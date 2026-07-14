@@ -150,13 +150,26 @@ function formatSummary(prompt: string | undefined): string {
  * Format an ISO date string (or any parseable date) as a relative time string.
  * Matches V1's format_timestamp: "X seconds/minutes/hours/days ago"
  */
-export function formatRelativeTime(dateStr: string): string {
+export function formatRelativeTime(
+  dateStr: string,
+  options?: { compact?: boolean }
+): string {
   try {
     const then = new Date(dateStr).getTime();
     if (isNaN(then)) return 'unknown';
     const now = Date.now();
     const diffSecs = Math.floor((now - then) / 1000);
+    const compact = options?.compact ?? false;
 
+    if (compact) {
+      // Column-width form for tabular UIs (pickers): `3h ago`, `2w ago`.
+      if (diffSecs < 60) return 'just now';
+      if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}m ago`;
+      if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}h ago`;
+      const days = Math.floor(diffSecs / 86400);
+      if (days < 7) return `${days}d ago`;
+      return `${Math.floor(days / 7)}w ago`;
+    }
     if (diffSecs < 60) return `${diffSecs} seconds ago`;
     if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)} minutes ago`;
     if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)} hours ago`;

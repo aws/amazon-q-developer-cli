@@ -183,6 +183,7 @@ export const LiteLayout: React.FC = () => {
     showTuiPanel,
     showStatsPanel,
     showHooksPanel,
+    showRepoPicker,
     showKnowledgePanel,
     showCodePanel,
     showChangelogPanel,
@@ -227,6 +228,7 @@ export const LiteLayout: React.FC = () => {
     showTuiPanel ||
     showStatsPanel ||
     showHooksPanel ||
+    showRepoPicker ||
     showKnowledgePanel ||
     showCodePanel ||
     showChangelogPanel ||

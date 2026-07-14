@@ -75,6 +75,7 @@ export function createMockCommandContext(
   return {
     kiro: { ...defaultKiro, ...opts.kiro } as any,
     agentEngine: 'v2',
+    cloudSessionActive: false,
     slashCommands: opts.slashCommands ?? [],
     kasCommands: opts.kasCommands ?? [],
     prompts: opts.prompts ?? [],
@@ -111,6 +112,7 @@ export function createMockCommandContext(
     setGoalStatus: spy('setGoalStatus') as any,
     setShowStatsPanel: spy('setShowStatsPanel') as any,
     setShowHooksPanel: spy('setShowHooksPanel') as any,
+    setShowRepoPicker: spy('setShowRepoPicker') as any,
     setShowKeybindingsPanel: spy('setShowKeybindingsPanel') as any,
     setShowDisplaySettingsPanel: spy('setShowDisplaySettingsPanel') as any,
     setShowThemePanel: spy('setShowThemePanel') as any,

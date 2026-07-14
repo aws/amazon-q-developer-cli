@@ -47,6 +47,7 @@ export const useCommandState = () => {
       _slashCommands: s.slashCommands,
       _kasCommands: s.kasCommands,
       _agentEngine: s.agentEngine,
+      _cloudSessionActive: s.cloudSessionActive,
       _prompts: s.prompts,
       _skills: s.skills,
       _steering: s.steering,
@@ -67,6 +68,7 @@ export const useCommandState = () => {
         prompts: state._prompts,
         skills: state._skills,
         steering: state._steering,
+        cloudSessionActive: state._cloudSessionActive,
       }),
     [
       state._agentEngine,
@@ -75,6 +77,7 @@ export const useCommandState = () => {
       state._prompts,
       state._skills,
       state._steering,
+      state._cloudSessionActive,
     ]
   );
   return { ...state, slashCommands };
@@ -170,6 +173,8 @@ export const useUIState = () =>
       statsList: state.statsList,
       statsSummary: state.statsSummary,
       showHooksPanel: state.showHooksPanel,
+      showRepoPicker: state.showRepoPicker,
+      repoPickerResources: state.repoPickerResources,
       showKeybindingsPanel: state.showKeybindingsPanel,
       showDisplaySettingsPanel: state.showDisplaySettingsPanel,
       showThemePanel: state.showThemePanel,
@@ -208,6 +213,8 @@ export const useUIActions = () =>
       setShowGoalPanel: state.setShowGoalPanel,
       setShowStatsPanel: state.setShowStatsPanel,
       setShowHooksPanel: state.setShowHooksPanel,
+      setShowRepoPicker: state.setShowRepoPicker,
+      submitRepoPicker: state.submitRepoPicker,
       setShowKeybindingsPanel: state.setShowKeybindingsPanel,
       setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
       setShowThemePanel: state.setShowThemePanel,

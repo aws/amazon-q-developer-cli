@@ -14,6 +14,7 @@ import { handleUpgradeAgent } from './upgrade-agent';
 import { handleModel } from './model';
 import { handleAgent } from './agent';
 import { handleEffort } from './effort';
+import { handleRepo } from './repo';
 
 export type KasHandler = (
   cmd: KasCommand,
@@ -44,4 +45,5 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Model]: handleModel,
   [KasCommandName.Agent]: handleAgent,
   [KasCommandName.Effort]: handleEffort,
+  [KasCommandName.Repo]: handleRepo,
 };

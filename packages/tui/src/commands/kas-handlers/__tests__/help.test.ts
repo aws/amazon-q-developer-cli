@@ -106,4 +106,35 @@ describe('/help KAS handler — client-side command list', () => {
     const agentCmd = (commands as any[]).find((c: any) => c.name === '/agent');
     expect(agentCmd?.subcommands).toEqual(['create', 'edit', 'swap']);
   });
+
+  it('hides cloud-only kas commands outside a cloud session, shows them inside', async () => {
+    const kasCommands = [
+      { name: '/help', description: 'Show help', meta: {} },
+      {
+        name: '/repo',
+        description: 'Attach a repository to the cloud session',
+        meta: { inputType: 'panel', cloudOnly: true },
+      },
+    ];
+
+    const localCtx = createMockCommandContext({
+      kasCommands: kasCommands as any,
+    });
+    await handleHelp(kasCommands[0] as any, '', localCtx);
+    const localNames = (
+      localCtx._spies.setShowHelpPanel!.mock.calls[0]![1] as any[]
+    ).map((c: any) => c.name);
+    expect(localNames).not.toContain('/repo');
+    expect(localNames).toContain('/help');
+
+    const cloudCtx = createMockCommandContext({
+      kasCommands: kasCommands as any,
+    });
+    cloudCtx.cloudSessionActive = true;
+    await handleHelp(kasCommands[0] as any, '', cloudCtx);
+    const cloudNames = (
+      cloudCtx._spies.setShowHelpPanel!.mock.calls[0]![1] as any[]
+    ).map((c: any) => c.name);
+    expect(cloudNames).toContain('/repo');
+  });
 });

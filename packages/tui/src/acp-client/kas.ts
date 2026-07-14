@@ -5,6 +5,9 @@ import type {
   SpecInvokeResponse,
   SpecResolveSessionRequest,
   SpecResolveSessionResponse,
+  SourceProviderList,
+  SourceProviderResourcePage,
+  SourceProviderResourcesRequest,
 } from '@kiro/acp-type-covenant';
 import { logger } from '../utils/logger';
 import {
@@ -297,8 +300,20 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly executionTarget?: ExecutionTarget;
 
   /**
-   * Repository selector(s) for a remote session, from `--repo`. Held for the
-   * repo-source flow (later task); not yet sent on `session/new`.
+   * Whether the active session was actually placed on a cloud sandbox — i.e. a
+   * `cloud-sandbox` executionTarget was advertised by KAS AND sent on
+   * `session/new`. Set in `newSession` from the SENT meta, so it is `false`
+   * when `--cloud` degraded to local (cap not advertised) — cloud-only UI then
+   * never appears against a local session. Dark-safe: stays
+   * false on every released build (no cloud-sandbox cap).
+   */
+  private startedCloudSession = false;
+
+  /**
+   * Repository selector(s) to bind on `session/new` for a cloud session, from
+   * the `--repo` flag. Sent as `_meta.kiro.repositories` when a cloud-sandbox
+   * placement is advertised; otherwise inert. With no `--repo` this is undefined
+   * and the create starts an empty sandbox.
    */
   private readonly repos?: string[];
 
@@ -1239,6 +1254,14 @@ export class KasAcpClient extends BaseAcpClient {
     logger.debug('[acp-client] KAS ACP handshake done');
   }
 
+  /**
+   * Whether the active session is genuinely running on a cloud sandbox (the
+   * placement was advertised and sent) — false when `--cloud` degraded local.
+   */
+  isCloudSessionActive(): boolean {
+    return this.startedCloudSession;
+  }
+
   override close(): void {
     this.hooksNotificationDisposable?.dispose();
     this.hooksNotificationDisposable = null;
@@ -1299,7 +1322,7 @@ export class KasAcpClient extends BaseAcpClient {
           )}); starting a local session instead.`
       );
     }
-    // A `cloud-sandbox` placement is a remote session, so send `sessionSource:
+    // A `cloud-sandbox` placement is a cloud session, so send `sessionSource:
     // 'remote'` alongside the cloud `executionTarget`. This block is only reachable
     // once KAS advertised `cloud-sandbox` (the gate above set
     // `kiroMeta.executionTarget`), so it is inert for existing users -- today's KAS
@@ -1307,14 +1330,21 @@ export class KasAcpClient extends BaseAcpClient {
     // gated independently on its own advertised capability, so we never send a flag
     // KAS didn't advertise. With no repo bound this is the "New" (empty-workspace)
     // start; starting a session bound to a repo is handled separately.
-    if (
+    const intendedCloudSandbox =
       (kiroMeta.executionTarget as ExecutionTarget | undefined)?.kind ===
-      'cloud-sandbox'
-    ) {
+      'cloud-sandbox';
+    this.startedCloudSession = intendedCloudSandbox;
+    if (intendedCloudSandbox) {
       if (this.kiroCapabilities.sessionSources?.includes('remote')) {
         kiroMeta.sessionSource = 'remote';
       }
-      if (!this.repos || this.repos.length === 0) {
+      if (this.repos && this.repos.length > 0) {
+        // Bind the selected repositories at session/new; they are fixed for the
+        // session's life. KAS resolves each `name`|`owner/name` string and drops
+        // an unresolvable one with a warning. No `isEmptyWorkspace` -- the
+        // workspace is the bound repo(s).
+        kiroMeta.repositories = this.repos;
+      } else {
         // "New" empty sandbox: no repo bound, so tell KAS to start an empty
         // workspace and not validate a local cwd (it owns the sandbox cwd).
         kiroMeta.isEmptyWorkspace = true;
@@ -2335,6 +2365,67 @@ export class KasAcpClient extends BaseAcpClient {
   ): Promise<{ sessionId: string; name: string }> {
     logger.debug('spawnSession not yet supported in KAS mode');
     return { sessionId: '', name: name ?? '' };
+  }
+
+  /**
+   * Gate for the `_kiro/sourceProviders/*` pull methods (repo picker): the
+   * `sourceProviders` capability must be advertised AND the method must appear
+   * in `extensionMethods` (consulted together as a fail-safe). Dark-safe:
+   * today's KAS advertises neither, so callers get `undefined` and never issue
+   * the ext call. Remove the gate once `sourceProviders` is always advertised.
+   */
+  private isSourceProvidersMethodAvailable(method: string): boolean {
+    return (
+      this.kiroCapabilities.sourceProviders === true &&
+      (this.kiroCapabilities.extensionMethods?.includes(method) ?? false)
+    );
+  }
+
+  /**
+   * List the account's source providers + connection state via
+   * `_kiro/sourceProviders/list`. Returns `undefined` when the surface is
+   * unavailable (capability not advertised) or the call fails -- the repo picker
+   * treats that as "no in-CLI picker" and points at the web portal.
+   */
+  async listSourceProviders(): Promise<SourceProviderList | undefined> {
+    if (!this.isSourceProvidersMethodAvailable('_kiro/sourceProviders/list')) {
+      return undefined;
+    }
+    try {
+      return await this.kiroClient.sendExtMethod(
+        '_kiro/sourceProviders/list',
+        {}
+      );
+    } catch (e) {
+      logger.debug('[kas] sourceProviders/list failed:', e);
+      return undefined;
+    }
+  }
+
+  /**
+   * Page one provider's repositories via `_kiro/sourceProviders/listResources`.
+   * Returns `undefined` when unavailable or on failure. The selected
+   * resource's `name` is what binds to a session via `_meta.kiro.repositories`.
+   */
+  async listSourceProviderResources(
+    request: SourceProviderResourcesRequest
+  ): Promise<SourceProviderResourcePage | undefined> {
+    if (
+      !this.isSourceProvidersMethodAvailable(
+        '_kiro/sourceProviders/listResources'
+      )
+    ) {
+      return undefined;
+    }
+    try {
+      return await this.kiroClient.sendExtMethod(
+        '_kiro/sourceProviders/listResources',
+        request
+      );
+    } catch (e) {
+      logger.debug('[kas] sourceProviders/listResources failed:', e);
+      return undefined;
+    }
   }
 
   /**

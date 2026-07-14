@@ -14,6 +14,7 @@ import type {
   SkillEntry,
   SteeringEntry,
 } from '../types/commands.js';
+import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import type {
   AgentEntry,
   EffortEntry,
@@ -37,6 +38,8 @@ export interface CommandContext {
   kiro: Kiro;
   /** Active agent backend */
   agentEngine: AgentEngine;
+  /** Whether the current session is a cloud session. Gates cloud-only commands like `/repo`. */
+  cloudSessionActive: boolean;
   /**
    * Slash commands visible for the current engine. This is the merged
    * list from `selectVisibleSlashCommands` -- host commands + V2/KAS
@@ -165,6 +168,11 @@ export interface CommandContext {
   ) => void;
   /** Show/hide hooks panel */
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
+  /** Show/hide the `/repo` picker with the fetched repositories (cloud-only). */
+  setShowRepoPicker: (
+    show: boolean,
+    resources?: SourceProviderResource[]
+  ) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
   setShowThemePanel: (show: boolean) => void;

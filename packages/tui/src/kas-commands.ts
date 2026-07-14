@@ -30,6 +30,7 @@ export enum KasCommandName {
   Feedback = '/feedback',
   Rewind = '/rewind',
   UpgradeAgent = '/upgrade-agent',
+  Repo = '/repo',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -216,6 +217,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
         diagnostics: '(review upgraded agents)',
       },
     },
+  },
+  {
+    name: KasCommandName.Repo,
+    description: 'Attach a repository to the cloud session',
+    meta: { inputType: 'panel', cloudOnly: true },
   },
 ];
 

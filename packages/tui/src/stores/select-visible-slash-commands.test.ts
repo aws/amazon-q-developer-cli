@@ -21,6 +21,11 @@ describe('selectVisibleSlashCommands', () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
     const visible = selectVisibleSlashCommands(store.getState());
     for (const cmd of KAS_COMMANDS) {
+      // cloud-only commands (e.g. /repo) are gated out of a non-cloud session.
+      if (cmd.meta?.cloudOnly) {
+        expect(visible.find((c) => c.name === cmd.name)).toBeUndefined();
+        continue;
+      }
       expect(visible.find((c) => c.name === cmd.name)).toBeDefined();
     }
     for (const cmd of store.getState().slashCommands) {
@@ -185,6 +190,29 @@ describe('selectVisibleSlashCommands', () => {
     const matches = visible.filter((c) => c.name === '/review');
     expect(matches).toHaveLength(1);
     expect(matches[0]!.meta?.type).toBe('prompt');
+  });
+});
+
+describe('/repo cloud-only visibility gate (dark-ship)', () => {
+  it('hides /repo in a non-cloud KAS session', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    // cloudSessionActive defaults to false (a local session / released build).
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/repo')).toBeUndefined();
+  });
+
+  it('shows /repo once the session is marked cloud', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    store.getState().setCloudSessionActive(true);
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/repo')).toBeDefined();
+  });
+
+  it('never shows /repo in v2 mode even with the cloud flag set', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
+    store.getState().setCloudSessionActive(true);
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/repo')).toBeUndefined();
   });
 });
 

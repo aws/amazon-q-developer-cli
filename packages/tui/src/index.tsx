@@ -695,6 +695,9 @@ const startInitialization = (resumePickerSessionId?: string) => {
         kas: { ...s.kas, effortExplicit: !!cliArgs.effort },
       }));
       await kiro.createSession(resolvedSessionId);
+      // Cloud-only commands become visible only for a CONFIRMED cloud placement
+      // (--cloud that degraded to local must not surface them).
+      appStore.getState().setCloudSessionActive(kiro.isCloudSessionActive());
       appStore
         .getState()
         .setBootStage('session_create', 'initializing workspace', 'ready');

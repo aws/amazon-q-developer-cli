@@ -49,6 +49,7 @@ export interface Glyphs {
   pencil: string;
   wrench: string;
   mail: string;
+  emDash: string;
 }
 
 export interface Spinners {
@@ -107,6 +108,7 @@ export const UNICODE_GLYPHS: Glyphs = {
   pencil: '✎',
   wrench: '🔧',
   mail: '📧',
+  emDash: '—',
 };
 
 export const ASCII_GLYPHS: Glyphs = {
@@ -158,6 +160,7 @@ export const ASCII_GLYPHS: Glyphs = {
   pencil: 'e',
   wrench: 'T',
   mail: 'M',
+  emDash: '-',
 };
 
 export const UNICODE_SPINNERS: Spinners = {

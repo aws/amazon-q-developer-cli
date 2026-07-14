@@ -366,7 +366,8 @@ impl ChatArgs {
     /// are indistinguishable from a typo and leak nothing. Returns `None` when the
     /// feature is enabled (debug / `KIRO_TEST_MODE` / E2E builds; the V3-only
     /// conflict check then applies in `resolve_agent_engine`) or no remote flag
-    /// was passed.
+    /// was passed -- except that on the enabled path a blank `--repo` value
+    /// (`--repo ""` / `--repo ,`) yields a clap `InvalidValue` error.
     ///
     /// The caller MUST invoke this at the very top of the `Chat` arm in
     /// `cli/mod.rs` -- ahead of the `command.take()` / `--list-models` /
@@ -382,10 +383,38 @@ impl ChatArgs {
     ///
     /// REMOVE once remote sandbox is E2E-ready and the rollout ramps above 0%.
     pub fn remote_sandbox_gate_error(&self, feature_enabled: bool) -> Option<clap::Error> {
-        if feature_enabled || !(self.cloud || self.repo.is_some()) {
+        use clap::CommandFactory;
+        // A blank --repo value resolves to nothing, and --repo without --cloud
+        // would be silently discarded (local sessions never send repositories) --
+        // both are user errors. Checked here rather than via clap `requires` so
+        // released (gated-off) builds still fall through to UnknownArgument and
+        // never leak that `--cloud` exists.
+        if feature_enabled {
+            if self
+                .repo
+                .as_ref()
+                .is_some_and(|repos| repos.iter().any(|r| r.trim().is_empty()))
+            {
+                let msg = "invalid value for '--repo <REPO>': repository name must not be blank";
+                let mut cmd = crate::cli::Cli::command();
+                return Some(match cmd.find_subcommand_mut("chat") {
+                    Some(chat) => chat.error(clap::error::ErrorKind::InvalidValue, msg),
+                    None => cmd.error(clap::error::ErrorKind::InvalidValue, msg),
+                });
+            }
+            if self.repo.is_some() && !self.cloud {
+                let msg = "'--repo <REPO>' requires '--cloud'";
+                let mut cmd = crate::cli::Cli::command();
+                return Some(match cmd.find_subcommand_mut("chat") {
+                    Some(chat) => chat.error(clap::error::ErrorKind::MissingRequiredArgument, msg),
+                    None => cmd.error(clap::error::ErrorKind::MissingRequiredArgument, msg),
+                });
+            }
             return None;
         }
-        use clap::CommandFactory;
+        if !(self.cloud || self.repo.is_some()) {
+            return None;
+        }
         let flag = if self.cloud { "--cloud" } else { "--repo" };
         let msg = format!("unexpected argument '{flag}' found");
         let mut cmd = crate::cli::Cli::command();
@@ -6033,6 +6062,58 @@ mod tests {
         // No remote flags: never rejected, regardless of feature state.
         assert!(ChatArgs::default().remote_sandbox_gate_error(false).is_none());
         assert!(ChatArgs::default().remote_sandbox_gate_error(true).is_none());
+
+        // Feature enabled + a blank `--repo` value (`--repo ""` / `--repo ,` /
+        // whitespace): rejected as a clap InvalidValue error (a repo string that
+        // resolves to nothing is a user error, not an empty-session request).
+        for blank in [vec!["".to_string()], vec!["".to_string(), "".to_string()], vec![
+            "owner/name".to_string(),
+            "  ".to_string(),
+        ]] {
+            let err = ChatArgs {
+                repo: Some(blank),
+                ..Default::default()
+            }
+            .remote_sandbox_gate_error(true)
+            .expect("blank --repo should be rejected when enabled");
+            assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+            assert_eq!(err.exit_code(), 2);
+        }
+
+        // A usable --repo value passes when enabled, alongside --cloud.
+        assert!(
+            ChatArgs {
+                cloud: true,
+                repo: Some(vec!["owner/name".to_string()]),
+                ..Default::default()
+            }
+            .remote_sandbox_gate_error(true)
+            .is_none()
+        );
+
+        // --repo without --cloud on an enabled build: rejected rather than
+        // silently discarded (local sessions never send repositories).
+        let err = ChatArgs {
+            repo: Some(vec!["owner/name".to_string()]),
+            ..Default::default()
+        }
+        .remote_sandbox_gate_error(true)
+        .expect("--repo without --cloud should be rejected when enabled");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+        assert_eq!(err.exit_code(), 2);
+
+        // Blank --repo on a gated-off build still returns UnknownArgument (the flag
+        // stays hidden on released builds -- no InvalidValue existence leak).
+        assert_eq!(
+            ChatArgs {
+                repo: Some(vec!["".to_string()]),
+                ..Default::default()
+            }
+            .remote_sandbox_gate_error(false)
+            .unwrap()
+            .kind(),
+            clap::error::ErrorKind::UnknownArgument
+        );
     }
 
     async fn get_test_agents(os: &Os) -> Agents {

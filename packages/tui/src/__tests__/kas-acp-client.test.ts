@@ -6583,7 +6583,7 @@ describe('remote executionTarget', () => {
     expect(meta?.isEmptyWorkspace).toBeUndefined();
   });
 
-  it('omits isEmptyWorkspace when a repo is bound, but still marks the session remote (repo-bound create handled separately)', async () => {
+  it('binds repositories (and omits isEmptyWorkspace) for a repo-bound cloud session', async () => {
     advertiseRemoteCaps();
     const client = new KasAcpClient({
       executionTarget: { kind: 'cloud-sandbox' },
@@ -6592,8 +6592,158 @@ describe('remote executionTarget', () => {
     await client.initialize();
     await client.newSession();
     const meta = lastNewSessionMeta();
+    expect(meta?.repositories).toEqual(['owner/repo']);
     expect(meta?.isEmptyWorkspace).toBeUndefined();
     expect(meta?.sessionSource).toBe('remote');
+  });
+
+  it('binds multiple repositories in order for a repo-bound cloud session', async () => {
+    advertiseRemoteCaps();
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+      repos: ['acme/repo', 'MyPackage'],
+    });
+    await client.initialize();
+    await client.newSession();
+    const meta = lastNewSessionMeta();
+    expect(meta?.repositories).toEqual(['acme/repo', 'MyPackage']);
+    expect(meta?.isEmptyWorkspace).toBeUndefined();
+  });
+
+  // ---- gated _kiro/sourceProviders/* pull methods (repo-picker data path) ----
+  const SP_METHODS = [
+    '_kiro/sourceProviders/list',
+    '_kiro/sourceProviders/listResources',
+  ];
+
+  it('listSourceProviders issues the ext call and returns providers when the cap + method are advertised', async () => {
+    advertiseKiroCaps({ sourceProviders: true, extensionMethods: SP_METHODS });
+    const providers = {
+      providers: [
+        {
+          providerType: 'GITHUB',
+          displayName: 'GitHub',
+          connectionStatus: 'connected',
+        },
+      ],
+    };
+    mockKiroSendExtMethod.mockResolvedValueOnce(providers);
+    const client = new KasAcpClient();
+    await client.initialize();
+    const result = await client.listSourceProviders();
+    expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+      '_kiro/sourceProviders/list',
+      {}
+    );
+    expect(result).toEqual(providers);
+  });
+
+  it('listSourceProviderResources forwards the request and returns the page', async () => {
+    advertiseKiroCaps({ sourceProviders: true, extensionMethods: SP_METHODS });
+    const page = {
+      resources: [{ providerType: 'GITHUB', name: 'owner/repo' }],
+    };
+    mockKiroSendExtMethod.mockResolvedValueOnce(page);
+    const client = new KasAcpClient();
+    await client.initialize();
+    const result = await client.listSourceProviderResources({
+      providerType: 'GITHUB',
+      limit: 50,
+    });
+    expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+      '_kiro/sourceProviders/listResources',
+      { providerType: 'GITHUB', limit: 50 }
+    );
+    expect(result).toEqual(page);
+  });
+
+  it('returns undefined and issues NO ext call when the sourceProviders cap is absent (dark-safe)', async () => {
+    // Default initialize advertises no caps -> the repo-picker surface is off.
+    const client = new KasAcpClient();
+    await client.initialize();
+    mockKiroSendExtMethod.mockClear();
+    expect(await client.listSourceProviders()).toBeUndefined();
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_kiro/sourceProviders/list',
+      expect.anything()
+    );
+  });
+
+  it('returns undefined when sourceProviders is true but the method is absent from extensionMethods (extensionMethods is consulted)', async () => {
+    advertiseKiroCaps({ sourceProviders: true, extensionMethods: [] }); // cap on, method NOT listed
+    const client = new KasAcpClient();
+    await client.initialize();
+    mockKiroSendExtMethod.mockClear();
+    expect(await client.listSourceProviders()).toBeUndefined();
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_kiro/sourceProviders/list',
+      expect.anything()
+    );
+  });
+
+  it('listSourceProviderResources returns undefined without an ext call when the cap is off', async () => {
+    advertiseKiroCaps({}); // no sourceProviders cap
+    const client = new KasAcpClient();
+    await client.initialize();
+    mockKiroSendExtMethod.mockClear();
+    expect(
+      await client.listSourceProviderResources({ providerType: 'GITHUB' })
+    ).toBeUndefined();
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_kiro/sourceProviders/listResources',
+      expect.anything()
+    );
+  });
+
+  it('listSourceProviderResources returns undefined when the method is absent from extensionMethods', async () => {
+    advertiseKiroCaps({ sourceProviders: true, extensionMethods: [] });
+    const client = new KasAcpClient();
+    await client.initialize();
+    mockKiroSendExtMethod.mockClear();
+    expect(
+      await client.listSourceProviderResources({ providerType: 'GITHUB' })
+    ).toBeUndefined();
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalledWith(
+      '_kiro/sourceProviders/listResources',
+      expect.anything()
+    );
+  });
+
+  it('listSourceProviders resolves undefined (no throw) when the ext call rejects', async () => {
+    advertiseKiroCaps({ sourceProviders: true, extensionMethods: SP_METHODS });
+    mockKiroSendExtMethod.mockRejectedValueOnce(new Error('kas is down'));
+    const client = new KasAcpClient();
+    await client.initialize();
+    expect(await client.listSourceProviders()).toBeUndefined();
+  });
+
+  it('listSourceProviderResources resolves undefined (no throw) when the ext call rejects', async () => {
+    advertiseKiroCaps({ sourceProviders: true, extensionMethods: SP_METHODS });
+    mockKiroSendExtMethod.mockRejectedValueOnce(new Error('kas is down'));
+    const client = new KasAcpClient();
+    await client.initialize();
+    expect(
+      await client.listSourceProviderResources({ providerType: 'GITHUB' })
+    ).toBeUndefined();
+  });
+
+  it('isCloudSessionActive reflects the SENT placement: true for a confirmed cloud-sandbox, false when --cloud degraded to local', async () => {
+    advertiseRemoteCaps();
+    const cloud = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await cloud.initialize();
+    await cloud.newSession();
+    expect(cloud.isCloudSessionActive()).toBe(true);
+
+    freshMocks();
+    advertiseKiroCaps({ executionTargets: ['local'] }); // cloud NOT advertised
+    const degraded = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await degraded.initialize();
+    await degraded.newSession();
+    expect(degraded.isCloudSessionActive()).toBe(false);
   });
 
   it('omits BOTH sessionSource and isEmptyWorkspace when the cloud-sandbox placement is NOT advertised, even if a remote store is (gating keys off the SENT executionTarget)', async () => {
@@ -6607,6 +6757,7 @@ describe('remote executionTarget', () => {
     });
     const client = new KasAcpClient({
       executionTarget: { kind: 'cloud-sandbox' }, // requested, but unsupported
+      repos: ['owner/repo'], // must also be gated off when the target isn't sent
     });
     await client.initialize();
     await client.newSession();
@@ -6614,6 +6765,7 @@ describe('remote executionTarget', () => {
     expect(meta?.executionTarget).toBeUndefined();
     expect(meta?.sessionSource).toBeUndefined();
     expect(meta?.isEmptyWorkspace).toBeUndefined();
+    expect(meta?.repositories).toBeUndefined();
   });
 
   it('still sends modeId while dropping executionTarget when KAS does not advertise the kind', async () => {

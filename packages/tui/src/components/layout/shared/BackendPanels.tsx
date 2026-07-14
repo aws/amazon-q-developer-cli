@@ -12,6 +12,7 @@ import { ToolsPanel } from '../../ui/ToolsPanel.js';
 import { GoalPanel } from '../../ui/GoalPanel.js';
 import { StatsPanel } from '../../ui/StatsPanel.js';
 import { HooksPanel } from '../../ui/HooksPanel.js';
+import { RepoPickerPanel } from '../../ui/RepoPickerPanel.js';
 import { KnowledgePanel } from '../../ui/KnowledgePanel.js';
 import { CodePanel } from '../../ui/CodePanel.js';
 import { UsagePanel } from '../../ui/UsagePanel.js';
@@ -65,6 +66,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     statsSummary,
     showHooksPanel,
     hooksList,
+    showRepoPicker,
+    repoPickerResources,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
     showThemePanel,
@@ -78,6 +81,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     artifactViewOpen,
   } = useUIState();
   const { setShowMcpPanel } = useUIActions();
+  const { submitRepoPicker } = useUIActions();
+  const attachedRepos = useAppStore((s) => s.attachedRepos);
   const { initErrors, pendingOAuthServers } = useNotificationState();
   const { showTransientAlert } = useNotificationActions();
   const { contextUsagePercent, currentModel, currentAgent } = useContextState();
@@ -254,6 +259,14 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
         <HooksPanel
           hooks={hooksList}
           onClose={handlers.handleCloseHooksPanel}
+        />
+      )}
+      {showRepoPicker && (
+        <RepoPickerPanel
+          resources={repoPickerResources}
+          initialSelected={attachedRepos}
+          onSubmit={(selected) => void submitRepoPicker(selected)}
+          onClose={handlers.handleCloseRepoPicker}
         />
       )}
       {showKeybindingsPanel && (

@@ -30,6 +30,8 @@ export interface CommandMeta {
   subcommandHints?: Record<string, string>;
   hint?: string;
   local?: boolean;
+  /** When true, the command is hidden unless the session is a cloud session. */
+  cloudOnly?: boolean;
   type?: 'action' | 'prompt' | 'skill' | 'steering';
   arguments?: Array<{
     name: string;

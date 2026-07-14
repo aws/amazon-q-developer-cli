@@ -8,6 +8,8 @@ import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import { getKasCommands, type KasCommand } from '../kas-commands';
 import { features } from '../features';
+import type { SourceProviderResource } from '@kiro/acp-type-covenant';
+import { formatCloneReposInstruction } from '../utils/repo-attach';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import type {
   AgentScope,
@@ -1104,10 +1106,18 @@ interface BaseAppActions {
     summary?: StatsSummary | null
   ) => void;
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
+  setShowRepoPicker: (
+    show: boolean,
+    resources?: SourceProviderResource[]
+  ) => void;
+  /** Attach the selected repos (emulated clone) and close the `/repo` picker. */
+  submitRepoPicker: (selected: string[]) => Promise<void>;
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
   setShowThemePanel: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
+  /** Set whether the current session is a cloud session (gates `/repo`). */
+  setCloudSessionActive: (active: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
   /** Set the parent route consumed by the verbose menu's ESC handler. */
   setVerboseReturnOnEscape: (route: string | null) => void;
@@ -1373,6 +1383,8 @@ export interface AppState {
    * over the V2 dispatcher pipeline for the same command name.
    */
   kasCommands: KasCommand[];
+  /** True for cloud sessions; gates cloud-only slash commands. */
+  cloudSessionActive: boolean;
   /** Frozen at boot from props.agentEngine ?? process.env.KIRO_AGENT_ENGINE. */
   agentEngine: AgentEngine;
   /**
@@ -1617,6 +1629,11 @@ export interface AppState {
   statsSummary: StatsSummary | null;
   showHooksPanel: boolean;
   hooksList: HookInfo[];
+  /** `/repo` picker (cloud-only): open flag + the fetched repositories to choose from. */
+  showRepoPicker: boolean;
+  repoPickerResources: SourceProviderResource[];
+  /** Repos attached to the cloud session, so reopening /repo pre-checks them. */
+  attachedRepos: string[];
   showKeybindingsPanel: boolean;
   showDisplaySettingsPanel: boolean;
   showThemePanel: boolean;
@@ -2088,6 +2105,7 @@ function buildCommandContext(
   return {
     kiro: state.kiro,
     agentEngine: state.agentEngine,
+    cloudSessionActive: state.cloudSessionActive,
     slashCommands: visibleSlashCommands,
     kasCommands: state.kasCommands,
     prompts: state.prompts,
@@ -2135,6 +2153,7 @@ function buildCommandContext(
     setGoalStatus: state.setGoalStatus,
     setShowStatsPanel: state.setShowStatsPanel,
     setShowHooksPanel: state.setShowHooksPanel,
+    setShowRepoPicker: state.setShowRepoPicker,
     setShowKeybindingsPanel: state.setShowKeybindingsPanel,
     setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
     setShowThemePanel: state.setShowThemePanel,
@@ -2179,6 +2198,7 @@ function buildCommandContext(
         showToolsPanel: false,
         showStatsPanel: false,
         showHooksPanel: false,
+        showRepoPicker: false,
         showKeybindingsPanel: false,
         showThemePanel: false,
         settingsReturnOnEscape: false,
@@ -2374,6 +2394,7 @@ export const createAppStore = (props: AppStoreProps) => {
           cmd.name !== '/lite' || process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
       ),
     kasCommands: agentEngine === 'kas' ? [...getKasCommands()] : [],
+    cloudSessionActive: false,
     agentEngine,
     prompts: [],
     skills: [],
@@ -2500,6 +2521,9 @@ export const createAppStore = (props: AppStoreProps) => {
     statsSummary: null,
     showHooksPanel: false,
     hooksList: [],
+    showRepoPicker: false,
+    repoPickerResources: [],
+    attachedRepos: [],
     showKeybindingsPanel: false,
     showDisplaySettingsPanel: false,
     showThemePanel: false,
@@ -5990,6 +6014,26 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showHooksPanel: show, hooksList: hooks });
     },
 
+    setShowRepoPicker: (show, resources = []) => {
+      set({ showRepoPicker: show, repoPickerResources: resources });
+    },
+
+    submitRepoPicker: async (selected) => {
+      // Remember the full attached set so reopening /repo pre-checks these repos.
+      const previous = get().attachedRepos;
+      set({
+        showRepoPicker: false,
+        repoPickerResources: [],
+        attachedRepos: [...selected],
+      });
+      // Only newly selected repos need cloning — repos kept from a previous
+      // submission were already cloned, so re-submitting an unchanged
+      // selection must not fire another agent turn.
+      const added = selected.filter((repo) => !previous.includes(repo));
+      const instruction = formatCloneReposInstruction(added);
+      if (instruction) await get().sendMessage(instruction);
+    },
+
     setShowKeybindingsPanel: (show) => {
       set({ showKeybindingsPanel: show });
     },
@@ -6004,6 +6048,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowSettingsPanel: (show) => {
       set({ showSettingsPanel: show });
+    },
+
+    setCloudSessionActive: (cloudSessionActive) => {
+      set({ cloudSessionActive });
     },
 
     setTerminalTitleEnabled: (enabled) => {

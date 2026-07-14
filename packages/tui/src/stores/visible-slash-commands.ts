@@ -31,6 +31,7 @@ type VisibleSlashCommandsState = Pick<
   | 'prompts'
   | 'skills'
   | 'steering'
+  | 'cloudSessionActive'
 >;
 
 /**
@@ -117,6 +118,10 @@ export const selectVisibleSlashCommands = (
   const deduped: AvailableCommand[] = [];
   for (const cmd of ordered) {
     if (seen.has(cmd.name)) continue;
+    // Cloud-only commands (e.g. `/repo`) are hidden from autocomplete unless the
+    // current session is a cloud session — so existing local-only users
+    // never see them (dark-ship). `cloudSessionActive` is false on released builds.
+    if (cmd.meta?.cloudOnly && !state.cloudSessionActive) continue;
     seen.add(cmd.name);
     deduped.push(cmd);
   }

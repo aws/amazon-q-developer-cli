@@ -45,7 +45,18 @@ import type {
   SpecInvokeResponse,
   SpecResolveSessionRequest,
   SpecResolveSessionResponse,
+  SourceProviderList,
+  SourceProviderResourcePage,
+  SourceProviderResourcesRequest,
 } from '@kiro/acp-type-covenant';
+
+/** Narrow source-provider slice the `/repo` command needs. */
+export interface RepoProviderSource {
+  listSourceProviders(): Promise<SourceProviderList | undefined>;
+  listSourceProviderResources(
+    request: SourceProviderResourcesRequest
+  ): Promise<SourceProviderResourcePage | undefined>;
+}
 
 /**
  * Stateless Kiro class that only manages session client lifecycle.
@@ -954,6 +965,40 @@ export class Kiro {
       return { sessions: [] };
     }
     return this.sessionClient.listSessions(cwd);
+  }
+
+  /**
+   * Returns the source-provider surface when the active client hosts it,
+   * else a null source whose calls resolve `undefined`.
+   */
+  getRepoProviderSource(): RepoProviderSource {
+    const c = this.sessionClient as Partial<RepoProviderSource> | undefined;
+    if (
+      c &&
+      typeof c.listSourceProviders === 'function' &&
+      typeof c.listSourceProviderResources === 'function'
+    ) {
+      return {
+        listSourceProviders: () => c.listSourceProviders!(),
+        listSourceProviderResources: (r) => c.listSourceProviderResources!(r),
+      };
+    }
+    return {
+      listSourceProviders: async () => undefined,
+      listSourceProviderResources: async () => undefined,
+    };
+  }
+
+  /**
+   * Whether the active session is actually running on a cloud sandbox — true only for
+   * a genuine cloud-sandbox session (not a `--cloud` that degraded to local).
+   * Feature-detected: non-KAS clients don't host it, so this returns false.
+   */
+  isCloudSessionActive(): boolean {
+    const c = this.sessionClient as
+      | { isCloudSessionActive?: () => boolean }
+      | undefined;
+    return c?.isCloudSessionActive?.() ?? false;
   }
 
   async setSetting(key: string, value: unknown): Promise<void> {
