@@ -725,6 +725,19 @@ fn read_kas_version(server_js: &Path) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
+/// Whether the user has opted in to content collection for service improvement.
+/// Sourced from the same `ShareCodeWhispererContent` setting the V1/V2
+/// OptOutInterceptor uses (default: opted in). Passed to KAS via
+/// `KIRO_CONTENT_COLLECTION_ENABLED`; without it KAS defaults to opted out and
+/// stamps `x-amzn-codewhisperer-optout` on every request, suppressing
+/// DataHub/KCO conversation storage for v3.
+pub(crate) fn content_collection_enabled(os: &Os) -> bool {
+    os.database
+        .settings
+        .get_bool(crate::database::settings::Setting::ShareCodeWhispererContent)
+        .unwrap_or(true)
+}
+
 /// Internal chat-cli ACP-client paths handle the callback via
 /// `chat_cli_v2::auth::kas_token::handle_ext_method`. External
 /// clients connecting to a `KasStdio::Inherit` spawn (e.g. `kiro-cli acp`)
@@ -786,6 +799,10 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
             env!("CARGO_PKG_VERSION"),
         ),
     );
+    cmd.env(
+        crate::util::consts::env_var::KIRO_CONTENT_COLLECTION_ENABLED,
+        content_collection_enabled(os).to_string(),
+    );
 
     let child = cmd.spawn().with_context(|| {
         format!(
@@ -835,6 +852,10 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
                 std::env::consts::OS,
                 env!("CARGO_PKG_VERSION"),
             ),
+        )
+        .env(
+            crate::util::consts::env_var::KIRO_CONTENT_COLLECTION_ENABLED,
+            content_collection_enabled(os).to_string(),
         )
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
@@ -1105,6 +1126,35 @@ mod test {
     #[test]
     fn debug_assert() {
         Cli::command().debug_assert();
+    }
+
+    /// The content-collection opt-in passed to KAS must default to opted IN
+    /// (matching V1/V2) and reflect the user's explicit setting. Regression
+    /// guard for v3 requests being silently opted out of DataHub/KCO storage.
+    #[tokio::test]
+    async fn content_collection_enabled_reflects_setting() {
+        use crate::database::settings::Setting;
+
+        let mut os = Os::new().await.unwrap();
+
+        // Default (unset): opted in, so KAS collects content like V1/V2.
+        assert!(content_collection_enabled(&os));
+
+        // Explicit opt-out is honored.
+        os.database
+            .settings
+            .set(Setting::ShareCodeWhispererContent, false, None)
+            .await
+            .unwrap();
+        assert!(!content_collection_enabled(&os));
+
+        // Explicit opt-in is honored.
+        os.database
+            .settings
+            .set(Setting::ShareCodeWhispererContent, true, None)
+            .await
+            .unwrap();
+        assert!(content_collection_enabled(&os));
     }
 
     /// Test flag parsing for the top level [Cli]

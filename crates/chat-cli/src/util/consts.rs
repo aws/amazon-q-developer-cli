@@ -138,6 +138,11 @@ pub mod env_var {
         /// OpenTelemetry logs export switch for KUTS metrics-only testing
         KIRO_TELEMETRY_OTLP_LOGS_ENABLED = "KIRO_TELEMETRY_OTLP_LOGS_ENABLED",
 
+        /// Content-collection (service-improvement) opt-in passed to the v3 KAS engine.
+        /// Without it KAS defaults to opted out and stamps `x-amzn-codewhisperer-optout`,
+        /// suppressing DataHub/KCO conversation storage.
+        KIRO_CONTENT_COLLECTION_ENABLED = "KIRO_CONTENT_COLLECTION_ENABLED",
+
         /// Chat shell for Unix systems
         KIRO_CHAT_SHELL = "KIRO_CHAT_SHELL",
 

@@ -408,6 +408,16 @@ async fn launch_acp_interactive(
             .get_bool(crate::database::settings::Setting::TelemetryEnabled)
             .unwrap_or(true);
     cmd.env("KIRO_TELEMETRY_ENABLED", telemetry_enabled.to_string());
+
+    // Propagate the content-collection (service-improvement) opt-in to KAS, which
+    // otherwise defaults to opted out and stamps x-amzn-codewhisperer-optout on every
+    // request — suppressing DataHub/KCO conversation storage for v3. Sourced from the
+    // same setting the V1/V2 OptOutInterceptor uses (default: opted in). The TUI child
+    // forwards its env to the KAS subprocess, so setting it here covers the v3 path.
+    cmd.env(
+        crate::util::consts::env_var::KIRO_CONTENT_COLLECTION_ENABLED,
+        crate::cli::content_collection_enabled(os).to_string(),
+    );
     for env_var in [
         crate::util::consts::env_var::KIRO_TELEMETRY_OTEL,
         crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT,
