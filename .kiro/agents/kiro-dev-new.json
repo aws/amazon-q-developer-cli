@@ -4,21 +4,23 @@
   "model": "claude-opus-4.6-1m",
   "prompt": "file://resources/KIRO_DEV_PROMPT.md",
   "tools": [
-    "fs_read",
-    "fs_write",
-    "execute_bash",
+    "@builder-mcp/InternalSearch",
+    "@builder-mcp/ReadInternalWebsites",
+    "@ht-mcp",
     "code",
-    "grep",
     "glob",
+    "grep",
     "introspect",
     "knowledge",
+    "read",
+    "shell",
+    "subagent/kiro-research-agent",
+    "subagent/kiro_default",
     "todo_list",
-    "subagent",
+    "web",
     "web_fetch",
     "web_search",
-    "@ht-mcp",
-    "@builder-mcp/ReadInternalWebsites",
-    "@builder-mcp/InternalSearch"
+    "write"
   ],
   "allowedTools": [
     "fs_read",
@@ -81,16 +83,84 @@
     "file://AGENTS.md",
     "file://README.md"
   ],
-  "hooks": {
-    "agentSpawn": [
+  "hooks": [
+    {
+      "name": "agentSpawn-0",
+      "trigger": "agentSpawn",
+      "action": {
+        "type": "command",
+        "command": "git status"
+      },
+      "timeout": 10
+    },
+    {
+      "name": "agentSpawn-1",
+      "trigger": "agentSpawn",
+      "action": {
+        "type": "command",
+        "command": "pwd"
+      },
+      "timeout": 10
+    }
+  ],
+  "permissions": {
+    "rules": [
       {
-        "command": "git status",
-        "description": "Add current git status to context"
+        "capability": "shell",
+        "match": [
+          "git status",
+          "git diff*",
+          "git log*",
+          "git add*",
+          "git pull*",
+          "git commit*",
+          "git checkout*",
+          "cargo clippy*",
+          "cargo +nightly fmt*",
+          "cargo build*",
+          "cargo test*",
+          "bun install",
+          "bun test*",
+          "bun run*",
+          "./scripts/generate-types.sh",
+          "jq*",
+          "cat*",
+          "ls*",
+          "pwd",
+          "wc*",
+          "head*",
+          "tail*",
+          "grep*",
+          "find*",
+          "mkdir*",
+          "gh pr view*",
+          "gh pr list*",
+          "gh pr diff*",
+          "gh issue view*"
+        ],
+        "effect": "allow"
       },
       {
-        "command": "pwd",
-        "description": "Add current directory to context"
+        "capability": "subagent",
+        "match": [
+          "kiro-research-agent"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "mcp",
+        "match": [
+          "ht-mcp/*"
+        ],
+        "effect": "allow"
       }
+    ],
+    "policies": [
+      "read-only-shell"
     ]
   }
 }

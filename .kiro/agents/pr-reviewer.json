@@ -3,14 +3,14 @@
   "description": "Automated PR reviewer for CI. Delegates behavioral review to the semantic-reviewer sub-agent, handles memory queries, dedup, and Slack posting.",
   "prompt": "file://resources/REVIEWER_PROMPT.md",
   "tools": [
-    "fs_read",
-    "fs_write",
-    "execute_bash",
     "code",
-    "grep",
     "glob",
+    "grep",
     "knowledge",
-    "subagent"
+    "read",
+    "shell",
+    "subagent/semantic-reviewer",
+    "write"
   ],
   "allowedTools": [
     "fs_read",
@@ -51,6 +51,47 @@
     "file://.kiro/skills/slack-publish/SKILL.md",
     "file://AGENTS.md"
   ],
-  "hooks": {},
-  "useLegacyMcpJson": true
+  "hooks": [],
+  "useLegacyMcpJson": true,
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "aws lambda invoke *",
+          "aws sts assume-role *",
+          "gh *",
+          "git *",
+          "cat*",
+          "ls*",
+          "head*",
+          "tail*",
+          "grep*",
+          "find*",
+          "jq*",
+          "wc*",
+          "curl*"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "subagent",
+        "match": [
+          "semantic-reviewer"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "effect": "allow"
+      }
+    ],
+    "policies": [
+      "read-only-shell"
+    ]
+  }
 }

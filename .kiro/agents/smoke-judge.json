@@ -1,14 +1,62 @@
 {
-  "name" : "smoke-judge",
-  "description" : "Evaluates smoke test evidence and renders a pass/fail verdict based on narrow, reliable categories.",
-  "model" : "claude-opus-4.6",
-  "prompt" : "file://resources/SMOKE_JUDGE_PROMPT.md",
-  "tools" : [ "fs_read", "execute_bash", "grep", "glob" ],
-  "allowedTools" : [ "fs_read", "execute_bash", "grep", "glob" ],
-  "toolsSettings" : {
-    "execute_bash" : {
-      "autoAllowReadonly" : true,
-      "allowedCommands" : [ "^cat[^&;|]*$", "^ls[^&;|]*$", "^find[^&;|]*$", "^head[^&;|]*$", "^tail[^&;|]*$", "^grep[^&;|]*$", "^wc[^&;|]*$", "^jq[^&;|]*$" ]
+  "name": "smoke-judge",
+  "description": "Evaluates smoke test evidence and renders a pass/fail verdict based on narrow, reliable categories.",
+  "model": "claude-opus-4.6",
+  "prompt": "file://resources/SMOKE_JUDGE_PROMPT.md",
+  "tools": [
+    "glob",
+    "grep",
+    "read",
+    "shell"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "execute_bash",
+    "grep",
+    "glob"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "autoAllowReadonly": true,
+      "allowedCommands": [
+        "^cat[^&;|]*$",
+        "^ls[^&;|]*$",
+        "^find[^&;|]*$",
+        "^head[^&;|]*$",
+        "^tail[^&;|]*$",
+        "^grep[^&;|]*$",
+        "^wc[^&;|]*$",
+        "^jq[^&;|]*$"
+      ]
     }
+  },
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "cat*",
+          "ls*",
+          "find*",
+          "head*",
+          "tail*",
+          "grep*",
+          "wc*",
+          "jq*"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "effect": "allow"
+      }
+    ],
+    "policies": [
+      "read-only-shell"
+    ]
   }
 }
