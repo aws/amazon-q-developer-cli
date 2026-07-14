@@ -5,17 +5,17 @@ doc_meta:
   category: feature
   keywords: [refusal, content filter, content policy, model error, blocked, alert, stop reason]
   related: [model, classic-vs-tui]
-  validated: 2026-07-12
-  commit: 85d11e4fc
+  validated: 2026-07-14
+  commit: 32e3f718c
   status: validated
   testable_headless: false
 ---
 
 ## Overview
 
-When a model refuses to continue a conversation due to content-policy restrictions or the response is content-filtered by the provider, Kiro CLI displays an error alert explaining what happened and how to recover.
+When a model refuses to continue a conversation due to content-policy restrictions or the response is content-filtered by the provider, Kiro CLI writes an error message into the conversation scrollback explaining what happened and how to recover.
 
-Previously, content-filtered responses could cause the agent to stop silently mid-turn with no feedback. Now, the TUI detects these events and surfaces a temporary error notification so you always know why the conversation stopped. A permanent copy is also written to the conversation scrollback for reference.
+Previously, content-filtered responses could cause the agent to stop silently mid-turn with no feedback. Now, the TUI detects these events and writes an error message directly into the conversation scrollback so you always know why the conversation stopped.
 
 ## How It Works
 
@@ -25,11 +25,11 @@ The model provider may refuse a request or filter the response for several reaso
 - The accumulated conversation history crosses a content threshold
 - A specific prompt or tool output is flagged by the provider
 
-When this occurs, Kiro CLI receives a `CONTENT_FILTERED` stop reason or refusal metadata from the provider and immediately displays an error alert in the TUI.
+When this occurs, Kiro CLI receives a `CONTENT_FILTERED` stop reason or refusal metadata from the provider and writes an error message into the conversation scrollback.
 
 ## What You See
 
-When a refusal occurs, an error alert appears above your input area. The alert shows either:
+When a refusal occurs, an error message appears in-line in the conversation scrollback at the point where the turn stopped. The message shows either:
 
 1. **Provider explanation** — The specific reason given by the model provider, when available
 2. **Default guidance** — If no explanation is provided:
@@ -40,7 +40,7 @@ model, or start a new conversation, or rewind the current conversation to an
 earlier point and try a different approach.
 ```
 
-The alert automatically hides after 8 seconds. A permanent copy of the refusal message is also written to the conversation scrollback, so you can scroll back to review it at any time.
+The message stays in the scrollback permanently, so you can scroll back to review it at any time.
 
 ## Recovery Options
 
@@ -82,20 +82,20 @@ If a specific message triggered the refusal, try rephrasing your request to avoi
 
 ### Example 1: Refusal with Provider Explanation
 
-You send a message and the model refuses. The TUI displays:
+You send a message and the model refuses. A system message appears in the conversation:
 
 ```
-⚠ Error: This request was flagged by the model's content policy. The conversation
+⚠ This request was flagged by the model's content policy. The conversation
 contains content that cannot be processed. Please start a new conversation or
 switch to a different model.
 ```
 
 ### Example 2: Content-Filtered Stop with No Explanation
 
-The model stops mid-response due to content filtering. The TUI displays the default message:
+The model stops mid-response due to content filtering. A system message appears with the default guidance:
 
 ```
-⚠ Error: The selected model cannot continue this conversation. Please select a
+⚠ The selected model cannot continue this conversation. Please select a
 different model, or start a new conversation, or rewind the current conversation
 to an earlier point and try a different approach.
 ```

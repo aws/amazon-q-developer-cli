@@ -2840,13 +2840,26 @@ export const createAppStore = (props: AppStoreProps) => {
             isProcessing: false,
           });
         } else {
-          // All other errors are non-blocking (transient alerts)
+          // All other errors are non-blocking.
           get().showTransientAlert({
             message: displayMessage,
             status: 'error',
             autoHideMs: 5000,
           });
-          set({ isProcessing: false });
+          // Keep the failure visible after the transient alert fades.
+          set((s) => ({
+            isProcessing: false,
+            messages: [
+              ...s.messages,
+              {
+                id: generateMessageId(),
+                role: MessageRole.System,
+                content: displayMessage,
+                success: false,
+                turnOwned: true,
+              },
+            ],
+          }));
           // Turn ended (non-blocking error) — drain any queued messages.
           // processQueue handles steer-first priority internally.
           await get().processQueue();
@@ -3771,16 +3784,6 @@ export const createAppStore = (props: AppStoreProps) => {
               const message =
                 event.explanation ??
                 'The selected model cannot continue this conversation. Please select a different model, or start a new conversation, or rewind the current conversation to an earlier point and try a different approach.';
-              // Fade the toast; the scrollback copy below is the durable record.
-              get().showTransientAlert({
-                message,
-                status: 'error',
-                autoHideMs: 8000,
-              });
-              // Also leave a copy in scrollback so it survives the transient
-              // alert being dismissed or replaced. Mark turnOwned while a turn
-              // is in flight so ConversationView interleaves it into the turn
-              // body even when the refused response carried no model content.
               set((s) => ({
                 messages: [
                   ...s.messages,

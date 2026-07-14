@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Model refusal errors no longer pin a toast above the prompt bar — only a scrollback row is shown"
+}

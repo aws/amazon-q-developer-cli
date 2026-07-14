@@ -743,7 +743,7 @@ describe('Stream event handler — McpServerInitFailure', () => {
 });
 
 describe('Stream event handler — RateLimitError', () => {
-  it('shows transient alert', () => {
+  it('shows a transient alert without adding a scrollback row', () => {
     const store = makeStore();
     const handler = store.getState().createStreamEventHandler();
     handler({
@@ -754,11 +754,47 @@ describe('Stream event handler — RateLimitError', () => {
       'Rate limited, try again in 30s'
     );
     expect(store.getState().transientAlert?.status).toBe('error');
+    expect(store.getState().messages).toHaveLength(0);
+  });
+});
+
+describe('sendMessage — non-blocking error persistence', () => {
+  it('leaves a scrollback row when the prompt fails with a throttle error', async () => {
+    const store = makeStore();
+    store.getState().kiro.streamMessage = mock(() =>
+      Promise.reject(new Error('The request was throttled by the service'))
+    );
+    await store.getState().sendMessage('hello');
+
+    const rows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.System);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.content).toBe('The request was throttled by the service');
+    expect(rows[0]!.success).toBe(false);
+    expect(rows[0]!.turnOwned).toBe(true);
+    expect(store.getState().transientAlert?.message).toBe(
+      'The request was throttled by the service'
+    );
+    expect(store.getState().isProcessing).toBe(false);
+  });
+
+  it('keeps blocking auth errors out of scrollback', async () => {
+    const store = makeStore();
+    store.getState().kiro.streamMessage = mock(() =>
+      Promise.reject(new Error('token expired'))
+    );
+    await store.getState().sendMessage('hello');
+
+    expect(
+      store.getState().messages.filter((m) => m.role === MessageRole.System)
+    ).toHaveLength(0);
+    expect(store.getState().agentError).toBe('Session expired');
   });
 });
 
 describe('Stream event handler — ModelRefusal', () => {
-  it('shows an error alert that fades and leaves a copy in scrollback', () => {
+  it('leaves a scrollback copy without pinning a toast above the prompt bar', () => {
     const store = makeStore();
     store.setState({ isProcessing: true });
     const handler = store.getState().createStreamEventHandler();
@@ -769,14 +805,8 @@ describe('Stream event handler — ModelRefusal', () => {
       explanation: 'This request was declined by content policy.',
       recommendedModel: 'kiro-safe',
     });
-    const alert = store.getState().transientAlert;
-    expect(alert?.status).toBe('error');
-    expect(alert?.message).toBe('This request was declined by content policy.');
-    // The toast fades after 8s; the scrollback copy below is the durable record.
-    expect(alert?.autoHideMs).toBe(8000);
+    expect(store.getState().transientAlert).toBeNull();
 
-    // A copy is left in scrollback, marked turnOwned so it renders within the
-    // in-flight turn even though the refused response carried no model content.
     const scrollback = store
       .getState()
       .messages.filter((m) => m.role === MessageRole.System);
@@ -784,8 +814,8 @@ describe('Stream event handler — ModelRefusal', () => {
     expect(scrollback[0]!.content).toBe(
       'This request was declined by content policy.'
     );
-    expect((scrollback[0] as { success: boolean }).success).toBe(false);
-    expect((scrollback[0] as { turnOwned?: boolean }).turnOwned).toBe(true);
+    expect(scrollback[0]!.success).toBe(false);
+    expect(scrollback[0]!.turnOwned).toBe(true);
   });
 
   it('falls back to the default guidance when no explanation is given', () => {
@@ -795,7 +825,11 @@ describe('Stream event handler — ModelRefusal', () => {
       type: AgentEventType.ModelRefusal,
       stopReason: 'CONTENT_FILTERED',
     });
-    expect(store.getState().transientAlert?.message).toBe(
+    const scrollback = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.System);
+    expect(scrollback).toHaveLength(1);
+    expect(scrollback[0]!.content).toBe(
       'The selected model cannot continue this conversation. Please select a different model, or start a new conversation, or rewind the current conversation to an earlier point and try a different approach.'
     );
   });
@@ -818,7 +852,6 @@ describe('Stream event handler — ModelRefusal', () => {
       .messages.filter((m) => m.role === MessageRole.System);
     expect(scrollback).toHaveLength(1);
     expect(scrollback[0]!.content).toBe('First refusal.');
-    expect(store.getState().transientAlert?.message).toBe('First refusal.');
   });
 });
 

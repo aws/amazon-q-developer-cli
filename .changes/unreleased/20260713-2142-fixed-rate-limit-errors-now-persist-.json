@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Rate limit errors now persist in scrollback so the message remains visible after the toast fades"
+}
