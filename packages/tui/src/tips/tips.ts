@@ -70,10 +70,6 @@ const TUI_ONLY: readonly TipDef[] = [
     id: 'tui-expand-output',
     text: "Press Ctrl+O to expand a tool's full output, then again to collapse it.",
   },
-  {
-    id: 'tui-verbosity',
-    text: 'Open /verbosity to tune truncation, output filters, and density anytime.',
-  },
 ];
 
 // Lite only.

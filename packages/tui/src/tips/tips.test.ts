@@ -61,6 +61,13 @@ describe('pickTip — surface filtering', () => {
     }
   });
 
+  test('TUI surface never advertises the lite-only /verbosity command', () => {
+    const outcomes = allOutcomes(
+      ctx({ surface: 'tui', recommendLiteUi: true })
+    );
+    for (const tip of outcomes) expect(tip).not.toContain('/verbosity');
+  });
+
   test('Lite surface never yields a TUI_ONLY tip (incl. the Ctrl+O conflict)', () => {
     const outcomes = allOutcomes(
       ctx({ surface: 'lite', recommendLiteUi: true })
