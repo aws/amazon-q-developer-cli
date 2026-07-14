@@ -105,7 +105,7 @@ pub async fn load_agents<P: SystemProvider>(
     Ok((agent_configs, errors))
 }
 
-fn resolve_workspace_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
+pub(crate) fn resolve_workspace_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
     let cwd = system.cwd().ok()?;
     let kiro_path = cwd.join(".kiro").join("agents");
     if kiro_path.exists() {
@@ -118,7 +118,7 @@ fn resolve_workspace_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> 
     None
 }
 
-fn resolve_global_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
+pub(crate) fn resolve_global_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
     // Check test override first
     if let Ok(test_dir) = std::env::var("KIRO_TEST_AGENTS_DIR") {
         let path = PathBuf::from(test_dir);

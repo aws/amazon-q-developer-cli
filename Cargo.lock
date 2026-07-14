@@ -105,6 +105,7 @@ dependencies = [
  "r2d2_sqlite",
  "rand 0.10.1",
  "regex",
+ "regex-syntax",
  "reqwest 0.13.3",
  "rmcp 2.0.0",
  "rusqlite",

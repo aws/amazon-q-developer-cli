@@ -1,5 +1,6 @@
 pub mod definitions;
 pub mod load;
+pub mod migration;
 pub mod parse;
 pub mod types;
 

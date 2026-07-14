@@ -4,6 +4,7 @@
 //! line on stdout shaped by [`CliInternalOutput`], exit code mirrors
 //! the success flag.
 
+use std::env::VarError;
 use std::path::{
     Path,
     PathBuf,
@@ -11,6 +12,22 @@ use std::path::{
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use agent::agent_config::migration::{
+    AgentClassification,
+    AgentScope,
+    AgentUpgradeOutcome,
+    ScanResult,
+    default_scan_dirs,
+    scan_agents,
+    upgrade_agent_file,
+};
+use agent::util::providers::{
+    CwdProvider,
+    EnvProvider,
+    HomeProvider,
+    RealProvider,
+    SystemProvider,
+};
 use chat_cli_v2::agent::kas::v2_to_kas::{
     ConvertArgs as V2ConvertArgs,
     convert_v2_to_kas,
@@ -137,6 +154,10 @@ pub enum CliInternalOutput {
     /// `ensure-session`.
     #[serde(rename_all = "camelCase")]
     EnsureSession { session_id: String },
+    /// `upgrade-agent --action scan`.
+    UpgradeAgentScan { result: ScanResult },
+    /// `upgrade-agent --action run`.
+    UpgradeAgentRun { outcomes: Vec<AgentUpgradeOutcome> },
     /// `test-seed-v1`.
     #[serde(rename_all = "camelCase")]
     TestSeedV1 { conversation_id: String },
@@ -177,6 +198,14 @@ impl CliInternalOutput {
         Self::TestSeedV1 {
             conversation_id: conversation_id.into(),
         }
+    }
+
+    fn upgrade_agent_scan(result: ScanResult) -> Self {
+        Self::UpgradeAgentScan { result }
+    }
+
+    fn upgrade_agent_run(outcomes: Vec<AgentUpgradeOutcome>) -> Self {
+        Self::UpgradeAgentRun { outcomes }
     }
 
     fn error(message: impl Into<String>, code: Option<ErrorCode>) -> Self {
@@ -240,6 +269,9 @@ pub enum InternalChatSubcommand {
     /// Seed a V1 conversation row into a sandbox SQLite from a fixture
     /// JSON file. Refuses to run unless `KIRO_TEST_DB_PATH` is set.
     TestSeedV1(TestSeedV1Args),
+    /// Scan or run the agent-config universal-format migration. Wire
+    /// surface for the `/upgrade-agent` TUI panels.
+    UpgradeAgent(UpgradeAgentArgs),
 }
 
 impl ChatCommand {
@@ -251,6 +283,7 @@ impl ChatCommand {
             Self::Internal(InternalChatSubcommand::EnsureSession(args)) => Ok(args.execute().await),
             Self::Internal(InternalChatSubcommand::DeriveMessages(args)) => Ok(args.execute()),
             Self::Internal(InternalChatSubcommand::TestSeedV1(args)) => Ok(args.execute().await),
+            Self::Internal(InternalChatSubcommand::UpgradeAgent(args)) => Ok(args.execute()),
         }
     }
 }
@@ -440,6 +473,7 @@ pub struct EnsureSessionArgs {
     pub cwd: String,
 }
 
+#[derive(Debug)]
 struct RunError {
     message: String,
     code: Option<ErrorCode>,
@@ -686,6 +720,94 @@ impl TestSeedV1Args {
     }
 }
 
+// ─── upgrade-agent ───────────────────────────────────────────────────
+
+/// Scan classifies every agent; run rewrites the ones matching a
+/// classification+scope into the universal format in place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum UpgradeAgentAction {
+    Scan,
+    Run,
+}
+
+/// Wraps [`RealProvider`] but reports the caller-supplied `--cwd` so the
+/// scan's workspace-local dir tracks the TUI launch cwd rather than the
+/// process cwd (which is the binary's, not the user's workspace).
+#[derive(Debug)]
+struct CwdOverrideProvider {
+    cwd: PathBuf,
+}
+
+impl EnvProvider for CwdOverrideProvider {
+    fn var(&self, input: &str) -> Result<String, VarError> {
+        RealProvider.var(input)
+    }
+}
+
+impl HomeProvider for CwdOverrideProvider {
+    fn home(&self) -> Option<PathBuf> {
+        RealProvider.home()
+    }
+}
+
+impl CwdProvider for CwdOverrideProvider {
+    fn cwd(&self) -> Result<PathBuf, std::io::Error> {
+        Ok(self.cwd.clone())
+    }
+}
+
+impl SystemProvider for CwdOverrideProvider {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+pub struct UpgradeAgentArgs {
+    #[arg(long, value_enum)]
+    pub action: UpgradeAgentAction,
+    /// Workspace path the scan's local agent dir is resolved against.
+    #[arg(long)]
+    pub cwd: String,
+    /// Classification to upgrade. Required for `run`.
+    #[arg(long, value_enum)]
+    pub classification: Option<AgentClassification>,
+    /// Scope to upgrade. Required for `run`.
+    #[arg(long, value_enum)]
+    pub scope: Option<AgentScope>,
+}
+
+impl UpgradeAgentArgs {
+    fn execute(self) -> ExitCode {
+        match self.run() {
+            Ok(output) => emit(&output),
+            Err(err) => emit(&CliInternalOutput::error(err.message, err.code)),
+        }
+    }
+
+    fn run(&self) -> Result<CliInternalOutput, RunError> {
+        let provider = CwdOverrideProvider {
+            cwd: PathBuf::from(&self.cwd),
+        };
+        let scan = scan_agents(&default_scan_dirs(&provider));
+
+        match self.action {
+            UpgradeAgentAction::Scan => Ok(CliInternalOutput::upgrade_agent_scan(scan)),
+            UpgradeAgentAction::Run => {
+                let classification = self
+                    .classification
+                    .ok_or_else(|| RunError::message("upgrade-agent run: --classification is required"))?;
+                let scope = self
+                    .scope
+                    .ok_or_else(|| RunError::message("upgrade-agent run: --scope is required"))?;
+                let outcomes = scan
+                    .agents
+                    .iter()
+                    .filter(|a| a.classification == classification && a.scope == scope)
+                    .map(|a| upgrade_agent_file(Path::new(&a.source_path)))
+                    .collect();
+                Ok(CliInternalOutput::upgrade_agent_run(outcomes))
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -860,6 +982,115 @@ mod tests {
         };
         let result = args.ensure_v2_present(dir.path());
         assert_eq!(result.ok().as_deref(), Some(id));
+    }
+
+    // ─── upgrade-agent wire format ───────────────────────────────────
+
+    #[test]
+    fn upgrade_agent_scan_serializes_with_kind_and_camel_case_result() {
+        let result = ScanResult {
+            agents: Vec::new(),
+            counts: agent::agent_config::migration::ScanCounts::default(),
+            total: 0,
+        };
+        let json_str = serde_json::to_string(&CliInternalOutput::upgrade_agent_scan(result)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["kind"], "upgradeAgentScan");
+        assert_eq!(parsed["data"]["result"]["total"], 0);
+        assert_eq!(parsed["data"]["result"]["agents"], json!([]));
+        // Bucket counts use the kebab-case classification keys the TUI indexes.
+        assert_eq!(parsed["data"]["result"]["counts"]["v2-only"]["total"], 0);
+    }
+
+    #[test]
+    fn upgrade_agent_run_serializes_with_kind_and_camel_case_outcomes() {
+        use agent::agent_config::migration::UpgradeStatus;
+        let outcome = AgentUpgradeOutcome {
+            name: "a".to_string(),
+            source_path: "/tmp/a.json".to_string(),
+            backup_path: Some("/tmp/a.json.bak".to_string()),
+            classification: Some(AgentClassification::V2Only),
+            status: UpgradeStatus::Upgraded,
+            warnings: Vec::new(),
+            error: None,
+        };
+        let json_str = serde_json::to_string(&CliInternalOutput::upgrade_agent_run(vec![outcome])).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["kind"], "upgradeAgentRun");
+        let entry = &parsed["data"]["outcomes"][0];
+        assert_eq!(entry["name"], "a");
+        assert_eq!(entry["sourcePath"], "/tmp/a.json");
+        assert_eq!(entry["backupPath"], "/tmp/a.json.bak");
+        assert_eq!(entry["classification"], "v2-only");
+        assert_eq!(entry["status"], "upgraded");
+    }
+
+    // ─── UpgradeAgentArgs behavior ───────────────────────────────────
+
+    #[test]
+    fn upgrade_agent_scan_then_run_upgrades_seeded_v2_config() {
+        let workspace = tempfile::tempdir().unwrap();
+        let agents_dir = workspace.path().join(".kiro").join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        let agent_path = agents_dir.join("a.json");
+        std::fs::write(&agent_path, serde_json::json!({ "tools": ["fs_read"] }).to_string()).unwrap();
+        let cwd = workspace.path().to_string_lossy().into_owned();
+
+        // Scan classifies the seeded config as a local v2-only agent.
+        let scan_out = UpgradeAgentArgs {
+            action: UpgradeAgentAction::Scan,
+            cwd: cwd.clone(),
+            classification: None,
+            scope: None,
+        }
+        .run()
+        .expect("scan succeeds");
+        let CliInternalOutput::UpgradeAgentScan { result } = scan_out else {
+            panic!("expected UpgradeAgentScan");
+        };
+        // Assert on the seeded local agent, not the total, since the host may have global agents.
+        let seeded = result
+            .agents
+            .iter()
+            .find(|a| a.scope == AgentScope::Local && a.name == "a")
+            .expect("seeded local agent present in scan");
+        assert_eq!(seeded.classification, AgentClassification::V2Only);
+
+        // Run upgrades the matching agent in place and backs up the original.
+        let run_out = UpgradeAgentArgs {
+            action: UpgradeAgentAction::Run,
+            cwd,
+            classification: Some(AgentClassification::V2Only),
+            scope: Some(AgentScope::Local),
+        }
+        .run()
+        .expect("run succeeds");
+        let CliInternalOutput::UpgradeAgentRun { outcomes } = run_out else {
+            panic!("expected UpgradeAgentRun");
+        };
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            outcomes[0].status,
+            agent::agent_config::migration::UpgradeStatus::Upgraded
+        );
+        let upgraded: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&agent_path).unwrap()).unwrap();
+        assert_eq!(upgraded, serde_json::json!({ "tools": ["read"] }));
+        assert!(agents_dir.join("a.json.bak").exists());
+    }
+
+    #[test]
+    fn upgrade_agent_run_requires_classification_and_scope() {
+        let workspace = tempfile::tempdir().unwrap();
+        let err = UpgradeAgentArgs {
+            action: UpgradeAgentAction::Run,
+            cwd: workspace.path().to_string_lossy().into_owned(),
+            classification: None,
+            scope: Some(AgentScope::Local),
+        }
+        .run()
+        .err()
+        .expect("missing classification should error");
+        assert!(err.message.contains("--classification"));
     }
 
     #[test]

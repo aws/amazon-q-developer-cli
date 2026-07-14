@@ -1,0 +1,388 @@
+[
+  {
+    "description": "Sample V2 agent → universal: V2 tool names map to V3 tags; aws is deprecated",
+    "input": {
+      "prompt": "file://resources/prompt.md",
+      "tools": [
+        "fs_read",
+        "fs_write",
+        "execute_bash",
+        "use_subagent",
+        "web_fetch",
+        "aws",
+        "thinking",
+        "my_custom_tool",
+        "@github/*"
+      ],
+      "allowedTools": ["fs_read", "@github"],
+      "keyboardShortcut": "ctrl+3",
+      "mcpServers": { "github": { "command": "gh-mcp" } },
+      "resources": [
+        "file://AGENTS.md",
+        { "type": "knowledgeBase", "name": "my-docs", "auto_update": true }
+      ],
+      "hooks": {
+        "preToolUse": [
+          { "command": "fmt", "matcher": "fs_write", "timeout_ms": 2500 }
+        ],
+        "agentSpawn": [{ "command": "git status" }]
+      }
+    },
+    "expectedConfig": {
+      "prompt": "file://resources/prompt.md",
+      "tools": [
+        "read",
+        "write",
+        "shell",
+        "subagent",
+        "web_fetch",
+        "web",
+        "aws",
+        "thinking",
+        "my_custom_tool",
+        "@github/*"
+      ],
+      "allowedTools": ["fs_read", "@github"],
+      "keyboardShortcut": "ctrl+3",
+      "mcpServers": { "github": { "command": "gh-mcp" } },
+      "resources": [
+        "file://AGENTS.md",
+        { "type": "knowledgeBase", "name": "my-docs", "auto_update": true }
+      ],
+      "hooks": [
+        {
+          "name": "agentSpawn-0",
+          "trigger": "agentSpawn",
+          "action": { "type": "command", "command": "git status" },
+          "timeout": 10
+        },
+        {
+          "name": "preToolUse-0",
+          "trigger": "preToolUse",
+          "matcher": "fs_write",
+          "action": { "type": "command", "command": "fmt" },
+          "timeout": 3
+        }
+      ],
+      "permissions": {
+        "rules": [
+          { "capability": "fs_read", "effect": "allow" },
+          { "capability": "mcp", "match": ["github/*"], "effect": "allow" }
+        ]
+      }
+    },
+    "classification": "v2-only",
+    "warnings": ["deprecated-aws-tool"]
+  },
+  {
+    "description": "Agent with tool settings",
+    "input": {
+      "name": "dev",
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "allowedCommands": ["^git (status|log)$"],
+          "autoAllowReadonly": true
+        },
+        "fs_read": { "allowedPaths": ["src/**"], "deniedPaths": [".env"] },
+        "fs_write": { "allowedPaths": ["src/**"], "deniedPaths": ["*.lock"] },
+        "web_fetch": {
+          "trusted": [".*docs\\.aws\\.amazon\\.com.*"],
+          "blocked": [".*pastebin\\.com.*"]
+        }
+      }
+    },
+    "expectedConfig": {
+      "name": "dev",
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "allowedCommands": ["^git (status|log)$"],
+          "autoAllowReadonly": true
+        },
+        "fs_read": { "allowedPaths": ["src/**"], "deniedPaths": [".env"] },
+        "fs_write": { "allowedPaths": ["src/**"], "deniedPaths": ["*.lock"] },
+        "web_fetch": {
+          "trusted": [".*docs\\.aws\\.amazon\\.com.*"],
+          "blocked": [".*pastebin\\.com.*"]
+        }
+      },
+      "permissions": {
+        "rules": [
+          {
+            "capability": "shell",
+            "match": ["git status", "git log"],
+            "effect": "allow"
+          },
+          { "capability": "fs_read", "match": ["src/**"], "effect": "allow" },
+          { "capability": "fs_read", "match": [".env"], "effect": "deny" },
+          { "capability": "fs_write", "match": ["src/**"], "effect": "allow" },
+          { "capability": "fs_write", "match": ["*.lock"], "effect": "deny" },
+          {
+            "capability": "web_fetch",
+            "match": ["*docs.aws.amazon.com*"],
+            "effect": "allow"
+          },
+          {
+            "capability": "web_fetch",
+            "match": ["*pastebin.com*"],
+            "effect": "deny"
+          }
+        ],
+        "policies": ["read-only-shell"]
+      }
+    },
+    "classification": "v2-only"
+  },
+  {
+    "description": "V2 Tool settings - subagents: availableAgents → scoped subagent/<name> tags; trustedAgents → subagent allow rule",
+    "input": {
+      "tools": ["subagent"],
+      "toolsSettings": {
+        "subagent": {
+          "availableAgents": ["researcher", "planner"],
+          "trustedAgents": ["researcher"]
+        }
+      }
+    },
+    "expectedConfig": {
+      "tools": ["subagent/planner", "subagent/researcher"],
+      "toolsSettings": {
+        "subagent": {
+          "availableAgents": ["researcher", "planner"],
+          "trustedAgents": ["researcher"]
+        }
+      },
+      "permissions": {
+        "rules": [
+          {
+            "capability": "subagent",
+            "match": ["researcher"],
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    "classification": "v2-only"
+  },
+  {
+    "description": "Agent with denyByDefault; hooks with a valid command (kept) and an unknown trigger + a tool hook (both dropped with warnings)",
+    "input": {
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "denyByDefault": true,
+          "allowedCommands": ["git status", "ls .*"]
+        }
+      },
+      "hooks": {
+        "stop": [{ "command": "cleanup", "timeout_ms": 500 }],
+        "postFileSave": [{ "command": "never-runs" }],
+        "postToolUse": [{ "tool_name": "my_tool", "args": {} }]
+      }
+    },
+    "expectedConfig": {
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "denyByDefault": true,
+          "allowedCommands": ["git status", "ls .*"]
+        }
+      },
+      "hooks": [
+        {
+          "name": "stop-0",
+          "trigger": "stop",
+          "action": { "type": "command", "command": "cleanup" },
+          "timeout": 1
+        }
+      ],
+      "permissions": {
+        "rules": [
+          {
+            "capability": "shell",
+            "match": ["git status", "ls *"],
+            "effect": "allow"
+          },
+          {
+            "capability": "shell",
+            "match": ["*"],
+            "exclude": ["git status", "ls", "ls *"],
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    "classification": "v2-only",
+    "warnings": ["unconvertible-hook", "unconvertible-hook"]
+  },
+  {
+    "description": "Agent with allowedTools '*' → trust-all (single 'all' allow rule)",
+    "input": { "allowedTools": ["*"] },
+    "expectedConfig": {
+      "allowedTools": ["*"],
+      "permissions": { "rules": [{ "capability": "all", "effect": "allow" }] }
+    },
+    "classification": "v2-only"
+  },
+  {
+    "description": "Agent with unconvertible allowedCommand (dropped) & lossy deniedCommand",
+    "input": {
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "allowedCommands": ["^foo && bar$"],
+          "deniedCommands": ["sleep [0-9]+"]
+        }
+      }
+    },
+    "expectedConfig": {
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "allowedCommands": ["^foo && bar$"],
+          "deniedCommands": ["sleep [0-9]+"]
+        }
+      },
+      "permissions": {
+        "rules": [
+          { "capability": "shell", "match": ["sleep *"], "effect": "deny" }
+        ]
+      }
+    },
+    "classification": "v2-only",
+    "warnings": ["regex-shell-pattern", "unconvertible-pattern"]
+  },
+  {
+    "description": "Agent with denyByDefault AND autoAllowReadonly: (V3 can't combine them)",
+    "input": {
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "denyByDefault": true,
+          "autoAllowReadonly": true
+        }
+      }
+    },
+    "expectedConfig": {
+      "tools": ["*"],
+      "toolsSettings": {
+        "execute_bash": {
+          "denyByDefault": true,
+          "autoAllowReadonly": true
+        }
+      },
+      "permissions": {
+        "rules": [
+          {
+            "capability": "shell",
+            "match": ["*"],
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    "classification": "v2-only",
+    "warnings": ["deny-by-default-readonly"]
+  },
+  {
+    "description": "Unknown allowed tool warning and absolute file:// prompt warning",
+    "input": {
+      "prompt": "file:///etc/kiro/prompt.md",
+      "allowedTools": ["aws", "weird_tool"]
+    },
+    "expectedConfig": {
+      "prompt": "file:///etc/kiro/prompt.md",
+      "allowedTools": ["aws", "weird_tool"],
+      "permissions": { "rules": [] }
+    },
+    "classification": "v2-only",
+    "warnings": ["deprecated-aws-tool", "file-prompt", "unmapped-allowed-tool"]
+  },
+  {
+    "description": "universal-in-sync (idempotent): re-running on an already-upgraded config returns it unchanged",
+    "input": {
+      "tools": ["*"],
+      "toolsSettings": { "execute_bash": { "allowedCommands": ["ls"] } },
+      "permissions": {
+        "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
+      }
+    },
+    "expectedConfig": {
+      "tools": ["*"],
+      "toolsSettings": { "execute_bash": { "allowedCommands": ["ls"] } },
+      "permissions": {
+        "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
+      }
+    },
+    "classification": "universal-in-sync"
+  },
+  {
+    "description": "v3-only: config with V3 trust and no V2 trust is left untouched",
+    "input": {
+      "name": "k",
+      "tools": ["*"],
+      "permissions": {
+        "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
+      }
+    },
+    "expectedConfig": {
+      "name": "k",
+      "tools": ["*"],
+      "permissions": {
+        "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
+      }
+    },
+    "classification": "v3-only"
+  },
+  {
+    "description": "universal-out-of-sync: re-upgrade re-derives V3 purely from V2, replacing manually-set permissions",
+    "input": {
+      "tools": ["*"],
+      "permissions": {
+        "rules": [
+          { "capability": "subagent", "match": ["planner"], "effect": "allow" }
+        ]
+      },
+      "toolsSettings": { "execute_bash": { "allowedCommands": ["ls"] } }
+    },
+    "expectedConfig": {
+      "tools": ["*"],
+      "permissions": {
+        "rules": [{ "capability": "shell", "match": ["ls"], "effect": "allow" }]
+      },
+      "toolsSettings": { "execute_bash": { "allowedCommands": ["ls"] } }
+    },
+    "classification": "universal-out-of-sync"
+  },
+  {
+    "description": "marker-only tools already unioned → in-sync (idempotent; must not be re-listed/rewritten forever) [Bug B]",
+    "input": {
+      "tools": ["web", "web_fetch"]
+    },
+    "expectedConfig": {
+      "tools": ["web", "web_fetch"]
+    },
+    "classification": "universal-in-sync"
+  },
+  {
+    "description": "V2-spelled tools + hand-authored V3 permissions: fix tool spelling but PRESERVE permissions (don't delete) [Bug A]",
+    "input": {
+      "tools": ["fs_read", "execute_bash"],
+      "permissions": {
+        "rules": [
+          { "capability": "shell", "match": ["git status"], "effect": "allow" }
+        ]
+      }
+    },
+    "expectedConfig": {
+      "tools": ["read", "shell"],
+      "permissions": {
+        "rules": [
+          { "capability": "shell", "match": ["git status"], "effect": "allow" }
+        ]
+      }
+    },
+    "classification": "universal-out-of-sync"
+  }
+]
