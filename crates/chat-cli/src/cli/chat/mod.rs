@@ -343,12 +343,12 @@ pub struct ChatArgs {
     /// Mode to use with the V3 agent: "default" or "spec"
     #[arg(long, value_name = "MODE")]
     pub mode: Option<AgentMode>,
-    /// Run this session in a remote/cloud sandbox (V3/KAS only).
+    /// Run this session in a cloud sandbox (V3/KAS only).
     /// Hidden while the remote-sandbox feature is dark-shipped; forwarded
     /// to the TUI, which sends `_meta.kiro.executionTarget` on `session/new`.
     #[arg(long, hide = true)]
     pub cloud: bool,
-    /// Repository to open in a remote session, as `name` or `owner/name`
+    /// Repository to open in a cloud session, as `name` or `owner/name`
     /// (comma-separated for multiple). Only meaningful with `--cloud`. Hidden while dark-shipped.
     #[arg(long, value_delimiter = ',', value_name = "REPO", hide = true)]
     pub repo: Option<Vec<String>>,

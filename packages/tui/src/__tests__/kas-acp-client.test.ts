@@ -6423,11 +6423,11 @@ describe('KasAcpClient — KAS shell consent (compound command) ACP boundary', (
   });
 });
 
-// ── Remote sandbox: executionTarget on session/new + handshake-cap gating ──
+// ── Cloud sandbox: executionTarget on session/new + handshake-cap gating ──
 // Covers T1 (plumb executionTarget) + T2 (consume initialize caps, fail-safe
 // degrade to local). The mock KiroClient nests caps under
 // agentCapabilities._meta.kiro, matching the KAS ACP doc §4.
-describe('remote executionTarget', () => {
+describe('cloud executionTarget', () => {
   let origKasPath: string | undefined;
 
   // Advertise the cloud-sandbox execution target on the next initialize().
@@ -6546,8 +6546,8 @@ describe('remote executionTarget', () => {
     expect(meta?.modeId).toBeDefined();
   });
 
-  // ---- remote "New" empty sandbox — sessionSource + isEmptyWorkspace ----
-  it('sends sessionSource:remote + cloud-sandbox executionTarget + isEmptyWorkspace for a remote New session', async () => {
+  // ---- cloud "New" empty sandbox — sessionSource + isEmptyWorkspace ----
+  it('sends sessionSource:remote + cloud-sandbox executionTarget + isEmptyWorkspace for a cloud New session', async () => {
     advertiseRemoteCaps(); // executionTargets:[local,cloud-sandbox], sessionSources:[local,remote]
     const client = new KasAcpClient({
       executionTarget: { kind: 'cloud-sandbox' },
@@ -6794,11 +6794,7 @@ describe('remote executionTarget', () => {
     expect(lastNewSessionMeta()?.executionTarget).toBeUndefined();
   });
 
-  it('ingests the finalized caps shape (extensionMethods present, legacy sessionSearch ignored) and still gates executionTarget (T0)', async () => {
-    // T0 contract refresh (finalized guide nX6lAK2UudYy §0): KAS now advertises
-    // `extensionMethods` and no longer advertises `sessionSearch` (session search is
-    // out of this milestone). The refreshed parser must ingest the new shape, tolerate
-    // the dropped key, and leave executionTarget gating intact.
+  it('ingests the finalized caps shape (extensionMethods present, legacy sessionSearch ignored) and still gates executionTarget', async () => {
     advertiseKiroCaps({
       executionTargets: ['local', 'cloud-sandbox'],
       sessionSources: ['local', 'remote'],

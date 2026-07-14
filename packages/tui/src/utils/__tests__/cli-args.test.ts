@@ -268,7 +268,7 @@ describe('buildAcpArgs', () => {
   });
 });
 
-describe('remote sandbox flags (--cloud / --repo)', () => {
+describe('cloud sandbox flags (--cloud / --repo)', () => {
   let originalArgv: string[];
 
   beforeEach(() => {

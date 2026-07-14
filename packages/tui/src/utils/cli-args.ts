@@ -31,13 +31,13 @@ export interface CliArgs extends AcpSpawnArgs {
   /** Interactively select a conversation to resume (--resume-picker / --list). TUI-only. */
   resumePicker: boolean;
   /**
-   * Run the session in a remote/cloud sandbox (--cloud). TUI-only: not forwarded
+   * Run the session in a cloud sandbox (--cloud). TUI-only: not forwarded
    * to the KAS subprocess as a flag — instead the TUI sends
    * `_meta.kiro.executionTarget` on `session/new`. Dark-shipped (flag hidden in Rust).
    */
   cloud?: boolean;
   /**
-   * Repository selector(s) for a remote session (--repo name|owner/name, comma-separated).
+   * Repository selector(s) for a cloud session (--repo name|owner/name, comma-separated).
    * TUI-only; only meaningful with `--cloud`. Consumed by the repo-source flow (later task).
    */
   repo?: string[];
@@ -96,7 +96,7 @@ const FLAG_DEFS: FlagDef[] = [
     key: 'resumePicker',
     flags: ['--resume-picker', '--list'],
   },
-  // Remote sandbox (dark-shipped). Parsed by the TUI to set the KasAcpClient
+  // Cloud sandbox (dark-shipped). Parsed by the TUI to set the KasAcpClient
   // executionTarget; intentionally NO `acp:` mapping — executionTarget rides
   // `_meta.kiro.executionTarget` on session/new, not a forwarded subprocess flag.
   { type: 'boolean', key: 'cloud', flags: ['--cloud'] },

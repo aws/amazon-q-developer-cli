@@ -380,11 +380,9 @@ export interface SessionClient {
 }
 
 /**
- * Where a session's agent runs. Mirrors the KAS ACP `_meta.kiro.executionTarget`
- * discriminated union (finalized KAS Remote Sessions ACP Integration Guide, quip
- * nX6lAK2UudYy §0/§1). The wire union serves `{ kind: 'local' }` and
- * `{ kind: 'cloud-sandbox' }` ONLY; `remote-control` is forward-looking scaffolding
- * that is NOT on the wire yet (never send it). Absent / `{ kind: 'local' }` == today's behavior.
+ * Where a session's agent runs. The wire union serves `{ kind: 'local' }` and
+ * `{ kind: 'cloud-sandbox' }` only; `remote-control` is not on the wire yet — never send it.
+ * Absent / `{ kind: 'local' }` == today's behavior.
  */
 export type ExecutionTarget =
   | { kind: 'local' }
@@ -409,11 +407,11 @@ export type {
 
 /**
  * Kiro-namespaced capabilities advertised by KAS on the `initialize` handshake,
- * under `agentCapabilities._meta.kiro` (finalized guide nX6lAK2UudYy §0). Not all are
- * remote-specific (e.g. `sessionListScopes: ['workspace']` is local-first). All
- * optional: an older KAS that predates these caps omits them, and the client must then
- * degrade gracefully (never request an unadvertised placement/source/scope/method).
- * Gate each flow on its own flag — never one global "remote is on" switch.
+ * under `agentCapabilities._meta.kiro`. Not all are remote-specific (e.g.
+ * `sessionListScopes: ['workspace']` is local-first). All optional: an older KAS that
+ * predates these caps omits them, and the client must then degrade gracefully (never
+ * request an unadvertised placement/source/scope/method). Gate each flow on its own
+ * flag — never one global "remote is on" switch.
  */
 export interface KiroAgentCapabilities {
   /** Execution placements KAS accepts on `session/new` (e.g. 'local', 'cloud-sandbox'). */
