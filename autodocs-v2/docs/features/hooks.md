@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-07-14
+  commit: 106ed7591
   status: validated
   testable_headless: true
   category: feature
   title: Hooks System
   description: Execute commands at trigger points with JSON input/output and exit code control
-  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop, assistant_response, KIRO_SESSION_ID]
+  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop, assistant_response, KIRO_SESSION_ID, array, universal]
   related: [agent-configuration, hooks, session-management]
 ---
 
@@ -19,11 +19,13 @@ Execute commands at trigger points during agent lifecycle and tool execution. En
 
 Hooks allow you to execute custom commands at specific points during agent lifecycle and tool execution. This enables security validation, logging, formatting, context gathering, and other custom behaviors. Hooks are defined in agent configuration files and receive JSON input via STDIN.
 
-## How to Create/Enable Hooks
+## Configuration Formats
 
-### Step 1: Define Hooks in Agent Configuration
+The `hooks` field accepts two formats. Both are functionally equivalent; use whichever you prefer.
 
-Add hooks to your agent's JSON configuration file (`.kiro/agents/your-agent.json`):
+### Object Format (default)
+
+Hooks grouped by trigger name. Each trigger maps to an array of hook definitions:
 
 ```json
 {
@@ -31,13 +33,77 @@ Add hooks to your agent's JSON configuration file (`.kiro/agents/your-agent.json
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
+        "command": "git status"
       }
     ],
     "preToolUse": [
       {
         "matcher": "write",
-        "command": "echo 'About to write file'",
+        "command": "echo 'About to write file'"
+      }
+    ]
+  }
+}
+```
+
+### Array Format
+
+A flat array of hook documents, each with an explicit `trigger` field and an `action` object:
+
+```json
+{
+  "name": "my-agent",
+  "hooks": [
+    {
+      "name": "git-status",
+      "trigger": "agentSpawn",
+      "action": { "type": "command", "command": "git status" }
+    },
+    {
+      "name": "validate-write",
+      "trigger": "preToolUse",
+      "matcher": "write",
+      "action": { "type": "command", "command": "echo 'About to write file'" },
+      "timeout": 30
+    }
+  ]
+}
+```
+
+**Array format fields:**
+- `name` (optional): Human-readable hook name
+- `trigger` (required): One of `agentSpawn`, `userPromptSubmit`, `preToolUse`, `postToolUse`, `stop`
+- `matcher` (optional): Tool matching pattern (for `preToolUse`/`postToolUse`)
+- `action` (required): `{ "type": "command", "command": "..." }`
+- `timeout` (optional): Timeout in **seconds** (default: 10)
+- `enabled` (optional): Set to `false` to skip the hook without removing it (default: `true`)
+
+**Differences from object format:**
+- Timeout is in seconds (not milliseconds)
+- The command is wrapped in `action: { type: "command", command: "..." }`
+- Trigger names also accept PascalCase variants (`AgentSpawn`, `PreToolUse`, etc.) and the alias `SessionStart` (equivalent to `agentSpawn`)
+
+The file is written back in whichever format it was read from, so editing an array-format file preserves the array structure.
+
+## How to Create/Enable Hooks
+
+### Step 1: Define Hooks in Agent Configuration
+
+Add hooks to your agent's JSON configuration file (`.kiro/agents/your-agent.json`) using either format above. Object format example:
+
+```json
+{
+  "name": "my-agent",
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "git status"
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "write",
+        "command": "echo 'About to write file'"
       }
     ]
   }
@@ -70,7 +136,7 @@ chmod +x ~/.kiro/hooks/validate-write.sh
     "preToolUse": [
       {
         "matcher": "write",
-        "command": "~/.kiro/hooks/validate-write.sh",
+        "command": "~/.kiro/hooks/validate-write.sh"
       }
     ]
   }
@@ -276,7 +342,7 @@ For MCP tools, the tool name includes the full namespaced format including the M
 
 ## Timeout
 
-Default timeout is 10 seconds (10,000ms). Configure with `timeout_ms` field.
+Default timeout is 10 seconds. Configure with `timeout_ms` (milliseconds) in object format or `timeout` (seconds) in array format.
 
 ## Caching
 

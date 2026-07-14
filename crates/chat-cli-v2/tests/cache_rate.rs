@@ -96,7 +96,7 @@ async fn prefix_match_across_turns() {
         global_prompt: Some("You are a test agent. Follow the project guidelines.".to_string()),
         tools: vec!["*".to_string()],
         resources: vec!["file://GUIDELINES.md".parse().unwrap()],
-        hooks,
+        hooks: hooks.into(),
         ..Default::default()
     };
 

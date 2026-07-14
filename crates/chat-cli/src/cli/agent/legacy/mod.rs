@@ -165,7 +165,8 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
                     super::HookTrigger::UserPromptSubmit,
                     prompt_hooks.into_values().filter_map(Option::<Hook>::from).collect(),
                 ),
-            ]),
+            ])
+            .into(),
             mcp_servers: mcp_servers.clone().unwrap_or_default(),
             ..Default::default()
         });
@@ -200,7 +201,8 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
                     super::HookTrigger::UserPromptSubmit,
                     prompt_hooks.into_values().filter_map(Option::<Hook>::from).collect(),
                 ),
-            ]),
+            ])
+            .into(),
             mcp_servers: mcp_servers.clone().unwrap_or_default(),
             ..Default::default()
         });

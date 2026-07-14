@@ -6632,7 +6632,7 @@ mod tests {
 
         let agent = Agent {
             name: "TestAgent".to_string(),
-            hooks,
+            hooks: hooks.into(),
             ..Default::default()
         };
         agents.agents.insert("TestAgent".to_string(), agent);
@@ -6769,7 +6769,7 @@ mod tests {
 
         let agent = Agent {
             name: "SecurityAgent".to_string(),
-            hooks,
+            hooks: hooks.into(),
             ..Default::default()
         };
         agents.agents.insert("SecurityAgent".to_string(), agent);

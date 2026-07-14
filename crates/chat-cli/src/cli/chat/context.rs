@@ -200,7 +200,7 @@ impl ContextManager {
             max_context_files_size,
             current_profile: agent.name.clone(),
             paths,
-            hooks: agent.hooks.clone(),
+            hooks: agent.hooks.as_map().clone(),
             hook_executor: HookExecutor::new(),
         })
     }

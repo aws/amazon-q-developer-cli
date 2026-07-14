@@ -6,7 +6,9 @@ use std::collections::{
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
+    Deserializer,
     Serialize,
+    Serializer,
 };
 use typeshare::typeshare;
 
@@ -92,7 +94,7 @@ impl AgentConfig {
 
     pub fn hooks(&self) -> &HashMap<HookTrigger, Vec<HookConfig>> {
         match self {
-            AgentConfig::V2025_08_22(a) => &a.hooks,
+            AgentConfig::V2025_08_22(a) => a.hooks.as_map(),
         }
     }
 
@@ -366,8 +368,9 @@ pub struct AgentConfigV2025_08_22 {
     pub tool_schema: Option<InputSchema>,
 
     /// Hooks to add additional context
-    #[serde(default)]
-    pub hooks: HashMap<HookTrigger, Vec<HookConfig>>,
+    #[serde(default, skip_serializing_if = "HooksField::is_empty")]
+    #[schemars(with = "HooksFieldSchema")]
+    pub hooks: HooksField,
     /// Preferences for selecting a model the agent uses to generate responses.
     ///
     /// TODO: unimplemented
@@ -895,6 +898,239 @@ fn hook_default_max_output_size() -> usize {
 
 fn hook_default_cache_ttl_seconds() -> u64 {
     0
+}
+
+/// The on-disk shape a [`HooksField`] was read from, so it can be written back
+/// in the same shape (faithful round-trip).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum HookWireShape {
+    /// Legacy CLI object keyed by trigger: `{ "agentSpawn": [ { "command": … } ] }`.
+    #[default]
+    Object,
+    /// KAS array of hook documents: `[ { "name", "trigger", "action": { … } } ]`.
+    Array,
+}
+
+/// Hooks configuration that accepts **both** the legacy CLI object form and the
+/// KAS array form on read, and serializes back in whichever shape it was read
+/// from. This lets a single agent file be "universal" — loadable by both the
+/// Rust CLI and KAS — without changing KAS.
+///
+/// Internally it is just the CLI's `HashMap<HookTrigger, Vec<HookConfig>>`;
+/// [`Deref`]/[`DerefMut`] keep existing call sites unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HooksField {
+    map: HashMap<HookTrigger, Vec<HookConfig>>,
+    origin: HookWireShape,
+}
+
+impl HooksField {
+    pub fn as_map(&self) -> &HashMap<HookTrigger, Vec<HookConfig>> {
+        &self.map
+    }
+
+    /// Whether there are no hooks. Used to omit the field on serialize so a
+    /// hooks-less agent stays loadable by both engines (an empty object is not
+    /// valid KAS array form).
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    /// Convert the internal map into KAS hook documents for array-form output.
+    /// Ordering is deterministic (triggers sorted by their wire name) so
+    /// round-trips are stable.
+    fn to_wire_docs(&self) -> Vec<WireHookDocument> {
+        let mut triggers: Vec<&HookTrigger> = self.map.keys().collect();
+        triggers.sort_by_key(|t| t.to_string());
+        let mut out = Vec::new();
+        for trigger in triggers {
+            for (idx, hook) in self.map[trigger].iter().enumerate() {
+                let HookConfig::ShellCommand(cmd) = hook else {
+                    // Tool hooks are unimplemented and have no KAS representation.
+                    tracing::debug!("skipping non-command hook during array serialization");
+                    continue;
+                };
+                out.push(WireHookDocument {
+                    // KAS requires a non-empty name; the CLI has no hook name, so synthesize a
+                    // stable one from the trigger + position.
+                    name: Some(format!("{trigger}-{idx}")),
+                    trigger: trigger.to_string(),
+                    matcher: cmd.opts.matcher.clone(),
+                    action: WireHookAction::Command {
+                        command: cmd.command.clone(),
+                    },
+                    // Always emit timeout (seconds) so a value equal to one engine's default is
+                    // not dropped and re-read as a different engine's default.
+                    timeout: Some(cmd.opts.timeout_ms.div_ceil(1000)),
+                    // CLI-only extras: emit only when non-default (KAS strips unknown keys).
+                    max_output_size: (cmd.opts.max_output_size != hook_default_max_output_size())
+                        .then_some(cmd.opts.max_output_size),
+                    cache_ttl_seconds: (cmd.opts.cache_ttl_seconds != hook_default_cache_ttl_seconds())
+                        .then_some(cmd.opts.cache_ttl_seconds),
+                    enabled: true,
+                });
+            }
+        }
+        out
+    }
+}
+
+impl std::ops::Deref for HooksField {
+    type Target = HashMap<HookTrigger, Vec<HookConfig>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl std::ops::DerefMut for HooksField {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.map
+    }
+}
+
+impl From<HashMap<HookTrigger, Vec<HookConfig>>> for HooksField {
+    fn from(map: HashMap<HookTrigger, Vec<HookConfig>>) -> Self {
+        Self {
+            map,
+            origin: HookWireShape::Object,
+        }
+    }
+}
+
+/// Normalizes a wire trigger string (CLI camelCase or KAS PascalCase) onto the
+/// CLI's [`HookTrigger`]. Returns `None` for KAS-only triggers with no CLI
+/// equivalent (e.g. `PostFileSave`); such hooks are skipped on load.
+fn normalize_hook_trigger(s: &str) -> Option<HookTrigger> {
+    match s {
+        "agentSpawn" | "AgentSpawn" | "SessionStart" | "sessionStart" => Some(HookTrigger::AgentSpawn),
+        "userPromptSubmit" | "UserPromptSubmit" => Some(HookTrigger::UserPromptSubmit),
+        "preToolUse" | "PreToolUse" => Some(HookTrigger::PreToolUse),
+        "postToolUse" | "PostToolUse" => Some(HookTrigger::PostToolUse),
+        "stop" | "Stop" => Some(HookTrigger::Stop),
+        _ => None,
+    }
+}
+
+fn hook_enabled_default() -> bool {
+    true
+}
+
+fn hook_enabled_is_default(enabled: &bool) -> bool {
+    *enabled
+}
+
+/// A single KAS hook document (array-form element). Used for both reading KAS
+/// files and serializing the CLI's hooks back to array form.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct WireHookDocument {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    trigger: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    matcher: Option<String>,
+    action: WireHookAction,
+    /// Timeout in SECONDS (KAS unit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeout: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_output_size: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_ttl_seconds: Option<u64>,
+    #[serde(default = "hook_enabled_default", skip_serializing_if = "hook_enabled_is_default")]
+    enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum WireHookAction {
+    Command {
+        command: String,
+    },
+    /// Sends a prompt to the model. Unsupported by the CLI runtime (skipped on load).
+    Agent {
+        prompt: String,
+    },
+}
+
+/// Schema-only representation documenting both accepted `hooks` shapes.
+#[derive(JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum HooksFieldSchema {
+    Object(HashMap<HookTrigger, Vec<HookConfig>>),
+    Array(Vec<WireHookDocument>),
+}
+
+impl<'de> Deserialize<'de> for HooksField {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Object(HashMap<HookTrigger, Vec<HookConfig>>),
+            Array(Vec<WireHookDocument>),
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Object(map) => Ok(HooksField {
+                map,
+                origin: HookWireShape::Object,
+            }),
+            Repr::Array(docs) => {
+                let mut map: HashMap<HookTrigger, Vec<HookConfig>> = HashMap::new();
+                for doc in docs {
+                    if !doc.enabled {
+                        continue;
+                    }
+                    let Some(trigger) = normalize_hook_trigger(&doc.trigger) else {
+                        tracing::warn!(trigger = %doc.trigger, "skipping hook with unsupported trigger");
+                        continue;
+                    };
+                    let command = match doc.action {
+                        WireHookAction::Command { command } => command,
+                        WireHookAction::Agent { .. } => {
+                            tracing::warn!(
+                                trigger = %doc.trigger,
+                                "skipping agent-type hook action unsupported by the CLI runtime"
+                            );
+                            continue;
+                        },
+                    };
+                    let opts = BaseHookConfig {
+                        matcher: doc.matcher,
+                        timeout_ms: doc
+                            .timeout
+                            .map_or_else(hook_default_timeout_ms, |s| s.saturating_mul(1000)),
+                        max_output_size: doc.max_output_size.unwrap_or_else(hook_default_max_output_size),
+                        cache_ttl_seconds: doc.cache_ttl_seconds.unwrap_or_else(hook_default_cache_ttl_seconds),
+                    };
+                    map.entry(trigger)
+                        .or_default()
+                        .push(HookConfig::ShellCommand(CommandHook { command, opts }));
+                }
+                Ok(HooksField {
+                    map,
+                    origin: HookWireShape::Array,
+                })
+            },
+        }
+    }
+}
+
+impl Serialize for HooksField {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.origin {
+            HookWireShape::Object => self.map.serialize(serializer),
+            HookWireShape::Array => self.to_wire_docs().serialize(serializer),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -2240,6 +2476,240 @@ mod tests {
         assert_eq!(config.hooks().len(), 2);
         assert!(config.hooks().contains_key(&HookTrigger::AgentSpawn));
         assert!(config.hooks().contains_key(&HookTrigger::Stop));
+    }
+
+    // ---- Universal (KAS array-form) hooks: read both shapes, faithful round-trip ----
+
+    fn cmd_of(h: &HookConfig) -> &str {
+        match h {
+            HookConfig::ShellCommand(c) => c.command.as_str(),
+            HookConfig::Tool(_) => panic!("expected shell command hook"),
+        }
+    }
+
+    #[test]
+    fn test_hooks_array_form_parse() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "spawn", "trigger": "agentSpawn",
+                  "action": { "type": "command", "command": "echo spawn" } },
+                { "name": "validate", "trigger": "preToolUse", "matcher": "fs_write",
+                  "action": { "type": "command", "command": "validate.sh" }, "timeout": 30 }
+            ]
+        }))
+        .unwrap();
+        let hooks = config.hooks();
+        assert_eq!(hooks.len(), 2);
+        let spawn = &hooks[&HookTrigger::AgentSpawn];
+        assert_eq!(spawn.len(), 1);
+        assert_eq!(cmd_of(&spawn[0]), "echo spawn");
+        let pre = &hooks[&HookTrigger::PreToolUse];
+        assert_eq!(cmd_of(&pre[0]), "validate.sh");
+        assert_eq!(pre[0].matcher(), Some("fs_write"));
+        // KAS timeout is seconds; CLI stores milliseconds
+        assert_eq!(pre[0].opts().timeout_ms, 30_000);
+    }
+
+    #[test]
+    fn test_hooks_object_form_still_parses() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": { "agentSpawn": [{"command": "echo spawn", "matcher": "x"}] }
+        }))
+        .unwrap();
+        let spawn = &config.hooks()[&HookTrigger::AgentSpawn];
+        assert_eq!(cmd_of(&spawn[0]), "echo spawn");
+        assert_eq!(spawn[0].matcher(), Some("x"));
+    }
+
+    #[test]
+    fn test_hooks_array_trigger_normalization() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "a", "trigger": "SessionStart", "action": {"type":"command","command":"a"} },
+                { "name": "b", "trigger": "UserPromptSubmit", "action": {"type":"command","command":"b"} },
+                { "name": "c", "trigger": "PostToolUse", "action": {"type":"command","command":"c"} },
+                { "name": "d", "trigger": "Stop", "action": {"type":"command","command":"d"} }
+            ]
+        }))
+        .unwrap();
+        let h = config.hooks();
+        // SessionStart (KAS canonical) folds to the CLI's AgentSpawn
+        assert!(h.contains_key(&HookTrigger::AgentSpawn));
+        assert!(h.contains_key(&HookTrigger::UserPromptSubmit));
+        assert!(h.contains_key(&HookTrigger::PostToolUse));
+        assert!(h.contains_key(&HookTrigger::Stop));
+    }
+
+    #[test]
+    fn test_hooks_array_unknown_trigger_skipped() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "f", "trigger": "PostFileSave", "action": {"type":"command","command":"f"} },
+                { "name": "ok", "trigger": "stop", "action": {"type":"command","command":"ok"} }
+            ]
+        }))
+        .unwrap();
+        let h = config.hooks();
+        // KAS-only trigger has no CLI equivalent and is skipped; the rest loads.
+        assert_eq!(h.len(), 1);
+        assert!(h.contains_key(&HookTrigger::Stop));
+    }
+
+    #[test]
+    fn test_hooks_array_agent_action_skipped() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "ai", "trigger": "stop", "action": {"type":"agent","prompt":"summarize"} },
+                { "name": "ok", "trigger": "stop", "action": {"type":"command","command":"ok"} }
+            ]
+        }))
+        .unwrap();
+        let stop = &config.hooks()[&HookTrigger::Stop];
+        // agent-type actions are unsupported by the CLI runtime and skipped.
+        assert_eq!(stop.len(), 1);
+        assert_eq!(cmd_of(&stop[0]), "ok");
+    }
+
+    #[test]
+    fn test_hooks_array_enabled_false_skipped() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "off", "trigger": "stop", "enabled": false,
+                  "action": {"type":"command","command":"off"} },
+                { "name": "on", "trigger": "stop",
+                  "action": {"type":"command","command":"on"} }
+            ]
+        }))
+        .unwrap();
+        let stop = &config.hooks()[&HookTrigger::Stop];
+        assert_eq!(stop.len(), 1);
+        assert_eq!(cmd_of(&stop[0]), "on");
+    }
+
+    #[test]
+    fn test_hooks_roundtrip_array_stays_array() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "spawn", "trigger": "agentSpawn",
+                  "action": {"type":"command","command":"echo spawn"} }
+            ]
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&config).unwrap();
+        let hooks = &out["hooks"];
+        assert!(
+            hooks.is_array(),
+            "array-origin hooks must serialize as array, got: {hooks}"
+        );
+        let first = &hooks[0];
+        assert_eq!(first["trigger"], "agentSpawn");
+        assert_eq!(first["action"]["type"], "command");
+        assert_eq!(first["action"]["command"], "echo spawn");
+        assert!(first["name"].is_string(), "KAS requires a non-empty name");
+    }
+
+    #[test]
+    fn test_hooks_roundtrip_object_stays_object() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": { "agentSpawn": [{"command": "echo spawn"}] }
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&config).unwrap();
+        assert!(
+            out["hooks"].is_object(),
+            "object-origin hooks must serialize as object, got: {}",
+            out["hooks"]
+        );
+        assert!(out["hooks"]["agentSpawn"].is_array());
+    }
+
+    #[test]
+    fn test_hooks_array_roundtrip_reparse_equal() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "spawn", "trigger": "agentSpawn",
+                  "action": {"type":"command","command":"echo spawn"} },
+                { "name": "pre", "trigger": "preToolUse", "matcher": "fs_write",
+                  "action": {"type":"command","command":"v.sh"}, "timeout": 30 }
+            ]
+        }))
+        .unwrap();
+        let serialized = serde_json::to_value(&config).unwrap();
+        let reparsed: AgentConfig = serde_json::from_value(serialized).unwrap();
+        assert_eq!(config.hooks(), reparsed.hooks());
+    }
+
+    #[test]
+    fn test_hooks_array_timeout_survives_default() {
+        // A timeout equal to *any* engine's default must still be written, so a
+        // file re-serialized by one CLI engine doesn't lose it for another that
+        // has a different default.
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "s", "trigger": "stop", "timeout": 10,
+                  "action": {"type":"command","command":"echo hi"} }
+            ]
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&config).unwrap();
+        assert_eq!(out["hooks"][0]["timeout"], 10);
+    }
+
+    #[test]
+    fn test_hooks_array_timeout_absent_defaults_to_kas() {
+        // An array-form hook that omits `timeout` adopts KAS's 10s default and
+        // emits it, so it round-trips identically across engines.
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "s", "trigger": "stop",
+                  "action": {"type":"command","command":"echo hi"} }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(config.hooks()[&HookTrigger::Stop][0].opts().timeout_ms, 10_000);
+        let out = serde_json::to_value(&config).unwrap();
+        assert_eq!(out["hooks"][0]["timeout"], 10);
+    }
+
+    #[test]
+    fn test_hooks_empty_omitted_on_serialize() {
+        // A hooks-less agent must omit the field entirely (not emit `{}`), so it
+        // stays loadable by both engines.
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({"name": "t"})).unwrap();
+        let out = serde_json::to_value(&config).unwrap();
+        assert!(out.get("hooks").is_none(), "empty hooks must be omitted, got: {out}");
+    }
+
+    #[test]
+    fn test_hooks_array_subsecond_timeout_not_truncated() {
+        // A sub-second timeout (only reachable programmatically, not via the array
+        // parser) must round up to 1s, not truncate to 0 via integer division.
+        let mut config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [ { "name": "s", "trigger": "stop",
+                         "action": {"type":"command","command":"c"} } ]
+        }))
+        .unwrap();
+        match &mut config {
+            AgentConfig::V2025_08_22(a) => {
+                if let HookConfig::ShellCommand(c) = &mut a.hooks.get_mut(&HookTrigger::Stop).unwrap()[0] {
+                    c.opts.timeout_ms = 999;
+                }
+            },
+        }
+        let out = serde_json::to_value(&config).unwrap();
+        assert_eq!(out["hooks"][0]["timeout"], 1);
     }
 
     #[test]

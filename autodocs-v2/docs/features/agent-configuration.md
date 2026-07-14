@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-07-02
-  commit: d597315ad
+  validated: 2026-07-14
+  commit: 106ed7591
   status: validated
   testable_headless: true
   category: feature
@@ -240,7 +240,9 @@ description: Guide for DynamoDB data modeling best practices. Use when designing
 
 ### hooks
 
-Commands executed at trigger points. Each trigger maps to an array of hook configurations.
+Commands executed at trigger points. Accepts two formats: an **object** keyed by trigger, or an **array** of hook documents.
+
+**Object format** (trigger → hook array):
 
 ```json
 {
@@ -276,6 +278,27 @@ Commands executed at trigger points. Each trigger maps to an array of hook confi
 }
 ```
 
+**Array format** (flat list with explicit trigger):
+
+```json
+{
+  "hooks": [
+    {
+      "name": "git-status",
+      "trigger": "agentSpawn",
+      "action": { "type": "command", "command": "git status" }
+    },
+    {
+      "name": "pre-write-diff",
+      "trigger": "preToolUse",
+      "matcher": "write",
+      "action": { "type": "command", "command": "git diff" },
+      "timeout": 30
+    }
+  ]
+}
+```
+
 **Hook Triggers**:
 - `agentSpawn`: When agent initializes
 - `userPromptSubmit`: When user submits message
@@ -283,12 +306,20 @@ Commands executed at trigger points. Each trigger maps to an array of hook confi
 - `postToolUse`: After tool execution
 - `stop`: When assistant finishes responding
 
-**Hook Fields**:
+**Object format hook fields**:
 - `command` (required): Command to execute
 - `matcher` (optional): Pattern for preToolUse/postToolUse
 - `timeout_ms` (optional): Max execution time in ms (default: 10000)
 - `max_output_size` (optional): Max output bytes before truncation (default: 10240)
 - `cache_ttl_seconds` (optional): Cache duration for hook output (default: 0)
+
+**Array format hook fields**:
+- `name` (optional): Human-readable hook name
+- `trigger` (required): Trigger name (also accepts PascalCase: `AgentSpawn`, `PreToolUse`, etc., and alias `SessionStart` for `agentSpawn`)
+- `matcher` (optional): Pattern for preToolUse/postToolUse
+- `action` (required): `{ "type": "command", "command": "..." }`
+- `timeout` (optional): Max execution time in seconds (default: 10)
+- `enabled` (optional): `false` to disable without removing (default: `true`)
 
 ### toolAliases
 

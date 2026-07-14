@@ -62,8 +62,8 @@ use super::chat::legacy::tools::{
     ToolSpec,
 };
 use crate::cli::agent::hook::{
-    Hook,
     HookTrigger,
+    HooksField,
 };
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::database::settings::Setting;
@@ -180,8 +180,9 @@ pub struct Agent {
     #[serde(default)]
     pub resources: Vec<ResourcePath>,
     /// Commands to run when a chat session is created
-    #[serde(default)]
-    pub hooks: HashMap<HookTrigger, Vec<Hook>>,
+    #[serde(default, skip_serializing_if = "HooksField::is_empty")]
+    #[schemars(with = "crate::cli::agent::hook::HooksFieldSchema")]
+    pub hooks: HooksField,
     /// Settings for specific tools. These are mostly for native tools. The actual schema differs by
     /// tools and is documented in detail in our documentation
     #[serde(default)]
@@ -1790,6 +1791,219 @@ mod tests {
                 assert_eq!(hook.source, Source::Agent);
             }
         }
+    }
+
+    // ---- Universal (KAS array-form) hooks: read both shapes, faithful round-trip ----
+
+    #[test]
+    fn test_hooks_array_form_parse() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "spawn", "trigger": "agentSpawn",
+                  "action": { "type": "command", "command": "echo spawn" } },
+                { "name": "validate", "trigger": "preToolUse", "matcher": "fs_write",
+                  "action": { "type": "command", "command": "validate.sh" }, "timeout": 30 }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(agent.hooks.len(), 2);
+        assert_eq!(agent.hooks[&HookTrigger::AgentSpawn][0].command, "echo spawn");
+        let pre = &agent.hooks[&HookTrigger::PreToolUse];
+        assert_eq!(pre[0].command, "validate.sh");
+        assert_eq!(pre[0].matcher, Some("fs_write".to_string()));
+        assert_eq!(pre[0].timeout_ms, 30_000);
+    }
+
+    #[test]
+    fn test_hooks_object_form_still_parses() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": { "agentSpawn": [{"command": "echo spawn", "matcher": "x"}] }
+        }))
+        .unwrap();
+        let spawn = &agent.hooks[&HookTrigger::AgentSpawn];
+        assert_eq!(spawn[0].command, "echo spawn");
+        assert_eq!(spawn[0].matcher, Some("x".to_string()));
+    }
+
+    #[test]
+    fn test_hooks_array_trigger_normalization() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "a", "trigger": "SessionStart", "action": {"type":"command","command":"a"} },
+                { "name": "b", "trigger": "UserPromptSubmit", "action": {"type":"command","command":"b"} },
+                { "name": "c", "trigger": "PostToolUse", "action": {"type":"command","command":"c"} },
+                { "name": "d", "trigger": "Stop", "action": {"type":"command","command":"d"} }
+            ]
+        }))
+        .unwrap();
+        assert!(agent.hooks.contains_key(&HookTrigger::AgentSpawn));
+        assert!(agent.hooks.contains_key(&HookTrigger::UserPromptSubmit));
+        assert!(agent.hooks.contains_key(&HookTrigger::PostToolUse));
+        assert!(agent.hooks.contains_key(&HookTrigger::Stop));
+    }
+
+    #[test]
+    fn test_hooks_array_unknown_trigger_skipped() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "f", "trigger": "PostFileSave", "action": {"type":"command","command":"f"} },
+                { "name": "ok", "trigger": "stop", "action": {"type":"command","command":"ok"} }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(agent.hooks.len(), 1);
+        assert!(agent.hooks.contains_key(&HookTrigger::Stop));
+    }
+
+    #[test]
+    fn test_hooks_array_agent_action_skipped() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "ai", "trigger": "stop", "action": {"type":"agent","prompt":"summarize"} },
+                { "name": "ok", "trigger": "stop", "action": {"type":"command","command":"ok"} }
+            ]
+        }))
+        .unwrap();
+        let stop = &agent.hooks[&HookTrigger::Stop];
+        assert_eq!(stop.len(), 1);
+        assert_eq!(stop[0].command, "ok");
+    }
+
+    #[test]
+    fn test_hooks_array_enabled_false_skipped() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "off", "trigger": "stop", "enabled": false,
+                  "action": {"type":"command","command":"off"} },
+                { "name": "on", "trigger": "stop",
+                  "action": {"type":"command","command":"on"} }
+            ]
+        }))
+        .unwrap();
+        let stop = &agent.hooks[&HookTrigger::Stop];
+        assert_eq!(stop.len(), 1);
+        assert_eq!(stop[0].command, "on");
+    }
+
+    #[test]
+    fn test_hooks_roundtrip_array_stays_array() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "spawn", "trigger": "agentSpawn",
+                  "action": {"type":"command","command":"echo spawn"} }
+            ]
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&agent).unwrap();
+        let hooks = &out["hooks"];
+        assert!(
+            hooks.is_array(),
+            "array-origin hooks must serialize as array, got: {hooks}"
+        );
+        assert_eq!(hooks[0]["trigger"], "agentSpawn");
+        assert_eq!(hooks[0]["action"]["type"], "command");
+        assert_eq!(hooks[0]["action"]["command"], "echo spawn");
+        assert!(hooks[0]["name"].is_string(), "KAS requires a non-empty name");
+    }
+
+    #[test]
+    fn test_hooks_roundtrip_object_stays_object() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": { "agentSpawn": [{"command": "echo spawn"}] }
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&agent).unwrap();
+        assert!(
+            out["hooks"].is_object(),
+            "object-origin hooks must serialize as object, got: {}",
+            out["hooks"]
+        );
+        assert!(out["hooks"]["agentSpawn"].is_array());
+    }
+
+    #[test]
+    fn test_hooks_array_roundtrip_reparse_equal() {
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "spawn", "trigger": "agentSpawn",
+                  "action": {"type":"command","command":"echo spawn"} },
+                { "name": "pre", "trigger": "preToolUse", "matcher": "fs_write",
+                  "action": {"type":"command","command":"v.sh"}, "timeout": 30 }
+            ]
+        }))
+        .unwrap();
+        let serialized = serde_json::to_value(&agent).unwrap();
+        let reparsed: Agent = serde_json::from_value(serialized).unwrap();
+        assert_eq!(agent.hooks.as_map(), reparsed.hooks.as_map());
+    }
+
+    #[test]
+    fn test_hooks_array_timeout_survives_default() {
+        // A timeout equal to *any* engine's default must still be written.
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "s", "trigger": "stop", "timeout": 30,
+                  "action": {"type":"command","command":"echo hi"} }
+            ]
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&agent).unwrap();
+        assert_eq!(out["hooks"][0]["timeout"], 30);
+    }
+
+    #[test]
+    fn test_hooks_array_timeout_absent_defaults_to_kas() {
+        // An array-form hook that omits `timeout` adopts KAS's 10s default (not the
+        // CLI's legacy 30s object default), so it round-trips identically across
+        // engines instead of silently tripling.
+        let agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [
+                { "name": "s", "trigger": "stop",
+                  "action": {"type":"command","command":"echo hi"} }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(agent.hooks[&HookTrigger::Stop][0].timeout_ms, 10_000);
+        let out = serde_json::to_value(&agent).unwrap();
+        assert_eq!(out["hooks"][0]["timeout"], 10);
+    }
+
+    #[test]
+    fn test_hooks_empty_omitted_on_serialize() {
+        // A hooks-less agent must omit the field entirely (not emit `{}`), so it
+        // stays loadable by both engines.
+        let agent = Agent {
+            name: "t".to_string(),
+            ..Default::default()
+        };
+        let out = serde_json::to_value(&agent).unwrap();
+        assert!(out.get("hooks").is_none(), "empty hooks must be omitted, got: {out}");
+    }
+
+    #[test]
+    fn test_hooks_array_subsecond_timeout_not_truncated() {
+        // A sub-second timeout (only reachable programmatically, not via the array
+        // parser) must round up to 1s, not truncate to 0 via integer division.
+        let mut agent: Agent = serde_json::from_value(serde_json::json!({
+            "name": "t",
+            "hooks": [ { "name": "s", "trigger": "stop",
+                         "action": {"type":"command","command":"c"} } ]
+        }))
+        .unwrap();
+        agent.hooks.get_mut(&HookTrigger::Stop).unwrap()[0].timeout_ms = 999;
+        let out = serde_json::to_value(&agent).unwrap();
+        assert_eq!(out["hooks"][0]["timeout"], 1);
     }
 
     #[test]
