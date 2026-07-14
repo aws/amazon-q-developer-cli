@@ -8,6 +8,7 @@ import type {
   SourceProviderList,
   SourceProviderResourcePage,
   SourceProviderResourcesRequest,
+  KiroSessionListItemMeta,
 } from '@kiro/acp-type-covenant';
 import { logger } from '../utils/logger';
 import {
@@ -66,6 +67,7 @@ import {
   recordTuiContextUsage,
   recordTuiModeActive,
   recordTuiModelInvocation,
+  recordTuiCloudSession,
   recordTuiSessionStarted,
   recordTuiTokensConsumed,
   recordTuiTurnOutcome,
@@ -1336,6 +1338,9 @@ export class KasAcpClient extends BaseAcpClient {
             this.kiroCapabilities.executionTargets ?? []
           )}); starting a local session instead.`
       );
+      if (target.kind === 'cloud-sandbox') {
+        recordTuiCloudSession({ event: 'fell_back_local' });
+      }
     }
     // A `cloud-sandbox` placement is a cloud session, so send `sessionSource:
     // 'remote'` alongside the cloud `executionTarget`. This block is only reachable
@@ -1348,7 +1353,6 @@ export class KasAcpClient extends BaseAcpClient {
     const intendedCloudSandbox =
       (kiroMeta.executionTarget as ExecutionTarget | undefined)?.kind ===
       'cloud-sandbox';
-    this.startedCloudSession = intendedCloudSandbox;
     if (intendedCloudSandbox) {
       if (this.kiroCapabilities.sessionSources?.includes('remote')) {
         kiroMeta.sessionSource = 'remote';
@@ -1365,11 +1369,25 @@ export class KasAcpClient extends BaseAcpClient {
         kiroMeta.isEmptyWorkspace = true;
       }
     }
-    const r = await this.kiroClient.newSession({
-      cwd: process.cwd(),
-      mcpServers: [],
-      ...(Object.keys(kiroMeta).length > 0 && { _meta: { kiro: kiroMeta } }),
-    });
+    const r = await this.kiroClient
+      .newSession({
+        cwd: process.cwd(),
+        mcpServers: [],
+        ...(Object.keys(kiroMeta).length > 0 && { _meta: { kiro: kiroMeta } }),
+      })
+      .catch((err) => {
+        if (intendedCloudSandbox) {
+          recordTuiCloudSession({ event: 'start_failed' });
+        }
+        throw err;
+      });
+    // Record whether the session was actually placed on a cloud sandbox so
+    // /disconnect / exit can surface the reattach hint only for a genuine
+    // cloud session.
+    this.startedCloudSession = intendedCloudSandbox;
+    if (this.startedCloudSession) {
+      recordTuiCloudSession({ event: 'started' });
+    }
     const sid = r.sessionId;
     this.sessionId = sid;
     logger.debug('KAS session created', { sessionId: sid });
@@ -1443,6 +1461,19 @@ export class KasAcpClient extends BaseAcpClient {
       '[acp-client] KAS loadSession completed for session:',
       sessionId
     );
+
+    // A resumed session KAS tags as remote-sourced is a still-running cloud
+    // session the CLI just reattached to. The origin rides flat on the typed
+    // load-response meta (`_meta.source`, absent == local), populated only
+    // when the remote store was queried above.
+    const resumedSource = r._meta?.source;
+    if (resumedSource === 'remote') {
+      // A reattach IS an active cloud session: without this flag every cloud
+      // affordance keyed on isCloudSessionActive() (quit prompt, detach
+      // notice) would stay dead for the rest of the session.
+      this.startedCloudSession = true;
+      recordTuiCloudSession({ event: 'reattached' });
+    }
 
     const configOptions = (r as { configOptions?: unknown }).configOptions;
     this.emitConfigOptions(configOptions, 'loadSession');
@@ -2342,16 +2373,22 @@ export class KasAcpClient extends BaseAcpClient {
       }
 
       return {
-        sessions: r.sessions.map((s: any) => {
-          const k = s._meta?.kiro ?? {};
+        sessions: r.sessions.map((s) => {
+          // Per-row remote dimensions ride `_meta.kiro`, typed by the covenant
+          // list-item meta. Absent == local; `executionTarget` is the WHERE the
+          // picker surfaces, `source` is the store to route a later load/delete
+          // to, `status` a cold snapshot.
+          const k: Partial<KiroSessionListItemMeta> =
+            (s._meta as { kiro?: KiroSessionListItemMeta } | undefined)?.kiro ??
+            {};
           return {
             sessionId: s.sessionId,
             cwd: s.cwd,
-            title: s.title,
-            updatedAt: s.updatedAt ?? s._meta?.createdAt ?? k.createdAt,
-            // Per-row remote dimensions. Absent == local; `executionTarget` is the
-            // WHERE the picker surfaces, `source` is the store to route a later
-            // load/delete to, `status` a cold snapshot.
+            title: s.title ?? undefined,
+            updatedAt:
+              s.updatedAt ??
+              (s._meta as { createdAt?: string } | undefined)?.createdAt ??
+              k.createdAt,
             executionTarget: k.executionTarget,
             source: k.source,
             status: k.status,

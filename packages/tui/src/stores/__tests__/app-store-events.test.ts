@@ -2332,3 +2332,14 @@ describe('cloudRepo slice (footer location)', () => {
     expect(store.getState().cloudRepo).toBeNull();
   });
 });
+
+describe('app-store — showCloudQuitPrompt slice', () => {
+  it('defaults closed and toggles via setShowCloudQuitPrompt', () => {
+    const store = makeStore();
+    expect(store.getState().showCloudQuitPrompt).toBe(false);
+    store.getState().setShowCloudQuitPrompt(true);
+    expect(store.getState().showCloudQuitPrompt).toBe(true);
+    store.getState().setShowCloudQuitPrompt(false);
+    expect(store.getState().showCloudQuitPrompt).toBe(false);
+  });
+});

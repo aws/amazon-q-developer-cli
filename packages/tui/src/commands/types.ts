@@ -176,6 +176,8 @@ export interface CommandContext {
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
   setShowThemePanel: (show: boolean) => void;
+  /** Open/close the /quit "keep running vs turn off" prompt (cloud sessions only). */
+  setShowCloudQuitPrompt: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
   setSettingsReturnOnEscape: (value: boolean) => void;
   /** Stash the parent route consumed by the /verbosity menu's ESC handler. */

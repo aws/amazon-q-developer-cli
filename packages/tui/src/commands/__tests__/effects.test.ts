@@ -1643,3 +1643,43 @@ describe('/spec analyze_requirements effect', () => {
     expect(call.options[0].label).toBe('has-reqs');
   });
 });
+
+describe('quit effect (/quit cloud prompt)', () => {
+  const quitCmd: SlashCommand = {
+    name: '/quit',
+    description: '',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  it('opens the cloud-quit prompt (no teardown) for an active cloud session', () => {
+    const closeSpy = mock(() => {});
+    const ctx = createMockCommandContext({
+      kiro: { isCloudSessionActive: () => true, close: closeSpy },
+    });
+
+    const handled = runEffect(quitCmd, null, ctx, '');
+
+    expect(handled).toBe(true);
+    expect(ctx._spies.setShowCloudQuitPrompt!).toHaveBeenCalledWith(true);
+    // Must NOT tear down / exit — the prompt's handlers own that.
+    expect(closeSpy).not.toHaveBeenCalled();
+  });
+
+  it('exits immediately for a local session (unchanged behavior)', () => {
+    const exitSpy = spyOn(process, 'exit').mockImplementation(
+      (() => undefined) as never
+    );
+    const closeSpy = mock(() => {});
+    const ctx = createMockCommandContext({
+      kiro: { isCloudSessionActive: () => false, close: closeSpy },
+    });
+
+    runEffect(quitCmd, null, ctx, '');
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    expect(ctx._spies.setShowCloudQuitPrompt!).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+  });
+});

@@ -17,6 +17,12 @@ metrics:
     priority: P0
     temporality: delta
     attributes: [version_minor_bucket, mode, client_application, engine]
+  - name: kiro_cli_cloud_session_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [cloud_event, engine]
   - name: kiro_cli_ui_mode_session_started_total
     kind: counter
     unit: "1"

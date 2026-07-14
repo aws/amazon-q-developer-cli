@@ -24,6 +24,11 @@ import { ThemePanel } from '../../ui/ThemePanel.js';
 import { SettingsPanel } from '../../ui/SettingsPanel.js';
 import { ArtifactView } from '../../ui/ArtifactView/index.js';
 import { SurveyPanel } from '../../ui/SurveyPanel.js';
+import { CloudQuitPrompt } from '../../ui/CloudQuitPrompt.js';
+import {
+  quitCloudSessionKeepRunning,
+  quitCloudSessionTurnOff,
+} from '../../../utils/cloud-detach-notice.js';
 import {
   useUIState,
   useUIActions,
@@ -79,8 +84,9 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     codeData,
     showChangelogPanel,
     artifactViewOpen,
+    showCloudQuitPrompt,
   } = useUIState();
-  const { setShowMcpPanel } = useUIActions();
+  const { setShowMcpPanel, setShowCloudQuitPrompt } = useUIActions();
   const { submitRepoPicker } = useUIActions();
   const attachedRepos = useAppStore((s) => s.attachedRepos);
   const { initErrors, pendingOAuthServers } = useNotificationState();
@@ -301,6 +307,13 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
       {artifactViewOpen && <ArtifactView />}
       {showSurveyPanel && (
         <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
+      )}
+      {showCloudQuitPrompt && (
+        <CloudQuitPrompt
+          onKeepRunning={() => quitCloudSessionKeepRunning(kiro)}
+          onTurnOff={() => quitCloudSessionTurnOff(kiro)}
+          onCancel={() => setShowCloudQuitPrompt(false)}
+        />
       )}
     </>
   );

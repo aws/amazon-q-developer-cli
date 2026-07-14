@@ -1133,6 +1133,8 @@ interface BaseAppActions {
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
   setShowThemePanel: (show: boolean) => void;
+  /** Open/close the cloud-session `/quit` prompt (keep-running vs turn-off). */
+  setShowCloudQuitPrompt: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
   /** Set whether the current session is a cloud session (gates `/repo`). */
   setCloudSessionActive: (active: boolean) => void;
@@ -1667,6 +1669,8 @@ export interface AppState {
   showKeybindingsPanel: boolean;
   showDisplaySettingsPanel: boolean;
   showThemePanel: boolean;
+  /** Whether the cloud-session `/quit` prompt (keep-running vs turn-off) is open. */
+  showCloudQuitPrompt: boolean;
   showSettingsPanel: boolean;
   /** Theme preview string rendered below the /theme menu during the lite flow. */
   themePreview: string | null;
@@ -2187,6 +2191,7 @@ function buildCommandContext(
     setShowKeybindingsPanel: state.setShowKeybindingsPanel,
     setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
     setShowThemePanel: state.setShowThemePanel,
+    setShowCloudQuitPrompt: state.setShowCloudQuitPrompt,
     setShowSettingsPanel: state.setShowSettingsPanel,
     setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
     setVerboseReturnOnEscape: state.setVerboseReturnOnEscape,
@@ -2231,6 +2236,7 @@ function buildCommandContext(
         showRepoPicker: false,
         showKeybindingsPanel: false,
         showThemePanel: false,
+        showCloudQuitPrompt: false,
         settingsReturnOnEscape: false,
         verboseReturnOnEscape: null,
         themeReturnOnEscape: null,
@@ -2561,6 +2567,7 @@ export const createAppStore = (props: AppStoreProps) => {
     showKeybindingsPanel: false,
     showDisplaySettingsPanel: false,
     showThemePanel: false,
+    showCloudQuitPrompt: false,
     showSettingsPanel: false,
     themePreview: null,
     terminalTitleEnabled: readBoolSetting(Settings.CHAT_TERMINAL_TITLE, false),
@@ -6098,6 +6105,9 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowThemePanel: (show) => {
       set({ showThemePanel: show });
+    },
+    setShowCloudQuitPrompt: (show) => {
+      set({ showCloudQuitPrompt: show });
     },
 
     setShowSettingsPanel: (show) => {

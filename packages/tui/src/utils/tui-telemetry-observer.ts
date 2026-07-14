@@ -265,6 +265,47 @@ export function recordTuiSessionStarted(
 }
 
 /**
+ * Allowed `cloud_event` lifecycle values the CLI records. The schema's
+ * `_other_` overflow bucket is deliberately NOT in this union: it exists for
+ * the pipeline's cardinality guard, and callers must record a precise event.
+ */
+export type CloudSessionEvent =
+  | 'started'
+  | 'start_failed'
+  | 'reattached'
+  | 'detached'
+  | 'turned_off'
+  | 'fell_back_local';
+
+/**
+ * A cloud-sandbox session lifecycle event
+ * (`kiro_cli_cloud_session_total`): `started` (a cloud-sandbox session was
+ * created), `start_failed` (the cloud `session/new` was rejected, so the
+ * session never came up — the reliability denominator-mate for `started`),
+ * `reattached` (the CLI resumed a still-running cloud session), `detached`
+ * (the CLI disconnected but left it running), `turned_off` (the user stopped
+ * it via the /quit prompt), or `fell_back_local` (a cloud sandbox was
+ * requested but KAS did not advertise the placement, so the session ran
+ * locally instead). ORR observability for the dark-shipped cloud-sandbox path
+ * — reads zero on released builds (the feature is gated + never active), and
+ * lights up only when it ramps on internal/nightly. Always v3 (cloud is
+ * KAS-only) but carries `engine` for a uniform label split with the rest of
+ * the catalog.
+ */
+export function recordTuiCloudSession(
+  args: { event: CloudSessionEvent; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_cloud_session_total',
+    1,
+    { cloud_event: args.event, engine: args.engine ?? DEFAULT_ENGINE },
+    TUI_SCOPE
+  );
+}
+
+/**
  * A user turn completed: the count (`kiro_cli_user_turns`) + latency histogram
  * (`kiro_cli_user_turn_duration_seconds`). The schema allows `engine` on both
  * (it previously rejected attributes on the histogram), so both carry it.

@@ -30,6 +30,7 @@ const {
   recordTuiContextUsage,
   recordTuiModeActive,
   recordTuiSubagentDelegation,
+  recordTuiCloudSession,
   versionMinorBucketFromEnv,
   modeFromId,
   TuiToolCallObserver,
@@ -572,5 +573,32 @@ describe('KIRO_TEST_MODE suppression', () => {
       if (prev === undefined) delete process.env['KIRO_TEST_MODE'];
       else process.env['KIRO_TEST_MODE'] = prev;
     }
+  });
+});
+
+describe('recordTuiCloudSession', () => {
+  it('emits kiro_cli_cloud_session_total with the event + engine=v3', () => {
+    recordTuiCloudSession({ event: 'started' }, deps);
+    expect(counterCalls).toHaveLength(1);
+    const c = counterCalls[0]!;
+    expect(c.name).toBe('kiro_cli_cloud_session_total');
+    expect(c.value).toBe(1);
+    expectEngineV3(c);
+    expect(c.attrs?.['cloud_event']).toBe('started');
+  });
+
+  it('carries each lifecycle event through cloud_event', () => {
+    recordTuiCloudSession({ event: 'start_failed' }, deps);
+    recordTuiCloudSession({ event: 'reattached' }, deps);
+    recordTuiCloudSession({ event: 'detached' }, deps);
+    recordTuiCloudSession({ event: 'turned_off' }, deps);
+    recordTuiCloudSession({ event: 'fell_back_local' }, deps);
+    expect(counterCalls.map((c) => c.attrs?.['cloud_event'])).toEqual([
+      'start_failed',
+      'reattached',
+      'detached',
+      'turned_off',
+      'fell_back_local',
+    ]);
   });
 });

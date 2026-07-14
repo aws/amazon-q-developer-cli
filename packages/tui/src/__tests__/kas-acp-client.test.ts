@@ -222,10 +222,12 @@ mock.module('../utils/logger', () => ({
 // Capture recordTuiSessionStarted to assert the per-session dedup; other record
 // fns are no-ops, modeFromId/resultFromStatus/tool-call observer stay functional.
 const mockRecordTuiSessionStarted = mock((_a: unknown) => {});
+const mockRecordTuiCloudSession = mock((_a: unknown) => {});
 mock.module('../utils/tui-telemetry-observer', () => ({
   DEFAULT_ENGINE: 'v3',
   TUI_SCOPE: 'kiro.tui',
   recordTuiSessionStarted: mockRecordTuiSessionStarted,
+  recordTuiCloudSession: mockRecordTuiCloudSession,
   recordTuiModeActive: mock(() => {}),
   recordTuiUserTurn: mock(() => {}),
   recordTuiModelInvocation: mock(() => {}),
@@ -303,6 +305,7 @@ function freshMocks() {
   mockKiroSendExtNotification.mockClear();
   mockKiroListSessions.mockClear();
   mockRecordTuiSessionStarted.mockClear();
+  mockRecordTuiCloudSession.mockClear();
   capturedSessionUpdateHandler = null;
   capturedPermissionHandler = null;
   capturedKiroClientConfig = null;
@@ -6513,6 +6516,98 @@ describe('cloud executionTarget', () => {
     expect(lastNewSessionMeta()?.executionTarget).toEqual({
       kind: 'cloud-sandbox',
     });
+  });
+
+  it('isCloudSessionActive() is true after a cloud-sandbox session is placed on a cloud sandbox', async () => {
+    advertiseRemoteCaps();
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    expect(client.isCloudSessionActive()).toBe(true);
+    // A 'started' cloud-session metric is emitted for a cloud-sandbox placement.
+    expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
+      event: 'started',
+    });
+  });
+
+  it('emits start_failed (not started) when a cloud session/new is rejected', async () => {
+    advertiseRemoteCaps();
+    mockKiroNewSession.mockRejectedValueOnce(new Error('provision boom'));
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await expect(client.newSession()).rejects.toThrow('provision boom');
+    expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
+      event: 'start_failed',
+    });
+    expect(mockRecordTuiCloudSession).not.toHaveBeenCalledWith({
+      event: 'started',
+    });
+  });
+
+  it('does NOT emit start_failed when a LOCAL session/new is rejected', async () => {
+    mockKiroNewSession.mockRejectedValueOnce(new Error('local boom'));
+    const client = new KasAcpClient(); // local (default)
+    await expect(client.newSession()).rejects.toThrow('local boom');
+    expect(mockRecordTuiCloudSession).not.toHaveBeenCalled();
+  });
+
+  it('emits reattached when resuming a KAS-tagged remote-sourced session', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionSources: ['local', 'remote'] } },
+      },
+    });
+    mockKiroLoadSession.mockResolvedValueOnce({
+      configOptions: [],
+      _meta: { source: 'remote' },
+    } as any);
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.loadSession('cloud-session-1');
+    expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
+      event: 'reattached',
+    });
+    // A reattach activates the cloud affordances (quit prompt, detach notice).
+    expect(client.isCloudSessionActive()).toBe(true);
+  });
+
+  it('does NOT emit reattached when resuming a local-sourced session', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      configOptions: [],
+      _meta: { source: 'local' },
+    } as any);
+    const client = new KasAcpClient();
+    await client.loadSession('local-session-1');
+    expect(mockRecordTuiCloudSession).not.toHaveBeenCalled();
+    expect(client.isCloudSessionActive()).toBe(false);
+  });
+
+  it('isCloudSessionActive() stays false when --cloud degrades to local (cap not advertised)', async () => {
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize(); // default caps advertise no cloud-sandbox
+    await client.newSession();
+    expect(client.isCloudSessionActive()).toBe(false);
+    // Dark-safe: no 'started' metric when the session degraded to local — but a
+    // 'fell_back_local' metric records the degraded placement.
+    expect(mockRecordTuiCloudSession).not.toHaveBeenCalledWith({
+      event: 'started',
+    });
+    expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
+      event: 'fell_back_local',
+    });
+  });
+
+  it('isCloudSessionActive() is false for a local session', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    expect(client.isCloudSessionActive()).toBe(false);
   });
 
   it('degrades to local when KAS does NOT advertise the cap', async () => {

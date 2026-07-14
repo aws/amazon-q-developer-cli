@@ -116,6 +116,7 @@ export function createMockCommandContext(
     setShowKeybindingsPanel: spy('setShowKeybindingsPanel') as any,
     setShowDisplaySettingsPanel: spy('setShowDisplaySettingsPanel') as any,
     setShowThemePanel: spy('setShowThemePanel') as any,
+    setShowCloudQuitPrompt: spy('setShowCloudQuitPrompt') as any,
     setShowSettingsPanel: spy('setShowSettingsPanel') as any,
     setSettingsReturnOnEscape: spy('setSettingsReturnOnEscape') as any,
     setVerboseReturnOnEscape: spy('setVerboseReturnOnEscape') as any,

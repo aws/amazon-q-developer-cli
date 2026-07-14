@@ -91,6 +91,8 @@ attributes:
     allowed_values: [v1, v2, subagent, kas, _other_]
   - name: engine
     allowed_values: [v2, v3]
+  - name: cloud_event
+    allowed_values: [started, start_failed, reattached, detached, turned_off, fell_back_local, _other_]
   - name: process_role
     allowed_values: [host, tui, kas_subprocess]
   - name: render_kind

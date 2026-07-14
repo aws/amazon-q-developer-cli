@@ -31,6 +31,7 @@ import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
+import { emitCloudDetachNoticeOnce } from './utils/cloud-detach-notice';
 import type { AgentStreamEvent } from './types/agent-events';
 import { truncateToRecentTurns } from './utils/truncate-history';
 import {
@@ -93,6 +94,20 @@ process.on('exit', (code) => {
   logger.info('[tui] exit', { code });
 });
 
+// On any graceful exit of a cloud session, tell the user it keeps running and
+// how to reattach. Gated on the ACTUAL cloud placement (isCloudSessionActive
+// is false when --cloud degraded to local), so it never misfires on a local
+// session; dark-safe (always false on released builds).
+const emitDetachNoticeIfCloud = (): void => {
+  try {
+    if (kiro?.isCloudSessionActive?.() && kiro.sessionId) {
+      emitCloudDetachNoticeOnce(kiro.sessionId);
+    }
+  } catch {
+    // Never block shutdown on the notice.
+  }
+};
+
 const cleanup = () => {
   try {
     disableFocusTracking();
@@ -104,6 +119,7 @@ const cleanup = () => {
   } catch {
     // stdout/stdin may already be dead (e.g. PTY closed), ignore errors
   }
+  emitDetachNoticeIfCloud();
   process.exit(0);
 };
 
@@ -161,6 +177,9 @@ process.on('uncaughtException', (err) => {
 // before Node tears down — process.on('exit') is too late for async kills.
 process.on('beforeExit', () => {
   kiro.close();
+  // Covers the /quit + natural-drain path (which unmounts rather than routing
+  // through cleanup()). Print-once + gated, so no double-print with cleanup().
+  emitDetachNoticeIfCloud();
 });
 
 // Defense-in-depth: detect parent death via stdin EOF (works when stdin is piped)

@@ -473,6 +473,13 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   quit: (_result, ctx) => {
+    // Cloud sessions keep running after detach, so /quit asks keep-running vs
+    // turn-off. Local /quit is unchanged; on released builds the cloud path is
+    // unreachable (no cloud-sandbox cap).
+    if (ctx.kiro.isCloudSessionActive()) {
+      ctx.setShowCloudQuitPrompt(true);
+      return true;
+    }
     ctx.kiro.close();
     process.exit(0);
   },
