@@ -36,6 +36,128 @@ export function dumpLastFrame(term: TestTerminal, dir: string): void {
 	writeFileSync(join(dir, 'last-frame.txt'), serializeFrame(frame, width) + '\n');
 }
 
+// --- Full-color screenshots (SVG) ---
+
+/** One styled run of characters on a row (same fg/bg/bold). */
+interface StyledRun {
+	text: string;
+	x: number;
+	fg: string | null;
+	bg: string | null;
+	bold: boolean;
+}
+
+const CELL_W = 9;
+const CELL_H = 18;
+const DEFAULT_FG = '#fcfcfa';
+const DEFAULT_BG = '#221f22';
+
+/** 256-color palette index → hex (standard xterm palette). */
+function paletteToHex(idx: number): string {
+	if (idx < 16) {
+		const base = [
+			'#000000', '#cd0000', '#00cd00', '#cdcd00', '#0000ee', '#cd00cd', '#00cdcd', '#e5e5e5',
+			'#7f7f7f', '#ff0000', '#00ff00', '#ffff00', '#5c5cff', '#ff00ff', '#00ffff', '#ffffff',
+		];
+		return base[idx];
+	}
+	if (idx < 232) {
+		const c = idx - 16;
+		const steps = [0, 95, 135, 175, 215, 255];
+		const r = steps[Math.floor(c / 36)];
+		const g = steps[Math.floor((c % 36) / 6)];
+		const b = steps[c % 6];
+		return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+	}
+	const v = 8 + (idx - 232) * 10;
+	return `#${((v << 16) | (v << 8) | v).toString(16).padStart(6, '0')}`;
+}
+
+function escapeXml(s: string): string {
+	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Renders the terminal's CURRENT buffer to a full-color SVG screenshot,
+ * reading per-cell RGB/palette colors and bold from the xterm buffer (the
+ * plain-text Frame type drops these). Views in any browser; `rsvg-convert`
+ * or a browser turns it into PNG.
+ */
+export function screenshotSvg(term: TestTerminal): string {
+	const buf = term.xtermBuffer();
+	const cols = term.columns;
+	const rows = term.rows;
+	const rowRuns: StyledRun[][] = [];
+	const bgRects: Array<{ x: number; y: number; w: number; color: string }> = [];
+
+	for (let y = 0; y < rows; y++) {
+		const line = buf.getLine(buf.viewportY + y);
+		const runs: StyledRun[] = [];
+		if (!line) { rowRuns.push(runs); continue; }
+		let current: StyledRun | null = null;
+		for (let x = 0; x < cols; x++) {
+			const cell = line.getCell(x);
+			if (!cell) continue;
+			const chars = cell.getChars() || ' ';
+			const width = cell.getWidth();
+			if (width === 0) continue; // continuation of a wide char
+			let fg: string | null = null;
+			let bg: string | null = null;
+			if (cell.isFgRGB()) fg = `#${cell.getFgColor().toString(16).padStart(6, '0')}`;
+			else if (cell.isFgPalette()) fg = paletteToHex(cell.getFgColor());
+			if (cell.isBgRGB()) bg = `#${cell.getBgColor().toString(16).padStart(6, '0')}`;
+			else if (cell.isBgPalette()) bg = paletteToHex(cell.getBgColor());
+			const bold = !!cell.isBold();
+			// Merge adjacent same-color bg cells into one span — per-cell rects
+			// leave hairline gaps after SVG rasterization (striped highlights).
+			if (bg) {
+				const last = bgRects[bgRects.length - 1];
+				if (last && last.y === y && last.color === bg && last.x + last.w === x) {
+					last.w += width;
+				} else {
+					bgRects.push({ x, y, w: width, color: bg });
+				}
+			}
+			if (current && current.fg === fg && current.bg === bg && current.bold === bold) {
+				current.text += chars;
+			} else {
+				current = { text: chars, x, fg, bg, bold };
+				runs.push(current);
+			}
+		}
+		rowRuns.push(runs);
+	}
+
+	const W = cols * CELL_W;
+	const H = rows * CELL_H;
+	const parts: string[] = [
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" font-family="Menlo, Consolas, monospace" font-size="14">`,
+		`<rect width="${W}" height="${H}" fill="${DEFAULT_BG}"/>`,
+	];
+	// Background rects (merged per run would be nicer; per-cell is correct).
+	for (const r of bgRects) {
+		parts.push(`<rect x="${r.x * CELL_W}" y="${r.y * CELL_H}" width="${r.w * CELL_W}" height="${CELL_H}" fill="${r.color}"/>`);
+	}
+	// Text runs.
+	for (let y = 0; y < rowRuns.length; y++) {
+		for (const run of rowRuns[y]) {
+			if (run.text.trim() === '') continue;
+			const fill = run.fg ?? DEFAULT_FG;
+			const weight = run.bold ? ' font-weight="bold"' : '';
+			parts.push(
+				`<text x="${run.x * CELL_W}" y="${y * CELL_H + 14}" fill="${fill}"${weight} xml:space="preserve" textLength="${run.text.length * CELL_W}">${escapeXml(run.text)}</text>`,
+			);
+		}
+	}
+	parts.push('</svg>');
+	return parts.join('\n');
+}
+
+/** Writes a full-color SVG screenshot of the current buffer into `dir`. */
+export function dumpScreenshot(term: TestTerminal, dir: string, name = 'screenshot'): void {
+	writeFileSync(join(dir, `${name}.svg`), screenshotSvg(term));
+}
+
 export function dumpAllFrames(term: TestTerminal, dir: string): void {
 	const frames = term.getFrames();
 	if (frames.length === 0) return;
@@ -170,6 +292,9 @@ export class TestTerminal implements Terminal {
 
 	getFrames(): Frame[] { return [...this.frames]; }
 	getLastFrame(): Frame | undefined { return this.frames[this.frames.length - 1]; }
+
+	/** Raw xterm buffer access for full-color screenshot export. */
+	xtermBuffer() { return this.xterm.buffer.active; }
 }
 
 // --- Mutable component ---

@@ -75,11 +75,11 @@ import { getHighlighter } from '../utils/shiki.js';
 export const Markdown: React.FC<MarkdownProps> = ({ children, highlight = false, theme = 'monokai' }) => {
 	const tokens = marked.lexer(children);
 
-	// Render each token: completed code blocks always get shiki,
-	// everything else renders as fast ANSI strings
+	// Render each token: with `highlight`, code blocks with a language get
+	// shiki; everything else (and the default) renders as fast ANSI strings.
 	return React.createElement(Box, { flexDirection: 'column' },
 		...tokens.map((token, i) => {
-			if (token.type === 'code' && (token as Tokens.Code).lang) {
+			if (highlight && token.type === 'code' && (token as Tokens.Code).lang) {
 				return React.createElement(HighlightedCodeBlock, { key: i, token: token as Tokens.Code, theme });
 			}
 			const s = blockToString(token);
@@ -89,6 +89,19 @@ export const Markdown: React.FC<MarkdownProps> = ({ children, highlight = false,
 };
 
 // --- Block rendering to ANSI strings ---
+
+/**
+ * Renders markdown to a plain ANSI string (no React) — for hosts that manage
+ * their own line windowing/scrolling (e.g. transcript viewports) and only
+ * want the styled text. Code blocks use the fast gray path, not shiki.
+ */
+export function markdownToAnsi(markdown: string): string {
+	const tokens = marked.lexer(markdown);
+	return tokens
+		.map((token) => blockToString(token))
+		.filter((s): s is string => s !== null)
+		.join('\n');
+}
 
 function blockToString(token: Token): string | null {
 	switch (token.type) {
@@ -127,8 +140,10 @@ function blockToString(token: Token): string | null {
 }
 
 function listToString(token: Tokens.List): string {
+	// marked types start as number | "" — "" would string-concat with i.
+	const start = typeof token.start === 'number' ? token.start : 1;
 	return token.items.map((item, i) => {
-		const bullet = token.ordered ? `${(token as any).start + i}. ` : '• ';
+		const bullet = token.ordered ? `${start + i}. ` : '• ';
 		const content = item.tokens.map(child => {
 			if (child.type === 'text' && (child as Tokens.Text).tokens) {
 				return inlineToString((child as Tokens.Text).tokens!);

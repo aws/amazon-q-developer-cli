@@ -199,7 +199,6 @@ export class TUI extends Container {
   private contentStartRow = -1;
   private dsrPending = false;
   private altScreen = false;
-  private targetFps = 0;
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
   private pacingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -230,7 +229,8 @@ export class TUI extends Container {
       this.showHardwareCursor = opts.showHardwareCursor;
     }
     if (opts.targetFps && opts.targetFps > 0) {
-      this.targetFps = opts.targetFps;
+      // Only the derived per-frame budget is used downstream (frame pacing);
+      // the raw fps isn't read anywhere else, so we don't retain it.
       this.frameBudgetMs = 1000 / opts.targetFps;
     }
     if (opts.fullscreen) {
@@ -1646,6 +1646,11 @@ export class TUI extends Container {
 
     if (this.overlayStack.length > 0) {
       newLines = this.compositeOverlays(newLines, width, height);
+    }
+
+    // Clip to terminal height in alt-screen mode (prevents scroll desync).
+    if (this.altScreen && newLines.length > height) {
+      newLines = newLines.slice(0, height);
     }
 
     // Refresh the static-prefix physical-row caches if stale. Done BEFORE

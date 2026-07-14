@@ -2,8 +2,9 @@ import { Yoga, getComputedLayout, getBorderChars } from '../layout/yoga.js';
 import { colorToAnsi } from '../utils/color-parser.js';
 import { visibleWidth } from '../utils/visible-width.js';
 import { sliceWithWidth } from '../utils/slice.js';
-import { CONSTANTS, PROP_NAMES } from '../text/constants.js';
+import { PROP_NAMES } from '../text/constants.js';
 import type { TwinkiNode } from '../reconciler/types.js';
+import type { ComponentProps } from '../types/props.js';
 
 /**
  * Type for the renderNode function that will be injected
@@ -120,6 +121,13 @@ export function renderBoxChildren(
       }
       result += line;
       resultWidth += lineWidth;
+      // Preserve base content to the RIGHT of this child (overlays: an
+      // absolutely-positioned dialog must not blank the rest of the row).
+      if (base.width > resultWidth) {
+        const tail = sliceWithWidth(base.text, resultWidth, base.width - resultWidth);
+        result += tail.text;
+        resultWidth += tail.width;
+      }
       // Truncate to innerWidth unless this child explicitly opted into
       // overflow wrapping via `wrap="overflow"`. That keeps standard-mode
       // layouts intact while allowing wrapDisabled content to extend past
@@ -187,9 +195,62 @@ function calculateBoxDimensions(node: TwinkiNode, width: number, height: number,
 /**
  * Renders border and padding lines for a box.
  */
+/** Box-drawing character set for one border style (see layout/yoga.ts). */
+type BorderChars = ReturnType<typeof getBorderChars>;
+
+/** Interior width between the two corner characters (0 for degenerate widths). */
+function borderSpan(width: number): number {
+  return Math.max(0, width - 2);
+}
+
+/** Truncate a title to fit, appending an ellipsis when cut. */
+function fitTitle(title: string, maxLen: number): string {
+  if (title.length <= maxLen) return title;
+  return title.slice(0, Math.max(0, maxLen - 1)) + '…';
+}
+
+/** A plain border line: corner + horizontal fill + corner. */
+function plainBorderLine(
+  left: string, horizontal: string, right: string,
+  width: number, color: string, reset: string,
+): string {
+  return color + left + horizontal.repeat(borderSpan(width)) + (width > 1 ? right : '') + reset;
+}
+
+/** A top border with an embedded title: `╭─ title ──────╮`. */
+function titledBorderLine(
+  border: BorderChars, width: number, color: string, reset: string,
+  title: string, titleColor: string,
+): string {
+  const span = borderSpan(width);
+  const label = fitTitle(title, span - 4); // room for "─ ", " ", and ≥1 trailing "─"
+  const trailingFill = Math.max(0, span - (2 + label.length + 1));
+  return (
+    color + border.topLeft + border.horizontal + reset +
+    ' ' + titleColor + label + reset + ' ' +
+    color + border.horizontal.repeat(trailingFill) + (width > 1 ? border.topRight : '') + reset
+  );
+}
+
+/** Render the top border line, embedding a title when one fits. */
+function renderTopBorder(
+  border: BorderChars, width: number, borderColor: string, borderReset: string,
+  title?: string, titleColor?: string,
+): string {
+  const titleFits = title && borderSpan(width) >= 5;
+  return titleFits
+    ? titledBorderLine(border, width, borderColor, borderReset, title, titleColor || borderColor)
+    : plainBorderLine(border.topLeft, border.horizontal, border.topRight, width, borderColor, borderReset);
+}
+
+/** Render the bottom border line. */
+function renderBottomBorder(border: BorderChars, width: number, borderColor: string, borderReset: string): string {
+  return plainBorderLine(border.bottomLeft, border.horizontal, border.bottomRight, width, borderColor, borderReset);
+}
+
 function renderBoxFrame(
   width: number,
-  border: any,
+  border: BorderChars | null,
   borderColor: string,
   borderReset: string,
   bgCode: string,
@@ -197,18 +258,19 @@ function renderBoxFrame(
   pTop: number,
   pBottom: number,
   borderW: number,
-  content: string[]
+  content: string[],
+  borderTitle?: string,
+  borderTitleColor?: string
 ) {
   const lines: string[] = [];
 
-  // Top border
   if (border) {
-    lines.push(borderColor + border.topLeft + border.horizontal.repeat(width - 2) + border.topRight + borderReset);
+    lines.push(renderTopBorder(border, width, borderColor, borderReset, borderTitle, borderTitleColor));
   }
 
   // Top padding
   for (let i = 0; i < pTop; i++) {
-    const fillWidth = (bgCode || border) ? width - borderW * 2 : 0;
+    const fillWidth = (bgCode || border) ? Math.max(0, width - borderW * 2) : 0;
     const padLine = bgCode + (border ? borderColor + border.vertical + borderReset : '') +
       ' '.repeat(fillWidth) +
       (border ? borderColor + border.vertical + borderReset : '') + bgReset;
@@ -220,25 +282,36 @@ function renderBoxFrame(
 
   // Bottom padding
   for (let i = 0; i < pBottom; i++) {
-    const fillWidth = (bgCode || border) ? width - borderW * 2 : 0;
+    const fillWidth = (bgCode || border) ? Math.max(0, width - borderW * 2) : 0;
     const padLine = bgCode + (border ? borderColor + border.vertical + borderReset : '') +
       ' '.repeat(fillWidth) +
       (border ? borderColor + border.vertical + borderReset : '') + bgReset;
     lines.push(padLine);
   }
 
-  // Bottom border
   if (border) {
-    lines.push(borderColor + border.bottomLeft + border.horizontal.repeat(width - 2) + border.bottomRight + borderReset);
+    lines.push(renderBottomBorder(border, width, borderColor, borderReset));
   }
 
   return lines;
 }
 
+/**
+ * Render a single Box node to terminal lines: composites its children (via
+ * {@link renderBoxChildren}) then wraps them in the box's border, padding, and
+ * background color, padding to the full Yoga-computed frame so a bordered or
+ * background-painted box never collapses to content height.
+ *
+ * @param node - Box node to render (reads borderStyle/padding/colors from props)
+ * @param width - Total available width in columns
+ * @param height - Total available height in rows
+ * @param renderNodeFn - Function to render individual child nodes
+ * @returns Array of terminal lines representing the composed box
+ */
 export function renderBox(node: TwinkiNode, width: number, height: number, renderNodeFn: RenderNodeFn): string[] {
-  const props = node.props as any;
-  const hasBorder = !!props.borderStyle;
-  const border = hasBorder ? getBorderChars(props.borderStyle) : null;
+  const props = node.props as ComponentProps;
+  const hasBorder = props.borderStyle !== undefined;
+  const border = props.borderStyle !== undefined ? getBorderChars(props.borderStyle) : null;
 
   const { pTop, pBottom, pLeft, pRight, borderW, innerWidth, innerHeight } =
     calculateBoxDimensions(node, width, height, hasBorder);
@@ -262,6 +335,11 @@ export function renderBox(node: TwinkiNode, width: number, height: number, rende
   const borderColor = props.borderColor ? `${ESC}[${colorToAnsi(props.borderColor, false)}m` : '';
   const borderReset = borderColor ? `${ESC}[0m` : '';
 
+  // Pad content to fill the Yoga-computed frame height.
+  if (border || bgCode) {
+    while (childContent.length < innerHeight) childContent.push({ text: '', width: 0 });
+  }
+
   // Format content lines with padding
   const leftPad = ' '.repeat(pLeft);
   // Trailing fill and right padding are only needed when a background color
@@ -282,5 +360,6 @@ export function renderBox(node: TwinkiNode, width: number, height: number, rende
       (border ? borderColor + border.vertical + borderReset : '') + bgReset;
   });
 
-  return renderBoxFrame(width, border, borderColor, borderReset, bgCode, bgReset, pTop, pBottom, borderW, content);
+  const titleColorCode = props.borderTitleColor ? `${ESC}[${colorToAnsi(props.borderTitleColor, false)}m` : '';
+  return renderBoxFrame(width, border, borderColor, borderReset, bgCode, bgReset, pTop, pBottom, borderW, content, props.borderTitle, titleColorCode ? titleColorCode : undefined);
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import type { MouseEvent } from '../input/mouse.js';
 
 /**
  * Props for the Box component.
@@ -80,6 +81,13 @@ export interface BoxProps {
 	borderStyle?: 'single' | 'double' | 'round' | 'bold' | 'singleDouble' | 'doubleSingle' | 'classic';
 	/** Border color */
 	borderColor?: string;
+	/**
+	 * Text embedded in the top border (`╭─ title ──╮`) — pane titles without
+	 * spending an interior content row. Truncates to fit; needs borderStyle.
+	 */
+	borderTitle?: string;
+	/** Color for the border title (defaults to the border color). */
+	borderTitleColor?: string;
 	
 	// Visual
 	/** Background color */
@@ -91,9 +99,23 @@ export interface BoxProps {
 	/** Display mode */
 	display?: 'flex' | 'none';
 
+	// Positioning
+	/** Position type — 'absolute' overlays the parent (dialogs, popovers) */
+	position?: 'relative' | 'absolute';
+	/** Top offset (with position) */
+	top?: number;
+	/** Right offset (with position) */
+	right?: number;
+	/** Bottom offset (with position) */
+	bottom?: number;
+	/** Left offset (with position) */
+	left?: number;
+
 	// Mouse events
 	/** Called on mouse click (mousedown + mouseup on same element) */
 	onClick?: () => void;
+	/** Called on mouse press with the raw event (drag initiation needs coords) */
+	onMouseDown?: (event: MouseEvent) => void;
 	/** Called when mouse enters the element */
 	onMouseEnter?: () => void;
 	/** Called when mouse leaves the element */

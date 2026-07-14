@@ -18,6 +18,13 @@ async function highlightText(text: string, lang: string, theme: string): Promise
 	return map;
 }
 
+/** Scroll state the editor reports each render — drives an external scrollbar. */
+export interface EditorScrollInfo {
+	scrollTop: number;
+	totalLines: number;
+	viewportHeight: number;
+}
+
 export interface EditorInputProps {
 	/** Current value (controlled) */
 	value?: string;
@@ -37,6 +44,15 @@ export interface EditorInputProps {
 	isActive?: boolean;
 	/** Language for syntax highlighting (e.g. 'tsx', 'python'). Requires shiki. */
 	syntaxHighlight?: string;
+	/** Viewport height in lines — fills a fixed-height pane instead of the 30%-of-terminal default. */
+	visibleLines?: number;
+	/** Render/wrap width in columns. Defaults to the full terminal width;
+	 *  pass the pane's inner width so content wraps to the PANE, not the screen. */
+	width?: number;
+	/** Reports scroll state after each render — drives an external scrollbar. */
+	onScrollInfo?: (info: EditorScrollInfo) => void;
+	/** Imperative scroll target (e.g. from a clicked scrollbar); jumps the viewport. */
+	scrollTo?: number;
 	/** Theme for syntax highlighting (default: 'monokai') */
 	syntaxTheme?: string;
 	/** Show line numbers */
@@ -59,6 +75,10 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 	syntaxHighlight,
 	syntaxTheme = 'monokai',
 	lineNumbers = false,
+	visibleLines,
+	width: widthProp,
+	onScrollInfo,
+	scrollTo,
 }) => {
 	const { tui } = useTwinkiContext();
 	const editorRef = useRef<Editor>(null!);
@@ -73,6 +93,12 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 	}
 
 	const editor = editorRef.current;
+	const widthRef = useRef(widthProp);
+	widthRef.current = widthProp;
+	const visibleLinesRef = useRef(visibleLines);
+	visibleLinesRef.current = visibleLines;
+	const onScrollInfoRef = useRef(onScrollInfo);
+	onScrollInfoRef.current = onScrollInfo;
 
 	useEffect(() => {
 		editor.onSubmit = onSubmit;
@@ -82,12 +108,14 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 		};
 		editor.disableSubmit = disableSubmit ?? false;
 		editor.lineNumbers = lineNumbers;
+		editor.setVisibleLines(visibleLines ?? null);
 		if (autocompleteProvider) editor.setAutocompleteProvider(autocompleteProvider);
 	});
 
 	useEffect(() => {
 		if (value !== undefined && value !== editor.getText()) {
 			editor.setText(value);
+			scheduleHighlight();
 			rerender();
 		}
 	}, [value]);
@@ -137,9 +165,21 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 		if (syntaxHighlight) scheduleHighlight();
 	}, [syntaxHighlight, syntaxTheme]);
 
+	// External scrollbar click → jump the viewport.
+	useEffect(() => {
+		if (scrollTo === undefined) return;
+		editor.setScrollOffset(scrollTo);
+		rerender();
+	}, [scrollTo]);
+
 	function rerender() {
-		const width = tui.terminal.columns;
+		const width = widthRef.current ?? tui.terminal.columns;
 		setRenderedLines(editor.render(width));
+		onScrollInfoRef.current?.({
+			scrollTop: editor.getScrollOffset(),
+			totalLines: editor.getTotalLines(),
+			viewportHeight: visibleLinesRef.current ?? Math.max(5, Math.floor(tui.terminal.rows * 0.3)),
+		});
 	}
 
 	return React.createElement(

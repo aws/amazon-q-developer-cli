@@ -85,7 +85,10 @@ export class Editor implements Component, Focusable {
 	private paddingX: number = 0;
 	private lastWidth: number = 80;
 	private scrollOffset: number = 0;
+	private lastLayoutLineCount: number = 0;
 	private terminalRows: number = 24;
+	/** Explicit viewport height in lines; overrides the terminalRows heuristic. */
+	private visibleLinesOverride: number | null = null;
 
 	private autocompleteProvider?: AutocompleteProvider;
 	private autocompleteList?: SelectList;
@@ -123,6 +126,15 @@ export class Editor implements Component, Focusable {
 	}
 
 	setTerminalRows(rows: number): void { this.terminalRows = rows; }
+	setVisibleLines(lines: number | null): void { this.visibleLinesOverride = lines; }
+	/** Current scroll offset (top visible layout line) — for a scrollbar. */
+	getScrollOffset(): number { return this.scrollOffset; }
+	/** Total wrapped layout lines at the last render width — scrollbar total. */
+	getTotalLines(): number { return this.lastLayoutLineCount; }
+	/** Jump the viewport so `top` is the first visible line (scrollbar click). */
+	setScrollOffset(top: number): void {
+		this.scrollOffset = Math.max(0, Math.min(top, Math.max(0, this.lastLayoutLineCount - 1)));
+	}
 	setAutocompleteProvider(provider: AutocompleteProvider): void { this.autocompleteProvider = provider; }
 	isShowingAutocomplete(): boolean { return this.autocompleteState !== null; }
 
@@ -180,7 +192,10 @@ export class Editor implements Component, Focusable {
 
 		const horizontal = this.borderColor('─');
 		const layoutLines = this.layoutText(layoutWidth);
-		const maxVisibleLines = Math.max(5, Math.floor(this.terminalRows * 0.3));
+		this.lastLayoutLineCount = layoutLines.length;
+		const maxVisibleLines = this.visibleLinesOverride != null
+			? Math.max(1, this.visibleLinesOverride)
+			: Math.max(5, Math.floor(this.terminalRows * 0.3));
 
 		let cursorLineIndex = layoutLines.findIndex((l) => l.hasCursor);
 		if (cursorLineIndex === -1) cursorLineIndex = 0;

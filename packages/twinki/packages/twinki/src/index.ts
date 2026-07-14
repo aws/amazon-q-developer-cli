@@ -38,6 +38,7 @@ export {
   Static,
   Transform,
   Markdown,
+  markdownToAnsi,
   Typewriter,
   DiffView,
   TextInput,
@@ -49,6 +50,8 @@ export {
   Region,
   Scrollbar,
   StreamingPanel,
+  Tabs,
+  Split,
 } from './components/index.js';
 export type {
   TextProps,
@@ -68,7 +71,11 @@ export type {
   EditorInputProps,
   RegionProps,
   ScrollbarProps,
+  EditorScrollInfo,
   StreamingPanelProps,
+  Tab,
+  TabsProps,
+  SplitProps,
 } from './components/index.js';
 
 // Hooks
@@ -93,6 +100,8 @@ export type { UseTypewriterOptions, TypewriterSpeed } from './hooks/index.js';
 export { useFrames } from './hooks/index.js';
 export { useMouse } from './hooks/index.js';
 export type { UseMouseOptions } from './hooks/index.js';
+export { useTabs } from './hooks/index.js';
+export type { UseTabsOpts, TabsModel } from './hooks/index.js';
 export { usePaste } from './hooks/index.js';
 export type { UsePasteOptions } from './hooks/index.js';
 export { useFullscreen } from './hooks/index.js';

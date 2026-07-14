@@ -113,6 +113,18 @@ export function applyYogaProps(node: YogaNode, props: ComponentProps): void {
 		node.setOverflow(Yoga.OVERFLOW_HIDDEN);
 	}
 
+	// Position (absolute children overlay their parent; used for dialogs)
+	if (props.position === 'absolute') {
+		node.setPositionType(Yoga.POSITION_TYPE_ABSOLUTE);
+	} else if (props.position === 'relative') {
+		node.setPositionType(Yoga.POSITION_TYPE_RELATIVE);
+	}
+	const pos = props as { top?: number; bottom?: number; left?: number; right?: number };
+	if (pos.top !== undefined) node.setPosition(Yoga.EDGE_TOP, pos.top);
+	if (pos.bottom !== undefined) node.setPosition(Yoga.EDGE_BOTTOM, pos.bottom);
+	if (pos.left !== undefined) node.setPosition(Yoga.EDGE_LEFT, pos.left);
+	if (pos.right !== undefined) node.setPosition(Yoga.EDGE_RIGHT, pos.right);
+
 	// Display
 	if ((props as any).display === 'none') {
 		node.setDisplay(Yoga.DISPLAY_NONE);

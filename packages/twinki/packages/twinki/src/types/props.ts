@@ -1,4 +1,5 @@
 import type { WrapMode, FlexDirection } from '../text/constants.js';
+import type { MouseEvent } from '../input/mouse.js';
 
 /**
  * Base props that all components can accept.
@@ -92,6 +93,12 @@ export interface StyleProps {
 	borderStyle?: 'single' | 'double' | 'round' | 'bold' | 'singleDouble' | 'doubleSingle' | 'classic';
 	/** Border color */
 	borderColor?: string;
+	/** Text embedded in the top border (`╭─ title ──╮`); needs borderStyle. */
+	borderTitle?: string;
+	/** Color for the border title (defaults to the border color). */
+	borderTitleColor?: string;
+	/** Scroll offset from top (used with overflow: hidden). */
+	scrollTop?: number;
 	/** Text decoration */
 	bold?: boolean;
 	/** Italic text */
@@ -154,6 +161,8 @@ export interface TransformProps extends BaseProps {
 export interface MouseProps {
 	/** Click handler */
 	onClick?: () => void;
+	/** Mouse press handler — receives the raw event (drag initiation). */
+	onMouseDown?: (event: MouseEvent) => void;
 	/** Mouse enter handler */
 	onMouseEnter?: () => void;
 	/** Mouse leave handler */

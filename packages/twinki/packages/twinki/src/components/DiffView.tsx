@@ -267,19 +267,15 @@ export const DiffView: React.FC<DiffViewProps> = ({
 
 	useEffect(() => {
 		let cancelled = false;
-		async function run() {
-			const isCached = !highlight || (cachedHighlighter && loadedThemes.has(theme) && loadedLangs.has(lang));
 
-			let h = isCached
-				? (highlight ? cachedHighlighter : null)
-				: await getHighlighter(theme, lang);
-
-			if (cancelled) return;
-
+		// Compute + commit the diff with a given (maybe-null) highlighter. Factored
+		// out so we can paint UN-highlighted content SYNCHRONOUSLY on the first
+		// pass (no blank frame while shiki loads async) then re-commit with
+		// highlighting once the highlighter resolves.
+		const commit = (h: any) => {
 			const colors = h ? colorsFromTheme(h.getTheme(theme)) : DEFAULT_COLORS;
 			const computed = computePairs(leftSide.content, rightSide.content, colors);
 			assignLineNumbers(computed, leftSide.startLine ?? 1, rightSide.startLine ?? 1);
-
 			if (h) {
 				applyHighlight(computed, lang, theme, colors, h);
 			} else {
@@ -291,8 +287,19 @@ export const DiffView: React.FC<DiffViewProps> = ({
 				}
 			}
 			setState({ pairs: computed, colors });
+		};
+
+		const ready = cachedHighlighter && loadedThemes.has(theme) && loadedLangs.has(lang);
+		if (!highlight) {
+			commit(null); // no highlighting requested — synchronous, plain diff
+		} else if (ready) {
+			commit(cachedHighlighter); // highlighter already warm — synchronous
+		} else {
+			// Highlighter not loaded yet: paint the plain diff NOW so the body is
+			// never blank, then upgrade to highlighted once shiki resolves.
+			commit(null);
+			getHighlighter(theme, lang).then((h) => { if (!cancelled && h) commit(h); });
 		}
-		run();
 		return () => { cancelled = true; };
 	}, [leftSide.content, rightSide.content, highlight, lang, theme]);
 

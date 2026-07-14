@@ -334,6 +334,12 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 			if (enterNode?.props.onMouseEnter) enterNode.props.onMouseEnter();
 		}
 
+		// onMouseDown on press — handler receives the event (drags need coords)
+		if (event.type === 'mousedown' && event.button === 'left') {
+			const downNode = findAncestorWithProp(node, 'onMouseDown');
+			if (downNode && downNode.props.onMouseDown) downNode.props.onMouseDown(event);
+		}
+
 		// onClick on mouseup
 		if (event.type === 'mouseup' && event.button === 'left') {
 			const clickNode = findAncestorWithProp(node, 'onClick');
