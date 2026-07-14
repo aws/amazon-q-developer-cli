@@ -578,6 +578,13 @@ const startInitialization = (resumePickerSessionId?: string) => {
     .getState()
     .setBootStage('agent_connect', 'connecting to agent', 'loading');
 
+  // Cloud footer: surface the bound repo as the persistent location
+  // indicator. Only rendered for an actual cloud session (footer gated on
+  // cloudSessionStatus), so this is dark-safe; null for a New empty sandbox.
+  appStore
+    .getState()
+    .setCloudRepo(cliArgs.cloud ? (cliArgs.repo?.[0] ?? null) : null);
+
   initPromise = kiro
     .initialize(agentPath, acpArgs, {
       // CLI flag > cli.json setting > undefined (let agent pick default)
@@ -830,6 +837,10 @@ const startApp = async () => {
   let resumePickerSessionId: string | undefined;
   if (cliArgs.resumePicker) {
     wireUpHandlers();
+    // Cloud footer: same bound-repo indicator on the resume-picker path.
+    appStore
+      .getState()
+      .setCloudRepo(cliArgs.cloud ? (cliArgs.repo?.[0] ?? null) : null);
     await kiro.initialize(agentPath, acpArgs, {
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),

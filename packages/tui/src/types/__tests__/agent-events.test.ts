@@ -3,7 +3,9 @@ import {
   resolveToolId,
   kindToToolId,
   isParentSubagentTool,
+  deriveToolDiff,
 } from '../agent-events';
+import type { ToolCallEvent } from '../agent-events';
 
 describe('resolveToolId', () => {
   it('resolves write tools', () => {
@@ -108,5 +110,63 @@ describe('isParentSubagentTool', () => {
     expect(isParentSubagentTool('fs_read')).toBe(false);
     expect(isParentSubagentTool(undefined)).toBe(false);
     expect(isParentSubagentTool(null)).toBe(false);
+  });
+});
+
+describe('deriveToolDiff (transport-agnostic diff rendering for cloud sessions)', () => {
+  // A cloud session's edited file lives on the sandbox, not the
+  // local disk. Diff previews must be built purely from the ACP payload / tool
+  // input and must NEVER read a local file — otherwise a cloud diff would show
+  // wrong/empty content (or throw) for a path that doesn't exist locally.
+
+  it('derives a diff from the ACP toolContent payload even for a sandbox-only path (no local file read)', () => {
+    const event = {
+      type: 'tool_call',
+      kind: 'write',
+      // A path that does not exist on the local machine — proves the diff comes
+      // from the wire payload, not a filesystem read.
+      toolContent: [
+        {
+          type: 'diff',
+          path: '/nonexistent/sandbox/only/sandbox-file.ts',
+          newText: 'export const x = 2;\n',
+          oldText: 'export const x = 1;\n',
+        },
+      ],
+    } as unknown as ToolCallEvent;
+
+    expect(deriveToolDiff(event)).toEqual({
+      path: '/nonexistent/sandbox/only/sandbox-file.ts',
+      newText: 'export const x = 2;\n',
+      oldText: 'export const x = 1;\n',
+    });
+  });
+
+  it('derives a diff from the edit tool input (args) when no explicit toolContent is present', () => {
+    const event = {
+      type: 'tool_call',
+      kind: 'edit',
+      args: {
+        path: '/nonexistent/sandbox/only/app.ts',
+        oldStr: 'a',
+        newStr: 'b',
+      },
+    } as unknown as ToolCallEvent;
+
+    expect(deriveToolDiff(event)).toEqual({
+      path: '/nonexistent/sandbox/only/app.ts',
+      newText: 'b',
+      oldText: 'a',
+    });
+  });
+
+  it('returns undefined when no diff can be derived (no payload, non-edit kind)', () => {
+    const event = {
+      type: 'tool_call',
+      kind: 'shell',
+      args: { command: 'ls' },
+    } as unknown as ToolCallEvent;
+
+    expect(deriveToolDiff(event)).toBeUndefined();
   });
 });

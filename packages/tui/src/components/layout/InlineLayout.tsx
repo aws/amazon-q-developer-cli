@@ -61,6 +61,7 @@ import {
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getPlaceholder } from './getPlaceholder.js';
 import { getGitBranch } from '../../utils/git';
+import { formatCloudFooter } from '../../utils/cloud-status';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
@@ -193,6 +194,8 @@ export const InlineLayout: React.FC = () => {
     goalStatus,
   } = useContextState();
   const activeCommand = useAppStore((state) => state.activeCommand);
+  const cloudSessionStatus = useAppStore((state) => state.cloudSessionStatus);
+  const cloudRepo = useAppStore((state) => state.cloudRepo);
   const promptHint = useAppStore((state) => state.promptHint);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
@@ -357,6 +360,12 @@ export const InlineLayout: React.FC = () => {
       contextUsagePercent != null && (
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
       ),
+      cloudSessionStatus && (
+        <Chip
+          value={formatCloudFooter(cloudRepo, glyphs)}
+          color={ChipColor.SECONDARY}
+        />
+      ),
       codeIntelligenceActive && <Text>{getColor('primary')('λ')}</Text>,
       goalStatus &&
         (() => {
@@ -431,6 +440,8 @@ export const InlineLayout: React.FC = () => {
     currentModel,
     currentEffort,
     goalStatus,
+    cloudSessionStatus,
+    cloudRepo,
     getColor,
     glyphs,
   ]);

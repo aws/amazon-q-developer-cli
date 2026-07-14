@@ -13,6 +13,7 @@ import type {
   KasConfigOrigin,
 } from '../utils/kas-config-options.js';
 import type { KasCommand } from '../kas-commands.js';
+import type { SessionsChangedNotification } from './session-client.js';
 
 export enum AgentEventType {
   Content = 'content',
@@ -55,6 +56,7 @@ export enum AgentEventType {
   GoalStatus = 'goal_status',
   KasMessageIdAssigned = 'kas_message_id_assigned',
   ModelRefusal = 'model_refusal',
+  SessionRosterDelta = 'session_roster_delta',
 }
 
 export enum ContentType {
@@ -590,6 +592,16 @@ export interface CompactionStatusEvent {
   summary?: string;
 }
 
+/**
+ * A raw `_kiro/sessions/changed` roster delta, forwarded unmerged. The app
+ * store owns the roster state and derives the active session's cloud status
+ * from it. Local sessions never produce one (the channel is cloud-only).
+ */
+export interface SessionRosterDeltaEvent {
+  type: AgentEventType.SessionRosterDelta;
+  delta: SessionsChangedNotification;
+}
+
 export interface McpServerInitFailureEvent {
   type: AgentEventType.McpServerInitFailure;
   serverName: string;
@@ -750,4 +762,5 @@ export type AgentStreamEvent =
   | ToolsUpdateEvent
   | McpServersUpdateEvent
   | GoalStatusEvent
-  | ModelRefusalEvent;
+  | ModelRefusalEvent
+  | SessionRosterDeltaEvent;

@@ -2184,3 +2184,118 @@ describe('Stream event handler — ToolsUpdate', () => {
     ]);
   });
 });
+
+describe('Stream event handler — SessionRosterDelta', () => {
+  const attach = (store: ReturnType<typeof makeStore>) =>
+    store.setState({ sessionId: 's1' } as never);
+
+  it('derives cloudSessionStatus for the attached session from a roster delta', async () => {
+    const store = makeStore();
+    attach(store);
+    expect(store.getState().cloudSessionStatus).toBeNull();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SessionRosterDelta,
+      delta: {
+        upserted: [{ sessionId: 's1', status: 'provisioning' }],
+        deleted: [],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudSessionStatus).toBe('provisioning');
+  });
+
+  it('reflects a later status change and captures a provisioning failure', async () => {
+    const store = makeStore();
+    attach(store);
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SessionRosterDelta,
+      delta: {
+        upserted: [{ sessionId: 's1', status: 'provisioning' }],
+        deleted: [],
+      },
+    });
+    handler({
+      type: AgentEventType.SessionRosterDelta,
+      delta: {
+        upserted: [
+          {
+            sessionId: 's1',
+            status: 'failed',
+            provisioningFailure: { code: 'backend' },
+          },
+        ],
+        deleted: [],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudSessionStatus).toBe('failed');
+    expect(store.getState().cloudProvisioningFailure).toEqual({
+      code: 'backend',
+    });
+  });
+
+  it('resets the status to null when the attached session is retracted', async () => {
+    const store = makeStore();
+    attach(store);
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SessionRosterDelta,
+      delta: {
+        upserted: [{ sessionId: 's1', status: 'in_progress' }],
+        deleted: [],
+      },
+    });
+    handler({
+      type: AgentEventType.SessionRosterDelta,
+      delta: { upserted: [], deleted: ['s1'] },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudSessionStatus).toBeNull();
+  });
+
+  it('ignores status changes for sessions the client is not attached to', async () => {
+    const store = makeStore();
+    attach(store);
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SessionRosterDelta,
+      delta: {
+        upserted: [{ sessionId: 'other', status: 'in_progress' }],
+        deleted: [],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudSessionStatus).toBeNull();
+    // The roster still tracks the other session for observers.
+    expect(store.getState().sessionRoster.get('other')?.status).toBe(
+      'in_progress'
+    );
+  });
+
+  it('is also handled on the compaction-event dispatch path', async () => {
+    const store = makeStore();
+    attach(store);
+    store.getState().handleCompactionEvent({
+      type: AgentEventType.SessionRosterDelta,
+      delta: {
+        upserted: [{ sessionId: 's1', status: 'waiting_on_user' }],
+        deleted: [],
+      },
+    } as never);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudSessionStatus).toBe('waiting_on_user');
+  });
+});
+
+describe('cloudRepo slice (footer location)', () => {
+  it('defaults to null and is updated by setCloudRepo', () => {
+    const store = makeStore();
+    expect(store.getState().cloudRepo).toBeNull();
+    store.getState().setCloudRepo('acme/banana-service');
+    expect(store.getState().cloudRepo).toBe('acme/banana-service');
+    store.getState().setCloudRepo(null);
+    expect(store.getState().cloudRepo).toBeNull();
+  });
+});

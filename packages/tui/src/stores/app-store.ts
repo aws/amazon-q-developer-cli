@@ -7,6 +7,11 @@ import type { TerminalColor } from '../types/themeTypes';
 import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import { getKasCommands, type KasCommand } from '../kas-commands';
+import {
+  mergeRosterDelta,
+  deriveActiveSessionStatus,
+  type RosterEntry,
+} from '../utils/session-roster';
 import { features } from '../features';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import { formatCloneReposInstruction } from '../utils/repo-attach';
@@ -58,6 +63,11 @@ import type {
 import type { StatusType } from '../types/componentTypes';
 import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
 import type { AgentSession, InboxMessage } from '../types/multi-session.js';
+import type {
+  SessionActivityStatus,
+  SessionsChangedNotification,
+  ProvisioningFailureCode,
+} from '../types/session-client';
 import type { TaskItem, RawTask } from '../types/tasks';
 
 /** A selectable turn in the `/rewind` Explorer. Shape is defined by the
@@ -1060,6 +1070,14 @@ interface BaseAppActions {
 
   // Context usage actions
   setContextUsage: (percent: number) => void;
+  /**
+   * Merge a `_kiro/sessions/changed` delta into the roster and re-derive the
+   * attached session's cloud status (null when the roster no longer tracks it,
+   * so a retracted session clears the footer instead of going stale).
+   */
+  applySessionRosterDelta: (delta: SessionsChangedNotification) => void;
+  /** Set the bound repo for the cloud footer; null when not a cloud session / New empty sandbox. */
+  setCloudRepo: (repo: string | null) => void;
   setKasMessageId: (kasMessageId: string) => void;
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
@@ -1540,6 +1558,18 @@ export interface AppState {
 
   // Context usage state
   contextUsagePercent: number | null;
+  /** Live cloud session activity status for the status-line badge. */
+  cloudSessionStatus: SessionActivityStatus | null;
+  /**
+   * Provisioning-failure detail for the attached cloud session, when its
+   * status is `failed`. Consumed by the provisioning-outcome telemetry
+   * (provision_failed emit) landing in the follow-up change.
+   */
+  cloudProvisioningFailure: { code: ProvisioningFailureCode } | null;
+  /** Live roster of sessions from `_kiro/sessions/changed`; empty until KAS pushes deltas. */
+  sessionRoster: ReadonlyMap<string, RosterEntry>;
+  /** Repo bound to the cloud session, for the footer location indicator. */
+  cloudRepo: string | null;
   lastTurnTokens: LastTurnTokens | null;
   turnSummaries: Map<string, string>; // turnId (user message id) → formatted summary text
 
@@ -2471,6 +2501,10 @@ export const createAppStore = (props: AppStoreProps) => {
     hasExpandableToolOutputs: false,
 
     contextUsagePercent: null,
+    cloudSessionStatus: null,
+    cloudProvisioningFailure: null,
+    sessionRoster: new Map<string, RosterEntry>(),
+    cloudRepo: null,
     lastTurnTokens: null,
     turnSummaries: new Map(),
     showContextBreakdown: false,
@@ -3532,6 +3566,9 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
             break;
+          case AgentEventType.SessionRosterDelta:
+            get().applySessionRosterDelta(event.delta);
+            break;
           case AgentEventType.KasMessageIdAssigned:
             get().setKasMessageId(event.kasMessageId);
             break;
@@ -4393,6 +4430,10 @@ export const createAppStore = (props: AppStoreProps) => {
       }
       if (event.type === AgentEventType.EffortUpdate) {
         get().setCurrentEffort(event.effort);
+        return;
+      }
+      if (event.type === AgentEventType.SessionRosterDelta) {
+        get().applySessionRosterDelta(event.delta);
         return;
       }
       if (event.type !== AgentEventType.CompactionStatus) return;
@@ -5883,6 +5924,16 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     // Context usage actions
+    applySessionRosterDelta: (delta) => {
+      const roster = mergeRosterDelta(get().sessionRoster, delta);
+      const active = deriveActiveSessionStatus(roster, get().sessionId);
+      set({
+        sessionRoster: roster,
+        cloudSessionStatus: active?.status ?? null,
+        cloudProvisioningFailure: active?.provisioningFailure ?? null,
+      });
+    },
+    setCloudRepo: (cloudRepo) => set({ cloudRepo }),
     setContextUsage: (percent) => {
       set((state) => {
         const lastUserIdx = state.messages.findLastIndex(

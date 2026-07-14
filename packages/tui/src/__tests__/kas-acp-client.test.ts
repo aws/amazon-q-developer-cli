@@ -6917,3 +6917,43 @@ describe('KasAcpClient — content-policy refusal', () => {
     ).toBe(false);
   });
 });
+
+describe('KasAcpClient — _kiro/sessions/changed forwarding', () => {
+  let origKasPath: string | undefined;
+  beforeEach(() => {
+    origKasPath = process.env.KIRO_KAS_SERVER_PATH;
+    process.env.KIRO_KAS_SERVER_PATH = '/fake/acp-server.js';
+    freshMocks();
+  });
+  afterEach(() => {
+    if (origKasPath === undefined) delete process.env.KIRO_KAS_SERVER_PATH;
+    else process.env.KIRO_KAS_SERVER_PATH = origKasPath;
+  });
+
+  it('forwards each roster delta unmerged as a SessionRosterDelta event', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    client.onUpdate((e: any) => events.push(e));
+    await client.initialize();
+    const kc = (client as any).kiroClient;
+    const roster = kc._extNotifHandlers['_kiro/sessions/changed'];
+    expect(roster).toBeDefined();
+    const delta = {
+      upserted: [{ sessionId: 's1', status: 'provisioning' }],
+      deleted: ['s0'],
+    };
+    roster(delta);
+    const fwd = events.filter((e) => e.type === 'session_roster_delta');
+    expect(fwd).toHaveLength(1);
+    expect(fwd[0].delta).toEqual(delta);
+  });
+
+  it('registers the frontendToolCall and getAccessToken capabilities on the handshake', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    const caps = capturedKiroClientConfig?.capabilities ?? [];
+    const names = caps.map((c: any) => c?.name ?? c?.method ?? '').join(',');
+    expect(names).toContain('frontendToolCall');
+    expect(names).toContain('getAccessToken');
+  });
+});

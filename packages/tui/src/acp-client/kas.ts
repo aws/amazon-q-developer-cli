@@ -21,6 +21,7 @@ import { Settings } from '../constants/settings';
 import { maybeWrapStreamWithRecorder } from '../acp-recorder';
 import { createGetAccessTokenCapability } from '../auth/acp-auth-callback';
 import { createCopyUrlToClipboardCapability } from '../capabilities/copy-url-to-clipboard';
+import { createFrontendToolCallCapability } from '../capabilities/frontend-tool-call';
 import { createSecretStorageCapabilities } from '../capabilities/secret-storage';
 import { spawn } from 'node:child_process';
 import type {
@@ -30,6 +31,7 @@ import type {
   KiroAgentCapabilities,
   KasContextShowResponse,
   KasContextMutationResponse,
+  SessionsChangedNotification,
 } from '../types/session-client';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type {
@@ -376,7 +378,10 @@ export class KasAcpClient extends BaseAcpClient {
           version: this.version,
           _meta: KAS_CLIENT_INFO_META,
         },
-        capabilities: [createGetAccessTokenCapability()],
+        capabilities: [
+          createGetAccessTokenCapability(),
+          createFrontendToolCallCapability(),
+        ],
       });
       return;
     }
@@ -460,6 +465,7 @@ export class KasAcpClient extends BaseAcpClient {
       capabilities: [
         createGetAccessTokenCapability(),
         createCopyUrlToClipboardCapability(),
+        createFrontendToolCallCapability(),
         ...createSecretStorageCapabilities(),
       ],
       clientMeta: {
@@ -1238,6 +1244,15 @@ export class KasAcpClient extends BaseAcpClient {
       if (webTools) {
         this.handleWebToolsGovernanceDisabled(webTools);
       }
+    });
+
+    // Forward roster deltas as stream events; the app store owns the roster
+    // state and the derived cloud status. Dark-safe: today's KAS pushes none.
+    this.kiroClient.onExtNotification('_kiro/sessions/changed', (params) => {
+      this.broadcastStreamEvent({
+        type: AgentEventType.SessionRosterDelta,
+        delta: params as unknown as SessionsChangedNotification,
+      });
     });
 
     const commands = getKasCommands().map((cmd) => ({

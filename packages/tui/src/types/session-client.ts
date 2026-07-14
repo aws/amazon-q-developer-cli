@@ -1,3 +1,4 @@
+import type { SessionActivityStatus } from '@kiro/acp-type-covenant';
 import type { ContentBlock } from '@agentclientprotocol/sdk';
 import type {
   SpecInvokeRequest,
@@ -396,20 +397,15 @@ export type ExecutionTarget =
  */
 export type SessionDiscoverySource = 'local' | 'remote';
 
-/**
- * Liveness/snapshot status from a `session/list` entry (KAS `SessionActivityStatus`,
- * finalized guide nX6lAK2UudYy §6). Live updates ride the `_kiro/sessions/changed`
- * roster, not list polling. `provisioning` = a cloud sandbox is standing up and no
- * live agent is reachable yet; `completed`/`failed`/`provisioning` are set by the
- * runtime, not chosen by the model.
- */
-export type SessionActivityStatus =
-  | 'idle'
-  | 'in_progress'
-  | 'waiting_on_user'
-  | 'completed'
-  | 'failed'
-  | 'provisioning';
+// Roster + activity-status contract: defined by the covenant; re-exported here
+// so TUI consumers keep one import hub for session-client types.
+export type {
+  SessionActivityStatus,
+  ProvisioningFailureCode,
+  SessionRosterEntry,
+  SessionRosterUpsert,
+  SessionsChangedNotification,
+} from '@kiro/acp-type-covenant';
 
 /**
  * Kiro-namespaced capabilities advertised by KAS on the `initialize` handshake,
@@ -455,7 +451,7 @@ export interface SessionInfoEntry {
   messageCount?: number;
   /**
    * Where the session runs. Absent == local (today's behavior). Populated for
-   * remote sessions once KAS reports it on list entries (ACP doc §1).
+   * cloud sessions once KAS reports it on list entries.
    */
   executionTarget?: ExecutionTarget;
   /** Which store surfaced this record (local vs remote). Absent == local. */

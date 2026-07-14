@@ -596,6 +596,22 @@ describe('Kiro — handler registration and forwarding', () => {
     expect(handler).toHaveBeenCalled();
   });
 
+  it('onCompactionStatus receives SessionRosterDelta events outside a prompt', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onCompactionStatus(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.SessionRosterDelta,
+        delta: {
+          upserted: [{ sessionId: 'sess-1', status: 'idle' }],
+        },
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
   it('onInitNotification receives MCP failure events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});

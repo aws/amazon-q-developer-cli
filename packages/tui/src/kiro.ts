@@ -544,11 +544,16 @@ export class Kiro {
           );
           this.steeringHandler(event.steering);
         }
-        // Forward compaction, context usage, and compaction summary content events
+        // Forward compaction, context usage, and compaction summary content
+        // events. Session roster deltas are forwarded here too (not only via
+        // the per-prompt stream handler): a cloud sandbox settles to ready
+        // during connect, before any prompt is sent, so a per-prompt-only
+        // subscription would drop the delta that first renders the footer.
         if (
           (event.type === AgentEventType.CompactionStatus ||
             event.type === AgentEventType.ContextUsage ||
             event.type === AgentEventType.EffortUpdate ||
+            event.type === AgentEventType.SessionRosterDelta ||
             event.type === AgentEventType.Content) &&
           this.compactionHandler
         ) {
