@@ -163,6 +163,9 @@ pub fn get_available_commands(os: &Os) -> Vec<&'static str> {
     if crate::constants::VOICE_ENABLED_IN_CLASSIC_CHAT {
         commands.push("/voice");
     }
+    if crate::cli::chat::lite_enabled() {
+        commands.push("/lite");
+    }
     commands.extend(ExperimentManager::get_commands(os));
     commands.sort();
     commands

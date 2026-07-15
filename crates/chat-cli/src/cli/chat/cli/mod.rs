@@ -9,6 +9,7 @@ pub mod experiment;
 pub mod help;
 pub mod hooks;
 pub mod knowledge;
+pub mod lite;
 pub mod logdump;
 pub mod mcp;
 pub mod model;
@@ -35,6 +36,7 @@ use experiment::ExperimentArgs;
 use help::HelpArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
+use lite::LiteArgs;
 use logdump::LogdumpArgs;
 use mcp::McpArgs;
 use model::ModelArgs;
@@ -159,6 +161,8 @@ pub enum SlashCommand {
     Todos(TodoSubcommand),
     /// Paste an image from clipboard
     Paste(PasteArgs),
+    /// Switch to the Lite UI
+    Lite(LiteArgs),
     /// Get help about Kiro CLI features and commands
     Help(HelpArgs),
     #[cfg(feature = "voice")]
@@ -295,6 +299,7 @@ impl SlashCommand {
             Self::Checkpoint(subcommand) => subcommand.execute(os, session).await,
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
             Self::Paste(args) => args.execute(os, session).await,
+            Self::Lite(args) => args.execute(session).await,
             Self::Help(args) => args.execute(os, session).await,
             #[cfg(feature = "voice")]
             Self::Voice(args) => {
@@ -340,6 +345,7 @@ impl SlashCommand {
             Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
             Self::Paste(_) => "paste",
+            Self::Lite(_) => "lite",
             Self::Help { .. } => "help",
             #[cfg(feature = "voice")]
             Self::Voice(_) => "voice",

@@ -1002,7 +1002,7 @@ impl ChatArgs {
 
         let input_source = InputSource::new(os, prompt_request_sender, prompt_response_receiver, &agents)?;
 
-        ChatSession::new(
+        let mut session = ChatSession::new(
             os,
             &conversation_id,
             agents,
@@ -1020,10 +1020,23 @@ impl ChatArgs {
             self.wrap,
             registry_data,
         )
-        .await?
-        .spawn(os)
-        .await
-        .map(|_| ExitCode::SUCCESS)
+        .await?;
+        session.spawn(os).await?;
+        // Persist before import so Lite resumes the current classic conversation.
+        let relaunch = session
+            .relaunch_in_lite
+            .then(|| session.conversation.conversation_id().to_string());
+        if relaunch.is_some()
+            && let Ok(cwd) = std::env::current_dir()
+        {
+            os.database.set_conversation_by_path(&cwd, &session.conversation).ok();
+        }
+        // Drop before exec so terminal reset and history save run.
+        drop(session);
+        if let Some(resume_id) = relaunch {
+            relaunch_in_lite(&resume_id)?;
+        }
+        Ok(ExitCode::SUCCESS)
     }
 }
 
@@ -1242,6 +1255,7 @@ pub struct ChatSession {
     /// Pending prompts to be sent
     pending_prompts: VecDeque<PromptMessage>,
     interactive: bool,
+    relaunch_in_lite: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
@@ -1508,6 +1522,7 @@ impl ChatSession {
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
             interactive,
+            relaunch_in_lite: false,
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
@@ -2583,6 +2598,32 @@ impl ChatSession {
             {
                 // Only show rotating tips if we're not showing welcome message or changelog
                 if !showed_welcome_announcement && !showed_changelog {
+                    if lite_enabled() {
+                        // A fixed-width box garbles below GREETING_BREAK_POINT columns.
+                        if is_small_screen {
+                            execute!(
+                                self.stderr,
+                                style::Print(format!(
+                                    "✨ Try Lite Mode: A streamlined UI with all the latest CLI features. Run {} to switch this session.\n",
+                                    StyledText::brand("/lite"),
+                                )),
+                            )?;
+                        } else {
+                            let content = format!(
+                                "A streamlined UI with all the latest CLI features.\nRun {} to switch this session.",
+                                StyledText::brand("/lite"),
+                            );
+                            draw_box(
+                                &mut self.stderr,
+                                "Try Lite Mode",
+                                &content,
+                                GREETING_BREAK_POINT,
+                                crate::theme::theme().ui.primary_brand,
+                            )?;
+                            execute!(self.stderr, style::Print("\n"))?;
+                        }
+                    }
+
                     let rotating_tips = tips::get_rotating_tips();
                     let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
                     if is_small_screen {
@@ -5979,6 +6020,40 @@ async fn save_agent_config(
 /// resolved earlier in [`ChatArgs::resolve_agent_engine`] and is unaffected.
 fn default_tui_engine(kas_default: bool) -> AgentEngine {
     if kas_default { AgentEngine::Kas } else { AgentEngine::V2 }
+}
+
+/// Whether the Lite UI is reachable for this user, gating `/lite` and its
+/// startup nudge. Honors the launcher's `KIRO_LITE_ROLLOUT_ENABLED` when set,
+/// falling back to the `Feature::Lite` rollout that env var is derived from.
+pub fn lite_enabled() -> bool {
+    match std::env::var("KIRO_LITE_ROLLOUT_ENABLED") {
+        Ok(val) => val == "1",
+        Err(_) => crate::rollout::rollout().is_enabled(crate::rollout::Feature::Lite),
+    }
+}
+
+/// Re-exec this binary into Lite. `KIRO_UI_MODE=lite` has precedence over
+/// persisted UI settings. Use `--agent-engine` instead of `--tui` so a
+/// persisted `chat.agentEngine=v1` can't reject the flag as conflicting, and
+/// `--resume-id` so the TUI imports the classic conversation.
+fn relaunch_in_lite(resume_id: &str) -> Result<()> {
+    let engine = default_tui_engine(crate::rollout::rollout().is_enabled(crate::rollout::Feature::Kas));
+    let exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.args(["chat", "--agent-engine", engine.user_label(), "--resume-id", resume_id])
+        .env("KIRO_UI_MODE", "lite");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // exec replaces the process on success and never returns.
+        Err(cmd.exec().into())
+    }
+    #[cfg(not(unix))]
+    {
+        let status = cmd.status()?;
+        std::process::exit(status.code().unwrap_or(1));
+    }
 }
 
 #[cfg(test)]

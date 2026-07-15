@@ -30,27 +30,36 @@ pub fn draw_box(
     let mut wrapped_lines = Vec::new();
     let mut line = String::new();
 
-    for word in content.split_whitespace() {
-        if line.len() + word.len() < inner_width {
-            if !line.is_empty() {
-                line.push(' ');
-            }
-            line.push_str(word);
-        } else {
-            // Here we need to account for words that are too long as well
-            if word.len() >= inner_width {
-                let mut start = 0_usize;
-                for (i, _) in word.char_indices() {
-                    if i - start >= inner_width {
-                        wrapped_lines.push(word[start..i].to_string());
-                        start = i;
-                    }
+    for (seg_idx, segment) in content.split('\n').enumerate() {
+        // An explicit newline is a hard break: flush the pending line.
+        if seg_idx > 0 {
+            wrapped_lines.push(std::mem::take(&mut line));
+        }
+        for word in segment.split_whitespace() {
+            // Measure visible width so words carrying ANSI color codes wrap correctly.
+            let line_vis = strip_str(&line).len();
+            let word_vis = strip_str(word).len();
+            if line_vis + word_vis < inner_width {
+                if !line.is_empty() {
+                    line.push(' ');
                 }
-                wrapped_lines.push(word[start..].to_string());
-                line = String::new();
+                line.push_str(word);
             } else {
-                wrapped_lines.push(line);
-                line = word.to_string();
+                // Here we need to account for words that are too long as well
+                if word_vis >= inner_width {
+                    let mut start = 0_usize;
+                    for (i, _) in word.char_indices() {
+                        if i - start >= inner_width {
+                            wrapped_lines.push(word[start..i].to_string());
+                            start = i;
+                        }
+                    }
+                    wrapped_lines.push(word[start..].to_string());
+                    line = String::new();
+                } else {
+                    wrapped_lines.push(line);
+                    line = word.to_string();
+                }
             }
         }
     }
@@ -198,5 +207,25 @@ mod tests {
         for part in long_tip_parts.iter().take(3) {
             assert!(output_str.contains(part), "Output should contain parts of the long tip");
         }
+    }
+
+    #[tokio::test]
+    async fn explicit_newline_forces_line_break() {
+        let mut output = vec![];
+        draw_box(
+            &mut output,
+            "T",
+            "first line\nsecond line",
+            GREETING_BREAK_POINT,
+            theme().ui.secondary_text,
+        )
+        .expect("draw");
+        let s = output.to_str_lossy();
+        // Each sentence stays on its own content row rather than being merged.
+        assert!(s.contains("first line") && s.contains("second line"));
+        assert!(
+            !s.contains("first line second line"),
+            "explicit newline must not be collapsed"
+        );
     }
 }
