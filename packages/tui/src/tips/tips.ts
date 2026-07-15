@@ -55,6 +55,102 @@ const SHARED: readonly TipDef[] = [
     id: 'feedback',
     text: 'Share your thoughts anytime — type /feedback to send feedback to the Kiro team.',
   },
+  {
+    id: 'compact',
+    text: 'Running low on context? Type /compact to summarize the conversation and free up space.',
+  },
+  {
+    id: 'model-switch',
+    text: 'Type /model to switch between AI models mid-conversation without starting over.',
+  },
+  {
+    id: 'effort',
+    text: 'Use /effort to adjust reasoning depth. Lower effort for quick answers, higher for complex tasks.',
+  },
+  {
+    id: 'context-add',
+    text: 'Use /context add <path> to attach files or folders so Kiro can reference them.',
+  },
+  {
+    id: 'agent-switch',
+    text: 'Type /agent to list available agents or switch to a specialized one.',
+  },
+  {
+    id: 'chat-save',
+    text: 'Save a conversation with /chat save <path> and reload it later with /chat load.',
+  },
+  {
+    id: 'chat-new',
+    text: 'Start fresh without quitting: /chat new begins a new session in the same window.',
+  },
+  {
+    id: 'knowledge',
+    text: 'Use /knowledge to manage knowledge bases that give Kiro persistent project context.',
+  },
+  {
+    id: 'mcp-status',
+    text: 'Type /mcp to check which MCP servers are connected and their status.',
+  },
+  {
+    id: 'hooks',
+    text: 'Use /hooks to see your configured automation hooks.',
+  },
+  {
+    id: 'usage',
+    text: 'Curious about your usage? Type /usage to see plan limits and billing info.',
+  },
+  {
+    id: 'code-overview',
+    text: 'Type /code overview to get a high-level map of your codebase structure.',
+  },
+  {
+    id: 'tools-list',
+    text: 'Type /tools to see all available tools Kiro can use in the current session.',
+  },
+  {
+    id: 'changelog',
+    text: 'Type /changelog to see what shipped in the latest releases.',
+  },
+  {
+    id: 'settings',
+    text: 'Type /settings to customize keybindings, display, terminal behavior, and more.',
+  },
+  {
+    id: 'goal',
+    text: 'Use /goal <description> to set a persistent goal that guides Kiro across turns.',
+  },
+  {
+    id: 'at-file',
+    text: 'Type @ in your message to attach a file to context without copy-pasting.',
+  },
+  {
+    id: 'editor',
+    text: 'Use /editor to compose long prompts in your $EDITOR.',
+  },
+  {
+    id: 'copy',
+    text: 'Type /copy to copy the last response to your clipboard.',
+  },
+  {
+    id: 'transcript',
+    text: 'Use /transcript to open the full conversation in your $PAGER.',
+  },
+  {
+    id: 'rewind',
+    text: 'Made a wrong turn? Use /rewind to fork the conversation from any earlier point.',
+  },
+  {
+    id: 'paste-image',
+    text: 'Use /paste to attach an image from your clipboard to the conversation.',
+  },
+  {
+    id: 'spec',
+    text: 'Type /spec new <name> to create a structured feature spec with requirements and tasks.',
+  },
+  {
+    id: 'plan',
+    text: 'Use /plan for structured spec generation mode when you want Kiro to plan before coding.',
+  },
 ];
 
 // TUI only (Ctrl+O here expands output; in Lite it opens the inspect panel).
@@ -69,6 +165,10 @@ const TUI_ONLY: readonly TipDef[] = [
   {
     id: 'tui-expand-output',
     text: "Press Ctrl+O to expand a tool's full output, then again to collapse it.",
+  },
+  {
+    id: 'tui-steer',
+    text: 'Type while Kiro is working to steer it mid-turn. Switch to queue mode with Ctrl+S.',
   },
 ];
 
