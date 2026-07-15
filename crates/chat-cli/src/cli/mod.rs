@@ -379,6 +379,13 @@ impl RootSubcommand {
                     agent_engine,
                 } => {
                     if agent_engine == chat::AgentEngine::Kas {
+                        reject_unsupported_v3_acp_flags(
+                            agent.as_deref(),
+                            model.as_deref(),
+                            effort.as_deref(),
+                            trust_all_tools,
+                            trust_tools.as_deref(),
+                        );
                         return execute_kas_acp(os).await;
                     }
                     use std::sync::Arc;
@@ -568,6 +575,13 @@ impl RootSubcommand {
                 agent_engine,
             } => {
                 if agent_engine == chat::AgentEngine::Kas {
+                    reject_unsupported_v3_acp_flags(
+                        agent.as_deref(),
+                        model.as_deref(),
+                        effort.as_deref(),
+                        trust_all_tools,
+                        trust_tools.as_deref(),
+                    );
                     return execute_kas_acp(os).await;
                 }
                 use std::sync::Arc;
@@ -684,6 +698,58 @@ async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::Ag
         crate::launch::LaunchOptions::interactive(agent_engine, mode)
     };
     crate::launch::launch(options, os).await
+}
+
+/// Names of `acp` flags that are inert on the v3 engine, in declaration order.
+fn unsupported_v3_acp_flags(
+    agent: Option<&str>,
+    model: Option<&str>,
+    effort: Option<&str>,
+    trust_all_tools: bool,
+    trust_tools: Option<&[String]>,
+) -> Vec<&'static str> {
+    let mut flags = Vec::new();
+    if agent.is_some() {
+        flags.push("--agent");
+    }
+    if model.is_some() {
+        flags.push("--model");
+    }
+    if effort.is_some() {
+        flags.push("--effort");
+    }
+    if trust_all_tools {
+        flags.push("--trust-all-tools");
+    }
+    if trust_tools.is_some() {
+        flags.push("--trust-tools");
+    }
+    flags
+}
+
+/// Exit with a clap argument error if any `acp` flag unsupported on v3 was
+/// passed. No-op when none are set.
+fn reject_unsupported_v3_acp_flags(
+    agent: Option<&str>,
+    model: Option<&str>,
+    effort: Option<&str>,
+    trust_all_tools: bool,
+    trust_tools: Option<&[String]>,
+) {
+    let unsupported = unsupported_v3_acp_flags(agent, model, effort, trust_all_tools, trust_tools);
+    if unsupported.is_empty() {
+        return;
+    }
+    let msg = format!(
+        "the following arguments are not supported with --agent-engine=v3: {}",
+        unsupported.join(", ")
+    );
+    let mut command = Cli::command();
+    match command.find_subcommand_mut("acp") {
+        Some(acp) => acp.error(clap::error::ErrorKind::ArgumentConflict, msg),
+        None => command.error(clap::error::ErrorKind::ArgumentConflict, msg),
+    }
+    .exit();
 }
 
 /// Spawn the KAS TypeScript agent as an ACP server over stdio.
@@ -1126,6 +1192,36 @@ mod test {
     #[test]
     fn debug_assert() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn unsupported_v3_acp_flags_empty_when_none_set() {
+        assert!(unsupported_v3_acp_flags(None, None, None, false, None).is_empty());
+    }
+
+    #[test]
+    fn unsupported_v3_acp_flags_lists_all_set_in_declaration_order() {
+        let trust_tools = vec!["fs_read".to_string()];
+        let flags = unsupported_v3_acp_flags(
+            Some("kiro-cli"),
+            Some("gpt-5.5"),
+            Some("high"),
+            true,
+            Some(&trust_tools),
+        );
+        assert_eq!(flags, vec![
+            "--agent",
+            "--model",
+            "--effort",
+            "--trust-all-tools",
+            "--trust-tools"
+        ]);
+    }
+
+    #[test]
+    fn unsupported_v3_acp_flags_reports_only_set_subset() {
+        let flags = unsupported_v3_acp_flags(None, Some("gpt-5.5"), None, true, None);
+        assert_eq!(flags, vec!["--model", "--trust-all-tools"]);
     }
 
     /// The content-collection opt-in passed to KAS must default to opted IN

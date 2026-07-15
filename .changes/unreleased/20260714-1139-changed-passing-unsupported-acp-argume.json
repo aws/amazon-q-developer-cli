@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Passing unsupported `acp` arguments (`--agent`, `--model`, `--effort`, `--trust-all-tools`, `--trust-tools`) with `--agent-engine=v3` now errors instead of silently ignoring them"
+}
