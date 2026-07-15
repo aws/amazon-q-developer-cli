@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-07-15
+  commit: 0b443d2f3
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli update
   description: Check for and install Kiro CLI updates
-  keywords: [update, upgrade, version, auto-update, self-update]
+  keywords: [update, upgrade, version, auto-update, self-update, mdm, managed, enterprise, policy]
   related: [settings]
 ---
 
@@ -145,11 +145,48 @@ On Windows, the update command is fully functional. On macOS and Linux, updates 
 | Variable | Description |
 |----------|-------------|
 | `KIRO_NO_AUTO_UPDATE` | Set to any value to disable background auto-update |
-| `KIRO_DESKTOP_RELEASE_URL` | Override the update manifest URL |
+| `KIRO_DESKTOP_RELEASE_URL` | Override the update base URL (takes priority over `Q_DESKTOP_RELEASE_URL`) |
+| `Q_DESKTOP_RELEASE_URL` | Legacy alias for the update base URL override |
 
 ## Related
 
 - [Settings](settings.md) - Configure `app.disableAutoupdates`
+
+## Enterprise Management (MDM/GPO)
+
+Enterprise administrators can control the update URL via OS-native managed configuration:
+
+| Platform | Mechanism | Location |
+|----------|-----------|----------|
+| macOS | Managed Preferences (MDM profile) | Domain `dev.kiro.cli`, key `update.baseUrl` |
+| Windows | Group Policy (Registry) | `HKLM\SOFTWARE\Policies\Kiro\CLI`, value `update.baseUrl` |
+| Linux | Not supported | No OS-native managed config surface |
+
+When a managed `update.baseUrl` is set and forced by policy, it takes precedence over environment variables. This allows IT departments to point all managed machines at an internal update mirror.
+
+### URL Resolution Precedence
+
+The update base URL is resolved in this order:
+
+1. **MDM/GPO policy** (`update.baseUrl` — forced by administrator)
+2. **Environment variable** (`KIRO_DESKTOP_RELEASE_URL` or `Q_DESKTOP_RELEASE_URL`)
+3. **Built-in default** (production CDN)
+
+### Example: macOS MDM Profile Key
+
+Configure the MDM managed-preferences payload for the `dev.kiro.cli` domain with this key:
+
+```xml
+<key>update.baseUrl</key>
+<string>https://internal-mirror.corp.example.com/kiro/releases/</string>
+```
+
+### Example: Windows GPO Registry Value
+
+```
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Kiro\CLI]
+"update.baseUrl"="https://internal-mirror.corp.example.com/kiro/releases/"
+```
 
 ## Technical Details
 
@@ -159,4 +196,4 @@ On Windows, the update command is fully functional. On macOS and Linux, updates 
 
 **Windows Install Process**: On Windows, a batch script waits for the CLI process to exit, then runs `msiexec` silently to install the MSI.
 
-**Manifest URL**: The update manifest URL can be overridden via `KIRO_DESKTOP_RELEASE_URL` environment variable for testing or enterprise deployments.
+**Manifest URL**: The update base URL can be overridden via environment variable or enterprise MDM policy for testing or managed deployments. The manifest filename (`manifest.json`) is appended automatically to the base URL.

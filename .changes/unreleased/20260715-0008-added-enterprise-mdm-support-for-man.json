@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Enterprise MDM support for managed update URLs via macOS managed preferences and Windows group policy"
+}
