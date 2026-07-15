@@ -92,7 +92,7 @@ describe('deriveActiveSessionStatus', () => {
       {
         sessionId: 'active',
         status: 'failed',
-        provisioningFailure: { code: 'timeout' },
+        provisioningFailure: { code: 'backend' },
       },
       { sessionId: 'other', status: 'in_progress' },
     ],
@@ -102,7 +102,7 @@ describe('deriveActiveSessionStatus', () => {
   it('returns the active session status with its provisioning failure', () => {
     expect(deriveActiveSessionStatus(roster, 'active')).toEqual({
       status: 'failed',
-      provisioningFailure: { code: 'timeout' },
+      provisioningFailure: { code: 'backend' },
     });
   });
 
