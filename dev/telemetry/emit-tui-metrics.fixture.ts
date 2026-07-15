@@ -80,7 +80,7 @@ async function main(): Promise<void> {
 
   const results = [
     step('kiro_cli_chat_session_started_total', () =>
-      recordTuiSessionStarted({ mode: 'interactive', versionMinorBucket: 'current' })
+      recordTuiSessionStarted({ mode: 'interactive', version: '2.4.0' })
     ),
     step('kiro_cli_user_turns + kiro_cli_user_turn_duration_seconds', () =>
       recordTuiUserTurn({
@@ -118,7 +118,7 @@ async function main(): Promise<void> {
       recordTuiTurnOutcome({ status: 'timeout', model, mode: 'interactive' })
     ),
     step('kiro_cli_tool_execution_duration_ms (standalone)', () =>
-      recordTuiToolExecutionDuration({ toolOrigin: 'mcp', isSuccess: true, durationMs: 88 })
+      recordTuiToolExecutionDuration({ toolOrigin: 'mcp', mcpServerName: 'local-server', isSuccess: true, durationMs: 88 })
     ),
     step('kiro_cli_context_usage_percentage', () =>
       recordTuiContextUsage({ model, isSubagent: false, percentage: 63.4 })
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   const v2Snapshot: ProcessHealthSnapshot = { ...sampleSnapshot(), agentKind: 'v2' };
   results.push(
     step('[v2] kiro_cli_chat_session_started_total', () =>
-      recordTuiSessionStarted({ mode: 'interactive', versionMinorBucket: 'current', engine: 'v2' })
+      recordTuiSessionStarted({ mode: 'interactive', version: '2.4.0', engine: 'v2' })
     ),
     step('[v2] kiro_cli_user_turns + kiro_cli_user_turn_duration_seconds', () =>
       recordTuiUserTurn({
@@ -170,6 +170,7 @@ async function main(): Promise<void> {
     step('[v2] kiro_cli_tool_execution_duration_ms (standalone)', () =>
       recordTuiToolExecutionDuration({
         toolOrigin: 'mcp',
+        mcpServerName: 'local-server',
         isSuccess: true,
         durationMs: 88,
         engine: 'v2',

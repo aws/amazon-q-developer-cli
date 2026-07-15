@@ -1634,7 +1634,7 @@ mod tests {
         let record = metric_record(&records, "kiro_cli_session_started_total");
 
         assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
-        assert_eq!(metric_attr(record, "version_minor_bucket"), Some("current"));
+        assert_eq!(metric_attr(record, "version_full"), Some(env!("CARGO_PKG_VERSION")));
         assert_eq!(metric_attr(record, "os_type"), Some("macos"));
         assert_eq!(metric_attr(record, "install_source"), Some("internal"));
         assert_eq!(metric_attr(record, "client_application"), Some("chat_cli_v2"));

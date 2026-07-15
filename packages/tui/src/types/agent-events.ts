@@ -404,6 +404,7 @@ export interface KiroMeta {
     explanation?: string;
     recommendedModel?: string;
   };
+  mcpServerName?: string;
 }
 
 export interface AgentContentEvent {

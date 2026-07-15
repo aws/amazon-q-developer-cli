@@ -892,6 +892,7 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
         )],
         EventType::ToolUseSuggested {
             tool_name,
+            mcp_server_name,
             is_accepted,
             is_success,
             is_valid,
@@ -900,14 +901,21 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
             aws_service_name,
             ..
         } => {
-            let tool_use = metric::ToolUseMetrics::from_tool_context(
+            let engine = if event.app_type.as_deref() == Some("KAS") {
+                metric::Engine::V3
+            } else {
+                metric::Engine::V2
+            };
+            let tool_use = metric::ToolUseMetrics::new(metric::ToolInvocation::from_tool_context(
                 tool_name.as_deref(),
                 aws_service_name.as_deref(),
                 *is_custom_tool,
+                mcp_server_name.as_deref(),
                 *is_accepted,
                 *is_valid,
                 *is_success,
-            )
+            ))
+            .engine(Some(engine))
             .legacy_event(legacy_event_type)
             .execution_duration(*execution_duration);
             metric::tool_use_records(tool_use)
@@ -961,7 +969,7 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
             let mode = if event.app_type.as_deref() == Some("ACP") {
                 metric::Mode::AcpExternal
             } else {
-                *mode
+                mode.clone()
             };
             vec![metric::chat_session_started_record(metric::ChatSessionStarted::new(
                 mode,
@@ -1566,17 +1574,25 @@ mod tests {
 
         let records = event_to_otel_metric_records(&event);
 
-        expect_metric(
-            &records,
-            metric::tool_call_total(metric::ToolOrigin::Builtin, Some("fs_read"), metric::Outcome::Success),
+        let invocation = metric::ToolInvocation::new(
+            Some("fs_read"),
+            metric::ToolOrigin::Builtin,
+            true,
+            Some(true),
+            Some(true),
         );
         expect_metric(
             &records,
-            metric::tool_invocations(metric::ToolOrigin::Builtin, metric::Outcome::Success),
+            metric::tool_call_total_for_invocation(invocation, Some(metric::Engine::V2)),
         );
         expect_metric(
             &records,
-            metric::tool_execution_duration_ms(25.0, metric::ToolOrigin::Builtin, true),
+            metric::tool_invocations_for_invocation(invocation, Some(metric::Engine::V2)),
+        );
+        expect_metric(
+            &records,
+            metric::tool_execution_duration_ms_for_invocation(25.0, invocation, Some(metric::Engine::V2))
+                .expect("duration metric"),
         );
 
         let log_record = event_to_otel_log_record(&event).expect("tool fact log");
@@ -1685,9 +1701,10 @@ mod tests {
         });
 
         let records = event_to_otel_metric_records(&event);
+        let invocation = metric::ToolInvocation::mcp(Some("custom_tool"), Some("local-server"), false, None, None);
         expect_metric(
             &records,
-            metric::tool_invocations(metric::ToolOrigin::Mcp, metric::Outcome::Denied),
+            metric::tool_invocations_for_invocation(invocation, Some(metric::Engine::V2)),
         );
         let log_record = event_to_otel_log_record(&event).expect("tool fact log");
         expect_log(
@@ -1735,17 +1752,25 @@ mod tests {
 
         let records = event_to_otel_metric_records(&event);
 
-        expect_metric(
-            &records,
-            metric::tool_call_total(metric::ToolOrigin::AwsApi, Some("use_aws"), metric::Outcome::Success),
+        let invocation = metric::ToolInvocation::new(
+            Some("use_aws"),
+            metric::ToolOrigin::AwsApi,
+            true,
+            Some(true),
+            Some(true),
         );
         expect_metric(
             &records,
-            metric::tool_invocations(metric::ToolOrigin::AwsApi, metric::Outcome::Success),
+            metric::tool_call_total_for_invocation(invocation, Some(metric::Engine::V2)),
         );
         expect_metric(
             &records,
-            metric::tool_execution_duration_ms(10.0, metric::ToolOrigin::AwsApi, true),
+            metric::tool_invocations_for_invocation(invocation, Some(metric::Engine::V2)),
+        );
+        expect_metric(
+            &records,
+            metric::tool_execution_duration_ms_for_invocation(10.0, invocation, Some(metric::Engine::V2))
+                .expect("duration metric"),
         );
     }
 
@@ -2053,24 +2078,15 @@ mod tests {
         let records = event_to_otel_metric_records(&event);
         let rss = expect_metric(
             &records,
-            metric::process_memory_rss(
-                128.0 * 1024.0 * 1024.0,
-                metric::VersionMinorBucket::Current,
-                metric::AgentKind::Kas,
-            ),
+            metric::process_memory_rss(128.0 * 1024.0 * 1024.0, "2.4.0", metric::AgentKind::Kas),
         );
-        expect_metric_attrs(rss, &[("version_minor_bucket", "current"), ("agent_kind", "kas")]);
+        expect_metric_attrs(rss, &[("version_full", "2.4.0"), ("agent_kind", "kas")]);
         let cpu = expect_metric(
             &records,
-            metric::process_cpu_utilization(
-                0.2,
-                metric::VersionMinorBucket::Current,
-                metric::AgentKind::Kas,
-                metric::ProcessState::Other,
-            ),
+            metric::process_cpu_utilization(0.2, "2.4.0", metric::AgentKind::Kas, metric::ProcessState::Other),
         );
         expect_metric_attrs(cpu, &[
-            ("version_minor_bucket", "current"),
+            ("version_full", "2.4.0"),
             ("agent_kind", "kas"),
             ("state", "_other_"),
         ]);

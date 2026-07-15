@@ -34,6 +34,7 @@ use agent::protocol::{
 };
 use agent::tools::{
     BuiltInTool,
+    ToolCallIdentity,
     ToolKind,
 };
 use agent::types::AgentId;
@@ -877,7 +878,11 @@ fn test_failed_tool_call_without_tracker_emits_denied_mcp_telemetry() {
         "test-session",
         &AgentEvent::Update(UpdateEvent::ToolCallFailed {
             tool_use_id: "tool-mcp".to_string(),
-            tool_name: "@local-server/custom_tool".to_string(),
+            tool_name: "sanitized_custom_tool".to_string(),
+            tool_identity: Some(ToolCallIdentity {
+                tool_name: "custom_tool".to_string(),
+                mcp_server_name: Some("local-server".to_string()),
+            }),
             raw_input: serde_json::json!({}),
             reason: ToolCallFailureReason::PermissionDenied,
             error: "denied".to_string(),
@@ -887,12 +892,14 @@ fn test_failed_tool_call_without_tracker_emits_denied_mcp_telemetry() {
     let event = rx.try_recv().unwrap();
     match &event.ty {
         EventType::ToolUseSuggested {
+            tool_name,
             mcp_server_name,
             is_accepted,
             is_valid,
             is_custom_tool,
             ..
         } => {
+            assert_eq!(tool_name.as_deref(), Some("custom_tool"));
             assert_eq!(mcp_server_name.as_deref(), Some("local-server"));
             assert!(!is_accepted);
             assert_eq!(*is_valid, Some(true));

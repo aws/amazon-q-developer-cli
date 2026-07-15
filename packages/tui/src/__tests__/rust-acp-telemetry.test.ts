@@ -6,22 +6,28 @@
  * we can capture the record-fn calls without standing up the OTLP transport.
  */
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
-import { AgentEventType } from '../types/agent-events';
+import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
+
+type ToolFinishArgs = {
+  outcome: 'success' | 'error' | 'cancelled' | 'denied';
+  model: string;
+};
+type RecordFnArgs = Record<string, unknown>;
 
 // --- Capture the observer record-fn calls ---
-const recordTuiSessionStarted = mock((_a: any) => {});
-const recordTuiModeActive = mock((_a: any) => {});
-const recordTuiUserTurn = mock((_a: any) => {});
-const recordTuiModelInvocation = mock((_a: any) => {});
-const recordTuiTurnOutcome = mock((_a: any) => {});
-const recordTuiTokensConsumed = mock((_a: any) => {});
-const recordTuiContextUsage = mock((_a: any) => {});
+const recordTuiSessionStarted = mock((_a: RecordFnArgs) => {});
+const recordTuiModeActive = mock((_a: RecordFnArgs) => {});
+const recordTuiUserTurn = mock((_a: RecordFnArgs) => {});
+const recordTuiModelInvocation = mock((_a: RecordFnArgs) => {});
+const recordTuiTurnOutcome = mock((_a: RecordFnArgs) => {});
+const recordTuiTokensConsumed = mock((_a: RecordFnArgs) => {});
+const recordTuiContextUsage = mock((_a: RecordFnArgs) => {});
 
 // TuiToolCallObserver is exercised for real (it just forwards to the record fns,
 // which we replace below), but we need to capture the engine it is built with.
 const observerEngines: Array<string | undefined> = [];
-const toolStartCalls: Array<{ id: string; info: any }> = [];
-const toolFinishCalls: Array<{ id: string; args: any }> = [];
+const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
+const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 
 mock.module('../utils/tui-telemetry-observer', () => ({
   DEFAULT_ENGINE: 'v3',
@@ -33,19 +39,19 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiTurnOutcome,
   recordTuiTokensConsumed,
   recordTuiContextUsage,
-  versionMinorBucketFromEnv: () => '_other_',
+  recordTuiCloudSession: mock(() => {}),
   // This suite only ever feeds 'default' (→ 'interactive'); the full
   // normalization is covered in tui-telemetry-observer.test.ts.
   modeFromId: (id?: string) => (!id || id === 'default' ? 'interactive' : id),
   resultFromStatus: (s?: string) => (s === 'completed' ? 'success' : '_other_'),
   TuiToolCallObserver: class {
-    constructor(_deps: any, engine?: string) {
+    constructor(_deps: unknown, engine?: string) {
       observerEngines.push(engine);
     }
-    start(id: string, info: any) {
+    start(id: string, info: TuiToolCallStart) {
       toolStartCalls.push({ id, info });
     }
-    finish(id: string, args: any) {
+    finish(id: string, args: ToolFinishArgs) {
       toolFinishCalls.push({ id, args });
     }
     reset() {}
@@ -151,13 +157,14 @@ describe('RustAcpClient v2 telemetry wiring (§H.4/§H.6)', () => {
   });
 
   it('newSession emits chat_session_started + mode_active stamped engine=v2', async () => {
-    const c = new AcpClient('/agent', []);
+    const c = new AcpClient('/agent', [], '9.9.9-test');
     await c.newSession();
     expect(recordTuiSessionStarted).toHaveBeenCalledTimes(1);
     // The raw Rust mode id 'default' is normalized to the catalog `mode` enum
     // member 'interactive' (modeFromId) before it is stamped on the metric.
     expect(recordTuiSessionStarted.mock.calls[0]![0]).toMatchObject({
       mode: 'interactive',
+      version: '9.9.9-test',
       engine: 'v2',
     });
     expect(recordTuiModeActive).toHaveBeenCalledWith(
@@ -243,8 +250,62 @@ describe('RustAcpClient v2 telemetry wiring (§H.4/§H.6)', () => {
     } as any);
     expect(toolStartCalls).toHaveLength(1);
     expect(toolStartCalls[0]!.id).toBe('tc-1');
-    expect(toolStartCalls[0]!.info.origin).toBe('builtin');
+    expect(toolStartCalls[0]!.info.toolOrigin).toBe('builtin');
     expect(toolFinishCalls).toHaveLength(1);
     expect(toolFinishCalls[0]!.args.outcome).toBe('success');
+  });
+
+  it('main-session tool_call preserves host-stamped MCP server identity', async () => {
+    const c = new AcpClient('/agent', []);
+    await c.newSession();
+    clearAll();
+
+    await c.sessionUpdate({
+      sessionId: 'v2-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc-mcp',
+        title: 'query_db',
+        status: 'pending',
+        _meta: { kiro: { mcpServerName: 'local-server' } },
+      },
+    } as any);
+
+    expect(toolStartCalls).toHaveLength(1);
+    expect(toolStartCalls[0]!.info).toEqual({
+      name: 'query_db',
+      toolOrigin: 'mcp',
+      mcpServerName: 'local-server',
+    });
+  });
+
+  it('failed-before-exec synthesized MCP tool_call feeds observer.start before finish', async () => {
+    const c = new AcpClient('/agent', []);
+    await c.newSession();
+    clearAll();
+
+    await c.sessionUpdate({
+      sessionId: 'v2-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-mcp-failed',
+        title: 'query_db',
+        status: 'failed',
+        rawInput: { sql: 'select 1' },
+        _meta: {
+          kiro: { toolName: 'query_db', mcpServerName: 'local-server' },
+        },
+      },
+    } as any);
+
+    expect(toolStartCalls).toHaveLength(1);
+    expect(toolStartCalls[0]!.info).toEqual({
+      name: 'query_db',
+      toolOrigin: 'mcp',
+      mcpServerName: 'local-server',
+    });
+    expect(toolFinishCalls).toHaveLength(1);
+    expect(toolFinishCalls[0]!.id).toBe('tc-mcp-failed');
+    expect(toolFinishCalls[0]!.args.outcome).toBe('error');
   });
 });

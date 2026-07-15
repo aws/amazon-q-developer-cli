@@ -1,13 +1,11 @@
 attributes:
   - name: product
     allowed_values: [CodewhispererTerminal]
-  - name: version_minor_bucket
-    allowed_values: [current, current-1, current-2, older, _other_]
-  - name: from_version_minor_bucket
-    allowed_values: [current, current-1, current-2, older, _other_]
-  - name: to_version_minor_bucket
-    allowed_values: [current, current-1, current-2, older, _other_]
   - name: version_full
+    max_distinct: 200
+  - name: from_version
+    max_distinct: 200
+  - name: to_version
     max_distinct: 200
   - name: os_type
     allowed_values: [linux, macos, windows, _other_]
@@ -30,7 +28,7 @@ attributes:
   - name: upgrade_trigger
     allowed_values: [auto, prompted, manual, _other_]
   - name: mode
-    allowed_values: [interactive, oneshot, agent, plan, review, tangent, voice, acp_external, generate_agent, _other_]
+    max_distinct: 40
   - name: ui_mode
     allowed_values: [tui, lite, unset, _other_]
   - name: ui_mode_source
@@ -62,7 +60,7 @@ attributes:
   - name: tool_name
     metric_allowed: false
   - name: mcp_server_name
-    metric_allowed: false
+    max_distinct: 64
   - name: mcp_server_class
     allowed_values: [builtin_fs, builtin_code, builtin_knowledge, official_third_party, user_defined, internal_amazon, _other_]
   - name: outcome
@@ -100,7 +98,7 @@ attributes:
   - name: turn_outcome_reason
     allowed_values: [interrupted, model_error, tool_error, timeout, context_limit, _other_]
   - name: subagent_name_class
-    allowed_values: [code_review, general, custom, _other_]
+    max_distinct: 64
   - name: crash_kind
     allowed_values: [panic, segfault, abort, unhandled_signal, _other_]
   - name: failure_stage

@@ -27,13 +27,13 @@ import {
   recordTuiSessionStarted,
   recordTuiTurnOutcome,
   recordTuiUserTurn,
-  versionMinorBucketFromEnv,
   TuiToolCallObserver,
 } from '../utils/tui-telemetry-observer';
 import {
   BaseAcpClient,
   EXT_METHODS,
   buildStdioStreams,
+  toolTelemetryStartFromEvent,
   toAgentProcess,
   type SessionResult,
 } from './base';
@@ -258,7 +258,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     const mode = modeFromId(this.v2CurrentMode);
     recordTuiSessionStarted({
       mode,
-      versionMinorBucket: versionMinorBucketFromEnv(),
+      version: this.version,
       engine: 'v2',
     });
     recordTuiModeActive({ mode, engine: 'v2' });
@@ -353,13 +353,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       return;
     }
     if (event.type === AgentEventType.ToolCall) {
-      // event.name is already MCP-prefix-stripped at construction
-      // (convertAcpUpdateToEvent), so the only origin signal left here is the
-      // pipeline marker; everything else is a builtin from this vantage.
-      this.v2ToolCalls.start(event.id, {
-        name: event.meta?.kiro?.toolName ?? event.name ?? '',
-        origin: event.meta?.kiro?.pipeline ? 'subagent_delegate' : 'builtin',
-      });
+      this.v2ToolCalls.start(event.id, toolTelemetryStartFromEvent(event));
       return;
     }
     if (event.type !== AgentEventType.ToolCallFinished) return;

@@ -34,6 +34,7 @@ import type {
   SteeringSource,
   TuiCommand,
 } from '../types/commands';
+import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
 
 /**
  * Strip the `@serverName/` prefix from KAS MCP tool titles.
@@ -42,9 +43,20 @@ import type {
 export function stripMcpTitlePrefix(
   title: string | undefined
 ): string | undefined {
-  if (!title) return title;
-  const match = title.match(/^@[^/]+\/(.+)$/);
-  return match ? match[1] : title;
+  return parseMcpTitle(title)?.toolName ?? title;
+}
+
+export function mcpServerNameFromTitle(
+  title: string | undefined
+): string | undefined {
+  return parseMcpTitle(title)?.serverName;
+}
+
+function parseMcpTitle(
+  title: string | undefined
+): { serverName: string; toolName: string } | undefined {
+  const match = title?.match(/^@([^/]+)\/(.+)$/);
+  return match ? { serverName: match[1]!, toolName: match[2]! } : undefined;
 }
 
 /**
@@ -84,6 +96,37 @@ export function extractKiroMetaFromUpdate(
   update: AcpSessionUpdate
 ): KiroMeta | undefined {
   return (update as KasAcpSessionUpdate)._meta?.kiro;
+}
+
+function extractToolKiroMetaFromUpdate(
+  update: AcpSessionUpdate
+): KiroMeta | undefined {
+  const kiroMeta = extractKiroMetaFromUpdate(update);
+  const title = (update as AcpSessionUpdate & { title?: string }).title;
+  const mcpServerName =
+    kiroMeta?.mcpServerName ?? mcpServerNameFromTitle(title);
+  if (!mcpServerName || kiroMeta?.mcpServerName === mcpServerName) {
+    return kiroMeta;
+  }
+  return { ...(kiroMeta ?? {}), mcpServerName };
+}
+
+export function toolTelemetryStartFromEvent(
+  event: AgentStreamEvent
+): TuiToolCallStart {
+  const kiroMeta = 'meta' in event && event.meta ? event.meta.kiro : undefined;
+  const name = kiroMeta?.toolName ?? ('name' in event ? event.name : '') ?? '';
+  if (kiroMeta?.pipeline) {
+    return { name, toolOrigin: 'subagent_delegate' };
+  }
+  if (kiroMeta?.mcpServerName) {
+    return {
+      name,
+      toolOrigin: 'mcp',
+      mcpServerName: kiroMeta.mcpServerName,
+    };
+  }
+  return { name, toolOrigin: 'builtin', builtinToolName: name || 'unknown' };
 }
 
 export const EXT_METHODS = {
@@ -831,6 +874,11 @@ export abstract class BaseAcpClient implements SessionClient {
   }
 
   protected broadcastSynthesizedFailedToolCall(event: AgentStreamEvent): void {
+    const eventSessionId = 'sessionId' in event ? event.sessionId : undefined;
+    // Subagent tools are excluded because aggregate tool metrics have no session dimension.
+    if (!eventSessionId || eventSessionId === this.sessionId) {
+      this.observeTurnTelemetry(event);
+    }
     this.broadcastStreamEvent(event);
   }
 
@@ -1258,7 +1306,7 @@ export abstract class BaseAcpClient implements SessionClient {
           path: loc.path,
           line: loc.line ?? undefined,
         }));
-        const kiroMeta = extractKiroMetaFromUpdate(update);
+        const kiroMeta = extractToolKiroMetaFromUpdate(update);
         return {
           type: AgentEventType.ToolCall,
           id: update.toolCallId,
@@ -1274,7 +1322,7 @@ export abstract class BaseAcpClient implements SessionClient {
       }
 
       case 'tool_call_update': {
-        const kiroMetaUpdate = extractKiroMetaFromUpdate(update);
+        const kiroMetaUpdate = extractToolKiroMetaFromUpdate(update);
         if (update.status === ToolCallStatus.Completed) {
           const diffContent = (update.content ?? [])
             .filter((c) => c.type === 'diff')
@@ -1343,6 +1391,7 @@ export abstract class BaseAcpClient implements SessionClient {
               name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
               kind: update.kind ?? undefined,
               args: (update.rawInput as Record<string, unknown>) ?? {},
+              ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
             };
             // Stamp the originating subagent session so the store resolves the
             // stage's agentName instead of falling back to the MAIN agent.

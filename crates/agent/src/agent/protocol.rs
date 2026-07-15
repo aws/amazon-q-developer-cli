@@ -33,6 +33,7 @@ use super::tools::session::SessionToolRequest;
 use super::tools::summary::Summary;
 use super::tools::{
     Tool,
+    ToolCallIdentity,
     ToolExecutionError,
     ToolExecutionOutput,
 };
@@ -207,6 +208,8 @@ pub enum UpdateEvent {
         tool_use_id: String,
         /// The tool name as requested by the model
         tool_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_identity: Option<ToolCallIdentity>,
         /// The raw input (arguments) the model generated for this tool call.
         /// Included so clients can surface the attempted arguments when the
         /// tool could not be executed.

@@ -4,19 +4,19 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_minor_bucket, os_type, install_source, client_application]
+    attributes: [version_full, os_type, install_source, client_application]
   - name: kiro_cli_user_logged_in_total
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [client_application, credential_kind, version_minor_bucket]
+    attributes: [client_application, credential_kind, version_full]
   - name: kiro_cli_chat_session_started_total
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_minor_bucket, mode, client_application, engine]
+    attributes: [version_full, mode, client_application, engine]
   - name: kiro_cli_cloud_session_total
     kind: counter
     unit: "1"
@@ -80,7 +80,7 @@ metrics:
     unit: percent
     priority: P0
     temporality: cumulative
-    attributes: [version_minor_bucket, release_channel]
+    attributes: [version_full, release_channel]
   - name: stale_version_users
     kind: observable_gauge
     unit: users
@@ -92,7 +92,7 @@ metrics:
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [from_version_minor_bucket, to_version_minor_bucket, upgrade_trigger]
+    attributes: [from_version, to_version, upgrade_trigger]
   - name: kiro_cli_client_identity
     kind: log_event
     unit: event
@@ -109,13 +109,13 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [command, version_minor_bucket]
+    attributes: [command, version_full]
   - name: kiro_cli_feature_used_total
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [feature, version_minor_bucket]
+    attributes: [feature, version_full]
   - name: feature_unique_users_weekly
     kind: observable_gauge
     unit: users
@@ -127,7 +127,7 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [tool_origin, builtin_tool_name, outcome, engine]
+    attributes: [tool_origin, builtin_tool_name, mcp_server_name, outcome, engine]
   - name: tool_using_sessions_pct
     kind: observable_gauge
     unit: percent
@@ -185,7 +185,7 @@ metrics:
     unit: s
     priority: P0
     temporality: delta
-    attributes: [version_minor_bucket, cold_start, os_type]
+    attributes: [version_full, cold_start, os_type]
   - name: kiro_cli.agent.loop.iteration_duration
     kind: histogram
     unit: s
@@ -273,31 +273,31 @@ metrics:
     unit: By
     priority: P0
     temporality: cumulative
-    attributes: [version_minor_bucket, agent_kind, engine, process_role]
+    attributes: [version_full, agent_kind, engine, process_role]
   - name: kiro_cli.process.memory.growth_rate
     kind: histogram
     unit: "By/s"
     priority: P1
     temporality: delta
-    attributes: [version_minor_bucket, agent_kind]
+    attributes: [version_full, agent_kind]
   - name: kiro_cli.process.cpu.utilization
     kind: histogram
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_minor_bucket, agent_kind, state, engine, process_role]
+    attributes: [version_full, agent_kind, state, engine, process_role]
   - name: kiro_cli.process.fds.open
     kind: observable_gauge
     unit: "1"
     priority: P1
     temporality: cumulative
-    attributes: [version_minor_bucket, agent_kind, engine, process_role]
+    attributes: [version_full, agent_kind, engine, process_role]
   - name: kiro_cli.process.threads
     kind: observable_gauge
     unit: "1"
     priority: P2
     temporality: cumulative
-    attributes: [version_minor_bucket, agent_kind, engine, process_role]
+    attributes: [version_full, agent_kind, engine, process_role]
   - name: kiro_cli_tokens_consumed
     kind: counter
     unit: tokens
@@ -336,13 +336,13 @@ metrics:
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [tool_origin, outcome]
+    attributes: [tool_origin, mcp_server_name, outcome, engine]
   - name: kiro_cli_tool_execution_duration_ms
     kind: histogram
     unit: ms
     priority: P1
     temporality: delta
-    attributes: [tool_origin, is_success, engine]
+    attributes: [tool_origin, mcp_server_name, is_success, engine]
   - name: kiro_cli_mcp_server_init
     kind: log_event
     unit: event
@@ -549,13 +549,13 @@ metrics:
     unit: By
     priority: P1
     temporality: cumulative
-    attributes: [version_minor_bucket, engine, process_role]
+    attributes: [version_full, engine, process_role]
   - name: kiro_cli.process.memory.heap_used
     kind: observable_gauge
     unit: By
     priority: P1
     temporality: cumulative
-    attributes: [version_minor_bucket, engine, process_role]
+    attributes: [version_full, engine, process_role]
   - name: kiro_cli.tui.event_loop.delay
     kind: histogram
     unit: s

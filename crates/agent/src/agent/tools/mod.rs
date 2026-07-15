@@ -7,6 +7,7 @@ pub mod fs_write;
 pub mod glob;
 pub mod goal;
 pub mod grep;
+mod identity;
 pub mod introspect;
 pub mod knowledge;
 
@@ -47,6 +48,7 @@ use fs_write::{
 use glob::Glob;
 use goal::GoalTool;
 use grep::Grep;
+pub use identity::ToolCallIdentity;
 use introspect::Introspect;
 pub use knowledge::{
     Knowledge,
@@ -843,13 +845,23 @@ impl ToolExecutionError {
 #[error("Failed to parse the tool use: {}", .kind)]
 pub struct ToolParseError {
     pub tool_use: ToolUseBlock,
+    pub canonical_name: Option<CanonicalToolName>,
     #[source]
     pub kind: ToolParseErrorKind,
 }
 
 impl ToolParseError {
     pub fn new(tool_use: ToolUseBlock, kind: ToolParseErrorKind) -> Self {
-        Self { tool_use, kind }
+        Self {
+            tool_use,
+            canonical_name: None,
+            kind,
+        }
+    }
+
+    pub fn with_canonical_name(mut self, canonical_name: CanonicalToolName) -> Self {
+        self.canonical_name = Some(canonical_name);
+        self
     }
 }
 

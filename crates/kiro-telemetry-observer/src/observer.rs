@@ -39,6 +39,7 @@ use agent::protocol::{
 use agent::task_executor::TaskExecutorEvent;
 use agent::tools::{
     BuiltInTool,
+    ToolCallIdentity,
     ToolKind,
 };
 use futures::future::BoxFuture;
@@ -383,13 +384,20 @@ impl TelemetryObserver {
             AgentEvent::Update(UpdateEvent::ToolCallFailed {
                 tool_use_id,
                 tool_name,
+                tool_identity,
                 reason,
                 ..
             }) => {
                 if let Some(tracker) = session.tool_trackers.remove(tool_use_id) {
                     self.emit_tool_use_suggested(session_id, tool_use_id, tracker, None, false);
                 } else {
-                    self.emit_failed_tool_use_suggested(session_id, tool_use_id, tool_name, reason);
+                    self.emit_failed_tool_use_suggested(
+                        session_id,
+                        tool_use_id,
+                        tool_name,
+                        tool_identity.as_ref(),
+                        reason,
+                    );
                 }
             },
             AgentEvent::EndTurn(metadata) => {
@@ -735,22 +743,35 @@ impl TelemetryObserver {
         session_id: &str,
         tool_use_id: &str,
         tool_name: &str,
+        tool_identity: Option<&ToolCallIdentity>,
         reason: &ToolCallFailureReason,
     ) {
         let is_parse_error = matches!(reason, ToolCallFailureReason::ParseError);
+        let (metric_tool_name, mcp_server_name, is_custom_tool) = match tool_identity {
+            Some(identity) => (
+                identity.tool_name.clone(),
+                identity.mcp_server_name.clone(),
+                identity.mcp_server_name.is_some(),
+            ),
+            None => (
+                tool_name.to_string(),
+                mcp_server_name_from_tool_name(tool_name),
+                tool_name.starts_with('@'),
+            ),
+        };
         self.emit(EventType::ToolUseSuggested {
             conversation_id: session_id.to_string(),
             utterance_id: None,
             user_input_id: None,
             tool_use_id: Some(tool_use_id.to_string()),
-            tool_name: Some(tool_name.to_string()),
-            mcp_server_name: mcp_server_name_from_tool_name(tool_name),
+            tool_name: Some(metric_tool_name),
+            mcp_server_name,
             is_accepted: is_parse_error,
             is_trusted: false,
             is_success: is_parse_error.then_some(false),
             reason_desc: None,
             is_valid: Some(!is_parse_error),
-            is_custom_tool: tool_name.starts_with('@'),
+            is_custom_tool,
             input_token_size: None,
             output_token_size: None,
             custom_tool_call_latency: None,

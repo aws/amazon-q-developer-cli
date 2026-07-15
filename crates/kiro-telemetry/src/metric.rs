@@ -327,7 +327,7 @@ impl UpgradeTrigger {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
     #[default]
     Interactive,
@@ -339,7 +339,7 @@ pub enum Mode {
     Voice,
     AcpExternal,
     GenerateAgent,
-    Other,
+    Other(String),
 }
 
 impl Mode {
@@ -352,14 +352,13 @@ impl Mode {
             return Self::AcpExternal;
         }
 
-        match mode
+        let normalized = mode
             .unwrap_or_default()
             .trim()
             .trim_start_matches('/')
             .to_ascii_lowercase()
-            .replace('-', "_")
-            .as_str()
-        {
+            .replace('-', "_");
+        match normalized.as_str() {
             "oneshot" => Self::Oneshot,
             "agent" => Self::Agent,
             "plan" | "quick_plan" | "kiro_planner" | "planner" => Self::Plan,
@@ -369,11 +368,12 @@ impl Mode {
             "acp_external" => Self::AcpExternal,
             "generate_agent" | "generateagent" => Self::GenerateAgent,
             "" | "default" | "kiro" | "vibe" | "interactive" => Self::Interactive,
-            _ => Self::Other,
+            "_other_" => Self::Other("_other_".to_string()),
+            _ => Self::Other(normalized),
         }
     }
 
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             Self::Interactive => "interactive",
             Self::Oneshot => "oneshot",
@@ -384,7 +384,7 @@ impl Mode {
             Self::Voice => "voice",
             Self::AcpExternal => "acp_external",
             Self::GenerateAgent => "generate_agent",
-            Self::Other => "_other_",
+            Self::Other(value) => value,
         }
     }
 }
@@ -505,6 +505,45 @@ impl Engine {
 
 impl_metric_string_serde!(Engine, Engine::from_name);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloudSessionEvent {
+    Started,
+    StartFailed,
+    Reattached,
+    Detached,
+    TurnedOff,
+    FellBackLocal,
+    Other,
+}
+
+impl CloudSessionEvent {
+    pub fn from_name(value: &str) -> Self {
+        match value {
+            "started" => Self::Started,
+            "start_failed" => Self::StartFailed,
+            "reattached" => Self::Reattached,
+            "detached" => Self::Detached,
+            "turned_off" => Self::TurnedOff,
+            "fell_back_local" => Self::FellBackLocal,
+            _ => Self::Other,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Started => "started",
+            Self::StartFailed => "start_failed",
+            Self::Reattached => "reattached",
+            Self::Detached => "detached",
+            Self::TurnedOff => "turned_off",
+            Self::FellBackLocal => "fell_back_local",
+            Self::Other => "_other_",
+        }
+    }
+}
+
+impl_metric_string_serde!(CloudSessionEvent, CloudSessionEvent::from_name);
+
 /// Which process in the engine's pid tree sampled a perf metric. The host
 /// samples the native tree (`host` + `kas_subprocess`); the bun TUI samples
 /// itself (`tui`). See telemetry-metric-inventory.md §E.
@@ -602,33 +641,35 @@ impl TurnOutcomeReason {
 
 impl_metric_string_serde!(TurnOutcomeReason, TurnOutcomeReason::from_name);
 
-/// Bounded class for a sub-agent name (the raw name is high-cardinality and
-/// metric-forbidden). Backs `kiro_cli_subagent_delegations_total` (§C4).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum SubagentNameClass {
     CodeReview,
     General,
     Custom,
     #[default]
-    Other,
+    Unknown,
+    Other(String),
 }
 
 impl SubagentNameClass {
     pub fn from_name(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
+        let normalized = value.trim().to_ascii_lowercase();
+        match normalized.as_str() {
             "code_review" | "code-review" => Self::CodeReview,
             "general" => Self::General,
             "custom" => Self::Custom,
-            _ => Self::Other,
+            "" | "_other_" => Self::Unknown,
+            _ => Self::Other(normalized.replace('-', "_")),
         }
     }
 
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             Self::CodeReview => "code_review",
             Self::General => "general",
             Self::Custom => "custom",
-            Self::Other => "_other_",
+            Self::Unknown => "_other_",
+            Self::Other(value) => value,
         }
     }
 }
@@ -1308,31 +1349,6 @@ impl ChatConversationKind {
             Self::Oneshot => "oneshot",
             Self::Subagent => "subagent",
             Self::Acp => "acp",
-            Self::Other => "_other_",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VersionMinorBucket {
-    Current,
-    CurrentMinus1,
-    CurrentMinus2,
-    Older,
-    Other,
-}
-
-impl VersionMinorBucket {
-    pub fn from_version(value: &str) -> Self {
-        if value.is_empty() { Self::Other } else { Self::Current }
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Current => "current",
-            Self::CurrentMinus1 => "current-1",
-            Self::CurrentMinus2 => "current-2",
-            Self::Older => "older",
             Self::Other => "_other_",
         }
     }
@@ -2411,10 +2427,58 @@ impl<'a> ContextUsageMetric<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolIdentity<'a> {
+    Builtin {
+        name: Option<&'a str>,
+    },
+    Mcp {
+        name: Option<&'a str>,
+        server_name: Option<&'a str>,
+    },
+    Custom {
+        name: Option<&'a str>,
+    },
+    SubagentDelegate {
+        name: Option<&'a str>,
+    },
+    AwsApi {
+        name: Option<&'a str>,
+    },
+    Other {
+        name: Option<&'a str>,
+    },
+}
+
+impl<'a> ToolIdentity<'a> {
+    pub const fn from_origin(name: Option<&'a str>, origin: ToolOrigin) -> Self {
+        match origin {
+            ToolOrigin::Builtin => Self::Builtin { name },
+            ToolOrigin::Mcp => Self::Mcp {
+                name,
+                server_name: None,
+            },
+            ToolOrigin::Custom => Self::Custom { name },
+            ToolOrigin::SubagentDelegate => Self::SubagentDelegate { name },
+            ToolOrigin::AwsApi => Self::AwsApi { name },
+            ToolOrigin::Other => Self::Other { name },
+        }
+    }
+
+    pub const fn origin(self) -> ToolOrigin {
+        match self {
+            Self::Builtin { .. } => ToolOrigin::Builtin,
+            Self::Mcp { .. } => ToolOrigin::Mcp,
+            Self::Custom { .. } => ToolOrigin::Custom,
+            Self::SubagentDelegate { .. } => ToolOrigin::SubagentDelegate,
+            Self::AwsApi { .. } => ToolOrigin::AwsApi,
+            Self::Other { .. } => ToolOrigin::Other,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ToolInvocation<'a> {
-    pub tool_name: Option<&'a str>,
-    pub aws_service_name: Option<&'a str>,
-    pub is_custom_tool: bool,
+    pub identity: ToolIdentity<'a>,
     pub is_accepted: bool,
     pub is_valid: Option<bool>,
     pub is_success: Option<bool>,
@@ -2423,24 +2487,61 @@ pub struct ToolInvocation<'a> {
 impl<'a> ToolInvocation<'a> {
     pub const fn new(
         tool_name: Option<&'a str>,
-        aws_service_name: Option<&'a str>,
-        is_custom_tool: bool,
+        tool_origin: ToolOrigin,
         is_accepted: bool,
         is_valid: Option<bool>,
         is_success: Option<bool>,
     ) -> Self {
         Self {
-            tool_name,
-            aws_service_name,
-            is_custom_tool,
+            identity: ToolIdentity::from_origin(tool_name, tool_origin),
             is_accepted,
             is_valid,
             is_success,
         }
     }
 
-    pub fn origin(self) -> ToolOrigin {
-        ToolOrigin::from_tool_context(self.tool_name, self.aws_service_name, self.is_custom_tool)
+    pub const fn mcp(
+        tool_name: Option<&'a str>,
+        mcp_server_name: Option<&'a str>,
+        is_accepted: bool,
+        is_valid: Option<bool>,
+        is_success: Option<bool>,
+    ) -> Self {
+        Self {
+            identity: ToolIdentity::Mcp {
+                name: tool_name,
+                server_name: mcp_server_name,
+            },
+            is_accepted,
+            is_valid,
+            is_success,
+        }
+    }
+
+    pub fn from_tool_context(
+        tool_name: Option<&'a str>,
+        aws_service_name: Option<&'a str>,
+        is_custom_tool: bool,
+        mcp_server_name: Option<&'a str>,
+        is_accepted: bool,
+        is_valid: Option<bool>,
+        is_success: Option<bool>,
+    ) -> Self {
+        if is_custom_tool || mcp_server_name.map(str::trim).is_some_and(|server| !server.is_empty()) {
+            Self::mcp(tool_name, mcp_server_name, is_accepted, is_valid, is_success)
+        } else {
+            Self::new(
+                tool_name,
+                ToolOrigin::from_tool_context(tool_name, aws_service_name, false),
+                is_accepted,
+                is_valid,
+                is_success,
+            )
+        }
+    }
+
+    pub const fn origin(self) -> ToolOrigin {
+        self.identity.origin()
     }
 
     pub fn outcome(self) -> Outcome {
@@ -2463,6 +2564,7 @@ pub struct ToolUseMetrics<'a> {
     pub emit_tool_call_total: bool,
     pub invocation: ToolInvocation<'a>,
     pub execution_duration_ms: Option<f64>,
+    pub engine: Option<Engine>,
 }
 
 impl<'a> ToolUseMetrics<'a> {
@@ -2471,10 +2573,16 @@ impl<'a> ToolUseMetrics<'a> {
             emit_tool_call_total: false,
             invocation,
             execution_duration_ms: None,
+            engine: None,
         }
     }
 
-    pub const fn from_tool_context(
+    pub const fn engine(mut self, engine: Option<Engine>) -> Self {
+        self.engine = engine;
+        self
+    }
+
+    pub fn from_tool_context(
         tool_name: Option<&'a str>,
         aws_service_name: Option<&'a str>,
         is_custom_tool: bool,
@@ -2482,10 +2590,11 @@ impl<'a> ToolUseMetrics<'a> {
         is_valid: Option<bool>,
         is_success: Option<bool>,
     ) -> Self {
-        Self::new(ToolInvocation::new(
+        Self::new(ToolInvocation::from_tool_context(
             tool_name,
             aws_service_name,
             is_custom_tool,
+            None,
             is_accepted,
             is_valid,
             is_success,
@@ -2544,7 +2653,7 @@ impl<'a> BedrockStreamMetrics<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ModelResponseMetrics<'a> {
     pub emit_user_turn_counter: bool,
     pub context: InvocationContext<'a>,
@@ -2636,7 +2745,7 @@ impl<'a> ModelResponseMetrics<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct UserTurnCompletionMetrics<'a> {
     pub emit_user_turn_counter: bool,
     pub context: InvocationContext<'a>,
@@ -2750,7 +2859,7 @@ impl CliSessionStarted {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChatSessionStarted {
     pub mode: Mode,
     pub client_application: ClientApplication,
@@ -2989,7 +3098,7 @@ pub fn cli_session_started(
     client_application: ClientApplication,
 ) -> MetricRecord {
     counter("kiro_cli_session_started_total", 1)
-        .attribute("version_minor_bucket", "current")
+        .attribute("version_full", version_attr())
         .attribute("os_type", os_type.as_str())
         .attribute("install_source", install_source.as_str())
         .attribute("client_application", client_application.as_str())
@@ -3014,7 +3123,7 @@ pub fn cli_session_started_from_names(
 
 pub fn chat_session_started(mode: Mode, client_application: ClientApplication) -> MetricRecord {
     counter("kiro_cli_chat_session_started_total", 1)
-        .attribute("version_minor_bucket", "current")
+        .attribute("version_full", version_attr())
         .attribute("mode", mode.as_str())
         .attribute("client_application", client_application.as_str())
         .expect_valid()
@@ -3022,6 +3131,13 @@ pub fn chat_session_started(mode: Mode, client_application: ClientApplication) -
 
 pub fn chat_session_started_record(input: ChatSessionStarted) -> MetricRecord {
     chat_session_started(input.mode, input.client_application)
+}
+
+pub fn cloud_session_total(event: CloudSessionEvent, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_cloud_session_total", 1)
+        .attribute("cloud_event", event.as_str())
+        .attribute("engine", engine.as_str())
+        .expect_valid()
 }
 
 pub fn chat_session_started_from_context(
@@ -3066,7 +3182,7 @@ pub fn user_logged_in(client_application: ClientApplication, credential_kind: Cr
     counter("kiro_cli_user_logged_in_total", 1)
         .attribute("client_application", client_application.as_str())
         .attribute("credential_kind", credential_kind.as_str())
-        .attribute("version_minor_bucket", VersionMinorBucket::Current.as_str())
+        .attribute("version_full", version_attr())
         .expect_valid()
 }
 
@@ -3196,13 +3312,9 @@ pub fn client_version_seen(
         .expect_valid()
 }
 
-pub fn version_adoption_pct(
-    percent: f64,
-    version_minor_bucket: VersionMinorBucket,
-    release_channel: ReleaseChannel,
-) -> MetricRecord {
+pub fn version_adoption_pct(percent: f64, version: &str, release_channel: ReleaseChannel) -> MetricRecord {
     gauge("version_adoption_pct", percent)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("release_channel", release_channel.as_str())
         .expect_valid()
 }
@@ -3229,14 +3341,10 @@ pub fn mode_active_users_weekly(users: f64, mode: Mode) -> MetricRecord {
         .expect_valid()
 }
 
-pub fn upgrade_completed(
-    from_version_minor_bucket: VersionMinorBucket,
-    to_version_minor_bucket: VersionMinorBucket,
-    upgrade_trigger: UpgradeTrigger,
-) -> MetricRecord {
+pub fn upgrade_completed(from_version: &str, to_version: &str, upgrade_trigger: UpgradeTrigger) -> MetricRecord {
     counter("kiro_cli_upgrade_completed_total", 1)
-        .attribute("from_version_minor_bucket", from_version_minor_bucket.as_str())
-        .attribute("to_version_minor_bucket", to_version_minor_bucket.as_str())
+        .attribute("from_version", version_full_value(from_version))
+        .attribute("to_version", version_full_value(to_version))
         .attribute("upgrade_trigger", upgrade_trigger.as_str())
         .expect_valid()
 }
@@ -3344,7 +3452,7 @@ pub fn retry_exhausted_from_reason(upstream: Upstream, reason: Option<&str>, sta
 pub fn feature_used(feature: &str) -> MetricRecord {
     counter("kiro_cli_feature_used_total", 1)
         .attribute("feature", normalized_dynamic_name(feature))
-        .attribute("version_minor_bucket", VersionMinorBucket::Current.as_str())
+        .attribute("version_full", version_attr())
         .expect_valid()
 }
 
@@ -3355,7 +3463,7 @@ pub fn feature_used_record(input: FeatureUsed<'_>) -> MetricRecord {
 pub fn slash_command_invoked(command: &str) -> MetricRecord {
     counter("kiro_cli_slash_command_invoked_total", 1)
         .attribute("command", normalized_dynamic_name(command))
-        .attribute("version_minor_bucket", VersionMinorBucket::Current.as_str())
+        .attribute("version_full", version_attr())
         .expect_valid()
 }
 
@@ -3363,69 +3471,62 @@ pub fn slash_command_invoked_record(input: SlashCommandInvoked<'_>) -> MetricRec
     slash_command_invoked(input.command)
 }
 
-fn tool_call_metric(
-    metric_name: &'static str,
-    tool_origin: ToolOrigin,
-    builtin_tool_name: Option<&str>,
-    outcome: Outcome,
-) -> MetricRecord {
-    let mut builder = counter(metric_name, 1)
-        .attribute("tool_origin", tool_origin.as_str())
-        .attribute("outcome", outcome.as_str());
-    if tool_origin == ToolOrigin::Builtin {
-        builder = builder.attribute("builtin_tool_name", builtin_tool_name_value(builtin_tool_name));
+fn attach_tool_dimensions(
+    mut builder: MetricBuilder,
+    invocation: ToolInvocation<'_>,
+    engine: Option<Engine>,
+) -> MetricBuilder {
+    builder = builder.attribute("tool_origin", invocation.origin().as_str());
+    if let ToolIdentity::Mcp { server_name, .. } = invocation.identity {
+        builder = builder.attribute(
+            "mcp_server_name",
+            server_name.map_or_else(|| "_other_".to_string(), normalized_dynamic_name),
+        );
     }
-    builder.expect_valid()
+    if let Some(engine) = engine {
+        builder = builder.attribute("engine", engine.as_str());
+    }
+    builder
 }
 
-pub fn tool_call_total(tool_origin: ToolOrigin, builtin_tool_name: Option<&str>, outcome: Outcome) -> MetricRecord {
-    tool_call_metric("kiro_cli_tool_call_total", tool_origin, builtin_tool_name, outcome)
+pub fn tool_call_total_for_invocation(invocation: ToolInvocation<'_>, engine: Option<Engine>) -> MetricRecord {
+    let mut builder = counter("kiro_cli_tool_call_total", 1).attribute("outcome", invocation.outcome().as_str());
+    if let ToolIdentity::Builtin { name } = invocation.identity {
+        builder = builder.attribute("builtin_tool_name", builtin_tool_name_value(name));
+    }
+    attach_tool_dimensions(builder, invocation, engine).expect_valid()
 }
 
-pub fn tool_call_total_for_invocation(invocation: ToolInvocation<'_>) -> MetricRecord {
-    tool_call_total(invocation.origin(), invocation.tool_name, invocation.outcome())
-}
-
-pub fn tool_invocations(tool_origin: ToolOrigin, outcome: Outcome) -> MetricRecord {
-    counter("kiro_cli_tool_invocations", 1)
-        .attribute("tool_origin", tool_origin.as_str())
-        .attribute("outcome", outcome.as_str())
-        .expect_valid()
-}
-
-pub fn tool_invocations_for_invocation(invocation: ToolInvocation<'_>) -> MetricRecord {
-    tool_invocations(invocation.origin(), invocation.outcome())
-}
-
-pub fn tool_execution_duration_ms(duration_ms: f64, tool_origin: ToolOrigin, is_success: bool) -> MetricRecord {
-    histogram("kiro_cli_tool_execution_duration_ms", duration_ms)
-        .attribute("tool_origin", tool_origin.as_str())
-        .attribute("is_success", is_success.to_string())
-        .expect_valid()
+pub fn tool_invocations_for_invocation(invocation: ToolInvocation<'_>, engine: Option<Engine>) -> MetricRecord {
+    let builder = counter("kiro_cli_tool_invocations", 1).attribute("outcome", invocation.outcome().as_str());
+    attach_tool_dimensions(builder, invocation, engine).expect_valid()
 }
 
 pub fn tool_execution_duration_ms_for_invocation(
     duration_ms: f64,
     invocation: ToolInvocation<'_>,
+    engine: Option<Engine>,
 ) -> Option<MetricRecord> {
     let is_success = invocation.is_success?;
     if !duration_ms.is_finite() || duration_ms <= 0.0 {
         return None;
     }
 
-    Some(tool_execution_duration_ms(duration_ms, invocation.origin(), is_success))
+    let builder =
+        histogram("kiro_cli_tool_execution_duration_ms", duration_ms).attribute("is_success", is_success.to_string());
+    Some(attach_tool_dimensions(builder, invocation, engine).expect_valid())
 }
 
 pub fn tool_use_records(input: ToolUseMetrics<'_>) -> Vec<MetricRecord> {
     let mut records = Vec::new();
 
     if input.emit_tool_call_total {
-        records.push(tool_call_total_for_invocation(input.invocation));
+        records.push(tool_call_total_for_invocation(input.invocation, input.engine));
     }
-    records.push(tool_invocations_for_invocation(input.invocation));
+    records.push(tool_invocations_for_invocation(input.invocation, input.engine));
     if let Some(record) = input
         .execution_duration_ms
-        .and_then(|duration_ms| tool_execution_duration_ms_for_invocation(duration_ms, input.invocation))
+        .and_then(|duration_ms| tool_execution_duration_ms_for_invocation(duration_ms, input.invocation, input.engine))
     {
         records.push(record);
     }
@@ -3612,7 +3713,11 @@ pub fn user_turn_completion_records(input: UserTurnCompletionMetrics<'_>) -> Vec
     let mut records = Vec::new();
 
     if input.emit_user_turn_counter {
-        records.push(user_turns_for_invocation(input.context, input.result, input.mode));
+        records.push(user_turns_for_invocation(
+            input.context,
+            input.result,
+            input.mode.clone(),
+        ));
         records.extend(token_records(input.context, input.token_usage));
     }
 
@@ -3852,29 +3957,25 @@ pub fn message_regenerated_from_id(model_id: Option<&str>) -> MetricRecord {
     message_regenerated(model_id)
 }
 
-pub fn process_memory_rss(bytes: f64, version_minor_bucket: VersionMinorBucket, agent_kind: AgentKind) -> MetricRecord {
+pub fn process_memory_rss(bytes: f64, version: &str, agent_kind: AgentKind) -> MetricRecord {
     gauge("kiro_cli.process.memory.rss", bytes)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("agent_kind", agent_kind.as_str())
         .expect_valid()
 }
 
 pub fn process_memory_rss_from_names(bytes: f64, version: &str, agent_kind: Option<&str>) -> MetricRecord {
-    process_memory_rss(
-        bytes,
-        VersionMinorBucket::from_version(version),
-        AgentKind::from_name(agent_kind.unwrap_or_default()),
-    )
+    process_memory_rss(bytes, version, AgentKind::from_name(agent_kind.unwrap_or_default()))
 }
 
 pub fn process_cpu_utilization(
     utilization: f64,
-    version_minor_bucket: VersionMinorBucket,
+    version: &str,
     agent_kind: AgentKind,
     state: ProcessState,
 ) -> MetricRecord {
     histogram("kiro_cli.process.cpu.utilization", utilization)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("agent_kind", agent_kind.as_str())
         .attribute("state", state.as_str())
         .expect_valid()
@@ -3888,7 +3989,7 @@ pub fn process_cpu_utilization_from_names(
 ) -> MetricRecord {
     process_cpu_utilization(
         utilization,
-        VersionMinorBucket::from_version(version),
+        version,
         AgentKind::from_name(agent_kind.unwrap_or_default()),
         state,
     )
@@ -3899,7 +4000,7 @@ pub fn process_health_records(snapshot: ProcessHealthSnapshot<'_>) -> Vec<Metric
     if snapshot.rss_mb.is_finite() && snapshot.rss_mb >= 0.0 {
         records.push(process_memory_rss(
             snapshot.rss_mb * 1024.0 * 1024.0,
-            VersionMinorBucket::from_version(snapshot.version),
+            snapshot.version,
             snapshot.agent_kind,
         ));
     }
@@ -3908,7 +4009,7 @@ pub fn process_health_records(snapshot: ProcessHealthSnapshot<'_>) -> Vec<Metric
     if snapshot.cpu_user_pct.is_finite() && snapshot.cpu_system_pct.is_finite() && cpu_utilization_pct >= 0.0 {
         records.push(process_cpu_utilization(
             cpu_utilization_pct / 100.0,
-            VersionMinorBucket::from_version(snapshot.version),
+            snapshot.version,
             snapshot.agent_kind,
             snapshot.state,
         ));
@@ -3917,27 +4018,23 @@ pub fn process_health_records(snapshot: ProcessHealthSnapshot<'_>) -> Vec<Metric
     records
 }
 
-pub fn process_memory_growth_rate(
-    bytes_per_second: f64,
-    version_minor_bucket: VersionMinorBucket,
-    agent_kind: AgentKind,
-) -> MetricRecord {
+pub fn process_memory_growth_rate(bytes_per_second: f64, version: &str, agent_kind: AgentKind) -> MetricRecord {
     histogram("kiro_cli.process.memory.growth_rate", bytes_per_second)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("agent_kind", agent_kind.as_str())
         .expect_valid()
 }
 
-pub fn process_fds_open(count: f64, version_minor_bucket: VersionMinorBucket, agent_kind: AgentKind) -> MetricRecord {
+pub fn process_fds_open(count: f64, version: &str, agent_kind: AgentKind) -> MetricRecord {
     gauge("kiro_cli.process.fds.open", count)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("agent_kind", agent_kind.as_str())
         .expect_valid()
 }
 
-pub fn process_threads(count: f64, version_minor_bucket: VersionMinorBucket, agent_kind: AgentKind) -> MetricRecord {
+pub fn process_threads(count: f64, version: &str, agent_kind: AgentKind) -> MetricRecord {
     gauge("kiro_cli.process.threads", count)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("agent_kind", agent_kind.as_str())
         .expect_valid()
 }
@@ -3981,28 +4078,18 @@ pub fn mode_active_total(mode: Mode, engine: Engine) -> MetricRecord {
 // §E — process/perf metrics promoted from the TUI's log-only sampler.
 
 /// High-water-mark resident memory (`kiro_cli.process.memory.peak_rss`, §E).
-pub fn process_memory_peak_rss(
-    bytes: f64,
-    version_minor_bucket: VersionMinorBucket,
-    engine: Engine,
-    process_role: ProcessRole,
-) -> MetricRecord {
+pub fn process_memory_peak_rss(bytes: f64, version: &str, engine: Engine, process_role: ProcessRole) -> MetricRecord {
     gauge("kiro_cli.process.memory.peak_rss", bytes)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("engine", engine.as_str())
         .attribute("process_role", process_role.as_str())
         .expect_valid()
 }
 
 /// JS-runtime heap in use (`kiro_cli.process.memory.heap_used`, §E; TUI-only).
-pub fn process_memory_heap_used(
-    bytes: f64,
-    version_minor_bucket: VersionMinorBucket,
-    engine: Engine,
-    process_role: ProcessRole,
-) -> MetricRecord {
+pub fn process_memory_heap_used(bytes: f64, version: &str, engine: Engine, process_role: ProcessRole) -> MetricRecord {
     gauge("kiro_cli.process.memory.heap_used", bytes)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("engine", engine.as_str())
         .attribute("process_role", process_role.as_str())
         .expect_valid()
@@ -4293,14 +4380,9 @@ pub fn startup_failure_from_names(failure_stage: &str, os_type: &str) -> MetricR
     startup_failure(FailureStage::from_name(failure_stage), OsType::from_name(os_type))
 }
 
-pub fn startup_duration(
-    seconds: f64,
-    version_minor_bucket: VersionMinorBucket,
-    cold_start: bool,
-    os_type: OsType,
-) -> MetricRecord {
+pub fn startup_duration(seconds: f64, version: &str, cold_start: bool, os_type: OsType) -> MetricRecord {
     histogram("kiro_cli.startup.duration", seconds)
-        .attribute("version_minor_bucket", version_minor_bucket.as_str())
+        .attribute("version_full", version_full_value(version))
         .attribute("cold_start", cold_start.to_string())
         .attribute("os_type", os_type.as_str())
         .expect_valid()
@@ -4332,6 +4414,28 @@ fn normalized_dynamic_name(value: &str) -> String {
         "_other_".to_string()
     } else {
         value.to_ascii_lowercase()
+    }
+}
+
+pub fn version_attr() -> &'static str {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            std::env::var("KIRO_VERSION_OVERRIDE")
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
+        })
+        .as_str()
+}
+
+fn version_full_value(version: &str) -> String {
+    let version = version.trim();
+    if version.is_empty() {
+        "_other_".to_string()
+    } else {
+        version.to_string()
     }
 }
 
@@ -4430,7 +4534,7 @@ mod tests {
             "kiro_cli_session_started_total",
             MetricValue::Counter(1),
             &[
-                ("version_minor_bucket", "current"),
+                ("version_full", env!("CARGO_PKG_VERSION")),
                 ("os_type", "macos"),
                 ("install_source", "internal"),
                 ("client_application", "chat_cli_v2"),
@@ -4441,7 +4545,7 @@ mod tests {
             "kiro_cli_session_started_total",
             MetricValue::Counter(1),
             &[
-                ("version_minor_bucket", "current"),
+                ("version_full", env!("CARGO_PKG_VERSION")),
                 ("os_type", "macos"),
                 ("install_source", "internal"),
                 ("client_application", "chat_cli_v2"),
@@ -4453,7 +4557,7 @@ mod tests {
             "kiro_cli_chat_session_started_total",
             MetricValue::Counter(1),
             &[
-                ("version_minor_bucket", "current"),
+                ("version_full", env!("CARGO_PKG_VERSION")),
                 ("mode", "plan"),
                 ("client_application", "chat_cli_v2"),
             ],
@@ -4463,10 +4567,16 @@ mod tests {
             "kiro_cli_chat_session_started_total",
             MetricValue::Counter(1),
             &[
-                ("version_minor_bucket", "current"),
+                ("version_full", env!("CARGO_PKG_VERSION")),
                 ("mode", "plan"),
                 ("client_application", "chat_cli_v2"),
             ],
+        );
+        assert_metric_shape(
+            cloud_session_total(CloudSessionEvent::Started, Engine::V3),
+            "kiro_cli_cloud_session_total",
+            MetricValue::Counter(1),
+            &[("cloud_event", "started"), ("engine", "v3")],
         );
 
         assert_metric_shape(
@@ -4513,38 +4623,59 @@ mod tests {
             ],
         );
 
+        let tool_invocation = ToolInvocation::new(Some("fs_read"), ToolOrigin::Builtin, true, Some(true), Some(true));
         assert_metric_shape(
-            tool_call_total(ToolOrigin::Builtin, Some("fs_read"), Outcome::Success),
+            tool_call_total_for_invocation(tool_invocation, Some(Engine::V2)),
             "kiro_cli_tool_call_total",
             MetricValue::Counter(1),
             &[
                 ("tool_origin", "builtin"),
                 ("outcome", "success"),
                 ("builtin_tool_name", "fs_read"),
-            ],
-        );
-        let tool_invocation = ToolInvocation::new(Some("fs_read"), None, false, true, Some(true), Some(true));
-        assert_metric_shape(
-            tool_call_total_for_invocation(tool_invocation),
-            "kiro_cli_tool_call_total",
-            MetricValue::Counter(1),
-            &[
-                ("tool_origin", "builtin"),
-                ("outcome", "success"),
-                ("builtin_tool_name", "fs_read"),
+                ("engine", "v2"),
             ],
         );
         assert_metric_shape(
-            tool_invocations_for_invocation(tool_invocation),
+            tool_invocations_for_invocation(tool_invocation, None),
             "kiro_cli_tool_invocations",
             MetricValue::Counter(1),
             &[("tool_origin", "builtin"), ("outcome", "success")],
         );
         assert_metric_shape(
-            tool_execution_duration_ms_for_invocation(25.0, tool_invocation).expect("duration metric"),
+            tool_execution_duration_ms_for_invocation(25.0, tool_invocation, None).expect("duration metric"),
             "kiro_cli_tool_execution_duration_ms",
             MetricValue::Histogram(25.0),
             &[("tool_origin", "builtin"), ("is_success", "true")],
+        );
+
+        let mcp_invocation = ToolInvocation::mcp(
+            Some("query_db"),
+            Some("  My-Postgres Server  "),
+            true,
+            Some(true),
+            Some(true),
+        );
+        assert_metric_shape(
+            tool_call_total_for_invocation(mcp_invocation, Some(Engine::V3)),
+            "kiro_cli_tool_call_total",
+            MetricValue::Counter(1),
+            &[
+                ("tool_origin", "mcp"),
+                ("outcome", "success"),
+                ("mcp_server_name", "my-postgres server"),
+                ("engine", "v3"),
+            ],
+        );
+        assert_metric_shape(
+            tool_execution_duration_ms_for_invocation(10.0, mcp_invocation, Some(Engine::V3)).expect("duration"),
+            "kiro_cli_tool_execution_duration_ms",
+            MetricValue::Histogram(10.0),
+            &[
+                ("tool_origin", "mcp"),
+                ("is_success", "true"),
+                ("mcp_server_name", "my-postgres server"),
+                ("engine", "v3"),
+            ],
         );
 
         assert_metric_shape(
@@ -4621,17 +4752,13 @@ mod tests {
             process_memory_rss_from_names(1024.0, "2.4.0", Some("kas")),
             "kiro_cli.process.memory.rss",
             MetricValue::Gauge(1024.0),
-            &[("version_minor_bucket", "current"), ("agent_kind", "kas")],
+            &[("version_full", "2.4.0"), ("agent_kind", "kas")],
         );
         assert_metric_shape(
             process_cpu_utilization_from_names(0.5, "2.4.0", Some("kas"), ProcessState::Idle),
             "kiro_cli.process.cpu.utilization",
             MetricValue::Histogram(0.5),
-            &[
-                ("version_minor_bucket", "current"),
-                ("agent_kind", "kas"),
-                ("state", "idle"),
-            ],
+            &[("version_full", "2.4.0"), ("agent_kind", "kas"), ("state", "idle")],
         );
         assert_metric_shape(
             pii_redaction_run(
@@ -4824,7 +4951,7 @@ mod tests {
             "kiro_cli_session_started_total",
             MetricValue::Counter(1),
             &[
-                ("version_minor_bucket", "current"),
+                ("version_full", env!("CARGO_PKG_VERSION")),
                 ("os_type", "macos"),
                 ("install_source", "internal"),
                 ("client_application", "chat_cli_v2"),
@@ -4839,7 +4966,7 @@ mod tests {
             "kiro_cli_chat_session_started_total",
             MetricValue::Counter(1),
             &[
-                ("version_minor_bucket", "current"),
+                ("version_full", env!("CARGO_PKG_VERSION")),
                 ("mode", "plan"),
                 ("client_application", "chat_cli_v3"),
             ],
@@ -4924,13 +5051,13 @@ mod tests {
             feature_used_record(FeatureUsed::new(" Knowledge ")),
             "kiro_cli_feature_used_total",
             MetricValue::Counter(1),
-            &[("feature", "knowledge"), ("version_minor_bucket", "current")],
+            &[("feature", "knowledge"), ("version_full", env!("CARGO_PKG_VERSION"))],
         );
         assert_metric_shape(
             slash_command_invoked_record(SlashCommandInvoked::new(" /review ")),
             "kiro_cli_slash_command_invoked_total",
             MetricValue::Counter(1),
-            &[("command", "/review"), ("version_minor_bucket", "current")],
+            &[("command", "/review"), ("version_full", env!("CARGO_PKG_VERSION"))],
         );
         assert_metric_shape(
             session_outcome_record(SessionOutcomeMetric::from_goal_terminal_state("reinjection_failed")),
@@ -5040,8 +5167,7 @@ mod tests {
     fn tool_use_records_omit_legacy_and_duration_when_absent() {
         let tool_use = ToolUseMetrics::new(ToolInvocation::new(
             Some("external_tool"),
-            None,
-            true,
+            ToolOrigin::Mcp,
             false,
             None,
             None,
@@ -5058,6 +5184,7 @@ mod tests {
         );
         expect_counter_metric(&records, "kiro_cli_tool_invocations", 1, &[
             ("tool_origin", "mcp"),
+            ("mcp_server_name", "_other_"),
             ("outcome", "denied"),
         ]);
     }
@@ -5066,8 +5193,7 @@ mod tests {
     fn tool_use_records_bucket_error_cancelled_and_invalid_durations() {
         let invalid_tool_use = ToolUseMetrics::new(ToolInvocation::new(
             Some("fs_write"),
-            None,
-            false,
+            ToolOrigin::Builtin,
             true,
             Some(false),
             Some(false),
@@ -5094,8 +5220,7 @@ mod tests {
 
         let cancelled_tool_use = ToolUseMetrics::new(ToolInvocation::new(
             Some("fs_write"),
-            None,
-            false,
+            ToolOrigin::Builtin,
             true,
             Some(true),
             None,
@@ -5177,7 +5302,7 @@ mod tests {
         })
         .duration_seconds(Some(8.0));
 
-        let records = user_turn_completion_records(completion);
+        let records = user_turn_completion_records(completion.clone());
 
         assert!(
             records
@@ -5415,14 +5540,10 @@ mod tests {
         );
 
         assert_metric_shape(
-            startup_duration(0.5, VersionMinorBucket::Current, true, OsType::Macos),
+            startup_duration(0.5, "2.4.0", true, OsType::Macos),
             "kiro_cli.startup.duration",
             MetricValue::Histogram(0.5),
-            &[
-                ("version_minor_bucket", "current"),
-                ("cold_start", "true"),
-                ("os_type", "macos"),
-            ],
+            &[("version_full", "2.4.0"), ("cold_start", "true"), ("os_type", "macos")],
         );
 
         assert_metric_shape(
@@ -5467,22 +5588,22 @@ mod tests {
     #[test]
     fn process_health_detail_constructors_build_schema_valid_records() {
         assert_metric_shape(
-            process_memory_growth_rate(1024.0, VersionMinorBucket::Current, AgentKind::Kas),
+            process_memory_growth_rate(1024.0, "2.4.0", AgentKind::Kas),
             "kiro_cli.process.memory.growth_rate",
             MetricValue::Histogram(1024.0),
-            &[("version_minor_bucket", "current"), ("agent_kind", "kas")],
+            &[("version_full", "2.4.0"), ("agent_kind", "kas")],
         );
         assert_metric_shape(
-            process_fds_open(64.0, VersionMinorBucket::Current, AgentKind::Kas),
+            process_fds_open(64.0, "2.4.0", AgentKind::Kas),
             "kiro_cli.process.fds.open",
             MetricValue::Gauge(64.0),
-            &[("version_minor_bucket", "current"), ("agent_kind", "kas")],
+            &[("version_full", "2.4.0"), ("agent_kind", "kas")],
         );
         assert_metric_shape(
-            process_threads(12.0, VersionMinorBucket::Current, AgentKind::Kas),
+            process_threads(12.0, "2.4.0", AgentKind::Kas),
             "kiro_cli.process.threads",
             MetricValue::Gauge(12.0),
-            &[("version_minor_bucket", "current"), ("agent_kind", "kas")],
+            &[("version_full", "2.4.0"), ("agent_kind", "kas")],
         );
     }
 
@@ -5655,10 +5776,10 @@ mod tests {
             ],
         );
         assert_metric_shape(
-            version_adoption_pct(63.5, VersionMinorBucket::Current, ReleaseChannel::Stable),
+            version_adoption_pct(63.5, "2.4.0", ReleaseChannel::Stable),
             "version_adoption_pct",
             MetricValue::Gauge(63.5),
-            &[("version_minor_bucket", "current"), ("release_channel", "stable")],
+            &[("version_full", "2.4.0"), ("release_channel", "stable")],
         );
         assert_metric_shape(
             stale_version_users(12.0, StalenessBucket::from_age_days(75)),
@@ -5685,16 +5806,12 @@ mod tests {
             &[("mode", "plan")],
         );
         assert_metric_shape(
-            upgrade_completed(
-                VersionMinorBucket::Older,
-                VersionMinorBucket::Current,
-                UpgradeTrigger::Auto,
-            ),
+            upgrade_completed("2.3.9", "2.4.0", UpgradeTrigger::Auto),
             "kiro_cli_upgrade_completed_total",
             MetricValue::Counter(1),
             &[
-                ("from_version_minor_bucket", "older"),
-                ("to_version_minor_bucket", "current"),
+                ("from_version", "2.3.9"),
+                ("to_version", "2.4.0"),
                 ("upgrade_trigger", "auto"),
             ],
         );

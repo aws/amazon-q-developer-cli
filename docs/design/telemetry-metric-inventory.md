@@ -49,9 +49,7 @@ What shipped, corrected against the mid-flight plan:
   `tui-telemetry-observer.ts`, engine-neutral, on meter scope `kiro.tui` (§C, §D, §H).
 - **Launcher owns the endpoint.** `launch.rs` resolves the effective KUTS endpoint (the same one the Rust
   host uses) and passes it to the TUI via `KIRO_TELEMETRY_OTLP_ENDPOINT` — unset ⇒ disabled, never
-  loopback. No bundled collector; the `kiro-telemetry-collector` crate stays in-tree as a dormant,
-  **opt-in** path (`KIRO_TELEMETRY_COLLECTOR_BIN`) for the rare multi-emitter topology (kiro-bot, build
-  farms), never default-spawned.
+  loopback. There is no bundled collector or dormant local-collector crate in the product path.
 - **Legacy→OTEL parity closed** before the V2 `legacy_sink` deletion (§A, §G): `UserLoggedIn`,
   `AuthFailed`, V1 `DailyHeartbeat`, and the three `UiMode*` events. The
   `every_event_type_emits_an_otel_metric_or_log` regression test is the guardrail (it caught the
@@ -192,7 +190,7 @@ metrics to add.
 
 | Metric | Kind | Engine dim today | Notes |
 |---|---|---|---|
-| `kiro_cli_chat_session_started_total` | counter | scope **+ `client_application`** | `recordV3SessionStarted`; `version_minor_bucket` hardcoded `current` |
+| `kiro_cli_chat_session_started_total` | counter | scope **+ `client_application`** | `recordV3SessionStarted`; now emits raw `version_full` (bucket replaced 2026-07) |
 | `kiro_cli_user_turns` | counter | scope **+ `client_application`** | `recordV3UserTurn`; `is_subagent` hardcoded `false` (sub-agent turns never reach wire) |
 | `kiro_cli_user_turn_duration_seconds` | histogram | **scope only** | catalog forbids `client_application`; histogram point suppressed when KAS omits duration (no phantom 0s) |
 | `kiro_cli_tool_call_total` | counter | **scope only** | catalog forbids `client_application`; `outcome` only ever `success`/`error` on V3; `tool_origin` ≈ always `builtin` |
@@ -221,8 +219,9 @@ disabled when `KIRO_TELEMETRY_OTLP_ENDPOINT` unset; drops counted in-process onl
 `client_application`.**
 
 - **`engine`** = `v2 | v3` — the coarse, always-present engine split. New required attribute (§D).
-- **`version_minor_bucket`** — stop hardcoding `current` (today's `recordV3SessionStarted` does); pass the
-  real bucket from the launcher.
+- **`version_full`** — replaced `version_minor_bucket` (2026-07): the raw semver is emitted directly
+  (`getCliVersion()` on the TUI, `version_attr()` in Rust — both honor `KIRO_VERSION_OVERRIDE`);
+  downstream KUTS ingestion enforces the schema `max_distinct: 200` budget.
 
 `engine` rides as a **per-metric attribute**, not a resource attribute (`service.name` is identically
 `kiro-tui` across engines, so resource-level can't distinguish them). This requires adding `engine` to the
@@ -254,9 +253,9 @@ as a log. All carry the §C3 contract.
 | `kiro_cli_mode_active_total` | counter | `currentModeId` (already on session/turn metrics) | per-engine mode usage; avoids the `mode_active_users_weekly` lost-dims problem |
 | **Process/perf set** (CPU, RSS, heap, peak RSS, event-loop, input latency, render) | gauge/histogram | `process-health-collector.ts` snapshot | **see §E** — captured at the TUI level today, log-only |
 
-Also fix the two correctness gaps in the existing emitters: `is_subagent` is hardcoded `false` on
-`kiro_cli_user_turns` (sub-agent turns never reach the wire), and `version_minor_bucket` is hardcoded
-`current` on `kiro_cli_chat_session_started_total`.
+Also fix the remaining correctness gap in the existing emitters: `is_subagent` is hardcoded `false` on
+`kiro_cli_user_turns` (sub-agent turns never reach the wire). (The `version_minor_bucket`-hardcoded-`current`
+gap was resolved by replacing the bucket with raw `version_full`, 2026-07.)
 
 ---
 
@@ -485,11 +484,9 @@ economic panels (the authoritative server count). Token/context usage especially
     not CloudWatch *metrics*. Native, graphable/alarmable metrics come from the **`KiroCLI` namespace**
     (KUTS ADOT change `990d295`, log group `/kuts/kiro-cli/metrics`) — validate the v2-from-TUI work there
     once deployed (filter `service.name="kiro-tui"`, split by `engine`).
-- **Query gotcha (cost us time once):** `version_minor_bucket` is a **closed enum**
-  (`current|current-1|current-2|older|_other_`) clamped client-side in `versionMinorBucketFromEnv`
-  (`tui-telemetry-observer.ts`); an arbitrary probe tag is silently rewritten to `_other_`, so it can't be
-  used as a query needle. Identify a run by **`OTelLib`** (meter scope) + the **metric name** instead —
-  `machineId` is also absent from these records. TUI records now carry `OTelLib = "kiro.tui"` (the
+- **Query gotcha (cost us time once):** query version splits by **`version_full`** (raw semver, replaced
+  the old closed `version_minor_bucket` enum 2026-07). Identify a run by **`OTelLib`** (meter scope) + the
+  **metric name** — `machineId` is absent from these records. TUI records now carry `OTelLib = "kiro.tui"` (the
   engine-neutral scope from the §H.3 rename).
 
 ### H.6 Resolved: full-mirror minus economics

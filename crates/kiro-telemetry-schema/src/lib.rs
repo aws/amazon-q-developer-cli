@@ -564,16 +564,36 @@ mod tests {
     }
 
     #[test]
-    fn version_full_is_only_allowed_on_client_version_seen() {
+    fn version_full_only_on_allowlisted_metrics() {
         let registry = Registry::parse().expect("schema should load");
-        let users: Vec<&str> = registry
+        let users: HashSet<&str> = registry
             .metrics
             .iter()
             .filter(|metric| metric.kind.is_metric() && metric.attributes.iter().any(|attr| attr == "version_full"))
             .map(|metric| metric.name.as_str())
             .collect();
 
-        assert_eq!(users, vec!["client_version_seen"]);
+        let allowed: HashSet<&str> = [
+            "client_version_seen",
+            "version_adoption_pct",
+            "kiro_cli_session_started_total",
+            "kiro_cli_user_logged_in_total",
+            "kiro_cli_chat_session_started_total",
+            "kiro_cli_slash_command_invoked_total",
+            "kiro_cli_feature_used_total",
+            "kiro_cli.startup.duration",
+            "kiro_cli.process.memory.rss",
+            "kiro_cli.process.memory.growth_rate",
+            "kiro_cli.process.memory.peak_rss",
+            "kiro_cli.process.memory.heap_used",
+            "kiro_cli.process.cpu.utilization",
+            "kiro_cli.process.fds.open",
+            "kiro_cli.process.threads",
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(users, allowed);
     }
 
     #[test]

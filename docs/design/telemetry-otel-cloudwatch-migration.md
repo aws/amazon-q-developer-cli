@@ -63,7 +63,7 @@ Detailed inventory in `docs/oncall/metrics_and_telemetry.md` and the V1/V2 schem
 - **G2. OTel SDK at the boundary.** All emit sites in chat-cli/chat-cli-v2 use OpenTelemetry Metrics + Logs APIs through a single `kiro-telemetry-facade`. No direct calls to Toolkit Telemetry or `SendTelemetryEvent` from product code.
 - **G3. CloudWatch alarm parity.** Every existing alarm keeps firing on equivalent OTel-derived metrics during dual-write; cut over only after ≥30 days of side-by-side parity within 0.5%.
 - **G4. Privacy proof points.** `kiro_cli_telemetry_opt_out_respected_total`, `kiro_cli_telemetry_opt_out_violation_total` (must stay 0), `kiro_cli_pii_redaction_coverage_ratio` (0 → ≥0.999), `kiro_cli_consent_record_integrity_total`, `kiro_cli_govcloud_channel_disabled_total` / `kiro_cli_govcloud_channel_leak_total` paired counters wired before any new outbound channel turns on. End-to-end opt-out test in CI (see §11).
-- **G5. Cardinality budget enforced at the SDK boundary.** Closed enums in registry, `_other_` bucketing on overflow, runtime cardinality limiter, build-time lint that rejects free-form attribute insertion. Hard caps: ≤10 dims/metric; per-metric series cap default 5,000.
+- **G5. Cardinality budget enforced downstream, schema shape enforced at the SDK boundary.** Closed enums only for genuinely fixed sets (outcomes, os_type, engine, …); free-form dimensions (`version_full`, `mode`, `mcp_server_name`, `subagent_name_class`, `builtin_tool_name`) are emitted raw client-side with known-alias normalization, bounded by schema `max_distinct` budgets in the KUTS ingestion layer. Client-side validation still rejects unregistered metrics/attributes and out-of-enum values. Hard caps: ≤10 dims/metric.
 - **G6. Telemetry-on-telemetry.** P0 self-observability set ships day one (§5.10).
 
 **P1 — required for first PM dashboards (Phase 2).**
@@ -182,7 +182,7 @@ There is no AWS-managed public OTLP endpoint at a `otel.<region>.amazonaws.com` 
 
 ## 4. Cost envelope
 
-Worked example at proposed cardinality (assumes ~3 partitions, ~10 active model-class buckets, ~15 builtin tools, current+2 prior version_minors):
+Worked example at proposed cardinality (assumes ~3 partitions, ~10 active model-class buckets, ~15 builtin tools, `version_full` bounded at 200 distinct and `mcp_server_name` at 64 by the collector caps):
 
 | Bucket | Series estimate | Monthly cost ($0.30/series CW custom metric) |
 |---|---|---|
@@ -211,17 +211,17 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Rationale | Alert idea | Pri |
 |---|---|---|---|---|---|---|
-| `kiro_cli_session_started_total` | counter | 1 | `version_minor_bucket`, `os`, `install_source`, `client_application` | Foundational top-of-funnel; denominator for ratios | Anomaly: -20% WoW per (os, install_source) >1k baseline | P0 |
-| `kiro_cli_chat_session_started_total` | counter | 1 | `version_minor_bucket`, `mode`, `client_application` | Distinct from cli_session — first prompt sent | — | P0 |
+| `kiro_cli_session_started_total` | counter | 1 | `version_full`, `os`, `install_source`, `client_application` | Foundational top-of-funnel; denominator for ratios | Anomaly: -20% WoW per (os, install_source) >1k baseline | P0 |
+| `kiro_cli_chat_session_started_total` | counter | 1 | `version_full`, `mode`, `client_application` | Distinct from cli_session — first prompt sent | — | P0 |
 | `active_users_daily` | observable_gauge | users | `install_method`, `client_application`, `is_internal_amazon` | Daily rollup from facts; aggregate-only series | DAU drop >15% WoW per install_method | P0 |
 | `active_users_weekly` | observable_gauge | users | same | WAU smooths weekend troughs | Growth flatlines (<1% WoW) for 3 weeks | P0 |
 | `active_users_monthly` | observable_gauge | users | (none) | Single global gauge | — | P0 |
 | `dau_mau_ratio` | observable_gauge | ratio | (none) | Stickiness; >0.20 healthy | <0.15 for 2 consecutive weeks | P0 |
 | `new_users_daily` | observable_gauge | users | `install_source` | Acquisition-vs-retention split | — | P0 |
 | `client_version_seen` | observable_gauge | users | `version_full` (LRU 200), `release_channel`, `os_type` | Only place full semver allowed; 200 × 3 × 4 = 2,400 series cap | — | P0 |
-| `version_adoption_pct` | observable_gauge | percent | `version_minor_bucket`, `release_channel` | "Are users upgrading?" | Latest stable <50% adoption 14d post-release | P0 |
+| `version_adoption_pct` | observable_gauge | percent | `version_full`, `release_channel` | "Are users upgrading?" | Latest stable <50% adoption 14d post-release | P0 |
 | `stale_version_users` | observable_gauge | users | `staleness_bucket` ∈ {<30d, 30-60, 60-90, >90} | Long-tail upgrade pressure | — | P1 |
-| `kiro_cli_upgrade_completed_total` | counter | 1 | `from_version_minor_bucket`, `to_version_minor_bucket`, `trigger` ∈ {auto, prompted, manual} | Rollout safety | — | P1 |
+| `kiro_cli_upgrade_completed_total` | counter | 1 | `from_version`, `to_version`, `trigger` ∈ {auto, prompted, manual} | Rollout safety | — | P1 |
 | `kiro_cli_client_identity` | log_event | event | `anonymous_client_id`, `install_method`, `install_date_epoch_day`, `first_seen_*`, `is_internal_amazon` | Dim table for ALL cohort joins; high-cardinality fields belong here, not in metrics | — | P0 |
 | `kiro_cli_daily_heartbeat` | counter | 1 | `client_application`, `install_method` | MAU computation; `client_version` excluded (resource attr only, 90-day rolling) | Volume drop >10% WoW | P1 |
 
@@ -229,8 +229,8 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Rationale | Alert idea | Pri |
 |---|---|---|---|---|---|---|
-| `kiro_cli_slash_command_invoked_total` | counter | 1 | `command` (registry enum, top-N + `_other_`), `version_minor_bucket` | "Which slash commands are used" | New command <100 invocations 7d post-release | P0 |
-| `kiro_cli_feature_used_total` | counter | 1 | `feature` (registry enum, top-50 + `_other_`), `version_minor_bucket` | Generic non-slash feature counter | — | P0 |
+| `kiro_cli_slash_command_invoked_total` | counter | 1 | `command` (registry enum, top-N + `_other_`), `version_full` | "Which slash commands are used" | New command <100 invocations 7d post-release | P0 |
+| `kiro_cli_feature_used_total` | counter | 1 | `feature` (registry enum, top-50 + `_other_`), `version_full` | Generic non-slash feature counter | — | P0 |
 | `feature_unique_users_weekly` | observable_gauge | users | `feature` | Reach (distinguishes spam from breadth) | New feature <5% WAU after 14d | P0 |
 | `kiro_cli_tool_call_total` | counter | 1 | `tool_origin` ∈ {builtin, mcp, custom, subagent_delegate, aws_api}, `builtin_tool_name` (only when `tool_origin=builtin`), `outcome` ∈ {success, error, denied, cancelled} | MCP/custom tool names live on `kiro_cli_tool_invoked` log only | denied/total >5% (UX friction) | P0 |
 | `tool_using_sessions_pct` | observable_gauge | percent | (none) | % of sessions invoking ≥1 tool | -5pp WoW (agentic discovery regression) | P0 |
@@ -250,7 +250,7 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 | `kiro_cli.bedrock.stream.duration` | histogram | s | `model_class`, `completion_reason` | 1, 2, 5, 10, 30, 60, 120, 300 | P0 |
 | `kiro_cli.bedrock.request.duration` | histogram | s | `model_class`, `operation`, `outcome` | same buckets | P0 |
 | `kiro_cli.bedrock.stream.inter_token_latency` | histogram | s | `model_class` | 0.01, 0.04, 0.1, 0.25, 1, 5 | P1 |
-| `kiro_cli.startup.duration` | histogram | s | `version_minor_bucket`, `cold_start`, `os_type` | 0.1, 0.25, 0.5, 1, 2, 5, 10 | P0 |
+| `kiro_cli.startup.duration` | histogram | s | `version_full`, `cold_start`, `os_type` | 0.1, 0.25, 0.5, 1, 2, 5, 10 | P0 |
 | `kiro_cli.agent.loop.iteration_duration` | histogram | s | `loop_phase` ∈ {model_call, tool_exec, parse, render} | 0.1, 0.5, 2, 10, 30, 120, 300 | P0 |
 | `kiro_cli_user_turn_duration_seconds` | histogram | s | `model_class`, `chat_conversation_type`, `is_subagent`, `mode` | 1, 2, 5, 10, 30, 60, 120, 300, 600 | P0 |
 | `kiro_cli_time_to_first_chunk_ms` | histogram | ms | `model_class`, `client_application`, `is_subagent` | 100, 250, 500, 1000, 2000, 5000, 10000 | P1 |
@@ -276,11 +276,11 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 
 | Name | Kind | Unit | Dimensions | Notes | Pri |
 |---|---|---|---|---|---|
-| `kiro_cli.process.memory.rss` | observable_gauge | By | `version_minor_bucket`, `agent_kind` | Sampled per-session; alerts on cohort p95, not per-host | P0 |
-| `kiro_cli.process.memory.growth_rate` | histogram | By/s | `version_minor_bucket`, `agent_kind` | Linear-fit slope over rolling N min; leak detector | P1 |
-| `kiro_cli.process.cpu.utilization` | histogram | 1 | `version_minor_bucket`, `agent_kind`, `state` ∈ {streaming, idle, tool_running, compaction} | Idle CPU = busy-wait detector | P0 |
-| `kiro_cli.process.fds.open` | observable_gauge | 1 | `version_minor_bucket`, `agent_kind` | FD leaks before EMFILE | P1 |
-| `kiro_cli.process.threads` | observable_gauge | 1 | `version_minor_bucket`, `agent_kind` | Tokio pool blowup detector | P2 |
+| `kiro_cli.process.memory.rss` | observable_gauge | By | `version_full`, `agent_kind` | Sampled per-session; alerts on cohort p95, not per-host | P0 |
+| `kiro_cli.process.memory.growth_rate` | histogram | By/s | `version_full`, `agent_kind` | Linear-fit slope over rolling N min; leak detector | P1 |
+| `kiro_cli.process.cpu.utilization` | histogram | 1 | `version_full`, `agent_kind`, `state` ∈ {streaming, idle, tool_running, compaction} | Idle CPU = busy-wait detector | P0 |
+| `kiro_cli.process.fds.open` | observable_gauge | 1 | `version_full`, `agent_kind` | FD leaks before EMFILE | P1 |
+| `kiro_cli.process.threads` | observable_gauge | 1 | `version_full`, `agent_kind` | Tokio pool blowup detector | P2 |
 
 `panic_location` and `host_id_hash` are **excluded** as metric dimensions — both reviewers flagged these as cardinality bombs. Crash signatures live on `kiro_cli_panic` log records; crash-loop detection comes from a separate per-process detector that emits `chat_cli.process.crashloop.detected` (no host dim).
 
@@ -548,7 +548,7 @@ Stop dual-writing. Remove `CognitoProvider`-driven `PostMetrics`. Delete V1 + V2
 
 | # | Risk | Severity | Mitigation |
 |---|---|---|---|
-| R1 | Cardinality explosion (rogue dim → CW bill spike) | Critical | Closed-enum registry, runtime LRU limiter with `_other_` overflow, per-metric 5k-series cap, CI lint rejecting free-form attrs, `telemetry.cardinality.overflow_total` P0 page, weekly cost-anomaly review on `ChatCLI` namespace. |
+| R1 | Cardinality explosion (rogue dim → CW bill spike) | Critical | Schema registry (client rejects unregistered metrics/attrs); KUTS ingestion enforces schema `max_distinct` budgets with `_other_` overflow on free-form dims (`mcp_server_name`, `mode`, `version_full`), `telemetry.cardinality.overflow_total` P0 page, weekly cost-anomaly review on `ChatCLI` namespace. |
 | R2 | Cost blow-up during dual-write | High | Standing budget $4K/mo per partition; dual-write capped at 30 days; cost reviewed weekly; Kinesis-side legacy sampling toggle if budget breached. |
 | R3 | Privacy regression (opt-out leak, PII outbound) | Critical | Paired counters (`kiro_cli_telemetry_opt_out_violation_total`, `kiro_cli_govcloud_channel_leak_total` must = 0; pageable). Redactor fail-closed (drop event, never passthrough). E2E opt-out test in CI. `kiro_cli_pii_redaction_coverage_ratio ≥ 0.999` SLO. |
 | R4 | Parity drift during dual-write | High | Quantitative parity job nightly; Phase gates require per-metric tolerance for 14d; PM Athena audit before Phase 3. |

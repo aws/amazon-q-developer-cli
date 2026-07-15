@@ -11,10 +11,16 @@ import {
 } from 'bun:test';
 import { EventEmitter } from 'events';
 import { AgentEventType, ContentType } from '../types/agent-events';
+import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
 import {
   KAS_DEFAULT_AGENT_ID,
   KAS_DEFAULT_AGENT_NAME,
 } from '../constants/agents';
+
+type ToolFinishArgs = {
+  outcome: 'success' | 'error' | 'cancelled' | 'denied';
+  model: string;
+};
 
 // --- Mock child_process ---
 function createMockStream() {
@@ -223,6 +229,8 @@ mock.module('../utils/logger', () => ({
 // fns are no-ops, modeFromId/resultFromStatus/tool-call observer stay functional.
 const mockRecordTuiSessionStarted = mock((_a: unknown) => {});
 const mockRecordTuiCloudSession = mock((_a: unknown) => {});
+const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
+const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 mock.module('../utils/tui-telemetry-observer', () => ({
   DEFAULT_ENGINE: 'v3',
   TUI_SCOPE: 'kiro.tui',
@@ -234,12 +242,15 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiTurnOutcome: mock(() => {}),
   recordTuiTokensConsumed: mock(() => {}),
   recordTuiContextUsage: mock(() => {}),
-  versionMinorBucketFromEnv: () => '_other_',
   modeFromId: (id?: string) => (id && id.length > 0 ? id : 'interactive'),
   resultFromStatus: (s?: string) => (s === 'completed' ? 'success' : '_other_'),
   TuiToolCallObserver: class {
-    start() {}
-    finish() {}
+    start(id: string, info: TuiToolCallStart) {
+      toolStartCalls.push({ id, info });
+    }
+    finish(id: string, args: ToolFinishArgs) {
+      toolFinishCalls.push({ id, args });
+    }
     reset() {}
   },
 }));
@@ -306,6 +317,8 @@ function freshMocks() {
   mockKiroListSessions.mockClear();
   mockRecordTuiSessionStarted.mockClear();
   mockRecordTuiCloudSession.mockClear();
+  toolStartCalls.length = 0;
+  toolFinishCalls.length = 0;
   capturedSessionUpdateHandler = null;
   capturedPermissionHandler = null;
   capturedKiroClientConfig = null;
@@ -664,7 +677,7 @@ describe('KasAcpClient', () => {
 
   it('emits kiro_cli_chat_session_started_total exactly once per session (dedup)', async () => {
     // Dedup guard: repeated prompts in one session must not re-emit session-started.
-    const client = new KasAcpClient();
+    const client = new KasAcpClient({ version: '9.9.9-test' });
     await client.newSession();
 
     await client.prompt([{ type: 'text', text: 'hello' } as any]);
@@ -672,6 +685,9 @@ describe('KasAcpClient', () => {
 
     expect(mockKiroPrompt).toHaveBeenCalledTimes(2);
     expect(mockRecordTuiSessionStarted).toHaveBeenCalledTimes(1);
+    expect(mockRecordTuiSessionStarted.mock.calls[0]![0]).toMatchObject({
+      version: '9.9.9-test',
+    });
   });
 
   it('cancel() calls kiroClient.cancel with sessionId', async () => {
@@ -1502,6 +1518,101 @@ describe('KasAcpClient', () => {
     expect(event).toBeDefined();
     expect(event.id).toBe('tc-1');
     expect(event.name).toBe('fs_write');
+  });
+
+  it('session update preserves MCP server identity before stripping title', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+    toolStartCalls.length = 0;
+    toolFinishCalls.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc-mcp',
+        title: '@local-server/query_db',
+        kind: 'mcp',
+        rawInput: { sql: 'select 1' },
+        content: [],
+        locations: [],
+      },
+    });
+
+    const event = handler.mock.calls
+      .map((c) => c[0])
+      .find((e: any) => e.type === AgentEventType.ToolCall) as any;
+    expect(event).toBeDefined();
+    expect(event.name).toBe('query_db');
+    expect(event.meta?.kiro?.mcpServerName).toBe('local-server');
+    expect(toolStartCalls).toEqual([
+      {
+        id: 'tc-mcp',
+        info: {
+          name: 'query_db',
+          toolOrigin: 'mcp',
+          mcpServerName: 'local-server',
+        },
+      },
+    ]);
+    expect(toolFinishCalls).toHaveLength(0);
+  });
+
+  it('failed-before-exec synthesized MCP tool_call feeds telemetry start before finish', async () => {
+    const client = new KasAcpClient();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+    await client.newSession();
+    toolStartCalls.length = 0;
+    toolFinishCalls.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-mcp-failed',
+        title: '@local-server/query_db',
+        status: 'failed',
+        rawInput: { sql: 'select 1' },
+      },
+    });
+
+    expect(toolStartCalls).toHaveLength(1);
+    expect(toolStartCalls[0]!.info).toEqual({
+      name: 'query_db',
+      toolOrigin: 'mcp',
+      mcpServerName: 'local-server',
+    });
+    expect(toolFinishCalls).toHaveLength(1);
+    expect(toolFinishCalls[0]!.id).toBe('tc-mcp-failed');
+    expect(toolFinishCalls[0]!.args.outcome).toBe('error');
+  });
+
+  it('failed-before-exec synthesized MCP subtask tool_call does not feed telemetry', async () => {
+    const client = new KasAcpClient();
+    const multiHandler = mock((_sessionId: string, _event: any) => {});
+    client.onMultiSessionUpdate(multiHandler);
+    await client.newSession();
+    toolStartCalls.length = 0;
+    toolFinishCalls.length = 0;
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc-sub-mcp-failed',
+        title: '@local-server/query_db',
+        status: 'failed',
+        rawInput: { sql: 'select 1' },
+        _meta: { kiro: { agentSubtaskId: 'sub-1' } },
+      },
+    });
+
+    expect(multiHandler).toHaveBeenCalled();
+    expect(toolStartCalls).toHaveLength(0);
+    expect(toolFinishCalls).toHaveLength(0);
   });
 
   // ── Stub methods ──

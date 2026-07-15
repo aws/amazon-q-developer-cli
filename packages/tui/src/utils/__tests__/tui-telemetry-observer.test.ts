@@ -31,7 +31,7 @@ const {
   recordTuiModeActive,
   recordTuiSubagentDelegation,
   recordTuiCloudSession,
-  versionMinorBucketFromEnv,
+  recordTuiProcessHealth,
   modeFromId,
   TuiToolCallObserver,
   DEFAULT_ENGINE,
@@ -110,25 +110,8 @@ function expectEngineV2(call: { attrs?: Attrs; scope?: string }): void {
   expect(call.attrs?.['client_application']).toBeUndefined();
 }
 
-describe('versionMinorBucketFromEnv', () => {
-  it('reads KIRO_VERSION_MINOR_BUCKET and falls back to _other_ (never hardcoded current)', () => {
-    const prev = process.env['KIRO_VERSION_MINOR_BUCKET'];
-    try {
-      delete process.env['KIRO_VERSION_MINOR_BUCKET'];
-      expect(versionMinorBucketFromEnv()).toBe('_other_');
-      process.env['KIRO_VERSION_MINOR_BUCKET'] = 'current-1';
-      expect(versionMinorBucketFromEnv()).toBe('current-1');
-      process.env['KIRO_VERSION_MINOR_BUCKET'] = 'garbage';
-      expect(versionMinorBucketFromEnv()).toBe('_other_');
-    } finally {
-      if (prev === undefined) delete process.env['KIRO_VERSION_MINOR_BUCKET'];
-      else process.env['KIRO_VERSION_MINOR_BUCKET'] = prev;
-    }
-  });
-});
-
 describe('modeFromId', () => {
-  it('normalizes raw mode/agent ids into the closed `mode` enum (mirrors Rust Mode::from_name)', () => {
+  it('normalizes known aliases and passes unknown ids through verbatim (mirrors Rust Mode::from_name)', () => {
     // default/kiro/vibe and empty all collapse to interactive.
     expect(modeFromId('default')).toBe('interactive');
     expect(modeFromId('vibe')).toBe('interactive');
@@ -144,25 +127,21 @@ describe('modeFromId', () => {
     // straight-through enum members.
     expect(modeFromId('oneshot')).toBe('oneshot');
     expect(modeFromId('review')).toBe('review');
-    // unknown custom agent ids fall back to _other_, not leaked raw.
-    expect(modeFromId('spec')).toBe('_other_');
-    expect(modeFromId('my_custom_agent')).toBe('_other_');
+    expect(modeFromId('spec')).toBe('spec');
+    expect(modeFromId('My-Custom-Agent')).toBe('my_custom_agent');
   });
 });
 
 describe('recordTuiSessionStarted', () => {
   it('emits kiro_cli_chat_session_started_total with engine=v3 on the v3 scope', () => {
-    recordTuiSessionStarted(
-      { mode: 'interactive', versionMinorBucket: 'current-1' },
-      deps
-    );
+    recordTuiSessionStarted({ mode: 'interactive', version: '2.4.0' }, deps);
     expect(counterCalls).toHaveLength(1);
     const c = counterCalls[0]!;
     expect(c.name).toBe('kiro_cli_chat_session_started_total');
     expect(c.value).toBe(1);
     expectEngineV3(c);
     expect(c.attrs?.['mode']).toBe('interactive');
-    expect(c.attrs?.['version_minor_bucket']).toBe('current-1');
+    expect(c.attrs?.['version_full']).toBe('2.4.0');
   });
 });
 
@@ -265,6 +244,7 @@ describe('recordTuiToolCall', () => {
     recordTuiToolCall(
       {
         toolOrigin: 'mcp',
+        mcpServerName: 'Local-Server',
         outcome: 'error',
       },
       deps
@@ -272,8 +252,39 @@ describe('recordTuiToolCall', () => {
     const m = counterCalls[0]!;
     expect(m.attrs?.['builtin_tool_name']).toBeUndefined();
     expect(m.attrs?.['tool_origin']).toBe('mcp');
+    expect(m.attrs?.['mcp_server_name']).toBe('local-server');
     expect(m.attrs?.['outcome']).toBe('error');
     expect(histogramCalls).toHaveLength(0);
+  });
+
+  it('normalizes MCP dimensions once for count and duration metrics', () => {
+    const mcpServerName = '  My-Postgres Server  ';
+    recordTuiToolCall(
+      {
+        toolOrigin: 'mcp',
+        mcpServerName,
+        outcome: 'success',
+        executionDurationMs: 42,
+      },
+      deps
+    );
+    recordTuiToolExecutionDuration(
+      {
+        toolOrigin: 'mcp',
+        mcpServerName,
+        isSuccess: true,
+        durationMs: 17,
+      },
+      deps
+    );
+
+    expect(counterCalls[0]!.attrs?.['mcp_server_name']).toBe(
+      'my-postgres server'
+    );
+    expect(histogramCalls).toHaveLength(2);
+    for (const call of histogramCalls) {
+      expect(call.attrs?.['mcp_server_name']).toBe('my-postgres server');
+    }
   });
 });
 
@@ -369,7 +380,12 @@ describe('recordTuiTurnOutcome', () => {
 describe('recordTuiToolExecutionDuration', () => {
   it('emits kiro_cli_tool_execution_duration_ms with engine=v3; skips non-positive', () => {
     recordTuiToolExecutionDuration(
-      { toolOrigin: 'builtin', isSuccess: true, durationMs: 17 },
+      {
+        toolOrigin: 'builtin',
+        builtinToolName: 'fs_read',
+        isSuccess: true,
+        durationMs: 17,
+      },
       deps
     );
     expect(histogramCalls).toHaveLength(1);
@@ -380,7 +396,12 @@ describe('recordTuiToolExecutionDuration', () => {
     expect(h.attrs?.['is_success']).toBe('true');
 
     recordTuiToolExecutionDuration(
-      { toolOrigin: 'builtin', isSuccess: true, durationMs: 0 },
+      {
+        toolOrigin: 'builtin',
+        builtinToolName: 'fs_read',
+        isSuccess: true,
+        durationMs: 0,
+      },
       deps
     );
     expect(histogramCalls).toHaveLength(1); // unchanged
@@ -414,7 +435,7 @@ describe('recordTuiModeActive', () => {
 });
 
 describe('recordTuiSubagentDelegation', () => {
-  it('emits kiro_cli_subagent_delegations_total, bucketing the name, with engine=v3', () => {
+  it('emits kiro_cli_subagent_delegations_total with the normalized name, engine=v3', () => {
     recordTuiSubagentDelegation(
       { subagentName: 'code-review', model: 'claude-sonnet-4' },
       deps
@@ -429,14 +450,26 @@ describe('recordTuiSubagentDelegation', () => {
       { subagentName: 'some-random-agent', model: 'claude-sonnet-4' },
       deps
     );
-    expect(counterCalls[1]!.attrs?.['subagent_name_class']).toBe('_other_');
+    expect(counterCalls[1]!.attrs?.['subagent_name_class']).toBe(
+      'some_random_agent'
+    );
+
+    recordTuiSubagentDelegation(
+      { subagentName: undefined, model: 'claude-sonnet-4' },
+      deps
+    );
+    expect(counterCalls[2]!.attrs?.['subagent_name_class']).toBe('_other_');
   });
 });
 
 describe('TuiToolCallObserver', () => {
   it('start→finish emits kiro_cli_tool_call_total for a builtin', () => {
     const obs = new TuiToolCallObserver(deps);
-    obs.start('call-1', { name: 'fs_read', origin: 'builtin' });
+    obs.start('call-1', {
+      name: 'fs_read',
+      toolOrigin: 'builtin',
+      builtinToolName: 'fs_read',
+    });
     obs.finish('call-1', {
       outcome: 'success',
       model: 'claude-sonnet-4',
@@ -453,7 +486,10 @@ describe('TuiToolCallObserver', () => {
 
   it('emits the delegation counter when the origin is subagent_delegate', () => {
     const obs = new TuiToolCallObserver(deps);
-    obs.start('call-2', { name: 'code-review', origin: 'subagent_delegate' });
+    obs.start('call-2', {
+      name: 'code-review',
+      toolOrigin: 'subagent_delegate',
+    });
     obs.finish('call-2', {
       outcome: 'success',
       model: 'claude-sonnet-4',
@@ -466,6 +502,25 @@ describe('TuiToolCallObserver', () => {
       (c) => c.name === 'kiro_cli_subagent_delegations_total'
     )!;
     expect(deleg.attrs?.['subagent_name_class']).toBe('code_review');
+  });
+
+  it('requires and emits mcp_server_name for MCP tool starts', () => {
+    const obs = new TuiToolCallObserver(deps);
+    obs.start('call-mcp', {
+      name: 'query_db',
+      toolOrigin: 'mcp',
+      mcpServerName: 'Local-Server',
+    });
+    obs.finish('call-mcp', {
+      outcome: 'success',
+      model: 'claude-sonnet-4',
+    });
+
+    expect(counterCalls).toHaveLength(1);
+    const c = counterCalls[0]!;
+    expect(c.attrs?.['tool_origin']).toBe('mcp');
+    expect(c.attrs?.['mcp_server_name']).toBe('local-server');
+    expect(c.attrs?.['builtin_tool_name']).toBeUndefined();
   });
 
   it('falls back to builtin/unknown for a finish with no matching start', () => {
@@ -481,7 +536,11 @@ describe('TuiToolCallObserver', () => {
 
   it('reset() drops in-flight starts so a later finish is unmatched', () => {
     const obs = new TuiToolCallObserver(deps);
-    obs.start('call-3', { name: 'fs_read', origin: 'builtin' });
+    obs.start('call-3', {
+      name: 'fs_read',
+      toolOrigin: 'builtin',
+      builtinToolName: 'fs_read',
+    });
     obs.reset();
     obs.finish('call-3', {
       outcome: 'success',
@@ -492,18 +551,58 @@ describe('TuiToolCallObserver', () => {
   });
 });
 
+describe('recordTuiProcessHealth', () => {
+  it('uses the snapshot version as version_full', () => {
+    recordTuiProcessHealth(
+      {
+        rssMb: 10,
+        heapUsedMb: 4,
+        peakRssMb: 12,
+        cpuUserPct: 1,
+        cpuSystemPct: 2,
+        lastRenderMs: 0,
+        maxRenderMs: 0,
+        rendersPerMin: 0,
+        fullRedrawsPerMin: 0,
+        yogaNodeCount: 0,
+        eventLoopP99Ms: null,
+        inputLatencyP95Ms: null,
+        sessionDurationSec: 30,
+        cpuCores: 8,
+        totalMemoryMb: 16384,
+        terminal: 'unknown',
+        sessionId: null,
+        version: '9.8.7-test',
+        platform: 'darwin',
+      },
+      'v2',
+      deps
+    );
+
+    const rss = gaugeCalls.find(
+      (call) => call.name === 'kiro_cli.process.memory.rss'
+    )!;
+    expect(rss.attrs?.['version_full']).toBe('9.8.7-test');
+    expect(rss.attrs?.['engine']).toBe('v2');
+    const cpu = histogramCalls.find(
+      (call) => call.name === 'kiro_cli.process.cpu.utilization'
+    )!;
+    expect(cpu.attrs?.['version_full']).toBe('9.8.7-test');
+  });
+});
+
 describe('engine parameterization (v2 path, §H.4)', () => {
   it('stamps engine=v2 when passed explicitly, defaults to v3 otherwise', () => {
     // Explicit v3 still works (the default).
     recordTuiSessionStarted(
-      { mode: 'interactive', versionMinorBucket: 'current', engine: 'v3' },
+      { mode: 'interactive', version: '2.4.0', engine: 'v3' },
       deps
     );
     expectEngineV3(counterCalls[0]!);
 
     // engine:'v2' flips the discriminator, same metric/scope.
     recordTuiSessionStarted(
-      { mode: 'interactive', versionMinorBucket: 'current', engine: 'v2' },
+      { mode: 'interactive', version: '2.4.0', engine: 'v2' },
       deps
     );
     const v2 = counterCalls[1]!;
@@ -547,7 +646,11 @@ describe('engine parameterization (v2 path, §H.4)', () => {
 
   it('TuiToolCallObserver stamps the engine it was constructed with', () => {
     const obs = new TuiToolCallObserver(deps, 'v2');
-    obs.start('call-v2', { name: 'fs_read', origin: 'builtin' });
+    obs.start('call-v2', {
+      name: 'fs_read',
+      toolOrigin: 'builtin',
+      builtinToolName: 'fs_read',
+    });
     obs.finish('call-v2', {
       outcome: 'success',
       model: 'claude-sonnet-4',
@@ -564,7 +667,7 @@ describe('KIRO_TEST_MODE suppression', () => {
     try {
       recordTuiSessionStarted({
         mode: 'interactive',
-        versionMinorBucket: 'current',
+        version: '2.4.0',
       });
       // No injected deps → real transports would have been used, but the
       // guard suppressed them. (counterCalls only tracks the injected spy.)

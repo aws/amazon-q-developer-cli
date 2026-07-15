@@ -152,6 +152,7 @@ use tool_utils::{
 use tools::task::store::TaskStore;
 use tools::{
     Tool,
+    ToolCallIdentity,
     ToolExecutionError,
     ToolExecutionOutput,
     ToolExecutionOutputItem,
@@ -2336,6 +2337,7 @@ impl Agent {
                 .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
                     tool_use_id: tool_use_id.clone(),
                     tool_name: block.name.clone(),
+                    tool_identity: Some(ToolCallIdentity::from_tool(tool)),
                     raw_input: block.input.clone(),
                     reason: ToolCallFailureReason::PermissionDenied,
                     error: reason,
@@ -3109,6 +3111,10 @@ impl Agent {
                 // avoid surfacing the wrapper in the UI.
                 let model_err_msg = e.to_string();
                 let user_err_msg = e.kind.to_string();
+                let tool_identity = e
+                    .canonical_name
+                    .as_ref()
+                    .map(ToolCallIdentity::from_canonical_tool_name);
                 pre_built_content.push(ContentBlock::ToolResult(ToolResultBlock {
                     tool_use_id: tool_use_id.clone(),
                     content: vec![ToolResultContentBlock::Text(model_err_msg.clone())],
@@ -3123,6 +3129,7 @@ impl Agent {
                     .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
                         tool_use_id,
                         tool_name,
+                        tool_identity,
                         raw_input,
                         reason: ToolCallFailureReason::ParseError,
                         error: user_err_msg,
@@ -3231,6 +3238,7 @@ impl Agent {
                     .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
                         tool_use_id: block.tool_use_id.clone(),
                         tool_name: block.name.clone(),
+                        tool_identity: Some(ToolCallIdentity::from_tool(tool)),
                         raw_input: block.input.clone(),
                         reason: ToolCallFailureReason::PermissionDenied,
                         error: user_err_msg,
@@ -3569,6 +3577,7 @@ impl Agent {
                     let mut content = pre_built_content.clone();
                     let mut results = pre_built_results.clone();
                     for (tool_use_id, tool_name, raw_input, tool, hook_res) in denied_tools {
+                        let tool_identity = ToolCallIdentity::from_tool(&tool);
                         let err_msg = format!(
                             "PreToolHook blocked the tool execution: {}",
                             hook_res.output().unwrap_or("no output provided")
@@ -3587,6 +3596,7 @@ impl Agent {
                             .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
                                 tool_use_id,
                                 tool_name,
+                                tool_identity: Some(tool_identity),
                                 raw_input,
                                 reason: ToolCallFailureReason::HookRejected,
                                 error: err_msg,
@@ -3809,14 +3819,15 @@ impl Agent {
             let mut tool = match Tool::parse(&canonical_tool_name, tool_use.input.clone()) {
                 Ok(t) => t,
                 Err(err) => {
-                    parse_errors.push(ToolParseError::new(tool_use, err));
+                    parse_errors.push(ToolParseError::new(tool_use, err).with_canonical_name(canonical_tool_name));
                     continue;
                 },
             };
             match self.validate_tool(&mut tool).await {
                 Ok(_) => tools.push((tool_use, tool)),
                 Err(err) => {
-                    parse_errors.push(ToolParseError::new(tool_use, err));
+                    parse_errors
+                        .push(ToolParseError::new(tool_use, err).with_canonical_name(tool.canonical_tool_name()));
                 },
             }
         }

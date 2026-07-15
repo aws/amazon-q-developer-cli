@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot", "crates/kiro-knowledge-mcp", "crates/kiro-bot-eval", "crates/kiro-github-mcp", "crates/kiro-mcp", "crates/kiro-bot-metrics", "crates/kiro-telemetry", "crates/kiro-telemetry-collector", "crates/kiro-telemetry-host", "crates/kiro-telemetry-legacy", "crates/kiro-telemetry-observer", "crates/kiro-telemetry-schema", "crates/voice"]
+members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/chat-cli-v2", "crates/code-agent-sdk", "crates/semantic-search-client", "crates/agent", "crates/mock-mcp-server", "crates/chat-cli-ui", "crates/kiro-bot", "crates/kiro-knowledge-mcp", "crates/kiro-bot-eval", "crates/kiro-github-mcp", "crates/kiro-mcp", "crates/kiro-bot-metrics", "crates/kiro-telemetry", "crates/kiro-telemetry-host", "crates/kiro-telemetry-legacy", "crates/kiro-telemetry-observer", "crates/kiro-telemetry-schema", "crates/voice"]
 default-members = ["crates/chat-cli"]
 
 [workspace.package]

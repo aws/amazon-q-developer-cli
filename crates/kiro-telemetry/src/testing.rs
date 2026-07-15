@@ -68,6 +68,7 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     ));
     records.push(user_logged_in(ClientApplication::ChatCliV3, CredentialKind::BuilderId));
     records.push(chat_session_started(Mode::Interactive, ClientApplication::ChatCliV3));
+    records.push(cloud_session_total(CloudSessionEvent::Started, Engine::V3));
     records.push(ui_mode_session_started(
         UiMode::Tui,
         UiModeSource::Default,
@@ -96,24 +97,19 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     records.push(dau_mau_ratio(0.21));
     records.push(new_users_daily(99.0, InstallSource::Download));
     records.push(client_version_seen(7.0, "2.6.1", ReleaseChannel::Stable, OsType::Macos));
-    records.push(version_adoption_pct(
-        63.5,
-        VersionMinorBucket::Current,
-        ReleaseChannel::Stable,
-    ));
+    records.push(version_adoption_pct(63.5, "2.6.1", ReleaseChannel::Stable));
     records.push(stale_version_users(12.0, StalenessBucket::from_age_days(75)));
     records.push(mode_active_users_weekly(15.0, Mode::Plan));
-    records.push(upgrade_completed(
-        VersionMinorBucket::Older,
-        VersionMinorBucket::Current,
-        UpgradeTrigger::Auto,
-    ));
+    records.push(upgrade_completed("2.5.9", "2.6.1", UpgradeTrigger::Auto));
 
     // §5.2 Feature usage
     records.push(slash_command_invoked("help"));
     records.push(feature_used("catalog_smoke"));
     records.push(feature_unique_users_weekly(8.0, "tangent"));
-    records.push(tool_call_total(ToolOrigin::Builtin, Some("fs_read"), Outcome::Success));
+    records.push(tool_call_total_for_invocation(
+        ToolInvocation::mcp(Some("query_db"), Some("postgres-mcp"), true, Some(true), Some(true)),
+        Some(Engine::V3),
+    ));
     records.push(tool_using_sessions_pct(72.0));
     records.push(mcp_server_connected_total(McpServerClass::BuiltinFs));
     records.push(model_invocation(Some("claude-sonnet-4")));
@@ -137,7 +133,7 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         Outcome::Success,
     ));
     records.push(bedrock_stream_inter_token_latency(0.05, Some("claude-sonnet-4")));
-    records.push(startup_duration(0.5, VersionMinorBucket::Current, true, OsType::Macos));
+    records.push(startup_duration(0.5, "2.6.1", true, OsType::Macos));
     records.push(agent_loop_iteration_duration(2.0, LoopPhase::ModelCall));
     records.push(user_turn_duration_seconds(
         5.0,
@@ -175,24 +171,16 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     records.push(upstream_dependency_up(true, Dependency::Bedrock, Partition::Aws));
 
     // §5.5 Health (process)
-    records.push(process_memory_rss(
-        128.0 * 1024.0 * 1024.0,
-        VersionMinorBucket::Current,
-        AgentKind::Kas,
-    ));
+    records.push(process_memory_rss(128.0 * 1024.0 * 1024.0, "2.6.1", AgentKind::Kas));
     records.push(process_cpu_utilization(
         0.25,
-        VersionMinorBucket::Current,
+        "2.6.1",
         AgentKind::Kas,
         ProcessState::Streaming,
     ));
-    records.push(process_memory_growth_rate(
-        1024.0,
-        VersionMinorBucket::Current,
-        AgentKind::Kas,
-    ));
-    records.push(process_fds_open(64.0, VersionMinorBucket::Current, AgentKind::Kas));
-    records.push(process_threads(12.0, VersionMinorBucket::Current, AgentKind::Kas));
+    records.push(process_memory_growth_rate(1024.0, "2.6.1", AgentKind::Kas));
+    records.push(process_fds_open(64.0, "2.6.1", AgentKind::Kas));
+    records.push(process_threads(12.0, "2.6.1", AgentKind::Kas));
 
     // §5.6 LLM-specific
     records.extend(token_records(invocation, TokenUsage {
@@ -215,8 +203,12 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     ));
 
     // §5.7 Tool-use & MCP
-    records.push(tool_invocations(ToolOrigin::Builtin, Outcome::Success));
-    records.push(tool_execution_duration_ms(42.0, ToolOrigin::Builtin, true));
+    let builtin_invocation = ToolInvocation::new(Some("fs_read"), ToolOrigin::Builtin, true, Some(true), Some(true));
+    records.push(tool_invocations_for_invocation(builtin_invocation, Some(Engine::V3)));
+    records.push(
+        tool_execution_duration_ms_for_invocation(42.0, builtin_invocation, Some(Engine::V3))
+            .expect("positive duration"),
+    );
     records.push(mcp_server_init_total(McpServerClass::BuiltinFs, Outcome::Success));
 
     // §5.8 Quality / outcomes
@@ -246,13 +238,13 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     // §5.5b Health (process/perf — TUI-promoted)
     records.push(process_memory_peak_rss(
         256.0 * 1024.0 * 1024.0,
-        VersionMinorBucket::Current,
+        "2.6.1",
         Engine::V3,
         ProcessRole::Tui,
     ));
     records.push(process_memory_heap_used(
         96.0 * 1024.0 * 1024.0,
-        VersionMinorBucket::Current,
+        "2.6.1",
         Engine::V3,
         ProcessRole::Tui,
     ));

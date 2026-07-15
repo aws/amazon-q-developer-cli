@@ -73,7 +73,6 @@ import {
   recordTuiTurnOutcome,
   recordTuiUserTurn,
   resultFromStatus,
-  versionMinorBucketFromEnv,
   TuiToolCallObserver,
 } from '../utils/tui-telemetry-observer';
 import {
@@ -95,6 +94,7 @@ import {
   extractKiroMetaFromUpdate,
   normalizeKasTurnCompletion,
   stripMcpTitlePrefix,
+  toolTelemetryStartFromEvent,
   toAgentProcess,
   type AcpSessionUpdate,
   type AgentProcess,
@@ -732,12 +732,7 @@ export class KasAcpClient extends BaseAcpClient {
    */
   private observeV3ToolCall(event: AgentStreamEvent | null): void {
     if (event?.type === AgentEventType.ToolCall) {
-      // origin: `_meta.kiro.pipeline` marks a sub-agent delegation, else builtin.
-      // event.name is already MCP-prefix-stripped, so MCP can't be told from it.
-      this.v3ToolCalls.start(event.id, {
-        name: event.meta?.kiro?.toolName ?? event.name ?? '',
-        origin: event.meta?.kiro?.pipeline ? 'subagent_delegate' : 'builtin',
-      });
+      this.v3ToolCalls.start(event.id, toolTelemetryStartFromEvent(event));
       return;
     }
     if (event?.type !== AgentEventType.ToolCallFinished) return;
@@ -801,6 +796,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.rememberKasToolCall(event);
     const meta = extractKiroMetaFromEvent(event);
     if (this.routeKasSubtaskEvent(event, meta)) return;
+    this.observeV3ToolCall(event);
     this.broadcastStreamEvent(event);
   }
 
@@ -2527,12 +2523,10 @@ export class KasAcpClient extends BaseAcpClient {
   private emitChatSessionStartedOnce(sessionId: string): void {
     if (this.chatSessionStartedSessions.has(sessionId)) return;
     this.chatSessionStartedSessions.add(sessionId);
-    // version_minor_bucket comes from the launcher (KIRO_VERSION_MINOR_BUCKET);
-    // the TUI's own-version vantage can't compute the bucket.
     const mode = modeFromId(this.telemetryCurrentModeId);
     recordTuiSessionStarted({
       mode,
-      versionMinorBucket: versionMinorBucketFromEnv(),
+      version: this.version,
     });
     recordTuiModeActive({ mode });
   }

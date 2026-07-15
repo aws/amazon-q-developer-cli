@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { stripMcpTitlePrefix, unwrapKasMcpOutput } from '../acp-client';
+import {
+  mcpServerNameFromTitle,
+  stripMcpTitlePrefix,
+  unwrapKasMcpOutput,
+} from '../acp-client';
 
 describe('stripMcpTitlePrefix', () => {
   it('strips @serverName/ prefix from MCP tool titles', () => {
@@ -25,6 +29,21 @@ describe('stripMcpTitlePrefix', () => {
     );
     expect(stripMcpTitlePrefix('@/empty-server')).toBe('@/empty-server'); // no match — empty server name
     expect(stripMcpTitlePrefix('')).toBe('');
+  });
+});
+
+describe('mcpServerNameFromTitle', () => {
+  it('extracts the server name from @server/tool titles', () => {
+    expect(mcpServerNameFromTitle('@test-mock/echo')).toBe('test-mock');
+    expect(mcpServerNameFromTitle('@my-server/get_weather')).toBe('my-server');
+  });
+
+  it('returns undefined for non-MCP titles', () => {
+    expect(mcpServerNameFromTitle('Read File')).toBeUndefined();
+    expect(mcpServerNameFromTitle('shell')).toBeUndefined();
+    expect(mcpServerNameFromTitle('@/empty-server')).toBeUndefined();
+    expect(mcpServerNameFromTitle('')).toBeUndefined();
+    expect(mcpServerNameFromTitle(undefined)).toBeUndefined();
   });
 });
 

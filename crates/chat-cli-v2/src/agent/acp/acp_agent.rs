@@ -50,6 +50,7 @@ use agent::tools::{
     BuiltInTool,
     BuiltInToolName,
     Tool,
+    ToolCallIdentity,
     ToolKind as AgentToolKind,
 };
 use agent::tui_commands::{
@@ -3592,7 +3593,7 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
                 .status(ToolCallStatus::Pending)
                 .content(get_tool_content(&tool_call.tool))
                 .raw_input(Some(tool_call.tool_use_block.input.clone()))
-                .meta(kiro_tool_name_meta(&tool_call.tool_use_block.name));
+                .meta(kiro_tool_name_meta(&tool_call.tool));
 
             if let Some(locations) = locations {
                 acp_tool_call = acp_tool_call.locations(locations);
@@ -3639,6 +3640,7 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
         UpdateEvent::ToolCallFailed {
             tool_use_id,
             tool_name,
+            tool_identity,
             raw_input,
             error,
             ..
@@ -3647,9 +3649,14 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
             // Surface the failure reason as a text content block so clients
             // render a descriptive error instead of a generic fallback.
             let error_content: ToolCallContent = ContentBlock::Text(TextContent::new(error.clone())).into();
-            Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-                ToolCallId::new(tool_use_id),
-                ToolCallUpdateFields::new()
+            let meta = tool_identity.as_ref().map_or_else(
+                || kiro_tool_identity_meta(&tool_name, None),
+                |identity| kiro_tool_identity_meta(&identity.tool_name, identity.mcp_server_name.as_deref()),
+            );
+            Some(SessionUpdate::ToolCallUpdate(
+                ToolCallUpdate::new(
+                    ToolCallId::new(tool_use_id),
+                    ToolCallUpdateFields::new()
                     .status(Some(ToolCallStatus::Failed))
                     .title(Some(tool_name))
                     .kind(Some(kind))
@@ -3657,7 +3664,9 @@ fn convert_update_event_to_session_update(update_event: UpdateEvent) -> Option<S
                     // Forward the model-generated arguments so the TUI can
                     // render them when execution was blocked.
                     .raw_input(Some(raw_input.clone())),
-            )))
+                )
+                .meta(meta),
+            ))
         },
         UpdateEvent::ToolCallUpdate {
             id,
@@ -3772,9 +3781,20 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
     }
 }
 
-fn kiro_tool_name_meta(tool_name: &str) -> Meta {
+fn kiro_tool_name_meta(tool: &Tool) -> Meta {
+    let identity = ToolCallIdentity::from_tool(tool);
+    kiro_tool_identity_meta(&identity.tool_name, identity.mcp_server_name.as_deref())
+}
+
+fn kiro_tool_identity_meta(tool_name: &str, mcp_server_name: Option<&str>) -> Meta {
     let mut kiro = serde_json::Map::new();
     kiro.insert("toolName".into(), serde_json::Value::String(tool_name.to_string()));
+    if let Some(mcp_server_name) = mcp_server_name {
+        kiro.insert(
+            "mcpServerName".into(),
+            serde_json::Value::String(mcp_server_name.to_string()),
+        );
+    }
     let mut meta = Meta::new();
     meta.insert("kiro".into(), serde_json::Value::Object(kiro));
     meta
@@ -5287,11 +5307,7 @@ mod kas_turn_completion_telemetry_tests {
         let process_records = event_to_otel_metric_records(&process);
         expect_metric(
             &process_records,
-            metric::process_memory_rss(
-                128.0 * 1024.0 * 1024.0,
-                metric::VersionMinorBucket::Current,
-                metric::AgentKind::Kas,
-            ),
+            metric::process_memory_rss(128.0 * 1024.0 * 1024.0, "2.4.0", metric::AgentKind::Kas),
         );
     }
 
@@ -5522,22 +5538,30 @@ mod kas_turn_completion_telemetry_tests {
         );
 
         let builtin_records = event_to_otel_metric_records(&events[0]);
-        expect_metric(
-            &builtin_records,
-            metric::tool_call_total(metric::ToolOrigin::Builtin, Some("fs_read"), metric::Outcome::Success),
+        let builtin_invocation = metric::ToolInvocation::new(
+            Some("fs_read"),
+            metric::ToolOrigin::Builtin,
+            true,
+            Some(true),
+            Some(true),
         );
         expect_metric(
             &builtin_records,
-            metric::tool_invocations(metric::ToolOrigin::Builtin, metric::Outcome::Success),
+            metric::tool_call_total_for_invocation(builtin_invocation, Some(metric::Engine::V3)),
+        );
+        expect_metric(
+            &builtin_records,
+            metric::tool_invocations_for_invocation(builtin_invocation, Some(metric::Engine::V3)),
         );
         let builtin_log = event_to_otel_log_record(&events[0]).expect("builtin tool log");
         assert_eq!(log_attr(&builtin_log, "tool_name"), Some("fs_read"));
         assert_eq!(log_attr(&builtin_log, "model"), Some("claude-4-sonnet"));
 
         let mcp_records = event_to_otel_metric_records(&events[1]);
+        let mcp_invocation = metric::ToolInvocation::mcp(Some("echo"), Some("local"), true, Some(true), Some(true));
         expect_metric(
             &mcp_records,
-            metric::tool_call_total(metric::ToolOrigin::Mcp, None, metric::Outcome::Success),
+            metric::tool_call_total_for_invocation(mcp_invocation, Some(metric::Engine::V3)),
         );
         let mcp_log = event_to_otel_log_record(&events[1]).expect("mcp tool log");
         assert_eq!(log_attr(&mcp_log, "tool_name"), Some("echo"));
@@ -5972,7 +5996,32 @@ mod convert_update_event_tests {
         let json = serde_json::to_value(&update).expect("SessionUpdate should serialize");
 
         assert_eq!(json["title"], "Creating scraper.rs", "got: {json}");
-        assert_eq!(json["_meta"]["kiro"]["toolName"], "fs_write", "got: {json}");
+        assert_eq!(json["_meta"]["kiro"]["toolName"], "write", "got: {json}");
+    }
+
+    #[test]
+    fn test_failed_tool_call_carries_resolved_mcp_identity_in_meta() {
+        use agent::protocol::ToolCallFailureReason;
+        use agent::tools::ToolCallIdentity;
+
+        let event = UpdateEvent::ToolCallFailed {
+            tool_use_id: "tc-mcp-failed".to_string(),
+            tool_name: "query_db".to_string(),
+            tool_identity: Some(ToolCallIdentity {
+                tool_name: "query_db".to_string(),
+                mcp_server_name: Some("local-server".to_string()),
+            }),
+            raw_input: serde_json::json!({ "sql": "select 1" }),
+            reason: ToolCallFailureReason::PermissionDenied,
+            error: "blocked".to_string(),
+        };
+
+        let update = convert_update_event_to_session_update(event).expect("ToolCallFailed should map");
+        let json = serde_json::to_value(&update).expect("SessionUpdate should serialize");
+
+        assert_eq!(json["title"], "query_db", "got: {json}");
+        assert_eq!(json["_meta"]["kiro"]["toolName"], "query_db", "got: {json}");
+        assert_eq!(json["_meta"]["kiro"]["mcpServerName"], "local-server", "got: {json}");
     }
 }
 

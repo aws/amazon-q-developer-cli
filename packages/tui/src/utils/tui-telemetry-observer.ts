@@ -43,25 +43,6 @@ export type Engine = 'v2' | 'v3';
  */
 const USER_TURN_DURATION_BOUNDS = [1, 2, 5, 10, 30, 60, 120, 300, 600];
 
-/**
- * Resolve the launcher-provided `version_minor_bucket` (§C4). The bucket is
- * relative to the latest known release, which only the Rust launcher knows; it
- * threads it via `KIRO_VERSION_MINOR_BUCKET`. When unset we fall back to
- * `_other_`, NOT the old hardcoded `current` (which silently mislabeled every
- * stale client as up-to-date).
- */
-const VERSION_MINOR_BUCKETS = new Set([
-  'current',
-  'current-1',
-  'current-2',
-  'older',
-  '_other_',
-]);
-export function versionMinorBucketFromEnv(): string {
-  const raw = process.env['KIRO_VERSION_MINOR_BUCKET']?.trim();
-  return raw && VERSION_MINOR_BUCKETS.has(raw) ? raw : '_other_';
-}
-
 /** Transport seams; default to the real transports. Tests inject spies. */
 export interface TuiTelemetryDeps {
   counter?: typeof meterCounter;
@@ -69,17 +50,13 @@ export interface TuiTelemetryDeps {
   histogram?: typeof meterHistogram;
 }
 
-/**
- * Normalize a mode/agent id into the catalog `mode` allowed-values enum.
- * Mirrors the Rust `Mode::from_name` (crates/kiro-telemetry/src/metric.rs) so a
- * raw TUI/ACP mode id (`default`, `kiro_planner`, `spec`, …) does not leak past
- * the closed enum and collapse to `_other_` on the dashboard. Unrecognized ids
- * (e.g. custom agents) still fall back to `_other_`, matching the Rust default.
- */
 export function modeFromId(modeId: string | undefined): string {
-  switch (
-    (modeId ?? '').trim().replace(/^\/+/, '').toLowerCase().replace(/-/g, '_')
-  ) {
+  const normalized = (modeId ?? '')
+    .trim()
+    .replace(/^\/+/, '')
+    .toLowerCase()
+    .replace(/-/g, '_');
+  switch (normalized) {
     case 'oneshot':
       return 'oneshot';
     case 'agent':
@@ -108,7 +85,7 @@ export function modeFromId(modeId: string | undefined): string {
     case 'interactive':
       return 'interactive';
     default:
-      return '_other_';
+      return normalized;
   }
 }
 
@@ -189,27 +166,9 @@ export function turnOutcomeReasonFromStatus(
   }
 }
 
-/** Allowed `subagent_name_class` enum (mirrors the Rust SubagentNameClass). */
-export type SubagentNameClass =
-  | 'code_review'
-  | 'general'
-  | 'custom'
-  | '_other_';
-
-/** Bucket a raw sub-agent name into the bounded `subagent_name_class` enum. */
-export function subagentNameClassFromName(
-  name: string | undefined
-): SubagentNameClass {
-  switch ((name ?? '').toLowerCase().replace(/-/g, '_')) {
-    case 'code_review':
-      return 'code_review';
-    case 'general':
-      return 'general';
-    case 'custom':
-      return 'custom';
-    default:
-      return '_other_';
-  }
+export function subagentNameClassFromName(name: string | undefined): string {
+  const normalized = (name ?? '').trim().toLowerCase().replace(/-/g, '_');
+  return normalized === '' ? '_other_' : normalized;
 }
 
 /**
@@ -248,7 +207,7 @@ function histogramFn(deps?: TuiTelemetryDeps): typeof meterHistogram {
 
 /** A session began (`kiro_cli_chat_session_started_total`). One per session (caller dedupes). */
 export function recordTuiSessionStarted(
-  args: { mode: string; versionMinorBucket: string; engine?: Engine },
+  args: { mode: string; version: string; engine?: Engine },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
@@ -257,7 +216,7 @@ export function recordTuiSessionStarted(
     1,
     {
       mode: args.mode,
-      version_minor_bucket: args.versionMinorBucket,
+      version_full: args.version,
       engine: args.engine ?? DEFAULT_ENGINE,
     },
     TUI_SCOPE
@@ -365,12 +324,9 @@ export function recordTuiUserTurn(
 /**
  * A tool call finished: the count (`kiro_cli_tool_call_total`) + latency histogram
  * (`kiro_cli_tool_execution_duration_ms`) when a duration was measured (§C4).
- * `tool_name` is high-cardinality and metric-forbidden, so it is not recorded.
  */
 export function recordTuiToolCall(
-  args: {
-    toolOrigin: 'builtin' | 'mcp' | 'subagent_delegate';
-    builtinToolName?: string;
+  args: ToolTelemetryIdentity & {
     outcome: 'success' | 'error' | 'cancelled' | 'denied';
     executionDurationMs?: number;
     engine?: Engine;
@@ -382,15 +338,9 @@ export function recordTuiToolCall(
 
   const isSuccess = args.outcome === 'success';
   const countAttrs: MetricAttributes = {
-    tool_origin: args.toolOrigin,
+    ...toolAttrs(args, engine, true),
     outcome: args.outcome,
-    engine,
   };
-  // builtin_tool_name is only meaningful (and only allowed-by-convention)
-  // for builtin tools; omit it otherwise to stay within the cardinality cap.
-  if (args.toolOrigin === 'builtin' && args.builtinToolName) {
-    countAttrs['builtin_tool_name'] = args.builtinToolName;
-  }
 
   counterFn(deps)('kiro_cli_tool_call_total', 1, countAttrs, TUI_SCOPE);
 
@@ -401,14 +351,14 @@ export function recordTuiToolCall(
     Number.isFinite(args.executionDurationMs) &&
     args.executionDurationMs > 0
   ) {
+    const durationAttrs: MetricAttributes = {
+      ...toolAttrs(args, engine, false),
+      is_success: String(isSuccess),
+    };
     histogramFn(deps)(
       'kiro_cli_tool_execution_duration_ms',
       args.executionDurationMs,
-      {
-        tool_origin: args.toolOrigin,
-        is_success: String(isSuccess),
-        engine,
-      },
+      durationAttrs,
       TUI_SCOPE
     );
   }
@@ -498,8 +448,7 @@ export function recordTuiTurnOutcome(
  * entry point for durations outside the {@link recordTuiToolCall} inline path.
  */
 export function recordTuiToolExecutionDuration(
-  args: {
-    toolOrigin: 'builtin' | 'mcp' | 'subagent_delegate';
+  args: ToolTelemetryIdentity & {
     isSuccess: boolean;
     durationMs: number;
     engine?: Engine;
@@ -508,14 +457,14 @@ export function recordTuiToolExecutionDuration(
 ): void {
   if (suppressedInTest(deps)) return;
   if (!Number.isFinite(args.durationMs) || args.durationMs <= 0) return;
+  const attrs: MetricAttributes = {
+    ...toolAttrs(args, args.engine ?? DEFAULT_ENGINE, false),
+    is_success: String(args.isSuccess),
+  };
   histogramFn(deps)(
     'kiro_cli_tool_execution_duration_ms',
     args.durationMs,
-    {
-      tool_origin: args.toolOrigin,
-      is_success: String(args.isSuccess),
-      engine: args.engine ?? DEFAULT_ENGINE,
-    },
+    attrs,
     TUI_SCOPE
   );
 }
@@ -587,15 +536,41 @@ export function recordTuiSubagentDelegation(
   );
 }
 
-/** Origin of a V3 tool call, decided at ToolCall time. */
-export type ToolOrigin = 'builtin' | 'mcp' | 'subagent_delegate';
+export type ToolTelemetryIdentity =
+  | {
+      toolOrigin: 'builtin';
+      builtinToolName: string;
+    }
+  | {
+      toolOrigin: 'mcp';
+      mcpServerName: string;
+    }
+  | {
+      toolOrigin: 'subagent_delegate';
+    };
 
-/** Start-time facts a ToolCall carries, captured for the matching finish. */
-export interface TuiToolCallStart {
-  name: string;
-  origin: ToolOrigin;
-  mcpServerName?: string;
+function normalizeToolDimension(value: string): string {
+  return value.trim().toLowerCase() || '_other_';
 }
+
+function toolAttrs(
+  identity: ToolTelemetryIdentity,
+  engine: Engine,
+  includeBuiltinToolName: boolean
+): MetricAttributes {
+  const attrs: MetricAttributes = {
+    tool_origin: identity.toolOrigin,
+    engine,
+  };
+  if (identity.toolOrigin === 'mcp') {
+    attrs['mcp_server_name'] = normalizeToolDimension(identity.mcpServerName);
+  } else if (identity.toolOrigin === 'builtin' && includeBuiltinToolName) {
+    attrs['builtin_tool_name'] = identity.builtinToolName;
+  }
+  return attrs;
+}
+
+export type TuiToolCallStart = ToolTelemetryIdentity & { name: string };
 
 /**
  * Correlates ToolCall → ToolCallFinished events (keyed by toolCallId) into tool
@@ -636,7 +611,10 @@ export class TuiToolCallObserver {
     const started = this.inFlight.get(toolCallId);
     this.inFlight.delete(toolCallId);
     const toolName = started?.name ?? 'unknown';
-    const toolOrigin = started?.origin ?? 'builtin';
+    const toolIdentity: ToolTelemetryIdentity = started ?? {
+      toolOrigin: 'builtin',
+      builtinToolName: toolName,
+    };
     const executionDurationMs =
       started !== undefined
         ? Math.max(0, Math.round(performance.now() - started.startMs))
@@ -644,8 +622,7 @@ export class TuiToolCallObserver {
 
     recordTuiToolCall(
       {
-        toolOrigin,
-        ...(toolOrigin === 'builtin' ? { builtinToolName: toolName } : {}),
+        ...toolIdentity,
         outcome: args.outcome,
         ...(executionDurationMs !== undefined ? { executionDurationMs } : {}),
         engine: this.engine,
@@ -653,7 +630,7 @@ export class TuiToolCallObserver {
       this.deps
     );
 
-    if (toolOrigin === 'subagent_delegate') {
+    if (toolIdentity.toolOrigin === 'subagent_delegate') {
       recordTuiSubagentDelegation(
         {
           subagentName: toolName,
@@ -707,7 +684,7 @@ export function recordTuiProcessHealth(
 ): void {
   if (suppressedInTest(deps)) return;
 
-  const versionMinorBucket = versionMinorBucketFromEnv();
+  const version = snapshot.version;
   // agent_kind is a 1:1 function of engine on the TUI path (v3→kas, v2→v2);
   // catalog allowed_values are [v1, v2, subagent, kas, _other_].
   const agentKind = engine === 'v3' ? 'kas' : 'v2';
@@ -720,7 +697,7 @@ export function recordTuiProcessHealth(
     'kiro_cli.process.memory.rss',
     snapshot.rssMb * MIB,
     {
-      version_minor_bucket: versionMinorBucket,
+      version_full: version,
       agent_kind: agentKind,
       engine,
       process_role: PROCESS_ROLE_TUI,
@@ -731,7 +708,7 @@ export function recordTuiProcessHealth(
     'kiro_cli.process.memory.peak_rss',
     snapshot.peakRssMb * MIB,
     {
-      version_minor_bucket: versionMinorBucket,
+      version_full: version,
       engine,
       process_role: PROCESS_ROLE_TUI,
     },
@@ -741,7 +718,7 @@ export function recordTuiProcessHealth(
     'kiro_cli.process.memory.heap_used',
     snapshot.heapUsedMb * MIB,
     {
-      version_minor_bucket: versionMinorBucket,
+      version_full: version,
       engine,
       process_role: PROCESS_ROLE_TUI,
     },
@@ -756,7 +733,7 @@ export function recordTuiProcessHealth(
       'kiro_cli.process.cpu.utilization',
       cpuRatio,
       {
-        version_minor_bucket: versionMinorBucket,
+        version_full: version,
         agent_kind: agentKind,
         engine,
         process_role: PROCESS_ROLE_TUI,
