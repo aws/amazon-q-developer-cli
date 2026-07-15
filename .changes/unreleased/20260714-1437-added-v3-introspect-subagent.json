@@ -1,4 +1,4 @@
 {
   "type": "added",
-  "description": "[V3] Built-in introspect subagent answers questions about Kiro features using official documentation"
+  "description": "[V3] Introspect subagent to answer questions about Kiro's features and help write custom agents, hooks, and steering"
 }
