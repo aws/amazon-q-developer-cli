@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] `HTTP_PROXY` and `HTTPS_PROXY` environment variables are now honored for backend API connections"
+}

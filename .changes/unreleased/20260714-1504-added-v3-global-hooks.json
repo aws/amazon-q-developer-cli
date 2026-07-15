@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "[V3] Global hooks: hooks in `~/.kiro/hooks/` now load automatically alongside workspace hooks"
+}

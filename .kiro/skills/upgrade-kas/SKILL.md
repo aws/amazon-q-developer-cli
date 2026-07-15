@@ -124,11 +124,63 @@ Confirm `/tmp/knight-rider.log` has no errors, then stop the server:
 for pid in $(lsof -ti:3001 2>/dev/null); do kill $pid 2>/dev/null; done
 ```
 
-### Step 9 — Document the upgrade (commit diff → impact analysis → PR)
+Record the results in a table for the PR description (Step 10c):
+
+| Check | Evidence |
+|---|---|
+| Boot: status bar | e.g. `Default · Claude Opus 4.8 · High · ◔ 1%` |
+| `/model` picker | N models with `x.xxX credits`, active model marked `[active]` |
+| `/tools` + `/mcp` | tool count + server count with `● running` |
+| Real prompt turn | tool used + `▸ Credits: X.XX • Time: Xs` |
+| Tool approval | command → Allow → output |
+| Log errors | empty or list findings |
+
+### Step 9 — Create `[V3]` changelog fragments
+
+V3 is available to all users via `--v3` / `kiro-cli chat --agent-engine=kas`. Create `.changes/unreleased/` fragments for commits that change observable behavior in V3 mode.
+
+> **Skip fragments for features gated behind settings the CLI doesn't send yet** (e.g. `kiroMemoryEnable`). If a feature requires a client-side opt-in that doesn't exist, it's invisible to users — no fragment needed until the CLI wires up the setting.
+
+#### Decision criteria
+
+A KAS commit warrants a `[V3]` fragment when it:
+- Adds a new user-facing feature (new tool, new subagent, new hook loading path)
+- Fixes a bug users could hit (approval loops, proxy failures, publish behavior)
+- Changes UX behavior (new slash commands, renamed concepts users see)
+
+Skip fragments for:
+- Internal telemetry/instrumentation
+- Test-only changes
+- Backend-only changes with no wire/UX impact (e.g. `scopeKey` the CLI sends but users never see)
+- Features gated behind a setting the CLI doesn't send yet (e.g. `kiroMemoryEnable`)
+
+#### Creating fragments
+
+Use `./scripts/new-change.sh` when possible:
+
+```bash
+./scripts/new-change.sh added '[V3] Description of the feature'
+./scripts/new-change.sh fixed '[V3] Description of the fix'
+```
+
+If the validator rejects valid descriptions (e.g. paths like `~/.kiro/hooks/` trigger the slash-command check), create fragments manually:
+
+```bash
+TIMESTAMP=$(date +%Y%m%d-%H%M)
+echo '{"type":"added","description":"[V3] Description here"}' | jq . > ".changes/unreleased/${TIMESTAMP}-added-v3-slug.json"
+```
+
+#### Convention
+
+- Always prefix with `[V3]` — this distinguishes KAS/V3-only features from V2 changes in the combined changelog
+- Follow `.changes/GUIDELINES.md` rules: no verb prefix, capitalize, one change per entry, under 100 chars
+- Wrap paths and commands in backticks
+
+### Step 10 — Document the upgrade (commit diff → impact analysis → PR)
 
 Produce a PR description that (1) captures the full KAS commit changelog across the two versions, (2) enumerates which commits impact the interface or CLI behavior with a one-liner + why-not-a-concern for each, and (3) links to the complete change list.
 
-#### 9a. Capture the commit diff across versions
+#### 10a. Capture the commit diff across versions
 
 The KAS repo (`kiro-team/kiro-agent`) is a local checkout/worktree (ask the user for the path; e.g. `~/work/kas/<worktree>`). Versions map to git tags as **`agent-v-X.Y.Z`** (note the `-v-`), which does *not* match the npm scheme directly — always `fetch --tags` first, the local worktree is usually missing them.
 
@@ -142,7 +194,7 @@ git -C "$KAS" rev-list --count "$OLD..$NEW"            # commit count
 git -C "$KAS" diff --stat "$OLD..$NEW" | tail -1       # overall churn
 ```
 
-#### 9b. Find the impacting commits
+#### 10b. Find the impacting commits
 
 The **interface** set = commits that touched the shared contract package the CLI consumes:
 
@@ -172,9 +224,11 @@ For each impacting commit write a one-liner + **why it's not a concern**, ground
 
 Call out any **residual watch item** honestly (e.g. a new stop reason the TUI degrades rather than renders) as a non-blocking follow-up — do not claim coverage you didn't verify.
 
-#### 9c. Build the PR description
+#### 10c. Build the PR description
 
-Assemble: Summary / Changes / Testing (from Steps 4–8) + the two impact-analysis tables (interface, CLI-behavior) + a changelog section with the release link, compare link, and the full commit list in a `<details>` block. Linkify each `(#NNNN)` to the kiro-agent PR:
+Assemble: Summary / Changes / Testing (from Steps 4–8) + the two impact-analysis tables (interface, CLI-behavior) + a changelog section with the release link, compare link, and the full commit list in a `<details>` block. Linkify each `(#NNNN)` to the kiro-agent PR.
+
+> **⚠️ Commit message rule:** In the kiro-cli commit message body, do NOT include bare `(#NNNN)` PR references from kiro-agent commits. GitHub auto-links `#NNNN` to the **current repo** (kiro-cli), producing misleading links to unrelated PRs. Either strip them entirely or use the cross-repo syntax `(kiro-team/kiro-agent#NNNN)`.
 
 ```bash
 BODY=/tmp/kas-pr-body.md
@@ -223,6 +277,8 @@ The KAS interface is only *partially* type-checked. Know where the blind spots a
 - [ ] `cargo build -p chat_cli` succeeds
 - [ ] Knight Rider `--kas` smoke: boot, /model, /tools, /mcp, real turn, tool approval — no log errors
 - [ ] KAS changelog reviewed for Tier-2/Tier-3 breaking changes
+- [ ] `[V3]` changelog fragments created for user-visible features/fixes
 - [ ] Commit diff captured across `agent-v-<old>..agent-v-<new>`; interface + CLI-behavior commits analyzed (one-liner + why-not-a-concern each)
-- [ ] PR description includes the impact analysis + release/compare links + full commit list
+- [ ] PR description includes the impact analysis + Knight Rider results table + release/compare links + full commit list
+- [ ] Commit message uses cross-repo syntax `(kiro-team/kiro-agent#NNNN)` — no bare `(#NNNN)` refs
 - [ ] `.npmrc` not staged for commit

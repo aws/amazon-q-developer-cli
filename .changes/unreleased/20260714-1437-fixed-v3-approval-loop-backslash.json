@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Always-accept approval no longer loops on shell commands containing backslash escapes"
+}
