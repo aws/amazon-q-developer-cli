@@ -54,18 +54,18 @@ afterEach(() => {
 function mount(initial: {
   currentAgent?: { name: string } | null;
   previousAgentName?: string | null;
-  swapResult?: { success: boolean; data?: unknown };
+  // When set, setConfigOption rejects with this value (an RPC error).
+  rejectWith?: unknown;
 }) {
   const store = createAppStore({ kiro: new Kiro() });
-  const executeCommand = vi.fn(
-    async () =>
-      initial.swapResult ?? { success: true, data: { agent: { name: 'x' } } }
-  );
   const sendModeChanged = vi.fn();
+  const setConfigOption = vi.fn(async () => {
+    if (initial.rejectWith !== undefined) throw initial.rejectWith;
+  });
   store.setState({
     currentAgent: initial.currentAgent ?? null,
     previousAgentName: initial.previousAgentName ?? null,
-    kiro: { executeCommand, sendModeChanged, sessionId: 's1' },
+    kiro: { setConfigOption, sendModeChanged, sessionId: 's1' },
   } as any);
 
   const terminal = new MockTerminal();
@@ -77,7 +77,7 @@ function mount(initial: {
     { terminal, exitOnCtrlC: false }
   );
   activeInstance = instance;
-  return { store, executeCommand, sendModeChanged };
+  return { store, setConfigOption, sendModeChanged };
 }
 
 function Probe() {
@@ -95,42 +95,58 @@ async function flush(ms = 40): Promise<void> {
 
 describe('usePlanModeToggle', () => {
   test('Shift+Tab from a normal agent enters plan mode (swaps to kiro_planner)', async () => {
-    const { store, executeCommand } = mount({
+    const { store, setConfigOption, sendModeChanged } = mount({
       currentAgent: { name: 'kiro_default' },
-      swapResult: { success: true, data: { agent: { name: 'kiro_planner' } } },
     });
     await flush();
 
     activeTerminal!.sendInput(SHIFT_TAB);
     await flush();
 
-    expect(executeCommand).toHaveBeenCalledWith({
-      command: 'agent',
-      args: { agentName: 'kiro_planner' },
-    });
+    expect(setConfigOption).toHaveBeenCalledWith('mode', 'kiro_planner');
     // Records where we came from so the reverse toggle can restore it.
     expect(store.getState().previousAgentName).toBe('kiro_default');
+    // A successful (non-rejecting) switch flips the chip and fires the event.
+    expect(store.getState().currentAgent?.name).toBe('kiro_planner');
+    expect(sendModeChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fromMode: 'kiro_default',
+        toMode: 'kiro_planner',
+      })
+    );
+    expect(store.getState().transientAlert?.status).toBe('success');
   });
 
   test('Shift+Tab while in plan mode exits back to the previous agent', async () => {
-    const { executeCommand } = mount({
+    const { store, setConfigOption } = mount({
       currentAgent: { name: 'kiro_planner' },
       previousAgentName: 'kiro_default',
-      swapResult: { success: true, data: { agent: { name: 'kiro_default' } } },
     });
     await flush();
 
     activeTerminal!.sendInput(SHIFT_TAB);
     await flush();
 
-    expect(executeCommand).toHaveBeenCalledWith({
-      command: 'agent',
-      args: { agentName: 'kiro_default' },
-    });
+    expect(setConfigOption).toHaveBeenCalledWith('mode', 'kiro_default');
+    expect(store.getState().currentAgent?.name).toBe('kiro_default');
+  });
+
+  test('Shift+Tab before an agent is active (session initializing) is a no-op', async () => {
+    const { store, setConfigOption } = mount({ currentAgent: null });
+    await flush();
+
+    activeTerminal!.sendInput(SHIFT_TAB);
+    await flush();
+
+    // The primitive no-ops without a session, so toggling here must not flip
+    // the chip or claim success.
+    expect(setConfigOption).not.toHaveBeenCalled();
+    expect(store.getState().currentAgent).toBeNull();
+    expect(store.getState().transientAlert).toBeNull();
   });
 
   test('Shift+Tab in plan mode with no previous agent is a no-op', async () => {
-    const { executeCommand } = mount({
+    const { setConfigOption } = mount({
       currentAgent: { name: 'kiro_planner' },
       previousAgentName: null,
     });
@@ -139,6 +155,52 @@ describe('usePlanModeToggle', () => {
     activeTerminal!.sendInput(SHIFT_TAB);
     await flush();
 
-    expect(executeCommand).not.toHaveBeenCalled();
+    expect(setConfigOption).not.toHaveBeenCalled();
+  });
+
+  test('setConfigOption rejection surfaces an error and does not claim success', async () => {
+    const { store, sendModeChanged } = mount({
+      currentAgent: { name: 'kiro_default' },
+      rejectWith: {
+        code: -32603,
+        message: 'Internal error',
+        data: { details: 'planner unavailable' },
+      },
+    });
+    await flush();
+
+    activeTerminal!.sendInput(SHIFT_TAB);
+    await flush();
+
+    const alert = store.getState().transientAlert;
+    expect(alert?.status).toBe('error');
+    // extractRpcErrorMessage prefers data.details over the generic RPC message.
+    expect(alert?.message).toBe('planner unavailable');
+    expect(sendModeChanged).not.toHaveBeenCalled();
+    // A rejected switch must not flip the chip.
+    expect(store.getState().currentAgent?.name).toBe('kiro_default');
+  });
+
+  // KAS resolves setConfigOption('mode', …) with void (no CommandResult), unlike
+  // the v2-only executeCommand('agent') path that returned { success, data }.
+  // The hook ignores the return value: a resolve means the swap landed, so it
+  // flips the chip and fires sendModeChanged on both engines.
+  test('KAS-shaped switch (setConfigOption resolves void) still updates the agent', async () => {
+    const { store, setConfigOption, sendModeChanged } = mount({
+      currentAgent: { name: 'kiro_default' },
+    });
+    await flush();
+
+    activeTerminal!.sendInput(SHIFT_TAB);
+    await flush();
+
+    expect(setConfigOption).toHaveBeenCalledWith('mode', 'kiro_planner');
+    expect(store.getState().currentAgent?.name).toBe('kiro_planner');
+    expect(sendModeChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fromMode: 'kiro_default',
+        toMode: 'kiro_planner',
+      })
+    );
   });
 });

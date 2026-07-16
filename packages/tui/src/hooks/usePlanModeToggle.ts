@@ -1,5 +1,6 @@
 import { useAppStore } from '../stores/app-store.js';
 import { useKeypress } from './useKeypress.js';
+import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
 
 /** Shift+Tab toggles the active agent in/out of `kiro_planner` (plan mode). */
@@ -15,36 +16,43 @@ export function usePlanModeToggle(): void {
   useKeypress((_input, key) => {
     if (!(key.tab && key.shift)) return;
     const currentName = currentAgent?.name;
+    // No active agent yet (session still initializing): the primitive no-ops
+    // without a session, so toggling here would falsely flip the chip.
+    if (!currentName) return;
     const inPlan = currentName === 'kiro_planner';
     const target = inPlan ? previousAgentName : 'kiro_planner';
     if (!target) return;
 
-    if (!inPlan && currentName) setPreviousAgentName(currentName);
+    if (!inPlan) setPreviousAgentName(currentName);
     setLoadingMessage(`Agent changing to ${target}`);
+    // A resolve means the swap landed (the primitive rejects on failure), so
+    // set the chip optimistically rather than waiting for a store re-emit.
     kiro
-      .executeCommand({ command: 'agent', args: { agentName: target } })
-      .then((result) => {
+      .setConfigOption('mode', target)
+      .then(() => {
         setLoadingMessage(null);
-        if (!result?.success) return;
-        const name = (result.data as { agent?: { name?: string } })?.agent
-          ?.name;
-        if (currentName && name && currentName !== name) {
+        if (currentName !== target) {
           kiro.sendModeChanged({
             fromMode: currentName,
-            toMode: name,
+            toMode: target,
             source: ModeChangeSource.ShiftTab,
             sessionId: kiro.sessionId,
           });
         }
-        if (name) {
-          setCurrentAgent({ name });
-          showTransientAlert({
-            message: `Switched to ${name}`,
-            status: 'success',
-            autoHideMs: 2000,
-          });
-        }
+        setCurrentAgent({ name: target });
+        showTransientAlert({
+          message: `Switched to ${target}`,
+          status: 'success',
+          autoHideMs: 2000,
+        });
       })
-      .catch(() => setLoadingMessage(null));
+      .catch((err) => {
+        setLoadingMessage(null);
+        showTransientAlert({
+          message: extractRpcErrorMessage(err, 'Failed to switch agent'),
+          status: 'error',
+          autoHideMs: 5000,
+        });
+      });
   });
 }
