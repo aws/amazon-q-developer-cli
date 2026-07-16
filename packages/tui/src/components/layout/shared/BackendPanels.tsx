@@ -13,6 +13,7 @@ import { GoalPanel } from '../../ui/GoalPanel.js';
 import { StatsPanel } from '../../ui/StatsPanel.js';
 import { HooksPanel } from '../../ui/HooksPanel.js';
 import { RepoPickerPanel } from '../../ui/RepoPickerPanel.js';
+import { SessionPickerPanel } from '../../ui/SessionPickerPanel.js';
 import { KnowledgePanel } from '../../ui/KnowledgePanel.js';
 import { CodePanel } from '../../ui/CodePanel.js';
 import { UsagePanel } from '../../ui/UsagePanel.js';
@@ -73,6 +74,10 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     hooksList,
     showRepoPicker,
     repoPickerResources,
+    attachedRepos,
+    showSessionPicker,
+    sessionPickerRows,
+    sessionPickerTitle,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
     showThemePanel,
@@ -86,9 +91,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     artifactViewOpen,
     showCloudQuitPrompt,
   } = useUIState();
-  const { setShowMcpPanel, setShowCloudQuitPrompt } = useUIActions();
-  const { submitRepoPicker } = useUIActions();
-  const attachedRepos = useAppStore((s) => s.attachedRepos);
+  const { setShowMcpPanel, setShowCloudQuitPrompt, submitRepoPicker } =
+    useUIActions();
   const { initErrors, pendingOAuthServers } = useNotificationState();
   const { showTransientAlert } = useNotificationActions();
   const { contextUsagePercent, currentModel, currentAgent } = useContextState();
@@ -273,6 +277,14 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
           initialSelected={attachedRepos}
           onSubmit={(selected) => void submitRepoPicker(selected)}
           onClose={handlers.handleCloseRepoPicker}
+        />
+      )}
+      {showSessionPicker && (
+        <SessionPickerPanel
+          rows={sessionPickerRows}
+          title={sessionPickerTitle}
+          onSelect={handlers.handleSessionSelect}
+          onClose={handlers.handleCloseSessionPicker}
         />
       )}
       {showKeybindingsPanel && (

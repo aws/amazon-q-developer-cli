@@ -69,6 +69,16 @@ export function resetCloudDetachNoticeForTest(): void {
 }
 
 /**
+ * Whether the detach notice has already been emitted this process. Survives
+ * `Kiro.close()` (which nulls the session client), so an exit handler can tell
+ * a keep-running detach from a real session end even after the client is gone
+ * and `isCloudSessionActive()` reads false.
+ */
+export function hasEmittedCloudDetachNotice(): boolean {
+  return detachNoticePrinted;
+}
+
+/**
  * Keep-running quit: print the reattach notice, detach, exit. The notice is
  * emitted before exiting because exit skips later teardown.
  */

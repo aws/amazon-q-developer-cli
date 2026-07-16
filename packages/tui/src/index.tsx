@@ -20,19 +20,33 @@ import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
 import { ensureSession } from './utils/ensure-session-cli';
 import { ErrorCode } from './types/generated/chat-internal';
-import { Feature, features } from './features';
 import {
   isResumableSource,
   isActiveEngineSource,
   sourceFormatFor,
 } from './utils/cross-engine-session-id';
 import { listAllSessions } from './utils/list-all-sessions-cli';
+import {
+  isFullSessionId,
+  resolveResumeTarget,
+} from './utils/resolve-resume-target';
 import { resolveAgentEngine } from './agent-engine';
 import { TestModeProvider } from './test-utils/TestModeProvider';
 import { parseCliArgs, buildAcpArgs } from './utils/cli-args';
 import { sessionConversationsStore } from './stores/session-conversations.js';
 import { pickSessionFromEntries } from './utils/session-picker';
-import { emitCloudDetachNoticeOnce } from './utils/cloud-detach-notice';
+import {
+  emitCloudDetachNoticeOnce,
+  hasEmittedCloudDetachNotice,
+  setCloudDetachNoticePreamble,
+} from './utils/cloud-detach-notice';
+import {
+  droppedReposFromWarnings,
+  resolveSourceProviderConnection,
+} from './utils/repo-attach';
+import { drainConnectedProviderRepos } from './utils/cloud-repo-drain';
+import { formatMissingSourceProviderGuidance } from './utils/cloud-urls';
+import { Feature, features } from './features';
 import type { AgentStreamEvent } from './types/agent-events';
 import { truncateToRecentTurns } from './utils/truncate-history';
 import {
@@ -598,12 +612,14 @@ const startInitialization = (resumePickerSessionId?: string) => {
     .getState()
     .setBootStage('agent_connect', 'connecting to agent', 'loading');
 
-  // Cloud footer: surface the bound repo as the persistent location
-  // indicator. Only rendered for an actual cloud session (footer gated on
-  // cloudSessionStatus), so this is dark-safe; null for a New empty sandbox.
+  // Cloud footer: surface the launch-bound repos as the location indicator
+  // and pre-check them in /repo. Dark-safe: empty for non-cloud launches.
   appStore
     .getState()
-    .setCloudRepo(cliArgs.cloud ? (cliArgs.repo?.[0] ?? null) : null);
+    .applyRepoFooter(cliArgs.cloud ? (cliArgs.repo ?? []) : []);
+
+  // Flag cloud sessions so cloud-only commands become visible.
+  appStore.getState().setCloudSessionActive(!!cliArgs.cloud);
 
   initPromise = kiro
     .initialize(agentPath, acpArgs, {
@@ -712,9 +728,110 @@ const startInitialization = (resumePickerSessionId?: string) => {
         }
       }
 
+      // A cloud session needs a connected source provider, verified before the
+      // session is created and before any TUI chrome renders. When none is
+      // linked the gate is the only thing on screen and bring-up parks until a
+      // retry connects. Dark-safe: non-cloud sessions skip this; a missing
+      // catalog is silently skipped so it never blocks.
+      if (cliArgs.cloud) {
+        try {
+          const source = kiro.getRepoProviderSource();
+          let list = await source.listSourceProviders();
+          let conn = resolveSourceProviderConnection(list);
+          if (list && !conn.connected) {
+            if (cliArgs.noInteractive) {
+              // No TUI to host the connect gate and no one to retry it, so the
+              // awaited gate below would never dismiss and the process would
+              // hang. Emit setup guidance and exit non-zero so scripts fail fast.
+              process.stderr.write(
+                `${formatMissingSourceProviderGuidance(conn.setupUrl)}\n`
+              );
+              process.exit(1);
+            }
+            appStore
+              .getState()
+              .setShowSourceProviderGate(true, conn.setupUrl ?? null);
+            // The gate's retry re-probes via the store and dismisses itself on
+            // success; block here until that happens (quit exits the process),
+            // then re-read the list so enumeration below sees the connection.
+            await new Promise<void>((resolve) => {
+              const unsubscribe = appStore.subscribe((s) => {
+                if (!s.showSourceProviderGate) {
+                  unsubscribe();
+                  resolve();
+                }
+              });
+            });
+            list = await source.listSourceProviders();
+            conn = resolveSourceProviderConnection(list);
+          }
+          if (list && conn.connectedProviders.length > 0) {
+            // Surface every connected provider as one checklist line, e.g.
+            // "Connected to GitHub, GitLab".
+            appStore
+              .getState()
+              .setCloudProvider(conn.connectedProviders.join(', '));
+          }
+          // Repo enumeration for the startup checklist ("N repositories found")
+          // and the footer branch. The FULL catalog is drained (uncapped, same
+          // as /repo) so the checklist count always matches /repo's All(N) —
+          // but as a floating promise so a large catalog never delays
+          // bring-up; the checklist row fills in when the drain lands.
+          const launchRepos = (cliArgs.repo ?? [])
+            .map((r) => r.trim())
+            .filter(Boolean);
+          const connectedProviderTypes = (list?.providers ?? [])
+            .filter((p) => p.connectionStatus === 'connected')
+            .map((p) => p.providerType);
+          if (connectedProviderTypes.length > 0) {
+            // Repo validity is NOT judged here: KAS validates each `--repo`
+            // against the full catalog server-side at session/new and reports
+            // dropped ones via `_meta.kiro.warnings` (consumed after
+            // createSession below). This drain only feeds the count + the
+            // footer branch, and floats so a large catalog never delays
+            // bring-up.
+            void drainConnectedProviderRepos(
+              (req) => source.listSourceProviderResources(req),
+              connectedProviderTypes
+            )
+              .then(({ resources }) => {
+                // Drain EVERY connected provider to exhaustion so the checklist
+                // "N repositories found" equals /repo's All(N) even when repos
+                // span multiple providers or pages (already name-deduped).
+                appStore.getState().setCloudRepoCount(resources.length);
+                // Re-check attachment before setting the branch: this drain
+                // races the bind-warning handling, which may have un-claimed
+                // the repo from the footer by the time a large catalog lands.
+                const footerRepo = appStore.getState().cloudRepo;
+                const first =
+                  footerRepo && footerRepo === launchRepos[0]
+                    ? resources.find((r) => r.name === footerRepo)
+                    : undefined;
+                if (first?.defaultBranch) {
+                  appStore.getState().setCloudBranch(first.defaultBranch);
+                }
+              })
+              .catch(() => {
+                // Count/branch are cosmetic; never surface a failure.
+              });
+          }
+        } catch {
+          // Never block cloud bring-up on the connection probe.
+        } finally {
+          // The provider decision is made (connected, gated, or probe failed):
+          // release the connecting screen's welcome/checklist, which waited so
+          // neither flashes before the gate could appear.
+          appStore.getState().setCloudProviderChecked(true);
+        }
+      } else {
+        appStore.getState().setCloudProviderChecked(true);
+      }
+
       // Begin session tracking before the session RPC: origin (new vs resumed)
       // and a fresh model-change baseline. The explicit `--effort` launch flag
       // is boot-only state, so it is set here rather than in beginKasSession.
+      // For a cloud session this runs only after the provider check above passed,
+      // so the sandbox is created (and its checklist shown) only once connected.
       appStore
         .getState()
         .beginKasSession(resolvedSessionId ? 'resumed' : 'new');
@@ -725,6 +842,26 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // Cloud-only commands become visible only for a CONFIRMED cloud placement
       // (--cloud that degraded to local must not surface them).
       appStore.getState().setCloudSessionActive(kiro.isCloudSessionActive());
+      // KAS validates each `--repo` against the FULL provider catalog at
+      // session/new and reports dropped ones via `_meta.kiro.warnings` — the
+      // authoritative bind outcome (unlike any capped client-side page scan).
+      // Surface each warning and un-claim dropped repos from the footer so it
+      // never shows a repo the sandbox doesn't actually have.
+      const bindWarnings = kiro.getSessionNewWarnings();
+      if (bindWarnings.length > 0) {
+        appStore.getState().showTransientAlert({
+          message: `${bindWarnings.join('; ')} — the session started without ${bindWarnings.length === 1 ? 'it' : 'them'}.`,
+          status: 'warning',
+          autoHideMs: 10000,
+        });
+        const droppedRepos = droppedReposFromWarnings(bindWarnings);
+        if (droppedRepos.size > 0) {
+          const kept = (cliArgs.repo ?? [])
+            .map((r) => r.trim())
+            .filter((r) => r && !droppedRepos.has(r));
+          appStore.getState().applyRepoFooter(kept);
+        }
+      }
       appStore
         .getState()
         .setBootStage('session_create', 'initializing workspace', 'ready');
@@ -857,10 +994,13 @@ const startApp = async () => {
   let resumePickerSessionId: string | undefined;
   if (cliArgs.resumePicker) {
     wireUpHandlers();
+
     // Cloud footer: same bound-repo indicator on the resume-picker path.
     appStore
       .getState()
-      .setCloudRepo(cliArgs.cloud ? (cliArgs.repo?.[0] ?? null) : null);
+      .applyRepoFooter(cliArgs.cloud ? (cliArgs.repo ?? []) : []);
+    appStore.getState().setCloudSessionActive(!!cliArgs.cloud);
+
     await kiro.initialize(agentPath, acpArgs, {
       initialAgent:
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
@@ -927,37 +1067,114 @@ const startApp = async () => {
   // logger.warn and as an in-app error banner so the user knows
   // their resume target wasn't honored.
   if (!resumePickerSessionId && cliArgs.resumeId) {
-    const ensured = await ensureSession({
-      sourceFormat: 'auto',
-      sourceSessionId: cliArgs.resumeId,
-      targetFormat: resolveAgentEngine(),
-      cwd: process.cwd(),
-    });
-    if (ensured.ok) {
-      resumePickerSessionId = ensured.sessionId;
-    } else if (
-      resolveAgentEngine() === 'kas' &&
-      ensured.code === ErrorCode.SessionNotFound &&
-      features.isEnabled(Feature.RemoteSandbox)
+    // Resolve the resume target against the merged listing (local + cloud
+    // rows — the same data /sessions renders). This gives us two things:
+    //  - Short-id support: `--list-sessions` renders 8-char ids, so a unique
+    //    prefix resolves to the full id. Ambiguity keeps the input untouched
+    //    and errors rather than resuming a guessed session.
+    //  - Cloud auto-detect: a row marked cloud-sandbox flips the launch to
+    //    cloud mode behind the scenes, so `--resume-id <cloud-id>` needs no
+    //    `--cloud` — the load then starts against the remote store and the
+    //    whole surface (footer, cloud commands) comes up cloud.
+    // Dark-shipped: the pre-resolution shells out to `--list-sessions` (KAS
+    // child spawn) before connecting, so it runs only when the remote-sandbox
+    // feature is enabled — released builds keep the exact pre-existing
+    // resume path (no extra spawn, no new behavior).
+    const isFullId = isFullSessionId(cliArgs.resumeId);
+    let ambiguousResumeId = false;
+    if (
+      features.isEnabled(Feature.RemoteSandbox) &&
+      (!cliArgs.cloud || !isFullId)
     ) {
-      // Not in any local store — the id may name a CLOUD session (the detach
-      // notice hands out ids without --cloud). Let the connected client's
-      // `session/load` try the remote store; a genuinely bad id fails there
-      // with a clear error instead of this misleading local not-found.
-      // Feature-gated: without remote sandbox there is no remote store to
-      // retry, so released builds keep the pre-existing error banner.
-      resumePickerSessionId = cliArgs.resumeId;
+      const listing = await listAllSessions();
+      if (listing.ok) {
+        const resolution = resolveResumeTarget(
+          cliArgs.resumeId,
+          !!cliArgs.cloud,
+          listing.sessions
+        );
+        if (resolution.ambiguous) {
+          ambiguousResumeId = true;
+          appStore
+            .getState()
+            .setAgentError(
+              `Session id "${cliArgs.resumeId}" is ambiguous (${resolution.matchCount} matches).`,
+              'Use a longer prefix or the full id from --list-sessions.'
+            );
+        } else {
+          if (resolution.resumeId !== cliArgs.resumeId) {
+            logger.info(
+              `Resolved short --resume-id ${cliArgs.resumeId} to ${resolution.resumeId}`
+            );
+            cliArgs.resumeId = resolution.resumeId;
+          }
+          if (resolution.cloud && !cliArgs.cloud) {
+            logger.info(
+              `--resume-id ${cliArgs.resumeId} is a cloud session; enabling cloud mode`
+            );
+            cliArgs.cloud = true;
+          }
+        }
+      }
+    }
+    // An ambiguous prefix already surfaced an error banner; skip the resume so
+    // the launch starts a fresh session rather than resuming a guessed one.
+    if (ambiguousResumeId) {
+      // fall through with resumePickerSessionId unset
+    } else if (cliArgs.cloud) {
+      if (isFullSessionId(cliArgs.resumeId)) {
+        // A cloud session is remote-only — ensure-session's local probes can't
+        // see it. Pass the full id straight through; the connected client's
+        // `session/load` resolves it against the remote store (a genuinely bad
+        // id fails there with a clear error, not a misleading local not-found).
+        resumePickerSessionId = cliArgs.resumeId;
+      } else {
+        // A short prefix can't be resolved before connecting: the pre-connect
+        // listing never returns cloud rows (its one-shot KAS child isn't wired
+        // to the remote store), so there is nothing to expand the prefix
+        // against. Passing 8 chars to `session/load` as an exact id would load
+        // the wrong session or fail opaquely — surface an error and start fresh
+        // instead, mirroring the ambiguous-prefix handling above.
+        appStore
+          .getState()
+          .setAgentError(
+            `Session id "${cliArgs.resumeId}" is too short to resume a cloud session.`,
+            'Use the full id from --list-sessions.'
+          );
+      }
     } else {
-      logger.warn(
-        `Failed to resolve session for --resume-id: ${ensured.message}`
-      );
-      const detail =
-        ensured.code === ErrorCode.SessionNotFound
-          ? `Failed to find session with id ${cliArgs.resumeId}`
-          : `Failed to resume session ${cliArgs.resumeId}: ${ensured.message}`;
-      appStore
-        .getState()
-        .setAgentError(detail, 'Starting a new session instead.');
+      const ensured = await ensureSession({
+        sourceFormat: 'auto',
+        sourceSessionId: cliArgs.resumeId,
+        targetFormat: resolveAgentEngine(),
+        cwd: process.cwd(),
+      });
+      if (ensured.ok) {
+        resumePickerSessionId = ensured.sessionId;
+      } else if (
+        resolveAgentEngine() === 'kas' &&
+        ensured.code === ErrorCode.SessionNotFound &&
+        features.isEnabled(Feature.RemoteSandbox)
+      ) {
+        // Not in any local store — the id may name a CLOUD session (the detach
+        // notice hands out ids without --cloud). Let the connected client's
+        // `session/load` try the remote store; a genuinely bad id fails there
+        // with a clear error instead of this misleading local not-found.
+        // Feature-gated: without remote sandbox there is no remote store to
+        // retry, so released builds keep the pre-existing error banner.
+        resumePickerSessionId = cliArgs.resumeId;
+      } else {
+        logger.warn(
+          `Failed to resolve session for --resume-id: ${ensured.message}`
+        );
+        const detail =
+          ensured.code === ErrorCode.SessionNotFound
+            ? `Failed to find session with id ${cliArgs.resumeId}`
+            : `Failed to resume session ${cliArgs.resumeId}: ${ensured.message}`;
+        appStore
+          .getState()
+          .setAgentError(detail, 'Starting a new session instead.');
+      }
     }
   }
 
@@ -1232,16 +1449,39 @@ const startApp = async () => {
 
   // Ensure twinki unmounts cleanly on exit to prevent stale terminal writes
   appStore.setState({ onExit: () => instance.unmount() });
+  // The cloud detach notice must land on a settled terminal — unmount the
+  // renderer first so the notice text can't splice into a mid-paint frame
+  // (rule lines / hint fragments fusing with "Quit session ..."). Unmount is
+  // idempotent, so the process-exit unmount below stays harmless.
+  setCloudDetachNoticePreamble(() => instance.unmount());
   process.on('exit', () => {
     instance.unmount();
     try {
       if (!cliArgs.noInteractive && process.stdout.isTTY) {
         const sessionId = appStore.getState().sessionId;
+        // A keep-running quit calls Kiro.close() before this handler runs,
+        // nulling the session client so isCloudSessionActive() now reads false.
+        // The emitted-notice flag survives close(), so honor it too — otherwise
+        // the epilogue below prints "Session ended." and contradicts the detach
+        // notice the keep-running path already showed.
+        const cloudDetach =
+          hasEmittedCloudDetachNotice() ||
+          !!(kiro?.isCloudSessionActive?.() && sessionId);
+        if (cloudDetach) {
+          // Cloud session keeps running after we detach — show the reattach
+          // notice (idempotent, so it won't double up with an earlier exit
+          // path) ahead of the regular epilogue. Engine/source resolution
+          // recognizes the id as cloud, so the standard resume command works.
+          emitCloudDetachNoticeOnce(sessionId);
+        }
         if (sessionId) {
-          writeSync(
-            1,
-            `\x1b[2m\nSession ended.\nResume with: kiro-cli --resume-id ${sessionId}\n\x1b[0m`
-          );
+          // A cloud session did not end (the detach notice says so); "Session
+          // ended." would contradict it, so print only the reattach command on
+          // that path. Local exits keep the unchanged "Session ended." epilogue.
+          const epilogue = cloudDetach
+            ? `\x1b[2m\nResume with: kiro-cli --resume-id ${sessionId}\n\x1b[0m`
+            : `\x1b[2m\nSession ended.\nResume with: kiro-cli --resume-id ${sessionId}\n\x1b[0m`;
+          writeSync(1, epilogue);
         }
       }
     } catch {

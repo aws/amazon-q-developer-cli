@@ -3,6 +3,7 @@ import { ASCII_GLYPHS } from '../glyphs';
 import {
   formatCloudDetachNotice,
   emitCloudDetachNoticeOnce,
+  hasEmittedCloudDetachNotice,
   suppressCloudDetachNotice,
   resetCloudDetachNoticeForTest,
   quitCloudSessionKeepRunning,
@@ -63,6 +64,28 @@ describe('emitCloudDetachNoticeOnce', () => {
     suppressCloudDetachNotice();
     emitCloudDetachNoticeOnce('sess-1');
     expect(written).toHaveLength(0);
+  });
+});
+
+describe('hasEmittedCloudDetachNotice', () => {
+  beforeEach(() => resetCloudDetachNoticeForTest());
+  afterEach(() => resetCloudDetachNoticeForTest());
+
+  it('is false before emission and true after — so the exit epilogue can honor a detach even after Kiro.close()', () => {
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = mock(() => true) as typeof process.stderr.write;
+    try {
+      expect(hasEmittedCloudDetachNotice()).toBe(false);
+      emitCloudDetachNoticeOnce('sess-1');
+      expect(hasEmittedCloudDetachNotice()).toBe(true);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
+
+  it('is true after suppress (turn-off) so no stray epilogue re-emits', () => {
+    suppressCloudDetachNotice();
+    expect(hasEmittedCloudDetachNotice()).toBe(true);
   });
 });
 

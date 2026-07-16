@@ -62,6 +62,9 @@ import {
   selectBootIndicatorPhase,
   formatBootIndicator,
 } from './boot-indicator.js';
+import { formatCloudStartupChecklist } from '../shared/cloud-startup-checklist.js';
+import { cloudConnectStage } from '../shared/cloud-connect-stage.js';
+import { formatCloudFooter } from '../../../utils/cloud-status.js';
 import { getCliVersion } from '../../../utils/version.js';
 import { getGitBranch, getGitBranchAsync } from '../../../utils/git.js';
 import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
@@ -75,6 +78,7 @@ import {
   useGlyphs,
   useSpinners,
   useAllowAsciiArt,
+  useAllowIcons,
 } from '../../../hooks/useGlyphs.js';
 import type { Glyphs } from '../../../utils/glyphs.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
@@ -94,6 +98,9 @@ import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
 import chalk from 'chalk';
 import { BackendPanels } from '../shared/BackendPanels.js';
+import { SourceProviderGate } from '../../ui/SourceProviderGate.js';
+import { openUrlInBrowser } from '../../../utils/browser.js';
+import { SOURCE_PROVIDER_SETUP_URL } from '../../../utils/cloud-urls.js';
 import { getPlaceholder } from '../getPlaceholder.js';
 import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
 import { ArtifactGenerationCard } from '../../ui/ArtifactView/ArtifactGenerationCard.js';
@@ -156,6 +163,13 @@ export const LiteLayout: React.FC = () => {
   const applyQueuedInputRestore = useAppStore((s) => s.applyQueuedInputRestore);
   const mcpInitStatus = useAppStore((s) => s.mcpInitStatus);
   const bootProgress = useAppStore((s) => s.bootProgress);
+  const cloudSessionActive = useAppStore((s) => s.cloudSessionActive);
+  const cloudProviderChecked = useAppStore((s) => s.cloudProviderChecked);
+  const cloudProvider = useAppStore((s) => s.cloudProvider);
+  const cloudRepoCount = useAppStore((s) => s.cloudRepoCount);
+  const cloudExtraRepos = useAppStore((s) => s.cloudExtraRepos);
+  const cloudRepo = useAppStore((s) => s.cloudRepo);
+  const cloudBranch = useAppStore((s) => s.cloudBranch);
   const cancelMessage = useAppStore((s) => s.cancelMessage);
   const resetExitSequence = useAppStore((s) => s.resetExitSequence);
   const wasCancelled = useAppStore((s) => s.wasCancelled);
@@ -169,6 +183,7 @@ export const LiteLayout: React.FC = () => {
   const glyphs = useGlyphs();
   const spinners = useSpinners();
   const { allowAsciiArt } = useAllowAsciiArt();
+  const { allowIcons } = useAllowIcons();
   const animationPaused = useAnimationPaused();
 
   // Panel show-flags — needed here to build anyPanelOpen, which drives the
@@ -193,6 +208,10 @@ export const LiteLayout: React.FC = () => {
     showThemePanel,
     showSettingsPanel,
     artifactViewOpen,
+    showSourceProviderGate,
+    sourceProviderSetupUrl,
+    showSessionPicker,
+    showCloudQuitPrompt,
   } = useUIState();
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
@@ -238,7 +257,9 @@ export const LiteLayout: React.FC = () => {
     showThemePanel ||
     showSettingsPanel ||
     !!artifactViewOpen ||
-    showSurveyPanel;
+    showSurveyPanel ||
+    showSessionPicker ||
+    showCloudQuitPrompt;
 
   // The lite /verbosity menu renders via <CommandMenu> (not a backend panel)
   // for its live preview + truncation editor, but presents like other
@@ -534,6 +555,16 @@ export const LiteLayout: React.FC = () => {
     }
     return false;
   }, [bootProgress, mcpInitStatus]);
+
+  // Cloud connect screen: while a cloud session is booting and no message has
+  // been sent yet, show the milestone checklist in place of the single boot
+  // row. False (inert) unless a cloud session is active — non-cloud startup
+  // renders exactly as before. Rows are built at render time so the in-progress
+  // spinner animates with bootFrame.
+  const showCloudChecklist =
+    cloudSessionActive &&
+    bootProgress.has('agent_connect') &&
+    messages.length === 0;
 
   // Boot tick — cycles the spinner glyph (150ms, matches LiteLiveRegion). One
   // interval shared by the boot indicator + pending-agent footer chip.
@@ -1474,6 +1505,92 @@ export const LiteLayout: React.FC = () => {
     }
   }, [getUserPromptBgHex]);
 
+  const cloudSessionCreated =
+    bootProgress.get('session_create')?.status === 'ready';
+  const cloudSessionFailed =
+    bootProgress.get('session_create')?.status === 'failed';
+
+  // A cloud session's chat UI is unusable until the session is created and
+  // linked, so while it is still being created (or creation failed) render only
+  // the connect screen — the milestone checklist plus any error — and suppress
+  // the scrollback, prompt, and footer. Dark-safe: a non-cloud session never
+  // enters this branch, so its startup is unchanged.
+  // Source-provider gate takes the whole screen — no welcome/checklist behind
+  // it — until the provider is verified (session not created yet).
+  if (cloudSessionActive && showSourceProviderGate) {
+    return (
+      <SourceProviderGate
+        setupUrl={sourceProviderSetupUrl ?? null}
+        onOpenBrowser={() => {
+          openUrlInBrowser(sourceProviderSetupUrl ?? SOURCE_PROVIDER_SETUP_URL);
+        }}
+        onRetry={handlers.handleSourceProviderRetry}
+        onQuit={handlers.handleSourceProviderQuit}
+      />
+    );
+  }
+
+  if (cloudSessionActive && !cloudSessionCreated) {
+    return (
+      <Box flexDirection="column">
+        {agentError && <Text>{chalk.red(`error: ${agentError}`)}</Text>}
+        {/* Connecting phase shows only the spinner. Welcome + checklist
+            wait for the source-provider probe (cloudProviderChecked) so neither
+            flashes before the 2.1 gate can appear. */}
+        {cloudProviderChecked &&
+          bootProgress.get('agent_connect')?.status === 'ready' && (
+            <Box marginBottom={1}>
+              <Text>{welcomeBannerText}</Text>
+            </Box>
+          )}
+        {cloudConnectStage(
+          cloudProviderChecked,
+          bootProgress.get('agent_connect')?.status
+        ) === 'connecting' && (
+          <Text>
+            {chalk.dim(
+              `  ${
+                spinners.brailleRotate[
+                  bootFrame % spinners.brailleRotate.length
+                ]
+              } Connecting to kiro.dev${glyphs.ellipsis}`
+            )}
+          </Text>
+        )}
+        {cloudConnectStage(
+          cloudProviderChecked,
+          bootProgress.get('agent_connect')?.status
+        ) === 'failed' && (
+          // Terminal failure row: a rejected connect leaves cloudProviderChecked
+          // false, so without this the spinner above would spin forever beside
+          // the error line. No spinner — the connect is not still in flight.
+          <Text>
+            {chalk.red(`  ${glyphs.cross} Couldn't connect to kiro.dev`)}
+          </Text>
+        )}
+        {cloudProviderChecked &&
+          formatCloudStartupChecklist(
+            {
+              connected: bootProgress.get('agent_connect')?.status === 'ready',
+              sessionCreated: false,
+              sessionFailed: cloudSessionFailed,
+              provider: cloudProvider ?? undefined,
+              repoCount: cloudRepoCount ?? undefined,
+            },
+            {
+              check: glyphs.checkmark,
+              cross: glyphs.cross,
+              ellipsis: glyphs.ellipsis,
+              spinner:
+                spinners.brailleRotate[
+                  bootFrame % spinners.brailleRotate.length
+                ]!,
+            }
+          ).map((line, i) => <Text key={i}>{line}</Text>)}
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       {/* Scrollback: append-only. wrap="overflow" soft-wraps so copy-paste
@@ -1581,9 +1698,25 @@ export const LiteLayout: React.FC = () => {
             modelName ? getColor('primary')(modelName) : '',
             currentEffort ? secondary(formatEffort(currentEffort)) : '',
             `${ctxColor(`${ctxPct}%`)} ${chalk.dim('ctx')}`,
-            getColor('brand')(shortenPath(process.cwd())),
-            gitBranch
+            // Local cwd + git branch describe this machine's checkout; a cloud
+            // session runs in the sandbox, so suppress them and let the cloud
+            // location chip below be authoritative.
+            cloudSessionActive
+              ? ''
+              : getColor('brand')(shortenPath(process.cwd())),
+            !cloudSessionActive && gitBranch
               ? `${secondary('(')}${getColor('primary')(gitBranch)}${secondary(')')}`
+              : '',
+            cloudSessionActive
+              ? getColor('brand')(
+                  formatCloudFooter(
+                    cloudRepo,
+                    cloudBranch,
+                    allowIcons ? glyphs.cloud : undefined,
+                    cloudExtraRepos,
+                    glyphs
+                  )
+                )
               : '',
             formatGoalStatusSegment(goalStatus, glyphs),
           ];
@@ -1601,15 +1734,44 @@ export const LiteLayout: React.FC = () => {
           );
         })()}
 
-      {/* Boot indicator — inline (not memoized) so it ticks every bootFrame. */}
-      {showBootIndicator && (
-        <Text>
-          {formatBootIndicator(
-            selectBootIndicatorPhase(bootProgress, mcpInitStatus),
-            spinners.brailleRotate[bootFrame % spinners.brailleRotate.length]!,
-            glyphs.ellipsis
-          )}
-        </Text>
+      {/* Boot indicator — inline (not memoized) so it ticks every bootFrame.
+          For a cloud session's connect screen, the milestone checklist takes
+          its place. */}
+      {showCloudChecklist ? (
+        <Box flexDirection="column">
+          {formatCloudStartupChecklist(
+            {
+              connected: bootProgress.get('agent_connect')?.status === 'ready',
+              sessionCreated:
+                bootProgress.get('session_create')?.status === 'ready',
+              provider: cloudProvider ?? undefined,
+              repoCount: cloudRepoCount ?? undefined,
+            },
+            {
+              check: glyphs.checkmark,
+              cross: glyphs.cross,
+              ellipsis: glyphs.ellipsis,
+              spinner:
+                spinners.brailleRotate[
+                  bootFrame % spinners.brailleRotate.length
+                ]!,
+            }
+          ).map((line, i) => (
+            <Text key={i}>{line}</Text>
+          ))}
+        </Box>
+      ) : (
+        showBootIndicator && (
+          <Text>
+            {formatBootIndicator(
+              selectBootIndicatorPhase(bootProgress, mcpInitStatus),
+              spinners.brailleRotate[
+                bootFrame % spinners.brailleRotate.length
+              ]!,
+              glyphs.ellipsis
+            )}
+          </Text>
+        )
       )}
 
       {/* Approval prompt — inside the input area. No marginTop so the divider

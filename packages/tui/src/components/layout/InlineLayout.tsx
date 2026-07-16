@@ -13,6 +13,12 @@ import {
   useAnimationPaused,
 } from '../../contexts/AnimationPausedContext.js';
 import { ConversationView } from '../ui/ConversationView';
+import { WelcomeScreen } from '../welcome-screen/index.js';
+import { SourceProviderGate } from '../ui/SourceProviderGate.js';
+import { openUrlInBrowser } from '../../utils/browser.js';
+import { SOURCE_PROVIDER_SETUP_URL } from '../../utils/cloud-urls.js';
+import { formatCloudStartupChecklist } from './shared/cloud-startup-checklist.js';
+import { cloudConnectStage } from './shared/cloud-connect-stage.js';
 import { ActivityTray } from '../ui/activity-tray/index.js';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
@@ -65,7 +71,12 @@ import { formatCloudFooter } from '../../utils/cloud-status';
 import { shortenPath, formatEffort } from '../../utils/string';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
-import { useGlyphs, useAllowAnimations } from '../../hooks/useGlyphs.js';
+import {
+  useGlyphs,
+  useSpinners,
+  useAllowAnimations,
+  useAllowIcons,
+} from '../../hooks/useGlyphs.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
@@ -136,6 +147,7 @@ export const InlineLayout: React.FC = () => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const { allowAnimations } = useAllowAnimations();
+  const { allowIcons } = useAllowIcons();
   // Grouped selectors using useShallow - prevents re-render cascades
   const {
     transientAlert,
@@ -182,6 +194,11 @@ export const InlineLayout: React.FC = () => {
     showKnowledgePanel,
     showCodePanel,
     artifactViewOpen,
+    showSourceProviderGate,
+    sourceProviderSetupUrl,
+    showSessionPicker,
+    showRepoPicker,
+    showCloudQuitPrompt,
   } = useUIState();
   const { toggleToolOutputsExpanded } = useUIActions();
   const {
@@ -194,8 +211,23 @@ export const InlineLayout: React.FC = () => {
     goalStatus,
   } = useContextState();
   const activeCommand = useAppStore((state) => state.activeCommand);
-  const cloudSessionStatus = useAppStore((state) => state.cloudSessionStatus);
   const cloudRepo = useAppStore((state) => state.cloudRepo);
+  const cloudBranch = useAppStore((state) => state.cloudBranch);
+  const cloudSessionActive = useAppStore((state) => state.cloudSessionActive);
+  // MCP OAuth prompts come from LOCAL MCP servers; a cloud session runs its
+  // tools in the sandbox, so the local auth nag doesn't apply there and would
+  // read as a leak from the previous local session. It reappears untouched
+  // when the user switches back to a local session.
+  const oauthBannerVisible =
+    pendingOAuthServers.size > 0 && !cloudSessionActive;
+  const cloudProviderChecked = useAppStore(
+    (state) => state.cloudProviderChecked
+  );
+  const cloudProvider = useAppStore((state) => state.cloudProvider);
+  const cloudRepoCount = useAppStore((state) => state.cloudRepoCount);
+  const cloudExtraRepos = useAppStore((state) => state.cloudExtraRepos);
+  const bootProgress = useAppStore((state) => state.bootProgress);
+  const inlineSpinners = useSpinners();
   const promptHint = useAppStore((state) => state.promptHint);
   const commandInputValue = useAppStore((state) => state.commandInputValue);
   const { setActiveCommand, setActiveTrigger, clearCommandInput } =
@@ -360,12 +392,6 @@ export const InlineLayout: React.FC = () => {
       contextUsagePercent != null && (
         <ProgressChip value={contextUsagePercent} warningThreshold={60} />
       ),
-      cloudSessionStatus && (
-        <Chip
-          value={formatCloudFooter(cloudRepo, glyphs)}
-          color={ChipColor.SECONDARY}
-        />
-      ),
       codeIntelligenceActive && <Text>{getColor('primary')('λ')}</Text>,
       goalStatus &&
         (() => {
@@ -419,8 +445,25 @@ export const InlineLayout: React.FC = () => {
       ) : (
         isDevMode() && <RenderMetricsChip />
       ),
-      <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />,
-      gitBranch && (
+      // The right side is the session's LOCATION. Local sessions show this
+      // machine's cwd + git branch; a cloud session runs in the sandbox, so it
+      // shows `☁ Cloud · ~/kiro/<repo> · <branch>` instead —
+      // the local pair would be a misleading location for a cloud session.
+      cloudSessionActive ? (
+        <Chip
+          value={formatCloudFooter(
+            cloudRepo,
+            cloudBranch,
+            allowIcons ? glyphs.cloud : undefined,
+            cloudExtraRepos,
+            glyphs
+          )}
+          color={ChipColor.BRAND}
+        />
+      ) : (
+        <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />
+      ),
+      !cloudSessionActive && gitBranch && (
         <Chip value={gitBranch} color={ChipColor.PRIMARY} wrap={true} />
       ),
     ];
@@ -440,10 +483,13 @@ export const InlineLayout: React.FC = () => {
     currentModel,
     currentEffort,
     goalStatus,
-    cloudSessionStatus,
+    cloudSessionActive,
     cloudRepo,
+    cloudBranch,
+    cloudExtraRepos,
     getColor,
     glyphs,
+    allowIcons,
   ]);
 
   // Build a dimmed version of the context bar for when tool outputs are expanded
@@ -480,8 +526,23 @@ export const InlineLayout: React.FC = () => {
       ) : (
         isDevMode() && <RenderMetricsChip color={mutedColor} />
       ),
-      <Chip value={shortenPath(process.cwd())} color={mutedColor} />,
-      gitBranch && <Chip value={gitBranch} color={mutedColor} wrap={true} />,
+      cloudSessionActive ? (
+        <Chip
+          value={formatCloudFooter(
+            cloudRepo,
+            cloudBranch,
+            allowIcons ? glyphs.cloud : undefined,
+            cloudExtraRepos,
+            glyphs
+          )}
+          color={mutedColor}
+        />
+      ) : (
+        <Chip value={shortenPath(process.cwd())} color={mutedColor} />
+      ),
+      !cloudSessionActive && gitBranch && (
+        <Chip value={gitBranch} color={mutedColor} wrap={true} />
+      ),
     ];
 
     return (
@@ -496,6 +557,12 @@ export const InlineLayout: React.FC = () => {
     codeIntelligenceActive,
     gitBranch,
     getColor,
+    cloudSessionActive,
+    cloudRepo,
+    cloudBranch,
+    cloudExtraRepos,
+    glyphs,
+    allowIcons,
   ]);
 
   const handleSubmit = useCallback(
@@ -555,6 +622,135 @@ export const InlineLayout: React.FC = () => {
     setAgentError(null);
   }, [setAgentError]);
 
+  // Cloud connect screen: show the milestone checklist while a cloud session
+  // boots and no message has been sent. A small ticker animates the in-progress
+  // spinner; it runs only while the screen is up and animations are enabled.
+  const showCloudConnectScreen =
+    cloudSessionActive &&
+    bootProgress.has('agent_connect') &&
+    messages.length === 0;
+  const [cloudBootFrame, setCloudBootFrame] = useState(0);
+  useEffect(() => {
+    if (!showCloudConnectScreen || globalPaused) return;
+    const t = setInterval(() => setCloudBootFrame((f) => f + 1), 150);
+    return () => clearInterval(t);
+  }, [showCloudConnectScreen, globalPaused]);
+
+  const cloudSessionCreated =
+    bootProgress.get('session_create')?.status === 'ready';
+  const cloudSessionFailed =
+    bootProgress.get('session_create')?.status === 'failed';
+
+  // A cloud session's chat UI is unusable until the session is created and
+  // linked, so while it is still being created (or creation failed) render only
+  // the connect screen — the milestone checklist plus any error — and suppress
+  // the conversation, prompt, and footer. Dark-safe: a non-cloud session never
+  // enters this branch, so its startup is unchanged.
+  // Source-provider gate: a cloud session with no connected provider must show
+  // ONLY the gate — no welcome, no checklist, no TUI chrome — until the provider
+  // is verified (the session isn't created yet at this point). Highest-priority
+  // cloud branch so the connect screen below never renders behind it.
+  if (cloudSessionActive && showSourceProviderGate) {
+    return (
+      <AnimationPausedContext.Provider value={globalPaused}>
+        <SourceProviderGate
+          setupUrl={sourceProviderSetupUrl ?? null}
+          onOpenBrowser={() => {
+            openUrlInBrowser(
+              sourceProviderSetupUrl ?? SOURCE_PROVIDER_SETUP_URL
+            );
+          }}
+          onRetry={backendPanelHandlers.handleSourceProviderRetry}
+          onQuit={backendPanelHandlers.handleSourceProviderQuit}
+        />
+      </AnimationPausedContext.Provider>
+    );
+  }
+
+  if (cloudSessionActive && !cloudSessionCreated) {
+    return (
+      <AnimationPausedContext.Provider value={globalPaused || !!agentError}>
+        <Box flexDirection="column">
+          {agentError && (
+            <BlockingErrorAlert
+              message={agentError}
+              guidance={agentErrorGuidance ?? undefined}
+              onDismiss={handleDismissError}
+            />
+          )}
+          {/* The connecting phase shows ONLY the spinner — no welcome
+              banner yet. The welcome + checklist wait until the source-provider
+              probe has resolved (cloudProviderChecked), so neither flashes
+              before the 2.1 gate can take the screen when no provider is linked.
+              Once connected to kiro.dev, the welcome banner renders
+              above the checklist. */}
+          {cloudProviderChecked &&
+            bootProgress.get('agent_connect')?.status === 'ready' && (
+              <Box marginBottom={1}>
+                <WelcomeScreen agent="kiro" mcpServers={[]} animate={false} />
+              </Box>
+            )}
+          {cloudConnectStage(
+            cloudProviderChecked,
+            bootProgress.get('agent_connect')?.status
+          ) === 'connecting' && (
+            <Box flexDirection="column">
+              <Text>
+                {getColor('secondary')(
+                  `  ${
+                    inlineSpinners.brailleRotate[
+                      cloudBootFrame % inlineSpinners.brailleRotate.length
+                    ]
+                  } Connecting to kiro.dev${glyphs.ellipsis}`
+                )}
+              </Text>
+            </Box>
+          )}
+          {cloudConnectStage(
+            cloudProviderChecked,
+            bootProgress.get('agent_connect')?.status
+          ) === 'failed' && (
+            // Terminal failure row: a rejected connect leaves cloudProviderChecked
+            // false, so without this the spinner above would spin forever beside
+            // the error alert. No spinner — the connect is not still in flight.
+            <Box flexDirection="column">
+              <Text>
+                {getColor('error')(
+                  `  ${glyphs.cross} Couldn't connect to kiro.dev`
+                )}
+              </Text>
+            </Box>
+          )}
+          {cloudProviderChecked && (
+            <Box flexDirection="column">
+              {formatCloudStartupChecklist(
+                {
+                  connected:
+                    bootProgress.get('agent_connect')?.status === 'ready',
+                  sessionCreated: false,
+                  sessionFailed: cloudSessionFailed,
+                  provider: cloudProvider ?? undefined,
+                  repoCount: cloudRepoCount ?? undefined,
+                },
+                {
+                  check: glyphs.checkmark,
+                  cross: glyphs.cross,
+                  ellipsis: glyphs.ellipsis,
+                  spinner:
+                    inlineSpinners.brailleRotate[
+                      cloudBootFrame % inlineSpinners.brailleRotate.length
+                    ]!,
+                }
+              ).map((line, i) => (
+                <Text key={i}>{line}</Text>
+              ))}
+            </Box>
+          )}
+        </Box>
+      </AnimationPausedContext.Provider>
+    );
+  }
+
   return (
     <AnimationPausedContext.Provider
       value={globalPaused || !!pendingApproval || !!agentError}
@@ -568,8 +764,40 @@ export const InlineLayout: React.FC = () => {
           />
         )}
 
-        {/* ConversationView - always rendered */}
+        {/* ConversationView - always rendered. It renders the Kiro welcome
+            banner at its top when no message has been sent. */}
         <ConversationView />
+
+        {/* Cloud connect screen: milestone checklist while a cloud session is
+            booting and no message has been sent yet. Rendered AFTER
+            ConversationView so it appears below the welcome banner,
+            not above it. Inert unless a cloud session is active, so non-cloud
+            startup is unchanged. */}
+        {showCloudConnectScreen && (
+          <Box flexDirection="column">
+            {formatCloudStartupChecklist(
+              {
+                connected:
+                  bootProgress.get('agent_connect')?.status === 'ready',
+                sessionCreated:
+                  bootProgress.get('session_create')?.status === 'ready',
+                provider: cloudProvider ?? undefined,
+                repoCount: cloudRepoCount ?? undefined,
+              },
+              {
+                check: glyphs.checkmark,
+                cross: glyphs.cross,
+                ellipsis: glyphs.ellipsis,
+                spinner:
+                  inlineSpinners.brailleRotate[
+                    cloudBootFrame % inlineSpinners.brailleRotate.length
+                  ]!,
+              }
+            ).map((line, i) => (
+              <Text key={i}>{line}</Text>
+            ))}
+          </Box>
+        )}
 
         <NotificationBar
           message={
@@ -577,7 +805,7 @@ export const InlineLayout: React.FC = () => {
               ? 'Initializing...'
               : (loadingMessage ??
                 transientAlert?.message ??
-                (pendingOAuthServers.size > 0
+                (oauthBannerVisible
                   ? `${pendingOAuthServers.keys().next().value} requires OAuth — Ctrl+y to authenticate`
                   : undefined) ??
                 summarizeInitErrors(
@@ -593,7 +821,7 @@ export const InlineLayout: React.FC = () => {
             !sessionId || loadingMessage
               ? 'loading'
               : (transientAlert?.status ??
-                (pendingOAuthServers.size > 0
+                (oauthBannerVisible
                   ? 'info'
                   : initErrors.some(
                         (e) =>
@@ -618,7 +846,7 @@ export const InlineLayout: React.FC = () => {
           actionHint={
             transientAlert?.action
               ? `${transientAlert.action.key}: ${transientAlert.action.label}`
-              : pendingOAuthServers.size > 0
+              : oauthBannerVisible
                 ? 'Ctrl+y: Authenticate'
                 : undefined
           }
@@ -658,6 +886,9 @@ export const InlineLayout: React.FC = () => {
               showCodePanel ||
               !!artifactViewOpen ||
               showSurveyPanel ||
+              showSessionPicker ||
+              showRepoPicker ||
+              showCloudQuitPrompt ||
               !!pendingApproval
                 ? undefined
                 : toolOutputsExpanded
@@ -722,7 +953,10 @@ export const InlineLayout: React.FC = () => {
                   showKnowledgePanel ||
                   showCodePanel ||
                   !!artifactViewOpen ||
-                  showSurveyPanel
+                  showSurveyPanel ||
+                  showSessionPicker ||
+                  showRepoPicker ||
+                  showCloudQuitPrompt
             }
           >
             <CommandMenu />
@@ -769,6 +1003,9 @@ export const InlineLayout: React.FC = () => {
                 !showCodePanel &&
                 !artifactViewOpen &&
                 !showSurveyPanel &&
+                !showSessionPicker &&
+                !showRepoPicker &&
+                !showCloudQuitPrompt &&
                 commandInputValue.length === 0 &&
                 exitSequence === 0 &&
                 !suspendArmed

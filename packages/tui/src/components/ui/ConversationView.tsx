@@ -641,6 +641,16 @@ export const ConversationView = React.memo(function ConversationView() {
       }),
     [tipRecommendLiteUi, tipEngine]
   );
+  // Hold the welcome screen for a cloud session until the session is actually
+  // created and linked; on a connect/createSession failure it must not render.
+  // `session_create` reaches 'ready' only on success (and 'failed' on error),
+  // so it is the reliable gate even when KAS pushes no live roster status.
+  // Local sessions are unaffected — `welcomeAllowed` is always true for them.
+  const cloudSessionActive = useAppStore((s) => s.cloudSessionActive);
+  const cloudSessionCreated = useAppStore(
+    (s) => s.bootProgress.get('session_create')?.status === 'ready'
+  );
+  const welcomeAllowed = !cloudSessionActive || cloudSessionCreated;
 
   // Track if we've ever had messages (to know if this is initial load or post-clear)
   const hadMessagesRef = React.useRef(_hadMessages);
@@ -937,7 +947,12 @@ export const ConversationView = React.memo(function ConversationView() {
   };
 
   // Welcome screen — emitted once when messages first appear
-  if (hasMessages && !welcomeInStaticRef.current && greetingEnabled) {
+  if (
+    hasMessages &&
+    !welcomeInStaticRef.current &&
+    greetingEnabled &&
+    welcomeAllowed
+  ) {
     welcomeInStaticRef.current = true;
     _welcomeInStatic = true;
     appendStatic({ type: 'welcome', id: '__welcome__' });
@@ -1052,7 +1067,7 @@ export const ConversationView = React.memo(function ConversationView() {
 
   return (
     <Box flexDirection="column">
-      {isInitialLoad && greetingEnabled && (
+      {isInitialLoad && greetingEnabled && welcomeAllowed && (
         <Box marginBottom={1}>
           <WelcomeScreen
             agent="kiro"

@@ -200,6 +200,13 @@ export const PromptInput = React.memo(function PromptInput({
     setActiveCommand,
   } = useCommandActions();
   const toggleInterruptMode = useAppStore((s) => s.toggleInterruptMode);
+  // Panels that own the keyboard via their own useInput (repo picker, session
+  // picker, source-provider gate). While one is open the prompt must not also
+  // consume keystrokes, or typing (e.g. the picker's type-to-search) echoes in
+  // both places at once.
+  const inputPanelOpen = useAppStore(
+    (s) => s.showRepoPicker || s.showSessionPicker || s.showSourceProviderGate
+  );
   const keybindings = useKeybindings();
   const glyphs = useGlyphs();
   const { allowAsciiArt } = useAllowAsciiArt();
@@ -889,6 +896,10 @@ export const PromptInput = React.memo(function PromptInput({
 
       // Don't process input when selection menu is open (Menu handles its own input)
       if (activeCommand) return;
+
+      // Don't process input while a useInput-owning panel is open (repo/session
+      // picker, source-provider gate) — it handles its own keystrokes.
+      if (inputPanelOpen) return;
 
       // Toggle interrupt behavior (Ctrl+S by default) — works in all states
       if (keybindings.matches('toggleInterruptMode', userInput, key)) {
@@ -1658,7 +1669,9 @@ export const PromptInput = React.memo(function PromptInput({
         insertText(normalizeLineEndings(userInput));
       }
     },
-    { onEmptyPaste: handlePasteImage }
+    // Detach the prompt's key listener entirely while a useInput-owning panel
+    // is open, so its type-to-search owns the keyboard (no double echo).
+    { onEmptyPaste: handlePasteImage, isActive: !inputPanelOpen }
   );
 
   const renderContent = () => {

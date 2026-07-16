@@ -25,6 +25,8 @@ export function useBackendPanelHandlers() {
     setShowStatsPanel,
     setShowHooksPanel,
     setShowRepoPicker,
+    retrySourceProviderConnection,
+    setShowSessionPicker,
     setShowKnowledgePanel,
     setShowCodePanel,
     setShowChangelogPanel,
@@ -36,7 +38,8 @@ export function useBackendPanelHandlers() {
     setSettingsReturnOnEscape,
     reopenSettingsMenu,
   } = useUIActions();
-  const { setActiveCommand, clearCommandInput } = useCommandActions();
+  const { setActiveCommand, clearCommandInput, resumeSession } =
+    useCommandActions();
   const { handleUserInput } = useInputActions();
   const { kiro } = useKiroClient();
   const settingsReturnOnEscape = useAppStore((s) => s.settingsReturnOnEscape);
@@ -79,6 +82,7 @@ export function useBackendPanelHandlers() {
     handleCloseStatsPanel: makeClose(setShowStatsPanel),
     handleCloseHooksPanel: makeClose(setShowHooksPanel),
     handleCloseRepoPicker: makeClose(setShowRepoPicker),
+    handleCloseSessionPicker: makeClose(setShowSessionPicker),
     handleCloseKnowledgePanel: makeClose(setShowKnowledgePanel),
     handleCloseCodePanel: makeClose(setShowCodePanel),
     handleCloseChangelogPanel: makeClose(setShowChangelogPanel),
@@ -185,6 +189,27 @@ export function useBackendPanelHandlers() {
     ]
   );
 
+  // Resume the chosen session via the store's resumeSession action, which fires
+  // the synthetic `/chat <id>` dispatch so the KAS handler's loadExistingSession
+  // flow resolves + loads it (native or cross-engine), same as the old menu path.
+  const handleSessionSelect = useCallback(
+    (sessionId: string, environment: 'local' | 'cloud') => {
+      void resumeSession(sessionId, environment);
+    },
+    [resumeSession]
+  );
+
+  // Cloud-entry source-provider gate. Open-browser keeps the gate up; retry
+  // re-probes the connection (dismisses on success, stays up otherwise); quit
+  // detaches and exits cleanly.
+  const handleSourceProviderRetry = useCallback(async () => {
+    await retrySourceProviderConnection();
+  }, [retrySourceProviderConnection]);
+  const handleSourceProviderQuit = useCallback(() => {
+    kiro.close();
+    process.exit(0);
+  }, [kiro]);
+
   return {
     ...closeHandlers,
     handleCloseSettingsPanel,
@@ -192,6 +217,9 @@ export function useBackendPanelHandlers() {
     handleTabFromUsage,
     handleRefreshCodePanel,
     handleRewindSelect,
+    handleSessionSelect,
+    handleSourceProviderRetry,
+    handleSourceProviderQuit,
   };
 }
 

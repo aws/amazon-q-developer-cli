@@ -45,9 +45,13 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
   const appStore = useContext(AppStoreContext);
 
   useEffect(() => {
-    if (!process.env.KIRO_TEST_MODE || !appStore) return;
+    // Only wire the test IPC when the harness actually provided a socket to
+    // connect to. A user running the debug build with KIRO_TEST_MODE=1 (to
+    // enable dark-shipped features) sets no socket path — connecting to an
+    // empty path throws an async socket error that freezes bring-up.
+    const socketPath = process.env.KIRO_TEST_TUI_IPC_SOCKET_PATH;
+    if (!process.env.KIRO_TEST_MODE || !socketPath || !appStore) return;
 
-    const socketPath = process.env.KIRO_TEST_TUI_IPC_SOCKET_PATH!;
     const socket = net.createConnection(socketPath);
     const connection = new TuiIpcConnection(socket);
 
