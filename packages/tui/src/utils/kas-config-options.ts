@@ -1,4 +1,5 @@
 import { KAS_DEFAULT_AGENT_ID } from '../constants/agents';
+import { features, Feature } from '../features';
 import type {
   KiroModelOptionMeta,
   EffortSchemaPath,
@@ -279,6 +280,8 @@ const BUILTIN_AGENT_ALLOWLIST = new Set<string>([
   KAS_DEFAULT_AGENT_ID,
   'kiro_planner',
   'spec',
+  // Explore (C2S) gated to internal nightly via Feature::C2s rollout.
+  ...(features.isEnabled(Feature.C2s) ? ['Explore'] : []),
 ]);
 
 type RawSelect = {

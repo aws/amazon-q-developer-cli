@@ -39,6 +39,14 @@ export type CliInternalOutput =
 	| { kind: "ensureSession", data: {
 	sessionId: string;
 }}
+	/** `upgrade-agent --action scan`. */
+	| { kind: "upgradeAgentScan", data: {
+	result: ScanResult;
+}}
+	/** `upgrade-agent --action run`. */
+	| { kind: "upgradeAgentRun", data: {
+	outcomes: AgentUpgradeOutcome[];
+}}
 	/** `test-seed-v1`. */
 	| { kind: "testSeedV1", data: {
 	conversationId: string;
@@ -63,7 +71,21 @@ export enum Feature {
 	/** Remote/cloud sandbox sessions (`--cloud` / `--repo` flags). */
 	RemoteSandbox = "remote_sandbox",
 	V2NonInteractive = "v2_non_interactive",
+	/**
+	 * ICECAP infrastructure-safety gate. Internal-only via `rollout.json`
+	 * (`segment: internal`). The launcher exports the decision as
+	 * `KIRO_INFRA_SAFETY_ROLLOUT_ENABLED` so the TUI advertises the
+	 * `infrastructureSafety` capability and honors the `infraSafetyMonitor` /
+	 * `infraSafetyEnforce` settings only for users in the cohort.
+	 */
+	InfraSafety = "infra_safety",
 	Memory = "memory",
+	/**
+	 * Code-to-Spec Explore agent and analysis pipeline. Internal nightly only;
+	 * launcher exports `KIRO_C2S_ROLLOUT_ENABLED` and the TUI honors
+	 * `chat.enableC2s` + shows the Explore agent only when enabled.
+	 */
+	C2s = "c2s",
 }
 
 /**

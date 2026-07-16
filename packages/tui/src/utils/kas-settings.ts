@@ -83,6 +83,12 @@ export function buildKasSettings(): KasSettings | undefined {
     );
   }
 
+  // C2S (Code-to-Spec) Explore agent gate. Opt-in via cli.json, gated to
+  // internal nightly builds via Feature::C2s rollout decision.
+  if (features.isEnabled(Feature.C2s)) {
+    boolMappings.push(['chat.enableC2s', 'c2s']);
+  }
+
   for (const [cliKey, agentKey] of boolMappings) {
     const val = raw[cliKey];
     if (typeof val === 'boolean') {

@@ -39,6 +39,10 @@ pub enum Feature {
     /// `infraSafetyEnforce` settings only for users in the cohort.
     InfraSafety,
     Memory,
+    /// Code-to-Spec Explore agent and analysis pipeline. Internal nightly only;
+    /// launcher exports `KIRO_C2S_ROLLOUT_ENABLED` and the TUI honors
+    /// `chat.enableC2s` + shows the Explore agent only when enabled.
+    C2s,
     #[cfg(test)]
     #[typeshare(skip)]
     Test,
