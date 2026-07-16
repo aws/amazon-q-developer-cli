@@ -100,16 +100,56 @@ impl WorkspaceEditInfo {
                         .to_string_lossy()
                         .to_string();
 
+                    let preview = Self::build_preview(text_edits);
+
                     changes.push(FileChangeInfo {
                         file_path: relative_path,
                         edit_count: text_edits.len(),
-                        preview: None, // Could add preview logic here
+                        preview,
                     });
                 }
             }
         }
 
         Self { changes }
+    }
+
+    /// Build a preview string showing what each edit does
+    fn build_preview(edits: &[lsp_types::TextEdit]) -> Option<String> {
+        if edits.is_empty() {
+            return None;
+        }
+        let mut lines = Vec::new();
+        for edit in edits {
+            let range = &edit.range;
+            let loc = format!(
+                "L{}:{}-L{}:{}",
+                range.start.line + 1,
+                range.start.character + 1,
+                range.end.line + 1,
+                range.end.character + 1
+            );
+            if edit.new_text.is_empty() {
+                lines.push(format!("  delete {}", loc));
+            } else if range.start == range.end {
+                let text = truncate_preview(&edit.new_text, 80);
+                lines.push(format!("  insert at {}: {}", loc, text));
+            } else {
+                let text = truncate_preview(&edit.new_text, 80);
+                lines.push(format!("  replace {}: {}", loc, text));
+            }
+        }
+        Some(lines.join("\n"))
+    }
+}
+
+/// Truncate a string for preview display, replacing newlines with ↵
+fn truncate_preview(s: &str, max_len: usize) -> String {
+    let collapsed: String = s.chars().map(|c| if c == '\n' { '↵' } else { c }).collect();
+    if collapsed.len() <= max_len {
+        collapsed
+    } else {
+        format!("{}…", &collapsed[..max_len])
     }
 }
 
@@ -453,6 +493,50 @@ impl CompletionInfo {
 /// Calculate fuzzy match score for completion filtering
 /// Re-exported from utils::scoring for backward compatibility
 pub use crate::utils::scoring::calculate_fuzzy_score;
+
+/// Information about a code action available at a specific location.
+///
+/// Code actions represent automated changes that can be applied to code,
+/// such as quick fixes, refactorings, or source organization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeActionInfo {
+    /// Human-readable title of the code action
+    pub title: String,
+    /// The kind of code action (e.g., "quickfix", "refactor.extract", "source.organizeImports")
+    pub kind: Option<String>,
+    /// The diagnostics that this code action resolves
+    pub diagnostics: Vec<DiagnosticInfo>,
+    /// Whether this is a preferred action (shown with special UI treatment)
+    pub is_preferred: Option<bool>,
+    /// If set, the code action is disabled with this reason
+    pub disabled_reason: Option<String>,
+    /// The workspace edit this code action performs (if any)
+    pub edit: Option<WorkspaceEditInfo>,
+    /// An optional command to execute after applying the edit
+    pub command: Option<CommandInfo>,
+}
+
+/// Information about a command that can be executed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandInfo {
+    /// Human-readable title of the command
+    pub title: String,
+    /// The identifier of the command to execute
+    pub command: String,
+    /// Arguments to pass to the command
+    pub arguments: Option<Vec<serde_json::Value>>,
+}
+
+/// Result of applying a code action.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApplyCodeActionResult {
+    /// Number of files modified (or would be modified in dry_run)
+    pub files_changed: usize,
+    /// Whether a command was executed (or would be in dry_run)
+    pub command_executed: bool,
+    /// Preview of the workspace edit (populated in dry_run mode)
+    pub edit: Option<WorkspaceEditInfo>,
+}
 
 /// Severity level of a diagnostic message.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

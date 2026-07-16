@@ -127,7 +127,7 @@ Params: file_path, path
 
 ## LSP Operations (Not Available)
 These require LSP initialization (/code init):
-find_references, goto_definition, get_hover, get_completions, get_diagnostics, rename_symbol".to_string(),
+find_references, goto_definition, get_hover, get_completions, get_diagnostics, rename_symbol, get_code_actions".to_string(),
             input_schema: InputSchema(serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -193,7 +193,7 @@ CORE FEATURES:
 • Extracts function/class signatures via AST
 • Structural AST search and rewrite (ast-grep)
 • Codebase overview and directory exploration
-• LSP-powered: find_references, goto_definition, get_hover, get_completions, rename_symbol
+• LSP-powered: find_references, goto_definition, get_hover, get_completions, get_code_actions, rename_symbol
 
 ## Workflows
 
@@ -259,6 +259,12 @@ Params: file_path, row, column (required)
 **get_completions** - Get completion suggestions at position.
 Params: file_path, row, column (required), trigger_character, limit, filter
 
+**get_code_actions** - Get available code actions (quick fixes, refactorings) at position or range.
+Params: file_path, row, column (required), end_row, end_column, only_kinds
+
+**apply_code_action** - Apply a specific code action by title. Use get_code_actions first to see available actions.
+Params: file_path, row, column, title (required), dry_run (default true)
+
 **pattern_search** - AST-based structural search using ast-grep.
 Params: pattern, language (required), file_path, limit
 
@@ -316,7 +322,7 @@ Workflow:
                             "enum": [
                                 "search_symbols", "lookup_symbols", "find_references", "goto_definition",
                                 "get_document_symbols", "get_diagnostics",
-                                "get_hover", "get_completions", "pattern_search",
+                                "get_hover", "get_completions", "get_code_actions", "apply_code_action", "pattern_search",
                                 "generate_codebase_overview", "search_codebase_map",
                                 "rename_symbol", "format", "pattern_rewrite"
                             ],
@@ -337,7 +343,7 @@ Workflow:
                         },
                         "file_path": { 
                             "type": "string", 
-                            "description": "File path (required for rename_symbol/get_document_symbols/get_diagnostics/get_hover/get_completions, optional for format/pattern_rewrite/pattern_search/search_codebase_map)" 
+                            "description": "File path (required for rename_symbol/get_document_symbols/get_diagnostics/get_hover/get_completions/get_code_actions, optional for format/pattern_rewrite/pattern_search/search_codebase_map)" 
                         },
                         "path": {
                             "type": "string",
@@ -345,11 +351,11 @@ Workflow:
                         },
                         "row": { 
                             "type": "integer", 
-                            "description": "Line number 1-based (required for find_references/goto_definition/get_hover/get_completions/rename_symbol)" 
+                            "description": "Line number 1-based (required for find_references/goto_definition/get_hover/get_completions/get_code_actions/rename_symbol)" 
                         },
                         "column": { 
                             "type": "integer", 
-                            "description": "Column number 1-based (required for find_references/goto_definition/get_hover/get_completions/rename_symbol)" 
+                            "description": "Column number 1-based (required for find_references/goto_definition/get_hover/get_completions/get_code_actions/rename_symbol)" 
                         },
                         "pattern": {
                             "type": "string",
@@ -373,8 +379,25 @@ Workflow:
                         },
                         "dry_run": {
                             "type": "boolean",
-                            "description": "Preview changes without writing (optional for rename_symbol/pattern_rewrite). After reviewing dry-run results, call again with dry_run=false to apply.",
+                            "description": "Preview changes without writing (optional for rename_symbol/pattern_rewrite/apply_code_action). After reviewing dry-run results, call again with dry_run=false to apply.",
                             "default": true
+                        },
+                        "end_row": {
+                            "type": "integer",
+                            "description": "End line number 1-based (optional for get_code_actions, defines range end)"
+                        },
+                        "end_column": {
+                            "type": "integer",
+                            "description": "End column number 1-based (optional for get_code_actions, defines range end)"
+                        },
+                        "only_kinds": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Filter code actions by kind (optional for get_code_actions, e.g. [\"quickfix\", \"refactor\"])"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Code action title to apply (required for apply_code_action, must match exactly)"
                         }
                     },
                     "required": ["operation"]

@@ -3864,6 +3864,12 @@ pub(crate) fn get_tool_title(tool: &Tool) -> String {
                     Code::GetDiagnostics(p) => format!("Getting diagnostics for {}", truncate_path(&p.file_path)),
                     Code::GetHover(p) => format!("Getting hover info in {}", truncate_path(&p.file_path)),
                     Code::GetCompletions(p) => format!("Getting completions in {}", truncate_path(&p.file_path)),
+                    Code::GetCodeActions(p) => format!("Getting code actions in {}", truncate_path(&p.file_path)),
+                    Code::ApplyCodeAction(p) => format!(
+                        "Applying code action '{}' in {}",
+                        truncate_str(&p.title, 30),
+                        truncate_path(&p.file_path)
+                    ),
                     Code::RenameSymbol(p) => format!("Renaming to '{}' in {}", p.new_name, truncate_path(&p.file_path)),
                     Code::Format(p) => format!(
                         "Formatting {}",

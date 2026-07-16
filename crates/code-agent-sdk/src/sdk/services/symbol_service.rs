@@ -88,6 +88,20 @@ pub trait SymbolService: Send + Sync {
         workspace_manager: &mut WorkspaceManager,
         request: crate::model::types::CompletionRequest,
     ) -> Result<Option<crate::model::entities::CompletionInfo>>;
+
+    /// Get code actions at a specific position or range
+    async fn code_actions(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::CodeActionsRequest,
+    ) -> Result<Vec<crate::model::entities::CodeActionInfo>>;
+
+    /// Apply a specific code action by title at a position
+    async fn apply_code_action(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::ApplyCodeActionRequest,
+    ) -> Result<crate::model::entities::ApplyCodeActionResult>;
 }
 
 /// LSP-based implementation of SymbolService
@@ -880,6 +894,248 @@ impl SymbolService for LspSymbolService {
             None => Ok(None),
         }
     }
+
+    async fn code_actions(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::CodeActionsRequest,
+    ) -> Result<Vec<crate::model::entities::CodeActionInfo>> {
+        // Ensure initialized
+        if !workspace_manager.is_initialized() {
+            workspace_manager.initialize().await?;
+        }
+
+        let canonical_path = canonicalize_path(&request.file_path)?;
+        let content = std::fs::read_to_string(&canonical_path)?;
+        self.workspace_service
+            .open_file(workspace_manager, &canonical_path, content)
+            .await?;
+
+        // Fetch diagnostics for the file to pass as context
+        let diagnostics = workspace_manager
+            .get_diagnostics_for_file(&canonical_path)
+            .await
+            .unwrap_or_default();
+
+        let client = workspace_manager
+            .get_client_for_file(&canonical_path)
+            .await?
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
+
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
+
+        let start_position = crate::utils::to_lsp_position(request.row, request.column);
+        let end_position = match (request.end_row, request.end_column) {
+            (Some(end_row), Some(end_col)) => crate::utils::to_lsp_position(end_row, end_col),
+            _ => start_position,
+        };
+
+        let only = request
+            .only_kinds
+            .map(|kinds| kinds.into_iter().map(CodeActionKind::from).collect());
+
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri },
+            range: Range {
+                start: start_position,
+                end: end_position,
+            },
+            context: CodeActionContext {
+                diagnostics,
+                only,
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let response = client.code_actions(params).await?;
+        let workspace_root = workspace_manager.workspace_root().to_path_buf();
+
+        Ok(response
+            .unwrap_or_default()
+            .into_iter()
+            .map(|action_or_cmd| match action_or_cmd {
+                CodeActionOrCommand::CodeAction(action) => {
+                    let edit = action.edit.as_ref().map(|e| {
+                        crate::model::entities::WorkspaceEditInfo::from_lsp_workspace_edit(e, &workspace_root)
+                    });
+                    let command = action.command.map(|cmd| crate::model::entities::CommandInfo {
+                        title: cmd.title,
+                        command: cmd.command,
+                        arguments: cmd.arguments.map(|args| args.into_iter().collect()),
+                    });
+                    let diagnostics = action
+                        .diagnostics
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|d| crate::model::entities::DiagnosticInfo::from_lsp_diagnostic(d, &workspace_root))
+                        .collect();
+                    crate::model::entities::CodeActionInfo {
+                        title: action.title,
+                        kind: action.kind.map(|k| k.as_str().to_string()),
+                        diagnostics,
+                        is_preferred: action.is_preferred,
+                        disabled_reason: action.disabled.map(|d| d.reason),
+                        edit,
+                        command,
+                    }
+                },
+                CodeActionOrCommand::Command(cmd) => crate::model::entities::CodeActionInfo {
+                    title: cmd.title.clone(),
+                    kind: None,
+                    diagnostics: vec![],
+                    is_preferred: None,
+                    disabled_reason: None,
+                    edit: None,
+                    command: Some(crate::model::entities::CommandInfo {
+                        title: cmd.title,
+                        command: cmd.command,
+                        arguments: cmd.arguments.map(|args| args.into_iter().collect()),
+                    }),
+                },
+            })
+            .collect())
+    }
+
+    async fn apply_code_action(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::ApplyCodeActionRequest,
+    ) -> Result<crate::model::entities::ApplyCodeActionResult> {
+        // Ensure initialized
+        if !workspace_manager.is_initialized() {
+            workspace_manager.initialize().await?;
+        }
+
+        let canonical_path = canonicalize_path(&request.file_path)?;
+        let content = std::fs::read_to_string(&canonical_path)?;
+        self.workspace_service
+            .open_file(workspace_manager, &canonical_path, content)
+            .await?;
+
+        // Fetch diagnostics for the file to pass as context
+        let diagnostics = workspace_manager
+            .get_diagnostics_for_file(&canonical_path)
+            .await
+            .unwrap_or_default();
+
+        let workspace_root = workspace_manager.workspace_root().to_path_buf();
+        let client = workspace_manager
+            .get_client_for_file(&canonical_path)
+            .await?
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
+
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
+
+        let position = crate::utils::to_lsp_position(request.row, request.column);
+
+        // Re-fetch code actions at this position
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri },
+            range: Range {
+                start: position,
+                end: position,
+            },
+            context: CodeActionContext {
+                diagnostics,
+                only: None,
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let response = client.code_actions(params).await?;
+        let actions = response.unwrap_or_default();
+
+        // Find the action matching the title
+        let matching = actions.into_iter().find(|a| match a {
+            CodeActionOrCommand::CodeAction(action) => action.title == request.title,
+            CodeActionOrCommand::Command(cmd) => cmd.title == request.title,
+        });
+
+        let Some(action_or_cmd) = matching else {
+            anyhow::bail!("Code action '{}' not found at this position", request.title);
+        };
+
+        let mut files_changed = 0;
+        let mut command_executed = false;
+        let mut edit_info = None;
+
+        match action_or_cmd {
+            CodeActionOrCommand::CodeAction(mut action) => {
+                // Resolve if no edit present (lazy resolution)
+                if action.edit.is_none()
+                    && let Some(resolved) = client.code_action_resolve(action.clone()).await?
+                {
+                    action = resolved;
+                }
+
+                if let Some(ref workspace_edit) = action.edit {
+                    files_changed = count_files_in_edit(workspace_edit);
+                    edit_info = Some(crate::model::entities::WorkspaceEditInfo::from_lsp_workspace_edit(
+                        workspace_edit,
+                        &workspace_root,
+                    ));
+
+                    if !request.dry_run {
+                        crate::utils::apply_workspace_edit(workspace_edit)?;
+                    }
+                }
+
+                if action.command.is_some() {
+                    command_executed = true;
+                    if !request.dry_run {
+                        let cmd = action.command.unwrap();
+                        let exec_params = ExecuteCommandParams {
+                            command: cmd.command,
+                            arguments: cmd.arguments.unwrap_or_default(),
+                            work_done_progress_params: Default::default(),
+                        };
+                        let _ = client.execute_command(exec_params).await;
+                    }
+                }
+            },
+            CodeActionOrCommand::Command(cmd) => {
+                if !request.dry_run {
+                    let exec_params = ExecuteCommandParams {
+                        command: cmd.command,
+                        arguments: cmd.arguments.unwrap_or_default(),
+                        work_done_progress_params: Default::default(),
+                    };
+                    let _ = client.execute_command(exec_params).await;
+                }
+                command_executed = true;
+            },
+        }
+
+        Ok(crate::model::entities::ApplyCodeActionResult {
+            files_changed,
+            command_executed,
+            edit: if request.dry_run { edit_info } else { None },
+        })
+    }
+}
+
+/// Count the number of files affected by a workspace edit.
+/// Per LSP spec, document_changes takes precedence over changes when both are present.
+fn count_files_in_edit(edit: &WorkspaceEdit) -> usize {
+    if let Some(document_changes) = &edit.document_changes {
+        return match document_changes {
+            lsp_types::DocumentChanges::Edits(edits) => edits.len(),
+            lsp_types::DocumentChanges::Operations(ops) => ops.len(),
+        };
+    }
+    edit.changes.as_ref().map_or(0, |c| c.len())
 }
 
 #[cfg(test)]

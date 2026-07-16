@@ -243,6 +243,44 @@ pub struct CompletionRequest {
     pub offset: Option<usize>,
 }
 
+/// Request to get code actions at a specific position or range.
+///
+/// Code actions provide automated fixes, refactorings, and other code transformations
+/// available at a given location. Uses 1-based line and column numbers.
+#[derive(Debug, Clone)]
+pub struct CodeActionsRequest {
+    /// File path to get code actions for
+    pub file_path: PathBuf,
+    /// Start line number (1-based)
+    pub row: u32,
+    /// Start column number (1-based)
+    pub column: u32,
+    /// Optional end line number (1-based). If not provided, uses a zero-width range at row/column.
+    pub end_row: Option<u32>,
+    /// Optional end column number (1-based)
+    pub end_column: Option<u32>,
+    /// Optional filter to only return specific kinds of code actions (e.g., "quickfix", "refactor")
+    pub only_kinds: Option<Vec<String>>,
+}
+
+/// Request to apply a specific code action at a position.
+///
+/// This re-fetches code actions at the given position, finds the one matching the title,
+/// resolves it if needed, applies the workspace edit, and executes any associated command.
+#[derive(Debug, Clone)]
+pub struct ApplyCodeActionRequest {
+    /// File path where the code action is available
+    pub file_path: PathBuf,
+    /// Start line number (1-based)
+    pub row: u32,
+    /// Start column number (1-based)
+    pub column: u32,
+    /// Title of the code action to apply (must match exactly)
+    pub title: String,
+    /// If true, only preview the changes without applying (default: true)
+    pub dry_run: bool,
+}
+
 /// Request to open a file in the language server.
 ///
 /// This request opens a file for analysis, making it available for code intelligence operations.

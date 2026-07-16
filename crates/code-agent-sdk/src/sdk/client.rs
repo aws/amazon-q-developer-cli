@@ -1031,6 +1031,44 @@ impl CodeIntelligence {
             .await
     }
 
+    /// **Get code actions at a specific position or range**
+    ///
+    /// Retrieves available code actions (quick fixes, refactorings, etc.) for the
+    /// specified position or range in a file.
+    ///
+    /// # Arguments
+    /// * `request` - Code actions request parameters including file path and position
+    ///
+    /// # Returns
+    /// * `Result<Vec<CodeActionInfo>>` - Available code actions
+    pub async fn code_actions(
+        &mut self,
+        request: crate::model::types::CodeActionsRequest,
+    ) -> Result<Vec<crate::model::entities::CodeActionInfo>> {
+        self.lsp_symbol_service
+            .code_actions(&mut self.workspace_manager, request)
+            .await
+    }
+
+    /// **Apply a specific code action**
+    ///
+    /// Re-fetches code actions at the given position, finds the one matching the title,
+    /// resolves it if needed, applies the workspace edit, and executes any command.
+    ///
+    /// # Arguments
+    /// * `request` - Apply code action request with position and title
+    ///
+    /// # Returns
+    /// * `Result<ApplyCodeActionResult>` - Result with files changed and command status
+    pub async fn apply_code_action(
+        &mut self,
+        request: crate::model::types::ApplyCodeActionRequest,
+    ) -> Result<crate::model::entities::ApplyCodeActionResult> {
+        self.lsp_symbol_service
+            .apply_code_action(&mut self.workspace_manager, request)
+            .await
+    }
+
     /// **Add a language server configuration**
     ///
     /// Registers a new language server that will be used for files matching

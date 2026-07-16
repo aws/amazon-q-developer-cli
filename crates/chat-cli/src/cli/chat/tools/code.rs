@@ -38,7 +38,10 @@ pub(crate) fn is_enabled(_os: &Os) -> bool {
 
 /// Check if an operation is a write operation
 pub fn is_write_operation(op: &Code) -> bool {
-    matches!(op, Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_))
+    matches!(
+        op,
+        Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) | Code::ApplyCodeAction(_)
+    )
 }
 
 /// Code intelligence operations - single unified tool with permission-based scoping
@@ -55,6 +58,8 @@ pub enum Code {
     GetDiagnostics(GetDiagnosticsParams),
     GetHover(GetHoverParams),
     GetCompletions(GetCompletionsParams),
+    GetCodeActions(GetCodeActionsParams),
+    ApplyCodeAction(ApplyCodeActionParams),
     InitializeWorkspace,
     PatternSearch(PatternSearchParams),
     PatternRewrite(PatternRewriteParams),
@@ -104,12 +109,13 @@ impl Code {
             Code::GetDiagnostics(p) => vec![p.file_path.clone()],
             Code::GetHover(p) => vec![p.file_path.clone()],
             Code::GetCompletions(p) => vec![p.file_path.clone()],
+            Code::GetCodeActions(p) => vec![p.file_path.clone()],
             Code::PatternSearch(p) => p.file_path.iter().cloned().collect(),
             Code::GenerateCodebaseOverview(p) => p.path.iter().cloned().collect(),
             Code::SearchCodebaseMap(p) => p.path.iter().chain(p.file_path.iter()).cloned().collect(),
             Code::InitializeWorkspace => vec![],
             // Write operations are handled separately
-            Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) => vec![],
+            Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) | Code::ApplyCodeAction(_) => vec![],
         }
     }
 }
@@ -210,6 +216,26 @@ pub struct GetCompletionsParams {
     pub filter: Option<String>,
     #[serde(default)]
     pub symbol_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetCodeActionsParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+    pub end_row: Option<i32>,
+    pub end_column: Option<i32>,
+    pub only_kinds: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApplyCodeActionParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+    pub title: String,
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -462,6 +488,22 @@ impl Code {
             Code::GetCompletions(params) => {
                 validate_file_exists(os, &params.file_path)?;
                 validate_position(params.row, params.column)?;
+                Ok(())
+            },
+            Code::GetCodeActions(params) => {
+                validate_file_exists(os, &params.file_path)?;
+                validate_position(params.row, params.column)?;
+                if let (Some(end_row), Some(end_col)) = (params.end_row, params.end_column) {
+                    validate_position(end_row, end_col)?;
+                }
+                Ok(())
+            },
+            Code::ApplyCodeAction(params) => {
+                validate_file_exists(os, &params.file_path)?;
+                validate_position(params.row, params.column)?;
+                if params.title.trim().is_empty() {
+                    eyre::bail!("Title cannot be empty");
+                }
                 Ok(())
             },
             Code::PatternSearch(params) => {
@@ -1246,6 +1288,113 @@ impl Code {
                         },
                     }
                 },
+                Code::GetCodeActions(params) => {
+                    let request = code_agent_sdk::model::types::CodeActionsRequest {
+                        file_path: std::path::PathBuf::from(&params.file_path),
+                        row: params.row as u32,
+                        column: params.column as u32,
+                        end_row: params.end_row.map(|r| r as u32),
+                        end_column: params.end_column.map(|c| c as u32),
+                        only_kinds: params.only_kinds.clone(),
+                    };
+
+                    match client.code_actions(request).await {
+                        Ok(actions) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            if actions.is_empty() {
+                                queue!(_stdout, style::Print("\nNo code actions available\n"),)?;
+                                result = "No code actions available".to_string();
+                            } else {
+                                let mut output = format!("\nFound {} code actions:\n", actions.len());
+                                for (i, action) in actions.iter().enumerate() {
+                                    output.push_str(&format!("  {}. {}", i + 1, action.title));
+                                    if let Some(kind) = &action.kind {
+                                        output.push_str(&format!(" [{}]", kind));
+                                    }
+                                    if action.is_preferred == Some(true) {
+                                        output.push_str(" (preferred)");
+                                    }
+                                    if let Some(reason) = &action.disabled_reason {
+                                        output.push_str(&format!(" (disabled: {})", reason));
+                                    }
+                                    if let Some(edit) = &action.edit {
+                                        let files = edit.changes.len();
+                                        output.push_str(&format!(
+                                            " — edits {} file{}",
+                                            files,
+                                            if files == 1 { "" } else { "s" }
+                                        ));
+                                    }
+                                    if let Some(cmd) = &action.command {
+                                        output.push_str(&format!(" — runs '{}'", cmd.command));
+                                    }
+                                    if !action.diagnostics.is_empty() {
+                                        output.push_str(&format!(
+                                            " — fixes {} diagnostic{}",
+                                            action.diagnostics.len(),
+                                            if action.diagnostics.len() == 1 { "" } else { "s" }
+                                        ));
+                                    }
+                                    output.push('\n');
+                                }
+                                queue!(_stdout, style::Print(&output))?;
+                                result = format!("{actions:?}");
+                            }
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let msg = format!("Failed to get code actions: {e}");
+                            queue!(_stdout, style::Print(&format!("\n{msg}\n")))?;
+                            result = msg;
+                        },
+                    }
+                },
+                Code::ApplyCodeAction(params) => {
+                    let request = code_agent_sdk::model::types::ApplyCodeActionRequest {
+                        file_path: std::path::PathBuf::from(&params.file_path),
+                        row: params.row as u32,
+                        column: params.column as u32,
+                        title: params.title.clone(),
+                        dry_run: params.dry_run,
+                    };
+
+                    match client.apply_code_action(request).await {
+                        Ok(action_result) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let prefix = if params.dry_run { "Would apply" } else { "Applied" };
+                            let mut output = format!("\n{} code action: {}\n", prefix, params.title);
+                            if action_result.files_changed > 0 {
+                                output.push_str(&format!("Files changed: {}\n", action_result.files_changed));
+                            }
+                            if action_result.command_executed {
+                                let verb = if params.dry_run { "Would execute" } else { "Executed" };
+                                output.push_str(&format!("{} command\n", verb));
+                            }
+                            if let Some(edit) = &action_result.edit {
+                                for change in &edit.changes {
+                                    output.push_str(&format!("  {} ({} edits)\n", change.file_path, change.edit_count));
+                                    if let Some(preview) = &change.preview {
+                                        output.push_str(&format!("{}\n", preview));
+                                    }
+                                }
+                            }
+                            if params.dry_run {
+                                output.push_str("\nCall again with dry_run=false to apply.\n");
+                            }
+                            queue!(_stdout, style::Print(&output))?;
+                            result = format!(
+                                "{} '{}': {} files changed",
+                                prefix, params.title, action_result.files_changed
+                            );
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let msg = format!("Failed to apply code action: {e}");
+                            queue!(_stdout, style::Print(&format!("\n{msg}\n")))?;
+                            result = msg;
+                        },
+                    }
+                },
                 Code::InitializeWorkspace => match client.initialize().await {
                     Ok(_) => {
                         Self::stop_spinner(&mut spinner, _stdout)?;
@@ -1986,6 +2135,46 @@ impl Code {
                         style::Print("]"),
                     )?;
                 }
+            },
+            Code::GetCodeActions(params) => {
+                queue!(
+                    output,
+                    style::Print("Getting code actions at: "),
+                    StyledText::brand_fg(),
+                    style::Print(&params.file_path),
+                    StyledText::reset(),
+                    style::Print(":"),
+                    StyledText::secondary_fg(),
+                    style::Print(&format!("{}:{}", params.row, params.column)),
+                    StyledText::reset(),
+                )?;
+                if let Some(kinds) = &params.only_kinds {
+                    queue!(
+                        output,
+                        style::Print(" [kinds: "),
+                        StyledText::info_fg(),
+                        style::Print(&kinds.join(", ")),
+                        StyledText::reset(),
+                        style::Print("]"),
+                    )?;
+                }
+            },
+            Code::ApplyCodeAction(params) => {
+                queue!(
+                    output,
+                    style::Print("Applying code action: "),
+                    StyledText::brand_fg(),
+                    style::Print(&params.title),
+                    StyledText::reset(),
+                    style::Print(" at "),
+                    StyledText::brand_fg(),
+                    style::Print(&params.file_path),
+                    StyledText::reset(),
+                    style::Print(":"),
+                    StyledText::secondary_fg(),
+                    style::Print(&format!("{}:{}", params.row, params.column)),
+                    StyledText::reset(),
+                )?;
             },
             Code::InitializeWorkspace => {
                 queue!(output, style::Print("Initializing workspace"),)?;

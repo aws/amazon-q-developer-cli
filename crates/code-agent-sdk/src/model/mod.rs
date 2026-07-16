@@ -13,6 +13,8 @@ pub use entities::{
     SymbolInfo,
 };
 pub use types::{
+    ApplyCodeActionRequest,
+    CodeActionsRequest,
     FindReferencesByLocationRequest,
     FindReferencesByNameRequest,
     FindSymbolsRequest,

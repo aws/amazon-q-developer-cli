@@ -37,6 +37,8 @@ pub enum Code {
     GetDiagnostics(GetDiagnosticsParams),
     GetHover(GetHoverParams),
     GetCompletions(GetCompletionsParams),
+    GetCodeActions(GetCodeActionsParams),
+    ApplyCodeAction(ApplyCodeActionParams),
     InitializeWorkspace,
     PatternSearch(PatternSearchParams),
     PatternRewrite(PatternRewriteParams),
@@ -145,6 +147,26 @@ pub struct GetCompletionsParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCodeActionsParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+    pub end_row: Option<i32>,
+    pub end_column: Option<i32>,
+    pub only_kinds: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApplyCodeActionParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+    pub title: String,
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatternSearchParams {
     pub pattern: String,
     pub language: String,
@@ -221,7 +243,10 @@ fn validate_file_exists<P: SystemProvider>(provider: &P, file_path: &str) -> Res
 
 /// Check if operation is a write operation (requires permission)
 pub fn is_write_operation(op: &Code) -> bool {
-    matches!(op, Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_))
+    matches!(
+        op,
+        Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) | Code::ApplyCodeAction(_)
+    )
 }
 
 // Re-export for convenience
@@ -252,7 +277,10 @@ impl BuiltInToolTrait for Code {
 impl Code {
     /// Check if this is a write operation (requires permission)
     pub fn is_write_operation(&self) -> bool {
-        matches!(self, Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_))
+        matches!(
+            self,
+            Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) | Code::ApplyCodeAction(_)
+        )
     }
 
     /// Return the filesystem paths this operation will read from.
@@ -270,12 +298,13 @@ impl Code {
             Code::GetDiagnostics(p) => vec![p.file_path.clone()],
             Code::GetHover(p) => vec![p.file_path.clone()],
             Code::GetCompletions(p) => vec![p.file_path.clone()],
+            Code::GetCodeActions(p) => vec![p.file_path.clone()],
             Code::PatternSearch(p) => p.file_path.iter().cloned().collect(),
             Code::GenerateCodebaseOverview(p) => p.path.iter().cloned().collect(),
             Code::SearchCodebaseMap(p) => p.path.iter().chain(p.file_path.iter()).cloned().collect(),
             Code::InitializeWorkspace => vec![],
             // Write operations are handled separately
-            Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) => vec![],
+            Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) | Code::ApplyCodeAction(_) => vec![],
         }
     }
 
@@ -311,6 +340,20 @@ impl Code {
             Code::GetDiagnostics(p) => validate_file_exists(provider, &p.file_path),
             Code::GetCompletions(p) => {
                 validate_position(p.row, p.column)?;
+                validate_file_exists(provider, &p.file_path)
+            },
+            Code::GetCodeActions(p) => {
+                validate_position(p.row, p.column)?;
+                if let (Some(end_row), Some(end_col)) = (p.end_row, p.end_column) {
+                    validate_position(end_row, end_col)?;
+                }
+                validate_file_exists(provider, &p.file_path)
+            },
+            Code::ApplyCodeAction(p) => {
+                validate_position(p.row, p.column)?;
+                if p.title.trim().is_empty() {
+                    return Err("title cannot be empty".to_string());
+                }
                 validate_file_exists(provider, &p.file_path)
             },
             Code::LookupSymbols(p) => {
@@ -492,6 +535,63 @@ impl Code {
                     },
                     Ok(None) => Ok(text_output("No completions available")),
                     Err(e) => Err(ToolExecutionError::Custom(format!("Get completions failed: {e}"))),
+                }
+            },
+
+            Code::GetCodeActions(params) => {
+                let request = code_agent_sdk::model::types::CodeActionsRequest {
+                    file_path: resolve_path(&cwd, &params.file_path),
+                    row: params.row as u32,
+                    column: params.column as u32,
+                    end_row: params.end_row.map(|r| r as u32),
+                    end_column: params.end_column.map(|c| c as u32),
+                    only_kinds: params.only_kinds.clone(),
+                };
+                match client.code_actions(request).await {
+                    Ok(actions) => {
+                        if actions.is_empty() {
+                            Ok(text_output("No code actions available"))
+                        } else {
+                            Ok(format_code_actions(&actions))
+                        }
+                    },
+                    Err(e) => Err(ToolExecutionError::Custom(format!("Get code actions failed: {e}"))),
+                }
+            },
+
+            Code::ApplyCodeAction(params) => {
+                let request = code_agent_sdk::model::types::ApplyCodeActionRequest {
+                    file_path: resolve_path(&cwd, &params.file_path),
+                    row: params.row as u32,
+                    column: params.column as u32,
+                    title: params.title.clone(),
+                    dry_run: params.dry_run,
+                };
+                match client.apply_code_action(request).await {
+                    Ok(result) => {
+                        let prefix = if params.dry_run { "Would apply" } else { "Applied" };
+                        let mut msg = format!("{} code action: {}", prefix, params.title);
+                        if result.files_changed > 0 {
+                            msg.push_str(&format!("\nFiles changed: {}", result.files_changed));
+                        }
+                        if result.command_executed {
+                            let verb = if params.dry_run { "Would execute" } else { "Executed" };
+                            msg.push_str(&format!("\n{} command", verb));
+                        }
+                        if let Some(edit) = &result.edit {
+                            for change in &edit.changes {
+                                msg.push_str(&format!("\n  {} ({} edits)", change.file_path, change.edit_count));
+                                if let Some(preview) = &change.preview {
+                                    msg.push_str(&format!("\n{}", preview));
+                                }
+                            }
+                        }
+                        if params.dry_run {
+                            msg.push_str("\n\nCall again with dry_run=false to apply.");
+                        }
+                        Ok(text_output(msg))
+                    },
+                    Err(e) => Err(ToolExecutionError::Custom(format!("Apply code action failed: {e}"))),
                 }
             },
 
@@ -700,6 +800,38 @@ fn format_completions(
         output.push_str(&format!("- {}", item.label));
         if let Some(detail) = &item.detail {
             output.push_str(&format!(" ({})", detail));
+        }
+        output.push('\n');
+    }
+    text_output(output)
+}
+
+fn format_code_actions(actions: &[code_agent_sdk::model::entities::CodeActionInfo]) -> ToolExecutionOutput {
+    let mut output = format!("Found {} code actions:\n", actions.len());
+    for action in actions {
+        output.push_str(&format!("- {}", action.title));
+        if let Some(kind) = &action.kind {
+            output.push_str(&format!(" [{}]", kind));
+        }
+        if action.is_preferred == Some(true) {
+            output.push_str(" (preferred)");
+        }
+        if let Some(reason) = &action.disabled_reason {
+            output.push_str(&format!(" (disabled: {})", reason));
+        }
+        if let Some(edit) = &action.edit {
+            let files = edit.changes.len();
+            output.push_str(&format!(" — edits {} file{}", files, if files == 1 { "" } else { "s" }));
+        }
+        if let Some(cmd) = &action.command {
+            output.push_str(&format!(" — runs '{}'", cmd.command));
+        }
+        if !action.diagnostics.is_empty() {
+            output.push_str(&format!(
+                " — fixes {} diagnostic{}",
+                action.diagnostics.len(),
+                if action.diagnostics.len() == 1 { "" } else { "s" }
+            ));
         }
         output.push('\n');
     }

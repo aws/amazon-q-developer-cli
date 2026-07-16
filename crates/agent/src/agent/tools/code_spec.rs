@@ -29,7 +29,7 @@ CORE FEATURES:
 • Structural AST search and rewrite (ast-grep)
 • Codebase overview and directory exploration
 
-NOTE: LSP operations (find_references, goto_definition, get_hover, get_completions, get_diagnostics, rename_symbol) require LSP initialization.
+NOTE: LSP operations (find_references, goto_definition, get_hover, get_completions, get_diagnostics, get_code_actions, rename_symbol) require LSP initialization.
 
 ## Available Operations
 - search_symbols: Find symbol definitions by name
@@ -106,7 +106,7 @@ Code intelligence with full LSP support for semantic code analysis, navigation, 
 
 CORE FEATURES:
 • Fuzzy search for symbols (classes, functions, methods)
-• LSP-powered: find_references, goto_definition, get_hover, get_completions, rename_symbol
+• LSP-powered: find_references, goto_definition, get_hover, get_completions, get_code_actions, rename_symbol
 • Structural AST search and rewrite (ast-grep)
 • Codebase overview and directory exploration
 
@@ -119,12 +119,14 @@ CORE FEATURES:
 - get_diagnostics: Get compiler errors/warnings
 - get_hover: Get type info at position
 - get_completions: Get completion suggestions
+- get_code_actions: Get available code actions (quick fixes, refactorings)
 - pattern_search: AST-based structural search
 - generate_codebase_overview: High-level codebase structure
 - search_codebase_map: Focused directory exploration
 
 ## Write Operations
 - rename_symbol: Rename symbol across codebase
+- apply_code_action: Apply a code action (quick fix, refactoring) by title
 - format: Format code
 - pattern_rewrite: AST-based code transformation
 "#;
@@ -138,7 +140,7 @@ pub const CODE_TOOL_SCHEMA: &str = r#"
             "enum": [
                 "search_symbols", "lookup_symbols", "find_references", "goto_definition",
                 "get_document_symbols", "get_diagnostics", "get_hover", "get_completions",
-                "initialize_workspace", "pattern_search", "pattern_rewrite",
+                "get_code_actions", "apply_code_action", "initialize_workspace", "pattern_search", "pattern_rewrite",
                 "generate_codebase_overview", "search_codebase_map",
                 "rename_symbol", "format"
             ],
@@ -197,6 +199,23 @@ pub const CODE_TOOL_SCHEMA: &str = r#"
             "type": "boolean",
             "description": "Preview changes without writing. After reviewing dry-run results, call again with dry_run=false to apply.",
             "default": true
+        },
+        "end_row": {
+            "type": "integer",
+            "description": "End line number 1-based (optional for get_code_actions)"
+        },
+        "end_column": {
+            "type": "integer",
+            "description": "End column number 1-based (optional for get_code_actions)"
+        },
+        "only_kinds": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Filter code actions by kind (optional for get_code_actions, e.g. [\"quickfix\", \"refactor\"])"
+        },
+        "title": {
+            "type": "string",
+            "description": "Code action title to apply (required for apply_code_action, must match exactly)"
         }
     },
     "required": ["operation"]

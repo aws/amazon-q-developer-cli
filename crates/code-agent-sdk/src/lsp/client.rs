@@ -436,6 +436,39 @@ impl LspClient {
         self.send_lsp_request("textDocument/completion", params).await
     }
 
+    /// Request code actions for a given range
+    ///
+    /// # Arguments
+    /// * `params` - Code action parameters including range and context
+    ///
+    /// # Returns
+    /// * `Result<Option<CodeActionResponse>>` - Available code actions or None
+    pub async fn code_actions(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        self.send_lsp_request("textDocument/codeAction", params).await
+    }
+
+    /// Resolve a code action to get its full edit details
+    ///
+    /// # Arguments
+    /// * `code_action` - The code action to resolve
+    ///
+    /// # Returns
+    /// * `Result<Option<CodeAction>>` - Resolved code action with full edit or None
+    pub async fn code_action_resolve(&self, code_action: CodeAction) -> Result<Option<CodeAction>> {
+        self.send_lsp_request("codeAction/resolve", code_action).await
+    }
+
+    /// Execute a command on the language server
+    ///
+    /// # Arguments
+    /// * `params` - Command execution parameters
+    ///
+    /// # Returns
+    /// * `Result<Option<serde_json::Value>>` - Command result or None
+    pub async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<serde_json::Value>> {
+        self.send_lsp_request("workspace/executeCommand", params).await
+    }
+
     /// Notify server that a document was opened
     ///
     /// # Arguments
