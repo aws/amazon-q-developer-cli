@@ -154,6 +154,13 @@ describe('formatSubagentApprovalLines', () => {
 });
 
 describe('renderSubagentFinalBlock', () => {
+  // These tests assert default-config rendering; re-read the (temp, empty)
+  // disk each time so state leaked from another test file cannot flip the
+  // output gates mid-suite.
+  beforeEach(() => {
+    resetVerboseCache();
+  });
+
   const baseContent = JSON.stringify({
     task: 'Generate test output',
     stages: [

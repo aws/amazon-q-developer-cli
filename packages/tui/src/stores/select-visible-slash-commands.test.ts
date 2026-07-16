@@ -208,6 +208,20 @@ describe('/repo cloud-only visibility gate (dark-ship)', () => {
     expect(visible.find((c) => c.name === '/repo')).toBeDefined();
   });
 
+  it('hides /sessions from a local session', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    // cloudSessionActive defaults to false (a local session / released build).
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/sessions')).toBeUndefined();
+  });
+
+  it('shows /sessions once the session is marked cloud', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    store.getState().setCloudSessionActive(true);
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/sessions')).toBeDefined();
+  });
+
   it('never shows /repo in v2 mode even with the cloud flag set', () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store.getState().setCloudSessionActive(true);

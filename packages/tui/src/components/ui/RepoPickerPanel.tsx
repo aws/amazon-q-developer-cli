@@ -126,8 +126,8 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
       ),
     [filtered, glyphs]
   );
-  // Reserve room for the `> [x] ` prefix (cursor + checkbox) and the gaps.
-  const prefixWidth = 6;
+  // Reserve room for the `>[x] ` prefix (cursor + checkbox) and the gaps.
+  const prefixWidth = 5;
   const gapWidth = 4;
   const nameWidth = Math.max(
     termWidth -
@@ -158,7 +158,7 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
 
   return (
     <Panel
-      title="/repo"
+      title={getColor('brand')('/repo')}
       onClose={onClose}
       closeHintLabel="to save and exit"
       footerLeft={
@@ -170,7 +170,10 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
       }
     >
       <Box flexDirection="column">
-        <Text>{chalk.hex(secondaryHex)(`Selected(${selected.length})`)}</Text>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Text>{chalk.hex(secondaryHex)(`Selected(${selected.length})`)}</Text>
+          <Text>{hint('tab', 'to switch panels')}</Text>
+        </Box>
         {/* Each chosen repo with its default branch, so the user sees exactly
             what will be cloned. The row is accented while its cursor is on it. */}
         {selectedRows.map((row) => {
@@ -232,7 +235,8 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
           return (
             <Box key={`${row.providerType}:${row.name}`} flexDirection="row">
               <Text>
-                {cursorGlyph} {checkbox} {nameStyled}
+                {cursorGlyph}
+                {checkbox} {nameStyled}
               </Text>
               <Box width={gapWidth} />
               <Text>{providerStyled}</Text>

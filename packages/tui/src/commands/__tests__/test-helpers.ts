@@ -63,6 +63,7 @@ export function createMockCommandContext(
     executeCommand: mock(() =>
       Promise.resolve({ success: true, message: '', data: undefined })
     ),
+    isCloudSessionActive: mock(() => false),
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
     setConfigOption: mock(() => Promise.resolve()),
     sendModeChanged: mock(() => undefined),
@@ -113,6 +114,11 @@ export function createMockCommandContext(
     setShowStatsPanel: spy('setShowStatsPanel') as any,
     setShowHooksPanel: spy('setShowHooksPanel') as any,
     setShowRepoPicker: spy('setShowRepoPicker') as any,
+    setShowSessionPicker: spy('setShowSessionPicker') as any,
+    resetCloudSessionScope: spy('resetCloudSessionScope') as any,
+    stashCloudSessionScope: spy('stashCloudSessionScope') as any,
+    restoreCloudSessionScope: spy('restoreCloudSessionScope') as any,
+    setCloudSessionActive: spy('setCloudSessionActive') as any,
     setShowKeybindingsPanel: spy('setShowKeybindingsPanel') as any,
     setShowDisplaySettingsPanel: spy('setShowDisplaySettingsPanel') as any,
     setShowThemePanel: spy('setShowThemePanel') as any,

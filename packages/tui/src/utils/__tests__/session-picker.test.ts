@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { formatMergedEntry } from '../session-picker';
+import { formatMergedEntry, formatSessionState } from '../session-picker';
 import type { SessionEntry } from '../list-all-sessions-cli';
 
 const baseEntry = (overrides: Partial<SessionEntry>): SessionEntry => ({
@@ -54,19 +54,81 @@ describe('formatMergedEntry', () => {
     expect(result).toEndWith('...');
   });
 
-  it('tags a cloud-sandbox session with a WHERE indicator', () => {
+  it('tags a cloud-sandbox session with the cloud Environment when shown', () => {
     const result = formatMergedEntry(
-      baseEntry({ title: 'remote task', executionTarget: 'cloud-sandbox' }),
-      200
+      baseEntry({ title: 'alpha task', executionTarget: 'cloud-sandbox' }),
+      200,
+      true
     );
-    expect(result).toContain('cloud');
+    expect(result).toContain('| cloud');
   });
 
-  it('shows no WHERE tag for a local session (executionTarget absent — dark-safe)', () => {
+  it('tags a local session as local when the Environment column is shown', () => {
     const result = formatMergedEntry(
-      baseEntry({ title: 'local task', executionTarget: undefined }),
+      baseEntry({ title: 'beta task', executionTarget: undefined }),
+      200,
+      true
+    );
+    expect(result).toContain('| local');
+  });
+
+  it('shows no Environment tag when not requested (dark-safe default)', () => {
+    const cloud = formatMergedEntry(
+      baseEntry({ title: 'alpha task', executionTarget: 'cloud-sandbox' }),
       200
     );
-    expect(result).not.toContain('cloud');
+    const local = formatMergedEntry(
+      baseEntry({ title: 'beta task', executionTarget: undefined }),
+      200
+    );
+    expect(cloud).not.toContain('| cloud');
+    expect(cloud).not.toContain('| local');
+    expect(local).not.toContain('| cloud');
+    expect(local).not.toContain('| local');
+  });
+});
+
+describe('formatMergedEntry state column', () => {
+  it('shows the mapped state when the Environment column is shown', () => {
+    const result = formatMergedEntry(
+      baseEntry({ executionTarget: 'cloud-sandbox', status: 'in_progress' }),
+      200,
+      true
+    );
+    expect(result).toContain('| working');
+  });
+
+  it('hides the state when the Environment column is not shown (dark-safe)', () => {
+    const result = formatMergedEntry(
+      baseEntry({ executionTarget: 'cloud-sandbox', status: 'in_progress' }),
+      200,
+      false
+    );
+    expect(result).not.toContain('working');
+  });
+
+  it('omits the state for a row with no status', () => {
+    const result = formatMergedEntry(
+      baseEntry({ executionTarget: 'cloud-sandbox', status: undefined }),
+      200,
+      true
+    );
+    expect(result).toContain('| cloud');
+    expect(result).not.toContain('| working');
+  });
+});
+
+describe('formatSessionState', () => {
+  it('maps coarse statuses to short words', () => {
+    expect(formatSessionState('in_progress')).toBe('working');
+    expect(formatSessionState('waiting_on_user')).toBe('waiting');
+    expect(formatSessionState('completed')).toBe('done');
+  });
+
+  it('passes through idle/failed/provisioning and unknown values', () => {
+    expect(formatSessionState('idle')).toBe('idle');
+    expect(formatSessionState('failed')).toBe('failed');
+    expect(formatSessionState('provisioning')).toBe('provisioning');
+    expect(formatSessionState('future_status')).toBe('future_status');
   });
 });

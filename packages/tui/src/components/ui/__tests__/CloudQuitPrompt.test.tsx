@@ -76,10 +76,18 @@ function mountPrompt() {
   return { terminal, onKeepRunning, onTurnOff, onCancel };
 }
 
+/** Wait until the menu is mounted and listening (deflakes the cold first mount). */
+async function settle(terminal: MockTerminal): Promise<void> {
+  for (let i = 0; i < 10; i++) {
+    await flush();
+    if (terminal.output.includes('agent')) return;
+  }
+}
+
 describe('CloudQuitPrompt key wiring', () => {
   test('enter on the default row fires onKeepRunning only', async () => {
     const { terminal, onKeepRunning, onTurnOff, onCancel } = mountPrompt();
-    await flush();
+    await settle(terminal);
     // Warm-up round-trip: proves input is wired and lands the cursor back on
     // row 0 deterministically before the assertion keypress.
     terminal.sendInput(DOWN);

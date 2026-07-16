@@ -11,6 +11,8 @@ export enum KasCommandName {
   Help = '/help',
   Agent = '/agent',
   Chat = '/chat',
+  Sessions = '/sessions',
+  Disconnect = '/disconnect',
   Clear = '/clear',
   Model = '/model',
   Effort = '/effort',
@@ -80,6 +82,22 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       inputType: 'selection',
       local: true,
+      subcommands: ['new', 'save', 'load'],
+      subcommandHints: {
+        new: '[prompt]',
+        save: '[--force] <path>',
+        load: '<path>',
+      },
+    },
+  },
+  {
+    // Cloud-gated alias of /chat: same subcommands and selection view.
+    name: KasCommandName.Sessions,
+    description: 'Load a previous session, save, or start a new one',
+    meta: {
+      inputType: 'selection',
+      local: true,
+      cloudOnly: true,
       subcommands: ['new', 'save', 'load'],
       subcommandHints: {
         new: '[prompt]',
@@ -220,8 +238,14 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   },
   {
     name: KasCommandName.Repo,
-    description: 'Attach a repository to the cloud session',
-    meta: { inputType: 'panel', cloudOnly: true },
+    description:
+      'Attach a repository to the cloud session (or /repo <owner/name> to attach directly)',
+    meta: { inputType: 'panel', hint: '[owner/name]', cloudOnly: true },
+  },
+  {
+    name: KasCommandName.Disconnect,
+    description: 'Disconnect from the cloud session (it keeps running)',
+    meta: { local: true, cloudOnly: true },
   },
 ];
 

@@ -59,6 +59,22 @@ describe('kas-commands', () => {
       expect(chatCmd).toBeDefined();
       expect(chatCmd!.meta?.subcommands).toEqual(['new', 'save', 'load']);
     });
+
+    it('/sessions is a cloud-gated alias of /chat: same handler, same meta plus cloudOnly', async () => {
+      const { KAS_COMMANDS, KasCommandName } = await import('../kas-commands');
+      const { kasHandlers } = await import('../commands/kas-handlers');
+      const chatCmd = KAS_COMMANDS.find(
+        (cmd: KasCommand) => cmd.name === '/chat'
+      );
+      const sessionsCmd = KAS_COMMANDS.find(
+        (cmd: KasCommand) => cmd.name === '/sessions'
+      );
+      expect(sessionsCmd).toBeDefined();
+      expect(sessionsCmd!.meta).toEqual({ ...chatCmd!.meta, cloudOnly: true });
+      expect(kasHandlers[KasCommandName.Sessions]).toBe(
+        kasHandlers[KasCommandName.Chat]
+      );
+    });
   });
 
   describe('Conditional /spec command visibility', () => {

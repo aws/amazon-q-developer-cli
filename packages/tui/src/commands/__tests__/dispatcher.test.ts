@@ -367,4 +367,19 @@ describe('dispatch - additional coverage', () => {
       expect(calls).toContain(null);
     });
   });
+
+  describe('cloudOnly guard', () => {
+    it('refuses a cloudOnly command outside a cloud session', async () => {
+      // Mock ctx defaults to cloudSessionActive: false.
+      const ctx = createMockCommandContext();
+      await dispatch(
+        makeCmd({ name: '/disconnect', meta: { cloudOnly: true } }),
+        '',
+        ctx
+      );
+      // No handler ran — the guard returned before dispatch.
+      expect(ctx._spies.sendMessage!).not.toHaveBeenCalled();
+      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
+    });
+  });
 });

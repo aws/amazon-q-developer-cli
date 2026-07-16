@@ -20,6 +20,7 @@ import { isGhostty } from './utils/terminal-detection.js';
 import { Kiro } from './kiro';
 import { ensureSession } from './utils/ensure-session-cli';
 import { ErrorCode } from './types/generated/chat-internal';
+import { Feature, features } from './features';
 import {
   isResumableSource,
   isActiveEngineSource,
@@ -934,6 +935,18 @@ const startApp = async () => {
     });
     if (ensured.ok) {
       resumePickerSessionId = ensured.sessionId;
+    } else if (
+      resolveAgentEngine() === 'kas' &&
+      ensured.code === ErrorCode.SessionNotFound &&
+      features.isEnabled(Feature.RemoteSandbox)
+    ) {
+      // Not in any local store — the id may name a CLOUD session (the detach
+      // notice hands out ids without --cloud). Let the connected client's
+      // `session/load` try the remote store; a genuinely bad id fails there
+      // with a clear error instead of this misleading local not-found.
+      // Feature-gated: without remote sandbox there is no remote store to
+      // retry, so released builds keep the pre-existing error banner.
+      resumePickerSessionId = cliArgs.resumeId;
     } else {
       logger.warn(
         `Failed to resolve session for --resume-id: ${ensured.message}`

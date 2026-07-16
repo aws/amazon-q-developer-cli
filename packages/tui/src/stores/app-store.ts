@@ -7,6 +7,8 @@ import type { TerminalColor } from '../types/themeTypes';
 import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import { getKasCommands, type KasCommand } from '../kas-commands';
+import { loadExistingSession } from '../commands/kas-handlers/chat';
+import { emitCloudDetachNoticeOnce } from '../utils/cloud-detach-notice';
 import {
   mergeRosterDelta,
   deriveActiveSessionStatus,
@@ -14,7 +16,14 @@ import {
 } from '../utils/session-roster';
 import { features } from '../features';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
-import { formatCloneReposInstruction } from '../utils/repo-attach';
+import type { SessionPickerRow } from '../components/ui/SessionPickerPanel';
+import {
+  formatRepoChangeInstruction,
+  reconcileRepoSelection,
+  resolveSourceProviderConnection,
+} from '../utils/repo-attach';
+import { dedupeRepoResources } from '../utils/repo-multiselect';
+import { recordTuiCloudRepoAttach } from '../utils/tui-telemetry-observer';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import type {
   AgentScope,
@@ -1011,6 +1020,11 @@ interface BaseAppActions {
   // Command UI actions
   setActiveCommand: (command: ActiveCommand | null) => void;
   executeCommandWithArg: (arg: string) => Promise<void>;
+  /** Resume the session chosen in the `/sessions` panel (synthetic `/chat <id>`). */
+  resumeSession: (
+    sessionId: string,
+    environment?: 'local' | 'cloud'
+  ) => Promise<void>;
   setCommandInput: (value: string) => void;
   setActiveTrigger: (
     trigger: { key: string; position: number; type: 'start' | 'inline' } | null
@@ -1076,6 +1090,27 @@ interface BaseAppActions {
   applySessionRosterDelta: (delta: SessionsChangedNotification) => void;
   /** Set the bound repo for the cloud footer; null when not a cloud session / New empty sandbox. */
   setCloudRepo: (repo: string | null) => void;
+  /** Project an attached-repo set onto the footer (first repo + `(+N others)`)
+   *  and the /repo pre-check list, in one place. */
+  applyRepoFooter: (repos: string[]) => void;
+  /** Clear the per-session cloud scope (bound repo, branch, extras, attached
+   *  set) when switching to a different session — these describe ONE sandbox
+   *  and must not leak into the next session's footer/picker. */
+  resetCloudSessionScope: () => void;
+  /** Snapshot the current cloud scope keyed by session id before switching
+   *  away, so switching back restores the footer's repo/branch. */
+  stashCloudSessionScope: (sessionId: string | null | undefined) => void;
+  /** Restore a previously stashed cloud scope for `sessionId`.
+   *  Returns whether a stash was found and applied. */
+  restoreCloudSessionScope: (sessionId: string | null | undefined) => boolean;
+  /** Set the bound repo's default branch for the cloud footer. */
+  setCloudBranch: (branch: string | null) => void;
+  /** Set the connected source provider display name for the startup checklist. */
+  setCloudProvider: (provider: string | null) => void;
+  /** Set the repository count for the startup checklist. */
+  setCloudRepoCount: (count: number | null) => void;
+  /** Set the count of extra bound repos for the footer's `(+N others)` suffix. */
+  setCloudExtraRepos: (count: number) => void;
   setKasMessageId: (kasMessageId: string) => void;
   setLastTurnTokens: (tokens: LastTurnTokens) => void;
   toggleContextBreakdown: () => void;
@@ -1128,6 +1163,19 @@ interface BaseAppActions {
   ) => void;
   /** Attach the selected repos (emulated clone) and close the `/repo` picker. */
   submitRepoPicker: (selected: string[]) => Promise<void>;
+  /** Open/close the cloud-entry source-provider gate with the setup URL. */
+  setShowSourceProviderGate: (show: boolean, setupUrl?: string | null) => void;
+  setCloudProviderChecked: (checked: boolean) => void;
+  /** Re-probe the source-provider connection; dismisses the gate when now
+   *  connected, otherwise leaves it up. Returns whether a provider is connected. */
+  retrySourceProviderConnection: () => Promise<boolean>;
+  /** Open/close the `/sessions` picker. `invokedAs` is the slash command the
+   *  user actually typed (`/chat` or `/sessions`), echoed as the panel title. */
+  setShowSessionPicker: (
+    show: boolean,
+    rows?: SessionPickerRow[],
+    invokedAs?: string
+  ) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
   setShowThemePanel: (show: boolean) => void;
@@ -1454,6 +1502,10 @@ export interface AppState {
   activeCompactionAttemptKey: number | null;
   compactionReportAnchor: { attemptKey: number; index: number } | null;
   wasCancelled: boolean;
+  /** True when the most recent agent turn ended in an error (blocking or
+   *  transient). Lets a caller that fired a turn (e.g. the /repo attach)
+   *  distinguish "completed" from "failed" without parsing messages. */
+  lastTurnErrored: boolean;
   agentError: string | null;
   agentErrorGuidance: string | null;
   pendingApproval: ApprovalRequestInfo | null;
@@ -1560,16 +1612,31 @@ export interface AppState {
   contextUsagePercent: number | null;
   /** Live cloud session activity status for the status-line badge. */
   cloudSessionStatus: SessionActivityStatus | null;
-  /**
-   * Provisioning-failure detail for the attached cloud session, when its
-   * status is `failed`. Consumed by the provisioning-outcome telemetry
-   * (provision_failed emit) landing in the follow-up change.
-   */
+  /** Provisioning-failure detail for the attached cloud session, when its status is `failed`. */
   cloudProvisioningFailure: { code: ProvisioningFailureCode } | null;
   /** Live roster of sessions from `_kiro/sessions/changed`; empty until KAS pushes deltas. */
   sessionRoster: ReadonlyMap<string, RosterEntry>;
   /** Repo bound to the cloud session, for the footer location indicator. */
   cloudRepo: string | null;
+  /** Default branch of the bound repo, for the footer; null until known. */
+  cloudBranch: string | null;
+  /** Connected source provider display name (e.g. "GitHub") for the startup checklist. */
+  cloudProvider: string | null;
+  /** Number of repositories the connected provider exposes, for the startup checklist; null until known. */
+  cloudRepoCount: number | null;
+  /** Count of bound repos beyond the one shown in the footer (the `(+N others)` suffix). 0 = single/none. */
+  cloudExtraRepos: number;
+  /** Per-session snapshots of the cloud scope (repo/branch/extras/attached),
+   *  so switching back to a session restores its footer without a re-fetch. */
+  cloudScopeBySession: ReadonlyMap<
+    string,
+    {
+      cloudRepo: string | null;
+      cloudBranch: string | null;
+      cloudExtraRepos: number;
+      attachedRepos: string[];
+    }
+  >;
   lastTurnTokens: LastTurnTokens | null;
   turnSummaries: Map<string, string>; // turnId (user message id) → formatted summary text
 
@@ -1664,6 +1731,18 @@ export interface AppState {
   repoPickerResources: SourceProviderResource[];
   /** Repos attached to the cloud session, so reopening /repo pre-checks them. */
   attachedRepos: string[];
+  /** True once the cloud-entry source-provider probe has resolved (connected or
+   *  gate shown). Gates the connecting screen's welcome/checklist so neither
+   *  flashes before the provider decision is made. */
+  cloudProviderChecked: boolean;
+  /** Cloud-entry gate shown when no source provider is connected: open flag + the setup URL. */
+  showSourceProviderGate: boolean;
+  sourceProviderSetupUrl: string | null;
+  /** `/sessions` picker: open flag + the merged local/cloud rows. */
+  showSessionPicker: boolean;
+  sessionPickerRows: SessionPickerRow[];
+  /** Panel title = the command the user typed (`/chat` or `/sessions`). */
+  sessionPickerTitle: string;
   showKeybindingsPanel: boolean;
   showDisplaySettingsPanel: boolean;
   showThemePanel: boolean;
@@ -2190,6 +2269,11 @@ function buildCommandContext(
     setShowStatsPanel: state.setShowStatsPanel,
     setShowHooksPanel: state.setShowHooksPanel,
     setShowRepoPicker: state.setShowRepoPicker,
+    setShowSessionPicker: state.setShowSessionPicker,
+    resetCloudSessionScope: state.resetCloudSessionScope,
+    stashCloudSessionScope: state.stashCloudSessionScope,
+    restoreCloudSessionScope: state.restoreCloudSessionScope,
+    setCloudSessionActive: state.setCloudSessionActive,
     setShowKeybindingsPanel: state.setShowKeybindingsPanel,
     setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
     setShowThemePanel: state.setShowThemePanel,
@@ -2235,6 +2319,7 @@ function buildCommandContext(
         showStatsPanel: false,
         showHooksPanel: false,
         showRepoPicker: false,
+        showSourceProviderGate: false,
         showKeybindingsPanel: false,
         showThemePanel: false,
         showCloudQuitPrompt: false,
@@ -2451,6 +2536,7 @@ export const createAppStore = (props: AppStoreProps) => {
     activeCompactionAttemptKey: null,
     compactionReportAnchor: null,
     wasCancelled: false,
+    lastTurnErrored: false,
     agentError: null,
     agentErrorGuidance: null,
     pendingApproval: null,
@@ -2512,6 +2598,11 @@ export const createAppStore = (props: AppStoreProps) => {
     cloudProvisioningFailure: null,
     sessionRoster: new Map<string, RosterEntry>(),
     cloudRepo: null,
+    cloudBranch: null,
+    cloudProvider: null,
+    cloudRepoCount: null,
+    cloudExtraRepos: 0,
+    cloudScopeBySession: new Map(),
     lastTurnTokens: null,
     turnSummaries: new Map(),
     showContextBreakdown: false,
@@ -2565,6 +2656,12 @@ export const createAppStore = (props: AppStoreProps) => {
     showRepoPicker: false,
     repoPickerResources: [],
     attachedRepos: [],
+    cloudProviderChecked: false,
+    showSourceProviderGate: false,
+    sourceProviderSetupUrl: null,
+    showSessionPicker: false,
+    sessionPickerRows: [],
+    sessionPickerTitle: '/sessions',
     showKeybindingsPanel: false,
     showDisplaySettingsPanel: false,
     showThemePanel: false,
@@ -2717,6 +2814,7 @@ export const createAppStore = (props: AppStoreProps) => {
           agentError: null,
           agentErrorGuidance: null,
           wasCancelled: false,
+          lastTurnErrored: false,
           autoApproveCrewTools: false,
           messages: [...state.messages, userMessage],
           attachedFiles: [], // Clear attachments after sending
@@ -2846,6 +2944,7 @@ export const createAppStore = (props: AppStoreProps) => {
             agentError: displayMessage,
             agentErrorGuidance: getErrorGuidance(errorMessage).message,
             isProcessing: false,
+            lastTurnErrored: true,
           });
         } else {
           // All other errors are non-blocking.
@@ -2857,6 +2956,7 @@ export const createAppStore = (props: AppStoreProps) => {
           // Keep the failure visible after the transient alert fades.
           set((s) => ({
             isProcessing: false,
+            lastTurnErrored: true,
             messages: [
               ...s.messages,
               {
@@ -3668,6 +3768,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 agentError: event.message,
                 agentErrorGuidance: guidance.message,
                 isProcessing: false,
+                lastTurnErrored: true,
               });
             }
             break;
@@ -4993,6 +5094,33 @@ export const createAppStore = (props: AppStoreProps) => {
       await executeCommandWithArg(cmdName, arg, ctx);
     },
 
+    resumeSession: async (sessionId, environment) => {
+      // Resume a session chosen in the `/sessions` panel. The picker knows the
+      // row's store, so route the load to it explicitly — a cloud row must not
+      // be probed against local stores (not-found), and a local row picked from
+      // inside a cloud session must not be sent to the remote store.
+      set({
+        showSessionPicker: false,
+        sessionPickerRows: [],
+        activeCommand: null,
+      });
+      const state = get();
+      const ctx: CommandContext = buildCommandContext(state, set, get, {
+        showTuiPanel: false,
+        showChangelogPanel: false,
+        showCodePanel: false,
+        codeData: null,
+      });
+      applyLiteAlertRouting(ctx, state, set);
+      if (environment) {
+        await loadExistingSession(ctx, sessionId, {
+          source: environment === 'cloud' ? 'remote' : 'local',
+        });
+      } else {
+        await executeCommandWithArg('chat', sessionId, ctx);
+      }
+    },
+
     queueMessage: (content: string) => {
       const trimmed = content.trim();
       if (!trimmed) return;
@@ -5933,6 +6061,59 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
     setCloudRepo: (cloudRepo) => set({ cloudRepo }),
+    applyRepoFooter: (repos) =>
+      set({
+        cloudRepo: repos[0] ?? null,
+        cloudExtraRepos: Math.max(0, repos.length - 1),
+        attachedRepos: [...repos],
+        ...(repos.length === 0 && { cloudBranch: null }),
+      }),
+    resetCloudSessionScope: () =>
+      set({
+        cloudRepo: null,
+        cloudBranch: null,
+        cloudExtraRepos: 0,
+        attachedRepos: [],
+      }),
+    stashCloudSessionScope: (sessionId) => {
+      if (!sessionId) return;
+      const { cloudRepo, cloudBranch, cloudExtraRepos, attachedRepos } = get();
+      // Nothing bound → drop any stale stash so a restore can't resurrect it.
+      const next = new Map(get().cloudScopeBySession);
+      next.delete(sessionId);
+      if (cloudRepo || attachedRepos.length > 0) {
+        next.set(sessionId, {
+          cloudRepo,
+          cloudBranch,
+          cloudExtraRepos,
+          attachedRepos: [...attachedRepos],
+        });
+      }
+      // Bound the LRU (Map preserves insertion order) so a long-lived process
+      // switching through many sessions can't grow it without limit.
+      const MAX_STASH = 20;
+      while (next.size > MAX_STASH) {
+        next.delete(next.keys().next().value as string);
+      }
+      set({ cloudScopeBySession: next });
+    },
+    restoreCloudSessionScope: (sessionId) => {
+      const stashed = sessionId
+        ? get().cloudScopeBySession.get(sessionId)
+        : undefined;
+      if (!stashed) return false;
+      set({
+        cloudRepo: stashed.cloudRepo,
+        cloudBranch: stashed.cloudBranch,
+        cloudExtraRepos: stashed.cloudExtraRepos,
+        attachedRepos: [...stashed.attachedRepos],
+      });
+      return true;
+    },
+    setCloudBranch: (cloudBranch) => set({ cloudBranch }),
+    setCloudProvider: (cloudProvider) => set({ cloudProvider }),
+    setCloudRepoCount: (cloudRepoCount) => set({ cloudRepoCount }),
+    setCloudExtraRepos: (cloudExtraRepos) => set({ cloudExtraRepos }),
     setContextUsage: (percent) => {
       set((state) => {
         const lastUserIdx = state.messages.findLastIndex(
@@ -6065,23 +6246,171 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setShowRepoPicker: (show, resources = []) => {
-      set({ showRepoPicker: show, repoPickerResources: resources });
+      // Providers can list the same repo name more than once; selection is
+      // name-keyed, so duplicates would check/toggle together. First wins.
+      const deduped = dedupeRepoResources(resources);
+      set({ showRepoPicker: show, repoPickerResources: deduped });
+      if (show) {
+        recordTuiCloudRepoAttach({ event: 'opened' });
+        // Zero-cost branch resolution: the picker already fetched these
+        // resources (each carries an optional defaultBranch), so if the
+        // session-bound repo is among them, light up the footer's branch
+        // segment without any extra RPC.
+        const boundRepo = get().cloudRepo?.trim();
+        if (boundRepo && !get().cloudBranch) {
+          const match = deduped.find((r) => r.name === boundRepo);
+          if (match?.defaultBranch) set({ cloudBranch: match.defaultBranch });
+        }
+      }
     },
 
     submitRepoPicker: async (selected) => {
-      // Remember the full attached set so reopening /repo pre-checks these repos.
       const previous = get().attachedRepos;
-      set({
-        showRepoPicker: false,
-        repoPickerResources: [],
-        attachedRepos: [...selected],
+      // Snapshot the pre-attach footer so a failed clone turn can roll it
+      // back — the footer must reflect what is actually in the sandbox.
+      const rollback: Partial<AppState> = {
+        cloudRepo: get().cloudRepo,
+        cloudBranch: get().cloudBranch,
+        cloudExtraRepos: get().cloudExtraRepos,
+        attachedRepos: previous,
+      };
+      const firstBranch = selected[0]
+        ? get().repoPickerResources.find((r) => r.name === selected[0])
+            ?.defaultBranch
+        : undefined;
+      // The resources are cleared below; keep a branch lookup in case a
+      // partial failure promotes a different repo to the footer's primary.
+      const branchByName = new Map(
+        get().repoPickerResources.map((r) => [r.name, r.defaultBranch])
+      );
+      set({ showRepoPicker: false, repoPickerResources: [] });
+      get().applyRepoFooter(selected);
+      if (firstBranch) set({ cloudBranch: firstBranch });
+      recordTuiCloudRepoAttach({
+        event: 'submitted',
+        repoCount: selected.length,
       });
-      // Only newly selected repos need cloning — repos kept from a previous
-      // submission were already cloned, so re-submitting an unchanged
-      // selection must not fire another agent turn.
+      // One turn settles the workspace to the selected set: clone the newly
+      // checked, remove the unchecked. Unchanged selection fires no turn.
       const added = selected.filter((repo) => !previous.includes(repo));
-      const instruction = formatCloneReposInstruction(added);
-      if (instruction) await get().sendMessage(instruction);
+      const removed = previous.filter((repo) => !selected.includes(repo));
+      const instruction = formatRepoChangeInstruction(added, removed);
+      if (!instruction) return;
+      const preTurnMessageCount = get().messages.length;
+      // sendMessage silently queues (early-returns) instead of firing when a
+      // turn is already in flight; a queued instruction leaves the inspected
+      // slice empty, so a stale error flag could force a spurious rollback of a
+      // footer whose clone is still pending. Only judge the outcome when the
+      // turn actually fired (mirrors sendMessage's own fire condition).
+      const turnFired =
+        get().isInitialized &&
+        !get().isProcessing &&
+        !get().isCompacting &&
+        !get().loadingMessage;
+      await get().sendMessage(instruction);
+      if (!turnFired) return;
+      // Roll back only on evidence the work didn't happen: no tool in the
+      // turn succeeded AND something failed. Error flags alone are unreliable
+      // — a phantom session error can land during a turn whose clones all
+      // succeeded.
+      const turnTools = get()
+        .messages.slice(preTurnMessageCount)
+        .filter(
+          (m) => m.role === MessageRole.ToolUse && !m.isSubagentTool
+        ) as Extract<MessageType, { role: MessageRole.ToolUse }>[];
+      const anyToolSucceeded = turnTools.some(
+        (m) => m.result?.status === 'success'
+      );
+      const anyToolFailed = turnTools.some((m) => m.result?.status === 'error');
+      if (!anyToolSucceeded && (get().lastTurnErrored || anyToolFailed)) {
+        logger.warn('[repo-attach] rolling back footer', {
+          lastTurnErrored: get().lastTurnErrored,
+          toolCount: turnTools.length,
+          anyToolFailed,
+        });
+        set(rollback);
+        get().showTransientAlert({
+          message:
+            "Repository change didn't complete — the footer reflects the previous state. Check the turn output and retry /repo.",
+          status: 'warning',
+          autoHideMs: 8000,
+        });
+        return;
+      }
+      if (!anyToolFailed) return;
+      // Mixed outcome: some tools succeeded, some failed. Settle each
+      // requested repo against the tools that mention it so a failed clone
+      // never stays in the footer behind an unrelated success.
+      const reconciled = reconcileRepoSelection(
+        selected,
+        added,
+        removed,
+        turnTools.map((m) => ({
+          content: m.content,
+          status:
+            m.result?.status === 'error'
+              ? ('error' as const)
+              : m.result?.status === 'success'
+                ? ('success' as const)
+                : undefined,
+        }))
+      );
+      if (reconciled === selected) return;
+      logger.warn('[repo-attach] reconciling footer after partial failure', {
+        selected,
+        reconciled,
+      });
+      get().applyRepoFooter(reconciled);
+      const primary = reconciled[0];
+      if (primary && primary !== selected[0]) {
+        set({
+          cloudBranch:
+            primary === rollback.cloudRepo
+              ? (rollback.cloudBranch ?? null)
+              : (branchByName.get(primary) ?? null),
+        });
+      }
+      get().showTransientAlert({
+        message:
+          "Some repository changes didn't complete — the footer reflects what's in the sandbox. Check the turn output and retry /repo.",
+        status: 'warning',
+        autoHideMs: 8000,
+      });
+    },
+
+    setCloudProviderChecked: (cloudProviderChecked) =>
+      set({ cloudProviderChecked }),
+    setShowSourceProviderGate: (show, setupUrl = null) => {
+      set({
+        showSourceProviderGate: show,
+        sourceProviderSetupUrl: show ? setupUrl : null,
+      });
+    },
+
+    retrySourceProviderConnection: async () => {
+      const kiro = get().kiro;
+      if (!kiro) return false;
+      try {
+        const list = await kiro.getRepoProviderSource().listSourceProviders();
+        const conn = resolveSourceProviderConnection(list);
+        if (conn.connected) {
+          set({ showSourceProviderGate: false, sourceProviderSetupUrl: null });
+          return true;
+        }
+        // Still not connected: refresh the setup URL and keep the gate up.
+        set({ sourceProviderSetupUrl: conn.setupUrl ?? null });
+        return false;
+      } catch {
+        return false;
+      }
+    },
+
+    setShowSessionPicker: (show, rows = [], invokedAs) => {
+      set({
+        showSessionPicker: show,
+        sessionPickerRows: show ? rows : [],
+        sessionPickerTitle: show ? (invokedAs ?? '/sessions') : '/sessions',
+      });
     },
 
     setShowKeybindingsPanel: (show) => {
@@ -6751,6 +7080,25 @@ export const createAppStore = (props: AppStoreProps) => {
 
         if (lower === '/quit' || lower === '/exit') {
           state.clearInput();
+          if (state.kiro.isCloudSessionActive?.()) {
+            // Cloud: the keep-running/turn-off prompt must ALWAYS appear, even
+            // mid-turn — same flow as the idle-path quit effect. The prompt's
+            // choices already handle an in-flight turn (keep-running detaches,
+            // turn-off cancels first).
+            get().setShowCloudQuitPrompt(true);
+            return;
+          }
+          state.kiro.close();
+          state.onExit?.();
+          process.exit(0);
+        }
+
+        // /disconnect only detaches the client — the sandbox keeps running
+        // the in-flight turn — so it must work mid-turn instead of queueing
+        // behind a turn it doesn't interrupt.
+        if (lower === '/disconnect' && state.kiro.isCloudSessionActive?.()) {
+          state.clearInput();
+          emitCloudDetachNoticeOnce(state.kiro.sessionId);
           state.kiro.close();
           state.onExit?.();
           process.exit(0);

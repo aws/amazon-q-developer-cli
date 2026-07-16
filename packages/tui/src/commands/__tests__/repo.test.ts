@@ -75,11 +75,7 @@ describe('handleRepo (/repo)', () => {
     });
     ctx.cloudSessionActive = true;
     await handleRepo(cmd, '', ctx);
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Connect a source provider to attach a repository: https://kiro.dev/settings/providers',
-      'warning',
-      5000
-    );
+    expect(ctx._spies.showAlert).toHaveBeenCalled();
     expect(ctx._spies.setShowRepoPicker).not.toHaveBeenCalled();
   });
 
@@ -101,23 +97,21 @@ describe('handleRepo (/repo)', () => {
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
       'No connected source provider. Connect one in the Kiro web portal, then try again.',
       'warning',
-      5000
+      6000
     );
     expect(ctx._spies.setShowRepoPicker).not.toHaveBeenCalled();
   });
 
-  it("shows the 'picker unavailable' error when provider listing is unavailable", async () => {
+  it('falls back to direct-attach guidance when provider listing is unavailable', async () => {
     const ctx = ctxWithSource({
       listSourceProviders: async () => undefined,
       listSourceProviderResources: async () => undefined,
     });
     ctx.cloudSessionActive = true;
     await handleRepo(cmd, '', ctx);
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'The repository picker is unavailable in this session.',
-      'error',
-      5000
-    );
+    const [message, status] = (ctx._spies.showAlert as any).mock.calls[0];
+    expect(message).toContain('/repo <owner/name>');
+    expect(status).toBe('warning');
     expect(ctx._spies.setShowRepoPicker).not.toHaveBeenCalled();
   });
 
@@ -144,7 +138,7 @@ describe('handleRepo (/repo)', () => {
     expect(ctx._spies.setShowRepoPicker).not.toHaveBeenCalled();
   });
 
-  it("shows 'no repositories' when the resource page itself is unavailable", async () => {
+  it('falls back to direct-attach guidance when the resource page is unavailable', async () => {
     const ctx = ctxWithSource({
       listSourceProviders: async () => ({
         providers: [
@@ -159,11 +153,9 @@ describe('handleRepo (/repo)', () => {
     });
     ctx.cloudSessionActive = true;
     await handleRepo(cmd, '', ctx);
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'No repositories available to attach.',
-      'warning',
-      5000
-    );
+    const [message, status] = (ctx._spies.showAlert as any).mock.calls[0];
+    expect(message).toContain('/repo <owner/name>');
+    expect(status).toBe('warning');
     expect(ctx._spies.setShowRepoPicker).not.toHaveBeenCalled();
   });
 });

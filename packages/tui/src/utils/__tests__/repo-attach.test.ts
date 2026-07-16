@@ -6,6 +6,7 @@ import {
   resolveSourceProviderConnection,
   droppedReposFromWarnings,
   formatRepoChangeInstruction,
+  reconcileRepoSelection,
 } from '../repo-attach';
 
 describe('normalizeRepoArg', () => {
@@ -173,5 +174,84 @@ describe('formatRepoChangeInstruction', () => {
     expect(formatRepoChangeInstruction([], ['  a/one  ', ''])).toBe(
       'Remove the repository a/one from the workspace (delete its cloned directory).'
     );
+  });
+});
+
+describe('reconcileRepoSelection', () => {
+  const clone = (repo: string, status: 'success' | 'error') => ({
+    content: `{"command":"git clone https://github.com/${repo}.git"}`,
+    status,
+  });
+  const remove = (repo: string, status: 'success' | 'error') => ({
+    content: `{"command":"rm -rf ${repo.split('/').pop()}"}`,
+    status,
+  });
+
+  it('returns the selection unchanged when no tool failed', () => {
+    const selected = ['owner/app', 'owner/lib'];
+    const out = reconcileRepoSelection(
+      selected,
+      selected,
+      [],
+      [clone('owner/app', 'success'), clone('owner/lib', 'success')]
+    );
+    expect(out).toBe(selected);
+  });
+
+  it('drops an added repo whose clone failed while keeping the one that succeeded', () => {
+    const out = reconcileRepoSelection(
+      ['owner/app', 'owner/bad'],
+      ['owner/app', 'owner/bad'],
+      [],
+      [clone('owner/app', 'success'), clone('owner/bad', 'error')]
+    );
+    expect(out).toEqual(['owner/app']);
+  });
+
+  it('restores a removed repo whose removal failed', () => {
+    const out = reconcileRepoSelection(
+      ['owner/app'],
+      [],
+      ['owner/gone'],
+      [clone('owner/app', 'success'), remove('owner/gone', 'error')]
+    );
+    expect(out).toEqual(['owner/app', 'owner/gone']);
+  });
+
+  it('keeps a repo when a failed tool does not mention it', () => {
+    const out = reconcileRepoSelection(
+      ['owner/app', 'owner/lib'],
+      ['owner/app', 'owner/lib'],
+      [],
+      [
+        clone('owner/app', 'success'),
+        { content: '{"command":"cat README.md"}', status: 'error' },
+      ]
+    );
+    expect(out).toEqual(['owner/app', 'owner/lib']);
+  });
+
+  it('keeps a repo when a later tool mentioning it succeeded (retry recovered)', () => {
+    const out = reconcileRepoSelection(
+      ['owner/app'],
+      ['owner/app'],
+      [],
+      [clone('owner/app', 'error'), clone('owner/app', 'success')]
+    );
+    expect(out).toEqual(['owner/app']);
+  });
+
+  it('matches the bare directory name without matching a hyphenated superset', () => {
+    const out = reconcileRepoSelection(
+      ['owner/app', 'owner/my-app'],
+      ['owner/app', 'owner/my-app'],
+      [],
+      [
+        { content: '{"command":"rm -rf my-app"}', status: 'error' },
+        clone('owner/app', 'success'),
+      ]
+    );
+    // The failure names `my-app`, not `app` — only `my-app` is affected.
+    expect(out).toEqual(['owner/app']);
   });
 });

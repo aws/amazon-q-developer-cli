@@ -42,10 +42,16 @@ const mockListAllSessions = mock<() => Promise<ListAllSessionsResult>>(() =>
 
 beforeEach(() => {
   __setListAllSessionsOverrideForTests(() => mockListAllSessions());
+  // The columnar picker + live-client overlay are dark-shipped behind the
+  // remote-sandbox feature; these tests exercise the feature-ON flow.
+  process.env.KIRO_ENABLED_FEATURES = JSON.stringify(['remote_sandbox']);
+  features._resetForTests();
 });
 
 afterEach(() => {
   __setListAllSessionsOverrideForTests(undefined);
+  delete process.env.KIRO_ENABLED_FEATURES;
+  features._resetForTests();
 });
 
 afterAll(() => {
@@ -85,6 +91,7 @@ import { handleChat } from '../chat';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
 import type { KasCommand } from '../../../kas-commands';
 import { KasCommandName } from '../../../kas-commands';
+import { features } from '../../../features';
 
 const CHAT_CMD: KasCommand = {
   name: KasCommandName.Chat,
@@ -118,10 +125,145 @@ describe('handleChat (KAS-mode dispatch)', () => {
         kiro: { sessionId: 'bbbb2222' } as any,
       });
       await handleChat(CHAT_CMD, '', ctx);
+      const showPicker = ctx._spies.setShowSessionPicker as any;
+      expect(showPicker).toHaveBeenCalled();
+      const rows = showPicker.mock.calls[0][1];
+      expect(rows.map((r: any) => r.sessionId)).toEqual(['aaaa1111']);
+    });
+
+    it('dark-ship: feature OFF keeps the legacy selection menu (no columnar panel, no live overlay)', async () => {
+      delete process.env.KIRO_ENABLED_FEATURES;
+      features._resetForTests();
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'aaaa1111',
+            source: 'v3',
+            title: 'Other',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const listSessions = mock(() => Promise.resolve({ sessions: [] }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'bbbb2222', listSessions } as any,
+      });
+      await handleChat(CHAT_CMD, '', ctx);
+      // Released path: selection menu via setActiveCommand, not the panel.
+      expect(ctx._spies.setShowSessionPicker as any).not.toHaveBeenCalled();
       const setActive = ctx._spies.setActiveCommand as any;
       expect(setActive).toHaveBeenCalled();
-      const arg = setActive.mock.calls[0][0];
-      expect(arg.options.map((o: any) => o.value)).toEqual(['aaaa1111']);
+      expect(setActive.mock.calls[0][0].options[0].value).toBe('aaaa1111');
+      // And the live-client overlay call never fires (no new RPC on released builds).
+      expect(listSessions).not.toHaveBeenCalled();
+    });
+
+    it('resets the per-session cloud scope when loading a different session', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          sessionId: 'cur',
+          loadSession: async () => ({ sessionId: 'other' }),
+        } as any,
+      });
+      await handleChat(CHAT_CMD, 'other', ctx, { argIsSynthetic: true });
+      expect(ctx._spies.resetCloudSessionScope).toHaveBeenCalled();
+    });
+
+    it('surfaces cloud rows from the live client that the shell-out omitted', async () => {
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'local1',
+            source: 'v3',
+            title: 'Local one',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          sessionId: 'cur',
+          listSessions: async () => ({
+            sessions: [
+              {
+                sessionId: 'cloud1',
+                cwd: '/x',
+                title: 'Cloud task',
+                updatedAt: new Date().toISOString(),
+                executionTarget: { kind: 'cloud-sandbox' },
+                status: 'in_progress',
+              },
+            ],
+          }),
+        } as any,
+      });
+      await handleChat(CHAT_CMD, '', ctx);
+      const showPicker = ctx._spies.setShowSessionPicker as any;
+      expect(showPicker).toHaveBeenCalled();
+      const rows = showPicker.mock.calls[0][1];
+      const cloud = rows.find((r: any) => r.sessionId === 'cloud1');
+      expect(cloud).toBeDefined();
+      expect(cloud.environment).toBe('cloud');
+      expect(cloud.status).toBe('working');
+      // The local shell-out row is still present.
+      expect(rows.some((r: any) => r.sessionId === 'local1')).toBe(true);
+    });
+
+    it('sorts merged local + cloud rows most-recent-first (mixed UTC-Z timestamps)', async () => {
+      // Both sources emit UTC ISO-8601 (Z) timestamps, so lexicographic
+      // localeCompare equals chronological order -- a cloud row newer than the
+      // local rows must sort to the top even when the shell-out lists it last.
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'localOld',
+            source: 'v3',
+            title: 'Oldest local',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            sessionId: 'localMid',
+            source: 'v3',
+            title: 'Middle local',
+            updatedAt: '2026-06-15T12:30:00.000Z',
+          },
+        ],
+      });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          sessionId: 'cur',
+          listSessions: async () => ({
+            sessions: [
+              {
+                sessionId: 'cloudNew',
+                cwd: '/x',
+                title: 'Newest cloud',
+                updatedAt: '2026-07-01T09:00:00.000Z',
+                executionTarget: { kind: 'cloud-sandbox' },
+                status: 'idle',
+              },
+            ],
+          }),
+        } as any,
+      });
+      await handleChat(CHAT_CMD, '', ctx);
+      const showPicker = ctx._spies.setShowSessionPicker as any;
+      const rows = showPicker.mock.calls[0][1];
+      expect(rows.map((r: any) => r.sessionId)).toEqual([
+        'cloudNew',
+        'localMid',
+        'localOld',
+      ]);
     });
 
     it('alerts when no other sessions exist', async () => {
@@ -159,11 +301,11 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(showAlert.mock.calls[0][1]).toBe('error');
     });
 
-    it('strips raw newlines from picker option labels', async () => {
+    it('strips raw newlines from picker row titles', async () => {
       // Multi-line titles arrive when KAS seeds the title from a first
-      // prompt that contains real newlines. The Ink-based autocomplete
-      // picker renders each option on one row, so embedded `\n`s
-      // mangle the option layout. The label must collapse them.
+      // prompt that contains real newlines. The columnar picker renders each
+      // row on one line, so embedded `\n`s mangle the layout — the title must
+      // collapse them.
       mockListAllSessions.mockResolvedValueOnce({
         ok: true,
         cwd: '/x',
@@ -181,12 +323,12 @@ describe('handleChat (KAS-mode dispatch)', () => {
         kiro: { sessionId: 'cur-id' } as any,
       });
       await handleChat(CHAT_CMD, '', ctx);
-      const setActive = ctx._spies.setActiveCommand as any;
-      const arg = setActive.mock.calls[0][0];
-      const label = arg.options[0]!.label as string;
-      expect(label).not.toContain('\n');
-      expect(label).not.toContain('\r');
-      expect(label).toContain('fix the bug');
+      const showPicker = ctx._spies.setShowSessionPicker as any;
+      const rows = showPicker.mock.calls[0][1];
+      const title = rows[0]!.title as string;
+      expect(title).not.toContain('\n');
+      expect(title).not.toContain('\r');
+      expect(title).toContain('fix the bug');
     });
   });
 
@@ -581,6 +723,71 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(ctx._spies.setLoadingMessage).toHaveBeenLastCalledWith(null);
       const showAlert = ctx._spies.showAlert as any;
       expect(showAlert.mock.calls.at(-1)?.[1]).toBe('error');
+    });
+
+    it('new: a rejected newSession restores the previous session cloud scope', async () => {
+      const newSession = mock(() => Promise.reject(new Error('boom')));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { newSession, sessionId: 'prev-sid' } as any,
+      });
+      await handleChat(CHAT_CMD, 'new', ctx);
+      // The scope was stashed under the previous session's id before the RPC;
+      // the failure must bring it back — that session is still the active one.
+      expect(ctx._spies.stashCloudSessionScope).toHaveBeenCalledWith(
+        'prev-sid'
+      );
+      expect(ctx._spies.restoreCloudSessionScope).toHaveBeenCalledWith(
+        'prev-sid'
+      );
+    });
+
+    it('bare sessionId: a rejected loadSession restores the previous session cloud scope', async () => {
+      const loadSession = mock(() => Promise.reject(new Error('nope')));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, sessionId: 'prev-sid' } as any,
+      });
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(ctx._spies.stashCloudSessionScope).toHaveBeenCalledWith(
+        'prev-sid'
+      );
+      expect(ctx._spies.restoreCloudSessionScope).toHaveBeenCalledWith(
+        'prev-sid'
+      );
+    });
+
+    it('loading a cloud session from a local one announces "Connected"', async () => {
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, isCloudSessionActive: () => true } as any,
+      });
+      // Pre-load state is local; the message must reflect the LOADED session.
+      ctx.cloudSessionActive = false;
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      const addSystemMessage = ctx._spies.addSystemMessage as any;
+      expect(
+        addSystemMessage.mock.calls.some(
+          (c: any[]) => c[0] === 'Connected to session sid'
+        )
+      ).toBe(true);
+    });
+
+    it('loading a local session from a cloud one announces "Loaded"', async () => {
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, isCloudSessionActive: () => false } as any,
+      });
+      ctx.cloudSessionActive = true;
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      const addSystemMessage = ctx._spies.addSystemMessage as any;
+      expect(
+        addSystemMessage.mock.calls.some(
+          (c: any[]) => c[0] === 'Loaded session sid'
+        )
+      ).toBe(true);
     });
   });
 });

@@ -8,12 +8,15 @@ import {
 import { listAllSessions } from '../../utils/list-all-sessions-cli';
 import { ensureSession } from '../../utils/ensure-session-cli';
 import {
-  isResumableSource,
   isActiveEngineSource,
+  isResumableSource,
 } from '../../utils/cross-engine-session-id';
 import { formatRelativeTime } from '../../utils/sessions';
+import { formatSessionState } from '../../utils/session-picker';
+import { Feature, features } from '../../features';
 import { sanitizeSessionTitleForDisplay } from '../../utils/sanitize-title';
 import { unquote } from '../../utils/string';
+import type { SessionPickerRow } from '../../components/ui/SessionPickerPanel';
 import { basename } from 'node:path';
 import { statSync } from 'node:fs';
 import type { AgentStreamEvent } from '../../types/agent-events';
@@ -47,7 +50,7 @@ export async function handleChat(
   if (options?.argIsSynthetic) {
     return loadExistingSession(ctx, trimmed);
   }
-  ctx.showAlert(`Unknown /chat subcommand: ${trimmed}`, 'error', 3000);
+  ctx.showAlert(`Unknown ${cmd.name} subcommand: ${trimmed}`, 'error', 3000);
 }
 
 async function showSessionPicker(
@@ -65,23 +68,92 @@ async function showSessionPicker(
   // Active engine is always KAS here: this handler runs only when the
   // dispatcher's KAS intercept fires.
   const activeIsKas = true;
-  const options = listing.sessions
+
+  // Dark-ship: without the remote-sandbox feature, /chat keeps the exact
+  // pre-existing selection-menu flow (no live-client overlay call, no
+  // columnar panel) — released users see zero change.
+  if (!features.isEnabled(Feature.RemoteSandbox)) {
+    const options = listing.sessions
+      .filter((s) => s.sessionId !== currentSessionId)
+      .filter((s) => isResumableSource(s.source, activeIsKas))
+      .map((s) => {
+        const native = isActiveEngineSource(s.source, activeIsKas);
+        const sourceTag = native ? '' : ` (${s.source})`;
+        return {
+          value: s.sessionId,
+          label: `${sanitizeSessionTitleForDisplay(s.title)} (${s.sessionId.slice(0, 8)})${sourceTag}`,
+          description: formatRelativeTime(s.updatedAt),
+        };
+      });
+    if (options.length === 0) {
+      ctx.showAlert('No previous sessions found', 'error', 3000);
+      return;
+    }
+    ctx.setActiveCommand({ command: cmd, options });
+    return;
+  }
+  // The shell-out (`chat --list-sessions`) merges V1/V2 stores but its one-shot
+  // KAS child isn't wired to the remote endpoint, so it never returns cloud
+  // rows. The live, already-connected client IS wired (it spans both stores),
+  // so ask it too and overlay its rows — this is what surfaces cloud sessions
+  // in the interactive picker. Best-effort: a failure just leaves the V1/V2
+  // list intact.
+  const liveByCwd = await Promise.resolve()
+    .then(() => ctx.kiro.listSessions(process.cwd()))
+    .catch(() => ({ sessions: [] }));
+  const liveMeta = new Map(liveByCwd.sessions.map((s) => [s.sessionId, s]));
+  const resumable = listing.sessions
     .filter((s) => s.sessionId !== currentSessionId)
-    .filter((s) => isResumableSource(s.source, activeIsKas))
-    .map((s) => {
-      const native = isActiveEngineSource(s.source, activeIsKas);
-      const sourceTag = native ? '' : ` (${s.source})`;
-      return {
-        value: s.sessionId,
-        label: `${sanitizeSessionTitleForDisplay(s.title)} (${s.sessionId.slice(0, 8)})${sourceTag}`,
-        description: formatRelativeTime(s.updatedAt),
-      };
-    });
-  if (options.length === 0) {
+    .filter((s) => isResumableSource(s.source, activeIsKas));
+  // Cloud rows the live client knows about but the shell-out omitted entirely.
+  const shellIds = new Set(listing.sessions.map((s) => s.sessionId));
+  const liveOnly = liveByCwd.sessions
+    .filter(
+      (s) =>
+        s.sessionId !== currentSessionId &&
+        !shellIds.has(s.sessionId) &&
+        s.executionTarget?.kind === 'cloud-sandbox'
+    )
+    .map((s) => ({
+      sessionId: s.sessionId,
+      source: 'v3' as const,
+      title: s.title ?? '',
+      updatedAt: s.updatedAt ?? '',
+      // The shell-out rows carry executionTarget as a STRING kind; normalize the
+      // live client's `{ kind }` object to that so the row map below is uniform.
+      executionTarget: s.executionTarget?.kind,
+      status: s.status,
+    }));
+  if (resumable.length === 0 && liveOnly.length === 0) {
     ctx.showAlert('No previous sessions found', 'error', 3000);
     return;
   }
-  ctx.setActiveCommand({ command: cmd, options });
+  // Columnar resume table: ID | Name | Environment | Status | Last
+  // updated. A local (on-disk, not-running) session has no live status, so it
+  // defaults to `idle`. Overlay the live client's per-row cloud metadata onto
+  // the shell-out rows, then append the cloud-only rows it alone knows, and
+  // sort the whole set most-recent-first so cloud rows aren't buried below the
+  // window when many local sessions exist. Both sources emit UTC ISO-8601 (Z)
+  // timestamps, so lexicographic order equals chronological order here.
+  const merged = [...resumable, ...liveOnly].sort((a, b) =>
+    (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')
+  );
+  const rows: SessionPickerRow[] = merged.map((s) => {
+    const live = liveMeta.get(s.sessionId);
+    const executionTarget = live?.executionTarget?.kind ?? s.executionTarget;
+    const status = live?.status ?? s.status;
+    const isCloud = executionTarget === 'cloud-sandbox';
+    return {
+      sessionId: s.sessionId,
+      title: sanitizeSessionTitleForDisplay(s.title),
+      environment: isCloud ? 'cloud' : 'local',
+      status: status ? formatSessionState(status) : 'idle',
+      updatedAt: s.updatedAt,
+    };
+  });
+  // Echo the command the user actually typed (`/chat` or `/sessions`) as the
+  // panel title even though both share this view.
+  ctx.setShowSessionPicker(true, rows, cmd.name);
 }
 
 async function startNewSession(
@@ -89,6 +161,13 @@ async function startNewSession(
   prompt: string | null
 ): Promise<void> {
   ctx.clearUIState();
+  // The bound repo/branch describe the PREVIOUS session's sandbox — stash so
+  // switching back to it restores its footer, then clear for the new session.
+  // Keep the id: a rejected RPC leaves that session active, so its scope must
+  // come back out of the stash.
+  const previousSessionId = ctx.kiro.sessionId;
+  ctx.stashCloudSessionScope(previousSessionId);
+  ctx.resetCloudSessionScope();
   ctx.resetMessages();
   ctx.setLoadingMessage('Starting new conversation...');
   const restoreKasSession = ctx.beginKasSession('new');
@@ -106,6 +185,9 @@ async function startNewSession(
     if (prompt) ctx.sendMessage(prompt);
   } catch (err) {
     restoreKasSession();
+    // The previous session is still the active one — bring its footer
+    // repo/branch back from the stash cleared above.
+    ctx.restoreCloudSessionScope(previousSessionId);
     logger.error('[chat] newSession failed', {
       err: JSON.stringify(err),
       stack: err instanceof Error ? err.stack : undefined,
@@ -119,43 +201,77 @@ async function startNewSession(
   }
 }
 
-async function loadExistingSession(
+export async function loadExistingSession(
   ctx: CommandContext,
   inputId: string,
-  options?: { systemMessage?: string }
+  options?: { systemMessage?: string; source?: 'local' | 'remote' }
 ): Promise<void> {
-  // Always route through ensure-session with `auto` source: native
-  // ids resolve via a fast filesystem probe; non-native ids
-  // (e.g. picking a V2 session in KAS mode) trigger conversion.
-  ctx.setLoadingMessage(`Resolving session ${inputId}...`);
-  const ensured = await ensureSession({
-    sourceFormat: 'auto',
-    sourceSessionId: inputId,
-    targetFormat: 'kas',
-    cwd: process.cwd(),
-  });
-  ctx.setLoadingMessage(null);
-  if (!ensured.ok) {
-    ctx.showAlert(`Failed to load session: ${ensured.message}`, 'error', 5000);
-    return;
+  // A remote session has no local on-disk record, so skip ensure-session's
+  // local probes and load the id straight through the connected client, which
+  // routes `session/load` to the remote store.
+  let sessionId: string;
+  if (options?.source === 'remote') {
+    sessionId = inputId;
+  } else {
+    ctx.setLoadingMessage(`Resolving session ${inputId}...`);
+    const ensured = await ensureSession({
+      sourceFormat: 'auto',
+      sourceSessionId: inputId,
+      targetFormat: 'kas',
+      cwd: process.cwd(),
+    });
+    ctx.setLoadingMessage(null);
+    if (!ensured.ok) {
+      // Local stores don't have it — if this is a cloud session, treat the id as
+      // a remote one and let the connected client load it. Otherwise surface the
+      // original not-found.
+      if (ctx.cloudSessionActive) {
+        sessionId = inputId;
+      } else {
+        ctx.showAlert(
+          `Failed to load session: ${ensured.message}`,
+          'error',
+          5000
+        );
+        return;
+      }
+    } else {
+      sessionId = ensured.sessionId;
+    }
   }
-  const sessionId = ensured.sessionId;
   ctx.clearUIState();
+  // The bound repo/branch describe the PREVIOUS session's sandbox — snapshot
+  // them under that session's id (so switching back restores its footer
+  // without a re-fetch), then clear so nothing leaks into the loaded session.
+  // Keep the id: a rejected load leaves that session active, so its scope
+  // must come back out of the stash.
+  const previousSessionId = ctx.kiro.sessionId;
+  ctx.stashCloudSessionScope(previousSessionId);
+  ctx.resetCloudSessionScope();
   ctx.setLoadingMessage(`Loading session ${sessionId}...`);
   // Buffer history events during load via direct onUpdate subscriber, then
   // replay them after the load resolves so the conversation renders in order.
   const buffered: AgentStreamEvent[] = [];
   const restoreKasSession = ctx.beginKasSession('resumed');
   try {
-    const session = await ctx.kiro.loadSession(sessionId, (e) =>
-      buffered.push(e)
+    const session = await ctx.kiro.loadSession(
+      sessionId,
+      (e) => buffered.push(e),
+      options?.source ? { source: options.source } : undefined
     );
     logger.debug('[chat] loadSession resolved', {
       sessionId,
       bufferedCount: buffered.length,
     });
+    // Cloud resume reads as "Connected to session"; a local
+    // resume keeps the "Loaded session" wording. An explicit systemMessage
+    // (e.g. an import) overrides both. Read the client's live mode — the
+    // store snapshot still describes the pre-load session here.
     ctx.addSystemMessage(
-      options?.systemMessage ?? `Loaded session ${sessionId}`,
+      options?.systemMessage ??
+        (ctx.kiro.isCloudSessionActive()
+          ? `Connected to session ${sessionId}`
+          : `Loaded session ${sessionId}`),
       true
     );
     if (buffered.length > 0) {
@@ -179,12 +295,21 @@ async function loadExistingSession(
     }
     ctx.setLoadingMessage(null);
     ctx.setSessionId(sessionId);
+    // Mode follows the session: a local session loaded from a cloud surface
+    // (or vice versa) flips the footer + cloud-only command gating globally.
+    ctx.setCloudSessionActive(ctx.kiro.isCloudSessionActive());
+    // Re-hydrate this session's footer repo/branch from a prior switch-away;
+    // the load response carries no repositories to re-derive them from.
+    ctx.restoreCloudSessionScope(sessionId);
     if (session.currentModel) ctx.setCurrentModel(session.currentModel);
     if (session.currentAgent)
       ctx.setCurrentAgent(session.currentAgent, { suppressWelcome: true });
     ctx.showAlert('Session loaded', 'success', 3000);
   } catch (err) {
     restoreKasSession();
+    // The previous session is still the active one — bring its footer
+    // repo/branch back from the stash cleared above.
+    ctx.restoreCloudSessionScope(previousSessionId);
     logger.error('[chat] loadSession failed', {
       sessionId,
       err: JSON.stringify(err),

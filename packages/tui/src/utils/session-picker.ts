@@ -149,22 +149,47 @@ export async function pickSession(cwd: string): Promise<string | undefined> {
  *
  * Exported for unit testing; not used outside this module.
  */
+export function formatSessionState(status: string): string {
+  switch (status) {
+    case 'in_progress':
+      return 'working';
+    case 'waiting_on_user':
+      return 'waiting';
+    case 'completed':
+      return 'done';
+    default:
+      return status; // idle / failed / provisioning / future values
+  }
+}
+
 export function formatMergedEntry(
   entry: SessionEntry,
-  maxWidth: number
+  maxWidth: number,
+  showEnvironment = false
 ): string {
   const timestamp = entry.updatedAt
     ? formatRelativeTime(entry.updatedAt)
     : 'unknown';
   const sanitizedTitle = sanitizeSessionTitleForDisplay(entry.title);
   const title = sanitizedTitle || '(no title)';
-  // WHERE the session runs. Only a cloud-sandbox session gets a tag; local
-  // rows (V1/V2, and V3 without the field) render exactly as before.
-  const whereTag = entry.executionTarget === 'cloud-sandbox' ? ' | cloud' : '';
+  // Environment (WHERE the session runs). Shown only when the listing contains
+  // at least one cloud row (showEnvironment) — so a purely local listing renders
+  // exactly as before (dark-safe). When shown, every row is tagged local|cloud.
+  const environment = showEnvironment
+    ? entry.executionTarget === 'cloud-sandbox'
+      ? ' | cloud'
+      : ' | local'
+    : '';
+  // State column: mapped activity status, shown alongside Environment (same
+  // cloud-present gate) and only for rows that carry a status snapshot.
+  const state =
+    showEnvironment && entry.status
+      ? ` | ${formatSessionState(entry.status)}`
+      : '';
   const line =
     entry.messageCount && entry.messageCount > 0
-      ? `${timestamp} | ${title} | ${entry.messageCount} msgs${whereTag}`
-      : `${timestamp} | ${title}${whereTag}`;
+      ? `${timestamp} | ${title} | ${entry.messageCount} msgs${environment}${state}`
+      : `${timestamp} | ${title}${environment}${state}`;
   const maxLen = maxWidth - 4;
   if (line.length > maxLen) {
     return line.slice(0, maxLen - 3) + '...';
@@ -201,11 +226,18 @@ export async function pickSessionFromEntries(
       const totalLines = visibleCount + 2;
       process.stderr.write(`\x1b[${totalLines}A\x1b[J`);
       process.stderr.write('Select a chat session to resume:\n');
+      const showEnvironment = entries.some(
+        (e) => e.executionTarget === 'cloud-sandbox'
+      );
       for (let vi = 0; vi < visibleCount; vi++) {
         const i = scrollOffset + vi;
         const prefix =
           i === selectedIndex ? `\x1b[36m${glyphs.chevron}\x1b[0m ` : '  ';
-        const text = formatMergedEntry(entries[i]!, terminalWidth());
+        const text = formatMergedEntry(
+          entries[i]!,
+          terminalWidth(),
+          showEnvironment
+        );
         const styled = i === selectedIndex ? `\x1b[1m${text}\x1b[0m` : text;
         process.stderr.write(`${prefix}${styled}\n`);
       }

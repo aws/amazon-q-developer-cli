@@ -51,6 +51,13 @@ export async function dispatch(
   const isLocal = cmd.meta?.local === true;
   const cmdName = cmd.name.replace(/^\//, '');
 
+  // Cloud-only commands are hidden from autocomplete outside cloud sessions,
+  // but prefix-typed input (e.g. `/d` → /disconnect) still resolves them —
+  // refuse here so they can't fire against a local session.
+  if (cmd.meta?.cloudOnly && !ctx.cloudSessionActive) {
+    return;
+  }
+
   // KAS intercept: in KAS mode, registered handlers own the command flow
   // and skip the V2 dispatcher pipeline entirely.
   if (ctx.agentEngine === 'kas' && isKasCommand(cmd)) {

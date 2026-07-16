@@ -95,6 +95,7 @@ export const useCommandActions = () =>
       setCommandShadowText: state.setCommandShadowText,
       clearCommandInput: state.clearCommandInput,
       executeCommandWithArg: state.executeCommandWithArg,
+      resumeSession: state.resumeSession,
     }))
   );
 
@@ -175,6 +176,13 @@ export const useUIState = () =>
       showHooksPanel: state.showHooksPanel,
       showRepoPicker: state.showRepoPicker,
       repoPickerResources: state.repoPickerResources,
+      attachedRepos: state.attachedRepos,
+      cloudProviderChecked: state.cloudProviderChecked,
+      showSourceProviderGate: state.showSourceProviderGate,
+      sourceProviderSetupUrl: state.sourceProviderSetupUrl,
+      showSessionPicker: state.showSessionPicker,
+      sessionPickerRows: state.sessionPickerRows,
+      sessionPickerTitle: state.sessionPickerTitle,
       showKeybindingsPanel: state.showKeybindingsPanel,
       showDisplaySettingsPanel: state.showDisplaySettingsPanel,
       showThemePanel: state.showThemePanel,
@@ -216,6 +224,9 @@ export const useUIActions = () =>
       setShowHooksPanel: state.setShowHooksPanel,
       setShowRepoPicker: state.setShowRepoPicker,
       submitRepoPicker: state.submitRepoPicker,
+      setShowSourceProviderGate: state.setShowSourceProviderGate,
+      retrySourceProviderConnection: state.retrySourceProviderConnection,
+      setShowSessionPicker: state.setShowSessionPicker,
       setShowKeybindingsPanel: state.setShowKeybindingsPanel,
       setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
       setShowThemePanel: state.setShowThemePanel,

@@ -105,3 +105,55 @@ export function droppedReposFromWarnings(warnings: string[]): Set<string> {
       .filter((r): r is string => !!r)
   );
 }
+
+/** The slice of a turn's tool invocations the reconciler inspects. */
+export interface RepoTurnTool {
+  /** Tool input (command text / JSON args) — where a repo would be named. */
+  content: string;
+  status?: 'success' | 'error';
+}
+
+/**
+ * Settle an optimistic picker selection against the turn's per-tool outcomes.
+ *
+ * A repo's operation is judged failed when some errored tool invocation
+ * references it and no successful one does: a failed clone drops the repo
+ * from the selection, a failed removal restores it (appended in their prior
+ * order). Repos without failure evidence keep their optimistic state — the
+ * turn is a natural-language instruction, so an unmentioned repo is not
+ * evidence either way, and over-dropping would hide work that did happen.
+ * Returns the input `selected` array unchanged when nothing needs to move.
+ */
+export function reconcileRepoSelection(
+  selected: string[],
+  added: string[],
+  removed: string[],
+  turnTools: RepoTurnTool[]
+): string[] {
+  const failedTools = turnTools.filter((t) => t.status === 'error');
+  const succeededTools = turnTools.filter((t) => t.status === 'success');
+  if (failedTools.length === 0) return selected;
+  const opFailed = (repo: string): boolean =>
+    failedTools.some((t) => toolMentionsRepo(t.content, repo)) &&
+    !succeededTools.some((t) => toolMentionsRepo(t.content, repo));
+  const droppedAdds = new Set(added.filter(opFailed));
+  const restoredRemovals = removed.filter(opFailed);
+  if (droppedAdds.size === 0 && restoredRemovals.length === 0) return selected;
+  return [
+    ...selected.filter((repo) => !droppedAdds.has(repo)),
+    ...restoredRemovals,
+  ];
+}
+
+/**
+ * Whether a tool invocation references `owner/name`. Clone commands carry the
+ * full slug inside the URL; removals typically name only the final path
+ * segment, so that segment is also matched on its own (delimited, to keep
+ * `app` from matching `my-app`).
+ */
+function toolMentionsRepo(content: string, repo: string): boolean {
+  if (content.includes(repo)) return true;
+  const name = repo.split('/').pop() ?? repo;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\w-])${escaped}([^\\w-]|$)`).test(content);
+}

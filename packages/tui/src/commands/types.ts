@@ -15,6 +15,7 @@ import type {
   SteeringEntry,
 } from '../types/commands.js';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
+import type { SessionPickerRow } from '../components/ui/SessionPickerPanel.js';
 import type {
   AgentEntry,
   EffortEntry,
@@ -177,6 +178,22 @@ export interface CommandContext {
     show: boolean,
     resources?: SourceProviderResource[]
   ) => void;
+  /** Show/hide the `/sessions` picker with merged local/cloud rows.
+   *  `invokedAs` echoes the typed command (`/chat` or `/sessions`) as the title. */
+  setShowSessionPicker: (
+    show: boolean,
+    rows?: SessionPickerRow[],
+    invokedAs?: string
+  ) => void;
+  /** Clear the per-session cloud scope (bound repo/branch/attached set) when
+   *  switching sessions, so the footer never shows the previous sandbox. */
+  resetCloudSessionScope: () => void;
+  /** Snapshot the leaving session's cloud scope so switching back restores it. */
+  stashCloudSessionScope: (sessionId: string | null | undefined) => void;
+  /** Restore a stashed cloud scope; returns whether one was applied. */
+  restoreCloudSessionScope: (sessionId: string | null | undefined) => boolean;
+  /** Sync the surface's cloud/local mode to the active session's placement. */
+  setCloudSessionActive: (active: boolean) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
   setShowThemePanel: (show: boolean) => void;
