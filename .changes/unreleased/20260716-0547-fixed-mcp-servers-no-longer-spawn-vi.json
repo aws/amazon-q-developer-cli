@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP servers no longer spawn visible console windows on Windows"
+}

@@ -116,6 +116,9 @@ impl McpService {
                 let cmd = {
                     let cmd_str = cmd.to_string();
                     Command::new("cmd.exe").configure(|cmd| {
+                        // CREATE_NO_WINDOW: stop each stdio MCP server from spawning a visible console window on
+                        // Windows.
+                        cmd.creation_flags(0x08000000);
                         let mut cmd_args = vec!["/C".to_string(), cmd_str.clone()];
                         cmd_args.extend(config.args.iter().cloned());
                         // Apply shell env first, then config env, so config takes precedence
