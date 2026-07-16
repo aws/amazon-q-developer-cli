@@ -154,29 +154,47 @@ jobs:
           SMOKE_ENGINE: ${{ matrix.engine }}
         shell: bash
         run: |
-          mkdir -p ${{ github.workspace }}/.smoke-frames
-          kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
-            "Run all scenarios. Engine: ${{ matrix.engine }}. If engine is 'kas', start Knight Rider with --kas flag." 2>&1 | tee ${{ github.workspace }}/.smoke-frames/session.log || true
+          mkdir -p "$SMOKE_OUTPUT_DIR"
+          prompt="Run all scenarios. Engine: ${{ matrix.engine }}. Use the smoke prompt's exact Knight Rider command."
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # A long-lived child can retain the workflow pipe on Windows after the agent finishes.
+            kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
+              "$prompt" > "$SMOKE_OUTPUT_DIR/session.log" 2>&1 || true
+            cat "$SMOKE_OUTPUT_DIR/session.log"
+          else
+            kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
+              "$prompt" 2>&1 | tee "$SMOKE_OUTPUT_DIR/session.log" || true
+          fi
+
+      - name: Stop Knight Rider (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: bash scripts/knight-rider.sh stop || true
 
       - name: Collect evidence frames
         if: always()
         shell: bash
         run: |
           FRAMES_DIR="${{ github.workspace }}/.smoke-frames"
+          KR_ROOT="${{ github.workspace }}/packages/tui/e2e_tests/test-outputs"
           mkdir -p "$FRAMES_DIR"
-          # If agent didn't write to .smoke-frames, copy from Knight Rider's default output
-          if [ -z "$(find "$FRAMES_DIR" -name '*.html' 2>/dev/null)" ]; then
-            KR_DIR=$(find ${{ github.workspace }}/packages/tui/e2e_tests/test-outputs -maxdepth 1 -name "knight-rider-*" -type d 2>/dev/null | sort -r | head -1)
+          # If agent didn't write to .smoke-frames, copy from Knight Rider's default output.
+          if ! find "$FRAMES_DIR" -name '*.html' -print -quit 2>/dev/null | grep -q .; then
+            KR_DIR=""
+            if [ -d "$KR_ROOT" ]; then
+              KR_DIR=$(find "$KR_ROOT" -maxdepth 1 -name 'knight-rider-*' -type d 2>/dev/null | sort -r | head -1 || true)
+            fi
             if [ -n "$KR_DIR" ] && [ -d "$KR_DIR" ]; then
               echo "Copying frames from $KR_DIR to $FRAMES_DIR"
-              cp -r "$KR_DIR"/* "$FRAMES_DIR"/ 2>/dev/null || true
+              cp -r "$KR_DIR"/. "$FRAMES_DIR"/ 2>/dev/null || true
             fi
           fi
           # Ensure _summary.md exists for dashboard rendering
           if [ -f "$FRAMES_DIR/summary-results.md" ]; then
             cp "$FRAMES_DIR/summary-results.md" "$FRAMES_DIR/_summary.md"
           fi
-          echo "Frame count: $(find "$FRAMES_DIR" -name '*.html' 2>/dev/null | wc -l)"
+          frames=$(find "$FRAMES_DIR" -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
+          echo "Frame count: $frames"
 
       - name: Sync evidence to S3
         if: always()

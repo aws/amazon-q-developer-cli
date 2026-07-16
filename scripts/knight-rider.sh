@@ -19,12 +19,19 @@ KAS=false
 BOOT_TIMEOUT=30
 KILL_TIMEOUT=10
 RUN_TIMEOUT=2700
+WINDOWS=false
+if [ "${RUNNER_OS:-}" = "Windows" ] || [ "${OS:-}" = "Windows_NT" ]; then
+  WINDOWS=true
+fi
 
 # Parse args: first positional is action, rest are flags
 ACTION="${1:-status}"
 shift || true
 REPO_ROOT="$HOME/workplace/kiro-cli-review"
-OUT_DIR=""
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  REPO_ROOT="$(pwd)"
+fi
+OUT_DIR="${SMOKE_OUTPUT_DIR:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir) REPO_ROOT="$2"; shift 2 ;;
@@ -34,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+[ "${SMOKE_ENGINE:-}" = "kas" ] && KAS=true
 TUI_DIR="$REPO_ROOT/packages/tui"
 
 # Derive per-port file paths so multiple instances can coexist
@@ -44,7 +52,9 @@ PID_FILE="/tmp/knight-rider-${PORT}.pid"
 # Portable timeout: use GNU timeout if available, otherwise run without limit
 _timeout() {
   local secs="$1"; shift
-  if command -v timeout &>/dev/null; then
+  if [ "$WINDOWS" = "true" ]; then
+    "$@"
+  elif command -v timeout &>/dev/null; then
     timeout "$secs" "$@"
   else
     "$@"
@@ -79,8 +89,29 @@ stop() {
   if [ -f "$PID_FILE" ]; then
     local pid
     pid=$(cat "$PID_FILE")
-    kill "$pid" 2>/dev/null && echo "  Killed PID $pid (from pid file)" || true
+    if [ "$WINDOWS" = "true" ]; then
+      taskkill.exe //PID "$pid" //T //F >/dev/null 2>&1 && echo "  Killed PID $pid (from pid file)" || true
+    else
+      kill "$pid" 2>/dev/null && echo "  Killed PID $pid (from pid file)" || true
+    fi
     rm -f "$PID_FILE"
+  fi
+  if [ "$WINDOWS" = "true" ]; then
+    # Git Bash may report an MSYS PID that taskkill.exe cannot use. Fall back to
+    # the native Windows PID listening on Knight Rider's configured port.
+    local port_pids
+    port_pids=$(powershell.exe -NoProfile -NonInteractive -Command \
+      "Get-NetTCPConnection -LocalPort $PORT -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique" \
+      2>/dev/null | tr -d '\r' || true)
+    if [ -n "$port_pids" ]; then
+      while IFS= read -r port_pid; do
+        [ -z "$port_pid" ] && continue
+        taskkill.exe //PID "$port_pid" //T //F >/dev/null 2>&1 && echo "  Killed PID $port_pid (port $PORT listener)" || true
+      done <<< "$port_pids"
+    fi
+    sleep 1
+    echo "Stopped."
+    return
   fi
   local pids
   pids=$(_timeout "$KILL_TIMEOUT" lsof -ti:$PORT 2>/dev/null || true)
@@ -98,19 +129,32 @@ start() {
     echo "❌ TUI directory not found: $TUI_DIR"
     exit 1
   fi
-  if [ ! -f "$REPO_ROOT/target/debug/chat_cli" ]; then
-    echo "⚠️  No Rust binary at target/debug/chat_cli — building..."
+  local chat_cli_bin="$REPO_ROOT/target/debug/chat_cli"
+  [ "$WINDOWS" = "true" ] && chat_cli_bin="${chat_cli_bin}.exe"
+  if [ ! -f "$chat_cli_bin" ]; then
+    echo "⚠️  No Rust binary at $chat_cli_bin — building..."
     (cd "$REPO_ROOT" && _timeout 120 cargo build -p chat_cli) || { echo "❌ cargo build failed"; exit 1; }
   fi
+  export KIRO_CHAT_CLI_BIN="$chat_cli_bin"
   echo "Cleaning up orphans..."
   stop 2>/dev/null || true
   echo "Starting Knight Rider (max ${RUN_TIMEOUT}s lifetime)..."
   echo "  Repo: $REPO_ROOT"
   cd "$TUI_DIR"
-  local kr_args="knight-rider --port $PORT"
-  [ -n "$OUT_DIR" ] && kr_args="$kr_args --out $OUT_DIR" && echo "  Out: $OUT_DIR"
-  [ "$KAS" = "true" ] && kr_args="$kr_args --kas" && echo "  Engine: KAS"
-  _timeout "$RUN_TIMEOUT" bun run $kr_args > "$LOG" 2>&1 &
+  local kr_args=(knight-rider --port "$PORT")
+  if [ -n "$OUT_DIR" ]; then
+    kr_args+=(--out "$OUT_DIR")
+    echo "  Out: $OUT_DIR"
+  fi
+  if [ "$KAS" = "true" ]; then
+    kr_args+=(--kas)
+    echo "  Engine: KAS"
+  fi
+  if [ "$WINDOWS" = "true" ]; then
+    bun run "${kr_args[@]}" > "$LOG" 2>&1 &
+  else
+    _timeout "$RUN_TIMEOUT" bun run "${kr_args[@]}" > "$LOG" 2>&1 &
+  fi
   local kr_pid=$!
   echo "$kr_pid" > "$PID_FILE"
   echo "  PID: $kr_pid"

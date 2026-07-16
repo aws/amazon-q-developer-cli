@@ -42,25 +42,19 @@ that scenario and log it as: `⏭️ <id>: skipped (command not implemented)`
 NEVER run raw `nohup bun run knight-rider` — it WILL hang without timeout guards.
 
 ```bash
-# Default (Rust ACP engine)
-bash scripts/knight-rider.sh start --dir "$(pwd)" --out "${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}"
-
-# KAS engine (when SMOKE_ENGINE=kas)
-bash scripts/knight-rider.sh start --dir "$(pwd)" --out "${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}" --kas
+bash scripts/knight-rider.sh start
 ```
 
-**Engine selection**: Check the `SMOKE_ENGINE` env var. If it equals `kas`, add `--kas` to
-the start command. This launches Knight Rider with the KAS TypeScript agent engine instead
-of the default Rust ACP backend.
+In CI, the wrapper reads the current checkout, `SMOKE_OUTPUT_DIR`, and `SMOKE_ENGINE` from
+the environment. Use the command exactly as shown on every platform; do not add `--dir`, `--out`,
+or `--kas` in CI.
 
-The script handles: killing stale instances, timeout guards (30s boot, 5min lifetime),
-building the Rust binary if missing, and polling for readiness. If it exits non-zero,
-Knight Rider failed to boot — check `/tmp/knight-rider.log` and report the failure.
+The script handles: engine selection, the evidence output directory, killing stale instances,
+a 30s boot guard, building the Rust binary if missing, and polling for readiness. Unix process
+lifetime is bounded to 45 minutes; Windows is bounded by the workflow step timeout. If startup
+exits non-zero, check `/tmp/knight-rider-3001.log` and report the failure.
 
 **If the script fails, do NOT fall back to manual startup.** Report the error and stop.
-
-The `--out` flag is critical — without it, frames go to an auto-generated
-directory that the workflow can't find for S3 upload.
 
 ## Shell Helpers
 
