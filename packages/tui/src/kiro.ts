@@ -973,6 +973,30 @@ export class Kiro {
   }
 
   /**
+   * Whether the active session is actually running on a cloud sandbox — true only for
+   * a genuine cloud-sandbox session (not a `--cloud` that degraded to local).
+   * Feature-detected: non-KAS clients don't host it, so this returns false.
+   */
+  isCloudSessionActive(): boolean {
+    const c = this.sessionClient as
+      | { isCloudSessionActive?: () => boolean }
+      | undefined;
+    return c?.isCloudSessionActive?.() ?? false;
+  }
+
+  /**
+   * Advisory warnings from the last `session/new` (KAS `_meta.kiro.warnings`),
+   * e.g. a `--repo` KAS dropped because no connected provider owns it.
+   * Empty for non-KAS clients or a clean bind.
+   */
+  getSessionNewWarnings(): string[] {
+    const c = this.sessionClient as
+      | { sessionNewWarnings?: string[] }
+      | undefined;
+    return c?.sessionNewWarnings ?? [];
+  }
+
+  /**
    * Returns the source-provider surface when the active client hosts it,
    * else a null source whose calls resolve `undefined`.
    */
@@ -992,18 +1016,6 @@ export class Kiro {
       listSourceProviders: async () => undefined,
       listSourceProviderResources: async () => undefined,
     };
-  }
-
-  /**
-   * Whether the active session is actually running on a cloud sandbox — true only for
-   * a genuine cloud-sandbox session (not a `--cloud` that degraded to local).
-   * Feature-detected: non-KAS clients don't host it, so this returns false.
-   */
-  isCloudSessionActive(): boolean {
-    const c = this.sessionClient as
-      | { isCloudSessionActive?: () => boolean }
-      | undefined;
-    return c?.isCloudSessionActive?.() ?? false;
   }
 
   async setSetting(key: string, value: unknown): Promise<void> {
@@ -1038,7 +1050,8 @@ export class Kiro {
 
   async loadSession(
     sessionId: string,
-    onHistoryEvent?: (event: AgentStreamEvent) => void
+    onHistoryEvent?: (event: AgentStreamEvent) => void,
+    options?: { source?: 'local' | 'remote' }
   ): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
@@ -1055,7 +1068,7 @@ export class Kiro {
       : undefined;
     try {
       logger.debug('[kiro] calling loadSession', { sessionId });
-      const result = await this.sessionClient.loadSession(sessionId);
+      const result = await this.sessionClient.loadSession(sessionId, options);
       logger.debug('[kiro] loadSession returned', { sessionId });
       // Only terminate the previous session after successful load
       if (previousSessionId) {

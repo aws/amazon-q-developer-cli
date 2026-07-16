@@ -22,7 +22,6 @@ import { Settings } from '../constants/settings';
 import { maybeWrapStreamWithRecorder } from '../acp-recorder';
 import { createGetAccessTokenCapability } from '../auth/acp-auth-callback';
 import { createCopyUrlToClipboardCapability } from '../capabilities/copy-url-to-clipboard';
-import { createFrontendToolCallCapability } from '../capabilities/frontend-tool-call';
 import { createSecretStorageCapabilities } from '../capabilities/secret-storage';
 import { spawn } from 'node:child_process';
 import type {
@@ -30,9 +29,9 @@ import type {
   ListSessionsResponse,
   ExecutionTarget,
   KiroAgentCapabilities,
+  SessionsChangedNotification,
   KasContextShowResponse,
   KasContextMutationResponse,
-  SessionsChangedNotification,
 } from '../types/session-client';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type {
@@ -58,6 +57,8 @@ import type {
   ToolInfo,
 } from '../stores/app-store';
 import { parseToolsDidChange } from '../utils/kas-tools';
+import { extractRpcErrorMessage } from '../utils/error-handling';
+import { openUrlInBrowser } from '../utils/browser';
 import { getCliVersion } from '../utils/version';
 import { getKasCommands } from '../kas-commands';
 import { features } from '../features';
@@ -66,8 +67,9 @@ import {
   modeFromId,
   recordTuiContextUsage,
   recordTuiModeActive,
-  recordTuiModelInvocation,
   recordTuiCloudSession,
+  recordTuiCloudSessionReady,
+  recordTuiModelInvocation,
   recordTuiSessionStarted,
   recordTuiTokensConsumed,
   recordTuiTurnOutcome,
@@ -314,6 +316,22 @@ export class KasAcpClient extends BaseAcpClient {
   private startedCloudSession = false;
 
   /**
+   * Advisory warnings from the last `session/new` (`_meta.kiro.warnings`),
+   * e.g. a requested repository dropped because no connected provider owns
+   * it. Empty when the session bound cleanly; cleared on session load.
+   */
+  sessionNewWarnings: string[] = [];
+
+  /**
+   * Cloud provisioning telemetry: start time is the latency baseline; the two
+   * emitted-flags make each outcome fire at most once. Inert without a cloud
+   * session (dark-safe).
+   */
+  private cloudSessionStartMs?: number;
+  private cloudReadyEmitted = false;
+  private cloudProvisionFailedEmitted = false;
+
+  /**
    * Repository selector(s) to bind on `session/new` for a cloud session, from
    * the `--repo` flag. Sent as `_meta.kiro.repositories` when a cloud-sandbox
    * placement is advertised; otherwise inert. With no `--repo` this is undefined
@@ -380,10 +398,7 @@ export class KasAcpClient extends BaseAcpClient {
           version: this.version,
           _meta: KAS_CLIENT_INFO_META,
         },
-        capabilities: [
-          createGetAccessTokenCapability(),
-          createFrontendToolCallCapability(),
-        ],
+        capabilities: [createGetAccessTokenCapability()],
       });
       return;
     }
@@ -467,7 +482,6 @@ export class KasAcpClient extends BaseAcpClient {
       capabilities: [
         createGetAccessTokenCapability(),
         createCopyUrlToClipboardCapability(),
-        createFrontendToolCallCapability(),
         ...createSecretStorageCapabilities(),
       ],
       clientMeta: {
@@ -1247,9 +1261,41 @@ export class KasAcpClient extends BaseAcpClient {
     // Forward roster deltas as stream events; the app store owns the roster
     // state and the derived cloud status. Dark-safe: today's KAS pushes none.
     this.kiroClient.onExtNotification('_kiro/sessions/changed', (params) => {
+      const delta = params as unknown as SessionsChangedNotification;
+      // Cloud provision outcome (once per session, cloud-only): a `failed`
+      // status is a provisioning failure; the first live status is `ready`
+      // and closes the `started` → ready latency histogram.
+      if (this.startedCloudSession) {
+        for (const up of delta.upserted ?? []) {
+          if (up?.sessionId !== this.sessionId || !up.status) continue;
+          if (up.status === 'failed') {
+            if (!this.cloudProvisionFailedEmitted) {
+              this.cloudProvisionFailedEmitted = true;
+              recordTuiCloudSession({ event: 'provision_failed' });
+            }
+          } else if (
+            !this.cloudReadyEmitted &&
+            // Only a session THIS process provisioned has a start baseline; a
+            // reattach leaves `cloudSessionStartMs` unset, so its later status
+            // deltas must not fire a spurious zero-duration `ready`.
+            this.cloudSessionStartMs !== undefined &&
+            (up.status === 'idle' ||
+              up.status === 'in_progress' ||
+              up.status === 'waiting_on_user' ||
+              up.status === 'completed')
+          ) {
+            this.cloudReadyEmitted = true;
+            recordTuiCloudSessionReady({
+              durationSeconds: this.cloudSessionStartMs
+                ? (Date.now() - this.cloudSessionStartMs) / 1000
+                : 0,
+            });
+          }
+        }
+      }
       this.broadcastStreamEvent({
         type: AgentEventType.SessionRosterDelta,
-        delta: params as unknown as SessionsChangedNotification,
+        delta,
       });
     });
 
@@ -1349,6 +1395,7 @@ export class KasAcpClient extends BaseAcpClient {
     const intendedCloudSandbox =
       (kiroMeta.executionTarget as ExecutionTarget | undefined)?.kind ===
       'cloud-sandbox';
+    this.startedCloudSession = intendedCloudSandbox;
     if (intendedCloudSandbox) {
       if (this.kiroCapabilities.sessionSources?.includes('remote')) {
         kiroMeta.sessionSource = 'remote';
@@ -1377,16 +1424,29 @@ export class KasAcpClient extends BaseAcpClient {
         }
         throw err;
       });
-    // Record whether the session was actually placed on a cloud sandbox so
-    // /disconnect / exit can surface the reattach hint only for a genuine
-    // cloud session.
-    this.startedCloudSession = intendedCloudSandbox;
-    if (this.startedCloudSession) {
+    if (intendedCloudSandbox) {
+      this.cloudSessionStartMs = Date.now();
+      this.cloudReadyEmitted = false;
+      this.cloudProvisionFailedEmitted = false;
       recordTuiCloudSession({ event: 'started' });
     }
     const sid = r.sessionId;
     this.sessionId = sid;
     logger.debug('KAS session created', { sessionId: sid });
+
+    // KAS validates each requested repository against the FULL provider
+    // catalog server-side and reports the ones it dropped via
+    // `_meta.kiro.warnings` (e.g. `repository "x" was not found among your
+    // connected source providers`). This is the authoritative bind outcome —
+    // expose it so the UI can warn AND un-claim the repo from the footer.
+    const newWarnings = (r as { _meta?: { kiro?: { warnings?: unknown } } })
+      ._meta?.kiro?.warnings;
+    this.sessionNewWarnings = Array.isArray(newWarnings)
+      ? newWarnings.filter((w): w is string => typeof w === 'string')
+      : [];
+    if (this.sessionNewWarnings.length > 0) {
+      logger.warn('[kas] session/new warnings:', this.sessionNewWarnings);
+    }
 
     // Register BEFORE any async work to avoid race condition
     this.wireSessionListeners(sid);
@@ -1428,47 +1488,82 @@ export class KasAcpClient extends BaseAcpClient {
     return { sessionId: sid, ...selections };
   }
 
-  async loadSession(sessionId: string): Promise<SessionResult> {
+  async loadSession(
+    sessionId: string,
+    options?: { source?: 'local' | 'remote' }
+  ): Promise<SessionResult> {
     const previousSessionId = this.sessionId;
     this.sessionId = sessionId;
+    // A loaded session has no create-time bind warnings.
+    this.sessionNewWarnings = [];
 
     // Register BEFORE loadSession to capture history replay events
     this.wireSessionListeners(sessionId);
 
-    // A resume may target a session in the remote store, so route the load across
-    // both stores via `_meta.kiro.sessionSource:'all'` — 'all' resolves the id in
-    // whichever store holds it, and the agent tags the origin on `_meta.kiro.source`.
-    // Gated on the remote-store capability, so a KAS that advertises no remote store
-    // gets a byte-identical `session/load` with `_meta` omitted. Remove the gate
-    // check when the remote store is always advertised.
-    const loadParams: acp.LoadSessionRequest = {
-      sessionId,
-      cwd: process.cwd(),
-      mcpServers: [],
-    };
-    if (this.kiroCapabilities.sessionSources?.includes('remote')) {
-      loadParams._meta = { kiro: { sessionSource: 'all' } };
-    }
-    const r = await this.kiroClient.loadSession(loadParams).catch((err) => {
-      this.sessionId = previousSessionId;
-      throw err;
-    });
+    // session/load acts on ONE store (KAS rejects 'all' here). An explicit
+    // source wins; else a cloud placement starts remote; else local first
+    // with a remote retry when the local store reports not-found.
+    const remoteCapable =
+      this.kiroCapabilities.sessionSources?.includes('remote') ?? false;
+    const loadFrom = (source?: 'remote') =>
+      this.kiroClient.loadSession({
+        sessionId,
+        cwd: process.cwd(),
+        mcpServers: [],
+        ...(source && { _meta: { kiro: { sessionSource: source } } }),
+      });
+    const explicit = options?.source;
+    const startRemote =
+      remoteCapable &&
+      (explicit === 'remote' ||
+        (!explicit && this.executionTarget?.kind === 'cloud-sandbox'));
+    const retryRemoteOnMiss = remoteCapable && !explicit && !startRemote;
+    const r = await loadFrom(startRemote ? 'remote' : undefined)
+      .catch((err) => {
+        // Retry against the remote store only for a not-found: any other
+        // failure (auth, transport) must surface as-is, not as a confusing
+        // remote miss.
+        const msg = extractRpcErrorMessage(err, '');
+        if (!retryRemoteOnMiss || !/not found/i.test(msg)) throw err;
+        logger.debug(
+          '[acp-client] local session/load missed; retrying remote store:',
+          err
+        );
+        return loadFrom('remote');
+      })
+      .catch((err) => {
+        this.sessionId = previousSessionId;
+        throw err;
+      });
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',
       sessionId
     );
 
-    // A resumed session KAS tags as remote-sourced is a still-running cloud
-    // session the CLI just reattached to. The origin rides flat on the typed
-    // load-response meta (`_meta.source`, absent == local), populated only
-    // when the remote store was queried above.
-    const resumedSource = r._meta?.source;
-    if (resumedSource === 'remote') {
-      // A reattach IS an active cloud session: without this flag every cloud
-      // affordance keyed on isCloudSessionActive() (quit prompt, detach
-      // notice) would stay dead for the rest of the session.
+    // A cloud placement is authoritative from `executionTarget` even when the
+    // load resolved from a local cache (where `source` reads local). These
+    // fields may sit at the `_meta` top level or under `_meta.kiro`; read both.
+    type LoadMetaFields = {
+      source?: unknown;
+      executionTarget?: { kind?: unknown };
+    };
+    const rawMeta = (
+      r as { _meta?: LoadMetaFields & { kiro?: LoadMetaFields } }
+    )._meta;
+    const loadMeta: LoadMetaFields | undefined = rawMeta?.kiro ?? rawMeta;
+    const isCloudSession =
+      loadMeta?.executionTarget?.kind === 'cloud-sandbox' ||
+      loadMeta?.source === 'remote';
+    if (isCloudSession) {
+      // A resumed cloud session lights the cloud footer/commands
+      // (isCloudSessionActive), just as a fresh cloud `newSession` does.
       this.startedCloudSession = true;
       recordTuiCloudSession({ event: 'reattached' });
+    } else {
+      // The active session IS local: the whole surface must read local (footer,
+      // cloud-only commands), even when the process was launched `--cloud` or
+      // the previous session was remote. Mode follows the session.
+      this.startedCloudSession = false;
     }
 
     const configOptions = (r as { configOptions?: unknown }).configOptions;
@@ -2439,15 +2534,27 @@ export class KasAcpClient extends BaseAcpClient {
     if (!this.isSourceProvidersMethodAvailable('_kiro/sourceProviders/list')) {
       return undefined;
     }
-    try {
-      return await this.kiroClient.sendExtMethod(
-        '_kiro/sourceProviders/list',
-        {}
-      );
-    } catch (e) {
-      logger.debug('[kas] sourceProviders/list failed:', e);
-      return undefined;
+    // One retry after a short pause: the first call right after the handshake
+    // can race the agent's own token refresh (observed as a transient
+    // UnauthorizedException server-side) — a blip must not disable the picker
+    // and the cloud-entry gate for the whole session.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await this.kiroClient.sendExtMethod(
+          '_kiro/sourceProviders/list',
+          {}
+        );
+      } catch (e) {
+        logger.debug(
+          `[kas] sourceProviders/list failed (attempt ${attempt + 1}):`,
+          e
+        );
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
     }
+    return undefined;
   }
 
   /**
@@ -2691,58 +2798,17 @@ export function resolveFeedbackUrl(kind: string, isInternal: boolean): string {
   return urls[kind] ?? urls.general!;
 }
 
-/** Best-effort WSL detection via the Linux kernel osrelease string. */
-function detectWsl(): boolean {
-  if (process.platform !== 'linux') return false;
-  try {
-    const { readFileSync } = require('fs');
-    const release = readFileSync(
-      '/proc/sys/kernel/osrelease',
-      'utf8'
-    ).toLowerCase();
-    return release.includes('microsoft') || release.includes('wsl');
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Build the argv to open a URL in the default browser, per platform. Windows
- * uses rundll32's URL handler (not cmd `start`, which mangles `&` and treats
- * the URL as a window title); WSL uses wslview to reach the Windows browser.
- * URL stays its own argv element — no shell. Pure for testability.
- */
-export function browserOpenCommand(
-  platform: NodeJS.Platform,
-  url: string,
-  isWsl = false
-): { file: string; args: string[] } {
-  if (platform === 'darwin') return { file: 'open', args: [url] };
-  if (platform === 'win32')
-    return { file: 'rundll32', args: ['url.dll,FileProtocolHandler', url] };
-  if (isWsl) return { file: 'wslview', args: [url] };
-  return { file: 'xdg-open', args: [url] };
-}
-
 function kasFeedback(args?: Record<string, string>): CommandResult {
   const kind = args?.value || 'general';
   const url = resolveFeedbackUrl(kind, features.isInternalUser);
-  try {
-    const { execFileSync } = require('child_process');
-    const { file, args: openArgs } = browserOpenCommand(
-      process.platform,
-      url,
-      detectWsl()
-    );
-    execFileSync(file, openArgs, { stdio: 'ignore' });
+  if (openUrlInBrowser(url)) {
     return { success: true, message: 'Opening in browser...' };
-  } catch {
-    return {
-      success: false,
-      message: `Could not open browser. Copy the URL: ${url}`,
-      data: { url },
-    };
   }
+  return {
+    success: false,
+    message: `Could not open browser. Copy the URL: ${url}`,
+    data: { url },
+  };
 }
 
 /**

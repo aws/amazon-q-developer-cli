@@ -3,6 +3,7 @@ import {
   filterRepoResources,
   toggleRepoSelection,
   formatRepoLastUsed,
+  dedupeRepoResources,
 } from '../repo-multiselect';
 import { UNICODE_GLYPHS } from '../glyphs';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
@@ -66,5 +67,33 @@ describe('formatRepoLastUsed', () => {
     expect(formatRepoLastUsed(ago(3 * 3600))).toBe('3h ago');
     expect(formatRepoLastUsed(ago(2 * 86400))).toBe('2d ago');
     expect(formatRepoLastUsed(ago(14 * 86400))).toBe('2w ago');
+  });
+});
+
+describe('dedupeRepoResources', () => {
+  it('returns an empty list unchanged', () => {
+    expect(dedupeRepoResources([])).toEqual([]);
+  });
+
+  it('keeps the first row for each repeated name and preserves order', () => {
+    const dupes: SourceProviderResource[] = [
+      { providerType: 'GITHUB', name: 'kiro/banana-service' },
+      { providerType: 'GITLAB', name: 'kiro/banana-service' },
+      { providerType: 'GITHUB', name: 'acme/shared-libs' },
+      { providerType: 'GITHUB', name: 'kiro/banana-service' },
+    ];
+    const out = dedupeRepoResources(dupes);
+    expect(out.map((r) => r.name)).toEqual([
+      'kiro/banana-service',
+      'acme/shared-libs',
+    ]);
+    // First sighting wins: the GITHUB row is kept, later GITLAB duplicate dropped.
+    expect(out[0]!.providerType).toBe('GITHUB');
+  });
+
+  it('leaves an already-unique list untouched', () => {
+    expect(dedupeRepoResources(repos).map((r) => r.name)).toEqual(
+      repos.map((r) => r.name)
+    );
   });
 });

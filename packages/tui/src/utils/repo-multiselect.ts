@@ -1,7 +1,22 @@
 /** Pure filter + ordered-selection helpers for the `/repo` picker. */
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import { type Glyphs, UNICODE_GLYPHS } from './glyphs.js';
-import { formatRelativeTime } from './sessions.js';
+
+/**
+ * Drop catalog rows whose `name` repeats an earlier row (first sighting wins).
+ * Providers can return the same repo more than once (e.g. across pages);
+ * selection and attach are keyed by name, so duplicate names are
+ * indistinguishable downstream — one checkbox would light up every copy and
+ * React row keys would collide.
+ */
+export function dedupeRepoResources(
+  resources: SourceProviderResource[]
+): SourceProviderResource[] {
+  const seen = new Set<string>();
+  return resources.filter((r) =>
+    seen.has(r.name) ? false : (seen.add(r.name), true)
+  );
+}
 
 /** Case-insensitive substring filter on repo name (empty query = all). */
 export function filterRepoResources(
@@ -28,15 +43,22 @@ export function toggleRepoSelection(
 }
 
 /**
- * Compact last-used label for a repo row from the resource's `updatedAt`;
- * an em-dash placeholder (glyph-routed for ASCII mode) when unknown.
+ * Compact relative "last used" label (e.g. `3h ago`, `2w ago`, `just now`) for
+ * the picker's column. Falls back to the em-dash glyph when the source omitted
+ * `updatedAt` or it is unparseable, so the column stays aligned.
  */
 export function formatRepoLastUsed(
   updatedAt?: string,
   glyphs: Glyphs = UNICODE_GLYPHS
 ): string {
-  if (!updatedAt || Number.isNaN(new Date(updatedAt).getTime())) {
-    return glyphs.emDash;
-  }
-  return formatRelativeTime(updatedAt, { compact: true });
+  if (!updatedAt) return glyphs.emDash;
+  const then = new Date(updatedAt).getTime();
+  if (Number.isNaN(then)) return glyphs.emDash;
+  const secs = Math.floor((Date.now() - then) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  const days = Math.floor(secs / 86400);
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
 }

@@ -180,6 +180,30 @@ export function formatRelativeTime(
 }
 
 /**
+ * Compact relative age for the columnar session table: `45s`, `12m`,
+ * `3h`, `12d`, `30w`. Weeks are the coarsest unit (matching the mock, which
+ * shows `30w` rather than months/years) so the column stays narrow. Returns `?`
+ * for an unparseable timestamp.
+ */
+export function formatRelativeTimeShort(dateStr: string): string {
+  try {
+    const then = new Date(dateStr).getTime();
+    if (isNaN(then)) return '?';
+    const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d}d`;
+    return `${Math.floor(d / 7)}w`;
+  } catch {
+    return '?';
+  }
+}
+
+/**
  * Format a session entry for display in the picker.
  * The line is truncated to `maxWidth` to prevent line wrapping which
  * breaks the picker's redraw. Callers pass the terminal width; the

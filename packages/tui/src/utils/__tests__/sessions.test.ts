@@ -7,6 +7,7 @@ import {
   getMostRecentSessionId,
   formatRelativeTime,
   formatSessionEntry,
+  formatRelativeTimeShort,
 } from '../sessions.js';
 import type { V2SessionFsEntry } from '../sessions.js';
 
@@ -372,5 +373,26 @@ describe('sessions', () => {
 
       expect(getMostRecentSessionId(cwd)).toBeUndefined();
     });
+  });
+});
+
+describe('formatRelativeTimeShort', () => {
+  const ago = (secs: number) =>
+    new Date(Date.now() - secs * 1000).toISOString();
+
+  it('renders each unit bucket with no "ago" suffix', () => {
+    expect(formatRelativeTimeShort(ago(45))).toBe('45s');
+    expect(formatRelativeTimeShort(ago(12 * 60))).toBe('12m');
+    expect(formatRelativeTimeShort(ago(3 * 3600))).toBe('3h');
+    expect(formatRelativeTimeShort(ago(3 * 86400))).toBe('3d');
+    expect(formatRelativeTimeShort(ago(30 * 7 * 86400))).toBe('30w');
+  });
+
+  it('clamps a future timestamp to 0s rather than a negative value', () => {
+    expect(formatRelativeTimeShort(ago(-100))).toBe('0s');
+  });
+
+  it('returns "?" for an unparseable timestamp', () => {
+    expect(formatRelativeTimeShort('not-a-date')).toBe('?');
   });
 });

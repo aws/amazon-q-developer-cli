@@ -229,6 +229,7 @@ mock.module('../utils/logger', () => ({
 // fns are no-ops, modeFromId/resultFromStatus/tool-call observer stay functional.
 const mockRecordTuiSessionStarted = mock((_a: unknown) => {});
 const mockRecordTuiCloudSession = mock((_a: unknown) => {});
+const mockRecordTuiCloudSessionReady = mock((_a: unknown) => {});
 const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
 const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 mock.module('../utils/tui-telemetry-observer', () => ({
@@ -236,6 +237,8 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   TUI_SCOPE: 'kiro.tui',
   recordTuiSessionStarted: mockRecordTuiSessionStarted,
   recordTuiCloudSession: mockRecordTuiCloudSession,
+  recordTuiCloudSessionReady: mockRecordTuiCloudSessionReady,
+  recordTuiCloudRepoAttach: mock(() => {}),
   recordTuiModeActive: mock(() => {}),
   recordTuiUserTurn: mock(() => {}),
   recordTuiModelInvocation: mock(() => {}),
@@ -301,8 +304,9 @@ afterAll(() => {
 });
 
 // @ts-expect-error — bun-specific query-string import
-const { KasAcpClient, resolveFeedbackUrl, browserOpenCommand } =
+const { KasAcpClient, resolveFeedbackUrl } =
   await import('../acp-client?kas-test');
+const { browserOpenCommand } = await import('../utils/browser');
 
 function freshMocks() {
   mockSpawn.mockClear();
@@ -317,6 +321,7 @@ function freshMocks() {
   mockKiroListSessions.mockClear();
   mockRecordTuiSessionStarted.mockClear();
   mockRecordTuiCloudSession.mockClear();
+  mockRecordTuiCloudSessionReady.mockClear();
   toolStartCalls.length = 0;
   toolFinishCalls.length = 0;
   capturedSessionUpdateHandler = null;
@@ -631,7 +636,27 @@ describe('KasAcpClient', () => {
     expect(result.currentAgent?.name).toBe('default');
   });
 
-  it('routes session/load across both stores (sessionSource:all) when the remote store is advertised', async () => {
+  it('loads from the remote store (sessionSource:remote) for a cloud-sandbox session when advertised', async () => {
+    // session/load takes ONE concrete store (KAS rejects 'all' — list-only):
+    // a cloud session reattaches remote; a local session omits the hint.
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionSources: ['local', 'remote'] } },
+      },
+    });
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.loadSession('maybe-remote-session');
+    const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
+    expect(req?.sessionId).toBe('maybe-remote-session');
+    expect(req?.cwd).toBeDefined();
+    expect(req?._meta?.kiro).toEqual({ sessionSource: 'remote' });
+  });
+
+  it('omits the store hint on session/load for a local session even when the remote store is advertised', async () => {
     mockKiroInitialize.mockResolvedValueOnce({
       protocolVersion: '1.0',
       agentCapabilities: {
@@ -640,11 +665,9 @@ describe('KasAcpClient', () => {
     });
     const client = new KasAcpClient();
     await client.initialize();
-    await client.loadSession('maybe-remote-session');
+    await client.loadSession('local-session');
     const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
-    expect(req?.sessionId).toBe('maybe-remote-session');
-    expect(req?.cwd).toBeDefined();
-    expect(req?._meta?.kiro).toEqual({ sessionSource: 'all' });
+    expect(req?._meta).toBeUndefined();
   });
 
   it('omits _meta.kiro on session/load when KAS advertises no remote store (existing-user path is byte-identical)', async () => {
@@ -653,6 +676,40 @@ describe('KasAcpClient', () => {
     const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
     expect(req?.sessionId).toBe('local-session');
     expect(req?._meta).toBeUndefined();
+  });
+
+  it('retries session/load against the remote store when the local store reports not found', async () => {
+    // Pins the retry to the KAS not-found wording: a local miss falls through
+    // to the remote store, so resuming a running cloud session still works.
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionSources: ['local', 'remote'] } },
+      },
+    });
+    mockKiroLoadSession.mockRejectedValueOnce(new Error('session not found'));
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.loadSession('maybe-remote');
+    expect(mockKiroLoadSession).toHaveBeenCalledTimes(2);
+    const first = mockKiroLoadSession.mock.calls[0]?.[0] as any;
+    const second = mockKiroLoadSession.mock.calls[1]?.[0] as any;
+    expect(first?._meta).toBeUndefined();
+    expect(second?._meta?.kiro).toEqual({ sessionSource: 'remote' });
+  });
+
+  it('does not retry the remote store when the local load fails for another reason', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionSources: ['local', 'remote'] } },
+      },
+    });
+    mockKiroLoadSession.mockRejectedValueOnce(new Error('unauthorized'));
+    const client = new KasAcpClient();
+    await client.initialize();
+    await expect(client.loadSession('sess')).rejects.toThrow('unauthorized');
+    expect(mockKiroLoadSession).toHaveBeenCalledTimes(1);
   });
 
   it('prompt() throws when no session is active', async () => {
@@ -6675,7 +6732,7 @@ describe('cloud executionTarget', () => {
     });
     mockKiroLoadSession.mockResolvedValueOnce({
       configOptions: [],
-      _meta: { source: 'remote' },
+      _meta: { kiro: { source: 'remote' } },
     } as any);
     const client = new KasAcpClient();
     await client.initialize();
@@ -6683,19 +6740,16 @@ describe('cloud executionTarget', () => {
     expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
       event: 'reattached',
     });
-    // A reattach activates the cloud affordances (quit prompt, detach notice).
-    expect(client.isCloudSessionActive()).toBe(true);
   });
 
   it('does NOT emit reattached when resuming a local-sourced session', async () => {
     mockKiroLoadSession.mockResolvedValueOnce({
       configOptions: [],
-      _meta: { source: 'local' },
+      _meta: { kiro: { source: 'local' } },
     } as any);
     const client = new KasAcpClient();
     await client.loadSession('local-session-1');
     expect(mockRecordTuiCloudSession).not.toHaveBeenCalled();
-    expect(client.isCloudSessionActive()).toBe(false);
   });
 
   it('isCloudSessionActive() stays false when --cloud degrades to local (cap not advertised)', async () => {
@@ -6915,12 +6969,27 @@ describe('cloud executionTarget', () => {
     );
   });
 
-  it('listSourceProviders resolves undefined (no throw) when the ext call rejects', async () => {
+  it('listSourceProviders resolves undefined (no throw) when the ext call keeps rejecting', async () => {
     advertiseKiroCaps({ sourceProviders: true, extensionMethods: SP_METHODS });
-    mockKiroSendExtMethod.mockRejectedValueOnce(new Error('kas is down'));
+    mockKiroSendExtMethod
+      .mockRejectedValueOnce(new Error('kas is down'))
+      .mockRejectedValueOnce(new Error('kas is down'));
     const client = new KasAcpClient();
     await client.initialize();
     expect(await client.listSourceProviders()).toBeUndefined();
+  });
+
+  it('listSourceProviders retries once and succeeds after a transient failure', async () => {
+    // The first call can race the agent's token refresh (transient
+    // UnauthorizedException); a single blip must not disable the picker.
+    advertiseKiroCaps({ sourceProviders: true, extensionMethods: SP_METHODS });
+    const providers = { providers: [] };
+    mockKiroSendExtMethod
+      .mockRejectedValueOnce(new Error('Authentication required'))
+      .mockResolvedValueOnce(providers);
+    const client = new KasAcpClient();
+    await client.initialize();
+    expect(await client.listSourceProviders()).toEqual(providers);
   });
 
   it('listSourceProviderResources resolves undefined (no throw) when the ext call rejects', async () => {
@@ -7150,12 +7219,57 @@ describe('KasAcpClient — _kiro/sessions/changed forwarding', () => {
     expect(fwd[0].delta).toEqual(delta);
   });
 
-  it('registers the frontendToolCall and getAccessToken capabilities on the handshake', async () => {
+  it('emits cloud ready when a started session first reports completed', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            sessionSources: ['local', 'remote'],
+            executionTargets: ['cloud-sandbox'],
+          },
+        },
+      },
+    });
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/sessions/changed']({
+      upserted: [{ sessionId: 'kas-session-1', status: 'completed' }],
+    });
+    expect(mockRecordTuiCloudSessionReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not emit cloud ready on a reattached session (no start baseline)', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: { kiro: { sessionSources: ['local', 'remote'] } },
+      },
+    });
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'kas-loaded',
+      _meta: { source: 'remote' },
+      configOptions: [],
+    });
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.loadSession('reattached-id');
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/sessions/changed']({
+      upserted: [{ sessionId: 'reattached-id', status: 'idle' }],
+    });
+    expect(mockRecordTuiCloudSessionReady).not.toHaveBeenCalled();
+  });
+
+  it('registers the getAccessToken capability on the handshake', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     const caps = capturedKiroClientConfig?.capabilities ?? [];
     const names = caps.map((c: any) => c?.name ?? c?.method ?? '').join(',');
-    expect(names).toContain('frontendToolCall');
     expect(names).toContain('getAccessToken');
   });
 });

@@ -31,6 +31,9 @@ const {
   recordTuiModeActive,
   recordTuiSubagentDelegation,
   recordTuiCloudSession,
+  recordTuiCloudSessionReady,
+  recordTuiCloudRepoAttach,
+  repoCountBucket,
   recordTuiProcessHealth,
   modeFromId,
   TuiToolCallObserver,
@@ -703,5 +706,60 @@ describe('recordTuiCloudSession', () => {
       'turned_off',
       'fell_back_local',
     ]);
+  });
+});
+
+describe('recordTuiCloudSessionReady', () => {
+  it('emits the ready counter AND the latency histogram, both engine=v3', () => {
+    recordTuiCloudSessionReady({ durationSeconds: 12.5 }, deps);
+    expect(counterCalls).toHaveLength(1);
+    const c = counterCalls[0]!;
+    expect(c.name).toBe('kiro_cli_cloud_session_total');
+    expect(c.attrs?.['cloud_event']).toBe('ready');
+    expectEngineV3(c);
+
+    expect(histogramCalls).toHaveLength(1);
+    const h = histogramCalls[0]!;
+    expect(h.name).toBe('kiro_cli_cloud_session_ready_seconds');
+    expect(h.value).toBe(12.5);
+    expect(h.bounds).toBeDefined();
+    expectEngineV3(h);
+  });
+
+  it('emits the ready counter but NOT the histogram for a non-positive duration', () => {
+    recordTuiCloudSessionReady({ durationSeconds: 0 }, deps);
+    expect(counterCalls).toHaveLength(1);
+    expect(histogramCalls).toHaveLength(0);
+  });
+});
+
+describe('repoCountBucket', () => {
+  it('buckets counts into the bounded enum', () => {
+    expect(repoCountBucket(0)).toBe('none');
+    expect(repoCountBucket(undefined)).toBe('none');
+    expect(repoCountBucket(1)).toBe('1');
+    expect(repoCountBucket(2)).toBe('2');
+    expect(repoCountBucket(4)).toBe('3_5');
+    expect(repoCountBucket(5)).toBe('3_5');
+    expect(repoCountBucket(9)).toBe('6_plus');
+  });
+});
+
+describe('recordTuiCloudRepoAttach', () => {
+  it('emits opened with repo_count_bucket=none', () => {
+    recordTuiCloudRepoAttach({ event: 'opened' }, deps);
+    const c = counterCalls[0]!;
+    expect(c.name).toBe('kiro_cli_cloud_repo_attach_total');
+    expect(c.attrs?.['repo_attach_event']).toBe('opened');
+    expect(c.attrs?.['repo_count_bucket']).toBe('none');
+    expectEngineV3(c);
+  });
+
+  it('emits submitted with the bucketed repo count', () => {
+    recordTuiCloudRepoAttach({ event: 'submitted', repoCount: 3 }, deps);
+    const c = counterCalls[0]!;
+    expect(c.attrs?.['repo_attach_event']).toBe('submitted');
+    expect(c.attrs?.['repo_count_bucket']).toBe('3_5');
+    expectEngineV3(c);
   });
 });

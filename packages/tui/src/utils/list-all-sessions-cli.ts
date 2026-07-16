@@ -42,6 +42,13 @@ export interface SessionEntry {
    * `executionTarget`; until then it is harmless (absence == local).
    */
   executionTarget?: string;
+  /**
+   * Coarse activity status snapshot (`_meta.kiro.status`): `idle` |
+   * `in_progress` | `waiting_on_user` | `completed` | `failed` | `provisioning`.
+   * Omitted by the binary for rows without one (V1/V2, and V3 rows lacking it).
+   * Drives the picker's state column when a cloud row is present.
+   */
+  status?: string;
 }
 
 /** Result envelope: `ok: true` with entries, or `ok: false` with a message. */
@@ -213,6 +220,7 @@ function parseListing(stdout: string): ListAllSessionsResult {
       ...(typeof entry.executionTarget === 'string'
         ? { executionTarget: entry.executionTarget }
         : {}),
+      ...(typeof entry.status === 'string' ? { status: entry.status } : {}),
     });
   }
   return { ok: true, cwd, sessions };

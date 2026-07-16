@@ -12,6 +12,9 @@ export function formatCloudDetachNotice(
   sessionId: string,
   glyphs: Glyphs = UNICODE_GLYPHS
 ): string {
+  // No resume command here: the regular exit epilogue already prints
+  // `Resume with: kiro-cli --resume-id <id>`, and engine/source resolution
+  // recognizes the id as a cloud session without extra flags.
   return (
     `${glyphs.checkmark} Quit session ${sessionId}\n` +
     `Your work continues while you're away.`
@@ -19,6 +22,16 @@ export function formatCloudDetachNotice(
 }
 
 let detachNoticePrinted = false;
+
+// Unmounts the live TUI before the notice is written. Without this, the
+// stderr write splices into the frame the renderer is still painting (the
+// user sees the notice fused with a rule line / panel hints). Registered by
+// index.tsx once the render instance exists; idempotent unmount, so the
+// process-exit unmount that follows is harmless.
+let beforeNotice: (() => void) | null = null;
+export function setCloudDetachNoticePreamble(fn: () => void): void {
+  beforeNotice = fn;
+}
 
 /**
  * Emit the detach notice exactly once, from whichever exit path fires first
@@ -32,6 +45,7 @@ export function emitCloudDetachNoticeOnce(
   if (detachNoticePrinted || !sessionId) return;
   detachNoticePrinted = true;
   try {
+    beforeNotice?.();
     process.stderr.write(`\n${formatCloudDetachNotice(sessionId)}\n`);
     recordTuiCloudSession({ event: 'detached' });
   } catch {

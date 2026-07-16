@@ -43,6 +43,7 @@ describe('Glyph registry', () => {
       'treeBranch', // ├──
       'wrench', // 🔧 astral emoji (JS length 2)
       'mail', // 📧 astral emoji (JS length 2)
+      'cloud', // ☁️ emoji-presentation (base + VS16, JS length 2)
     ]);
     for (const [key, value] of Object.entries(UNICODE_GLYPHS)) {
       if (multiCharAllowed.has(key)) continue;

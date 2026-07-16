@@ -223,33 +223,34 @@ export function recordTuiSessionStarted(
   );
 }
 
-/**
- * Allowed `cloud_event` lifecycle values the CLI records. The schema's
- * `_other_` overflow bucket is deliberately NOT in this union: it exists for
- * the pipeline's cardinality guard, and callers must record a precise event.
- */
+/** Allowed `cloud_event` lifecycle enum (mirrors the schema catalog type). */
 export type CloudSessionEvent =
   | 'started'
   | 'start_failed'
   | 'reattached'
+  | 'ready'
+  | 'provision_failed'
   | 'detached'
   | 'turned_off'
-  | 'fell_back_local';
+  | 'fell_back_local'
+  | '_other_';
 
 /**
  * A cloud-sandbox session lifecycle event
  * (`kiro_cli_cloud_session_total`): `started` (a cloud-sandbox session was
  * created), `start_failed` (the cloud `session/new` was rejected, so the
  * session never came up — the reliability denominator-mate for `started`),
- * `reattached` (the CLI resumed a still-running cloud session), `detached`
- * (the CLI disconnected but left it running), `turned_off` (the user stopped
- * it via the /quit prompt), or `fell_back_local` (a cloud sandbox was
- * requested but KAS did not advertise the placement, so the session ran
- * locally instead). ORR observability for the dark-shipped cloud-sandbox path
- * — reads zero on released builds (the feature is gated + never active), and
- * lights up only when it ramps on internal/nightly. Always v3 (cloud is
- * KAS-only) but carries `engine` for a uniform label split with the rest of
- * the catalog.
+ * `reattached` (the CLI resumed a still-running cloud session), `ready` (the
+ * sandbox reached a live status after provisioning; paired with the
+ * `kiro_cli_cloud_session_ready_seconds` latency histogram), `provision_failed`
+ * (the sandbox reported a failed activity status), `detached` (the CLI
+ * disconnected but left it running), `turned_off` (the user stopped it via the
+ * /quit prompt), or `fell_back_local` (a cloud sandbox was requested but KAS
+ * did not advertise the placement, so the session ran locally instead). ORR
+ * observability for the dark-shipped cloud-sandbox path — reads zero on
+ * released builds (the feature is gated + never active), and lights up only
+ * when it ramps on internal/nightly. Always v3 (cloud is KAS-only) but carries
+ * `engine` for a uniform label split with the rest of the catalog.
  */
 export function recordTuiCloudSession(
   args: { event: CloudSessionEvent; engine?: Engine },
@@ -260,6 +261,82 @@ export function recordTuiCloudSession(
     'kiro_cli_cloud_session_total',
     1,
     { cloud_event: args.event, engine: args.engine ?? DEFAULT_ENGINE },
+    TUI_SCOPE
+  );
+}
+
+/**
+ * Bucket bounds (seconds) for `kiro_cli_cloud_session_ready_seconds` — how long
+ * a cloud sandbox takes to reach a live status after `started`. Wider than the
+ * turn buckets: provisioning a sandbox is a slower, cold-start operation.
+ */
+const CLOUD_READY_DURATION_BOUNDS = [1, 2, 5, 10, 20, 30, 60, 120, 300];
+
+/**
+ * A cloud sandbox reached a live status after provisioning. Emits both the
+ * `ready` lifecycle counter and the `kiro_cli_cloud_session_ready_seconds`
+ * latency histogram (`started` → first live status). Dark-safe: only the cloud
+ * roster path calls this, which never fires on released builds.
+ */
+export function recordTuiCloudSessionReady(
+  args: { durationSeconds: number; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  const engine = args.engine ?? DEFAULT_ENGINE;
+  counterFn(deps)(
+    'kiro_cli_cloud_session_total',
+    1,
+    { cloud_event: 'ready', engine },
+    TUI_SCOPE
+  );
+  if (args.durationSeconds > 0) {
+    histogramFn(deps)(
+      'kiro_cli_cloud_session_ready_seconds',
+      args.durationSeconds,
+      { engine },
+      TUI_SCOPE,
+      CLOUD_READY_DURATION_BOUNDS
+    );
+  }
+}
+
+/** Allowed `repo_attach_event` funnel enum (mirrors the schema catalog type). */
+export type RepoAttachEvent = 'opened' | 'submitted' | '_other_';
+
+/**
+ * Bucket a repo-selection count into the bounded `repo_count_bucket` enum, so
+ * the raw count never lands as a high-cardinality metric attribute.
+ */
+export function repoCountBucket(n: number | undefined): string {
+  if (!n || n <= 0) return 'none';
+  if (n === 1) return '1';
+  if (n === 2) return '2';
+  if (n <= 5) return '3_5';
+  return '6_plus';
+}
+
+/**
+ * A `/repo` picker funnel event (`kiro_cli_cloud_repo_attach_total`): `opened`
+ * (the cloud-only repo picker was shown) or `submitted` (repos were selected
+ * and bound), the latter carrying a bucketed `repo_count`. Cancel rate is
+ * `opened - submitted`. Dark-safe: the `/repo` command is cloud-only + gated,
+ * so a released user emits none of these.
+ */
+export function recordTuiCloudRepoAttach(
+  args: { event: RepoAttachEvent; repoCount?: number; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_cloud_repo_attach_total',
+    1,
+    {
+      repo_attach_event: args.event,
+      repo_count_bucket:
+        args.event === 'submitted' ? repoCountBucket(args.repoCount) : 'none',
+      engine: args.engine ?? DEFAULT_ENGINE,
+    },
     TUI_SCOPE
   );
 }

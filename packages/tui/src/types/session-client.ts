@@ -106,7 +106,10 @@ export interface SessionClient {
    * @param sessionId - The session ID to load
    * @returns Promise resolving to session info including ID and current model/agent
    */
-  loadSession(sessionId: string): Promise<{
+  loadSession(
+    sessionId: string,
+    options?: { source?: 'local' | 'remote' }
+  ): Promise<{
     sessionId: string;
     currentModel?: { id: string; name: string };
     currentAgent?: { name: string; welcomeMessage?: string };
