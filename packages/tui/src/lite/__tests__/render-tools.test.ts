@@ -1330,6 +1330,77 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     expect(out).toMatch(/\+\s+const a = 2;/);
     expect(out).not.toMatch(/oldStr:|newStr:|command:/);
   });
+
+  // In block mode the inline chip is empty, so the diff must print the path
+  // header itself — otherwise the edited filename appears nowhere.
+  test('block mode: write diff shows the filename via the path header', () => {
+    setDisplay({ toolArgsMode: 'block' });
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-write-path-block',
+          role: 'tool_use',
+          name: 'fs_write',
+          content: JSON.stringify({
+            command: 'str_replace',
+            path: 'src/widget/foo.ts',
+            old_str: 'const a = 1;',
+            new_str: 'const a = 2;',
+          }),
+          isFinished: true,
+        } as any,
+        'kiro_default'
+      )
+    );
+    expect(out).toContain('src/widget/foo.ts');
+    expect(out).toMatch(/\+\s+const a = 2;/);
+  });
+
+  // In inline mode the chip carries the path ("[edit …]"), so the diff must NOT
+  // repeat it in a header (no duplication).
+  test('inline mode: filename comes from the chip, not duplicated in a header', () => {
+    setDisplay({ toolArgsMode: 'inline' });
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-write-path-inline',
+          role: 'tool_use',
+          name: 'fs_write',
+          content: JSON.stringify({
+            command: 'str_replace',
+            path: 'src/widget/foo.ts',
+            old_str: 'const a = 1;',
+            new_str: 'const a = 2;',
+          }),
+          isFinished: true,
+        } as any,
+        'kiro_default'
+      )
+    );
+    expect(out).toContain('foo.ts'); // present via the chip
+    // The path appears exactly once (chip), not again as a diff header row.
+    const occurrences = out.split('foo.ts').length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  // A delete (and empty create / no-op edit) produces an empty diff with no
+  // path row of its own — block mode must still name the file.
+  test('block mode: empty-diff write (delete) still shows the filename', () => {
+    setDisplay({ toolArgsMode: 'block' });
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-write-delete',
+          role: 'tool_use',
+          name: 'fs_write',
+          content: JSON.stringify({ command: 'delete', path: 'src/gone.ts' }),
+          isFinished: true,
+        } as any,
+        'kiro_default'
+      )
+    );
+    expect(out).toContain('src/gone.ts');
+  });
 });
 
 describe('pretty-printed tool output (json envelopes)', () => {

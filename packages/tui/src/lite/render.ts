@@ -1190,11 +1190,12 @@ export function renderWriteToolCall(
   }
 
   const out: string[] = [renderToolCall(info, opts.theme)];
-  // suppressPathHeader: the inline arg chip already shows the path; `path` is
-  // still passed for syntax-highlight language detection.
+  // Suppress the diff's path header only when the inline chip already carries
+  // the path (inline mode); in block/off mode the chip is empty, so the diff
+  // must print the path itself or the filename appears nowhere.
   const diff = renderUnifiedDiff(oldText, newText, {
     path,
-    suppressPathHeader: true,
+    suppressPathHeader: !!info.inlineArg,
     startLine,
     termCols: opts.termCols,
     theme: opts.theme,
@@ -1202,6 +1203,10 @@ export function renderWriteToolCall(
   // Diffs render in full (the payload being reviewed; no safe tail to drop).
   if (diff.length > 0) {
     out.push(...diff);
+  } else if (!info.inlineArg && path) {
+    // Empty diff (delete / empty create / no-op edit) has no path row of its
+    // own — show the filename here so a chip-less mode still names the file.
+    out.push(chalk.dim(`  ${path}`));
   }
   return out.join('\n');
 }
