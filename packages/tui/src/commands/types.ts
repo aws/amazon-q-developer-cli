@@ -77,7 +77,11 @@ export interface CommandContext {
    * in TUI mode it falls back to a transient alert (since classic has a
    * NotificationBar but no equivalent always-visible scrollback target).
    */
-  announceSystem: (message: string, success?: boolean) => void;
+  announceSystem: (
+    message: string,
+    success?: boolean,
+    autoHideMs?: number
+  ) => void;
   /** Set loading message (shows shimmer) */
   setLoadingMessage: (message: string | null) => void;
   /** Set active command (for selection menus) */
@@ -222,8 +226,6 @@ export interface CommandContext {
   clearMessages: () => void;
   /** Reset all messages (full wipe for /chat new) */
   resetMessages: () => void;
-  /** Mark messages at index >= fromIndex as replayed history (cheaper render) */
-  markMessagesFromHistory: (fromIndex: number) => void;
   /** Clear all command UI state (menus, panels) */
   clearUIState: () => void;
   /** Lite-only: signal LiteLayout to wipe scrollback + render cache.
@@ -236,12 +238,8 @@ export interface CommandContext {
     images?: Array<{ base64: string; mimeType: string }>,
     displayContent?: string
   ) => Promise<void>;
-  /** Create a stream event handler for processing agent events into messages.
-   *  Lite passes `{ fromHistory: true }` when replaying a resumed session so
-   *  the handler renders cheaply (see session-load / markMessagesFromHistory). */
-  createStreamEventHandler: (options?: {
-    fromHistory?: boolean;
-  }) => StreamEventHandler;
+  /** Create a stream event handler for processing agent events into messages. */
+  createStreamEventHandler: () => StreamEventHandler;
   /** Update the session ID in the store */
   setSessionId: (id: string | null) => void;
   /** Add a system message to the conversation */

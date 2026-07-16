@@ -87,17 +87,13 @@ export function runSessionLoad(
             true
           );
         }
-        const replayStartIndex = ctx.getMessages().length;
-        const handler = ctx.createStreamEventHandler(
-          isLite ? { fromHistory: true } : undefined
-        );
+        const handler = ctx.createStreamEventHandler();
         for (const e of events) handler(e);
         // TODO: extend `createStreamEventHandler` return type to expose
         // `flush` rather than escaping through `as any`. KAS's
         // `loadExistingSession` has the same cast and both should be
         // cleaned up together.
         (handler as any).flush?.();
-        if (isLite) ctx.markMessagesFromHistory(replayStartIndex);
       }
       // Lite-only: clamp painted history to the most recent rows. The bookmark
       // is a static lower bound — live turns appended later render normally.

@@ -117,7 +117,7 @@ const SHARED: readonly TipDef[] = [
   },
   {
     id: 'goal',
-    text: 'Use /goal <description> to set a persistent goal that guides Kiro across turns.',
+    text: 'Use /goal <description> to set a persistent goal that keeps Kiro aligned across long, multi-turn tasks.',
   },
   {
     id: 'at-file',
@@ -137,19 +137,42 @@ const SHARED: readonly TipDef[] = [
   },
   {
     id: 'rewind',
+    engines: ['kas'], // /rewind is v3-only (v2 uses /checkpoint)
     text: 'Made a wrong turn? Use /rewind to fork the conversation from any earlier point.',
   },
   {
     id: 'paste-image',
-    text: 'Use /paste to attach an image from your clipboard to the conversation.',
+    text: 'Press Ctrl+V or run /paste to attach an image from your clipboard to the conversation.',
   },
   {
     id: 'spec',
+    engines: ['kas'], // /spec is v3-only
     text: 'Type /spec new <name> to create a structured feature spec with requirements and tasks.',
   },
   {
     id: 'plan',
     text: 'Use /plan for structured spec generation mode when you want Kiro to plan before coding.',
+  },
+  {
+    id: 'newline',
+    text: 'Press Shift+Enter or Alt+Enter to insert a newline instead of sending your prompt.',
+  },
+  {
+    id: 'shell-escape',
+    text: 'Start your message with ! to run a shell command without leaving the chat; Ctrl+C cancels it.',
+  },
+  {
+    id: 'reverse-search',
+    text: 'Press Ctrl+R to reverse-search prompt history; press again for older matches, Esc accepts.',
+  },
+  {
+    id: 'crew-monitor',
+    text: 'Press Ctrl+G to open the full-screen monitor of subagent activity; Ctrl+G or q exits.',
+  },
+  {
+    id: 'plan-mode',
+    engines: ['v2'], // Shift+Tab agent-switch is a no-op on kas (v3)
+    text: 'Press Shift+Tab to toggle plan mode; press it again to return to your previous agent.',
   },
 ];
 
@@ -168,7 +191,7 @@ const TUI_ONLY: readonly TipDef[] = [
   },
   {
     id: 'tui-steer',
-    text: 'Type while Kiro is working to steer it mid-turn. Switch to queue mode with Ctrl+S.',
+    text: 'Type while Kiro is working to steer it mid-turn (Ctrl+S switches to queue mode); Ctrl+X opens the tray to edit a queued message.',
   },
 ];
 
@@ -201,7 +224,7 @@ const LITE_ONLY: readonly TipDef[] = [
   },
   {
     id: 'lite-queue-edit',
-    text: 'After queueing a message, ↑ pulls it back into the input to edit; empty + Enter deletes the slot.',
+    text: 'Type while Kiro is working to steer it mid-turn (Ctrl+S switches to queue mode); ↑ pulls a queued message back into the input to edit.',
   },
 ];
 

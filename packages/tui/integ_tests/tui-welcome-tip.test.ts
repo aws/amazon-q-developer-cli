@@ -64,6 +64,11 @@ describe('TUI welcome rotating tip', () => {
       'attach an image from your clipboard',
       'structured feature spec with requirements',
       'structured spec generation mode',
+      'insert a newline instead of sending',
+      'run a shell command without leaving',
+      'reverse-search prompt history',
+      'full-screen monitor of subagent',
+      'toggle plan mode',
     ];
     const shown = KNOWN_TIP_PHRASES.filter((p) => boot.includes(p));
     expect(shown.length).toBeGreaterThanOrEqual(1);

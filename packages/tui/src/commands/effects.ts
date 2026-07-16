@@ -68,6 +68,10 @@ export type EffectHandler = (
 ) => boolean | void | Promise<boolean | void>;
 
 // Symmetric same-text success confirmation: lite → scrollback row, TUI → toast.
+// Reads the LIVE uiMode (getUiMode) so an awaited effect that announces after a
+// surface switch routes to the current surface — unlike announceSystem, which
+// reads the dispatch-time snapshot (load-bearing for callers that flip uiMode
+// themselves then announce the transition, e.g. /tui).
 function confirmAction(ctx: CommandContext, msg: string, ms = 3000): void {
   if (ctx.getUiMode?.() === 'lite') {
     ctx.announceSystem(msg);
@@ -1012,19 +1016,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
 
   showSessionId: (_result, ctx) => {
     const sessionId = ctx.kiro.sessionId ?? 'none';
-    // /session-id prints the ID for the user to copy. Lite drops 'success'
-    // alerts, so it goes to scrollback (scrollable later); TUI keeps the toast.
-    if (ctx.getUiMode?.() === 'lite') {
-      ctx.announceSystem(`Session ID: ${sessionId}`);
-    } else {
-      ctx.showAlert(
-        sessionId !== 'none'
-          ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume-id ${sessionId}`
-          : 'Session ID: none',
-        'success',
-        10000
-      );
-    }
+    const msg =
+      sessionId !== 'none'
+        ? `Session ID: ${sessionId}\nResume with: kiro-cli --resume-id ${sessionId}`
+        : 'Session ID: none';
+    ctx.announceSystem(msg, true, 10000);
     return true;
   },
 

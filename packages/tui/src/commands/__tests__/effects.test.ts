@@ -1219,19 +1219,32 @@ describe('clearMessages effect', () => {
 });
 
 describe('showSessionId effect', () => {
-  it('shows session ID when available', () => {
+  // One announceSystem call renders per-surface; both surfaces get the resume
+  // hint and the 10s read time (announceSystem's TUI toast honors autoHideMs,
+  // lite scrollback ignores it). No uiMode branch in the effect.
+  it('announces ID + resume hint with a 10s TUI read time', () => {
     const ctx = createMockCommandContext({
       kiro: { sessionId: 'abc-123' } as any,
     });
-    (ctx as any).getUiMode = () => 'lite';
     runEffect(sessionIdCmd, { success: true, message: '', data: {} }, ctx, '');
-    // Confirmation goes via announceSystem (not showAlert) so the row lands
-    // in lite scrollback. showAlert(..., 'success') is silently dropped in
-    // lite — see app-store.ts ~3479. The contract for state-changing
-    // success messages is announceSystem; this test pins that.
-    expect(ctx._spies.announceSystem).toHaveBeenCalled();
-    const announceArg = ctx._spies.announceSystem!.mock.calls[0]![0];
-    expect(announceArg).toBe('Session ID: abc-123');
+    expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+      'Session ID: abc-123\nResume with: kiro-cli --resume-id abc-123',
+      true,
+      10000
+    );
+    expect(ctx._spies.showAlert).not.toHaveBeenCalled();
+  });
+
+  it('announces bare "none" when there is no session', () => {
+    const ctx = createMockCommandContext({
+      kiro: { sessionId: undefined } as any,
+    });
+    runEffect(sessionIdCmd, { success: true, message: '', data: {} }, ctx, '');
+    expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+      'Session ID: none',
+      true,
+      10000
+    );
   });
 });
 

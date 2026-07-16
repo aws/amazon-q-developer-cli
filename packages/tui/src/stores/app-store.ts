@@ -947,8 +947,6 @@ interface BaseAppActions {
   // Chat actions
   clearMessages: () => void;
   resetMessages: () => void;
-  /** Mark messages at index >= fromIndex as replayed history (cheaper render) */
-  markMessagesFromHistory: (fromIndex: number) => void;
   /**
    * Queue a message for later. In QUEUE interrupt mode (and pre-init) the
    * content is appended to the local queue / pending-steer buffer; in STEER
@@ -2150,14 +2148,18 @@ function buildCommandContext(
     kasAvailableEfforts: state.kas.availableEfforts,
     showAlert: (message, status, autoHideMs = 3000) =>
       state.showTransientAlert({ message, status, autoHideMs }),
-    announceSystem: (message: string, success: boolean = true) => {
+    announceSystem: (
+      message: string,
+      success: boolean = true,
+      autoHideMs: number = 3000
+    ) => {
       if (state.uiMode === 'lite') {
         addSystemMessage(message, success);
       } else {
         state.showTransientAlert({
           message,
           status: success ? 'success' : 'error',
-          autoHideMs: 3000,
+          autoHideMs,
         });
       }
     },
@@ -2204,7 +2206,6 @@ function buildCommandContext(
     openArtifactView: state.openArtifactView,
     clearMessages: state.clearMessages,
     resetMessages: state.resetMessages,
-    markMessagesFromHistory: state.markMessagesFromHistory,
     bumpLiteScrollbackClear: state.bumpLiteScrollbackClear,
     sendMessage: state.sendMessage,
     createStreamEventHandler: state.createStreamEventHandler,
@@ -4874,18 +4875,6 @@ export const createAppStore = (props: AppStoreProps) => {
         tasks: [],
         activityTrayExpanded: false,
       }));
-    },
-
-    /**
-     * Reserved no-op. Was meant to stamp `fromHistory: true` on replayed rows
-     * (>= fromIndex) after a /chat resume so the lite renderer could pick a
-     * cheaper preset, but the renderer-side consumer was removed and never
-     * re-added. The action + its sole caller (session-load.ts) are kept as a
-     * stable hook so the cheaper-render path can be wired back up without
-     * re-threading the call site; today it does nothing.
-     */
-    markMessagesFromHistory: (_fromIndex: number) => {
-      // intentional no-op — see doc comment above
     },
 
     setSlashCommands: (commands: SlashCommand[]) => {
