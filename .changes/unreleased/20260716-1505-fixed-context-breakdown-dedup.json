@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "`/context` no longer lists the same file multiple times when it is matched by overlapping resource globs or symlinked paths"
+}

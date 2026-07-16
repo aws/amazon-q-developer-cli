@@ -398,6 +398,16 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
     let mut session_items = Vec::new();
     let mut session_total = 0;
 
+    // The loader de-dupes resources by canonicalized path, so a file reached via
+    // overlapping globs, literal duplicates, or symlinked paths is only sent to the
+    // model once. Mirror that here so the breakdown doesn't list (and count) it twice.
+    let mut seen: std::collections::HashSet<(bool, String)> = std::collections::HashSet::new();
+    let mut first_occurrence = |path: &str, is_skill: bool| -> bool {
+        let canonical =
+            std::fs::canonicalize(path).map_or_else(|_| path.to_string(), |p| p.to_string_lossy().to_string());
+        seen.insert((is_skill, canonical))
+    };
+
     for r in resources {
         let path_str = r.as_ref();
         let is_session = snapshot.session_resource_paths.contains(path_str);
@@ -427,6 +437,9 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
                             let file_path_str = file_path.to_string_lossy().to_string();
                             let (tokens, matched, auto_included) = calculate_file_tokens(&file_path_str, is_skill);
                             if matched {
+                                if !first_occurrence(&file_path_str, is_skill) {
+                                    continue;
+                                }
                                 let item = BreakdownItem {
                                     name: file_path_str,
                                     tokens,
@@ -464,6 +477,9 @@ fn calculate_context_files_tokens(snapshot: &AgentSnapshot) -> (usize, Vec<Break
         } else {
             // Regular file path
             let (tokens, matched, auto_included) = calculate_file_tokens(&expanded_path, is_skill);
+            if matched && !first_occurrence(&expanded_path, is_skill) {
+                continue;
+            }
             let item = BreakdownItem {
                 name: expanded_path,
                 tokens,
@@ -798,6 +814,55 @@ mod tests {
             "Ratio should be preserved: expected {}, got {}",
             original_ratio,
             adjusted_ratio
+        );
+    }
+
+    /// The same file referenced as a literal path, via overlapping globs, and
+    /// through a symlinked path must appear only once in the breakdown, since
+    /// the loader only sends it to the model once.
+    #[test]
+    #[cfg(unix)]
+    fn test_breakdown_dedupes_file_matched_by_multiple_resources() {
+        use agent::agent_config::definitions::AgentConfig;
+        use agent::agent_config::types::ResourcePath;
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("notes.md"), "# Notes").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let mut config = AgentConfig::default();
+        match &mut config {
+            AgentConfig::V2025_08_22(c) => {
+                c.resources = vec![
+                    ResourcePath::FilePath(format!("file://{}/notes.md", real.display())),
+                    ResourcePath::FilePath(format!("file://{}/*.md", real.display())),
+                    ResourcePath::FilePath(format!("file://{}/**/*.md", real.display())),
+                    ResourcePath::FilePath(format!("file://{}/notes.md", link.display())),
+                ];
+            },
+        }
+        let snapshot = AgentSnapshot::new_empty(LoadedAgentConfig::new(
+            config,
+            ConfigSource::BuiltIn,
+            ResolvedGlobalPrompt::None,
+        ));
+
+        let (_, agent_items, _, session_items) = calculate_context_files_tokens(&snapshot);
+
+        assert!(session_items.is_empty());
+        assert_eq!(
+            agent_items.len(),
+            1,
+            "expected one breakdown item, got: {:?}",
+            agent_items.iter().map(|i| &i.name).collect::<Vec<_>>()
         );
     }
 }
