@@ -3324,8 +3324,8 @@ impl ChatSession {
                 cursor::MoveToColumn(0),
             )?;
         }
-        // Parse and validate the initial generated config
-        let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
+        // Parse and validate the initial generated config; models often wrap the JSON in markdown fences.
+        let initial_agent_config = match serde_json::from_str::<Agent>(strip_markdown_code_fences(&agent_config_json)) {
             Ok(config) => config,
             Err(_) => {
                 execute!(
@@ -5963,6 +5963,24 @@ async fn get_limit_reached_info(os: &mut Os) -> LimitReachedInfo {
 
 /// Checks if an input may be referencing a file and should not be handled as a typical slash
 /// command. If true, then return [Option::Some<ChatState>], otherwise [Option::None].
+/// Strip a surrounding markdown code fence (```` ```json ... ``` ````) from model output, if
+/// present. Falls back to the trimmed input unchanged when no complete fence is found.
+fn strip_markdown_code_fences(input: &str) -> &str {
+    let trimmed = input.trim();
+    let Some(after_open) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+    // Drop the opening fence's optional language tag line.
+    let body = match after_open.split_once('\n') {
+        Some((_lang, rest)) => rest,
+        None => return trimmed,
+    };
+    match body.rsplit_once("```") {
+        Some((inner, _after_close)) => inner.trim(),
+        None => trimmed,
+    }
+}
+
 fn does_input_reference_file(input: &str) -> Option<ChatState> {
     let after_slash = input.strip_prefix("/")?;
 
@@ -7040,6 +7058,24 @@ mod tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {expected} for input {input}");
         }
+    }
+
+    #[test]
+    fn test_strip_markdown_code_fences_parses_agent_config() {
+        let bare = r#"{"name": "my-agent"}"#;
+        let fenced_json = format!("```json\n{bare}\n```");
+        let fenced_plain = format!("```\n{bare}\n```");
+        let fenced_padded = format!("\n\n```json\n{bare}\n```\n\n");
+
+        for input in [bare.to_string(), fenced_json, fenced_plain, fenced_padded] {
+            let stripped = strip_markdown_code_fences(&input);
+            let agent = serde_json::from_str::<Agent>(stripped)
+                .unwrap_or_else(|e| panic!("failed to parse stripped input {input:?}: {e}"));
+            assert_eq!(agent.name, "my-agent");
+        }
+
+        // No fence present: input is returned trimmed and still parses.
+        assert_eq!(strip_markdown_code_fences("  {\"name\": \"x\"}  "), "{\"name\": \"x\"}");
     }
 
     #[test]

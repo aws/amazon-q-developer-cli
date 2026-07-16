@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Agent creation no longer fails when the model wraps the generated config in markdown code fences"
+}
