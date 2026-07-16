@@ -432,9 +432,19 @@ impl ChatArgs {
     /// Returns `Err` if conflicting flags are supplied (e.g. `--legacy-ui`
     /// with `--agent-engine=kas`).
     pub fn resolve_agent_engine(&self, os: &Os) -> Result<AgentEngine> {
+        // `--cloud`/`--repo` imply the KAS (V3) engine: the remote execution
+        // target exists only there, so `kiro chat --cloud` works without
+        // `--v3`. An explicit `--agent-engine` still wins (the V1/V2 conflict
+        // is then rejected below). Rollout-gated like every remote surface.
+        let cloud_implies_kas = (self.cloud || self.repo.is_some())
+            && crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox);
         let engine = if self.v3 {
             AgentEngine::Kas
         } else if let Some(engine) = self.agent_engine {
+            engine
+        } else if cloud_implies_kas {
+            AgentEngine::Kas
+        } else if let Some(engine) = self.engine_for_resume_id(os) {
             engine
         } else if let Some(val) = os.database.settings.get_string(Setting::ChatAgentEngine) {
             if val.eq_ignore_ascii_case("v3") || val.eq_ignore_ascii_case("kas") {
@@ -467,24 +477,38 @@ impl ChatArgs {
             );
         }
 
-        // Remote sandbox (`--cloud` / `--repo`) is dark-shipped and V3/KAS-only.
-        // The gate-OFF rejection (released builds) is hoisted to the top of the
-        // `Chat` arm in `cli/mod.rs` via `remote_sandbox_gate_error`, so it
-        // precedes every early-return and side effect. Here we handle only the
-        // gate-ON (testing build) case: the remote execution target exists solely
-        // on the KAS (V3) engine, so guide the user rather than silently ignoring
-        // the flag on V1/V2.
-        if (self.cloud || self.repo.is_some())
-            && crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox)
-            && engine != AgentEngine::Kas
-        {
+        // `--cloud`/`--repo` auto-selected KAS above, so a non-KAS engine here
+        // means the user EXPLICITLY forced V1/V2 alongside a cloud flag — an
+        // impossible combination (the remote target exists only on KAS), so
+        // reject rather than silently ignoring one of the two.
+        if cloud_implies_kas && engine != AgentEngine::Kas {
             bail!(
-                "Conflicting options: --cloud/--repo require the V3 agent. \
-                 Re-run with --v3 (for example: `kiro chat --v3 --cloud`)."
+                "Conflicting options: --cloud/--repo run on the V3 agent and cannot be \
+                 combined with --agent-engine={}. Use `kiro chat --cloud` (V3 is implied; \
+                 --v3 and --agent-engine=v3 are also fine).",
+                engine.user_label()
             );
         }
 
         Ok(engine)
+    }
+
+    /// Infer the engine from `--resume-id`: an id in neither the V1 nor V2
+    /// store lives in the KAS store, so resolve to KAS instead of failing the
+    /// resume as not-found. Gated on the remote-sandbox rollout so released
+    /// builds keep their exact engine selection.
+    fn engine_for_resume_id(&self, os: &Os) -> Option<AgentEngine> {
+        let id = self.resume_id.as_deref()?.trim();
+        if id.is_empty() || !crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox) {
+            return None;
+        }
+        let v2_sessions_dir = chat_cli_v2::util::paths::sessions_dir().ok();
+        let cwd = std::env::current_dir().unwrap_or_default();
+        if resume_id_owned_locally(&os.database, v2_sessions_dir.as_deref(), &cwd, id) {
+            None
+        } else {
+            Some(AgentEngine::Kas)
+        }
     }
 
     /// Default engine based on interactivity mode and TUI preferences.
@@ -1049,6 +1073,38 @@ const WELCOME_ANNOUNCEMENT_MAX_SHOW_COUNT: i64 = 2;
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
+/// Whether a `--resume-id` value belongs to a local (V1/V2) store, meaning
+/// engine inference must NOT reroute it to KAS.
+///
+/// - V1: global exact probe — V1 resume loads by id from anywhere. A lookup error counts as locally
+///   owned so a transient DB fault never reroutes a possibly-local id to KAS (where it would fail
+///   as not-found).
+/// - V2: global exact-or-prefix probe. V2 resume loads a session by id regardless of the directory
+///   it was created in (and adopts the new cwd), so a cwd-scoped probe would misroute
+///   cross-directory sessions.
+/// - V1 prefix: scoped to `cwd` — the truncated ids a user pastes come from `--list-sessions`,
+///   which lists V1 rows for the current directory only.
+pub(crate) fn resume_id_owned_locally(
+    db: &crate::database::Database,
+    v2_sessions_dir: Option<&std::path::Path>,
+    cwd: &std::path::Path,
+    id: &str,
+) -> bool {
+    match db.get_conversation_by_id(id) {
+        Ok(Some(_)) | Err(_) => return true,
+        Ok(None) => {},
+    }
+    if let Some(dir) = v2_sessions_dir
+        && let Ok(v2) = chat_cli_v2::agent::session::list_sessions(dir, None)
+        && v2.iter().any(|s| s.session_id.starts_with(id))
+    {
+        return true;
+    }
+    db.list_conversations_by_path(cwd)
+        .map(|rows| rows.iter().any(|(conv_id, ..)| conv_id.starts_with(id)))
+        .unwrap_or(true)
+}
+
 fn trust_all_text() -> String {
     ui_text::trust_all_warning()
 }

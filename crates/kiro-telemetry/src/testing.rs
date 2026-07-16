@@ -234,6 +234,12 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         Engine::V3,
     ));
     records.push(mode_active_total(Mode::Interactive, Engine::V3));
+    records.push(cloud_session_ready_seconds(42.0, Engine::V3));
+    records.push(cloud_repo_attach_total(
+        RepoAttachEvent::Submitted,
+        RepoCountBucket::Two,
+        Engine::V3,
+    ));
 
     // §5.5b Health (process/perf — TUI-promoted)
     records.push(process_memory_peak_rss(

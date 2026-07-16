@@ -286,6 +286,24 @@ pub fn acquire_lock(sessions_dir: &Path, session_id: &str) -> Result<SessionLock
     acquire_lock_impl(&lock_path(sessions_dir, session_id), is_pid_alive, std::process::id())
 }
 
+/// Whether a session is currently open in another live process.
+///
+/// True only when the lock file exists and names a PID that is still alive.
+/// Any error (missing file, unparseable contents, dead PID) reads as unlocked.
+pub fn is_session_locked(sessions_dir: &Path, session_id: &str) -> bool {
+    is_session_locked_impl(&lock_path(sessions_dir, session_id), is_pid_alive)
+}
+
+fn is_session_locked_impl(lock_path: &Path, is_pid_alive: impl Fn(u32) -> bool) -> bool {
+    let Ok(content) = fs::read_to_string(lock_path) else {
+        return false;
+    };
+    let Ok(lock) = serde_json::from_str::<SessionLock>(&content) else {
+        return false;
+    };
+    is_pid_alive(lock.pid)
+}
+
 /// Attempt to acquire an exclusive lock for a session.
 ///
 /// Uses atomic file creation (`O_CREAT | O_EXCL`) to prevent race conditions:
@@ -1118,6 +1136,33 @@ mod tests {
         let guard = acquire_lock_impl(&lock_file, pid_always_dead, 12345).unwrap();
         assert!(lock_file.exists());
         drop(guard);
+    }
+
+    #[test]
+    fn test_is_session_locked() {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_dir = temp_dir.path();
+        let session_id = "locked-check";
+        let lock_file = lock_path(sessions_dir, session_id);
+        fs::create_dir_all(sessions_dir).unwrap();
+
+        // Missing lock file → unlocked.
+        assert!(!is_session_locked_impl(&lock_file, pid_always_alive));
+
+        // Lock file with a live PID → locked.
+        let lock = SessionLock {
+            pid: 4321,
+            started_at: Utc::now(),
+        };
+        fs::write(&lock_file, serde_json::to_string(&lock).unwrap()).unwrap();
+        assert!(is_session_locked_impl(&lock_file, pid_always_alive));
+
+        // Same lock file but the PID is dead → unlocked (stale lock).
+        assert!(!is_session_locked_impl(&lock_file, pid_always_dead));
+
+        // Unparseable lock contents → unlocked.
+        fs::write(&lock_file, "not json").unwrap();
+        assert!(!is_session_locked_impl(&lock_file, pid_always_alive));
     }
 
     #[test]

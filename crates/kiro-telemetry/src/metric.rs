@@ -510,6 +510,8 @@ pub enum CloudSessionEvent {
     Started,
     StartFailed,
     Reattached,
+    Ready,
+    ProvisionFailed,
     Detached,
     TurnedOff,
     FellBackLocal,
@@ -522,6 +524,8 @@ impl CloudSessionEvent {
             "started" => Self::Started,
             "start_failed" => Self::StartFailed,
             "reattached" => Self::Reattached,
+            "ready" => Self::Ready,
+            "provision_failed" => Self::ProvisionFailed,
             "detached" => Self::Detached,
             "turned_off" => Self::TurnedOff,
             "fell_back_local" => Self::FellBackLocal,
@@ -534,6 +538,8 @@ impl CloudSessionEvent {
             Self::Started => "started",
             Self::StartFailed => "start_failed",
             Self::Reattached => "reattached",
+            Self::Ready => "ready",
+            Self::ProvisionFailed => "provision_failed",
             Self::Detached => "detached",
             Self::TurnedOff => "turned_off",
             Self::FellBackLocal => "fell_back_local",
@@ -600,6 +606,60 @@ impl RenderKind {
 }
 
 impl_metric_string_serde!(RenderKind, RenderKind::from_name);
+
+/// `/repo` picker interaction backing `kiro_cli_cloud_repo_attach_total`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RepoAttachEvent {
+    #[default]
+    Opened,
+    Submitted,
+    Other,
+}
+
+impl RepoAttachEvent {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Opened => "opened",
+            Self::Submitted => "submitted",
+            Self::Other => "_other_",
+        }
+    }
+}
+
+/// Bucketed count of repositories in a `/repo` submission.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RepoCountBucket {
+    #[default]
+    None,
+    One,
+    Two,
+    ThreeToFive,
+    SixPlus,
+    Other,
+}
+
+impl RepoCountBucket {
+    pub const fn from_count(count: usize) -> Self {
+        match count {
+            0 => Self::None,
+            1 => Self::One,
+            2 => Self::Two,
+            3..=5 => Self::ThreeToFive,
+            _ => Self::SixPlus,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::One => "1",
+            Self::Two => "2",
+            Self::ThreeToFive => "3_5",
+            Self::SixPlus => "6_plus",
+            Self::Other => "_other_",
+        }
+    }
+}
 
 /// Bucketed reason a user turn ended in a non-success state. Backs
 /// `kiro_cli_turn_outcome_total` (§C4) so the failure mode is a queryable label
@@ -4071,6 +4131,26 @@ pub fn subagent_delegations_total(
 pub fn mode_active_total(mode: Mode, engine: Engine) -> MetricRecord {
     counter("kiro_cli_mode_active_total", 1)
         .attribute("mode", mode.as_str())
+        .attribute("engine", engine.as_str())
+        .expect_valid()
+}
+
+/// Cloud sandbox start→ready latency (`kiro_cli_cloud_session_ready_seconds`).
+pub fn cloud_session_ready_seconds(seconds: f64, engine: Engine) -> MetricRecord {
+    histogram("kiro_cli_cloud_session_ready_seconds", seconds)
+        .attribute("engine", engine.as_str())
+        .expect_valid()
+}
+
+/// `/repo` picker usage (`kiro_cli_cloud_repo_attach_total`).
+pub fn cloud_repo_attach_total(
+    event: RepoAttachEvent,
+    repo_count_bucket: RepoCountBucket,
+    engine: Engine,
+) -> MetricRecord {
+    counter("kiro_cli_cloud_repo_attach_total", 1)
+        .attribute("repo_attach_event", event.as_str())
+        .attribute("repo_count_bucket", repo_count_bucket.as_str())
         .attribute("engine", engine.as_str())
         .expect_valid()
 }

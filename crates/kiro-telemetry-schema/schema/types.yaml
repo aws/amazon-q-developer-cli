@@ -90,7 +90,11 @@ attributes:
   - name: engine
     allowed_values: [v2, v3]
   - name: cloud_event
-    allowed_values: [started, start_failed, reattached, detached, turned_off, fell_back_local, _other_]
+    allowed_values: [started, start_failed, reattached, ready, provision_failed, detached, turned_off, fell_back_local, _other_]
+  - name: repo_attach_event
+    allowed_values: [opened, submitted, _other_]
+  - name: repo_count_bucket
+    allowed_values: [none, "1", "2", "3_5", "6_plus", _other_]
   - name: process_role
     allowed_values: [host, tui, kas_subprocess]
   - name: render_kind

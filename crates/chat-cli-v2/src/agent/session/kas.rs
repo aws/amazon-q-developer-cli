@@ -48,12 +48,14 @@ pub trait KasSessionClient {
 pub struct KasAcpSessionClient {
     conn: acp::ClientSideConnection,
     _child: Child,
-    /// Whether the KAS handshake advertised a `remote` session source
-    /// (`agentCapabilities._meta.kiro.sessionSources ∋ "remote"`). Gates the
-    /// `sessionSource: "all"` list request below. Dark-safe: `false` on every
-    /// released build (no
-    /// remote store advertised), so the list request stays byte-identical.
+    /// Whether the handshake advertised a `remote` session source. Gates the
+    /// `sessionSource: "all"` list request; `false` absent the cap keeps the
+    /// request byte-identical.
     remote_sessions_advertised: bool,
+    /// Whether the handshake advertised the user list scope. The remote store
+    /// owns the user slice, fetched only when the list also asks
+    /// `listScope: "both"`; this gates sending it.
+    user_list_scope_advertised: bool,
 }
 
 impl KasAcpSessionClient {
@@ -95,16 +97,20 @@ impl KasAcpSessionClient {
         };
 
         // Gate remote-row listing on the handshake advertising a `remote`
-        // session source. Dark-safe —
-        // `false` unless KAS advertises it (never on released builds today).
+        // session source; `false` absent the cap.
         let remote_sessions_advertised = advertises_remote_session_source(&init.agent_capabilities.meta);
+        let user_list_scope_advertised = advertises_user_list_scope(&init.agent_capabilities.meta);
 
-        debug!(remote_sessions_advertised, "KAS session client connected");
+        debug!(
+            remote_sessions_advertised,
+            user_list_scope_advertised, "KAS session client connected"
+        );
 
         Ok(Self {
             conn,
             _child: child,
             remote_sessions_advertised,
+            user_list_scope_advertised,
         })
     }
 }
@@ -123,6 +129,19 @@ pub fn advertises_remote_session_source(caps_meta: &Option<serde_json::Map<Strin
         .and_then(|k| k.get("sessionSources"))
         .and_then(|s| s.as_array())
         .is_some_and(|arr| arr.iter().any(|v| v.as_str() == Some("remote")))
+}
+
+/// True when the KAS initialize handshake advertised the `user` list scope
+/// (`agentCapabilities._meta.kiro.sessionListScopes ∋ "user"`). Gates sending
+/// `listScope: "both"` on a `session/list`, which is what makes KAS actually
+/// fetch the user-scoped remote rows. `false` absent the cap (dark-safe).
+pub fn advertises_user_list_scope(caps_meta: &Option<serde_json::Map<String, serde_json::Value>>) -> bool {
+    caps_meta
+        .as_ref()
+        .and_then(|m| m.get("kiro"))
+        .and_then(|k| k.get("sessionListScopes"))
+        .and_then(|s| s.as_array())
+        .is_some_and(|arr| arr.iter().any(|v| v.as_str() == Some("user")))
 }
 
 /// Reads a string field from a `session/list` row's `_meta.kiro` bag — e.g.
@@ -146,11 +165,17 @@ impl KasSessionClient for KasAcpSessionClient {
         let mut request = acp::ListSessionsRequest::new().cwd(Some(cwd.to_path_buf()));
         if self.remote_sessions_advertised {
             // Ask for both stores so remote rows appear alongside local ones.
-            // Gated on the handshake cap; absent it, no `_meta` is sent and the
-            // request is byte-identical to a local-only list (dark-safe).
-            request.meta = serde_json::json!({ "kiro": { "sessionSource": "all" } })
-                .as_object()
-                .cloned();
+            // `sessionSource: "all"` alone isn't enough: the remote store owns the
+            // user slice, which KAS fetches only when `listScope` asks for it
+            // (default `"workspace"` skips remote). Send `"both"` when the user
+            // scope is advertised. Gated on the caps; absent them, no `_meta` is
+            // sent and the request is byte-identical to a local-only list.
+            let mut kiro = serde_json::Map::new();
+            kiro.insert("sessionSource".into(), serde_json::json!("all"));
+            if self.user_list_scope_advertised {
+                kiro.insert("listScope".into(), serde_json::json!("both"));
+            }
+            request.meta = serde_json::json!({ "kiro": kiro }).as_object().cloned();
         }
         let resp = self
             .conn
@@ -187,6 +212,9 @@ impl KasSessionClient for KasAcpSessionClient {
                     title: info.title.or(meta_description),
                     updated_at: info.updated_at.or(meta_created_at),
                     message_count: None,
+                    // Cold snapshot of activity status from `_meta.kiro.status`;
+                    // `None` for a local row (no `_meta.kiro`).
+                    status: kiro_meta_string(&info.meta, "status"),
                 }
             })
             .collect();

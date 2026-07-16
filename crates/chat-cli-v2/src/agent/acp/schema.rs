@@ -218,6 +218,11 @@ pub struct SessionInfoEntry {
     /// Remove this field once every row carries `executionTarget`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_target: Option<String>,
+    /// Coarse activity status snapshot from `_meta.kiro.status` (KAS session/list).
+    /// A cold snapshot — live changes ride the roster. `None` for V1/V2 rows and
+    /// for KAS rows that omit it. Threaded so the merged list can show a state column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// Request to list user settings.

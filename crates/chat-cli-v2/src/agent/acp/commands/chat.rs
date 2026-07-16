@@ -331,6 +331,7 @@ pub async fn list_sessions(
                 updated_at: Some(s.updated_at.to_rfc3339()),
                 message_count: Some(s.message_count),
                 execution_target: None, // V2 sessions are always local
+                status: None,           // V2 rows carry no activity snapshot
             }
         })
         .collect())

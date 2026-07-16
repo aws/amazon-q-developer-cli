@@ -1884,6 +1884,78 @@ mod test {
         }
 
         #[tokio::test]
+        async fn resume_id_unknown_to_local_stores_resolves_to_kas() {
+            // A `--resume-id` that exists in neither the V1 nor V2 store lives
+            // in the KAS store (local KAS or cloud), so with no explicit engine
+            // the resolution must pick KAS — this is what makes
+            // `kiro chat --resume-id <cloud-id>` work without `--v3`.
+            // (Tests run with the remote-sandbox rollout force-enabled.)
+            let os = make_os().await;
+            let args = ChatArgs {
+                resume_id: Some("00000000-dead-beef-0000-000000000000".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn resume_id_defers_to_explicit_engine() {
+            // An explicit --agent-engine always wins over the resume-id inference.
+            let os = make_os().await;
+            let args = ChatArgs {
+                resume_id: Some("00000000-dead-beef-0000-000000000000".to_string()),
+                agent_engine: Some(chat::AgentEngine::V2),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+        }
+
+        #[tokio::test]
+        async fn resume_id_of_v2_session_from_another_directory_stays_local() {
+            // V2 resume loads a session by id no matter which directory it was
+            // created in, so the ownership probe must not be cwd-scoped: a
+            // cross-directory V2 id (full or 8-char prefix) must never be
+            // rerouted to KAS, where the resume would fail as not-found.
+            let os = make_os().await;
+            let sessions_dir = tempfile::tempdir().unwrap();
+            let session_id = "11111111-2222-4333-8444-555555555555";
+            std::fs::write(
+                sessions_dir.path().join(format!("{session_id}.json")),
+                serde_json::to_string(&serde_json::json!({
+                    "session_id": session_id,
+                    "cwd": "/somewhere/else/entirely",
+                    "created_at": chrono::Utc::now(),
+                    "updated_at": chrono::Utc::now(),
+                    "title": "created in another directory",
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let probe_cwd = std::path::Path::new("/current/working/dir");
+
+            // Full id and displayed 8-char prefix both stay local.
+            assert!(chat::resume_id_owned_locally(
+                &os.database,
+                Some(sessions_dir.path()),
+                probe_cwd,
+                session_id
+            ));
+            assert!(chat::resume_id_owned_locally(
+                &os.database,
+                Some(sessions_dir.path()),
+                probe_cwd,
+                "11111111"
+            ));
+            // An id no store owns still routes to KAS.
+            assert!(!chat::resume_id_owned_locally(
+                &os.database,
+                Some(sessions_dir.path()),
+                probe_cwd,
+                "00000000-dead-beef-0000-000000000000"
+            ));
+        }
+
+        #[tokio::test]
         async fn non_interactive_with_input_resolves() {
             let os = make_os().await;
             let mut args = ChatArgs {
@@ -1993,6 +2065,29 @@ mod test {
                 ..Default::default()
             };
             assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        #[tokio::test]
+        async fn bare_cloud_auto_selects_kas() {
+            // `kiro chat --cloud` needs no `--v3`: the cloud flag implies the
+            // KAS engine (the only one hosting the remote execution target).
+            let os = make_os().await;
+            let args = ChatArgs {
+                cloud: true,
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn bare_repo_auto_selects_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                cloud: true,
+                repo: Some(vec!["owner/name".to_string()]),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
         }
 
         #[tokio::test]

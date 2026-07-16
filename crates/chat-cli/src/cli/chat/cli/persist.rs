@@ -391,6 +391,10 @@ pub(crate) struct SessionEntry {
     /// `_meta.kiro.executionTarget.kind`. `None` for V1/V2 (always local) and for
     /// V3 rows without the field. Surfaced by the merged picker as a cloud tag.
     execution_target: Option<String>,
+    /// Coarse activity status snapshot (`_meta.kiro.status`): idle/in_progress/
+    /// waiting_on_user/etc. `None` for V1/V2 rows and V3 rows without it. Rendered
+    /// as the merged list's state column (only when a cloud row is present).
+    activity_status: Option<String>,
 }
 
 impl From<chat_cli_v2::agent::acp::schema::SessionInfoEntry> for SessionEntry {
@@ -407,6 +411,7 @@ impl From<chat_cli_v2::agent::acp::schema::SessionInfoEntry> for SessionEntry {
             updated_at_ms,
             source: SessionSource::Kas,
             execution_target: k.execution_target,
+            activity_status: k.status,
         }
     }
 }
@@ -466,6 +471,10 @@ pub(crate) struct SessionEntryJson<'a> {
     /// for V3 rows lacking it, so a TUI consumer reads it as local.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_target: Option<&'a str>,
+    /// Coarse activity status snapshot (`idle`/`in_progress`/`waiting_on_user`/...).
+    /// Omitted for rows without one (V1/V2, and V3 rows lacking it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<&'a str>,
 }
 
 impl<'a> SessionListingJson<'a> {
@@ -494,6 +503,7 @@ impl<'a> SessionEntryJson<'a> {
             updated_at,
             message_count: e.msg_count,
             execution_target: e.execution_target.as_deref(),
+            status: e.activity_status.as_deref(),
         }
     }
 }
@@ -504,6 +514,8 @@ fn collect_all_sessions(db: &crate::database::Database, cwd: &std::path::Path) -
     collect_all_sessions_impl(db, cwd, v2_dir.as_deref())
 }
 
+/// Local (V1 + V2) session ids for `cwd`, without spawning KAS. Used by engine
+/// resolution to tell a local resume id from a cloud one by prefix.
 fn collect_all_sessions_impl(
     db: &crate::database::Database,
     cwd: &std::path::Path,
@@ -521,6 +533,7 @@ fn collect_all_sessions_impl(
                 updated_at_ms: updated_at,
                 source: SessionSource::V1,
                 execution_target: None, // V1 sessions are always local
+                activity_status: None,
             });
         }
     }
@@ -529,7 +542,14 @@ fn collect_all_sessions_impl(
     if let Some(sessions_dir) = v2_sessions_dir
         && let Ok(v2_sessions) = chat_cli_v2::agent::session::list_sessions(sessions_dir, Some(cwd))
     {
+        // The lock probe (and the `status` field it feeds in JSON output) ships
+        // with the remote-sandbox feature; released listings stay byte-identical.
+        let probe_activity = crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox);
         for s in v2_sessions {
+            // A live lock means the session is open in another window → working.
+            let activity_status = (probe_activity
+                && chat_cli_v2::agent::session::is_session_locked(sessions_dir, &s.session_id))
+            .then(|| "in_progress".to_string());
             entries.push(SessionEntry {
                 session_id: s.session_id,
                 summary: s.title.unwrap_or_else(|| "(no title)".to_string()),
@@ -537,12 +557,20 @@ fn collect_all_sessions_impl(
                 updated_at_ms: s.updated_at.timestamp_millis(),
                 source: SessionSource::V2,
                 execution_target: None, // V2 sessions are always local
+                activity_status,
             });
         }
     }
 
     entries.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
     entries
+}
+
+/// A session id shorter than a full UUID is treated as a deletable prefix
+/// only from eight characters — the truncated length `--list-sessions`
+/// displays. Anything shorter must match a stored id exactly.
+fn is_session_id_prefix(id: &str) -> bool {
+    (8..36).contains(&id.len())
 }
 
 /// Delete a session from V1 (SQLite) and/or V2 (filesystem).
@@ -707,6 +735,56 @@ async fn handle_delete_session(
     source: Option<SessionSource>,
     cloud_delete_enabled: bool,
 ) -> ExitCode {
+    // Short-id support: resolve a unique prefix to the full id the stores key
+    // on. A prefix is honored only from eight characters — the length
+    // `--list-sessions` displays; anything shorter must match a stored id
+    // exactly, since destructively resolving a 1-char prefix could delete a
+    // session the user never identified. Try local (V1+V2) first — no KAS
+    // spawn. If the prefix is unique locally AND is a full-length local id
+    // (exact hit), take it without consulting KAS. Otherwise consult the
+    // merged listing (one KAS spawn) so a prefix shared by a local and a
+    // cloud session is reported ambiguous rather than silently resolving to
+    // the local one. Skipped for a full UUID (exact match needs no listing)
+    // and on released builds.
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let is_prefix = is_session_id_prefix(session_id);
+    let resolved: Option<String> = if cloud_delete_enabled && is_prefix {
+        let local: Vec<String> = collect_all_sessions(&os.database, &cwd)
+            .into_iter()
+            .map(|e| e.session_id)
+            .filter(|full| full.starts_with(session_id))
+            .collect();
+        // A single local exact match is unambiguous — the prefix IS a full id.
+        let local_exact = matches!(local.as_slice(), [one] if one == session_id);
+        let candidates: Vec<String> = if local_exact {
+            local
+        } else {
+            // Consult both stores so a prefix shared across local and cloud
+            // sessions is flagged ambiguous instead of picking local blindly.
+            collect_sessions(os, &cwd)
+                .await
+                .into_iter()
+                .map(|e| e.session_id)
+                .filter(|full| full.starts_with(session_id))
+                .collect()
+        };
+        match candidates.as_slice() {
+            [] => None,
+            [one] => Some(one.clone()),
+            many => {
+                eprintln!(
+                    "Error: session id prefix matches {} sessions; use a longer prefix or the full id from --list-sessions",
+                    many.len()
+                );
+                return ExitCode::FAILURE;
+            },
+        }
+    } else {
+        None
+    };
+    let session_id: &str = resolved.as_deref().unwrap_or(session_id);
+    let prefix_resolved = resolved.is_some();
+
     let target_rust = matches!(source, None | Some(SessionSource::V1 | SessionSource::V2));
     let target_kas = matches!(source, None | Some(SessionSource::Kas));
     let kas_required = matches!(source, Some(SessionSource::Kas));
@@ -728,6 +806,7 @@ async fn handle_delete_session(
     }
 
     if target_kas {
+        let cwd = cwd.clone();
         match with_kas_session_client(os, |client| async move {
             // Default (local) store, plus the cloud store when enabled, so a bare
             // delete removes a cloud session too. KAS has no combined-store delete
@@ -735,12 +814,34 @@ async fn handle_delete_session(
             client.delete_session(session_id, None).await?;
             if cloud_delete_enabled {
                 client.delete_session(session_id, Some("remote")).await?;
+                // KAS reports delete success unconditionally, so verify: the
+                // delete counts only when the id no longer appears in the
+                // listing. A listing failure degrades to trusting the delete.
+                match client.list_sessions(&cwd).await {
+                    Ok(entries) => Ok(!entries.iter().any(|e| e.session_id == session_id)),
+                    Err(e) => {
+                        tracing::warn!("delete verification listing unavailable: {e:#}");
+                        Ok(true)
+                    },
+                }
+            } else {
+                Ok(true)
             }
-            Ok(())
         })
         .await
         {
-            Ok(()) => deleted = true,
+            Ok(removed) => {
+                if removed {
+                    deleted = true;
+                } else if kas_required || prefix_resolved {
+                    // The id resolved against the live listing (or KAS was the
+                    // explicit target), so "not found" would be wrong — the
+                    // session exists and the delete didn't take effect.
+                    errors.push(format!(
+                        "session {session_id} still present after delete (its store may not be reachable from this launch)"
+                    ));
+                }
+            },
             Err(e) if kas_required => errors.push(format!("{e:#}")),
             Err(e) => tracing::warn!("KAS session delete unavailable: {e:#}"),
         }
@@ -750,7 +851,16 @@ async fn handle_delete_session(
         eprintln!("✔ Deleted chat session {session_id}");
         ExitCode::SUCCESS
     } else if errors.is_empty() {
-        eprintln!("Error: chat session {session_id} not found");
+        // Gated: released builds keep the plain not-found message. The hint
+        // fires when a sub-8-char value matched nothing exactly, since prefix
+        // resolution refused it.
+        if cloud_delete_enabled && !session_id.is_empty() && session_id.len() < 8 {
+            eprintln!(
+                "Error: chat session {session_id} not found (a partial session id must be at least 8 characters; copy the id from --list-sessions)"
+            );
+        } else {
+            eprintln!("Error: chat session {session_id} not found");
+        }
         ExitCode::FAILURE
     } else {
         for e in &errors {
@@ -772,9 +882,20 @@ pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(
     Ok(())
 }
 
-/// Shared output formatter for session listing. Produces identical output
-/// regardless of the originating source (V1, V2, or KAS); the per-row
-/// `source` column is the engine discriminator.
+/// Map a coarse activity status to the short word shown in the listing's
+/// state column. Unknown values pass through so a future status still renders.
+fn format_session_state(status: &str) -> &str {
+    match status {
+        "in_progress" => "working",
+        "waiting_on_user" => "waiting",
+        "completed" => "done",
+        _ => status, // idle / failed / provisioning / future values
+    }
+}
+
+/// Shared block-format session listing. With the remote-sandbox feature on,
+/// every row appends its environment (`local`/`cloud`) and a status word;
+/// released builds render the pre-existing format untouched.
 fn render_session_entries(
     writer: &mut impl std::io::Write,
     cwd_display: &str,
@@ -797,17 +918,33 @@ fn render_session_entries(
         StyledText::reset(),
     )?;
 
+    // Environment (local/cloud) + status tags ride the rollout: released
+    // builds keep the pre-existing row format byte-identical.
+    let remote_enabled = crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox);
+
     for entry in entries {
         let timestamp = format_timestamp(entry.updated_at_ms);
         let msg_count_segment = match entry.msg_count {
             Some(n) => format!("{} | ", format!("{n} msgs").dim()),
             None => String::new(),
         };
-        // WHERE the session runs. Only a cloud-sandbox session gets a tag; local
-        // rows (V1/V2, and V3 without the field) render exactly as before.
-        let where_segment = match entry.execution_target.as_deref() {
-            Some("cloud-sandbox") => format!(" | {}", "cloud".to_string().dim()),
-            _ => String::new(),
+        let where_segment = if remote_enabled {
+            let env = if entry.execution_target.as_deref() == Some("cloud-sandbox") {
+                "cloud"
+            } else {
+                "local"
+            };
+            format!(" | {}", env.to_string().dim())
+        } else {
+            String::new()
+        };
+        // Activity status (idle/working/waiting/...): a row without a live
+        // status is at rest, so it reads `idle`.
+        let status_segment = if remote_enabled {
+            let status = entry.activity_status.as_deref().map_or("idle", format_session_state);
+            format!(" | {}", status.to_string().dim())
+        } else {
+            String::new()
         };
         execute!(
             writer,
@@ -816,12 +953,13 @@ fn render_session_entries(
             style::Print(format!("{}\n", entry.session_id)),
             StyledText::reset_attributes(),
             style::Print(format!(
-                "  {} | {} | {}{}{}\n\n",
+                "  {} | {} | {}{}{}{}\n\n",
                 timestamp.dim(),
                 entry.summary,
                 msg_count_segment,
                 format!("{}", entry.source).dim(),
                 where_segment,
+                status_segment,
             )),
         )?;
     }
@@ -1463,6 +1601,7 @@ mod kas_tests {
             // KAS does not emit messageCount today.
             message_count: None,
             execution_target: None,
+            status: None,
         }
     }
 
@@ -1487,6 +1626,7 @@ mod kas_tests {
                 updated_at_ms: 1_735_689_600_000, // 2025-01-01
                 source: SessionSource::V1,
                 execution_target: None,
+                activity_status: None,
             },
             SessionEntry {
                 session_id: "sess_v2".into(),
@@ -1495,6 +1635,7 @@ mod kas_tests {
                 updated_at_ms: 1_735_776_000_000, // 2025-01-02
                 source: SessionSource::V2,
                 execution_target: None,
+                activity_status: None,
             },
             SessionEntry {
                 session_id: "sess_kas".into(),
@@ -1503,8 +1644,11 @@ mod kas_tests {
                 updated_at_ms: 1_735_862_400_000, // 2025-01-03
                 source: SessionSource::Kas,
                 execution_target: Some("cloud-sandbox".into()),
+                activity_status: Some("in_progress".into()),
             },
         ];
+        // Environment/status tags are rollout-gated.
+        crate::rollout::Rollout::init_for_tests_enable_all();
         let mut buf = Vec::new();
         render_session_entries(&mut buf, "/tmp/project", &entries).unwrap();
         let output = String::from_utf8(buf).unwrap();
@@ -1518,10 +1662,24 @@ mod kas_tests {
         for src in &["classic", "v2", "v3"] {
             assert!(output.contains(src), "source column should show {src}");
         }
-        // The cloud-sandbox V3 row shows a WHERE tag; local rows do not.
+        // Environment + status tags (rollout is force-enabled in tests): the
+        // cloud-sandbox row reads `cloud` with its mapped state word; local
+        // rows read `local` and default to `idle`.
         assert!(
             output.contains("cloud"),
-            "cloud-sandbox row should show a 'cloud' WHERE tag"
+            "cloud-sandbox row should show a 'cloud' environment tag"
+        );
+        assert!(
+            output.contains("local"),
+            "local rows should show a 'local' environment tag"
+        );
+        assert!(
+            output.contains("working"),
+            "cloud row's in_progress status should render as 'working'"
+        );
+        assert!(
+            output.contains("idle"),
+            "rows without a live status should default to 'idle'"
         );
         // Delete-hint footer.
         assert!(output.contains("To delete a session, use: kiro-cli chat --delete-session"));
@@ -1585,6 +1743,7 @@ mod kas_tests {
                 updated_at_ms: 1_700_000_000_000,
                 source: SessionSource::V2,
                 execution_target: None,
+                activity_status: None,
             },
             SessionEntry {
                 session_id: "kas-session-2".to_string(),
@@ -1593,6 +1752,7 @@ mod kas_tests {
                 updated_at_ms: 1_700_000_001_000,
                 source: SessionSource::Kas,
                 execution_target: Some("cloud-sandbox".to_string()),
+                activity_status: Some("waiting_on_user".to_string()),
             },
         ];
         let json = SessionListingJson::from_entries(&cwd, &entries);
@@ -1707,5 +1867,18 @@ mod kas_tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn session_id_prefix_requires_at_least_eight_chars_and_less_than_a_full_uuid() {
+        // Below eight chars a value must match a stored id exactly — a 1-char
+        // "prefix" must never destructively resolve to an arbitrary session.
+        assert!(!is_session_id_prefix("a"));
+        assert!(!is_session_id_prefix("1234567"));
+        assert!(is_session_id_prefix("12345678"));
+        assert!(is_session_id_prefix(&"a".repeat(35)));
+        // A full UUID needs no listing-based resolution.
+        assert!(!is_session_id_prefix(&"a".repeat(36)));
+        assert!(!is_session_id_prefix(""));
     }
 }
