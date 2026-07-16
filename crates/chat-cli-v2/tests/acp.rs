@@ -294,13 +294,31 @@ async fn prompt_with_send_error() {
         .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/send_error.jsonl")
         .await;
 
-    // Prompt should return an error because send_message fails
     let result = client.prompt_text(session_id, "hello").await;
     assert!(result.is_err(), "expected prompt to fail with send error");
 
-    // Verify telemetry events capture the failure.
-    // Use polling because telemetry events are emitted asynchronously and may still
-    // be in the pipeline when prompt_text returns an error.
+    let method = methods::RATE_LIMIT_ERROR
+        .strip_prefix('_')
+        .expect("extension method should have an underscore prefix");
+    let notification_received = client
+        .wait_for_timeout(
+            |captured| {
+                captured.ext_notifications.iter().any(|notification| {
+                    notification.method.as_ref() == method
+                        && serde_json::from_str::<serde_json::Value>(notification.params.get())
+                            .ok()
+                            .and_then(|params| params.get("message").cloned())
+                            .and_then(|message| message.as_str().map(str::to_owned))
+                            .as_deref()
+                            == Some("Rate limit exceeded. Please wait a moment before trying again.")
+                })
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+    assert!(notification_received, "expected exact rate-limit notification");
+
+    // Telemetry delivery can finish after the prompt error is returned.
     let events = harness
         .wait_for_telemetry_events(Duration::from_secs(5), |events| {
             let has_add_msg = events
@@ -357,6 +375,67 @@ async fn prompt_with_send_error() {
     if let chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { result, args, .. } = &turn.ty {
         assert_eq!(*result, chat_cli_v2::telemetry::TelemetryResult::Failed);
         assert_eq!(args.reason.as_deref(), Some("QuotaBreachError"));
+    }
+}
+
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn rate_limit_notifications_preserve_cause_messages() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let cases = [
+        (
+            "model_overload_notification",
+            ConverseStreamErrorKind::ModelOverloadedError,
+            "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again.",
+        ),
+        (
+            "monthly_limit_notification",
+            ConverseStreamErrorKind::MonthlyLimitReached,
+            "The monthly usage limit has been reached",
+        ),
+    ];
+
+    for (test_name, kind, expected_message) in cases {
+        let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new(test_name).build_with_session().await;
+        let error = ConverseStreamError {
+            request_id: None,
+            status_code: Some(429),
+            kind,
+            source: None,
+        };
+        harness
+            .push_mock_response(&session_id.0, Some(vec![MockStreamItem::SendError(error)]))
+            .await;
+        harness.push_mock_response(&session_id.0, None).await;
+
+        let result = client.prompt_text(session_id, "hello").await;
+        assert!(result.is_err(), "expected {test_name} prompt to fail");
+
+        let method = methods::RATE_LIMIT_ERROR
+            .strip_prefix('_')
+            .expect("extension method should have an underscore prefix");
+        let notification_received = client
+            .wait_for_timeout(
+                |captured| {
+                    captured.ext_notifications.iter().any(|notification| {
+                        if notification.method.as_ref() != method {
+                            return false;
+                        }
+                        let params: serde_json::Value =
+                            serde_json::from_str(notification.params.get()).unwrap_or_default();
+                        params.get("message").and_then(|message| message.as_str()) == Some(expected_message)
+                    })
+                },
+                Duration::from_secs(5),
+            )
+            .await;
+        assert!(notification_received, "expected exact notification for {test_name}");
     }
 }
 
@@ -4103,5 +4182,40 @@ async fn goal_complete_with_thinking_suppresses_followup_error() {
         result.is_ok(),
         "prompt should succeed (goal completed before error), got: {:?}",
         result.err()
+    );
+}
+
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_complete_suppresses_followup_rate_limit_notification() {
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("goal_complete_suppresses_followup_rate_limit_notification")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/goal_complete_with_thinking.jsonl")
+        .await;
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/send_error.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id, "/goal sup")
+        .await
+        .expect("completed goal should suppress the follow-up error");
+
+    let method = methods::RATE_LIMIT_ERROR
+        .strip_prefix('_')
+        .expect("extension method should have an underscore prefix");
+    let captured = client.captured().await;
+    assert!(
+        captured
+            .ext_notifications
+            .iter()
+            .all(|notification| notification.method.as_ref() != method),
+        "suppressed follow-up errors must not emit rate-limit notifications"
     );
 }

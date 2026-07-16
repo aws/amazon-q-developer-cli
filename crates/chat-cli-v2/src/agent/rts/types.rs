@@ -1,7 +1,42 @@
+use std::sync::Arc;
+
 use agent::agent_loop::types::*;
 
+use crate::api_client::error::{
+    ConverseStreamError,
+    ConverseStreamErrorKind,
+};
 use crate::api_client::model;
 use crate::cli::chat::legacy::util::serde_value_to_document;
+use crate::telemetry::ReasonCode;
+
+impl From<ConverseStreamError> for StreamError {
+    fn from(err: ConverseStreamError) -> Self {
+        let kind = match &err.kind {
+            ConverseStreamErrorKind::Throttling => StreamErrorKind::Throttling,
+            ConverseStreamErrorKind::MonthlyLimitReached => StreamErrorKind::MonthlyLimitReached {
+                message: err.to_string(),
+            },
+            ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::ContextWindowOverflow,
+            ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::ModelOverloaded {
+                message: err.to_string(),
+            },
+            ConverseStreamErrorKind::InvalidModelId { model_id } => StreamErrorKind::InvalidModelId {
+                model_id: model_id.clone(),
+            },
+            ConverseStreamErrorKind::Unknown { .. } => StreamErrorKind::Other {
+                reason_code: Some(err.reason_code()),
+                message: err.to_string(),
+            },
+        };
+
+        let request_id = err.request_id.clone();
+        StreamError::new(kind)
+            .set_original_request_id(request_id)
+            .set_original_status_code(err.status_code)
+            .with_source(Arc::new(err))
+    }
+}
 
 impl From<ImageBlock> for model::ImageBlock {
     fn from(v: ImageBlock) -> Self {
@@ -65,5 +100,42 @@ impl From<serde_json::Map<String, serde_json::Value>> for model::ToolInputSchema
         Self {
             json: Some(serde_value_to_document(v.into()).into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stream_error(kind: ConverseStreamErrorKind) -> StreamError {
+        ConverseStreamError::new(kind, None::<aws_smithy_types::error::operation::BuildError>).into()
+    }
+
+    #[test]
+    fn model_overload_preserves_its_message_and_source() {
+        let error = stream_error(ConverseStreamErrorKind::ModelOverloadedError);
+
+        assert!(matches!(
+            &error.kind,
+            StreamErrorKind::ModelOverloaded { message }
+                if message
+                    == "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again."
+        ));
+        assert!(
+            error
+                .as_concrete_error::<ConverseStreamError>()
+                .is_some_and(|source| matches!(source.kind, ConverseStreamErrorKind::ModelOverloadedError))
+        );
+    }
+
+    #[test]
+    fn monthly_limit_preserves_its_message() {
+        let error = stream_error(ConverseStreamErrorKind::MonthlyLimitReached);
+
+        assert!(matches!(
+            &error.kind,
+            StreamErrorKind::MonthlyLimitReached { message }
+                if message == "The monthly usage limit has been reached"
+        ));
     }
 }

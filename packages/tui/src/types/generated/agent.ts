@@ -105,6 +105,85 @@ export interface AgentSnapshot {
 	settings: AgentSettings;
 }
 
+/**
+ * Upgrade-flow classification. `universal-in-sync` is also the no-trust fallback; `v2-only` and
+ * `universal-out-of-sync` are the actionable states.
+ */
+export enum AgentClassification {
+	V2Only = "v2-only",
+	UniversalOutOfSync = "universal-out-of-sync",
+	UniversalInSync = "universal-in-sync",
+	V3Only = "v3-only",
+}
+
+/** Terminal status of a single-file upgrade attempt. */
+export enum UpgradeStatus {
+	Upgraded = "upgraded",
+	SkippedInSync = "skipped-in-sync",
+	SkippedV3Only = "skipped-v3-only",
+	SkippedNotAgent = "skipped-not-agent",
+	SkippedManaged = "skipped-managed",
+	Error = "error",
+}
+
+/**
+ * The kind of a lossy or ambiguous conversion warning. Spellings are contractual — diagnostics
+ * keys on the exact kind string.
+ */
+export enum MigrationWarningKind {
+	RegexShellPattern = "regex-shell-pattern",
+	RegexWebPattern = "regex-web-pattern",
+	UnconvertiblePattern = "unconvertible-pattern",
+	UnmappedAllowedTool = "unmapped-allowed-tool",
+	DeprecatedAwsTool = "deprecated-aws-tool",
+	/** `denyByDefault` + `autoAllowReadonly` can't coexist in V3 — read-only auto-approval dropped. */
+	DenyByDefaultReadonly = "deny-by-default-readonly",
+	FilePrompt = "file-prompt",
+	/** A hook KAS can't represent (a CLI tool hook, or an unknown trigger) was dropped. */
+	UnconvertibleHook = "unconvertible-hook",
+}
+
+/** A rule effect — drives the allow/deny label and deny-all status in diagnostics. */
+export enum Effect {
+	Allow = "allow",
+	Deny = "deny",
+	/** Never emitted by the migration, but a live V3 rule effect the wire schema must round-trip. */
+	Ask = "ask",
+}
+
+/** A warning about a lossy or ambiguous conversion. */
+export interface MigrationWarning {
+	kind: MigrationWarningKind;
+	detail?: string;
+	/** Source config field, e.g. `toolsSettings.shell.allowedCommands`. */
+	attribute?: string;
+	/** Emitted glob(s) for regex conversions (empty if unconvertible). */
+	converted?: string[];
+	/** Rule effect — drives the allow/deny label and deny-all status in diagnostics. */
+	effect?: Effect;
+}
+
+/** Per-agent upgrade outcome. */
+export interface AgentUpgradeOutcome {
+	/** Agent name (filename without extension). */
+	name: string;
+	sourcePath: string;
+	/** Backup written before the in-place rewrite, if any. */
+	backupPath?: string;
+	/** `None` when the file isn't an agent config (unreadable, invalid JSON, or non-agent). */
+	classification?: AgentClassification;
+	status: UpgradeStatus;
+	warnings: MigrationWarning[];
+	error?: string;
+}
+
+/** Per-scope counts for one classification bucket. */
+export interface BucketCount {
+	local: number;
+	global: number;
+	total: number;
+}
+
 /** Arguments for /chat command */
 export interface ChatArgs {
 	/** Subcommand: save <path>, load <path>, new [prompt], list, delete <id> */
@@ -444,6 +523,42 @@ export interface RewindArgs {
 	turnIndex?: string;
 }
 
+/**
+ * Per-classification bucket counts. An explicit struct (not a map) so the wire shape matches the
+ * fixed object the TUI indexes.
+ */
+export interface ScanCounts {
+	"v2-only": BucketCount;
+	"universal-out-of-sync": BucketCount;
+	"universal-in-sync": BucketCount;
+	"v3-only": BucketCount;
+}
+
+/** Where a scanned agent lives. */
+export enum AgentScope {
+	Local = "local",
+	Global = "global",
+}
+
+/** One classified agent found during a scan. */
+export interface ScannedAgent {
+	name: string;
+	scope: AgentScope;
+	classification: AgentClassification;
+	/** Absolute path of the source `.json` file. */
+	sourcePath: string;
+	/** Conversion warnings from the V3 derivation (empty for v3-only / no-trust agents). */
+	warnings: MigrationWarning[];
+}
+
+/** Result of scanning one or more agent dirs. */
+export interface ScanResult {
+	agents: ScannedAgent[];
+	counts: ScanCounts;
+	/** Total number of distinct agents found. */
+	total: number;
+}
+
 /** Arguments for /stats command */
 export interface StatsArgs {
 	/** Subcommand: "save <filename>" to export to file */
@@ -468,6 +583,12 @@ export type StreamErrorKind =
 	| { kind: "serviceFailure", data?: undefined }
 	/** The request failed due to the client being throttled. */
 	| { kind: "throttling", data?: undefined }
+	| { kind: "modelOverloaded", data: {
+	message: string;
+}}
+	| { kind: "monthlyLimitReached", data: {
+	message: string;
+}}
 	/**
 	 * The request was invalid.
 	 * 

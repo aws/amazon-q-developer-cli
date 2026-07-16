@@ -72,7 +72,6 @@ use crate::agent::session::legacy_compat::{
 use crate::api_client::error::{
     ApiClientError,
     ConverseStreamError,
-    ConverseStreamErrorKind,
 };
 use crate::api_client::model::{
     ChatResponseStream,
@@ -89,7 +88,6 @@ use crate::api_client::{
 use crate::cli::chat::legacy::additional_fields::AdditionalModelFields;
 use crate::cli::chat::legacy::model::ModelInfo;
 use crate::cli::chat::legacy::util::serde_value_to_document;
-use crate::telemetry::ReasonCode;
 
 /// A [Model] implementation using the RTS backend.
 #[derive(Debug, Clone)]
@@ -238,32 +236,10 @@ impl RtsModel {
             },
             Err(err) => {
                 error!(?err, ?request_duration, "failed to send rts request");
-                let kind = match err.kind {
-                    ConverseStreamErrorKind::Throttling => StreamErrorKind::Throttling,
-                    ConverseStreamErrorKind::MonthlyLimitReached => StreamErrorKind::Other {
-                        reason_code: Some(err.reason_code()),
-                        message: err.to_string(),
-                    },
-                    ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::ContextWindowOverflow,
-                    ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::Throttling,
-                    ConverseStreamErrorKind::InvalidModelId { ref model_id } => StreamErrorKind::InvalidModelId {
-                        model_id: model_id.clone(),
-                    },
-                    ConverseStreamErrorKind::Unknown { .. } => StreamErrorKind::Other {
-                        reason_code: Some(err.reason_code()),
-                        message: err.to_string(),
-                    },
-                };
-                let request_id = err.request_id.clone();
-                tx.send(StreamResult::Err(
-                    StreamError::new(kind)
-                        .set_original_request_id(request_id)
-                        .set_original_status_code(err.status_code)
-                        .with_source(Arc::new(err)),
-                ))
-                .await
-                .map_err(|err| error!(?err, "failed to send stream event"))
-                .ok();
+                tx.send(StreamResult::Err(err.into()))
+                    .await
+                    .map_err(|err| error!(?err, "failed to send stream event"))
+                    .ok();
             },
         }
     }
@@ -1331,19 +1307,6 @@ mod tests {
         if !was_cancelled {
             panic!("stream was never cancelled");
         }
-    }
-
-    #[test]
-    fn test_other_stream_err_downcasting() {
-        let err = StreamError::new(StreamErrorKind::Interrupted).with_source(Arc::new(ConverseStreamError::new(
-            ConverseStreamErrorKind::ModelOverloadedError,
-            None::<aws_smithy_types::error::operation::BuildError>, /* annoying type inference
-                                                                     * required */
-        )));
-        assert!(
-            err.as_concrete_error::<ConverseStreamError>()
-                .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
-        );
     }
 
     #[test]

@@ -2856,29 +2856,23 @@ impl AcpSession {
                 }
             },
             AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
-                // Check if this is a throttling error and send a rate limit notification
-                if let agent::protocol::AgentError::AgentLoopError(LoopError::Stream(stream_error)) = &agent_error
-                    && matches!(stream_error.kind, StreamErrorKind::Throttling)
+                let goal_already_completed = self
+                    .goal_controller
+                    .as_ref()
+                    .is_some_and(|controller| controller.state == super::goal::GoalState::Completed);
+
+                if !goal_already_completed
+                    && let agent::protocol::AgentError::AgentLoopError(LoopError::Stream(stream_error)) = &agent_error
+                    && let Some(message) = rate_limit_message(&stream_error.kind)
                 {
                     info!("Sending rate limit error notification to client");
                     if let Err(e) = self.send_ext_notification(methods::RATE_LIMIT_ERROR, RateLimitErrorNotification {
                         session_id: self.session_id.clone(),
-                        message: "Rate limit exceeded. Please wait a moment before trying again.".to_string(),
+                        message: message.to_string(),
                     }) {
                         error!("Failed to send rate limit notification: {}", e);
                     }
                 }
-
-                // Handle goal state before releasing the response:
-                // - If goal already completed (agent called goal(complete) tool before the error), suppress the
-                //   error and release normally — the goal succeeded.
-                // - If goal is still active (WaitingForTurn), mark it exhausted so the subsequent EndTurn (emitted
-                //   by end_current_turn) doesn't spawn a ghost re-injection task after the user already received
-                //   the error.
-                let goal_already_completed = self
-                    .goal_controller
-                    .as_ref()
-                    .is_some_and(|c| c.state == super::goal::GoalState::Completed);
 
                 if let Some(ref mut ctrl) = self.goal_controller
                     && ctrl.should_continue()
@@ -2889,9 +2883,7 @@ impl AcpSession {
                 }
 
                 if goal_already_completed {
-                    // Goal already completed — the error is from the model's follow-up
-                    // response after tool_result. Release gracefully instead of surfacing
-                    // a confusing error to the user.
+                    // The completed goal owns the response, including any later model error.
                     self.release_goal_response().await;
                 } else if let Some(respond_to) = self.pending_prompt_response.take() {
                     let respond_to = respond_to.into_inner();
@@ -4073,6 +4065,18 @@ async fn update_model_info(
     rts_state.apply_model_defaults(settings);
 
     Ok(())
+}
+
+fn rate_limit_message(kind: &StreamErrorKind) -> Option<&str> {
+    const THROTTLE_MESSAGE: &str = "Rate limit exceeded. Please wait a moment before trying again.";
+
+    match kind {
+        StreamErrorKind::Throttling => Some(THROTTLE_MESSAGE),
+        StreamErrorKind::ModelOverloaded { message } | StreamErrorKind::MonthlyLimitReached { message } => {
+            Some(message)
+        },
+        _ => None,
+    }
 }
 
 /// Construct a minimal `ModelInfo` for an id that wasn't returned by `ListAvailableModels`.

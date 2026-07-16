@@ -136,6 +136,7 @@ Not all providers include a detailed explanation with refusals. When only a `CON
 
 ## Related
 
+- [Rate Limit and Capacity Errors](rate-limit-errors.md) — Throttling, model overload, and monthly limit errors
 - [/model](../slash-commands/model.md) — Switch AI models
 - [/rewind](../slash-commands/rewind.md) — Rewind conversation to earlier point
 - [Classic vs TUI](classic-vs-tui.md) — Differences between classic and TUI modes

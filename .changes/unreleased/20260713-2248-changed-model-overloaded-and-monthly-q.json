@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Model-overloaded and monthly-quota errors now show distinct service messages instead of a generic throttle notice"
+}

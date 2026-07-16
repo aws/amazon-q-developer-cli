@@ -932,6 +932,16 @@ fn test_extract_reason_from_stream_error_kind() {
     let err = StreamError::new(StreamErrorKind::Throttling);
     assert_eq!(extract_reason_from_kind(&err).0, REASON_QUOTA_BREACH);
 
+    let err = StreamError::new(StreamErrorKind::ModelOverloaded {
+        message: "overloaded".to_string(),
+    });
+    assert_eq!(extract_reason_from_kind(&err).0, REASON_MODEL_OVERLOADED);
+
+    let err = StreamError::new(StreamErrorKind::MonthlyLimitReached {
+        message: "limit reached".to_string(),
+    });
+    assert_eq!(extract_reason_from_kind(&err).0, REASON_MONTHLY_LIMIT_REACHED);
+
     let err = StreamError::new(StreamErrorKind::ContextWindowOverflow);
     assert_eq!(extract_reason_from_kind(&err).0, REASON_CONTEXT_WINDOW_OVERFLOW);
 

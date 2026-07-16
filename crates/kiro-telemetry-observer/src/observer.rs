@@ -84,6 +84,10 @@ pub const REASON_INTERRUPTED: &str = "Interrupted";
 pub const REASON_CONTEXT_WINDOW_OVERFLOW: &str = "ContextWindowOverflow";
 /// Reason: request rate throttled.
 pub const REASON_QUOTA_BREACH: &str = "QuotaBreachError";
+/// Reason: the selected model is temporarily overloaded.
+pub const REASON_MODEL_OVERLOADED: &str = "ModelOverloadedError";
+/// Reason: the monthly usage limit was reached.
+pub const REASON_MONTHLY_LIMIT_REACHED: &str = "MonthlyLimitReached";
 /// Reason: backend service failure.
 pub const REASON_SERVICE_FAILURE: &str = "ServiceFailure";
 /// Reason: stream timed out waiting for next event.
@@ -834,6 +838,8 @@ fn whole_turn_duration_seconds(duration: Option<std::time::Duration>) -> i64 {
 pub fn extract_reason_from_kind(stream_err: &StreamError) -> (String, String) {
     let reason = match &stream_err.kind {
         StreamErrorKind::Throttling => REASON_QUOTA_BREACH,
+        StreamErrorKind::ModelOverloaded { .. } => REASON_MODEL_OVERLOADED,
+        StreamErrorKind::MonthlyLimitReached { .. } => REASON_MONTHLY_LIMIT_REACHED,
         StreamErrorKind::ContextWindowOverflow => REASON_CONTEXT_WINDOW_OVERFLOW,
         StreamErrorKind::Interrupted => REASON_INTERRUPTED,
         StreamErrorKind::ServiceFailure => REASON_SERVICE_FAILURE,

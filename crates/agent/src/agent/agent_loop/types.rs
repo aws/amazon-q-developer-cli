@@ -131,6 +131,12 @@ pub enum StreamErrorKind {
     ServiceFailure,
     /// The request failed due to the client being throttled.
     Throttling,
+    ModelOverloaded {
+        message: String,
+    },
+    MonthlyLimitReached {
+        message: String,
+    },
     /// The request was invalid.
     ///
     /// Not retryable - indicative of a bug with the client.
@@ -144,7 +150,9 @@ pub enum StreamErrorKind {
     /// 1. Add a new assistant message: `"Response timed out - message took too long to generate"`
     /// 2. Retry with a follow-up user message: `"You took too long to respond - try to split up the
     ///    work into smaller steps."`
-    StreamTimeout { duration: Duration },
+    StreamTimeout {
+        duration: Duration,
+    },
     /// The stream was closed to due being interrupted (for example, on ctrl+c).
     Interrupted,
     /// The backend rejected the request because the specified model id is not allowed in the
@@ -171,6 +179,9 @@ impl std::fmt::Display for StreamErrorKind {
             StreamErrorKind::ContextWindowOverflow => "The context window overflowed".into(),
             StreamErrorKind::ServiceFailure => "The service failed to process the request".into(),
             StreamErrorKind::Throttling => "The request was throttled by the service".into(),
+            StreamErrorKind::ModelOverloaded { message } | StreamErrorKind::MonthlyLimitReached { message } => {
+                message.as_str().into()
+            },
             StreamErrorKind::Validation { .. } => "An invalid request was sent".into(),
             StreamErrorKind::StreamTimeout { duration } => format!(
                 "The stream timed out receiving the response after {}ms",
