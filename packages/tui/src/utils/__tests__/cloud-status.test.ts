@@ -64,6 +64,16 @@ describe('formatCloudFooter (location indicator)', () => {
     );
   });
 
+  it('uses singular "(+1 other)" when exactly one additional repo is bound', () => {
+    expect(formatCloudFooter('kiro/KiroCLIReviewerCDK', 'main', '☁', 1)).toBe(
+      '☁ Cloud · ~/kiro/KiroCLIReviewerCDK · main (+1 other)'
+    );
+    // Singular form also without a branch segment.
+    expect(formatCloudFooter('kiro/banana-service', null, undefined, 1)).toBe(
+      'Cloud · ~/kiro/banana-service (+1 other)'
+    );
+  });
+
   it('appends the suffix even without a known branch', () => {
     expect(formatCloudFooter('kiro/banana-service', null, '☁', 2)).toBe(
       '☁ Cloud · ~/kiro/banana-service (+2 others)'
@@ -72,6 +82,9 @@ describe('formatCloudFooter (location indicator)', () => {
 
   it('omits the suffix for zero/negative/undefined others', () => {
     expect(formatCloudFooter('acme/repo', 'main', undefined, 0)).toBe(
+      'Cloud · ~/kiro/repo · main'
+    );
+    expect(formatCloudFooter('acme/repo', 'main', undefined, -1)).toBe(
       'Cloud · ~/kiro/repo · main'
     );
     expect(formatCloudFooter('acme/repo', 'main', undefined, undefined)).toBe(
