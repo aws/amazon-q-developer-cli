@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Registry errors no longer flood the terminal on some Windows machines"
+}

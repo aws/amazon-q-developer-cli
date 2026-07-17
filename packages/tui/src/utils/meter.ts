@@ -128,7 +128,7 @@ const DEFAULT_SCOPE = 'kiro.tui';
  * Injected centrally — callers never pass identity attributes themselves.
  */
 function withUserId(attrs?: MetricAttributes): MetricAttributes | undefined {
-  const userId = getTelemetryIdentity().userId;
+  const userId = process.env['KIRO_USER_ID'];
   if (!userId) return attrs;
   return { ...attrs, user_id: userId };
 }

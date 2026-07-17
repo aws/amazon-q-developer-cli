@@ -210,6 +210,7 @@ impl Clone for TelemetrySender {
 pub struct TelemetryThread {
     handle: Option<JoinHandle<()>>,
     tx: TelemetrySender,
+    client_id: Uuid,
 }
 
 impl Clone for TelemetryThread {
@@ -217,18 +218,12 @@ impl Clone for TelemetryThread {
         Self {
             handle: None,
             tx: self.tx.clone(),
+            client_id: self.client_id,
         }
     }
 }
 
 impl TelemetryThread {
-    /// Construct a V1 `TelemetryThread`.
-    ///
-    /// V1 keeps its own private internal pipeline (it has a distinct
-    /// `core::Event` shape from the host crate); PR I rewires V1 to consume
-    /// `HostConfig.legacy_sink`. For PR D the `_host_config` parameter is
-    /// metadata-only — V1 still derives govcloud partition and constructs its
-    /// local `TelemetryClient` from `(env, fs, database, region)`.
     pub async fn new(
         env: &Env,
         fs: &Fs,
@@ -239,6 +234,7 @@ impl TelemetryThread {
         // govcloud does not have the infrastructure to support toolkit telemetry
         let govcloud_partition = region.and_then(govcloud_partition);
         let telemetry_client = TelemetryClient::new(env, fs, database, govcloud_partition).await?;
+        let client_id = telemetry_client.client_id;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
 
@@ -266,7 +262,12 @@ impl TelemetryThread {
         Ok(Self {
             handle: Some(handle),
             tx,
+            client_id,
         })
+    }
+
+    pub(crate) fn client_id(&self) -> Uuid {
+        self.client_id
     }
 
     pub async fn finish(self) -> Result<(), TelemetryError> {
@@ -1429,6 +1430,7 @@ mod test {
             .unwrap();
         let clone = thread.clone();
 
+        assert_eq!(clone.client_id(), thread.client_id());
         clone.finish().await.unwrap();
         thread.finish().await.unwrap();
     }
@@ -1441,6 +1443,7 @@ mod test {
                 std::future::pending::<()>().await;
             })),
             tx: TelemetrySender::Strong(tx),
+            client_id: uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
         };
 
         thread.finish_with_timeout(Duration::from_millis(1)).await.unwrap();

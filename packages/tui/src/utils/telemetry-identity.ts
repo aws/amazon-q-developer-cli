@@ -1,20 +1,11 @@
 /**
  * Telemetry identity for KAS agent-side OTel pipeline.
  *
- * The agent (KAS) owns the full OTel pipeline — the client just passes
- * identity fields at initialize time via `clientMeta.telemetry`.
+ * KAS owns its OTel pipeline, while the client supplies the identity fields
+ * negotiated at initialization.
  */
 
-import { machineIdSync } from 'node-machine-id';
 import { getCliVersion } from './version';
-
-function getMachineId(): string {
-  try {
-    return machineIdSync();
-  } catch {
-    return 'UNDETERMINED_MACHINE_ID';
-  }
-}
 
 export interface TelemetryIdentity {
   machineId: string;
@@ -23,17 +14,15 @@ export interface TelemetryIdentity {
   kiroClientVersion: string;
 }
 
-/**
- * KIRO_USER_ID is set by the Rust launcher (launch.rs) for all engines from
- * the DB-cached GetUsageLimits user_id — only available when authenticated.
- */
 export function getTelemetryIdentity(): TelemetryIdentity {
-  const machineId = getMachineId();
+  const version = getCliVersion();
   return {
-    machineId,
+    machineId:
+      process.env['KIRO_TELEMETRY_CLIENT_ID']?.trim() ||
+      'UNDETERMINED_MACHINE_ID',
     userId: process.env['KIRO_USER_ID'] || '',
-    version: getCliVersion(),
-    kiroClientVersion: getCliVersion(),
+    version,
+    kiroClientVersion: version,
   };
 }
 

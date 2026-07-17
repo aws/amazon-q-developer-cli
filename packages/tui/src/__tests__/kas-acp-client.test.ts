@@ -60,10 +60,6 @@ const mockSpawn = mock((_cmd: string, _args: string[], _opts: any) => {
   return mockProcess;
 });
 
-mock.module('node-machine-id', () => ({
-  machineIdSync: () => 'test-machine-id',
-}));
-
 // --- Mock @kiro/client ---
 let capturedSessionUpdateHandler: any = null;
 let capturedPermissionHandler: any = null;

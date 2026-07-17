@@ -30,6 +30,7 @@ use tracing::{
     debug,
     info,
 };
+use uuid::Uuid;
 
 use crate::embedded_tui::extract_tui_assets_if_needed;
 use crate::os::Os;
@@ -37,6 +38,7 @@ use crate::util::consts::env_var::{
     KIRO_CHAT_CLI_BIN,
     KIRO_KAS_NODE_PATH,
     KIRO_KAS_SERVER_PATH,
+    KIRO_TELEMETRY_CLIENT_ID,
     KIRO_VERSION_OVERRIDE,
 };
 
@@ -248,12 +250,9 @@ fn resolve_force_color(
 /// Environment variables unconditionally forwarded to the TUI child process.
 /// Extracted into a pure helper so the forwarded set stays unit-testable.
 ///
-/// `version` is the already-resolved value to forward as
-/// `KIRO_VERSION_OVERRIDE`. The caller is responsible for resolution
-/// (honor a user/parent-provided override, else the crate's compile-time
-/// version) so this helper stays free of process-env reads and is testable
-/// with explicit inputs.
-fn tui_child_env(current_exe: &Path, version: OsString) -> Vec<(&'static str, OsString)> {
+/// The caller resolves the version override and effective telemetry identity so
+/// this helper stays free of process-env reads and is testable with explicit inputs.
+fn tui_child_env(current_exe: &Path, version: OsString, telemetry_client_id: Uuid) -> Vec<(&'static str, OsString)> {
     vec![
         // Path to chat_cli itself, so the TUI can invoke its headless
         // `chat _ export-session` / `chat _ import-session` subcommands for
@@ -270,6 +269,10 @@ fn tui_child_env(current_exe: &Path, version: OsString) -> Vec<(&'static str, Os
         // `0.0.0-dev` placeholder / `99.99.99-dev` dev fallback. Keeps the
         // survey User-Agent and KAS clientInfo aligned with the Rust user agent.
         (KIRO_VERSION_OVERRIDE, version),
+        (
+            KIRO_TELEMETRY_CLIENT_ID,
+            telemetry_client_id.hyphenated().to_string().into(),
+        ),
     ]
 }
 
@@ -354,7 +357,7 @@ async fn launch_acp_interactive(
     // it; fall back to the crate's compile-time version when unset.
     let version_override =
         std::env::var_os(KIRO_VERSION_OVERRIDE).unwrap_or_else(|| OsString::from(env!("CARGO_PKG_VERSION")));
-    for (key, value) in tui_child_env(&current_exe, version_override) {
+    for (key, value) in tui_child_env(&current_exe, version_override, os.telemetry.client_id()) {
         cmd.env(key, value);
     }
 
@@ -843,7 +846,11 @@ mod tests {
         // (e.g. in the survey User-Agent). Pass the default explicitly rather
         // than mutating process env to keep this test parallel-safe.
         let exe = Path::new("/tmp/kiro-cli");
-        let env = tui_child_env(exe, OsString::from(env!("CARGO_PKG_VERSION")));
+        let env = tui_child_env(
+            exe,
+            OsString::from(env!("CARGO_PKG_VERSION")),
+            uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+        );
         let version = env
             .iter()
             .find(|(k, _)| *k == "KIRO_VERSION_OVERRIDE")
@@ -862,7 +869,11 @@ mod tests {
         // version. Passing the value as an explicit param keeps the test free
         // of process-env mutation (parallel-test safe).
         let exe = Path::new("/tmp/kiro-cli");
-        let env = tui_child_env(exe, OsString::from("7.7.7-test"));
+        let env = tui_child_env(
+            exe,
+            OsString::from("7.7.7-test"),
+            uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+        );
         let version = env
             .iter()
             .find(|(k, _)| *k == "KIRO_VERSION_OVERRIDE")
@@ -872,6 +883,19 @@ mod tests {
             Some(OsString::from("7.7.7-test").as_os_str()),
             "TUI child env must forward the caller-resolved override value verbatim"
         );
+    }
+
+    #[test]
+    fn test_tui_child_env_forwards_telemetry_client_id() {
+        let exe = Path::new("/tmp/kiro-cli");
+        let client_id = uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e");
+        let env = tui_child_env(exe, OsString::from("7.7.7-test"), client_id);
+        let forwarded = env
+            .iter()
+            .find(|(key, _)| *key == KIRO_TELEMETRY_CLIENT_ID)
+            .map(|(_, value)| value.clone());
+
+        assert_eq!(forwarded, Some(OsString::from("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e")));
     }
 
     #[test]
