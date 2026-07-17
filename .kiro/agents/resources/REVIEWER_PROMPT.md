@@ -42,12 +42,13 @@ Correlate: if memory flags a pattern in this file, check if the current diff int
 
 **⚠️ CRITICAL: You MUST delegate to the `semantic-reviewer` sub-agent for EVERY PR, regardless of size or complexity. NEVER generate the review yourself inline — always invoke the sub-agent tool. This is non-negotiable.**
 
-**Fallback:** If the `subagent` tool is unavailable or the delegation fails (tool not found, timeout, error), you MUST still produce a review that matches the sub-agent's format. Read `.kiro/skills/semantic-pr-reviewer/SKILL.md` and follow its methodology directly — including confidence qualifiers (`confirmed`/`likely`/`possible`), the editing pass, issue summary, and verdict. The output format MUST include: High-level view, `<details>` collapsed block, Issues summary, and `**Verdict**: APPROVED` or `**Verdict**: NEEDS_CHANGES`. Never fall back to the old flat emoji-header format.
+**Fallback:** If the `subagent` tool is unavailable or the delegation fails (tool not found, timeout, error), you MUST still produce a review that matches the sub-agent's format. Read `.kiro/skills/semantic-pr-reviewer/SKILL.md` and follow its methodology directly — including confidence qualifiers (`confirmed`/`likely`/`possible`), the editing pass, issue summary, verdict, and adjacent `*.publish.json` manifest. The output format MUST include: High-level view, `<details>` collapsed block, Issues summary, and `**Verdict**: APPROVED` or `**Verdict**: NEEDS_CHANGES`. Never fall back to the old flat emoji-header format.
 
 Delegate the behavioral review to the `semantic-reviewer` sub-agent. Pass it:
 - The PR number and repo (`{owner}/{repo}`)
 - The memory context from step 2 (author patterns, component patterns, known patterns)
 - That this is a **final review** — the sub-agent must emit a verdict (APPROVED or NEEDS_CHANGES)
+- That it must write an adjacent `*.publish.json` manifest mapping each actionable concern to an inline anchor or `summary_findings`, as defined by the semantic reviewer skill
 
 When passing memory context, instruct the sub-agent to correlate it with the diff:
 - If memory flags a pattern (e.g. "bare-unwrap", "string_slice") in this file area → check if the current diff introduces that pattern
@@ -55,7 +56,7 @@ When passing memory context, instruct the sub-agent to correlate it with the dif
 - If the author has a known review pattern (e.g. "typically gets flagged for missing error propagation") → look for that specifically in the diff
 - If `known_patterns[]` includes something relevant, flag it as a concern if the diff introduces it
 
-The sub-agent will produce the full review document at `./semantic-review/<date>-<time>-pr-<N>.md`. Read it back when done.
+The sub-agent will produce the full review document at `./semantic-review/<date>-<time>-pr-<N>.md` and an adjacent `*.publish.json` manifest. Read both files when done.
 
 ## Step 3b: Append Memory Context and Suggested Reviewers
 
@@ -86,18 +87,15 @@ One sentence explaining why (e.g. "Clean config extraction with no runtime conce
 
 This must always be the last thing before the bot signature.
 
-## Step 4: Post or edit (never both)
+## Step 4: Publish one atomic review with inline findings
 
-- Prior comment exists → PATCH it:
-  ```bash
-  gh api repos/{owner}/{repo}/issues/comments/$COMMENT_ID --method PATCH -f body='...'
-  ```
-- No prior comment → create:
-  ```bash
-  gh pr comment {pr_number} --repo {owner}/{repo} --body '...'
-  ```
+Read and follow `.kiro/skills/publish-pr-review/SKILL.md` using the generated Markdown and adjacent manifest.
 
-Only post if there are new findings. If nothing new, exit cleanly.
+- Use the complete semantic review as the parent review body.
+- Attach each actionable line-specific finding as an inline comment in the same review; include an apply-ready suggestion only when it is an exact replacement.
+- Keep findings without a defensible changed-line anchor in the parent body.
+- Submit one GitHub `COMMENT` review. Do not create or patch a top-level issue comment, and do not post inline comments individually.
+- Only publish when at least one new finding remains after deduplication. If nothing new remains, exit cleanly.
 
 ## Step 5: Slack summary
 

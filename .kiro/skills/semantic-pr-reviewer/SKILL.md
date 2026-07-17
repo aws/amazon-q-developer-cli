@@ -206,6 +206,55 @@ The count N in the summary line is the number of items. Labels should be specifi
 
 Write the review to `./semantic-review/<yyyy-mm-dd>-<HHmmss>-pr-<N>.md`.
 
+For a post-PR review, also write an adjacent `./semantic-review/<yyyy-mm-dd>-<HHmmss>-pr-<N>.publish.json`. This is a publication proposal, not permission to post. The caller decides whether to invoke the `publish-pr-review` skill.
+
+The manifest must use this shape:
+
+```json
+{
+  "schema_version": 1,
+  "repository": "owner/repo",
+  "pull_number": 123,
+  "reviewed_head_sha": "full commit SHA",
+  "review_path": "semantic-review/<same basename>.md",
+  "inline_findings": [
+    {
+      "id": "stable-short-id",
+      "severity": "P1",
+      "confidence": "confirmed",
+      "title": "Short finding title",
+      "path": "src/file.ts",
+      "line": 42,
+      "start_line": null,
+      "body": "Evidence and impact without a signature or severity prefix.",
+      "remediation": "Concrete fix.",
+      "suggestion": null
+    }
+  ],
+  "summary_findings": [
+    {
+      "id": "stable-short-id",
+      "severity": "P2",
+      "confidence": "confirmed",
+      "title": "Cross-cutting coverage gap",
+      "body": "Why this cannot be attached to one meaningful changed line.",
+      "remediation": "Concrete fix."
+    }
+  ]
+}
+```
+
+Map every actionable item from the review's Issues section exactly once:
+
+- Use `inline_findings` only when the issue has a meaningful added-line anchor in the current PR diff. `line` and optional `start_line` are new-file line numbers on the right side.
+- Use `summary_findings` for broad test gaps, architecture concerns, or anything without a defensible changed-line anchor. Never attach these to an arbitrary line.
+- Keep `body` evidence-based and put the concrete action in `remediation`.
+- Add `suggestion` only when it is the exact, complete replacement for the anchored line range and can be applied safely as a GitHub suggested change. Otherwise use prose remediation.
+- Use a unique marker-safe ID for each issue matching `^[a-z0-9][a-z0-9-]{0,63}$`, preferably a content-derived slug that remains stable when the same issue is reviewed on a later head.
+- Do not include the Semantic Reviewer signature or hidden dedup markers; the publisher owns rendering.
+
+Do not create a publication manifest for a local pre-PR diff.
+
 When invoked by the autonomous planner (indicated by the delegation prompt specifying a task state path and base branch), use `git diff` against the specified base branch and write the review to `.agents/tasks/<task-id>/<yyyy-mm-dd>-<HHmmss>-review.md`.
 
 ---
