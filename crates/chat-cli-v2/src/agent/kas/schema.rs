@@ -94,7 +94,9 @@ pub enum CreatedReason {
     Human,
     Rewind,
     Subagent,
-    Thread,
+    /// Alias preserves deserialization of sessions created before the variant was renamed.
+    #[serde(alias = "thread")]
+    Tangent,
 }
 
 /// One line of `messages.jsonl`. Mirrors `PersistedMessageSchema`.
@@ -293,10 +295,11 @@ mod tests {
         assert_eq!(out["modelId"], "claude-sonnet-4.5");
     }
 
-    /// `createdReason` accepts every KAS-defined enum value.
+    /// `createdReason` accepts every KAS-defined enum value, including
+    /// the legacy `"thread"` alias.
     #[test]
     fn metadata_created_reason_accepts_all_kas_values() {
-        for reason in ["human", "rewind", "subagent", "thread"] {
+        for reason in ["human", "rewind", "subagent", "tangent"] {
             let raw = json!({
                 "schemaVersion": "1.0.0",
                 "id": "cli_abc_12345678",
@@ -311,6 +314,26 @@ mod tests {
             let out = serde_json::to_value(&parsed).expect("serialize");
             assert_eq!(out["createdReason"], reason);
         }
+    }
+
+    /// Legacy `"thread"` value still deserializes (backward compat) and
+    /// round-trips as `"tangent"` (the canonical name).
+    #[test]
+    fn metadata_created_reason_thread_alias_deserializes() {
+        let raw = json!({
+            "schemaVersion": "1.0.0",
+            "id": "cli_abc_12345678",
+            "title": "test",
+            "agentMode": "default",
+            "workspacePaths": ["/tmp/ws"],
+            "createdAt": "2024-01-01T00:00:00Z",
+            "lastModifiedAt": "2024-01-01T00:00:00Z",
+            "createdReason": "thread",
+        });
+        let parsed: SessionMetadata = serde_json::from_value(raw).expect("parse legacy 'thread'");
+        let out = serde_json::to_value(&parsed).expect("serialize");
+        // After round-trip, the canonical name is used
+        assert_eq!(out["createdReason"], "tangent");
     }
 
     /// Fields not named in [`SessionMetadata`] survive a
@@ -406,6 +429,6 @@ mod tests {
             serde_json::to_value(CreatedReason::Subagent).unwrap(),
             json!("subagent")
         );
-        assert_eq!(serde_json::to_value(CreatedReason::Thread).unwrap(), json!("thread"));
+        assert_eq!(serde_json::to_value(CreatedReason::Tangent).unwrap(), json!("tangent"));
     }
 }
