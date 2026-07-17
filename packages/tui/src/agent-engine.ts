@@ -14,3 +14,8 @@ export function resolveAgentEngine(): AgentEngine {
 export function engineSupportsSubagentKill(engine: AgentEngine): boolean {
   return engine !== 'kas';
 }
+
+/** KAS exposes MCP snapshots and reset-server OAuth, but not `/mcp` actions. */
+export function engineSupportsMcpCommandActions(engine: AgentEngine): boolean {
+  return engine !== 'kas';
+}

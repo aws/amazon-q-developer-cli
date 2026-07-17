@@ -38,11 +38,13 @@ import {
   useContextState,
   useKiroClient,
 } from '../../../stores/selectors.js';
-import { useAppStore, type McpServerInfo } from '../../../stores/app-store.js';
+import { useAppStore } from '../../../stores/app-store.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { startMcpOAuth } from '../../../utils/mcp-oauth.js';
 import { copyToSystemClipboard } from '../../../commands/effects.js';
+import { engineSupportsMcpCommandActions } from '../../../agent-engine.js';
 import type { BackendPanelHandlers } from './useBackendPanelHandlers.js';
+import { runMcpPanelAction } from './mcp-panel-actions.js';
 
 interface BackendPanelsProps {
   handlers: BackendPanelHandlers;
@@ -98,6 +100,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
   const { contextUsagePercent, currentModel, currentAgent } = useContextState();
   const { kiro } = useKiroClient();
   const agentEngine = useAppStore((s) => s.agentEngine);
+  const supportsMcpCommandActions =
+    engineSupportsMcpCommandActions(agentEngine);
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
   const closeSurveyPanel = useAppStore((s) => s.closeSurveyPanel);
   const submitSurvey = useAppStore((s) => s.submitSurvey);
@@ -117,27 +121,33 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     );
   }, [mcpServers, pendingOAuthServers]);
 
-  // Run a single-server /mcp action (e.g. "auth <name>") then refresh the
-  // panel's status snapshot. Live OAuth/init events update pendingOAuthServers
-  // separately.
-  const runMcpServerAction = useCallback(
-    async (value: string) => {
-      await kiro.executeCommand({
-        command: 'mcp',
-        args: { value },
-      } as any);
-      const result = await kiro.executeCommand({
-        command: 'mcp',
-        args: { value: '' },
-      } as any);
-      if (result?.data) {
-        const data = result.data as {
-          servers?: McpServerInfo[];
-          mode?: string;
-        };
-        setShowMcpPanel(true, data.servers ?? [], data.mode ?? 'status');
-      }
+  const startMcpServerOAuth = useCallback(
+    (serverName: string) => {
+      startMcpOAuth({
+        agentEngine,
+        serverName,
+        url: pendingOAuthServers.get(serverName) ?? null,
+        resetMcpServer: (name, startOAuth) =>
+          kiro.resetMcpServer(name, startOAuth),
+        copyToClipboard: copyToSystemClipboard,
+        showAlert: (message, status, autoHideMs) =>
+          showTransientAlert({ message, status, autoHideMs }),
+      });
     },
+    [agentEngine, kiro, pendingOAuthServers, showTransientAlert]
+  );
+
+  // V2 owns the command-backed mutation surface. KAS exposes only its
+  // supported reset-server OAuth operation.
+  const runMcpServerAction = useCallback(
+    (value: string) =>
+      runMcpPanelAction({
+        kiro,
+        value,
+        refreshValue: '',
+        panelMode: 'status',
+        setShowMcpPanel,
+      }),
     [kiro, setShowMcpPanel]
   );
 
@@ -205,48 +215,42 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
           pendingOAuthUrls={pendingOAuthServers}
           mode={mcpMode}
           onClose={handlers.handleCloseMcpPanel}
-          onAuthenticate={(serverName) => {
-            // Mirror the Ctrl+Y path so the panel shows the same
-            // notification: KAS resets the server to (re)start OAuth;
-            // V2 copies the (already valid) URL to the clipboard.
-            startMcpOAuth({
-              agentEngine,
-              serverName,
-              url: pendingOAuthServers.get(serverName) ?? null,
-              resetMcpServer: (name, startOAuth) =>
-                kiro.resetMcpServer(name, startOAuth),
-              copyToClipboard: copyToSystemClipboard,
-              showAlert: (message, status, autoHideMs) =>
-                showTransientAlert({ message, status, autoHideMs }),
-            });
-          }}
-          onForceAuth={(serverName) => {
-            void runMcpServerAction(`auth ${serverName}`);
-          }}
-          onAbortAuth={(serverName) => {
-            void runMcpServerAction(`cancel-auth ${serverName}`);
-          }}
-          onRemoveCredentials={(serverName) => {
-            void runMcpServerAction(`logout ${serverName}`);
-          }}
-          onAction={async (serverNames: string[]) => {
-            const action = mcpMode === 'add' ? 'add' : 'remove';
-            await kiro.executeCommand({
-              command: 'mcp',
-              args: { value: `${action} ${serverNames.join(',')}` },
-            } as any);
-            const result = await kiro.executeCommand({
-              command: 'mcp',
-              args: { value: action },
-            } as any);
-            if (result?.data) {
-              const data = result.data as {
-                servers?: McpServerInfo[];
-                mode?: string;
-              };
-              setShowMcpPanel(true, data.servers ?? [], data.mode ?? action);
-            }
-          }}
+          onAuthenticate={startMcpServerOAuth}
+          onForceAuth={
+            supportsMcpCommandActions
+              ? (serverName) => {
+                  void runMcpServerAction(`auth ${serverName}`);
+                }
+              : startMcpServerOAuth
+          }
+          onAbortAuth={
+            supportsMcpCommandActions
+              ? (serverName) => {
+                  void runMcpServerAction(`cancel-auth ${serverName}`);
+                }
+              : undefined
+          }
+          onRemoveCredentials={
+            supportsMcpCommandActions
+              ? (serverName) => {
+                  void runMcpServerAction(`logout ${serverName}`);
+                }
+              : undefined
+          }
+          onAction={
+            supportsMcpCommandActions
+              ? async (serverNames: string[]) => {
+                  const action = mcpMode === 'add' ? 'add' : 'remove';
+                  await runMcpPanelAction({
+                    kiro,
+                    value: `${action} ${serverNames.join(',')}`,
+                    refreshValue: action,
+                    panelMode: action,
+                    setShowMcpPanel,
+                  });
+                }
+              : undefined
+          }
         />
       )}
       {showToolsPanel && (

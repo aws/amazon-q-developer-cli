@@ -213,7 +213,6 @@ describe('dispatcher KAS intercept', () => {
       kiro: {
         sessionId: 'cur',
         contextAdd,
-        getCachedContextBreakdown: mock(() => null),
       } as any,
     });
     ctx.agentEngine = 'kas';
@@ -232,14 +231,19 @@ describe('dispatcher KAS intercept', () => {
   });
 
   it("agentEngine='kas' + bare /context: handler opens the panel from the cached breakdown", async () => {
-    const cached = { contextFiles: { tokens: 100, percent: 5 } };
+    const cached = {
+      contextFiles: { tokens: 100, percent: 5 },
+      tools: { tokens: 20, percent: 1 },
+      kiroResponses: { tokens: 30, percent: 2 },
+      yourPrompts: { tokens: 40, percent: 2 },
+    };
     const ctx = createMockCommandContext({
       slashCommands: [CONTEXT_CMD],
       kiro: {
         sessionId: 'cur',
-        getCachedContextBreakdown: mock(() => cached),
         contextShow: mock(() => Promise.resolve({ entries: [] })),
       } as any,
+      getContextBreakdownCache: () => cached,
     });
     ctx.agentEngine = 'kas';
     await dispatch(CONTEXT_CMD, '', ctx);

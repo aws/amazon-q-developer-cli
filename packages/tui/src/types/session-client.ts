@@ -7,7 +7,7 @@ import type {
   SpecResolveSessionResponse,
 } from '@kiro/acp-type-covenant';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
-import type { ContextBreakdownData } from '../stores/app-store';
+import type { ContextBreakdownData } from './context';
 import type { AgentStreamEvent } from './agent-events';
 import type {
   CommandOptionsResponse,
@@ -288,6 +288,13 @@ export interface SessionClient {
   ): () => void;
 
   /**
+   * Registers a callback for inbox notifications.
+   *
+   * @param handler - Callback function that receives inbox notifications
+   */
+  onInboxNotification?(handler: (notification: any) => void): () => void;
+
+  /**
    * Resolves (or creates) the ACP session the agent uses to work on a
    * spec feature.  Implemented only by engines that support the
    * `_kiro/spec/resolveSession` extension method (currently KAS).
@@ -356,15 +363,6 @@ export interface SessionClient {
   ): Promise<KasContextMutationResponse>;
   contextRemove?(path: string): Promise<KasContextMutationResponse>;
   contextClear?(): Promise<KasContextMutationResponse>;
-
-  /**
-   * Latest context-usage breakdown pushed via `session_info_update`
-   * notifications, or `null` if none has been pushed yet.
-   *
-   * Used by the /context handler to short-circuit the panel open without
-   * a round-trip to the agent. KAS-only.
-   */
-  getCachedContextBreakdown?(): ContextBreakdownData | null;
 
   /**
    * Resets an MCP server connection, optionally starting the OAuth flow.

@@ -3,6 +3,7 @@ import { handleContext } from '../context';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
 import type { KasCommand } from '../../../kas-commands';
 import { KasCommandName } from '../../../kas-commands';
+import type { ContextBreakdownData } from '../../../types/context';
 
 const CONTEXT_CMD: KasCommand = {
   name: KasCommandName.Context,
@@ -22,19 +23,31 @@ const CONTEXT_CMD: KasCommand = {
  * test — they'll be merged on top of the defaults.
  */
 function ctxWith(
-  kiroOverrides: Record<string, unknown> = {}
+  kiroOverrides: Record<string, unknown> = {},
+  getContextBreakdownCache: () => ContextBreakdownData | null = () => null
 ): ReturnType<typeof createMockCommandContext> {
   const defaults = {
     contextShow: mock(() => Promise.resolve({ entries: [] })),
     contextAdd: mock(() => Promise.resolve({ success: true, message: '' })),
     contextRemove: mock(() => Promise.resolve({ success: true, message: '' })),
     contextClear: mock(() => Promise.resolve({ success: true, message: '' })),
-    getCachedContextBreakdown: mock(() => null),
   };
   return createMockCommandContext({
     kasCommands: [CONTEXT_CMD],
     kiro: { ...defaults, ...kiroOverrides } as any,
+    getContextBreakdownCache,
   });
+}
+
+function makeBreakdown(
+  contextFiles: ContextBreakdownData['contextFiles']
+): ContextBreakdownData {
+  return {
+    contextFiles,
+    tools: { tokens: 20, percent: 1 },
+    kiroResponses: { tokens: 30, percent: 2 },
+    yourPrompts: { tokens: 40, percent: 2 },
+  };
 }
 
 describe('handleContext (KAS-mode dispatch)', () => {
@@ -42,11 +55,7 @@ describe('handleContext (KAS-mode dispatch)', () => {
 
   describe('show flow', () => {
     it('bare /context with cached breakdown opens the panel collapsed', async () => {
-      const ctx = ctxWith({
-        getCachedContextBreakdown: mock(() => ({
-          contextFiles: { tokens: 100, percent: 5 },
-        })),
-      });
+      const ctx = ctxWith({}, () => makeBreakdown({ tokens: 100, percent: 5 }));
       await handleContext(CONTEXT_CMD, '', ctx);
 
       const setBreakdown = ctx._spies.setShowContextBreakdown as any;
@@ -62,23 +71,28 @@ describe('handleContext (KAS-mode dispatch)', () => {
     it('prefers the show-response breakdown over the cached one', async () => {
       // The cache is stale (e.g. right after an /agent switch); the fresh
       // show-response breakdown must win.
-      const ctx = ctxWith({
-        getCachedContextBreakdown: mock(() => ({
-          contextFiles: { tokens: 1, percent: 1, items: [{ name: 'stale' }] },
-        })),
-        contextShow: mock(() =>
-          Promise.resolve({
-            entries: [],
-            breakdown: {
-              contextFiles: {
+      const ctx = ctxWith(
+        {
+          contextShow: mock(() =>
+            Promise.resolve({
+              entries: [],
+              breakdown: makeBreakdown({
                 tokens: 999,
                 percent: 9,
-                items: [{ name: 'fresh' }],
-              },
-            },
+                items: [
+                  { name: 'fresh', tokens: 999, percent: 9, matched: true },
+                ],
+              }),
+            })
+          ),
+        },
+        () =>
+          makeBreakdown({
+            tokens: 1,
+            percent: 1,
+            items: [{ name: 'stale', tokens: 1, percent: 1, matched: true }],
           })
-        ),
-      });
+      );
       await handleContext(CONTEXT_CMD, 'show', ctx);
 
       const setBreakdown = ctx._spies.setShowContextBreakdown as any;
@@ -89,11 +103,7 @@ describe('handleContext (KAS-mode dispatch)', () => {
     });
 
     it('/context show with cached breakdown opens the panel expanded', async () => {
-      const ctx = ctxWith({
-        getCachedContextBreakdown: mock(() => ({
-          contextFiles: { tokens: 100, percent: 5 },
-        })),
-      });
+      const ctx = ctxWith({}, () => makeBreakdown({ tokens: 100, percent: 5 }));
       await handleContext(CONTEXT_CMD, 'show', ctx);
 
       const setBreakdown = ctx._spies.setShowContextBreakdown as any;
@@ -101,9 +111,39 @@ describe('handleContext (KAS-mode dispatch)', () => {
       expect(breakdown.initialExpanded).toBe(true);
     });
 
+    it('uses a cache update that arrives while contextShow is pending', async () => {
+      let resolveShow!: (response: { entries: [] }) => void;
+      const showResponse = new Promise<{ entries: [] }>((resolve) => {
+        resolveShow = resolve;
+      });
+      let cachedBreakdown: ContextBreakdownData | null = null;
+      const ctx = ctxWith(
+        {
+          contextShow: mock(() => showResponse),
+        },
+        () => cachedBreakdown
+      );
+
+      const handling = handleContext(CONTEXT_CMD, 'show', ctx);
+      cachedBreakdown = makeBreakdown({
+        tokens: 777,
+        percent: 7,
+        items: [{ name: 'mid-flight', tokens: 777, percent: 7, matched: true }],
+      });
+      resolveShow({ entries: [] });
+      await handling;
+
+      const setBreakdown = ctx._spies.setShowContextBreakdown as any;
+      expect(setBreakdown.mock.calls[0][1]).toMatchObject({
+        contextFiles: {
+          items: [{ name: 'mid-flight' }],
+        },
+        initialExpanded: true,
+      });
+    });
+
     it('falls through to contextShow() when no breakdown is cached', async () => {
       const ctx = ctxWith({
-        getCachedContextBreakdown: mock(() => null),
         contextShow: mock(() =>
           Promise.resolve({
             entries: [

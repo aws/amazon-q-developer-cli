@@ -36,22 +36,22 @@ describe('lite welcome banner roundtrip', () => {
         .getSnapshot()
         .filter((line) => line.includes('lite'));
       expect(bannerLines.length).toBeGreaterThan(0);
-      expect(storeBefore.liteWelcomeEmitted).toBe(false);
+      expect(storeBefore.lite.welcomeEmitted).toBe(false);
 
       for (let i = 0; i < roundtrips; i++) {
         await switchToTui(testCase);
         await testCase.sleepMs(500);
         const storeTui = await testCase.getStore();
         expect(storeTui.uiMode).toBe('tui');
-        // Unmount sets liteWelcomeEmitted=true (gates the live-region banner
+        // Unmount sets lite.welcomeEmitted=true (gates the live-region banner
         // so the welcome screen doesn't re-flash on the next lite mount).
-        expect(storeTui.liteWelcomeEmitted).toBe(true);
+        expect(storeTui.lite.welcomeEmitted).toBe(true);
 
         await switchToLite(testCase);
         await testCase.sleepMs(500);
         const storeLite = await testCase.getStore();
         expect(storeLite.uiMode).toBe('lite');
-        expect(storeLite.liteWelcomeEmitted).toBe(true);
+        expect(storeLite.lite.welcomeEmitted).toBe(true);
       }
 
       // Each mount writes the "· lite" version line exactly once (live-region

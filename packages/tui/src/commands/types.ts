@@ -23,6 +23,7 @@ import type {
 } from '../utils/kas-config-options.js';
 import type {
   ActiveCommand,
+  ContextBreakdownData,
   HookInfo,
   KnowledgeEntry,
   McpServerInfo,
@@ -115,6 +116,8 @@ export interface CommandContext {
   setContextUsage: (percent: number) => void;
   /** Show/hide context breakdown panel */
   setShowContextBreakdown: (show: boolean, breakdown?: any) => void;
+  /** Read the latest raw context breakdown pushed by the active agent. */
+  getContextBreakdownCache: () => ContextBreakdownData | null;
   /** Show/hide help panel */
   setShowHelpPanel: (
     show: boolean,
@@ -145,6 +148,10 @@ export interface CommandContext {
     mode?: string,
     registryServers?: McpServerInfo[]
   ) => void;
+  /** Latest KAS configured-server snapshot. */
+  mcpServerCache: readonly McpServerInfo[];
+  /** Latest KAS MCP registry snapshot. */
+  mcpRegistryCache: readonly McpServerInfo[];
   /** Show/hide tools panel */
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
   /**
@@ -173,6 +180,11 @@ export interface CommandContext {
   ) => void;
   /** Show/hide hooks panel */
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
+  /**
+   * Read-only snapshot of the hook registry at the moment the context was
+   * built. KAS uses it before falling back to `_kiro/hooks/list`.
+   */
+  hooksList: readonly HookInfo[];
   /** Show/hide the `/repo` picker with the fetched repositories (cloud-only). */
   setShowRepoPicker: (
     show: boolean,

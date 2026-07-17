@@ -11,12 +11,15 @@
  * after vim's alt screen exit.
  */
 
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, it } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AcpTestCase } from '../shared/AcpTestCase';
 import { defaultKasModes } from '../shared/default-agent';
+
+const ALT_SCREEN_EXIT = '\x1b[?1049l';
+const ENABLE_BRACKETED_PASTE = '\x1b[?2004h';
 
 function setupHandshake(tc: AcpTestCase): void {
   tc.mock.on('initialize', () => ({
@@ -27,6 +30,28 @@ function setupHandshake(tc: AcpTestCase): void {
     sessionId: 's1',
     modes: defaultKasModes(),
   }));
+}
+
+async function waitForTerminalModeRestore(
+  tc: AcpTestCase,
+  outputStart: number,
+  timeoutMs = 10000
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const commandOutput = tc.getOutput().slice(outputStart);
+    const altScreenExit = commandOutput.lastIndexOf(ALT_SCREEN_EXIT);
+    if (
+      altScreenExit >= 0 &&
+      commandOutput
+        .slice(altScreenExit + ALT_SCREEN_EXIT.length)
+        .includes(ENABLE_BRACKETED_PASTE)
+    ) {
+      return;
+    }
+    await tc.sleepMs(50);
+  }
+  throw new Error('terminal modes were not restored after the shell escape');
 }
 
 describe('shell escape bracketed paste', () => {
@@ -54,22 +79,15 @@ describe('shell escape bracketed paste', () => {
 
     // Run !vim -c q — opens vim and immediately quits.
     // vim disables bracketed paste on exit.
+    const outputStart = tc.getOutput().length;
     await tc.sendKeys('!vim -c q');
     await tc.pressEnter();
-    await tc.sleepMs(1500);
-
-    // Wait for prompt to return
-    await tc.waitForVisibleText('ask a question', 10000);
 
     // The TTY shell escape path writes \x1b[?1049l (leave alt screen)
     // after vim exits. Bracketed paste (\x1b[?2004h) must be re-enabled
-    // AFTER that point. Find the last alt-screen-exit in the raw PTY
-    // output and check that a bracketed-paste-enable follows it.
-    const allOutput = tc.getOutput();
-    const altScreenExit = allOutput.lastIndexOf('\x1b[?1049l');
-    expect(altScreenExit).toBeGreaterThan(-1); // sanity: vim used alt screen
-
-    const afterAltExit = allOutput.slice(altScreenExit);
-    expect(afterAltExit.includes('\x1b[?2004h')).toBe(true);
+    // after that point. Poll the raw PTY output because the prompt remains
+    // visible while the synchronous child process is still exiting.
+    await waitForTerminalModeRestore(tc, outputStart);
+    await tc.waitForVisibleText('ask a question', 10000);
   }, 45000);
 });

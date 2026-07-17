@@ -1,9 +1,7 @@
 import React, { useEffect } from 'react';
-import { InlineLayout } from './InlineLayout';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
-import { LiteLayout } from './lite/index.js';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
@@ -26,6 +24,7 @@ import {
 } from './app-keypress-dispatch.js';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { useAllowAnimations } from '../../hooks/useGlyphs.js';
+import { UI_VARIANTS } from './ui-variants.js';
 
 /**
  * Suspends the process by restoring terminal state and sending SIGTSTP
@@ -198,6 +197,8 @@ export const AppContainer: React.FC = () => {
   });
 
   const { allowAnimations } = useAllowAnimations();
+  const { Layout, ApprovalPrompt, StatusLine, ActivityTray } =
+    UI_VARIANTS[uiMode];
 
   // Show trust-all-tools confirmation gate before allowing session to proceed
   if (trustAllToolsRequested && !trustAllToolsConfirmed) {
@@ -219,8 +220,13 @@ export const AppContainer: React.FC = () => {
 
   return (
     <AnimationPausedContext.Provider value={!allowAnimations}>
-      {mode === 'inline' && uiMode === 'tui' && <InlineLayout />}
-      {mode === 'inline' && uiMode === 'lite' && <LiteLayout />}
+      {mode === 'inline' && (
+        <Layout
+          ApprovalPrompt={ApprovalPrompt}
+          StatusLine={StatusLine}
+          ActivityTray={ActivityTray}
+        />
+      )}
       {mode === 'expanded' && <ExpandedLayout />}
       {mode === 'crew-monitor' && <CrewMonitorScreen />}
       {mode === 'session-view' && <SessionViewScreen />}

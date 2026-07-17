@@ -10,6 +10,7 @@ export {
   Newline,
   Spacer,
   Transform,
+  Region,
   Scrollbar,
   StreamingPanel,
   useInput,

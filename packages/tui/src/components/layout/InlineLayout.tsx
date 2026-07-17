@@ -1,13 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Text } from './../../renderer.js';
-import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
 import { truncateToWidth } from '../../utils/text-width.js';
 import { usePlanModeToggle } from '../../hooks/usePlanModeToggle.js';
-
-// Region is twinki-only — lazy import for dev mode metrics
-const Region = isDevMode()
-  ? (await import('twinki').catch(() => ({ Region: null }))).Region
-  : null;
 import {
   AnimationPausedContext,
   useAnimationPaused,
@@ -19,7 +13,6 @@ import { openUrlInBrowser } from '../../utils/browser.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../utils/cloud-urls.js';
 import { formatCloudStartupChecklist } from './shared/cloud-startup-checklist.js';
 import { cloudConnectStage } from './shared/cloud-connect-stage.js';
-import { ActivityTray } from '../ui/activity-tray/index.js';
 import { ExitHint } from '../ui/ExitHint';
 import { CommandMenu } from '../ui/CommandMenu';
 import { ActionHint } from '../ui/hint/ActionHint.js';
@@ -27,18 +20,16 @@ import {
   PromptBar,
   type PromptBarHeader,
 } from '../chat/prompt-bar/PromptBar.js';
-import { ContextBar } from '../chat/prompt-bar/ContextBar.js';
 import { SnackBar } from '../chat/prompt-bar/SnackBar.js';
 import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
-import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
-import { ApprovalRequest } from '../ui/ApprovalRequest.js';
 import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
 import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
 import { BackendPanels } from './shared/BackendPanels.js';
 import { useBackendPanelHandlers } from './shared/useBackendPanelHandlers.js';
+import type { VariantLayoutProps } from './variant-layout.js';
 
 import {
   useNotificationState,
@@ -67,15 +58,12 @@ import {
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getPlaceholder } from './getPlaceholder.js';
 import { getGitBranch } from '../../utils/git';
-import { formatCloudFooter } from '../../utils/cloud-status';
-import { shortenPath, formatEffort } from '../../utils/string';
-import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
+import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import {
   useGlyphs,
   useSpinners,
   useAllowAnimations,
-  useAllowIcons,
 } from '../../hooks/useGlyphs.js';
 
 const TRIGGER_RULES = [
@@ -128,26 +116,14 @@ function triggerEasterEgg() {
   }, DURATION);
 }
 
-/** Only mounted when KIRO_DEV=1 — keeps the hook out of production renders. */
-const RenderMetricsChip: React.FC<{
-  color?: ChipColor | ((text: string) => string);
-}> = ({ color }) => {
-  const metrics = useRenderMetrics();
-  const glyphs = useGlyphs();
-  if (!metrics) return null;
-  return (
-    <Chip
-      value={`${metrics.lastRenderMs.toFixed(1)}ms ${glyphs.smallDot} ${metrics.yogaNodeCount}n ${glyphs.smallDot} ${metrics.heapUsedMB}MB ${glyphs.smallDot} #${metrics.renderCount} ${glyphs.smallDot} r${metrics.fullRedrawCount}`}
-      color={color ?? ChipColor.PRIMARY}
-    />
-  );
-};
-
-export const InlineLayout: React.FC = () => {
+export const InlineLayout: React.FC<VariantLayoutProps> = ({
+  ApprovalPrompt,
+  StatusLine,
+  ActivityTray,
+}) => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const { allowAnimations } = useAllowAnimations();
-  const { allowIcons } = useAllowIcons();
   // Grouped selectors using useShallow - prevents re-render cascades
   const {
     transientAlert,
@@ -376,102 +352,24 @@ export const InlineLayout: React.FC = () => {
       ) as PromptBarHeader;
     }
 
-    const primaryItems = [
-      currentAgent && (
-        <Chip
-          value={getAgentDisplayName(currentAgent.name)}
-          color={getAgentColor(currentAgent.name, getColor)}
-        />
-      ),
-      currentModel && (
-        <Chip value={currentModel.name} color={ChipColor.PRIMARY} />
-      ),
-      currentEffort && (
-        <Chip value={formatEffort(currentEffort)} color={ChipColor.SECONDARY} />
-      ),
-      contextUsagePercent != null && (
-        <ProgressChip value={contextUsagePercent} warningThreshold={60} />
-      ),
-      codeIntelligenceActive && <Text>{getColor('primary')('λ')}</Text>,
-      goalStatus &&
-        (() => {
-          const icon =
-            goalStatus.state === 'paused'
-              ? glyphs.pause
-              : goalStatus.state === 'completed'
-                ? glyphs.checkmark
-                : goalStatus.state === 'exhausted'
-                  ? glyphs.cross
-                  : '⟳';
-          const label =
-            goalStatus.state === 'paused'
-              ? 'Paused'
-              : goalStatus.state === 'completed'
-                ? 'Done'
-                : goalStatus.state === 'exhausted'
-                  ? 'Exhausted'
-                  : `Active [${goalStatus.iteration + 1}/${goalStatus.maxIterations}]`;
-          const secs = goalStatus.startedAt
-            ? Math.floor((Date.now() - goalStatus.startedAt) / 1000)
-            : (goalStatus.elapsedSecs ?? 0);
-          const elapsed =
-            secs > 0
-              ? secs >= 3600
-                ? `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m`
-                : secs >= 60
-                  ? `${Math.floor(secs / 60)}m`
-                  : `${secs}s`
-              : '';
-          return (
-            <Chip
-              value={`${icon} Goal ${label}${elapsed ? ` ${glyphs.smallDot} ${elapsed}` : ''}`}
-              color={
-                goalStatus.state === 'completed'
-                  ? ChipColor.SUCCESS
-                  : goalStatus.state === 'exhausted'
-                    ? ChipColor.ERROR
-                    : ChipColor.SECONDARY
-              }
-            />
-          );
-        })(),
-    ];
-
-    const secondaryItems = [
-      isDevMode() && Region ? (
-        <Region id="metrics">
-          <RenderMetricsChip />
-        </Region>
-      ) : (
-        isDevMode() && <RenderMetricsChip />
-      ),
-      // The right side is the session's LOCATION. Local sessions show this
-      // machine's cwd + git branch; a cloud session runs in the sandbox, so it
-      // shows `☁ Cloud · ~/kiro/<repo> · <branch>` instead —
-      // the local pair would be a misleading location for a cloud session.
-      cloudSessionActive ? (
-        <Chip
-          value={formatCloudFooter(
-            cloudRepo,
-            cloudBranch,
-            allowIcons ? glyphs.cloud : undefined,
-            cloudExtraRepos,
-            glyphs
-          )}
-          color={ChipColor.BRAND}
-        />
-      ) : (
-        <Chip value={shortenPath(process.cwd())} color={ChipColor.BRAND} />
-      ),
-      !cloudSessionActive && gitBranch && (
-        <Chip value={gitBranch} color={ChipColor.PRIMARY} wrap={true} />
-      ),
-    ];
-
     return (
-      <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
+      <StatusLine
+        agentName={currentAgent?.name ?? null}
+        modelName={currentModel?.name ?? null}
+        effort={currentEffort}
+        contextUsagePercent={contextUsagePercent}
+        workspacePath={process.cwd()}
+        gitBranch={gitBranch}
+        goalStatus={goalStatus}
+        cloudSessionActive={cloudSessionActive}
+        cloudRepo={cloudRepo}
+        cloudBranch={cloudBranch}
+        cloudExtraRepos={cloudExtraRepos}
+        codeIntelligenceActive={codeIntelligenceActive}
+      />
     ) as PromptBarHeader;
   }, [
+    StatusLine,
     pendingApproval,
     messages,
     isCrewApproval,
@@ -487,68 +385,31 @@ export const InlineLayout: React.FC = () => {
     cloudRepo,
     cloudBranch,
     cloudExtraRepos,
-    getColor,
     glyphs,
-    allowIcons,
   ]);
 
   // Build a dimmed version of the context bar for when tool outputs are expanded
   const dimmedPromptBarHeader = useMemo(() => {
     if (!toolOutputsExpanded) return null;
-    const mutedColor = getColor('muted');
-
-    const primaryItems = [
-      currentAgent && (
-        <Chip
-          value={getAgentDisplayName(currentAgent.name)}
-          color={mutedColor}
-        />
-      ),
-      currentModel && <Chip value={currentModel.name} color={mutedColor} />,
-      currentEffort && (
-        <Chip value={formatEffort(currentEffort)} color={mutedColor} />
-      ),
-      contextUsagePercent != null && (
-        <ProgressChip
-          value={contextUsagePercent}
-          warningThreshold={60}
-          colorOverride={mutedColor}
-        />
-      ),
-      codeIntelligenceActive && <Text>{mutedColor('λ')}</Text>,
-    ];
-
-    const secondaryItems = [
-      isDevMode() && Region ? (
-        <Region id="metrics">
-          <RenderMetricsChip color={mutedColor} />
-        </Region>
-      ) : (
-        isDevMode() && <RenderMetricsChip color={mutedColor} />
-      ),
-      cloudSessionActive ? (
-        <Chip
-          value={formatCloudFooter(
-            cloudRepo,
-            cloudBranch,
-            allowIcons ? glyphs.cloud : undefined,
-            cloudExtraRepos,
-            glyphs
-          )}
-          color={mutedColor}
-        />
-      ) : (
-        <Chip value={shortenPath(process.cwd())} color={mutedColor} />
-      ),
-      !cloudSessionActive && gitBranch && (
-        <Chip value={gitBranch} color={mutedColor} wrap={true} />
-      ),
-    ];
-
     return (
-      <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
+      <StatusLine
+        agentName={currentAgent?.name ?? null}
+        modelName={currentModel?.name ?? null}
+        effort={currentEffort}
+        contextUsagePercent={contextUsagePercent}
+        workspacePath={process.cwd()}
+        gitBranch={gitBranch}
+        goalStatus={null}
+        cloudSessionActive={cloudSessionActive}
+        cloudRepo={cloudRepo}
+        cloudBranch={cloudBranch}
+        cloudExtraRepos={cloudExtraRepos}
+        codeIntelligenceActive={codeIntelligenceActive}
+        dimmed
+      />
     ) as PromptBarHeader;
   }, [
+    StatusLine,
     toolOutputsExpanded,
     currentAgent,
     currentModel,
@@ -556,13 +417,10 @@ export const InlineLayout: React.FC = () => {
     contextUsagePercent,
     codeIntelligenceActive,
     gitBranch,
-    getColor,
     cloudSessionActive,
     cloudRepo,
     cloudBranch,
     cloudExtraRepos,
-    glyphs,
-    allowIcons,
   ]);
 
   const handleSubmit = useCallback(
@@ -965,9 +823,16 @@ export const InlineLayout: React.FC = () => {
               (isCrewApproval ? (
                 <CrewApprovalRequest onConfigure={handleCrewConfigure} />
               ) : (
-                <ApprovalRequest
+                <ApprovalPrompt
                   key={pendingApproval?.toolCall.toolCallId}
-                  onDrillInSubmit={handleSubmit}
+                  messages={messages}
+                  approval={pendingApproval}
+                  respondToApproval={respondToApproval}
+                  getStageInputColor={(stageName: string) =>
+                    getAgentColor(stageName, getColor)
+                  }
+                  mainAgentName={currentAgent?.name ?? null}
+                  onInputSubmit={handleSubmit}
                 />
               ))}
             <BackendPanels handlers={backendPanelHandlers} />

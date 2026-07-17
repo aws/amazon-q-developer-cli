@@ -43,6 +43,8 @@ export interface Glyphs {
   triangleLeft: string;
   triangleRight: string;
   loop: string;
+  refresh: string;
+  codeIntelligence: string;
   times: string;
   pause: string;
   bar: string;
@@ -103,6 +105,8 @@ export const UNICODE_GLYPHS: Glyphs = {
   triangleLeft: '◀',
   triangleRight: '▶',
   loop: '↻',
+  refresh: '⟳',
+  codeIntelligence: 'λ',
   times: '×',
   pause: '⏸',
   bar: '█',
@@ -156,6 +160,8 @@ export const ASCII_GLYPHS: Glyphs = {
   triangleLeft: '<',
   triangleRight: '>',
   loop: '@',
+  refresh: '@',
+  codeIntelligence: 'L',
   times: 'x',
   pause: '||',
   bar: '#',

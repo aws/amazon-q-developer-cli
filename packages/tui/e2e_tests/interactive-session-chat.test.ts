@@ -1,6 +1,6 @@
 /**
  * Static E2E tests for interactive session chat flow components.
- * 
+ *
  * These tests verify that key components and handlers exist in the codebase
  * to support the interactive session chat functionality.
  */
@@ -15,24 +15,29 @@ function readFile(relativePath: string): string {
 }
 
 describe('Interactive Session Chat Flow - Static Checks', () => {
-  
   it('Test 1: acp_agent.rs handles AgentEvent::SubagentSummary', () => {
     const content = readFile('crates/chat-cli/src/agent/subagent.rs');
     expect(content).toContain('AgentEvent::SubagentSummary');
   });
 
   it('Test 2: SessionViewScreen.tsx adds user messages to sessionConversationsStore', () => {
-    const content = readFile('packages/tui/src/components/layout/SessionViewScreen.tsx');
+    const content = readFile(
+      'packages/tui/src/components/layout/SessionViewScreen.tsx'
+    );
     expect(content).toContain('sessionConversationsStore');
   });
 
   it('Test 3: session_manager.rs has auto-wake logic in DeliverSubagentResult handler', () => {
-    const content = readFile('crates/chat-cli-v2/src/agent/acp/session_manager.rs');
+    const content = readFile(
+      'crates/chat-cli-v2/src/agent/acp/session_manager.rs'
+    );
     expect(content).toContain('DeliverSubagentResult');
   });
 
   it('Test 4: handle_spawn_orchestrated checks persistent flag before terminate_session', () => {
-    const content = readFile('crates/chat-cli-v2/src/agent/acp/session_manager.rs');
+    const content = readFile(
+      'crates/chat-cli-v2/src/agent/acp/session_manager.rs'
+    );
     expect(content).toContain('handle_spawn_orchestrated');
     expect(content).toContain('persistent');
     expect(content).toContain('terminate_session');
@@ -45,7 +50,9 @@ describe('Interactive Session Chat Flow - Static Checks', () => {
   });
 
   it('Test 6: SessionViewScreen.tsx renders PromptBar with isProcessing prop', () => {
-    const content = readFile('packages/tui/src/components/layout/SessionViewScreen.tsx');
+    const content = readFile(
+      'packages/tui/src/components/layout/SessionViewScreen.tsx'
+    );
     expect(content).toContain('PromptBar');
     expect(content).toContain('isProcessing');
   });
@@ -55,10 +62,5 @@ describe('Interactive Session Chat Flow - Static Checks', () => {
     expect(content).toContain('switchSession');
     expect(content).toContain('\\x1b[?1049h');
     expect(content).toContain('session-view');
-  });
-
-  it('Test 8: AppContainer.tsx always renders InlineLayout', () => {
-    const content = readFile('packages/tui/src/components/layout/AppContainer.tsx');
-    expect(content).toContain('InlineLayout');
   });
 });

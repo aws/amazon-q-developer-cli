@@ -862,6 +862,70 @@ describe('Stream event handler — ContextUsage', () => {
     handler({ type: AgentEventType.ContextUsage, percent: 85 });
     expect(store.getState().contextUsagePercent).toBe(85);
   });
+
+  it('stores context breakdown snapshots independently of panel state', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    const breakdown = {
+      contextFiles: { tokens: 100, percent: 5 },
+      tools: { tokens: 20, percent: 1 },
+      kiroResponses: { tokens: 30, percent: 2 },
+      yourPrompts: { tokens: 40, percent: 2 },
+    };
+
+    handler({
+      type: AgentEventType.ContextBreakdownUpdate,
+      breakdown,
+    });
+
+    expect(store.getState().contextBreakdownCache).toEqual(breakdown);
+    expect(store.getState().contextBreakdown).toBeNull();
+  });
+});
+
+describe('Stream event handler — MCP registry snapshot', () => {
+  it('stores the latest registry independently of the open panel', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    const registryServers = [
+      {
+        name: 'memory',
+        status: 'disabled' as const,
+        toolCount: 0,
+        enabled: false,
+      },
+    ];
+
+    handler({
+      type: AgentEventType.McpRegistrySnapshot,
+      registryServers,
+    });
+
+    expect(store.getState().mcpRegistryCache).toEqual(registryServers);
+    expect(store.getState().mcpRegistryServers).toEqual([]);
+  });
+});
+
+describe('Stream event handler — MCP server snapshot', () => {
+  it('stores the latest snapshot without live-updating an open panel', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    const panelServers = [
+      { name: 'old', status: 'running' as const, toolCount: 1 },
+    ];
+    const latestServers = [
+      { name: 'new', status: 'loading' as const, toolCount: 0 },
+    ];
+    store.getState().setShowMcpPanel(true, panelServers, 'list');
+
+    handler({
+      type: AgentEventType.McpServerSnapshot,
+      servers: latestServers,
+    });
+
+    expect(store.getState().mcpServerCache).toEqual(latestServers);
+    expect(store.getState().mcpServers).toEqual(panelServers);
+  });
 });
 
 describe('Stream event handler — EffortUpdate', () => {
@@ -1375,6 +1439,23 @@ describe('handleCompactionEvent', () => {
     expect(store.getState().contextUsagePercent).toBe(42);
   });
 
+  it('forwards ContextBreakdownUpdate events', async () => {
+    const store = makeStore();
+    const breakdown = {
+      contextFiles: { tokens: 100, percent: 5 },
+      tools: { tokens: 20, percent: 1 },
+      kiroResponses: { tokens: 30, percent: 2 },
+      yourPrompts: { tokens: 40, percent: 2 },
+    };
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.ContextBreakdownUpdate,
+      breakdown,
+    });
+
+    expect(store.getState().contextBreakdownCache).toEqual(breakdown);
+  });
+
   it('forwards EffortUpdate events', async () => {
     const store = makeStore();
     await store.getState().handleCompactionEvent({
@@ -1673,22 +1754,25 @@ describe('resetMessages', () => {
     expect(store.getState().activityTrayExpanded).toBe(false);
   });
 
-  it('bumps liteScrollbackClearToken and resets the lite skip bookmark', () => {
+  it('bumps lite.scrollbackClearToken and resets the lite skip bookmark', () => {
     // Locks in the rest of the atomic-reset contract documented above the
     // resetMessages set() call so a future split (e.g. only clearing one
     // half) trips this test. The bump is gated behind uiMode==='lite'
     // (only lite mode tracks scrollback clear tokens), so set lite first.
     const store = makeStore();
     store.setState({ uiMode: 'lite' });
-    const startToken = store.getState().liteScrollbackClearToken;
-    store.setState({
-      liteStaticSkipBefore: 42,
-      liteWelcomeEmitted: true,
-    });
+    const startToken = store.getState().lite.scrollbackClearToken;
+    store.setState((state) => ({
+      lite: {
+        ...state.lite,
+        staticSkipBefore: 42,
+        welcomeEmitted: true,
+      },
+    }));
     store.getState().resetMessages();
-    expect(store.getState().liteScrollbackClearToken).toBe(startToken + 1);
-    expect(store.getState().liteStaticSkipBefore).toBe(0);
-    expect(store.getState().liteWelcomeEmitted).toBe(false);
+    expect(store.getState().lite.scrollbackClearToken).toBe(startToken + 1);
+    expect(store.getState().lite.staticSkipBefore).toBe(0);
+    expect(store.getState().lite.welcomeEmitted).toBe(false);
   });
 });
 

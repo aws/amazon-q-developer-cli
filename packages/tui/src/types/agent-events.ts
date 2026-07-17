@@ -14,6 +14,7 @@ import type {
 } from '../utils/kas-config-options.js';
 import type { KasCommand } from '../kas-commands.js';
 import type { SessionsChangedNotification } from './session-client.js';
+import type { ContextBreakdownData } from './context.js';
 
 export enum AgentEventType {
   Content = 'content',
@@ -28,6 +29,7 @@ export enum AgentEventType {
   SkillsUpdate = 'skills_update',
   SteeringUpdate = 'steering_update',
   ContextUsage = 'context_usage',
+  ContextBreakdownUpdate = 'context_breakdown_update',
   Metadata = 'metadata',
   CompactionStatus = 'compaction_status',
   McpServerInitFailure = 'mcp_server_init_failure',
@@ -53,6 +55,8 @@ export enum AgentEventType {
   HooksUpdate = 'hooks_update',
   ToolsUpdate = 'tools_update',
   McpServersUpdate = 'mcp_servers_update',
+  McpServerSnapshot = 'mcp_server_snapshot',
+  McpRegistrySnapshot = 'mcp_registry_snapshot',
   GoalStatus = 'goal_status',
   KasMessageIdAssigned = 'kas_message_id_assigned',
   ModelRefusal = 'model_refusal',
@@ -499,6 +503,11 @@ export interface ContextUsageEvent {
   percent: number;
 }
 
+export interface ContextBreakdownUpdateEvent {
+  type: AgentEventType.ContextBreakdownUpdate;
+  breakdown: ContextBreakdownData;
+}
+
 export interface KasMessageIdAssignedEvent {
   type: AgentEventType.KasMessageIdAssigned;
   kasMessageId: string;
@@ -566,6 +575,27 @@ export interface ToolsUpdateEvent {
 export interface McpServersUpdateEvent {
   type: AgentEventType.McpServersUpdate;
   servers: Array<{ name: string; status: string; toolCount: number }>;
+}
+
+export interface McpServerSnapshotEvent {
+  type: AgentEventType.McpServerSnapshot;
+  servers: Array<{
+    name: string;
+    status: 'running' | 'loading' | 'failed' | 'disabled' | 'auth-required';
+    toolCount: number;
+  }>;
+}
+
+export interface McpRegistrySnapshotEvent {
+  type: AgentEventType.McpRegistrySnapshot;
+  registryServers: Array<{
+    name: string;
+    status: 'disabled';
+    toolCount: number;
+    version?: string;
+    description?: string;
+    enabled?: boolean;
+  }>;
 }
 
 export interface GoalStatusEvent {
@@ -736,6 +766,7 @@ export type AgentStreamEvent =
   | SkillsUpdateEvent
   | SteeringUpdateEvent
   | ContextUsageEvent
+  | ContextBreakdownUpdateEvent
   | KasMessageIdAssignedEvent
   | MetadataEvent
   | CompactionStatusEvent
@@ -762,6 +793,8 @@ export type AgentStreamEvent =
   | HooksUpdateEvent
   | ToolsUpdateEvent
   | McpServersUpdateEvent
+  | McpServerSnapshotEvent
+  | McpRegistrySnapshotEvent
   | GoalStatusEvent
   | ModelRefusalEvent
   | SessionRosterDeltaEvent;

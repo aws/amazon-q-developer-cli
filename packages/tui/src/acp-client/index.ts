@@ -1,22 +1,29 @@
 import { logger } from '../utils/logger';
-import type { SessionClient, ExecutionTarget } from '../types/session-client';
-import { resolveAgentEngine } from '../agent-engine';
+import type { SessionClient } from '../types/session-client';
 import { RustAcpClient } from './rust';
-import { KasAcpClient } from './kas';
+import { KasAcpClient, type KasAcpClientOptions } from './kas';
 
 // ─── Factory ─────────────────────────────────────────────────────────
 
+export type KasAcpClientLaunchOptions = Omit<
+  KasAcpClientOptions,
+  'stream' | 'version'
+>;
+
+export type AcpClientLaunchOptions =
+  | { agentEngine: 'v2' }
+  | {
+      agentEngine: 'kas';
+      kasOptions: KasAcpClientLaunchOptions;
+    };
+
 export function createAcpClient(
   agentPath: string,
-  extraAcpArgs: string[] = [],
-  kasOptions?: {
-    initialAgent?: string;
-    initialModel?: string;
-    executionTarget?: ExecutionTarget;
-    repos?: string[];
-  }
+  extraAcpArgs: string[],
+  launchOptions: AcpClientLaunchOptions
 ): SessionClient {
-  if (resolveAgentEngine() === 'kas') {
+  if (launchOptions.agentEngine === 'kas') {
+    const { kasOptions } = launchOptions;
     // Test-only: inject an in-process mock transport when the harness set
     // the socket path env var. Production boots skip this branch entirely.
     // The require() path stays in this one call site so the rest of
@@ -30,7 +37,7 @@ export function createAcpClient(
         connectMockTransport,
       } = require('../test-utils/acp-mock/MockAcpTransport');
       const stream = connectMockTransport(mockSocketPath);
-      return new KasAcpClient({ stream, ...(kasOptions ?? {}) });
+      return new KasAcpClient({ stream, ...kasOptions });
     }
     return new KasAcpClient(kasOptions);
   }

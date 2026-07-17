@@ -96,7 +96,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
 
     // Positive control for the detection harness: /chat new must wipe the
     // committed A/B/C scrollback so we know removal IS observable here.
-    const tokenBefore = store.liteScrollbackClearToken;
+    const tokenBefore = store.lite.scrollbackClearToken;
 
     // Type char-by-char so CommandMenu intercepts Enter as the /chat command.
     for (const ch of '/chat new') {
@@ -110,7 +110,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
     const deadline = Date.now() + 5000;
     let storeAfter = await testCase.getStore();
     while (
-      storeAfter.liteScrollbackClearToken <= tokenBefore &&
+      storeAfter.lite.scrollbackClearToken <= tokenBefore &&
       Date.now() < deadline
     ) {
       await testCase.sleepMs(200);
@@ -118,7 +118,7 @@ describe('lite append-only mutation detection [bug-mine 1.1, 1.3, 1.4, 1.5]', ()
     }
 
     // The clear-token bump + empty messages prove the clear mechanism fired.
-    expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
+    expect(storeAfter.lite.scrollbackClearToken).toBeGreaterThan(tokenBefore);
     expect(storeAfter.messages.length).toBe(0);
 
     await pushTurn(

@@ -15,7 +15,7 @@ import {
 
 /**
  * /lite and /tui mode-swap commands (bug-mine 2.9). setUiMode's contract:
- *  cross-mode swap bumps liteScrollbackClearToken, resets liteStaticSkipBefore
+ *  cross-mode swap bumps lite.scrollbackClearToken, resets lite.staticSkipBefore
  *  to 0 in BOTH directions, and preserves messages[]; same-mode dispatch is a
  *  noop (must not bump the token). The per-test comments below pin two
  *  distinct rejected/refactor-prone designs.
@@ -25,8 +25,8 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
   let testCase: TestCase | null = null;
   trackCleanup(() => testCase);
 
-  // Cross-mode swap, both directions: bumps liteScrollbackClearToken, resets
-  // liteStaticSkipBefore to 0, and preserves messages[]. The two legs catch
+  // Cross-mode swap, both directions: bumps lite.scrollbackClearToken, resets
+  // lite.staticSkipBefore to 0, and preserves messages[]. The two legs catch
   // distinct rejected refactors:
   //  - tui→lite (bug-mine 2.6): pinning skipBefore to messages.length would
   //    silently drop the user's scrollback; the contract resets it to 0.
@@ -52,7 +52,7 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
       prompt: 'hello lite',
     },
   ])(
-    '$label bumps liteScrollbackClearToken and preserves messages',
+    '$label bumps lite.scrollbackClearToken and preserves messages',
     async ({ start, target, switchMode, marker, contentId, prompt }) => {
       testCase =
         start === 'tui'
@@ -93,7 +93,7 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
       const storeBefore = await testCase.getStore();
       expect(storeBefore.uiMode).toBe(start);
       expect(storeBefore.messages.length).toBeGreaterThan(0);
-      const tokenBefore = storeBefore.liteScrollbackClearToken;
+      const tokenBefore = storeBefore.lite.scrollbackClearToken;
 
       await switchMode(testCase);
 
@@ -107,8 +107,8 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
         20000
       );
       expect(storeAfter.uiMode).toBe(target);
-      expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
-      expect(storeAfter.liteStaticSkipBefore).toBe(0);
+      expect(storeAfter.lite.scrollbackClearToken).toBeGreaterThan(tokenBefore);
+      expect(storeAfter.lite.staticSkipBefore).toBe(0);
       const allMessageText = storeAfter.messages
         .map((m) => JSON.stringify(m))
         .join(' ');
@@ -145,12 +145,12 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     await testCase.waitForStore((s) => !s.isProcessing, 10000);
     await testCase.waitForVisibleText('LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM');
 
-    const tokenBefore = (await testCase.getStore()).liteScrollbackClearToken;
+    const tokenBefore = (await testCase.getStore()).lite.scrollbackClearToken;
     await switchToTui(testCase);
 
     const storeAfter = await testCase.getStore();
     expect(storeAfter.uiMode).toBe('tui');
-    expect(storeAfter.liteScrollbackClearToken).toBeGreaterThan(tokenBefore);
+    expect(storeAfter.lite.scrollbackClearToken).toBeGreaterThan(tokenBefore);
 
     const snap = testCase.getSnapshot();
     const statusRow = '⟳ Goal: "INTERLEAVED_SYSTEM_BEFORE_MODEL"';
@@ -349,14 +349,14 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
 
     const storeBefore = await testCase.getStore();
     expect(storeBefore.uiMode).toBe('lite');
-    const tokenBefore = storeBefore.liteScrollbackClearToken;
+    const tokenBefore = storeBefore.lite.scrollbackClearToken;
 
     // /lite while already in lite must NOT bump the clear token (bug 2.9).
     await switchToLite(testCase);
 
     const storeAfter = await testCase.getStore();
     expect(storeAfter.uiMode).toBe('lite');
-    expect(storeAfter.liteScrollbackClearToken).toBe(tokenBefore);
+    expect(storeAfter.lite.scrollbackClearToken).toBe(tokenBefore);
 
     await exitLiteInteg(testCase);
     // Outer timeout headroom for exitLiteInteg's generous (30s) exit wait.

@@ -4,14 +4,18 @@
  * clearCommandInput. `returnToSettings` panels also honor settingsReturnOnEscape
  * so /settings → sub-panel → Esc returns to the /settings menu.
  */
-import { useCallback } from 'react';
+import { useCallback, useContext } from 'react';
 import {
   useUIActions,
   useCommandActions,
   useKiroClient,
   useInputActions,
 } from '../../../stores/selectors.js';
-import { useAppStore, type CodePanelData } from '../../../stores/app-store.js';
+import {
+  AppStoreContext,
+  useAppStore,
+  type CodePanelData,
+} from '../../../stores/app-store.js';
 
 export function useBackendPanelHandlers() {
   const {
@@ -42,6 +46,8 @@ export function useBackendPanelHandlers() {
     useCommandActions();
   const { handleUserInput } = useInputActions();
   const { kiro } = useKiroClient();
+  const store = useContext(AppStoreContext);
+  if (!store) throw new Error('Missing StoreContext.Provider in the tree');
   const settingsReturnOnEscape = useAppStore((s) => s.settingsReturnOnEscape);
 
   // makeClose wraps useCallback; it's called unconditionally and in fixed
@@ -132,10 +138,13 @@ export function useBackendPanelHandlers() {
 
   const handleTabFromUsage = useCallback(async () => {
     try {
-      // KAS: prefer the typed cached breakdown — no round-trip required.
-      const cached = kiro.getCachedContextBreakdown();
-      if (cached) {
-        setShowContextBreakdown(true, cached);
+      // KAS: prefer the store-owned pushed breakdown — no round-trip required.
+      const isKas = store.getState().agentEngine === 'kas';
+      const contextBreakdownCache = isKas
+        ? store.getState().contextBreakdownCache
+        : null;
+      if (contextBreakdownCache) {
+        setShowContextBreakdown(true, contextBreakdownCache);
         setShowUsagePanel(false);
         return;
       }
@@ -145,18 +154,25 @@ export function useBackendPanelHandlers() {
         command: 'context',
         args: {},
       } as any);
-      if (
+      const responseBreakdown =
         result?.data &&
         typeof result.data === 'object' &&
         'breakdown' in result.data
-      ) {
-        setShowContextBreakdown(true, (result.data as any).breakdown);
+          ? (result.data as any).breakdown
+          : null;
+      // KAS previously re-read its client cache after contextShow resolved.
+      // Preserve that race behavior now that the cache belongs to the store.
+      const breakdown =
+        responseBreakdown ??
+        (isKas ? store.getState().contextBreakdownCache : null);
+      if (breakdown) {
+        setShowContextBreakdown(true, breakdown);
         setShowUsagePanel(false);
       }
     } catch {
       /* ignore */
     }
-  }, [kiro, setShowContextBreakdown, setShowUsagePanel]);
+  }, [kiro, setShowContextBreakdown, setShowUsagePanel, store]);
 
   const handleRefreshCodePanel = useCallback(async () => {
     try {

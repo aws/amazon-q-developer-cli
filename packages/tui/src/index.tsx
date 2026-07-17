@@ -621,6 +621,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
   // Flag cloud sessions so cloud-only commands become visible.
   appStore.getState().setCloudSessionActive(!!cliArgs.cloud);
 
+  appStore.getState().resetClientDisplayCaches();
   initPromise = kiro
     .initialize(agentPath, acpArgs, {
       // CLI flag > cli.json setting > undefined (let agent pick default)
@@ -633,6 +634,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,
       repos: cliArgs.repo,
+      kasSubagentRoutingStore: appStore.getState().kasSubagentRouting,
     })
     .then(async () => {
       appStore
@@ -900,7 +902,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
             // thousands of lines (~200ms/frame typing lag — PR #2503).
             // In lite mode, replay the full session into the store; lite
             // paints to <Static> rows and skips painting below the cap
-            // via liteStaticSkipBefore, so the long store costs nothing.
+            // via lite.staticSkipBefore, so the long store costs nothing.
             const isLite = appStore.getState().uiMode === 'lite';
             const { events, omittedTurns } = isLite
               ? { events: pendingHistoryEvents, omittedTurns: 0 }
@@ -1010,6 +1012,7 @@ const startApp = async () => {
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,
       repos: cliArgs.repo,
+      kasSubagentRoutingStore: appStore.getState().kasSubagentRouting,
     });
     const listing = await listAllSessions();
     if (!listing.ok) {

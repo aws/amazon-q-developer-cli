@@ -23,7 +23,14 @@ describe('shell escape (!command)', () => {
   afterEach(async () => {
     if (tc) await tc.cleanup();
     tc = null;
-    if (cwd) rmSync(cwd, { recursive: true, force: true });
+    if (cwd) {
+      rmSync(cwd, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    }
     cwd = null;
   });
 
@@ -81,6 +88,7 @@ describe('shell escape (!command)', () => {
       (l) => l.includes('hello_shell') && !l.includes('echo')
     );
 
+    await t.waitForStore((s) => s.isShellEscape === false, 10000);
     await t.waitForVisibleText('ask a question', 10000);
   }, 30000);
 
@@ -98,6 +106,7 @@ describe('shell escape (!command)', () => {
 
     await waitForLine(t, (l) => l.includes('cwd-marker-file.txt'));
 
+    await t.waitForStore((s) => s.isShellEscape === false, 10000);
     await t.waitForVisibleText('ask a question', 10000);
   }, 30000);
 
@@ -120,7 +129,9 @@ describe('shell escape (!command)', () => {
     await t.sleepMs(100);
     await t.pressEnter();
 
-    // Should complete and return to prompt
+    // The output is durable proof that the fast command started, so the
+    // following false-state wait cannot match the initial idle state.
+    await waitForLine(t, (l) => l.includes('[exit code: 1]'));
     await t.waitForStore((s) => s.isShellEscape === false, 10000);
     await t.waitForVisibleText('ask a question', 10000);
   }, 30000);
@@ -135,6 +146,7 @@ describe('shell escape (!command)', () => {
     // Output line, not the echoed command line (which also contains "done")
     await waitForLine(t, (l) => l.includes('done') && !l.includes('sleep'));
 
+    await t.waitForStore((s) => s.isShellEscape === false, 10000);
     await t.waitForVisibleText('ask a question', 10000);
   }, 30000);
 
@@ -150,6 +162,7 @@ describe('shell escape (!command)', () => {
       (l) => l.includes('hello world') && !l.includes('echo')
     );
 
+    await t.waitForStore((s) => s.isShellEscape === false, 10000);
     await t.waitForVisibleText('ask a question', 10000);
   }, 30000);
 
@@ -167,8 +180,8 @@ describe('shell escape (!command)', () => {
 
       const cmd =
         process.platform === 'win32'
-          ? '!$name = Read-Host "Name"; Write-Output "Hello $name"'
-          : '!read -p "Name: " name && echo "Hello $name"';
+          ? '!$prompt = "Name"; $name = Read-Host $prompt; Write-Output "Hello $name"'
+          : '!prompt=Name; read -p "${prompt}: " name && echo "Hello $name"';
       await t.sendKeys(cmd);
       await t.sleepMs(200);
       await t.pressEnter();
@@ -184,6 +197,7 @@ describe('shell escape (!command)', () => {
       // Should see the echoed greeting
       await t.waitForVisibleText('Hello Kiro', 30000);
 
+      await t.waitForStore((s) => s.isShellEscape === false, 15000);
       await t.waitForVisibleText('ask a question', 15000);
     },
     90000
@@ -242,6 +256,7 @@ describe('shell escape (!command)', () => {
       // Combined output only appears if both reads captured input
       await t.waitForVisibleText('foo and bar', 20000);
 
+      await t.waitForStore((s) => s.isShellEscape === false, 15000);
       await t.waitForVisibleText('ask a question', 15000);
     },
     60000

@@ -44,12 +44,10 @@ describe('MCP status + thinking', () => {
     /**
      * GIVEN  TUI connected
      * WHEN   server pushes _kiro/mcp/status with connected MCP servers
-     * THEN   the data is cached and /mcp shows server count
+     * THEN   the store-owned snapshot powers the /mcp panel
      *
-     * Note: _kiro/mcp/status populates KasAcpClient.mcpServerCache (used
-     * by executeCommand('mcp')), not the store's mcpServers directly.
-     * The store is only updated via McpServerInitialized events from the
-     * init flow.
+     * The notification becomes an McpServerSnapshot event. The store retains
+     * that snapshot separately from the currently open panel's server list.
      */
     tc = new AcpTestCase({ testName: 'mcp-status-running' });
     setupHandshake(tc);
@@ -78,7 +76,7 @@ describe('MCP status + thinking', () => {
     });
     await tc.sleepMs(300);
 
-    // /mcp reads from the client cache populated by the notification
+    // /mcp reads the store snapshot populated by the notification.
     await tc.sendKeys('/mcp');
     await tc.sleepMs(200);
     await tc.pressEnter();

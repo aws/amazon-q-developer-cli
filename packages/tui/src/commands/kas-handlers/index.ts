@@ -16,6 +16,7 @@ import { handleModel } from './model';
 import { handleAgent } from './agent';
 import { handleEffort } from './effort';
 import { handleRepo } from './repo';
+import { handleMcp } from './mcp';
 
 export type KasHandler = (
   cmd: KasCommand,
@@ -41,6 +42,7 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Context]: handleContext,
   [KasCommandName.Help]: handleHelp,
   [KasCommandName.Hooks]: handleHooks,
+  [KasCommandName.Mcp]: handleMcp,
   [KasCommandName.Prompts]: handlePrompts,
   [KasCommandName.Rewind]: handleRewind,
   [KasCommandName.Tools]: handleTools,

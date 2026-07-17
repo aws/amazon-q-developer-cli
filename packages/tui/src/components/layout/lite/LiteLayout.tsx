@@ -30,7 +30,6 @@ import {
 } from '../../../stores/app-store.js';
 import { LiteLiveRegion } from './LiteLiveRegion.js';
 import { LiteSubagentPanel } from './LiteSubagentPanel.js';
-import { LiteTaskTray } from './LiteTaskTray.js';
 import {
   computeActiveToolBatchIds,
   formatTurnSummaryRow,
@@ -47,7 +46,7 @@ import {
 } from '../../../lite/render.js';
 import { getVerboseDisplay } from '../../../lite/verbose.js';
 import { pickTip, formatTipLine } from '../../../tips/tips.js';
-import { ApprovalPrompt } from './ApprovalPrompt.js';
+import type { VariantLayoutProps } from '../variant-layout.js';
 import {
   formatSubagentRow,
   extractFooterToolDetail,
@@ -57,14 +56,12 @@ import {
 import { shouldCancelApprovalForKilledStage } from './subagent-kill.js';
 import { engineSupportsSubagentKill } from '../../../agent-engine.js';
 import { sessionConversationsStore } from '../../../stores/session-conversations.js';
-import { renderPendingAgent } from './ConnectingPanel.js';
 import {
   selectBootIndicatorPhase,
   formatBootIndicator,
 } from './boot-indicator.js';
 import { formatCloudStartupChecklist } from '../shared/cloud-startup-checklist.js';
 import { cloudConnectStage } from '../shared/cloud-connect-stage.js';
-import { formatCloudFooter } from '../../../utils/cloud-status.js';
 import { getCliVersion } from '../../../utils/version.js';
 import { getGitBranch, getGitBranchAsync } from '../../../utils/git.js';
 import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
@@ -78,14 +75,9 @@ import {
   useGlyphs,
   useSpinners,
   useAllowAsciiArt,
-  useAllowIcons,
 } from '../../../hooks/useGlyphs.js';
-import type { Glyphs } from '../../../utils/glyphs.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
-import {
-  getAgentColor,
-  getAgentDisplayName,
-} from '../../../utils/agentColors.js';
+import { getAgentColor } from '../../../utils/agentColors.js';
 import { isParentSubagentTool } from '../../../types/agent-events.js';
 import {
   collectSubagentSummariesByParent,
@@ -106,8 +98,6 @@ import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
 import { ArtifactGenerationCard } from '../../ui/ArtifactView/ArtifactGenerationCard.js';
 import { SurveyPromptBar } from '../../ui/SurveyPromptBar.js';
 import { useUIState } from '../../../stores/selectors.js';
-import { formatEffort, shortenPath } from '../../../utils/string.js';
-import { packStatusSegments } from './status-segments.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
@@ -116,14 +106,18 @@ const TRIGGER_RULES = [
 
 const APPROVAL_IDLE_MS = 2000;
 
-// Last `liteScrollbackClearToken` observed. MODULE-LEVEL (not a per-mount ref)
+// Last `lite.scrollbackClearToken` observed. MODULE-LEVEL (not a per-mount ref)
 // so the reset block below survives bare unmount/remount (Ctrl+G, session-view)
 // WITHOUT re-running — twinki's monotonic cursor persists across that cycle, so
 // re-resetting would duplicate/swallow scrollback. Only resetMessages/setUiMode
 // bump the token. -1 fires the reset once on first mount.
 let _liteLastObservedClearToken = -1;
 
-export const LiteLayout: React.FC = () => {
+export const LiteLayout: React.FC<VariantLayoutProps> = ({
+  ApprovalPrompt,
+  StatusLine,
+  ActivityTray,
+}) => {
   const store = useContext(AppStoreContext);
   const messages = useAppStore((s) => s.messages);
   const isProcessing = useAppStore((s) => s.isProcessing);
@@ -132,9 +126,8 @@ export const LiteLayout: React.FC = () => {
   // glyph and suppresses agent-mode chrome while the user interacts with bash
   // (keystroke→PTY forwarding lives in AppContainer's always-armed handler).
   const isShellEscape = useAppStore((s) => s.isShellEscape);
-  // Render-skip bookmark (full contract in app-store): tui→lite swap sets it
-  // to messages.length so TUI scrollback isn't re-rendered in lite.
-  const liteStaticSkipBefore = useAppStore((s) => s.liteStaticSkipBefore);
+  // Resume-history lower bound; mode changes reset it to zero.
+  const liteStaticSkipBefore = useAppStore((s) => s.lite.staticSkipBefore);
   const isInitialized = useAppStore((s) => s.isInitialized);
   const agentError = useAppStore((s) => s.agentError);
   const handleUserInput = useAppStore((s) => s.handleUserInput);
@@ -183,7 +176,6 @@ export const LiteLayout: React.FC = () => {
   const glyphs = useGlyphs();
   const spinners = useSpinners();
   const { allowAsciiArt } = useAllowAsciiArt();
-  const { allowIcons } = useAllowIcons();
   const animationPaused = useAnimationPaused();
 
   // Panel show-flags — needed here to build anyPanelOpen, which drives the
@@ -578,9 +570,9 @@ export const LiteLayout: React.FC = () => {
   }, [showBootIndicator, pendingAgentName, loadingMessage, animationPaused]);
 
   // KIRO welcome banner, shown while no real chat has happened this session.
-  // `liteWelcomeEmitted`: cross-mount suppression flag, set true on unmount so a
+  // `lite.welcomeEmitted`: cross-mount suppression flag, set true on unmount so a
   // lite→tui→lite swap doesn't re-flash the banner; resetMessages clears it.
-  const liteWelcomeEmitted = useAppStore((s) => s.liteWelcomeEmitted);
+  const liteWelcomeEmitted = useAppStore((s) => s.lite.welcomeEmitted);
   const setLiteWelcomeEmitted = useAppStore((s) => s.setLiteWelcomeEmitted);
   // Tip-eligibility signal for the shared startup-tip engine (tips/tips.ts).
   // The "Try Lite" tip is TUI-only and never appears here regardless of
@@ -678,7 +670,7 @@ export const LiteLayout: React.FC = () => {
 
   // Append-only <Static> invariant: Twinki's <Static> is a monotonic by-index
   // cursor that silently drops re-emissions for already-printed indices, so
-  // staticItemsRef only ever grows (until liteScrollbackClearToken resets it).
+  // staticItemsRef only ever grows (until lite.scrollbackClearToken resets it).
   // The delta walk clamps late eligibility shrinkage and dedups via
   // pushedStaticIdsRef for rows that flip eligible after a later row flushed.
   const staticItemsRef = useRef<Array<{ id: string; text: string }>>([]);
@@ -704,7 +696,7 @@ export const LiteLayout: React.FC = () => {
   const lastAppendedEligibleMsgRef = useRef<MessageType | null>(null);
 
   // Session boundary (/chat new|<id>|load, /clear, /rewind, lite↔tui swap):
-  // resetMessages/setUiMode bump liteScrollbackClearToken. On a bump (or -1
+  // resetMessages/setUiMode bump lite.scrollbackClearToken. On a bump (or -1
   // first-mount init): (1) adjustStaticCursor(MAX) so the next paint lands at
   // index 0; (2) reset staticItemsRef + bookkeeping refs; (3) head-push the KIRO
   // banner when there's prior content (fresh sessions use the live banner so
@@ -718,7 +710,7 @@ export const LiteLayout: React.FC = () => {
   // refs synchronously, so a post-commit reset would re-commit the prior
   // session's rows on the first render after a bump.
   const liteScrollbackClearToken = useAppStore(
-    (s) => s.liteScrollbackClearToken
+    (s) => s.lite.scrollbackClearToken
   );
   const { adjustStaticCursor } = useTwinkiContext();
   if (liteScrollbackClearToken !== _liteLastObservedClearToken) {
@@ -1080,8 +1072,6 @@ export const LiteLayout: React.FC = () => {
     const estimatedPctIncrease = Math.floor(estimatedNewTokens / 200); // ~0.5% per 1000 chars
     return Math.min(99, base + estimatedPctIncrease);
   }, [contextUsagePercent, isProcessing, streamingContent]);
-  const ctxColor = gradientCtxColor(ctxPct);
-
   // Active-subagents footer strip: one row per running stage in spawn order
   // with a per-stage phase (running → summarizing → complete). When every stage
   // is complete but the parent `subagent` tool is still in flight, a
@@ -1668,71 +1658,29 @@ export const LiteLayout: React.FC = () => {
           )}
         </Text>
       )}
-      <LiteTaskTray />
+      <ActivityTray />
       <Divider />
 
       {/* Status line (Divider → header → input order). Hidden while connecting
           and during shell escape (agent isn't running). Pending agent swap
           renders the requested name with a spinner. */}
-      {isInitialized &&
-        !isShellEscape &&
-        (() => {
-          // Discrete colored segments packed into width-bounded lines so the
-          // row wraps as the terminal narrows (mirrors ContextBar flex-wrap).
-          // Empty goal segment is dropped; floor 20 cols.
-          const cols = Math.max(20, process.stdout.columns ?? 80);
-          const agentSeg = pendingAgentName
-            ? renderPendingAgent(
-                pendingAgentName,
-                bootFrame,
-                getColor,
-                spinners.brailleRotate
-              )
-            : colorAgentName(agentName, getColor);
-          // Colors mirror the modern TUI ContextBar chips: model=primary,
-          // effort=secondary, workspace=brand, branch value=primary in
-          // secondary parens. ctx keeps its usage gradient.
-          const secondary = getColor('secondary');
-          const segments = [
-            agentSeg,
-            modelName ? getColor('primary')(modelName) : '',
-            currentEffort ? secondary(formatEffort(currentEffort)) : '',
-            `${ctxColor(`${ctxPct}%`)} ${chalk.dim('ctx')}`,
-            // Local cwd + git branch describe this machine's checkout; a cloud
-            // session runs in the sandbox, so suppress them and let the cloud
-            // location chip below be authoritative.
-            cloudSessionActive
-              ? ''
-              : getColor('brand')(shortenPath(process.cwd())),
-            !cloudSessionActive && gitBranch
-              ? `${secondary('(')}${getColor('primary')(gitBranch)}${secondary(')')}`
-              : '',
-            cloudSessionActive
-              ? getColor('brand')(
-                  formatCloudFooter(
-                    cloudRepo,
-                    cloudBranch,
-                    allowIcons ? glyphs.cloud : undefined,
-                    cloudExtraRepos,
-                    glyphs
-                  )
-                )
-              : '',
-            formatGoalStatusSegment(goalStatus, glyphs),
-          ];
-          const lines = packStatusSegments(
-            segments,
-            cols,
-            chalk.dim(` ${glyphs.smallDot} `)
-          );
-          return (
-            <Box flexDirection="column">
-              {lines.map((line, i) => (
-                <Text key={i}>{line}</Text>
-              ))}
-            </Box>
-          );
-        })()}
+      {isInitialized && !isShellEscape && (
+        <StatusLine
+          agentName={agentName}
+          modelName={modelName}
+          effort={currentEffort}
+          contextUsagePercent={ctxPct}
+          workspacePath={process.cwd()}
+          gitBranch={gitBranch}
+          goalStatus={goalStatus}
+          cloudSessionActive={cloudSessionActive}
+          cloudRepo={cloudRepo}
+          cloudBranch={cloudBranch}
+          cloudExtraRepos={cloudExtraRepos}
+          pendingAgentName={pendingAgentName}
+          animationFrame={bootFrame}
+        />
+      )}
 
       {/* Boot indicator — inline (not memoized) so it ticks every bootFrame.
           For a cloud session's connect screen, the milestone checklist takes
@@ -1786,7 +1734,7 @@ export const LiteLayout: React.FC = () => {
               getAgentColor(stageName, getColor)
             }
             mainAgentName={agentName}
-            onNotesSubmit={handleNotesSubmit}
+            onInputSubmit={handleNotesSubmit}
           />
         </Box>
       )}
@@ -1959,76 +1907,4 @@ function colorTransientAlert(message: string, status: string): string {
     default:
       return chalk.dim(message);
   }
-}
-
-// Goal-loop status segment (icon + state + iteration). '' when no goal so
-// packStatusSegments drops it. Goal TEXT isn't shown here (too long); bare
-// `/goal` surfaces it via a transient alert + scrollback confirmation.
-function formatGoalStatusSegment(
-  goalStatus: {
-    state: string;
-    iteration: number;
-    maxIterations: number;
-    startedAt?: number;
-    elapsedSecs?: number;
-  } | null,
-  glyphs: Glyphs
-): string {
-  if (!goalStatus) return '';
-  const iter = `[${goalStatus.iteration + 1}/${goalStatus.maxIterations}]`;
-  // Elapsed time mirrors the TUI goal chip (InlineLayout) so the indicator
-  // reads the same in both modes; a 60s tick in LiteLayout keeps it current.
-  const secs = goalStatus.startedAt
-    ? Math.floor((Date.now() - goalStatus.startedAt) / 1000)
-    : (goalStatus.elapsedSecs ?? 0);
-  const elapsed =
-    secs > 0
-      ? secs >= 3600
-        ? `${Math.floor(secs / 3600)}h${Math.floor((secs % 3600) / 60)}m`
-        : secs >= 60
-          ? `${Math.floor(secs / 60)}m`
-          : `${secs}s`
-      : '';
-  const withElapsed = (label: string) =>
-    elapsed ? `${label} ${glyphs.smallDot} ${elapsed}` : label;
-  switch (goalStatus.state) {
-    case 'completed':
-      return chalk.green(withElapsed(`${glyphs.checkmark} goal done`));
-    case 'exhausted':
-      return chalk.red(withElapsed(`${glyphs.cross} goal exhausted`));
-    case 'paused':
-      return chalk.yellow(withElapsed(`${glyphs.pause} goal paused ${iter}`));
-    default:
-      return chalk.dim(withElapsed(`⟳ goal ${iter}`));
-  }
-}
-
-// Color the agent name with its stable agentColors.ts color (same as the V2
-// InlineLayout chip). Built-in ids use canonical product labels; custom
-// agent names pass through.
-function colorAgentName(
-  agentName: string | null,
-  getColor: (path: string) => any
-): string {
-  const raw = agentName || 'kiro';
-  const color = getAgentColor(raw, getColor);
-  return color(getAgentDisplayName(raw));
-}
-
-// Smooth RGB gradient for the ctx-usage indicator (replaces step thresholds
-// that flipped yellow too late on large-window models). Piecewise-linear:
-// 0-20% flat green, 20-30% green→yellow, 30-100% yellow→red. chalk.rgb
-// degrades to nearest 256-color without truecolor support.
-function gradientCtxColor(pct: number): (s: string) => string {
-  const p = Math.max(0, Math.min(100, pct));
-  const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
-  if (p <= 20) {
-    return chalk.rgb(80, 200, 80);
-  }
-  if (p <= 30) {
-    const t = (p - 20) / 10;
-    return chalk.rgb(lerp(80, 220, t), lerp(200, 220, t), lerp(80, 0, t));
-  }
-  const t = (p - 30) / 70;
-  return chalk.rgb(220, lerp(220, 60, t), lerp(0, 60, t));
 }

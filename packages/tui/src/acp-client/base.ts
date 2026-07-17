@@ -7,6 +7,7 @@ import type {
   SessionClient,
   ListSessionsResponse,
 } from '../types/session-client';
+import type { ContextBreakdownData } from '../types/context';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type {
   ModeChangedNotification,
@@ -649,8 +650,6 @@ export abstract class BaseAcpClient implements SessionClient {
   private compactCompletionAttemptId = 0;
   private observedCompactCompletionAttemptId = 0;
   private externalCompactInProgress = false;
-  protected promptsCache: PromptEntry[] = [];
-  protected cachedBreakdown: unknown = null;
   // KAS steers accumulated by messageId, to rebuild the full buffer the
   // SteeringQueued handler expects (Rust sends it whole; KAS sends deltas).
   // Reset per-session in wireSessionListeners (a /clear mid-steer ends the
@@ -755,32 +754,35 @@ export abstract class BaseAcpClient implements SessionClient {
   // ── Shared methods ──
 
   onUpdate(handler: (event: AgentStreamEvent) => void): () => void {
-    this.updateHandlers.add(handler);
-    return () => this.updateHandlers.delete(handler);
+    return this.addHandler(this.updateHandlers, handler);
   }
 
   onMultiSessionUpdate(
     handler: (sessionId: string, event: AgentStreamEvent) => void
   ): () => void {
-    this.multiSessionHandlers.add(handler);
-    return () => this.multiSessionHandlers.delete(handler);
+    return this.addHandler(this.multiSessionHandlers, handler);
   }
 
   onSubagentListUpdate(
     handler: (subagents: any[], pendingStages?: any[]) => void
   ): () => void {
-    this.subagentListHandlers.add(handler);
-    return () => this.subagentListHandlers.delete(handler);
+    return this.addHandler(this.subagentListHandlers, handler);
   }
 
   onSessionEvent(handler: (event: any) => void): () => void {
-    this.sessionEventHandlers.add(handler);
-    return () => this.sessionEventHandlers.delete(handler);
+    return this.addHandler(this.sessionEventHandlers, handler);
   }
 
   onInboxNotification(handler: (notification: any) => void): () => void {
-    this.inboxHandlers.add(handler);
-    return () => this.inboxHandlers.delete(handler);
+    return this.addHandler(this.inboxHandlers, handler);
+  }
+
+  private addHandler<T>(handlers: Set<T>, handler: T): () => void {
+    if (this.closed) return () => {};
+    handlers.add(handler);
+    return () => {
+      handlers.delete(handler);
+    };
   }
 
   /**
@@ -795,6 +797,11 @@ export abstract class BaseAcpClient implements SessionClient {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.updateHandlers.clear();
+    this.multiSessionHandlers.clear();
+    this.inboxHandlers.clear();
+    this.sessionEventHandlers.clear();
+    this.subagentListHandlers.clear();
     this.resetCompactCompletionFallback();
     this.agentProcess.kill('SIGTERM');
     // Best-effort SIGKILL escalation after 800ms grace period. Unix only —
@@ -1685,7 +1692,10 @@ export abstract class BaseAcpClient implements SessionClient {
             });
           }
           if (meta?.breakdown) {
-            this.cachedBreakdown = meta.breakdown;
+            this.broadcastStreamEvent({
+              type: AgentEventType.ContextBreakdownUpdate,
+              breakdown: meta.breakdown as ContextBreakdownData,
+            });
           }
         }
         if (

@@ -4,6 +4,7 @@ import {
   MessageRole,
   ToolUseStatus,
   NOT_READY_TOOLS,
+  type HookInfo,
 } from './app-store';
 import { AgentEventType, ContentType } from '../types/agent-events';
 import { Kiro } from '../kiro';
@@ -864,5 +865,64 @@ describe('setShowToolsPanel — cache preservation', () => {
     expect(store.getState().toolsList).toEqual([
       { name: 'shell', source: 'builtin', description: 's' },
     ]);
+  });
+});
+
+describe('setShowHooksPanel — cache preservation', () => {
+  it('preserves hooksList when closing the panel without hook data', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const hooks: HookInfo[] = [
+      { trigger: 'preToolUse', matcher: 'write', command: 'validate.sh' },
+    ];
+
+    store.getState().setShowHooksPanel(true, hooks);
+    store.getState().setShowHooksPanel(false);
+
+    expect(store.getState().showHooksPanel).toBe(false);
+    expect(store.getState().hooksList).toEqual(hooks);
+  });
+
+  it('replaces hooksList when hooks are explicitly provided', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+
+    store
+      .getState()
+      .setShowHooksPanel(true, [
+        { trigger: 'agentSpawn', command: 'git status' },
+      ]);
+
+    expect(store.getState().hooksList).toEqual([
+      { trigger: 'agentSpawn', command: 'git status' },
+    ]);
+  });
+});
+
+describe('resetClientDisplayCaches', () => {
+  it('clears every display snapshot derived from the transport client', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    store.setState({
+      contextBreakdownCache: {
+        contextFiles: { percent: 1, tokens: 1 },
+        tools: { percent: 1, tokens: 1 },
+        kiroResponses: { percent: 1, tokens: 1 },
+        yourPrompts: { percent: 1, tokens: 1 },
+      },
+      mcpServerCache: [{ name: 'configured', status: 'running', toolCount: 1 }],
+      mcpRegistryCache: [
+        { name: 'registry', status: 'disabled', toolCount: 0 },
+      ],
+      toolsList: [{ name: 'tool', source: 'builtin', description: 'A tool' }],
+      hooksList: [{ name: 'hook', trigger: 'promptSubmit', command: 'run' }],
+    });
+
+    store.getState().resetClientDisplayCaches();
+
+    expect(store.getState()).toMatchObject({
+      contextBreakdownCache: null,
+      mcpServerCache: [],
+      mcpRegistryCache: [],
+      toolsList: [],
+      hooksList: [],
+    });
   });
 });

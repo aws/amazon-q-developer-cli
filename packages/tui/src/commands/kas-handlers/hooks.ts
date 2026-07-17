@@ -9,6 +9,11 @@ export async function handleHooks(
   ctx: CommandContext,
   _options?: DispatchOptions
 ): Promise<void> {
+  if (ctx.hooksList.length > 0) {
+    ctx.setShowHooksPanel(true, [...ctx.hooksList]);
+    return;
+  }
+
   const result = await ctx.kiro.executeCommand({
     command: 'hooks',
     args: {},

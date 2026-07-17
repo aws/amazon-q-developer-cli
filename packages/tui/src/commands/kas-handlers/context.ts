@@ -112,7 +112,7 @@ async function runShow(
 
   // Prefer the fresh show-response breakdown; the cache can be stale after
   // an /agent switch. Fall back to the cache for older agents.
-  const breakdown = response.breakdown ?? ctx.kiro.getCachedContextBreakdown();
+  const breakdown = response.breakdown ?? ctx.getContextBreakdownCache();
   if (breakdown) {
     ctx.setShowContextBreakdown(true, {
       ...breakdown,

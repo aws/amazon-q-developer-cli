@@ -1,4 +1,5 @@
-import { createAcpClient } from './acp-client';
+import { createAcpClient, type KasAcpClientLaunchOptions } from './acp-client';
+import { resolveAgentEngine } from './agent-engine';
 import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
 import {
@@ -20,7 +21,6 @@ import type {
   KasContextShowResponse,
   KasContextMutationResponse,
   ChatSlashCommandTelemetryPayload,
-  ExecutionTarget,
 } from './types/session-client';
 import type {
   ModeChangedNotification,
@@ -28,7 +28,7 @@ import type {
   UiModeDefaultChangedNotification,
   UiModeSessionStartNotification,
 } from './types/generated/chat-cli';
-import type { ContextBreakdownData, ToolInfo } from './stores/app-store';
+import type { ToolInfo } from './stores/app-store';
 import type { AgentEntry } from './utils/kas-config-options';
 import type {
   CommandOptionsResponse,
@@ -57,6 +57,12 @@ export interface RepoProviderSource {
     request: SourceProviderResourcesRequest
   ): Promise<SourceProviderResourcePage | undefined>;
 }
+
+type ClientSubscription =
+  | 'sessionEvent'
+  | 'multiSession'
+  | 'subagentList'
+  | 'inbox';
 
 /**
  * Stateless Kiro class that only manages session client lifecycle.
@@ -103,7 +109,7 @@ export class Kiro {
   private settingsHandler?: (settings: Record<string, unknown>) => void;
   private subagentListHandler?: (
     subagents: any[],
-    pendingStages: any[]
+    pendingStages?: any[]
   ) => void;
   private sessionEventHandler?: (event: any) => void;
   private multiSessionHandler?: (sessionId: string, event: any) => void;
@@ -123,7 +129,13 @@ export class Kiro {
     new Map();
   private approvalHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
+  private clientSubscriptionUnsubscribes = new Map<
+    ClientSubscription,
+    () => void
+  >();
+  private initializeGeneration = 0;
   private pendingPrompt: Promise<void> | null = null;
+  private activePromptToken?: symbol;
   private _promptActive = false;
 
   get sessionId(): string | undefined {
@@ -220,29 +232,44 @@ export class Kiro {
   }
 
   onSubagentListUpdate(
-    handler: (subagents: any[], pendingStages: any[]) => void
+    handler: (subagents: any[], pendingStages?: any[]) => void
   ): void {
     this.subagentListHandler = handler;
-    if (this.sessionClient && 'onSubagentListUpdate' in this.sessionClient) {
-      (this.sessionClient as any).onSubagentListUpdate(handler);
+    const sessionClient = this.sessionClient;
+    if (sessionClient?.onSubagentListUpdate) {
+      this.replaceClientSubscription('subagentList', () =>
+        sessionClient.onSubagentListUpdate!(handler)
+      );
     }
   }
 
   onSessionEvent(handler: (event: any) => void): void {
     this.sessionEventHandler = handler;
+    const sessionClient = this.sessionClient;
+    if (sessionClient?.onSessionEvent) {
+      this.replaceClientSubscription('sessionEvent', () =>
+        sessionClient.onSessionEvent!(handler)
+      );
+    }
   }
 
   onMultiSessionUpdate(handler: (sessionId: string, event: any) => void): void {
     this.multiSessionHandler = handler;
-    if (this.sessionClient && 'onMultiSessionUpdate' in this.sessionClient) {
-      (this.sessionClient as any).onMultiSessionUpdate(handler);
+    const sessionClient = this.sessionClient;
+    if (sessionClient?.onMultiSessionUpdate) {
+      this.replaceClientSubscription('multiSession', () =>
+        sessionClient.onMultiSessionUpdate!(handler)
+      );
     }
   }
 
   onInboxNotification(handler: (notification: any) => void): void {
     this.inboxHandler = handler;
-    if (this.sessionClient && 'onInboxNotification' in this.sessionClient) {
-      (this.sessionClient as any).onInboxNotification(handler);
+    const sessionClient = this.sessionClient;
+    if (sessionClient?.onInboxNotification) {
+      this.replaceClientSubscription('inbox', () =>
+        sessionClient.onInboxNotification!(handler)
+      );
     }
   }
 
@@ -354,15 +381,6 @@ export class Kiro {
     return this.sessionClient.contextClear();
   }
 
-  /**
-   * Latest context-usage breakdown pushed via `session_info_update`,
-   * or `null` if the underlying session client doesn't expose one
-   * (V1/V2-Rust) or hasn't received one yet (KAS, pre-first-event).
-   */
-  getCachedContextBreakdown(): ContextBreakdownData | null {
-    return this.sessionClient?.getCachedContextBreakdown?.() ?? null;
-  }
-
   async sendMessage(sessionId: string, content: string): Promise<void> {
     if (!this.sessionClient) {
       throw new Error('Kiro not initialized');
@@ -469,29 +487,54 @@ export class Kiro {
   async initialize(
     agentPath: string,
     extraAcpArgs: string[] = [],
-    kasOptions?: {
-      initialAgent?: string;
-      initialModel?: string;
-      executionTarget?: ExecutionTarget;
-      repos?: string[];
-    }
+    kasOptions?: KasAcpClientLaunchOptions
   ): Promise<void> {
     logger.debug('[kiro] initialize() called');
 
+    const generation = ++this.initializeGeneration;
+
+    // A resume-picker startup can initialize twice. Retire the previous
+    // transport before replacing it so its late events cannot reach the UI.
+    this.retireSessionClient();
+
+    let sessionClient: SessionClient;
+    let activateMockClient: (() => void) | undefined;
     if (process.env.KIRO_MOCK_ACP === 'true') {
       const { MockSessionClient, setMockSessionClient } =
         await import('./test-utils/MockSessionClient');
       const mockClient = new MockSessionClient();
-      this.sessionClient = mockClient;
-      setMockSessionClient(mockClient);
+      sessionClient = mockClient;
+      activateMockClient = () => setMockSessionClient(mockClient);
     } else {
-      this.sessionClient = createAcpClient(agentPath, extraAcpArgs, kasOptions);
+      const agentEngine = resolveAgentEngine();
+      if (agentEngine === 'kas') {
+        if (!kasOptions) {
+          throw new Error('KAS subagent routing store is required');
+        }
+        sessionClient = createAcpClient(agentPath, extraAcpArgs, {
+          agentEngine,
+          kasOptions,
+        });
+      } else {
+        sessionClient = createAcpClient(agentPath, extraAcpArgs, {
+          agentEngine,
+        });
+      }
     }
+
+    if (generation !== this.initializeGeneration) {
+      sessionClient.close();
+      throw new Error('Initialization superseded by a newer attempt');
+    }
+
+    this.sessionClient = sessionClient;
+    activateMockClient?.();
     logger.debug('[kiro] AcpClient created');
 
     // Register handler for commands update before initialize
-    this.globalUpdateUnsubscribe = this.sessionClient.onUpdate(
+    this.globalUpdateUnsubscribe = sessionClient.onUpdate(
       (event: AgentStreamEvent) => {
+        if (this.sessionClient !== sessionClient) return;
         logger.debug('[kiro] global handler event:', event.type);
         if (
           event.type === AgentEventType.CommandsUpdate &&
@@ -552,6 +595,7 @@ export class Kiro {
         if (
           (event.type === AgentEventType.CompactionStatus ||
             event.type === AgentEventType.ContextUsage ||
+            event.type === AgentEventType.ContextBreakdownUpdate ||
             event.type === AgentEventType.EffortUpdate ||
             event.type === AgentEventType.SessionRosterDelta ||
             event.type === AgentEventType.Content) &&
@@ -597,6 +641,8 @@ export class Kiro {
             event.type === AgentEventType.AgentNotFound ||
             event.type === AgentEventType.AgentConfigError ||
             event.type === AgentEventType.HooksUpdate ||
+            event.type === AgentEventType.McpServerSnapshot ||
+            event.type === AgentEventType.McpRegistrySnapshot ||
             event.type === AgentEventType.RateLimitError) &&
           this.initNotificationHandler
         ) {
@@ -676,46 +722,67 @@ export class Kiro {
       }
     );
 
-    await this.sessionClient.initialize();
+    try {
+      await sessionClient.initialize();
+    } catch (err) {
+      if (!this.isCurrentClient(generation, sessionClient)) {
+        sessionClient.close();
+        throw new Error('Initialization superseded by a newer attempt', {
+          cause: err,
+        });
+      }
+      this.retireSessionClient();
+      throw err;
+    }
+
+    this.assertCurrentClient(generation, sessionClient);
 
     // Fetch user settings before creating a session (needed for greeting display)
+    let settings: Record<string, unknown>;
     try {
-      this._settings = await this.sessionClient.listSettings();
+      settings = await sessionClient.listSettings();
     } catch (err) {
+      this.assertCurrentClient(generation, sessionClient);
       logger.error('[kiro] Failed to fetch settings:', err);
+      return;
     }
+    this.assertCurrentClient(generation, sessionClient);
+    this._settings = settings;
   }
 
   async createSession(resumeSessionId?: string): Promise<void> {
-    if (!this.sessionClient) throw new Error('connect() must be called first');
+    const sessionClient = this.sessionClient;
+    if (!sessionClient) throw new Error('connect() must be called first');
 
     // Use loadSession if resuming, otherwise create new session
     const sessionResult = resumeSessionId
-      ? await this.sessionClient.loadSession(resumeSessionId)
-      : await this.sessionClient.newSession();
+      ? await sessionClient.loadSession(resumeSessionId)
+      : await sessionClient.newSession();
+
+    if (this.sessionClient !== sessionClient) {
+      throw new Error('Session creation superseded by a newer client');
+    }
 
     // Wire up handlers after creating sessionClient
-    if (this.sessionEventHandler && 'onSessionEvent' in this.sessionClient) {
-      (this.sessionClient as any).onSessionEvent(this.sessionEventHandler);
-    }
-    if (
-      this.multiSessionHandler &&
-      'onMultiSessionUpdate' in this.sessionClient
-    ) {
-      (this.sessionClient as any).onMultiSessionUpdate(
-        this.multiSessionHandler
+    if (this.sessionEventHandler && sessionClient.onSessionEvent) {
+      this.replaceClientSubscription('sessionEvent', () =>
+        sessionClient.onSessionEvent!(this.sessionEventHandler!)
       );
     }
-    if (
-      this.subagentListHandler &&
-      'onSubagentListUpdate' in this.sessionClient
-    ) {
-      (this.sessionClient as any).onSubagentListUpdate(
-        this.subagentListHandler
+    if (this.multiSessionHandler && sessionClient.onMultiSessionUpdate) {
+      this.replaceClientSubscription('multiSession', () =>
+        sessionClient.onMultiSessionUpdate!(this.multiSessionHandler!)
       );
     }
-    if (this.inboxHandler && 'onInboxNotification' in this.sessionClient) {
-      (this.sessionClient as any).onInboxNotification(this.inboxHandler);
+    if (this.subagentListHandler && sessionClient.onSubagentListUpdate) {
+      this.replaceClientSubscription('subagentList', () =>
+        sessionClient.onSubagentListUpdate!(this.subagentListHandler!)
+      );
+    }
+    if (this.inboxHandler && sessionClient.onInboxNotification) {
+      this.replaceClientSubscription('inbox', () =>
+        sessionClient.onInboxNotification!(this.inboxHandler!)
+      );
     }
 
     // Notify about current model if available
@@ -747,9 +814,11 @@ export class Kiro {
     onEvent: (event: AgentStreamEvent) => void,
     images?: Array<{ base64: string; mimeType: string }>
   ): Promise<void> {
-    if (!this.sessionClient) {
+    const sessionClient = this.sessionClient;
+    if (!sessionClient) {
       throw new Error('Kiro not initialized');
     }
+    const promptToken = Symbol('prompt');
 
     logger.debug('[stream] streamMessage called', {
       contentLength: content.length,
@@ -762,6 +831,7 @@ export class Kiro {
 
     return new Promise<void>((resolve, reject) => {
       let settled = false;
+      let unsubscribe = () => {};
       // Track when the most recent stream event arrived so the stuck-turn
       // watchdog (defined below) can log the silence gap. Initialized to
       // Promise-creation time and bumped from updateHandler on every
@@ -771,6 +841,7 @@ export class Kiro {
       const settle = (reason: string, fn: () => void) => {
         if (settled) return;
         settled = true;
+        signal.removeEventListener('abort', onAbort);
         // Silent-stop diagnostic: which path settled the turn (abort,
         // prompt-resolved, prompt-error, initial-response-timeout) and how
         // long it had been since the last event arrived. If a real session
@@ -800,10 +871,13 @@ export class Kiro {
         // broadcastStreamEvent.  Deferring the unsubscribe by one macrotask
         // gives those handlers time to deliver their events.
         setTimeout(() => {
-          this._promptActive = false;
+          if (this.activePromptToken === promptToken) {
+            this.activePromptToken = undefined;
+            this._promptActive = false;
+          }
           unsubscribe();
+          fn();
         }, 0);
-        fn();
       };
 
       // Handle abort signal
@@ -820,6 +894,12 @@ export class Kiro {
       signal.addEventListener('abort', onAbort, { once: true });
 
       const updateHandler = (event: AgentStreamEvent) => {
+        if (
+          this.activePromptToken !== promptToken ||
+          this.sessionClient !== sessionClient
+        ) {
+          return;
+        }
         // Allow events to be delivered even after settled — the prompt
         // response and notifications race in the ACP SDK, so late
         // notifications must still reach the store.  The store's event
@@ -845,10 +925,11 @@ export class Kiro {
         }
       };
 
-      // Subscribe before setting the flag — if an event arrives between these
-      // two lines, double-delivery (both handlers fire) is harmless since the
-      // store's ApprovalRequest handler is idempotent. Lost delivery is not.
-      const unsubscribe = this.sessionClient!.onUpdate(updateHandler);
+      // Claim the turn before subscribing so even a synchronously delivered
+      // update is attributed to this prompt. Set the global flag only after
+      // the per-prompt listener exists so approval events cannot be dropped.
+      this.activePromptToken = promptToken;
+      unsubscribe = sessionClient.onUpdate(updateHandler);
       this._promptActive = true;
 
       // Start initial-response timeout
@@ -862,8 +943,8 @@ export class Kiro {
           // Send cancel to backend so it clears the pending prompt state.
           // Without this, the backend still thinks a prompt is in progress
           // and will reject the next request with "Prompt already in progress".
-          this.sessionClient
-            ?.cancel()
+          sessionClient
+            .cancel()
             .catch((cancelErr) => {
               logger.error(
                 '[stream] failed to send cancel on timeout:',
@@ -916,7 +997,8 @@ export class Kiro {
       }
       contentBlocks.push({ type: 'text', text: content });
 
-      const promptPromise = this.sessionClient!.prompt(contentBlocks as any)
+      const promptPromise = sessionClient
+        .prompt(contentBlocks as any)
         .then(() => {
           settle('prompt-resolved', () => resolve());
         })
@@ -1087,29 +1169,75 @@ export class Kiro {
   }
 
   async cancel(): Promise<void> {
-    if (!this.sessionClient) return;
-    await this.sessionClient.cancel();
-    if (this.pendingPrompt) {
+    const sessionClient = this.sessionClient;
+    if (!sessionClient) return;
+    const pendingPrompt = this.pendingPrompt;
+    await sessionClient.cancel();
+    if (pendingPrompt) {
       // Race against a timeout so we don't hang forever if KAS never responds.
       let timer: ReturnType<typeof setTimeout>;
       await Promise.race([
-        this.pendingPrompt,
+        pendingPrompt,
         new Promise<void>((r) => {
           timer = setTimeout(r, 5000);
         }),
       ]).finally(() => clearTimeout(timer!));
-      this.pendingPrompt = null;
+      if (this.pendingPrompt === pendingPrompt) {
+        this.pendingPrompt = null;
+      }
     }
   }
 
   close(): void {
+    this.initializeGeneration += 1;
+    this.retireSessionClient();
+  }
+
+  private isCurrentClient(
+    generation: number,
+    sessionClient: SessionClient
+  ): boolean {
+    return (
+      generation === this.initializeGeneration &&
+      sessionClient === this.sessionClient
+    );
+  }
+
+  private assertCurrentClient(
+    generation: number,
+    sessionClient: SessionClient
+  ): void {
+    if (this.isCurrentClient(generation, sessionClient)) return;
+    sessionClient.close();
+    throw new Error('Initialization superseded by a newer attempt');
+  }
+
+  private replaceClientSubscription(
+    name: ClientSubscription,
+    subscribe: () => () => void
+  ): void {
+    this.clientSubscriptionUnsubscribes.get(name)?.();
+    this.clientSubscriptionUnsubscribes.set(name, subscribe());
+  }
+
+  private retireSessionClient(): void {
     if (this.globalUpdateUnsubscribe) {
       this.globalUpdateUnsubscribe();
       this.globalUpdateUnsubscribe = undefined;
     }
-    if (this.sessionClient) {
-      this.sessionClient.close();
-      this.sessionClient = undefined;
+    for (const unsubscribe of this.clientSubscriptionUnsubscribes.values()) {
+      unsubscribe();
+    }
+    this.clientSubscriptionUnsubscribes.clear();
+
+    const sessionClient = this.sessionClient;
+    this.sessionClient = undefined;
+    this.artifactWriteCallsById.clear();
+    this.pendingPrompt = null;
+    this.activePromptToken = undefined;
+    this._promptActive = false;
+    if (sessionClient) {
+      sessionClient.close();
     }
   }
 }

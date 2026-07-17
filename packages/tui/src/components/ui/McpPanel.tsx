@@ -66,7 +66,8 @@ export const McpPanel: React.FC<McpPanelProps> = ({
 
   const isRegistryView =
     servers.length > 0 && servers[0]?.version !== undefined;
-  const isInteractive = (mode === 'add' || mode === 'remove') && isRegistryView;
+  const isInteractive =
+    (mode === 'add' || mode === 'remove') && isRegistryView && !!onAction;
 
   // Build a lookup of MCP failure reasons from initErrors
   const failureReasons = useMemo(() => {
@@ -370,6 +371,11 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       : 'No MCP servers configured';
 
   const isStatusView = !isRegistryView && !isListMode;
+  const statusActionHints = [
+    onForceAuth && { key: '^A', label: 'auth' },
+    onAbortAuth && { key: '^X', label: 'abort' },
+    onRemoveCredentials && { key: '^R', label: 'remove creds' },
+  ].filter((hint): hint is { key: string; label: string } => !!hint);
 
   const footerExtra = isInteractive ? (
     <Text>
@@ -379,9 +385,13 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     </Text>
   ) : isStatusView && servers.length > 0 ? (
     <Text>
-      {primary('^J/K')} {dim('navigate')} {dim(glyphs.smallDot)} {primary('^A')}{' '}
-      {dim('auth')} {dim(glyphs.smallDot)} {primary('^X')} {dim('abort')}{' '}
-      {dim(glyphs.smallDot)} {primary('^R')} {dim('remove creds')}
+      {primary('^J/K')} {dim('navigate')}
+      {statusActionHints.map(({ key, label }) => (
+        <React.Fragment key={key}>
+          {' '}
+          {dim(glyphs.smallDot)} {primary(key)} {dim(label)}
+        </React.Fragment>
+      ))}
     </Text>
   ) : undefined;
 

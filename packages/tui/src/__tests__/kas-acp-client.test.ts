@@ -16,6 +16,7 @@ import {
   KAS_DEFAULT_AGENT_ID,
   KAS_DEFAULT_AGENT_NAME,
 } from '../constants/agents';
+import type { KasAcpClientOptions } from '../acp-client/kas';
 
 type ToolFinishArgs = {
   outcome: 'success' | 'error' | 'cancelled' | 'denied';
@@ -59,8 +60,6 @@ const mockSpawn = mock((_cmd: string, _args: string[], _opts: any) => {
   return mockProcess;
 });
 
-mock.module('child_process', () => ({ spawn: mockSpawn }));
-mock.module('node:child_process', () => ({ spawn: mockSpawn }));
 mock.module('node-machine-id', () => ({
   machineIdSync: () => 'test-machine-id',
 }));
@@ -304,11 +303,39 @@ afterAll(() => {
 });
 
 // @ts-expect-error — bun-specific query-string import
-const { KasAcpClient, resolveFeedbackUrl } =
-  await import('../acp-client?kas-test');
+const {
+  KasAcpClient: RawKasAcpClient,
+  createAcpClient,
+  resolveFeedbackUrl,
+} = await import('../acp-client?kas-test');
 const { browserOpenCommand } = await import('../utils/browser');
+const { createStore } = await import('zustand/vanilla');
+const {
+  createInitialKasSubagentRoutingState,
+  createKasSubagentRoutingActions,
+} = await import('../stores/kas-subagent-routing');
+
+function createKasRoutingStore() {
+  const subagentRouting = createInitialKasSubagentRoutingState();
+  const kasSubagentRouting = createKasSubagentRoutingActions(
+    () => subagentRouting
+  );
+  return createStore(() => ({ subagentRouting, kasSubagentRouting }));
+}
+
+let kasRoutingStore = createKasRoutingStore();
+class KasAcpClient extends RawKasAcpClient {
+  constructor(options: Partial<KasAcpClientOptions> = {}) {
+    super({
+      ...options,
+      kasSubagentRoutingStore: kasRoutingStore.getState().kasSubagentRouting,
+      spawnProcess: mockSpawn,
+    });
+  }
+}
 
 function freshMocks() {
+  kasRoutingStore = createKasRoutingStore();
   mockSpawn.mockClear();
   mockKiroInitialize.mockClear();
   mockKiroNewSession.mockClear();
@@ -439,6 +466,18 @@ describe('KasAcpClient', () => {
     expect(args).toContain('--transport=stdio');
   });
 
+  it('factory forwards the required app-store routing actions for KAS', () => {
+    const client = createAcpClient('/unused', [], {
+      agentEngine: 'kas',
+      kasOptions: {
+        kasSubagentRoutingStore: kasRoutingStore.getState().kasSubagentRouting,
+        spawnProcess: mockSpawn,
+      },
+    });
+    expect(client).toBeInstanceOf(RawKasAcpClient);
+    client.close();
+  });
+
   it('declares knowledge capability in clientMeta', () => {
     const _client = new KasAcpClient();
     expect(capturedKiroClientConfig?.clientMeta?.knowledge).toBe(true);
@@ -456,6 +495,47 @@ describe('KasAcpClient', () => {
     const client = new KasAcpClient();
     client.close();
     expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('close() does not clear routing state owned by a replacement client', () => {
+    const client = new KasAcpClient();
+    const routingState = kasRoutingStore.getState().subagentRouting;
+    routingState.toolCallToSubtask.set('new-tool', 'new-subtask');
+
+    client.close();
+
+    expect(routingState.toolCallToSubtask.get('new-tool')).toBe('new-subtask');
+  });
+
+  it('a retired client cannot clear replacement routing after session/new resolves', async () => {
+    let resolveNewSession!: (result: any) => void;
+    mockKiroNewSession.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveNewSession = resolve;
+        })
+    );
+    const retiredClient = new KasAcpClient();
+    const pendingSession = retiredClient.newSession();
+
+    retiredClient.close();
+    const replacementClient = new KasAcpClient();
+    const routingState = kasRoutingStore.getState().subagentRouting;
+    routingState.toolCallToSubtask.set('replacement-tool', 'replacement-task');
+
+    resolveNewSession({
+      sessionId: 'retired-session',
+      configOptions: [],
+    });
+    await expect(pendingSession).rejects.toThrow(
+      'KAS client closed during session creation'
+    );
+
+    expect(capturedSessionUpdateHandler).toBeNull();
+    expect(routingState.toolCallToSubtask.get('replacement-tool')).toBe(
+      'replacement-task'
+    );
+    replacementClient.close();
   });
 
   it('initialize() calls kiroClient.initialize', async () => {
@@ -2403,22 +2483,31 @@ describe('KasAcpClient', () => {
       await expect(client.contextShow()).rejects.toThrow('method not found');
     });
 
-    it('getCachedContextBreakdown(): null until session_info_update populates it', async () => {
+    it('publishes context breakdowns for store ownership', async () => {
       const client = new KasAcpClient();
       await client.initialize();
       await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const breakdown = {
+        contextFiles: { tokens: 100, percent: 5 },
+        tools: { tokens: 20, percent: 1 },
+        kiroResponses: { tokens: 30, percent: 2 },
+        yourPrompts: { tokens: 40, percent: 2 },
+      };
 
-      expect(client.getCachedContextBreakdown()).toBeNull();
-    });
+      await capturedSessionUpdateHandler({
+        sessionId: client.sessionId,
+        update: {
+          sessionUpdate: 'session_info_update',
+          _meta: { kiro: { kind: 'context_usage', breakdown } },
+        },
+      });
 
-    it('getCachedContextBreakdown(): returns the cached breakdown once set', async () => {
-      const client = new KasAcpClient();
-      await client.initialize();
-      await client.newSession();
-      const breakdown = { contextFiles: { tokens: 100, percent: 5 } };
-      (client as any).cachedBreakdown = breakdown;
-
-      expect(client.getCachedContextBreakdown()).toBe(breakdown);
+      expect(events).toContainEqual({
+        type: AgentEventType.ContextBreakdownUpdate,
+        breakdown,
+      });
     });
   });
 
@@ -3950,12 +4039,13 @@ describe('mcp command (push model)', () => {
     delete process.env.KIRO_KAS_SERVER_PATH;
   });
 
-  it('executeCommand mcp returns cached servers from notification', async () => {
+  it('publishes a normalized configured-server snapshot', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
 
-    // Simulate receiving _kiro/mcp/status notification
     (client as any).handleMcpStatusNotification({
       sessionId: 'kas-session-1',
       servers: [
@@ -3970,94 +4060,55 @@ describe('mcp command (push model)', () => {
           failedAuthorization: false,
           errorMessage: 'err',
         },
-      ],
-    });
-
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-    expect(result.success).toBe(true);
-    expect(result.message).toBe('2 configured servers');
-    const servers = (result.data as any).servers;
-    expect(servers).toHaveLength(2);
-    expect(servers[0].name).toBe('test-server');
-    expect(servers[0].status).toBe('running');
-    expect(servers[0].toolCount).toBe(1);
-    expect(servers[1].status).toBe('failed');
-  });
-
-  it('executeCommand mcp returns empty when no notification received', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-    expect(result.success).toBe(true);
-    expect(result.message).toBe('0 configured servers');
-    expect((result.data as any).servers).toHaveLength(0);
-  });
-
-  it('maps connected status to running', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-
-    (client as any).handleMcpStatusNotification({
-      servers: [{ name: 's', status: 'connected', tools: [] }],
-    });
-
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-    expect((result.data as any).servers[0].status).toBe('running');
-  });
-
-  it('maps connecting status to loading', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-
-    (client as any).handleMcpStatusNotification({
-      servers: [{ name: 's', status: 'connecting' }],
-    });
-
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-    expect((result.data as any).servers[0].status).toBe('loading');
-  });
-
-  it('maps failed with failedAuthorization to auth-required', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-
-    (client as any).handleMcpStatusNotification({
-      servers: [
         {
-          name: 's',
+          name: 'loading-server',
+          status: 'connecting',
+        },
+        {
+          name: 'auth-server',
           status: 'failed',
           failedAuthorization: true,
-          errorMessage: 'auth',
+        },
+        {
+          name: 'disabled-server',
+          status: 'disabled',
         },
       ],
     });
 
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-    expect((result.data as any).servers[0].status).toBe('auth-required');
+    const snapshot = events.find(
+      (event) => event.type === AgentEventType.McpServerSnapshot
+    );
+    expect(snapshot.servers).toEqual([
+      { name: 'test-server', status: 'running', toolCount: 1 },
+      { name: 'failed-server', status: 'failed', toolCount: 0 },
+      { name: 'loading-server', status: 'loading', toolCount: 0 },
+      { name: 'auth-server', status: 'auth-required', toolCount: 0 },
+      { name: 'disabled-server', status: 'disabled', toolCount: 0 },
+    ]);
   });
 
-  it('singular message for 1 server', async () => {
+  it('publishes an empty configured-server snapshot when servers are omitted', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
 
-    (client as any).handleMcpStatusNotification({
-      servers: [{ name: 's', status: 'disabled' }],
-    });
+    (client as any).handleMcpStatusNotification({});
 
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-    expect(result.message).toBe('1 configured server');
+    const snapshot = events.find(
+      (event) => event.type === AgentEventType.McpServerSnapshot
+    );
+    expect(snapshot.servers).toEqual([]);
   });
 
-  it('/mcp list returns registry servers from notification', async () => {
+  it('publishes registry servers from the status notification', async () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
 
     (client as any).handleMcpStatusNotification({
       servers: [{ name: 'configured-server', status: 'connected', tools: [] }],
@@ -4072,17 +4123,11 @@ describe('mcp command (push model)', () => {
       ],
     });
 
-    const result = await client.executeCommand({
-      command: 'mcp',
-      args: { value: 'list' },
-    } as any);
-
-    expect(result.success).toBe(true);
-    expect(result.message).toBe('1 configured, 2 registry servers');
-    expect((result.data as any).mode).toBe('list');
-    expect((result.data as any).servers).toHaveLength(1);
-    expect((result.data as any).registryServers).toHaveLength(2);
-    expect((result.data as any).registryServers[0]).toEqual({
+    const event = events.find(
+      (candidate) => candidate.type === AgentEventType.McpRegistrySnapshot
+    );
+    expect(event.registryServers).toHaveLength(2);
+    expect(event.registryServers[0]).toEqual({
       name: 'registry-server-1',
       status: 'disabled',
       toolCount: 0,
@@ -4090,26 +4135,7 @@ describe('mcp command (push model)', () => {
       description: 'A registry server',
       enabled: true,
     });
-    expect((result.data as any).registryServers[1].enabled).toBe(false);
-  });
-
-  it('/mcp does NOT return registry servers', async () => {
-    const client = new KasAcpClient();
-    await client.initialize();
-    await client.newSession();
-
-    (client as any).handleMcpStatusNotification({
-      servers: [{ name: 'configured-server', status: 'connected', tools: [] }],
-      registryServers: [{ name: 'registry-server', version: '1.0.0' }],
-    });
-
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-
-    expect(result.success).toBe(true);
-    expect(result.message).toBe('1 configured server');
-    expect((result.data as any).servers).toHaveLength(1);
-    expect((result.data as any).registryServers).toBeUndefined();
-    expect((result.data as any).mode).toBeUndefined();
+    expect(event.registryServers[1].enabled).toBe(false);
   });
 });
 
@@ -4189,6 +4215,8 @@ describe('MCP OAuth flow', () => {
     const client = new KasAcpClient();
     await client.initialize();
     await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
 
     (client as any).handleMcpStatusNotification({
       servers: [
@@ -4201,8 +4229,10 @@ describe('MCP OAuth flow', () => {
       ],
     });
 
-    const result = await client.executeCommand({ command: 'mcp' } as any);
-    expect((result.data as any).servers[0]).toMatchObject({
+    const snapshot = events.find(
+      (event) => event.type === AgentEventType.McpServerSnapshot
+    );
+    expect(snapshot.servers[0]).toMatchObject({
       name: 'github-mcp',
       status: 'auth-required',
     });
@@ -5088,9 +5118,208 @@ describe('MCP OAuth flow', () => {
     });
   });
 
+  describe('independent subagent routing lifecycle', () => {
+    it('creates before delivery, terminates only on the lifecycle wrapper, and does not publish routing-only store updates', async () => {
+      const client = new KasAcpClient();
+      const order: string[] = [];
+      const sessionEvents: any[] = [];
+      let storeNotifications = 0;
+      const unsubscribeStore = kasRoutingStore.subscribe(() => {
+        storeNotifications += 1;
+      });
+      client.onSessionEvent((event: any) => {
+        sessionEvents.push(event);
+        order.push(`session:${event.type}`);
+      });
+      client.onMultiSessionUpdate((_sessionId: string, event: any) => {
+        order.push(`multi:${event.type}:${event.id}`);
+      });
+      client.onUpdate((event: any) => {
+        if (
+          event.type === AgentEventType.ToolCall ||
+          event.type === AgentEventType.ToolCallFinished
+        ) {
+          order.push(`main:${event.type}:${event.id}`);
+        }
+      });
+      await client.newSession();
+      order.length = 0;
+
+      const subtaskMeta = {
+        kiro: {
+          kind: 'agent-subtask',
+          agentSubtaskId: 'independent-subtask',
+        },
+      };
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'subagent-wrapper',
+          title: 'Sub-agent: reviewer',
+          kind: 'other',
+          rawInput: { agentName: 'reviewer' },
+          content: [],
+          locations: [],
+          _meta: subtaskMeta,
+        },
+      });
+
+      expect(order).toEqual([
+        'session:session_created',
+        `multi:${AgentEventType.ToolCall}:subagent-wrapper`,
+        `main:${AgentEventType.ToolCall}:subagent-wrapper`,
+      ]);
+      expect(sessionEvents[0].session).toMatchObject({
+        id: 'independent-subtask',
+        name: 'reviewer',
+        agentName: 'reviewer',
+        parentSession: 'kas-session-1',
+        status: 'busy',
+        type: 'ephemeral',
+      });
+      expect(sessionEvents[0].session.created).toBeInstanceOf(Date);
+      expect(sessionEvents[0].session.lastActivity).toBeInstanceOf(Date);
+
+      order.length = 0;
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'independent-child',
+          title: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/test' },
+          content: [],
+          locations: [],
+          _meta: { kiro: { agentSubtaskId: 'independent-subtask' } },
+        },
+      });
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'independent-child',
+          status: 'completed',
+          content: [],
+          _meta: { kiro: { agentSubtaskId: 'independent-subtask' } },
+        },
+      });
+      expect(order).toEqual([
+        `multi:${AgentEventType.ToolCall}:independent-child`,
+        `multi:${AgentEventType.ToolCallFinished}:independent-child`,
+      ]);
+      expect(sessionEvents).toHaveLength(1);
+
+      order.length = 0;
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'subagent-wrapper',
+          status: 'completed',
+          content: [],
+          _meta: subtaskMeta,
+        },
+      });
+      expect(order).toEqual([
+        `multi:${AgentEventType.ToolCallFinished}:subagent-wrapper`,
+        `main:${AgentEventType.ToolCallFinished}:subagent-wrapper`,
+        'session:session_terminated',
+      ]);
+      expect(sessionEvents[1]).toEqual({
+        type: 'session_terminated',
+        sessionId: 'independent-subtask',
+      });
+      expect(storeNotifications).toBe(0);
+      unsubscribeStore();
+    });
+  });
+
   // ── Standalone (hidden) subagent tool cards surface inline in main ──
 
   describe('standalone subagent tool cards surface in main', () => {
+    it('reconstructs a main card from the chunk snapshot when a metadata-poor update proves standalone routing', async () => {
+      const client = new KasAcpClient();
+      const mainEvents: any[] = [];
+      const deliveryOrder: string[] = [];
+      let approvalInfo: any = null;
+      client.onUpdate((event: any) => {
+        if (event.type === AgentEventType.ApprovalRequest) {
+          approvalInfo = event.value;
+          return;
+        }
+        mainEvents.push(event);
+        deliveryOrder.push(`main:${event.type}`);
+      });
+      client.onMultiSessionUpdate((_sessionId: string, event: any) => {
+        deliveryOrder.push(`multi:${event.type}`);
+      });
+      await client.newSession();
+      mainEvents.length = 0;
+      deliveryOrder.length = 0;
+
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId: 'snapshot-tool',
+        permissions: [
+          { id: 'allow_once', name: 'Allow once' },
+          { id: 'reject_once', name: 'Reject once' },
+        ],
+        _meta: {
+          kiro: {
+            agentSubtaskId: 'snapshot-subtask',
+            consent: { capability: 'fs_read' },
+          },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      approvalInfo.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+      mainEvents.length = 0;
+      deliveryOrder.length = 0;
+
+      (client as any).handleExtSessionUpdate({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_chunk',
+          toolCallId: 'snapshot-tool',
+          title: 'read_file',
+          kind: 'read',
+          _meta: {
+            kiro: { agentSubtaskId: 'snapshot-subtask' },
+          },
+        },
+      });
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'snapshot-tool',
+          status: 'in_progress',
+          content: [],
+        },
+      });
+
+      expect(deliveryOrder).toEqual([
+        `multi:${AgentEventType.ToolCall}`,
+        `multi:${AgentEventType.ToolCallUpdate}`,
+        `main:${AgentEventType.ToolCall}`,
+        `main:${AgentEventType.ToolCallUpdate}`,
+      ]);
+      expect(mainEvents[0]).toMatchObject({
+        type: AgentEventType.ToolCall,
+        id: 'snapshot-tool',
+        name: 'read_file',
+        kind: 'read',
+        args: {},
+      });
+      expect(mainEvents[0].sessionId).toBeUndefined();
+      expect(mainEvents[1]).toMatchObject({
+        type: AgentEventType.ToolCallUpdate,
+        id: 'snapshot-tool',
+      });
+    });
+
     it('standalone subtask tool_call/update (no crew panel) forwards to main AND multi-session', async () => {
       // Ground truth: a hidden/standalone spec subagent emits tool calls tagged
       // with agentSubtaskId but never registers a pipeline stage, so there is no

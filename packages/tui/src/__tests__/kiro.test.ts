@@ -15,6 +15,15 @@ mock.module('../utils/logger', () => ({
 
 // --- Mock AcpClient ---
 let mockOnUpdateHandler: ((event: AgentStreamEvent) => void) | null = null;
+const mockUpdateHandlers = new Set<(event: AgentStreamEvent) => void>();
+const mockSessionEventUnsubscribe = mock(() => {});
+const mockMultiSessionUnsubscribe = mock(() => {});
+const mockSubagentListUnsubscribe = mock(() => {});
+const mockInboxUnsubscribe = mock(() => {});
+
+function broadcastMockUpdate(event: AgentStreamEvent): void {
+  for (const handler of [...mockUpdateHandlers]) handler(event);
+}
 
 const mockSessionClient = {
   sessionId: undefined as string | undefined,
@@ -38,10 +47,31 @@ const mockSessionClient = {
   cancel: mock(() => Promise.resolve()),
   close: mock(() => {}),
   onUpdate: mock((handler: (event: AgentStreamEvent) => void) => {
+    mockUpdateHandlers.add(handler);
     mockOnUpdateHandler = handler;
     return () => {
-      mockOnUpdateHandler = null;
+      mockUpdateHandlers.delete(handler);
+      if (mockOnUpdateHandler === handler) {
+        mockOnUpdateHandler =
+          [...mockUpdateHandlers][mockUpdateHandlers.size - 1] ?? null;
+      }
     };
+  }),
+  onSessionEvent: mock((_handler: (event: any) => void) => {
+    return mockSessionEventUnsubscribe;
+  }),
+  onMultiSessionUpdate: mock(
+    (_handler: (sessionId: string, event: AgentStreamEvent) => void) => {
+      return mockMultiSessionUnsubscribe;
+    }
+  ),
+  onSubagentListUpdate: mock(
+    (_handler: (subagents: any[], pendingStages?: any[]) => void) => {
+      return mockSubagentListUnsubscribe;
+    }
+  ),
+  onInboxNotification: mock((_handler: (notification: any) => void) => {
+    return mockInboxUnsubscribe;
   }),
   executeCommand: mock(() => Promise.resolve({ success: true, message: 'ok' })),
   getCommandOptions: mock(() => Promise.resolve({ options: [] })),
@@ -73,6 +103,10 @@ const MockAcpClientClass = class MockAcpClient {
   cancel = mockSessionClient.cancel;
   close = mockSessionClient.close;
   onUpdate = mockSessionClient.onUpdate;
+  onSessionEvent = mockSessionClient.onSessionEvent;
+  onMultiSessionUpdate = mockSessionClient.onMultiSessionUpdate;
+  onSubagentListUpdate = mockSessionClient.onSubagentListUpdate;
+  onInboxNotification = mockSessionClient.onInboxNotification;
   executeCommand = mockSessionClient.executeCommand;
   getCommandOptions = mockSessionClient.getCommandOptions;
   setConfigOption = mockSessionClient.setConfigOption;
@@ -119,6 +153,26 @@ describe('Kiro', () => {
     mockSessionClient.cancel.mockClear();
     mockSessionClient.close.mockClear();
     mockSessionClient.onUpdate.mockClear();
+    mockSessionClient.onSessionEvent.mockClear();
+    mockSessionClient.onMultiSessionUpdate.mockClear();
+    mockSessionClient.onSubagentListUpdate.mockClear();
+    mockSessionClient.onInboxNotification.mockClear();
+    mockSessionEventUnsubscribe.mockClear();
+    mockMultiSessionUnsubscribe.mockClear();
+    mockSubagentListUnsubscribe.mockClear();
+    mockInboxUnsubscribe.mockClear();
+    mockSessionClient.onSessionEvent.mockImplementation(
+      () => mockSessionEventUnsubscribe
+    );
+    mockSessionClient.onMultiSessionUpdate.mockImplementation(
+      () => mockMultiSessionUnsubscribe
+    );
+    mockSessionClient.onSubagentListUpdate.mockImplementation(
+      () => mockSubagentListUnsubscribe
+    );
+    mockSessionClient.onInboxNotification.mockImplementation(
+      () => mockInboxUnsubscribe
+    );
     mockSessionClient.executeCommand.mockClear();
     mockSessionClient.getCommandOptions.mockClear();
     mockSessionClient.setConfigOption.mockClear();
@@ -128,7 +182,12 @@ describe('Kiro', () => {
     mockSessionClient.listSessions.mockClear();
     mockSessionClient.resolveSpecSession.mockClear();
     mockSessionClient.invokeSpec.mockClear();
+    mockUpdateHandlers.clear();
     mockOnUpdateHandler = null;
+    mockSessionClient.initialize.mockImplementation(() => Promise.resolve());
+    mockSessionClient.listSettings.mockImplementation(() =>
+      Promise.resolve({ 'chat.theme': 'dark' })
+    );
     // Reset newSession to update sessionId
     mockSessionClient.newSession.mockImplementation(() => {
       mockSessionClient.sessionId = 'session-1';
@@ -144,6 +203,91 @@ describe('Kiro', () => {
     const kiro = new Kiro();
     await kiro.initialize('/path/to/agent');
     expect(mockSessionClient.initialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('reinitializing closes the previous client and ignores its late events', async () => {
+    const kiro = new Kiro();
+    const commandsHandler = mock(() => {});
+    kiro.onCommandsUpdate(commandsHandler);
+    await kiro.initialize('/path/to/agent');
+    const firstClientUpdate = mockOnUpdateHandler!;
+
+    await kiro.initialize('/path/to/agent');
+    expect(mockSessionClient.close).toHaveBeenCalledTimes(1);
+
+    firstClientUpdate({
+      type: AgentEventType.CommandsUpdate,
+      commands: [{ name: 'stale', description: 'From old client' }],
+    } as AgentStreamEvent);
+    expect(commandsHandler).not.toHaveBeenCalled();
+
+    mockOnUpdateHandler!({
+      type: AgentEventType.CommandsUpdate,
+      commands: [{ name: 'fresh', description: 'From active client' }],
+    } as AgentStreamEvent);
+    expect(commandsHandler).toHaveBeenCalledWith(
+      [{ name: 'fresh', description: 'From active client' }],
+      undefined
+    );
+  });
+
+  it('keeps the newer client when overlapping initializations finish out of order', async () => {
+    let resolveFirstInitialize!: () => void;
+    let resolveSecondInitialize!: () => void;
+    const firstInitialize = new Promise<void>((resolve) => {
+      resolveFirstInitialize = resolve;
+    });
+    const secondInitialize = new Promise<void>((resolve) => {
+      resolveSecondInitialize = resolve;
+    });
+    mockSessionClient.initialize
+      .mockImplementationOnce(() => firstInitialize)
+      .mockImplementationOnce(() => secondInitialize);
+    mockSessionClient.listSettings.mockImplementation(() =>
+      Promise.resolve({ 'chat.theme': 'newer' })
+    );
+
+    const kiro = new Kiro();
+    const commandsHandler = mock(() => {});
+    kiro.onCommandsUpdate(commandsHandler);
+
+    const firstStartup = kiro
+      .initialize('/path/to/first-agent')
+      .then(() => kiro.createSession());
+    const firstOutcome = firstStartup.then(
+      () => null,
+      (error: unknown) => error
+    );
+    const firstClientUpdate = mockSessionClient.onUpdate.mock.calls[0]![0];
+    const second = kiro.initialize('/path/to/second-agent');
+    const secondClientUpdate = mockSessionClient.onUpdate.mock.calls[1]![0];
+
+    resolveSecondInitialize();
+    await second;
+    resolveFirstInitialize();
+    const staleError = await firstOutcome;
+
+    firstClientUpdate({
+      type: AgentEventType.CommandsUpdate,
+      commands: [{ name: 'stale', description: 'From old client' }],
+    } as AgentStreamEvent);
+    secondClientUpdate({
+      type: AgentEventType.CommandsUpdate,
+      commands: [{ name: 'fresh', description: 'From active client' }],
+    } as AgentStreamEvent);
+
+    expect(staleError).toBeInstanceOf(Error);
+    expect((staleError as Error).message).toContain(
+      'superseded by a newer attempt'
+    );
+    expect(mockSessionClient.newSession).not.toHaveBeenCalled();
+    expect(mockSessionClient.listSettings).toHaveBeenCalledTimes(1);
+    expect(kiro.settings).toEqual({ 'chat.theme': 'newer' });
+    expect(commandsHandler).toHaveBeenCalledTimes(1);
+    expect(commandsHandler).toHaveBeenCalledWith(
+      [{ name: 'fresh', description: 'From active client' }],
+      undefined
+    );
   });
 
   it('after initialize, sessionId is undefined until createSession', async () => {
@@ -262,6 +406,124 @@ describe('Kiro', () => {
     await kiro.initialize('/path/to/agent');
     kiro.close();
     expect(mockSessionClient.close).toHaveBeenCalled();
+  });
+
+  it('close detaches every retained session subscription', async () => {
+    const kiro = new Kiro();
+    kiro.onSessionEvent(() => {});
+    kiro.onMultiSessionUpdate(() => {});
+    kiro.onSubagentListUpdate(() => {});
+    kiro.onInboxNotification(() => {});
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+
+    kiro.close();
+
+    expect(mockSessionEventUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(mockMultiSessionUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(mockSubagentListUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(mockInboxUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('unsubscribes a retained channel before registering its replacement', async () => {
+    const calls: string[] = [];
+    const unsubscribe = mock(() => {
+      calls.push('unsubscribe');
+    });
+    mockSessionClient.onSessionEvent.mockImplementation(() => {
+      calls.push('subscribe');
+      return unsubscribe;
+    });
+    const kiro = new Kiro();
+    const handler = () => {};
+    kiro.onSessionEvent(handler);
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+    calls.length = 0;
+
+    kiro.onSessionEvent(handler);
+
+    expect(calls).toEqual(['unsubscribe', 'subscribe']);
+  });
+
+  it('drains late events before allowing the next prompt to start', async () => {
+    const firstEvents: string[] = [];
+    const secondEvents: string[] = [];
+    let resolveSecondPrompt!: () => void;
+    mockSessionClient.prompt
+      .mockImplementationOnce(() =>
+        Promise.resolve().then(() => {
+          // ACP prompt responses can resolve before an already-received
+          // notification reaches the client event handlers.
+          setTimeout(() => {
+            broadcastMockUpdate({
+              type: AgentEventType.Content,
+              id: 'late-first',
+              content: { type: 'text', text: 'late first turn content' },
+            } as AgentStreamEvent);
+          }, 0);
+        })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSecondPrompt = resolve;
+          })
+      );
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+
+    await kiro.streamMessage(
+      'first',
+      new AbortController().signal,
+      (event: AgentStreamEvent) => firstEvents.push((event as any).id)
+    );
+    const secondPrompt = kiro.streamMessage(
+      'second',
+      new AbortController().signal,
+      (event: AgentStreamEvent) => secondEvents.push((event as any).id)
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(firstEvents).toEqual(['late-first']);
+    expect(secondEvents).toEqual([]);
+    expect((kiro as any)._promptActive).toBe(true);
+
+    resolveSecondPrompt();
+    await secondPrompt;
+  });
+
+  it('times out a retired prompt without cancelling the replacement client', async () => {
+    const previousTimeout = process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS;
+    process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS = '20';
+    const kiro = new Kiro();
+    try {
+      await kiro.initialize('/path/to/agent');
+      const firstClient = (kiro as any).sessionClient;
+      const firstCancel = mock(() => Promise.resolve());
+      firstClient.cancel = firstCancel;
+      firstClient.prompt = mock(() => new Promise<void>(() => {}));
+
+      const retiredPrompt = kiro.streamMessage(
+        'first',
+        new AbortController().signal,
+        () => {}
+      );
+      await kiro.initialize('/path/to/replacement-agent');
+      const replacementCancel = mock(() => Promise.resolve());
+      (kiro as any).sessionClient.cancel = replacementCancel;
+
+      await expect(retiredPrompt).rejects.toThrow('Agent not responding');
+      expect(firstCancel).toHaveBeenCalledTimes(1);
+      expect(replacementCancel).not.toHaveBeenCalled();
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS;
+      } else {
+        process.env.KIRO_INITIAL_RESPONSE_TIMEOUT_MS = previousTimeout;
+      }
+      kiro.close();
+    }
   });
 
   it('streamMessage throws when not initialized', async () => {
@@ -582,6 +844,25 @@ describe('Kiro — handler registration and forwarding', () => {
     expect(handler).toHaveBeenCalled();
   });
 
+  it('onCompactionStatus receives ContextBreakdownUpdate events', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onCompactionStatus(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ContextBreakdownUpdate,
+        breakdown: {
+          contextFiles: { tokens: 100, percent: 5 },
+          tools: { tokens: 20, percent: 1 },
+          kiroResponses: { tokens: 30, percent: 2 },
+          yourPrompts: { tokens: 40, percent: 2 },
+        },
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
   it('onCompactionStatus receives EffortUpdate events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});
@@ -637,6 +918,34 @@ describe('Kiro — handler registration and forwarding', () => {
         type: AgentEventType.AgentNotFound,
         requestedAgent: 'missing',
         fallbackAgent: KAS_DEFAULT_AGENT_ID,
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onInitNotification receives MCP registry snapshots', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onInitNotification(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.McpRegistrySnapshot,
+        registryServers: [],
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onInitNotification receives MCP server snapshots', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onInitNotification(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.McpServerSnapshot,
+        servers: [],
       } as AgentStreamEvent);
     }
     expect(handler).toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from 'vitest';
+import { describe, test, expect, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, type Instance } from 'twinki';
 import type { Terminal } from 'twinki';
@@ -17,6 +17,7 @@ import { useScrollableBox } from './useScrollableBox.js';
 import { useTerminalSize } from './useTerminalSize.js';
 import { useTextStyle } from './useTextStyle.js';
 import { useTheme } from './useThemeContext.js';
+import { useBackendPanelHandlers } from '../components/layout/shared/useBackendPanelHandlers.js';
 
 // ---------------------------------------------------------------------------
 // MockTerminal -- minimal Terminal implementation for headless rendering
@@ -108,6 +109,13 @@ async function renderHook<T>(
     store.setState(storeOverrides as any);
   }
 
+  return renderHookInStore(hook, store);
+}
+
+async function renderHookInStore<T>(
+  hook: () => T,
+  store: ReturnType<typeof createAppStore>
+): Promise<T> {
   let captured: T | undefined;
 
   function TestComponent() {
@@ -323,6 +331,84 @@ describe('useKiro', () => {
     expect(result.isProcessing).toBe(false);
     expect(result.error).toBeNull();
     expect(result.isReady).toBe(true);
+  });
+});
+
+describe('useBackendPanelHandlers', () => {
+  const freshBreakdown = {
+    contextFiles: { percent: 7, tokens: 700 },
+    tools: { percent: 1, tokens: 100 },
+    kiroResponses: { percent: 2, tokens: 200 },
+    yourPrompts: { percent: 3, tokens: 300 },
+  };
+
+  test('reads the KAS context cache when the captured handler runs', async () => {
+    const executeCommand = vi.fn();
+    const store = createAppStore({
+      kiro: { executeCommand } as any,
+      agentEngine: 'kas',
+    });
+    const handlers = await renderHookInStore(useBackendPanelHandlers, store);
+
+    // The handler was captured before this update and cannot rerender.
+    store.setState({ contextBreakdownCache: freshBreakdown });
+    await handlers.handleTabFromUsage();
+
+    expect(executeCommand).not.toHaveBeenCalled();
+    expect(store.getState()).toMatchObject({
+      showContextBreakdown: true,
+      contextBreakdown: freshBreakdown,
+      showUsagePanel: false,
+    });
+  });
+
+  test('queries V2 even when the store contains a context cache', async () => {
+    const backendBreakdown = {
+      ...freshBreakdown,
+      contextFiles: { percent: 9, tokens: 900 },
+    };
+    const executeCommand = vi.fn().mockResolvedValue({
+      data: { breakdown: backendBreakdown },
+    });
+    const store = createAppStore({
+      kiro: { executeCommand } as any,
+      agentEngine: 'v2',
+    });
+    store.setState({ contextBreakdownCache: freshBreakdown });
+    const handlers = await renderHookInStore(useBackendPanelHandlers, store);
+
+    await handlers.handleTabFromUsage();
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      command: 'context',
+      args: {},
+    });
+    expect(store.getState().contextBreakdown).toBe(backendBreakdown);
+  });
+
+  test('uses a KAS cache update received while contextShow is pending', async () => {
+    let resolveCommand!: (result: {
+      success: boolean;
+      message: string;
+    }) => void;
+    const commandResult = new Promise<{ success: boolean; message: string }>(
+      (resolve) => {
+        resolveCommand = resolve;
+      }
+    );
+    const executeCommand = vi.fn(() => commandResult);
+    const store = createAppStore({
+      kiro: { executeCommand } as any,
+      agentEngine: 'kas',
+    });
+    const handlers = await renderHookInStore(useBackendPanelHandlers, store);
+
+    const handling = handlers.handleTabFromUsage();
+    store.setState({ contextBreakdownCache: freshBreakdown });
+    resolveCommand({ success: true, message: '' });
+    await handling;
+
+    expect(store.getState().contextBreakdown).toBe(freshBreakdown);
   });
 });
 

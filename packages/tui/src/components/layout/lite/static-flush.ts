@@ -4,10 +4,10 @@ import { needsLeadingBlankByRole } from '../../../lite/blank-rules.js';
 /**
  * Cap on rendered history rows when resuming in lite mode. Replay keeps the
  * FULL session in `messages` (context/tool-result lookups stay correct); the
- * cap only clamps how many rows paint into <Static>, via the same
- * `liteStaticSkipBefore = max(0, messages.length - cap)` bookmark tui→lite
- * uses. It is a static lower bound, not a sliding window, so live turns past
- * the cap still render at the user's configured verbosity.
+ * cap only clamps how many rows paint into <Static> via
+ * `lite.staticSkipBefore = max(0, messages.length - cap)`. It is a static
+ * lower bound, not a sliding window, so live turns past the cap still render
+ * at the user's configured verbosity.
  */
 export const LITE_HISTORY_RENDER_CAP = 70;
 

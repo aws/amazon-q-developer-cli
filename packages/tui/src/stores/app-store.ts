@@ -1,7 +1,7 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Kiro } from '../kiro';
+import type { Kiro } from '../kiro';
 import chalk from 'chalk';
 import type { TerminalColor } from '../types/themeTypes';
 import { kiroSafe } from '../theme/kiroSafe';
@@ -78,6 +78,16 @@ import type {
   ProvisioningFailureCode,
 } from '../types/session-client';
 import type { TaskItem, RawTask } from '../types/tasks';
+import type { ContextBreakdownData } from '../types/context';
+import {
+  createInitialKasSubagentRoutingState,
+  createKasSubagentRoutingActions,
+  type KasSubagentRoutingState,
+  type KasSubagentRoutingStore,
+} from './kas-subagent-routing';
+
+export type { ContextBreakdownData } from '../types/context';
+export type { KasSubagentRoutingStore } from './kas-subagent-routing';
 
 /** A selectable turn in the `/rewind` Explorer. Shape is defined by the
  *  backend `/rewind` execute handler in `CommandResult.data.turns`. */
@@ -93,25 +103,6 @@ export interface UpgradeAnalysisRow {
   name: string;
   scope: AgentScope;
   warnings: MigrationWarning[];
-}
-
-export interface ContextBreakdownData {
-  contextFiles: {
-    percent: number;
-    tokens: number;
-    items?: Array<{
-      name: string;
-      tokens: number;
-      matched: boolean;
-      percent: number;
-    }>;
-  };
-  tools: { percent: number; tokens: number };
-  kiroResponses: { percent: number; tokens: number };
-  yourPrompts: { percent: number; tokens: number };
-  sessionFiles?: { percent: number; tokens: number };
-  /** UI-specific: initially show context breakdown in expanded mode */
-  initialExpanded?: boolean;
 }
 
 export interface UsageBreakdownItem {
@@ -906,6 +897,7 @@ interface BaseAppActions {
     displayContent?: string
   ) => Promise<void>;
   createStreamEventHandler: () => StreamEventHandler;
+  kasSubagentRouting: KasSubagentRoutingStore;
   processMessageStream: (
     stream: AsyncGenerator<AgentStreamEvent>
   ) => Promise<void>;
@@ -1055,7 +1047,7 @@ interface BaseAppActions {
     mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
   ) => void;
   setUiMode: (uiMode: 'tui' | 'lite') => void;
-  /** Lite-only: see {@link AppState.liteStaticSkipBefore}. */
+  /** Lite-only: see {@link LiteState.staticSkipBefore}. */
   setLiteStaticSkipBefore: (idx: number) => void;
   addSubagentSession: (info: SubagentInfo) => void;
   updateSubagentSession: (sessionId: string, status: SubagentStatus) => void;
@@ -1143,6 +1135,8 @@ interface BaseAppActions {
     mode?: string,
     registryServers?: McpServerInfo[]
   ) => void;
+  /** Clear display snapshots derived from the active transport client. */
+  resetClientDisplayCaches: () => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
   /** Update the cached session tool listing without toggling the panel. */
   setToolsList: (tools: ToolInfo[]) => void;
@@ -1355,7 +1349,7 @@ export type SessionOrigin = 'new' | 'resumed' | null;
 /**
  * KAS-engine-specific store state, grouped so it is clear at a glance which
  * fields belong to the KAS agent path (the Rust V2 engine populates none of
- * these). Two concerns (so far):
+ * these). Three concerns (so far):
  *
  * 1. Config-option caches (`available*`): the model / agent / effort options
  *    parsed from the ACP `configOptions` payload on session/new, session/load,
@@ -1373,6 +1367,9 @@ export type SessionOrigin = 'new' | 'resumed' | null;
  *    Never apply on a resumed session or on an autonomous backend change, so a
  *    resumed session and any hand-set effort are left as-is. See the individual
  *    fields below for how each contributes.
+ * 3. Subagent routing state: correlates KAS tool events with the main
+ *    transcript, crew panel, and independent subagent streams. These
+ *    collections are UI state, not ACP transport state.
  */
 export interface KasState {
   availableModels: ModelEntry[];
@@ -1393,6 +1390,31 @@ export interface KasState {
    * suppress the new-session auto-apply so the explicit flag wins.
    */
   effortExplicit: boolean;
+  /** Non-reactive correlation state; use `kasSubagentRouting` actions to mutate it. */
+  subagentRouting: KasSubagentRoutingState;
+}
+
+export interface LiteState {
+  /**
+   * Lower bound into `messages` for Lite resume rendering. Resume paths cap
+   * replayed history with this index; mode changes reset it to 0 so the
+   * destination UI renders the complete in-memory conversation.
+   */
+  staticSkipBefore: number;
+  /**
+   * Lite-mode banners that should fire once per *session*, not per *mount*.
+   * Lives on the store (not a useRef in LiteLayout) so flipping /tui ↔ /lite
+   * doesn't re-emit the same banner every time LiteLayout remounts.
+   */
+  welcomeEmitted: boolean;
+  mcpFailureWarningEmitted: boolean;
+  /**
+   * Bumped when scrollback should be wiped and the lite render cache reset
+   * (currently only on /chat <id> + /rewind session swaps). LiteLayout
+   * subscribes to the token; the value itself is opaque — only the change
+   * matters. See effects.ts:loadSession + LiteLayout.tsx for the consumer.
+   */
+  scrollbackClearToken: number;
 }
 
 export interface AppState {
@@ -1563,27 +1585,6 @@ export interface AppState {
    * retry is in flight. Cleared on cancel, on next request, and when the turn ends.
    */
   retryStatus: RetryStatus | null;
-  /**
-   * Index into `messages` at which lite's <Static> begins emitting rows.
-   * Messages at index < this value are skipped from lite's append-only chat
-   * log. Two callers set it:
-   *   1. tui→lite swap (`switchToLite` effect) → messages.length, so prior
-   *      messages already rendered through the modern TUI's ConversationView
-   *      don't get re-emitted in lite style below them.
-   *   2. Session resume (cold-boot --resume in index.tsx + /chat <id> in
-   *      effects.ts) → max(0, messages.length - LITE_HISTORY_RENDER_CAP),
-   *      so very long sessions don't dump hundreds of replayed rows into
-   *      scrollback. Live turns appended past the cap render normally.
-   *
-   * Direction-asymmetric on purpose: lite→tui doesn't touch this. The TUI
-   * fully re-renders messages from scratch, which the user has accepted as
-   * the cost of "TUI takes full control" on that direction.
-   *
-   * Default 0 covers fresh-session cold boot and lite→tui→lite cycles
-   * (each tui→lite or resume resets the value, so the bookmark always
-   * reflects the most recent swap or resume point).
-   */
-  liteStaticSkipBefore: number;
   /** Streaming thinking/reasoning content from the agent (cleared on turn end). */
   thinkingContent: string;
   /**
@@ -1666,6 +1667,8 @@ export interface AppState {
   }>;
   showContextBreakdown: boolean;
   contextBreakdown: ContextBreakdownData | null;
+  /** Raw context-usage snapshot pushed by the agent, independent of panel UI. */
+  contextBreakdownCache: ContextBreakdownData | null;
   showTuiPanel: boolean;
   showChangelogPanel: boolean;
   showHelpPanel: boolean;
@@ -1678,6 +1681,10 @@ export interface AppState {
   showMcpPanel: boolean;
   mcpServers: McpServerInfo[];
   mcpRegistryServers: McpServerInfo[];
+  /** Latest KAS configured-server snapshot, independent of the open panel. */
+  mcpServerCache: McpServerInfo[];
+  /** Latest KAS registry snapshot, independent of the open panel. */
+  mcpRegistryCache: McpServerInfo[];
   pendingOAuthServers: Map<string, string>; // serverName → oauthUrl
   initErrors: InitError[];
   /**
@@ -1879,23 +1886,10 @@ export interface AppState {
   // UI mode (lite or tui)
   uiMode: 'tui' | 'lite';
 
-  /**
-   * Lite-mode banners that should fire once per *session*, not per *mount*.
-   * Lives on the store (not a useRef in LiteLayout) so flipping /tui ↔ /lite
-   * doesn't re-emit the same banner every time LiteLayout remounts.
-   */
-  liteWelcomeEmitted: boolean;
-  liteMcpFailureWarningEmitted: boolean;
+  /** Lite-specific state; see {@link LiteState}. */
+  lite: LiteState;
   setLiteWelcomeEmitted: (value: boolean) => void;
   setLiteMcpFailureWarningEmitted: (value: boolean) => void;
-
-  /**
-   * Bumped when scrollback should be wiped and the lite render cache reset
-   * (currently only on /chat <id> + /rewind session swaps). LiteLayout
-   * subscribes to the token; the value itself is opaque — only the change
-   * matters. See effects.ts:loadSession + LiteLayout.tsx for the consumer.
-   */
-  liteScrollbackClearToken: number;
   bumpLiteScrollbackClear: () => void;
 
   /**
@@ -2254,6 +2248,7 @@ function buildCommandContext(
     currentAgent: state.currentAgent,
     setContextUsage: state.setContextUsage,
     setShowContextBreakdown: state.setShowContextBreakdown,
+    getContextBreakdownCache: () => get().contextBreakdownCache,
     setShowHelpPanel: state.setShowHelpPanel,
     setShowTuiPanel: state.setShowTuiPanel,
     setShowChangelogPanel: state.setShowChangelogPanel,
@@ -2262,12 +2257,15 @@ function buildCommandContext(
     setUpgradeDiagnostics: state.setUpgradeDiagnostics,
     setUpgradeRunPreview: state.setUpgradeRunPreview,
     setShowMcpPanel: state.setShowMcpPanel,
+    mcpServerCache: state.mcpServerCache,
+    mcpRegistryCache: state.mcpRegistryCache,
     setShowToolsPanel: state.setShowToolsPanel,
     toolsList: state.toolsList,
     setShowGoalPanel: state.setShowGoalPanel,
     setGoalStatus: state.setGoalStatus,
     setShowStatsPanel: state.setShowStatsPanel,
     setShowHooksPanel: state.setShowHooksPanel,
+    hooksList: state.hooksList,
     setShowRepoPicker: state.setShowRepoPicker,
     setShowSessionPicker: state.setShowSessionPicker,
     resetCloudSessionScope: state.resetCloudSessionScope,
@@ -2528,6 +2526,7 @@ export const createAppStore = (props: AppStoreProps) => {
       sessionOrigin: null,
       previousModelId: null,
       effortExplicit: false,
+      subagentRouting: createInitialKasSubagentRoutingState(),
     },
     kiro: props.kiro,
     sessionId: null,
@@ -2588,7 +2587,6 @@ export const createAppStore = (props: AppStoreProps) => {
     thinkingContent: '',
     streamingContent: '',
     streamingMessageId: null as string | null,
-    liteStaticSkipBefore: 0,
     loadingMessage: null as string | null,
     toolOutputsExpanded: false,
     hasExpandableToolOutputs: false,
@@ -2607,6 +2605,7 @@ export const createAppStore = (props: AppStoreProps) => {
     turnSummaries: new Map(),
     showContextBreakdown: false,
     contextBreakdown: null,
+    contextBreakdownCache: null,
     showTuiPanel: false,
     showChangelogPanel: false,
     showHelpPanel: false,
@@ -2621,6 +2620,8 @@ export const createAppStore = (props: AppStoreProps) => {
     showMcpPanel: false,
     mcpServers: [],
     mcpRegistryServers: [],
+    mcpServerCache: [],
+    mcpRegistryCache: [],
     pendingOAuthServers: new Map(),
     initErrors: [],
     mcpInitStatus: new Map(),
@@ -2715,16 +2716,24 @@ export const createAppStore = (props: AppStoreProps) => {
     isInitialized: false,
     noInteractive: props.noInteractive ?? false,
     uiMode: props.uiMode ?? 'tui',
-    liteWelcomeEmitted: false,
-    liteMcpFailureWarningEmitted: false,
+    lite: {
+      staticSkipBefore: 0,
+      welcomeEmitted: false,
+      mcpFailureWarningEmitted: false,
+      scrollbackClearToken: 0,
+    },
     setLiteWelcomeEmitted: (value: boolean) =>
-      set({ liteWelcomeEmitted: value }),
+      set((s) => ({ lite: { ...s.lite, welcomeEmitted: value } })),
     setLiteMcpFailureWarningEmitted: (value: boolean) =>
-      set({ liteMcpFailureWarningEmitted: value }),
-    liteScrollbackClearToken: 0,
+      set((s) => ({
+        lite: { ...s.lite, mcpFailureWarningEmitted: value },
+      })),
     bumpLiteScrollbackClear: () =>
       set((s) => ({
-        liteScrollbackClearToken: s.liteScrollbackClearToken + 1,
+        lite: {
+          ...s.lite,
+          scrollbackClearToken: s.lite.scrollbackClearToken + 1,
+        },
       })),
     subagentPanelOpen: false,
     setSubagentPanelOpen: (open: boolean) => set({ subagentPanelOpen: open }),
@@ -2974,6 +2983,10 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       }
     },
+
+    kasSubagentRouting: createKasSubagentRoutingActions(
+      () => get().kas.subagentRouting
+    ),
 
     /**
      * Create a stream event handler for one prompt turn. Call as a function
@@ -3686,6 +3699,15 @@ export const createAppStore = (props: AppStoreProps) => {
           }
           case AgentEventType.ContextUsage:
             get().setContextUsage(event.percent);
+            break;
+          case AgentEventType.ContextBreakdownUpdate:
+            set({ contextBreakdownCache: event.breakdown });
+            break;
+          case AgentEventType.McpServerSnapshot:
+            set({ mcpServerCache: event.servers });
+            break;
+          case AgentEventType.McpRegistrySnapshot:
+            set({ mcpRegistryCache: event.registryServers });
             break;
           case AgentEventType.SessionRosterDelta:
             get().applySessionRosterDelta(event.delta);
@@ -4536,6 +4558,10 @@ export const createAppStore = (props: AppStoreProps) => {
         get().setContextUsage(event.percent);
         return;
       }
+      if (event.type === AgentEventType.ContextBreakdownUpdate) {
+        set({ contextBreakdownCache: event.breakdown });
+        return;
+      }
       if (event.type === AgentEventType.KasMessageIdAssigned) {
         get().setKasMessageId(event.kasMessageId);
         return;
@@ -4942,14 +4968,14 @@ export const createAppStore = (props: AppStoreProps) => {
       // flash through the live region. Folding it all here means every
       // resetMessages() call (now or future) wipes correctly.
       //
-      // - liteStaticSkipBefore reset to 0: the bookmark is a slice index into
+      // - lite.staticSkipBefore reset to 0: the bookmark is a slice index into
       //   the messages array. With messages now empty, any non-zero value
       //   would skip the entire next session's scrollback.
-      // - liteScrollbackClearToken bumped: triggers LiteLayout's terminal
+      // - lite.scrollbackClearToken bumped: triggers LiteLayout's terminal
       //   wipe + cursor reset + ref clear (LiteLayout.tsx:539). Also picked
       //   up by ConversationView (TUI) for the symmetric singleton wipe so
       //   tui→lite→tui swaps don't accumulate state across modes.
-      // - liteWelcomeEmitted reset: lets the next mount re-emit the banner
+      // - lite.welcomeEmitted reset: lets the next mount re-emit the banner
       //   (per-session welcome on /chat new, fresh boot, etc.).
       // - tasks cleared + activityTrayExpanded collapsed: the task list is
       //   populated by the agent's todo_list/task tool calls in the active
@@ -4961,18 +4987,21 @@ export const createAppStore = (props: AppStoreProps) => {
         messages: [],
         activeCompactionAttemptKey: null,
         compactionReportAnchor: null,
-        liteStaticSkipBefore: 0,
-        // Gate the cross-mode token bump to lite mode only. Modern TUI's
-        // ConversationView is a consumer of liteScrollbackClearToken (added
-        // for tui→lite swap symmetry), but in main /chat new does NOT wipe
-        // ConversationView's singletons. Leaving this unconditional would
-        // cross-mode-leak the bump into modern TUI on /chat new and force
-        // a singleton wipe that main never performed.
-        ...(s.uiMode === 'lite'
-          ? { liteScrollbackClearToken: s.liteScrollbackClearToken + 1 }
-          : {}),
-        liteWelcomeEmitted: false,
-        liteMcpFailureWarningEmitted: false,
+        lite: {
+          ...s.lite,
+          staticSkipBefore: 0,
+          // Gate the cross-mode token bump to lite mode only. Modern TUI's
+          // ConversationView is a consumer of lite.scrollbackClearToken
+          // (added for tui→lite swap symmetry), but in main /chat new does NOT
+          // wipe ConversationView's singletons. Leaving this unconditional
+          // would cross-mode-leak the bump into modern TUI on /chat new and
+          // force a singleton wipe that main never performed.
+          ...(s.uiMode === 'lite'
+            ? { scrollbackClearToken: s.lite.scrollbackClearToken + 1 }
+            : {}),
+          welcomeEmitted: false,
+          mcpFailureWarningEmitted: false,
+        },
         tasks: [],
         activityTrayExpanded: false,
       }));
@@ -5720,7 +5749,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // (some turns in TUI Card chrome, others with lite `You:`/`<agent>:`
       // headers).
       //
-      // Mechanism: bump liteScrollbackClearToken. LiteLayout and
+      // Mechanism: bump lite.scrollbackClearToken. LiteLayout and
       // ConversationView both subscribe to it; on bump each wipes its
       // module-level singletons, writes \x1b[3J\x1b[H\x1b[2J (twinki's
       // stdout interceptor catches that and drops accumulatedStaticOutput
@@ -5738,13 +5767,18 @@ export const createAppStore = (props: AppStoreProps) => {
         if (state.uiMode === uiMode) return state;
         return {
           uiMode,
-          liteStaticSkipBefore: 0,
-          liteScrollbackClearToken: state.liteScrollbackClearToken + 1,
+          lite: {
+            ...state.lite,
+            staticSkipBefore: 0,
+            scrollbackClearToken: state.lite.scrollbackClearToken + 1,
+          },
         };
       });
     },
     setLiteStaticSkipBefore: (idx: number) =>
-      set({ liteStaticSkipBefore: Math.max(0, idx) }),
+      set((s) => ({
+        lite: { ...s.lite, staticSkipBefore: Math.max(0, idx) },
+      })),
 
     addSubagentSession: (info) => {
       set((state) => {
@@ -6204,6 +6238,15 @@ export const createAppStore = (props: AppStoreProps) => {
         mcpRegistryServers: registryServers,
       });
     },
+    resetClientDisplayCaches: () => {
+      set({
+        contextBreakdownCache: null,
+        mcpServerCache: [],
+        mcpRegistryCache: [],
+        toolsList: [],
+        hooksList: [],
+      });
+    },
 
     setShowToolsPanel: (show, tools) => {
       // Only replace the cached list when tools are explicitly provided.
@@ -6241,8 +6284,12 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showStatsPanel: show, statsList: stats, statsSummary: summary });
     },
 
-    setShowHooksPanel: (show, hooks = []) => {
-      set({ showHooksPanel: show, hooksList: hooks });
+    setShowHooksPanel: (show, hooks) => {
+      set(
+        hooks !== undefined
+          ? { showHooksPanel: show, hooksList: hooks }
+          : { showHooksPanel: show }
+      );
     },
 
     setShowRepoPicker: (show, resources = []) => {

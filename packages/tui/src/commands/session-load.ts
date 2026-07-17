@@ -75,7 +75,7 @@ export function runSessionLoad(
       }
       if (buffered.length > 0) {
         // Lite paints history into <Static> once (then skips it via
-        // liteStaticSkipBefore — ~zero render cost), so it replays the full
+        // lite.staticSkipBefore — ~zero render cost), so it replays the full
         // session. The TUI re-renders every store message each frame, so it
         // caps to the most recent turns.
         const { events, omittedTurns } = isLite

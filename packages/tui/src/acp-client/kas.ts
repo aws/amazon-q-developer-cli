@@ -43,7 +43,9 @@ import type {
 import {
   AgentEventType,
   type AgentStreamEvent,
+  type HooksUpdateEvent,
   type KiroMeta,
+  type McpServerSnapshotEvent,
 } from '../types/agent-events';
 import type {
   CommandOptionsResponse,
@@ -51,11 +53,10 @@ import type {
   TuiCommand,
 } from '../types/commands';
 import type {
-  HookInfo,
-  McpServerInfo,
-  ContextBreakdownData,
-  ToolInfo,
-} from '../stores/app-store';
+  KasPermissionRequest,
+  KasSubagentRoutingEmitter,
+  KasSubagentRoutingStore,
+} from '../stores/kas-subagent-routing';
 import { parseToolsDidChange } from '../utils/kas-tools';
 import { extractRpcErrorMessage } from '../utils/error-handling';
 import { openUrlInBrowser } from '../utils/browser';
@@ -181,24 +182,6 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function extractKasSubagentName(title: string | undefined): string | undefined {
-  const match = title?.match(/^Sub-agent:\s*(.+)$/);
-  const name = match?.[1]?.trim();
-  return name || undefined;
-}
-
-function kasSubagentNameFromArgs(
-  args: Record<string, unknown> | undefined
-): string | undefined {
-  if (!args) return undefined;
-  return (
-    stringValue(args.name) ??
-    stringValue(args.agentName) ??
-    stringValue(args.subAgentName) ??
-    stringValue(args.agent)
-  );
-}
-
 function kasPermissionMeta(params: any): KiroMeta | undefined {
   return params?._meta?.kiro ?? params?.toolCall?._meta?.kiro;
 }
@@ -240,29 +223,28 @@ export function createNullAgentProcess(): AgentProcess {
 
 // ─── KAS ACP client ──────────────────────────────────────────────────
 
-/**
- * Subagent event types that should ALSO render inline in the main transcript
- * when the subtask is *standalone* (no crew panel registered). These are the
- * tool cards a user expects to see from a hidden/spec subagent. Content/Thought
- * are forwarded too — harmless, since KAS suppresses subagent say/reasoning for
- * hidden agents so they rarely arrive. Pure lifecycle/noise events are excluded.
- */
-const STANDALONE_MAIN_FORWARD_TYPES: ReadonlySet<AgentEventType> = new Set([
-  AgentEventType.ToolCall,
-  AgentEventType.ToolCallUpdate,
-  AgentEventType.ToolCallFinished,
-  AgentEventType.Content,
-  AgentEventType.Thought,
-]);
-
-function isDerivedPipelineStageSubtaskId(subtaskId: string): boolean {
-  return /^invoke_sub_?agent_.+_stage_.+$/.test(subtaskId);
+export interface KasAcpClientOptions {
+  kasSubagentRoutingStore: KasSubagentRoutingStore;
+  spawnProcess?: typeof spawn;
+  stream?: Stream;
+  initialAgent?: string;
+  initialModel?: string;
+  version?: string;
+  executionTarget?: ExecutionTarget;
+  repos?: string[];
 }
 
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
-  private mcpServerCache: McpServerInfo[] = [];
-  private mcpRegistryCache: McpServerInfo[] = [];
+  private readonly kasSubagentRoutingStore: KasSubagentRoutingStore;
+  private readonly kasSubagentRoutingEmitter: KasSubagentRoutingEmitter = {
+    emitMain: (event) => this.broadcastStreamEvent(event),
+    emitMultiSession: (sessionId, event) =>
+      this.broadcastMultiSession(sessionId, event),
+    emitSession: (event) => this.broadcastSessionEvent(event),
+    emitSubagentList: (subagents, pendingStages) =>
+      this.broadcastSubagentList(subagents, pendingStages),
+  };
   private pendingOAuthServerNames: Set<string> = new Set();
   private chatSessionStartedSessions = new Set<string>();
   /** Correlates V3 ToolCall → ToolCallFinished into tool telemetry (KAS-only). */
@@ -358,8 +340,9 @@ export class KasAcpClient extends BaseAcpClient {
   /**
    * Construct a KAS ACP client.
    *
-   * Default (no options): spawn the KAS subprocess and wire its stdio as
-   * the ACP `Stream`. This is the production path.
+   * Without `options.stream`, spawn the KAS subprocess and wire its stdio as
+   * the ACP `Stream`. The app-store routing actions are required in both
+   * production and injected-stream paths.
    *
    * With `options.stream`: skip the subprocess spawn and use the provided
    * stream (for `acp_integ_tests/`'s mock transport). The client reports
@@ -375,16 +358,11 @@ export class KasAcpClient extends BaseAcpClient {
    * never need to inject a different one, and accepting it without a
    * stream would silently ignore it.
    */
-  constructor(options?: {
-    stream?: Stream;
-    initialAgent?: string;
-    initialModel?: string;
-    version?: string;
-    executionTarget?: ExecutionTarget;
-    repos?: string[];
-  }) {
-    if (options?.stream) {
+  constructor(options: KasAcpClientOptions) {
+    const kasSubagentRoutingStore = options.kasSubagentRoutingStore;
+    if (options.stream) {
       super(createNullAgentProcess());
+      this.kasSubagentRoutingStore = kasSubagentRoutingStore;
       this.initialAgent = options.initialAgent;
       this.initialModel = options.initialModel;
       this.version = options.version ?? getCliVersion();
@@ -433,9 +411,9 @@ export class KasAcpClient extends BaseAcpClient {
     // Resolved before `super()` because the user-agent below is baked into
     // the subprocess env at spawn time, which precedes the `super()` call
     // that unblocks `this` access. Stored on the instance afterwards.
-    const version = options?.version ?? getCliVersion();
+    const version = options.version ?? getCliVersion();
 
-    const proc = spawn(
+    const proc = (options.spawnProcess ?? spawn)(
       nodeBin,
       [
         '--experimental-wasm-modules',
@@ -464,11 +442,12 @@ export class KasAcpClient extends BaseAcpClient {
       }
     );
     super(toAgentProcess(proc));
-    this.initialAgent = options?.initialAgent;
-    this.initialModel = options?.initialModel;
+    this.kasSubagentRoutingStore = kasSubagentRoutingStore;
+    this.initialAgent = options.initialAgent;
+    this.initialModel = options.initialModel;
     this.version = version;
-    this.executionTarget = options?.executionTarget;
-    this.repos = options?.repos;
+    this.executionTarget = options.executionTarget;
+    this.repos = options.repos;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     const kasSettings = buildKasSettings();
@@ -502,50 +481,14 @@ export class KasAcpClient extends BaseAcpClient {
     });
   }
 
-  // Pipeline support: maps toolCallId → agentSubtaskId for event routing and
-  // permission routing. This intentionally includes ordinary child tools.
-  private toolCallToSubtask: Map<string, string> = new Map();
-
-  // Lifecycle-only correlation for independent KAS subagent sessions. Only
-  // wrapper/lifecycle tool calls populate this map; ordinary child tools must
-  // not terminate the independent session when they finish.
-  private subagentLifecycleToolCallToSubtask: Map<string, string> = new Map();
-
-  // Subtasks that correspond to explicit independent KAS subagent sessions.
-  // Child tool events for these subtasks render inside the subagent stream
-  // only; the lifecycle wrapper is the parent transcript representation.
-  private independentSubagentSubtasks: Set<string> = new Set();
-
-  // Tool IDs whose initial standalone/lifecycle card was forwarded to the
-  // main transcript. KAS sometimes omits _meta on later updates/finishes; this
-  // lets mapped updates complete only the cards that actually exist in main.
-  private standaloneMainForwardedToolCalls: Set<string> = new Set();
-
-  // KAS may announce a child tool via tool_call_chunk before the parent
-  // pipeline snapshot that classifies the subtask as crew-owned. Keep those
-  // chunks panel-only until a later signal proves they are standalone.
-  private chunkDiscoveredToolCalls: Map<string, string> = new Map();
-  private standaloneSubtasks: Set<string> = new Set();
-
-  // Tool call metadata from the initial KAS tool_call/tool_call_chunk event.
-  // Some KAS permission requests only carry toolCallId; approvals still need
-  // the title and raw input details from the original tool call.
-  private kasToolCallSnapshots: Map<
-    string,
-    {
-      title?: string;
-      kind?: string;
-      rawInput?: Record<string, unknown>;
-    }
-  > = new Map();
-
-  // Subtasks that correspond to a VISIBLE pipeline stage (a crew panel was
-  // registered via handlePipelineStateUpdate → broadcastSubagentList). Only
-  // these route tool approvals to the crew monitor; hidden/one-off spec
-  // subagents have no panel, so their approvals must surface in the main view.
-  private pipelineStageSubtasks: Set<string> = new Set();
-
   private sessionDisposables: Array<{ dispose: () => void }> = [];
+  private retired = false;
+
+  private assertActive(operation: string): void {
+    if (this.retired) {
+      throw new Error(`KAS client closed during ${operation}`);
+    }
+  }
 
   /**
    * Emit normalized model / agent / effort updates parsed from a KAS
@@ -604,12 +547,8 @@ export class KasAcpClient extends BaseAcpClient {
     }
   }
 
-  /** Cached hooks from the agent's registry, updated via _kiro/hooks/didChange. */
-  private cachedHooks: HookInfo[] = [];
   /** Disposable for the hooks notification subscription. */
   private hooksNotificationDisposable: { dispose: () => void } | null = null;
-  /** Cached session tool listing, updated via _kiro/tools/didChange. */
-  private cachedTools: ToolInfo[] = [];
   /** Disposable for the tools notification subscription. */
   private toolsNotificationDisposable: { dispose: () => void } | null = null;
 
@@ -623,14 +562,7 @@ export class KasAcpClient extends BaseAcpClient {
     // subtaskId can't misroute a new session's tool approval to a crew panel
     // that no longer exists. loadSession replays history AFTER this runs, so
     // any still-active stages get re-registered before their events arrive.
-    this.pipelineStageSubtasks.clear();
-    this.toolCallToSubtask.clear();
-    this.subagentLifecycleToolCallToSubtask.clear();
-    this.independentSubagentSubtasks.clear();
-    this.standaloneMainForwardedToolCalls.clear();
-    this.chunkDiscoveredToolCalls.clear();
-    this.standaloneSubtasks.clear();
-    this.kasToolCallSnapshots.clear();
+    this.kasSubagentRoutingStore.resetKasSubagentRouting();
     this.kasSteerBuffer.clear();
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
@@ -707,7 +639,7 @@ export class KasAcpClient extends BaseAcpClient {
           });
           return;
         }
-        this.rememberKasToolCall(event);
+        this.kasSubagentRoutingStore.rememberKasToolCall(event);
 
         // Intercept pipeline metadata → emit subagent list update
         if (meta?.pipeline) {
@@ -716,11 +648,21 @@ export class KasAcpClient extends BaseAcpClient {
             event.type === AgentEventType.ToolCallFinished
               ? event.id
               : undefined;
-          this.handlePipelineStateUpdate(meta.pipeline, pipelineToolCallId);
+          this.kasSubagentRoutingStore.handlePipelineStateUpdate(
+            meta.pipeline,
+            pipelineToolCallId,
+            this.kasSubagentRoutingEmitter
+          );
         }
 
-        const routedToSubtask = this.routeKasSubtaskEvent(event, meta);
-        this.forgetFinishedKasToolCallSnapshot(event);
+        const routedToSubtask =
+          this.kasSubagentRoutingStore.routeKasSubtaskEvent(
+            event,
+            meta,
+            this.kasSubagentRoutingEmitter,
+            this.sessionId
+          );
+        this.kasSubagentRoutingStore.forgetFinishedKasToolCallSnapshot(event);
         if (routedToSubtask) {
           return;
         }
@@ -756,6 +698,7 @@ export class KasAcpClient extends BaseAcpClient {
       model: this.telemetryCurrentModelId ?? '',
     });
   }
+
   protected override handleExtSessionUpdate(
     params: Record<string, unknown>
   ): void {
@@ -777,9 +720,11 @@ export class KasAcpClient extends BaseAcpClient {
           sessionId: kiroMeta.agentSubtaskId,
           meta: { kiro: kiroMeta },
         };
-        this.rememberKasToolCall(event);
-        this.toolCallToSubtask.set(event.id, kiroMeta.agentSubtaskId);
-        this.chunkDiscoveredToolCalls.set(event.id, kiroMeta.agentSubtaskId);
+        this.kasSubagentRoutingStore.rememberKasToolCall(event);
+        this.kasSubagentRoutingStore.recordKasChunkToolCall(
+          event.id,
+          kiroMeta.agentSubtaskId
+        );
         this.broadcastMultiSession(kiroMeta.agentSubtaskId, event);
         return;
       }
@@ -787,343 +732,43 @@ export class KasAcpClient extends BaseAcpClient {
     super.handleExtSessionUpdate(params);
   }
 
-  private finishSubagentLifecycleToolCall(
-    toolCallId: string,
-    subtaskId: string,
-    isExplicitLifecycleSignal = false
-  ): void {
-    const lifecycleSubtaskId =
-      this.subagentLifecycleToolCallToSubtask.get(toolCallId);
-    if (isExplicitLifecycleSignal || lifecycleSubtaskId === subtaskId) {
-      this.broadcastSessionEvent({
-        type: 'session_terminated',
-        sessionId: subtaskId,
-      });
-      this.independentSubagentSubtasks.delete(subtaskId);
-    }
-    this.subagentLifecycleToolCallToSubtask.delete(toolCallId);
-  }
-
   protected override broadcastSynthesizedFailedToolCall(
     event: AgentStreamEvent
   ): void {
-    this.rememberKasToolCall(event);
+    this.kasSubagentRoutingStore.rememberKasToolCall(event);
     const meta = extractKiroMetaFromEvent(event);
-    if (this.routeKasSubtaskEvent(event, meta)) return;
+    const routedToSubtask = this.kasSubagentRoutingStore.routeKasSubtaskEvent(
+      event,
+      meta,
+      this.kasSubagentRoutingEmitter,
+      this.sessionId
+    );
+    if (routedToSubtask) return;
     this.observeV3ToolCall(event);
     this.broadcastStreamEvent(event);
   }
 
-  private rememberKasToolCall(event: AgentStreamEvent): void {
-    if (event.type !== AgentEventType.ToolCall) return;
-    this.kasToolCallSnapshots.set(event.id, {
-      title: event.name,
-      kind: event.kind,
-      rawInput: event.args,
-    });
-  }
-
-  private forgetFinishedKasToolCallSnapshot(event: AgentStreamEvent): void {
-    if (event.type !== AgentEventType.ToolCallFinished) return;
-    this.kasToolCallSnapshots.delete(event.id);
-  }
-
-  private isMappedStandaloneSubtask(subtaskId: string): boolean {
-    return (
-      this.standaloneSubtasks.has(subtaskId) &&
-      !this.pipelineStageSubtasks.has(subtaskId) &&
-      !this.independentSubagentSubtasks.has(subtaskId)
-    );
-  }
-
-  private isUnclassifiedChunkToolCall(
-    toolCallId: string,
-    subtaskId: string
-  ): boolean {
-    return (
-      this.chunkDiscoveredToolCalls.get(toolCallId) === subtaskId &&
-      !this.standaloneSubtasks.has(subtaskId) &&
-      !this.pipelineStageSubtasks.has(subtaskId) &&
-      !this.independentSubagentSubtasks.has(subtaskId)
-    );
-  }
-
-  private promoteMappedStandaloneToolCallToMain(
-    toolCallId: string,
-    subtaskId: string,
-    event?: AgentStreamEvent
-  ): boolean {
-    if (!this.isMappedStandaloneSubtask(subtaskId)) return false;
-    if (this.standaloneMainForwardedToolCalls.has(toolCallId)) return false;
-    if (event?.type === AgentEventType.ToolCall) {
-      this.standaloneMainForwardedToolCalls.add(toolCallId);
-      this.broadcastStreamEvent({ ...event, sessionId: undefined });
-      return true;
-    }
-    const snapshot = this.kasToolCallSnapshots.get(toolCallId);
-    if (!snapshot) return false;
-    this.standaloneMainForwardedToolCalls.add(toolCallId);
-    this.broadcastStreamEvent({
-      type: AgentEventType.ToolCall,
-      id: toolCallId,
-      name: snapshot.title ?? toolCallId,
-      kind: snapshot.kind,
-      args: snapshot.rawInput ?? {},
-    });
-    return true;
-  }
-
-  private routeKasSubtaskEvent(
-    event: AgentStreamEvent,
-    meta: KiroMeta | undefined
-  ): boolean {
-    if (meta?.agentSubtaskId) {
-      const subtaskId = meta.agentSubtaskId;
-      const isKnownIndependentSubagent =
-        this.independentSubagentSubtasks.has(subtaskId);
-      const isDerivedPipelineStageSubtask =
-        isDerivedPipelineStageSubtaskId(subtaskId);
-      const isIndependentLifecycleSignal =
-        meta.kind === 'agent-subtask' &&
-        !this.pipelineStageSubtasks.has(subtaskId) &&
-        !isDerivedPipelineStageSubtask;
-      const isCrewActivity =
-        !isKnownIndependentSubagent &&
-        !isIndependentLifecycleSignal &&
-        (this.pipelineStageSubtasks.has(subtaskId) ||
-          isDerivedPipelineStageSubtask);
-      const shouldManageSubagentLifecycle =
-        isIndependentLifecycleSignal && !isCrewActivity;
-      const isIndependentLifecycleToolCall =
-        shouldManageSubagentLifecycle ||
-        ('id' in event &&
-          this.subagentLifecycleToolCallToSubtask.get(event.id) === subtaskId);
-      const isUnclassifiedChunkCall =
-        'id' in event && this.isUnclassifiedChunkToolCall(event.id, subtaskId);
-      if (event.type === AgentEventType.ToolCall) {
-        event.sessionId = subtaskId;
-        this.toolCallToSubtask.set(event.id, subtaskId);
-        if (shouldManageSubagentLifecycle) {
-          this.independentSubagentSubtasks.add(subtaskId);
-          this.subagentLifecycleToolCallToSubtask.set(event.id, subtaskId);
-          const sessionName =
-            kasSubagentNameFromArgs(event.args) ??
-            extractKasSubagentName(event.name) ??
-            subtaskId;
-          this.broadcastSessionEvent({
-            type: 'session_created',
-            session: {
-              id: subtaskId,
-              name: sessionName,
-              agentName: sessionName,
-              status: 'busy',
-              type: 'ephemeral',
-              created: new Date(),
-              lastActivity: new Date(),
-              ...(this.sessionId ? { parentSession: this.sessionId } : {}),
-            },
-          });
-        }
-      }
-      this.broadcastMultiSession(subtaskId, event);
-      if (
-        !isCrewActivity &&
-        !isUnclassifiedChunkCall &&
-        (!isKnownIndependentSubagent || isIndependentLifecycleToolCall) &&
-        STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
-      ) {
-        const mainEvent =
-          event.type === AgentEventType.ToolCall
-            ? { ...event, sessionId: undefined }
-            : event;
-        if (event.type === AgentEventType.ToolCall) {
-          this.standaloneMainForwardedToolCalls.add(event.id);
-        }
-        this.broadcastStreamEvent(mainEvent);
-      }
-      if (event.type === AgentEventType.ToolCallFinished) {
-        this.toolCallToSubtask.delete(event.id);
-        this.standaloneMainForwardedToolCalls.delete(event.id);
-        this.chunkDiscoveredToolCalls.delete(event.id);
-        this.finishSubagentLifecycleToolCall(
-          event.id,
-          subtaskId,
-          shouldManageSubagentLifecycle
-        );
-      }
-      return true;
-    }
-
-    const mappedSubtaskId =
-      'id' in event ? this.toolCallToSubtask.get(event.id) : undefined;
-    if (!mappedSubtaskId) return false;
-
-    const mappedEvent =
-      event.type === AgentEventType.ToolCall
-        ? { ...event, sessionId: mappedSubtaskId }
-        : event;
-    this.broadcastMultiSession(mappedSubtaskId, mappedEvent);
-    if (
-      event.type === AgentEventType.ToolCall &&
-      this.chunkDiscoveredToolCalls.get(event.id) === mappedSubtaskId
-    ) {
-      this.standaloneSubtasks.add(mappedSubtaskId);
-    }
-    const promotedMappedStandaloneToolCall =
-      event.type === AgentEventType.ToolCall &&
-      this.promoteMappedStandaloneToolCallToMain(
-        event.id,
-        mappedSubtaskId,
-        event
-      );
-    if (
-      'id' in event &&
-      !promotedMappedStandaloneToolCall &&
-      STANDALONE_MAIN_FORWARD_TYPES.has(event.type)
-    ) {
-      this.promoteMappedStandaloneToolCallToMain(event.id, mappedSubtaskId);
-    }
-    if (
-      'id' in event &&
-      this.standaloneMainForwardedToolCalls.has(event.id) &&
-      !promotedMappedStandaloneToolCall
-    ) {
-      const mainEvent =
-        event.type === AgentEventType.ToolCall
-          ? { ...event, sessionId: undefined }
-          : event;
-      this.broadcastStreamEvent(mainEvent);
-    }
-    if (event.type === AgentEventType.ToolCallFinished) {
-      this.toolCallToSubtask.delete(event.id);
-      this.standaloneMainForwardedToolCalls.delete(event.id);
-      this.chunkDiscoveredToolCalls.delete(event.id);
-      this.standaloneSubtasks.delete(mappedSubtaskId);
-      this.finishSubagentLifecycleToolCall(event.id, mappedSubtaskId);
-    }
-    return true;
-  }
-
-  private handlePipelineStateUpdate(
-    pipeline: {
-      groupId: string;
-      stages: Array<{
-        name: string;
-        role: string;
-        status: string;
-        dependsOn: string[];
-        agentSubtaskId: string | null;
-      }>;
-    },
-    parentToolCallId?: string
-  ): void {
-    const statusMap: Record<string, { type: string }> = {
-      running: { type: 'working' },
-      completed: { type: 'terminated' },
-      failed: { type: 'terminated' },
-    };
-
-    const subagents = pipeline.stages
-      .filter((s) => s.agentSubtaskId != null && s.status !== 'pending')
-      .map((s) => ({
-        sessionId: s.agentSubtaskId!,
-        sessionName: s.name,
-        agentName: s.role,
-        status: statusMap[s.status] || { type: 'idle' },
-        group: pipeline.groupId,
-        role: s.role,
-        dependsOn: s.dependsOn,
-      }));
-
-    // Record every assigned stage subtask as a crew stage so early tool
-    // approvals can route to the crew monitor, even if the stage is still
-    // pending and must not yet appear as an active footer row.
-    //
-    // KAS also emits per-stage wrapper cards with derived ids like
-    // `invoke_subagent_<parentToolCallId>_stage_<stageName>`. Register the
-    // derived ids beside the real stage ids so wrappers stay panel-only even
-    // when their subtask id is not the stage UUID.
-    for (const s of pipeline.stages) {
-      if (s.agentSubtaskId) this.pipelineStageSubtasks.add(s.agentSubtaskId);
-      if (parentToolCallId && s.name) {
-        this.pipelineStageSubtasks.add(
-          `invoke_subagent_${parentToolCallId}_stage_${s.name}`
-        );
-        this.pipelineStageSubtasks.add(
-          `invoke_sub_agent_${parentToolCallId}_stage_${s.name}`
-        );
-      }
-    }
-
-    const pendingStages = pipeline.stages
-      .filter((s) => s.status === 'pending')
-      .map((s) => ({
-        ...(s.agentSubtaskId ? { sessionId: s.agentSubtaskId } : {}),
-        name: s.name,
-        role: s.role,
-        agentName: s.role,
-        group: pipeline.groupId,
-        dependsOn: s.dependsOn,
-      }));
-
-    this.broadcastSubagentList(subagents, pendingStages);
-  }
-
   private handleKasPermissionRequest(
-    request: any,
+    request: KasPermissionRequest,
     originSessionId?: string
   ): Promise<acp.RequestPermissionResponse> {
     // KAS sends toolCallId at top level; normalize to ACP format and enrich with stage correlation
     const toolCallId = request.toolCallId || request.toolCall?.toolCallId || '';
     const kiroMeta = kasPermissionMeta(request);
-    const subtaskId =
-      this.toolCallToSubtask.get(toolCallId) ??
-      stringValue(kiroMeta?.agentSubtaskId);
-    const cachedToolCall = this.kasToolCallSnapshots.get(toolCallId);
-    // Sub-agent spawn approvals are parent-session decisions — surface them
-    // in main view (V1 `use_subagent` UX), not the crew prompt.
     const consent = (
       kiroMeta as { consent?: { capability?: string } } | undefined
     )?.consent;
     const isSubagentSpawn = consent?.capability === KAS_CAPABILITIES.SUBAGENT;
-    // Route a child tool approval to a subagent context only when the subtask
-    // has a visible UI surface: either a crew pipeline stage or an explicit
-    // independent KAS subagent session. Hidden/one-off spec subagents never
-    // register either surface, so attaching their subtaskId as `sessionId`
-    // would route the prompt to a panel that doesn't exist.
-    const hasRenderableSubagentSession =
-      !!subtaskId &&
-      (this.pipelineStageSubtasks.has(subtaskId) ||
-        this.independentSubagentSubtasks.has(subtaskId));
     const shellPermission = inferKasShellPermissionToolCall(request);
-    const existingToolCall = request.toolCall ?? {};
-    const enriched = {
-      ...request,
-      toolCall: {
-        ...existingToolCall,
-        toolCallId,
-        title:
-          existingToolCall.title ??
-          shellPermission.title ??
-          cachedToolCall?.title,
-        rawInput:
-          existingToolCall.rawInput ??
-          shellPermission.rawInput ??
-          cachedToolCall?.rawInput,
-      },
-      ...(subtaskId &&
-        !isSubagentSpawn &&
-        hasRenderableSubagentSession && { sessionId: subtaskId }),
-      ...(originSessionId ? { originSessionId } : {}),
-    };
-    if (
-      subtaskId &&
-      !hasRenderableSubagentSession &&
-      !isSubagentSpawn &&
-      !this.chunkDiscoveredToolCalls.has(toolCallId)
-    ) {
-      this.standaloneSubtasks.add(subtaskId);
-    }
+    const enriched = this.kasSubagentRoutingStore.prepareKasPermissionRequest({
+      request,
+      toolCallId,
+      metadataSubtaskId: stringValue(kiroMeta?.agentSubtaskId),
+      isSubagentSpawn,
+      fallbackTitle: shellPermission.title,
+      fallbackRawInput: shellPermission.rawInput,
+      originSessionId,
+    });
     return this.handlePermissionRequest(enriched);
   }
 
@@ -1167,17 +812,17 @@ export class KasAcpClient extends BaseAcpClient {
     );
 
     // Subscribe to hooks registry changes. The agent pushes this
-    // notification whenever hooks are loaded, reloaded, or the file
-    // watcher detects a change. We cache the list and broadcast a
-    // HooksUpdate event so the TUI can refresh the panel if open.
+    // notification whenever hooks are loaded, reloaded, or the file watcher
+    // detects a change. We broadcast a HooksUpdate event so the store-owned
+    // snapshot and any open panel stay current.
     this.hooksNotificationDisposable = this.kiroClient.onExtNotification(
       '_kiro/hooks/didChange',
       (params: Record<string, unknown>) => {
         const rawHooks = Array.isArray(params.hooks) ? params.hooks : [];
-        this.cachedHooks = this.projectHooks(rawHooks);
+        const hooks = this.projectHooks(rawHooks);
         this.broadcastStreamEvent({
           type: AgentEventType.HooksUpdate,
-          hooks: this.cachedHooks,
+          hooks,
         });
       }
     );
@@ -1185,8 +830,8 @@ export class KasAcpClient extends BaseAcpClient {
     // Subscribe to session tool-listing changes. KAS pushes the full current
     // tag set (builtin category tags + per-tool MCP tags) on session
     // new/load and whenever the resolved tool set changes (MCP connect/reset,
-    // powers activation, /agent swaps). We cache it and broadcast a
-    // ToolsUpdate event so the /tools panel reflects the latest set.
+    // powers activation, /agent swaps). We broadcast a ToolsUpdate event so
+    // the store-owned /tools snapshot reflects the latest set.
     this.toolsNotificationDisposable = this.kiroClient.onExtNotification(
       '_kiro/tools/didChange',
       (params: Record<string, unknown>) => {
@@ -1194,10 +839,10 @@ export class KasAcpClient extends BaseAcpClient {
         if (sessionId && this.sessionId && sessionId !== this.sessionId) {
           return;
         }
-        this.cachedTools = parseToolsDidChange(params);
+        const tools = parseToolsDidChange(params);
         this.broadcastStreamEvent({
           type: AgentEventType.ToolsUpdate,
-          tools: this.cachedTools,
+          tools,
         });
       }
     );
@@ -1322,6 +967,8 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   override close(): void {
+    if (this.retired) return;
+    this.retired = true;
     this.hooksNotificationDisposable?.dispose();
     this.hooksNotificationDisposable = null;
     this.toolsNotificationDisposable?.dispose();
@@ -1329,15 +976,6 @@ export class KasAcpClient extends BaseAcpClient {
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [];
     this.v3ToolCalls.reset();
-    // Mirror wireSessionListeners: drop subtask correlation state on teardown.
-    this.pipelineStageSubtasks.clear();
-    this.toolCallToSubtask.clear();
-    this.subagentLifecycleToolCallToSubtask.clear();
-    this.independentSubagentSubtasks.clear();
-    this.standaloneMainForwardedToolCalls.clear();
-    this.chunkDiscoveredToolCalls.clear();
-    this.standaloneSubtasks.clear();
-    this.kasToolCallSnapshots.clear();
     super.close();
   }
 
@@ -1351,6 +989,7 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   async newSession(): Promise<SessionResult> {
+    this.assertActive('session creation');
     const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
     // Build the `_meta.kiro` payload once, merging mode + execution target so
     // neither overwrites the other (two separate `_meta` spreads would drop one).
@@ -1395,7 +1034,6 @@ export class KasAcpClient extends BaseAcpClient {
     const intendedCloudSandbox =
       (kiroMeta.executionTarget as ExecutionTarget | undefined)?.kind ===
       'cloud-sandbox';
-    this.startedCloudSession = intendedCloudSandbox;
     if (intendedCloudSandbox) {
       if (this.kiroCapabilities.sessionSources?.includes('remote')) {
         kiroMeta.sessionSource = 'remote';
@@ -1424,6 +1062,8 @@ export class KasAcpClient extends BaseAcpClient {
         }
         throw err;
       });
+    this.assertActive('session creation');
+    this.startedCloudSession = intendedCloudSandbox;
     if (intendedCloudSandbox) {
       this.cloudSessionStartMs = Date.now();
       this.cloudReadyEmitted = false;
@@ -1492,6 +1132,7 @@ export class KasAcpClient extends BaseAcpClient {
     sessionId: string,
     options?: { source?: 'local' | 'remote' }
   ): Promise<SessionResult> {
+    this.assertActive('session load');
     const previousSessionId = this.sessionId;
     this.sessionId = sessionId;
     // A loaded session has no create-time bind warnings.
@@ -1535,6 +1176,7 @@ export class KasAcpClient extends BaseAcpClient {
         this.sessionId = previousSessionId;
         throw err;
       });
+    this.assertActive('session load');
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',
       sessionId
@@ -1649,12 +1291,12 @@ export class KasAcpClient extends BaseAcpClient {
         // Without this case it fell through to the default "not yet supported"
         // branch, so Tab from /usage silently did nothing in KAS mode.
         const response = await this.contextShow();
-        const breakdown =
-          response.breakdown ?? this.getCachedContextBreakdown();
         return {
           success: true,
           message: response.message ?? '',
-          data: breakdown ? { breakdown } : undefined,
+          data: response.breakdown
+            ? { breakdown: response.breakdown }
+            : undefined,
         };
       }
       case 'prompts': {
@@ -1774,30 +1416,6 @@ export class KasAcpClient extends BaseAcpClient {
         const value = args?.value ?? 'status';
         return this.executeCode(value);
       }
-      case 'mcp': {
-        const args = (command as Record<string, unknown>).args as
-          | Record<string, string>
-          | undefined;
-        const value = args?.value?.trim() ?? '';
-
-        if (value === 'list') {
-          return {
-            success: true,
-            message: `${this.mcpServerCache.length} configured, ${this.mcpRegistryCache.length} registry servers`,
-            data: {
-              servers: this.mcpServerCache,
-              registryServers: this.mcpRegistryCache,
-              mode: 'list',
-            },
-          };
-        }
-
-        return {
-          success: true,
-          message: `${this.mcpServerCache.length} configured server${this.mcpServerCache.length === 1 ? '' : 's'}`,
-          data: { servers: this.mcpServerCache },
-        };
-      }
       default:
         return {
           success: false,
@@ -1830,23 +1448,8 @@ export class KasAcpClient extends BaseAcpClient {
 
   /**
    * /hooks — lists configured hooks from the agent's registry.
-   *
-   * Uses the cached hook list (populated by _kiro/hooks/didChange
-   * notifications) when available. Otherwise calls the agent's
-   * _kiro/hooks/list extension method.
    */
   private async executeHooks(): Promise<CommandResult> {
-    // Use cached hooks if we have them (populated by didChange notification)
-    if (this.cachedHooks.length > 0) {
-      const message = `${this.cachedHooks.length} hook${this.cachedHooks.length === 1 ? '' : 's'} configured`;
-      return {
-        success: true,
-        message,
-        data: { hooks: this.cachedHooks, message },
-      };
-    }
-
-    // Fetch from agent
     let result: CommandResult;
     try {
       result = await this.callExtMethod('_kiro/hooks/list', {
@@ -1873,7 +1476,6 @@ export class KasAcpClient extends BaseAcpClient {
 
       if (Array.isArray(data?.hooks)) {
         const hooks = this.projectHooks(data.hooks);
-        this.cachedHooks = hooks;
         return this.formatHooksResult(hooks);
       }
     }
@@ -1894,7 +1496,7 @@ export class KasAcpClient extends BaseAcpClient {
     };
   }
 
-  /** Project raw hook data from the agent into the HookInfo shape. */
+  /** Project raw hook data into the normalized display snapshot. */
   private projectHooks(
     rawHooks: Array<{
       name?: string;
@@ -1909,7 +1511,7 @@ export class KasAcpClient extends BaseAcpClient {
         enabled?: boolean;
       };
     }>
-  ): HookInfo[] {
+  ): HooksUpdateEvent['hooks'] {
     return rawHooks.map((h) => {
       const trigger = h._meta?.trigger ?? h.trigger ?? 'unknown';
       const matcher = h._meta?.matcher ?? h.matcher;
@@ -1930,7 +1532,7 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   /** Format a hooks array into a CommandResult for the panel. */
-  private formatHooksResult(hooks: HookInfo[]): CommandResult {
+  private formatHooksResult(hooks: HooksUpdateEvent['hooks']): CommandResult {
     if (hooks.length === 0) {
       return {
         success: true,
@@ -2050,15 +1652,6 @@ export class KasAcpClient extends BaseAcpClient {
       success: data?.success !== false,
       message: data?.message,
     };
-  }
-
-  /**
-   * Latest context-usage breakdown pushed via session_info_update, or
-   * null if none has arrived yet. The /context handler uses this to
-   * open the panel from cache without a round-trip.
-   */
-  getCachedContextBreakdown(): ContextBreakdownData | null {
-    return (this.cachedBreakdown as ContextBreakdownData | null) ?? null;
   }
 
   async resetMcpServer(serverName: string, startOAuth: boolean): Promise<void> {
@@ -2187,7 +1780,7 @@ export class KasAcpClient extends BaseAcpClient {
 
   /**
    * Handle `_kiro/mcp/status` notification from KAS.
-   * Transforms the notification data into McpServerInfo[] and caches it.
+   * Normalizes the wire data and publishes store-owned display snapshots.
    */
   private handleMcpStatusNotification(params: Record<string, unknown>): void {
     const servers = params.servers as
@@ -2206,35 +1799,39 @@ export class KasAcpClient extends BaseAcpClient {
         }>
       | undefined;
 
-    if (!servers) {
-      this.mcpServerCache = [];
-    } else {
-      this.mcpServerCache = servers.map((server) => {
-        let status: McpServerInfo['status'];
-        switch (server.status) {
-          case 'connected':
-            status = 'running';
-            break;
-          case 'connecting':
-            status = 'loading';
-            break;
-          case 'failed':
-            status = server.failedAuthorization ? 'auth-required' : 'failed';
-            break;
-          case 'disabled':
-            status = 'disabled';
-            break;
-          default:
-            status = 'failed';
-        }
+    const serverSnapshot: McpServerSnapshotEvent['servers'] = (
+      servers ?? []
+    ).map((server) => {
+      let status: McpServerSnapshotEvent['servers'][number]['status'];
+      switch (server.status) {
+        case 'connected':
+          status = 'running';
+          break;
+        case 'connecting':
+          status = 'loading';
+          break;
+        case 'failed':
+          status = server.failedAuthorization ? 'auth-required' : 'failed';
+          break;
+        case 'disabled':
+          status = 'disabled';
+          break;
+        default:
+          status = 'failed';
+      }
 
-        return {
-          name: server.name,
-          status,
-          toolCount: server.tools?.length ?? 0,
-        };
-      });
+      return {
+        name: server.name,
+        status,
+        toolCount: server.tools?.length ?? 0,
+      };
+    });
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpServerSnapshot,
+      servers: serverSnapshot,
+    });
 
+    if (servers) {
       // Broadcast OAuth URL for servers that need authentication,
       // and clear pending OAuth for servers that have connected.
       const stillPendingAuth = new Set<string>();
@@ -2267,7 +1864,7 @@ export class KasAcpClient extends BaseAcpClient {
       }
     }
 
-    // Cache registry servers separately
+    // Publish registry servers separately from the configured-server snapshot.
     const registryServers =
       (params.registryServers as Array<{
         name: string;
@@ -2275,7 +1872,7 @@ export class KasAcpClient extends BaseAcpClient {
         description?: string;
         enabled?: boolean;
       }>) ?? [];
-    this.mcpRegistryCache = registryServers.map((s) => ({
+    const registrySnapshot = registryServers.map((s) => ({
       name: s.name,
       status: 'disabled' as const,
       toolCount: 0,
@@ -2283,12 +1880,16 @@ export class KasAcpClient extends BaseAcpClient {
       description: s.description,
       enabled: s.enabled,
     }));
+    this.broadcastStreamEvent({
+      type: AgentEventType.McpRegistrySnapshot,
+      registryServers: registrySnapshot,
+    });
 
     logger.debug(
-      '[kas] handleMcpStatusNotification: cached',
-      this.mcpServerCache.length,
+      '[kas] handleMcpStatusNotification: published',
+      serverSnapshot.length,
       'configured,',
-      this.mcpRegistryCache.length,
+      registrySnapshot.length,
       'registry servers'
     );
   }

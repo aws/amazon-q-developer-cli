@@ -42,6 +42,14 @@ export interface CreateMockCtxOptions {
   currentEffort?: string | null;
   /** Cached session tool listing snapshot. Default: [] */
   toolsList?: CommandContext['toolsList'];
+  /** Cached hook registry snapshot. Default: [] */
+  hooksList?: CommandContext['hooksList'];
+  /** Read the latest cached context breakdown. Default: null */
+  getContextBreakdownCache?: CommandContext['getContextBreakdownCache'];
+  /** Cached KAS configured-server snapshot. Default: [] */
+  mcpServerCache?: CommandContext['mcpServerCache'];
+  /** Cached KAS MCP registry snapshot. Default: [] */
+  mcpRegistryCache?: CommandContext['mcpRegistryCache'];
 }
 
 /**
@@ -99,6 +107,7 @@ export function createMockCommandContext(
     currentAgent: opts.currentAgent ?? null,
     setContextUsage: spy('setContextUsage') as any,
     setShowContextBreakdown: spy('setShowContextBreakdown') as any,
+    getContextBreakdownCache: opts.getContextBreakdownCache ?? (() => null),
     setShowHelpPanel: spy('setShowHelpPanel') as any,
     setShowTuiPanel: spy('setShowTuiPanel') as any,
     setShowChangelogPanel: spy('setShowChangelogPanel') as any,
@@ -107,12 +116,15 @@ export function createMockCommandContext(
     setUpgradeDiagnostics: spy('setUpgradeDiagnostics') as any,
     setUpgradeRunPreview: spy('setUpgradeRunPreview') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,
+    mcpServerCache: opts.mcpServerCache ?? [],
+    mcpRegistryCache: opts.mcpRegistryCache ?? [],
     setShowToolsPanel: spy('setShowToolsPanel') as any,
     toolsList: opts.toolsList ?? [],
     setShowGoalPanel: spy('setShowGoalPanel') as any,
     setGoalStatus: spy('setGoalStatus') as any,
     setShowStatsPanel: spy('setShowStatsPanel') as any,
     setShowHooksPanel: spy('setShowHooksPanel') as any,
+    hooksList: opts.hooksList ?? [],
     setShowRepoPicker: spy('setShowRepoPicker') as any,
     setShowSessionPicker: spy('setShowSessionPicker') as any,
     resetCloudSessionScope: spy('resetCloudSessionScope') as any,

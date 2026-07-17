@@ -179,13 +179,20 @@ describe('renderSubagentFinalBlock', () => {
     output:
       'Pipeline completed: 3 stages finished.\n\n## combine\n\nFinal long body that we do not want.',
   };
+  // Keep these baseline assertions independent of cross-file KIRO_HOME changes.
+  const baselineOptions = {
+    display: DEFAULT_DISPLAY,
+    filtersOverride: [] as const,
+  };
 
   test('renders header, task, full pipeline tree with prompts; omits long taskResult body on success', () => {
     const block = renderSubagentFinalBlock(
       baseContent,
       heavyResult,
       'done',
-      5200
+      5200,
+      undefined,
+      baselineOptions
     );
     const stripped = stripAnsi(block);
     expect(stripped).toContain('subagent');
@@ -318,7 +325,8 @@ describe('renderSubagentFinalBlock', () => {
         heavyResult,
         'done',
         1000,
-        stageSummaries
+        stageSummaries,
+        baselineOptions
       ),
       { contains, absent }
     );
@@ -341,7 +349,8 @@ describe('renderSubagentFinalBlock', () => {
           contextSummary: 'should not render on error',
           taskResult: '',
         },
-      ]
+      ],
+      baselineOptions
     );
     const stripped = stripAnsi(block);
     expect(stripped).toContain('FAILED');
@@ -392,7 +401,7 @@ describe('renderSubagentFinalBlock', () => {
         'running',
         undefined,
         undefined,
-        info
+        { ...baselineOptions, ...info }
       );
       expectRender(block, {
         contains,

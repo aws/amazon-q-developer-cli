@@ -584,7 +584,7 @@ export const ConversationView = React.memo(function ConversationView() {
   // only when a turn completes (~once per 10-60s).
   const turnSummaries = useAppStore((s) => s.turnSummaries);
 
-  // Coordinated session/mode reset. The store bumps `liteScrollbackClearToken`
+  // Coordinated session/mode reset. The store bumps `lite.scrollbackClearToken`
   // when (a) the user runs /chat new or /chat <id>, (b) they swap from lite
   // to tui. Both cases require the TUI's module-level singletons below to
   // start empty — otherwise the staticItemsRef.current points at an array
@@ -603,7 +603,7 @@ export const ConversationView = React.memo(function ConversationView() {
   //
   // Token is read with a single store subscription so React re-renders this
   // component when the store dispatches the bump.
-  const clearToken = useAppStore((s) => s.liteScrollbackClearToken);
+  const clearToken = useAppStore((s) => s.lite.scrollbackClearToken);
   if (clearToken !== _lastObservedClearToken) {
     _lastObservedClearToken = clearToken;
     // Mutate in place — refs declared below already point at these arrays.
@@ -674,7 +674,7 @@ export const ConversationView = React.memo(function ConversationView() {
   const staticItemsSnapshotRef = React.useRef<StaticItem[]>([]);
 
   const liteScrollbackClearToken = useAppStore(
-    (s) => s.liteScrollbackClearToken
+    (s) => s.lite.scrollbackClearToken
   );
   let resetStaticThisRender = false;
   if (liteScrollbackClearToken !== _lastObservedClearToken) {
