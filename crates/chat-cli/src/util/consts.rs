@@ -261,9 +261,6 @@ pub mod env_var {
         /// Override the update release URL at runtime
         KIRO_DESKTOP_RELEASE_URL = "KIRO_DESKTOP_RELEASE_URL",
 
-        /// Legacy alias for KIRO_DESKTOP_RELEASE_URL (Q-era naming); KIRO_ wins when both are set
-        Q_DESKTOP_RELEASE_URL = "Q_DESKTOP_RELEASE_URL",
-
         /// Comma-separated MCP server names (matching entries in mcp.json) that must
         /// always be loaded and their tools always available, regardless of agent profile.
         ASBX_KIRO_MANDATORY_MCPS = "ASBX_KIRO_MANDATORY_MCPS",
@@ -279,8 +276,10 @@ pub mod env_var {
         KIRO_SESSION_ID = "KIRO_SESSION_ID"
     }
 
-    /// Default base URL for release artifacts.
-    pub const DEFAULT_UPDATE_BASE_URL: &str = "https://desktop-release.q.us-east-1.amazonaws.com/latest/";
+    /// Default update manifest URL. Set this to the production URL when ready.
+    // TODO: Update this to the production manifest URL once the update infrastructure is deployed.
+    pub const DEFAULT_UPDATE_MANIFEST_URL: &str =
+        "https://desktop-release.q.us-east-1.amazonaws.com/latest/manifest.json";
 }
 
 #[cfg(test)]
