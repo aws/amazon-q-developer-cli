@@ -223,7 +223,9 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         (!!lastVisibleMsg.content ||
           (lastVisibleMsg.id === streamingMessageId && !!streamingContent) ||
           ('shellOutput' in lastVisibleMsg && lastVisibleMsg.shellOutput) ||
-          ('thinking' in lastVisibleMsg && !!lastVisibleMsg.thinking)))
+          (thinkingMode !== 'off' &&
+            'thinking' in lastVisibleMsg &&
+            !!lastVisibleMsg.thinking)))
     : false;
   const showThinking = isProcessing && !hasActiveContent;
 
@@ -359,7 +361,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           </Box>
         );
       })}
-      {showThinking && <ThinkingMessage barColor={agentBarColor} />}
+      {showThinking && <ThinkingMessage barColor={agentBarColor} showTip />}
       {!isProcessing && summaryText && (
         <Box marginTop={1}>
           <TurnUsageSummary text={summaryText} />

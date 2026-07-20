@@ -20,6 +20,17 @@ import {
 } from '../../../utils/colorUtils.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
+/** Width of the vertical accent bar column (characters). */
+export const STATUS_BAR_WIDTH = 1;
+/** Gap between the bar and content (characters). */
+export const STATUS_BAR_MARGIN_LEFT = 1;
+/**
+ * Total left offset before content begins. Use this to align elements
+ * rendered outside a StatusBar with its content zone.
+ */
+export const STATUS_BAR_CONTENT_OFFSET =
+  STATUS_BAR_WIDTH + STATUS_BAR_MARGIN_LEFT;
+
 interface StatusBarContextType {
   setLineColor: (lineIndex: number, color: string) => void;
   setLineColors: (colors: Record<number, string>) => void;
@@ -269,7 +280,7 @@ export const StatusBar = React.memo(function StatusBar({
         {/* Bar stretches to match content; content sizes to its own height */}
         <Box
           flexDirection="column"
-          width={1}
+          width={STATUS_BAR_WIDTH}
           justifyContent="flex-start"
           backgroundColor={barBgColor}
         >
@@ -280,7 +291,7 @@ export const StatusBar = React.memo(function StatusBar({
           flexGrow={1}
           flexShrink={1}
           alignSelf="flex-start"
-          marginLeft={1}
+          marginLeft={STATUS_BAR_MARGIN_LEFT}
           ref={contentRef}
         >
           {children}
