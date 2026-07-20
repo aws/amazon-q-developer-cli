@@ -17,7 +17,7 @@ Disable automatically saving the selected effort level as a per-model default.
 
 ## Overview
 
-By default, using `/effort` to change the reasoning effort level automatically persists that level as a per-model default under `chat.modelDefaults`. The confirmation message shows `(saved for <model>)` when this happens. On subsequent sessions, the saved effort level is automatically applied when that model is active.
+By default, using `/effort` to change the reasoning effort level automatically persists that level as a per-model default under `chat.modelDefaults`. The confirmation message shows `(saved for <model>; disable with kiro-cli settings chat.disableAutoDefaultEffort true)` when this happens. On subsequent sessions, the saved effort level is automatically applied when that model is active.
 
 When `chat.disableAutoDefaultEffort` is set to `true`:
 - `/effort` changes still take effect for the current session
@@ -88,7 +88,7 @@ With `chat.disableAutoDefaultEffort` set to `false` (default):
 
 ```
 /effort low
-→ Effort set to low (saved for Claude Opus 4.7)
+→ Effort set to low (saved for Claude Opus 4.7; disable with kiro-cli settings chat.disableAutoDefaultEffort true)
 ```
 
 With `chat.disableAutoDefaultEffort` set to `true`:

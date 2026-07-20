@@ -66,7 +66,7 @@ Available effort levels: low, medium, high, xhigh
 
 **Output**:
 ```
-Effort set to low (saved for Claude Opus 4.7)
+Effort set to low (saved for Claude Opus 4.7; disable with kiro-cli settings chat.disableAutoDefaultEffort true)
 ```
 
 The effort level is automatically persisted as a per-model default in your settings. To disable this auto-save behavior, set `chat.disableAutoDefaultEffort` to `true`.

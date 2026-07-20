@@ -106,9 +106,9 @@ describe('handleModel', () => {
     expect(setConfigOption).toHaveBeenCalledWith('model', 'opus');
     expect(readCliJson()['chat.defaultModel']).toBe('opus');
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Switched to Opus (saved as default)',
+      'Switched to Opus (saved as default; disable with kiro-cli settings chat.disableAutoDefaultModel true)',
       'success',
-      3000
+      4000
     );
   });
 
@@ -277,9 +277,9 @@ describe('sticky-default persistence', () => {
       | undefined;
     expect(defaults?.opus?.output_config?.effort).toBe('high');
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Effort set to High (saved for Opus)',
+      'Effort set to High (saved for Opus; disable with kiro-cli settings chat.disableAutoDefaultEffort true)',
       'success',
-      3000
+      4000
     );
   });
 

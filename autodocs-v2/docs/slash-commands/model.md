@@ -88,7 +88,7 @@ Shows current model, rate multipliers, and descriptions.
 
 **Output**:
 ```
- Using claude-sonnet-4 (saved as default)
+ Using claude-sonnet-4 (saved as default; disable with kiro-cli settings chat.disableAutoDefaultModel true)
 ```
 
 The model is automatically persisted as your default for new sessions.

@@ -87,13 +87,15 @@ async function switchModel(
       logger.warn('[model] failed to persist default model:', err);
     }
   }
-  ctx.showAlert(
-    saved
-      ? `Switched to ${current.name} (saved as default)`
-      : `Switched to ${current.name}`,
-    'success',
-    3000
-  );
+  if (saved) {
+    ctx.showAlert(
+      `Switched to ${current.name} (saved as default; disable with kiro-cli settings ${Settings.CHAT_DISABLE_AUTO_DEFAULT_MODEL} true)`,
+      'success',
+      4000
+    );
+  } else {
+    ctx.showAlert(`Switched to ${current.name}`, 'success', 3000);
+  }
 }
 
 async function saveCurrentAsDefault(ctx: CommandContext): Promise<void> {

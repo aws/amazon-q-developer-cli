@@ -113,7 +113,10 @@ pub async fn execute(args: &EffortArgs, ctx: &CommandContext<'_>) -> CommandResu
                 .model_info()
                 .map_or_else(|| "current model".to_string(), |m| m.display_name().to_string());
             let suffix = if persisted {
-                format!(" (saved for {model_name})")
+                format!(
+                    " (saved for {model_name}; disable with kiro-cli settings {} true)",
+                    Setting::ChatDisableAutoDefaultEffort
+                )
             } else {
                 String::new()
             };

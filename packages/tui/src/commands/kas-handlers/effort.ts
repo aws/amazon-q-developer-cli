@@ -95,11 +95,13 @@ async function switchEffort(ctx: CommandContext, level: string): Promise<void> {
       );
     }
   }
-  ctx.showAlert(
-    savedForModel
-      ? `Effort set to ${formatEffort(level)} (saved for ${model!.name})`
-      : `Effort set to ${formatEffort(level)}`,
-    'success',
-    3000
-  );
+  if (savedForModel) {
+    ctx.showAlert(
+      `Effort set to ${formatEffort(level)} (saved for ${model!.name}; disable with kiro-cli settings ${Settings.CHAT_DISABLE_AUTO_DEFAULT_EFFORT} true)`,
+      'success',
+      4000
+    );
+  } else {
+    ctx.showAlert(`Effort set to ${formatEffort(level)}`, 'success', 3000);
+  }
 }

@@ -17,7 +17,7 @@ Disable automatically saving the selected model as the default.
 
 ## Overview
 
-By default, switching models via `/model` automatically persists that model as your default for future sessions (the "sticky default" behavior). The confirmation message shows `(saved as default)` when this happens.
+By default, switching models via `/model` automatically persists that model as your default for future sessions (the "sticky default" behavior). The confirmation message shows `(saved as default; disable with kiro-cli settings chat.disableAutoDefaultModel true)` when this happens.
 
 When `chat.disableAutoDefaultModel` is set to `true`, model selection no longer auto-persists. The `/model` switch still takes effect for the current session, but future sessions start with whatever default was previously saved (or the system default if none was saved).
 
@@ -105,7 +105,7 @@ With `chat.disableAutoDefaultModel` set to `false` (default):
 
 ```
 /model claude-opus-4.7
-→ Using claude-opus-4.7 (saved as default)
+→ Using claude-opus-4.7 (saved as default; disable with kiro-cli settings chat.disableAutoDefaultModel true)
 ```
 
 With `chat.disableAutoDefaultModel` set to `true`:

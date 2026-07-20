@@ -155,7 +155,14 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
                 .await
                 .is_ok()
         };
-        let suffix = if persisted { " (saved as default)" } else { "" };
+        let suffix = if persisted {
+            format!(
+                " (saved as default; disable with kiro-cli settings {} true)",
+                Setting::ChatDisableAutoDefaultModel
+            )
+        } else {
+            String::new()
+        };
 
         return CommandResult::success_with_data(
             format!("Model changed to {}{}", display_name, suffix),
