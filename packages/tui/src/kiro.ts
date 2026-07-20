@@ -128,6 +128,7 @@ export class Kiro {
   private artifactWriteCallsById: Map<string, SpecArtifactPathMatch> =
     new Map();
   private approvalHandler?: (event: AgentStreamEvent) => void;
+  private questionHandler?: (event: AgentStreamEvent) => void;
   private globalUpdateUnsubscribe?: () => void;
   private clientSubscriptionUnsubscribes = new Map<
     ClientSubscription,
@@ -229,6 +230,10 @@ export class Kiro {
    */
   onApprovalRequest(handler: (event: AgentStreamEvent) => void): void {
     this.approvalHandler = handler;
+  }
+
+  onQuestionRequest(handler: (event: AgentStreamEvent) => void): void {
+    this.questionHandler = handler;
   }
 
   onSubagentListUpdate(
@@ -658,6 +663,12 @@ export class Kiro {
         ) {
           this.approvalHandler(event);
         }
+        if (
+          event.type === AgentEventType.QuestionRequest &&
+          this.questionHandler
+        ) {
+          this.questionHandler(event);
+        }
         // Forward historical content events (user messages, assistant text,
         // tool calls) so the store can populate the message list on resume.
         if (event.type === AgentEventType.TurnSummary) {
@@ -918,6 +929,8 @@ export class Kiro {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
+        // Questions are delivered by the dedicated global callback above.
+        if (event.type === AgentEventType.QuestionRequest) return;
         try {
           onEvent(event);
         } catch (err) {

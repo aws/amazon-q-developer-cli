@@ -424,6 +424,130 @@ describe('Stream event handler — ApprovalRequest', () => {
   });
 });
 
+describe('Stream event handler — QuestionRequest', () => {
+  const request = (
+    toolCallId: string,
+    resolve: ReturnType<typeof mock>,
+    sessionId = 'main-session'
+  ) => ({
+    type: AgentEventType.QuestionRequest as const,
+    value: {
+      sessionId,
+      toolCallId,
+      question: 'Which path?',
+      options: [{ title: 'Yes' }, { title: 'No' }],
+      resolve,
+    },
+  });
+
+  it('queues, answers, and cancels questions outside approval state', () => {
+    const store = makeStore();
+    store.setState({
+      sessionId: 'main-session',
+      currentAgent: { name: 'spec' },
+      sessions: new Map([
+        [
+          'subagent-session',
+          { name: 'requirements', type: 'ephemeral', status: 'running' },
+        ],
+      ]),
+    });
+    const handler = store.getState().createStreamEventHandler();
+    const firstResolve = mock(() => {});
+    const secondResolve = mock(() => {});
+
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'replayed-question',
+      name: 'Which path?',
+      args: {},
+    });
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'replayed-question',
+      name: 'Which path?',
+      args: {},
+      meta: { kiro: { toolId: 'user_input' } },
+    });
+    expect(
+      store
+        .getState()
+        .messages.find((message) => message.id === 'replayed-question')
+    ).toMatchObject({ isQuestion: true });
+
+    handler(request('question-1', firstResolve, 'subagent-session'));
+    handler(request('question-2', secondResolve));
+
+    expect(store.getState().pendingApproval).toBeNull();
+    expect(store.getState().pendingQuestion?.toolCallId).toBe('question-1');
+    expect(store.getState().questionQueue).toHaveLength(2);
+
+    store
+      .getState()
+      .respondToQuestion(
+        '1 but add context',
+        store.getState().pendingQuestion!,
+        'Yes but add context'
+      );
+
+    expect(firstResolve).toHaveBeenCalledWith({
+      action: 'answered',
+      answer: 'Yes but add context',
+    });
+    expect(
+      store
+        .getState()
+        .messages.filter((message) => message.role === MessageRole.User)
+        .at(-1)
+    ).toMatchObject({
+      content: '1 but add context',
+      agentName: 'requirements',
+      questionToolCallId: 'question-1',
+    });
+    expect(store.getState().pendingQuestion?.toolCallId).toBe('question-2');
+
+    store.getState().cancelQuestion();
+    expect(secondResolve).toHaveBeenCalledWith({ action: 'dismissed' });
+    expect(store.getState().pendingQuestion).toBeNull();
+  });
+
+  it('attributes main-session answers and dismisses duplicate active ids', () => {
+    const store = makeStore();
+    store.setState({
+      sessionId: 'main-session',
+      currentAgent: { name: 'spec' },
+    });
+    const handler = store.getState().createStreamEventHandler();
+    const resolve = mock(() => {});
+    const duplicateResolve = mock(() => {});
+
+    handler(request('question-1', resolve));
+    handler(request('question-1', duplicateResolve));
+
+    expect(store.getState().questionQueue).toHaveLength(1);
+    expect(duplicateResolve).toHaveBeenCalledWith({ action: 'dismissed' });
+
+    store
+      .getState()
+      .respondToQuestion('Yes', store.getState().pendingQuestion!);
+
+    expect(resolve).toHaveBeenCalledWith({
+      action: 'answered',
+      answer: 'Yes',
+    });
+    expect(
+      store
+        .getState()
+        .messages.filter((message) => message.role === MessageRole.User)
+        .at(-1)
+    ).toMatchObject({
+      content: 'Yes',
+      agentName: 'spec',
+      questionToolCallId: 'question-1',
+    });
+  });
+});
+
 describe('Stream event handler — CompactionStatus', () => {
   it('sets isCompacting on started', () => {
     const store = makeStore();

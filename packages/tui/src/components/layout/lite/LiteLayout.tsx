@@ -46,6 +46,7 @@ import {
 } from '../../../lite/render.js';
 import { getVerboseDisplay } from '../../../lite/verbose.js';
 import { pickTip, formatTipLine } from '../../../tips/tips.js';
+import { Question } from '../../ui/Question.js';
 import type { VariantLayoutProps } from '../variant-layout.js';
 import {
   formatSubagentRow,
@@ -68,6 +69,7 @@ import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
 import { CommandMenu } from '../../ui/CommandMenu.js';
 import { Divider } from '../../ui/divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
+import { useInteractionReady } from '../../../hooks/useInteractionReady.js';
 import { usePlanModeToggle } from '../../../hooks/usePlanModeToggle.js';
 import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
@@ -104,8 +106,6 @@ const TRIGGER_RULES = [
   { key: '@', type: 'inline' as const },
 ];
 
-const APPROVAL_IDLE_MS = 2000;
-
 // Last `lite.scrollbackClearToken` observed. MODULE-LEVEL (not a per-mount ref)
 // so the reset block below survives bare unmount/remount (Ctrl+G, session-view)
 // WITHOUT re-running — twinki's monotonic cursor persists across that cycle, so
@@ -133,10 +133,13 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const handleUserInput = useAppStore((s) => s.handleUserInput);
   const pendingApproval = useAppStore((s) => s.pendingApproval);
   const respondToApproval = useAppStore((s) => s.respondToApproval);
+  const pendingQuestion = useAppStore((s) => s.pendingQuestion);
+  const respondToQuestion = useAppStore((s) => s.respondToQuestion);
+  const mainSessionId = useAppStore((s) => s.sessionId);
   const currentModel = useAppStore((s) => s.currentModel);
   const currentAgent = useAppStore((s) => s.currentAgent);
   // Shift+Tab toggles plan mode (shared with InlineLayout).
-  usePlanModeToggle();
+  usePlanModeToggle(!pendingQuestion);
   const contextUsagePercent = useAppStore((s) => s.contextUsagePercent);
   const turnSummaries = useAppStore((s) => s.turnSummaries);
   const queuedMessages = useAppStore((s) => s.queuedMessages);
@@ -350,6 +353,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   isProcessingRef.current = isProcessing;
   const pendingApprovalRef = useRef(pendingApproval);
   pendingApprovalRef.current = pendingApproval;
+  const pendingQuestionRef = useRef(pendingQuestion);
+  pendingQuestionRef.current = pendingQuestion;
   const activeCommandRef = useRef(activeCommand);
   activeCommandRef.current = activeCommand;
   const activeTriggerRef = useRef(activeTrigger);
@@ -388,8 +393,13 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         input,
         isProcessing: isProcessingRef.current,
         pendingApproval: !!pendingApprovalRef.current,
+        pendingQuestion: !!pendingQuestionRef.current,
       });
-      if (isProcessingRef.current && !pendingApprovalRef.current) {
+      if (
+        isProcessingRef.current &&
+        !pendingApprovalRef.current &&
+        !pendingQuestionRef.current
+      ) {
         cancelMessage();
         return;
       }
@@ -423,55 +433,23 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     if (!(key.ctrl && (input === 'x' || input === 'X'))) return;
     if (tasks.length === 0) return;
     if (isEditingEntry()) return;
-    if (pendingApprovalRef.current) return;
+    if (pendingApprovalRef.current || pendingQuestionRef.current) return;
     if (anyPanelOpenRef.current) return;
     if (subagentOpenIndexRef.current != null) return;
     toggleActivityTray();
   });
 
-  // Approval typing guard: defer showing approval until the user is idle for
-  // APPROVAL_IDLE_MS, so an approval landing mid-typing doesn't eat the user's
-  // next char as a y/t/n response. Once visible the prompt never re-hides on
-  // keystroke — only the boundary effect below (fresh pendingApproval) hides it.
-  const lastKeypressRef = useRef(0);
-  const [approvalReady, setApprovalReady] = useState(true);
-  const showApprovalRef = useRef(false);
-
-  useKeypress(() => {
-    // Skip while the prompt is visible — that keystroke is the y/n/t response;
-    // counting it would delay each sequential approval by APPROVAL_IDLE_MS.
-    if (showApprovalRef.current) return;
-    lastKeypressRef.current = Date.now();
-  });
-
-  useEffect(() => {
-    if (!pendingApproval) return;
-    if (approvalReady) return;
-    if (Date.now() - lastKeypressRef.current >= APPROVAL_IDLE_MS) {
-      setApprovalReady(true);
-      return;
-    }
-    const timer = setInterval(() => {
-      if (Date.now() - lastKeypressRef.current >= APPROVAL_IDLE_MS) {
-        setApprovalReady(true);
-        clearInterval(timer);
-      }
-    }, 300);
-    return () => clearInterval(timer);
-  }, [pendingApproval, approvalReady]);
-
-  useEffect(() => {
-    if (!pendingApproval) {
-      setApprovalReady(true);
-      return;
-    }
-    if (Date.now() - lastKeypressRef.current < APPROVAL_IDLE_MS) {
-      setApprovalReady(false);
-    }
-  }, [pendingApproval]);
-
-  const showApproval = pendingApproval && approvalReady;
-  showApprovalRef.current = !!showApproval;
+  const interactionReady = useInteractionReady(
+    pendingQuestion ?? pendingApproval
+  );
+  const showQuestion = interactionReady ? pendingQuestion : null;
+  const showApproval =
+    interactionReady && !pendingQuestion ? pendingApproval : null;
+  const showInteraction = !!showApproval || !!showQuestion;
+  const questionStageName =
+    pendingQuestion?.sessionId && pendingQuestion.sessionId !== mainSessionId
+      ? sessions.get(pendingQuestion.sessionId)?.name
+      : undefined;
 
   // Emit "user interrupted" only once a cancelled turn has FULLY settled
   // (!isProcessing). wasCancelled flips true immediately, but appending while
@@ -884,7 +862,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       getUserPromptBgHex
     );
     const renderCtx = {
-      pendingApprovalToolCallId: pendingApproval?.toolCall.toolCallId ?? null,
+      pendingApprovalToolCallId:
+        pendingQuestion?.toolCallId ??
+        pendingApproval?.toolCall.toolCallId ??
+        null,
       termCols: process.stdout.columns ?? 80,
       subagentSummariesById,
       getStageInputColor: stageColor,
@@ -999,6 +980,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     agentName,
     activeToolBatchIds,
     pendingApproval,
+    pendingQuestion,
     liteStaticSkipBefore,
     hasAnySubagentTool,
     sessions,
@@ -1722,13 +1704,28 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         )
       )}
 
+      {showQuestion && (
+        <Question
+          key={`${showQuestion.sessionId}:${showQuestion.toolCallId}`}
+          question={showQuestion.question}
+          options={showQuestion.options}
+          onAnswer={(answer, answerForAgent) =>
+            respondToQuestion(answer, showQuestion, answerForAgent)
+          }
+          onCancel={() => void cancelMessage()}
+          titlePrefix={
+            questionStageName ? `${questionStageName} > ` : undefined
+          }
+        />
+      )}
+
       {/* Approval prompt — inside the input area. No marginTop so the divider
           and status line don't jump when it mounts/unmounts. */}
-      {showApproval && (
+      {!showQuestion && showApproval && (
         <Box flexDirection="column">
           <ApprovalPrompt
             messages={messages}
-            approval={pendingApproval}
+            approval={showApproval}
             respondToApproval={respondToApproval}
             getStageInputColor={(stageName: string) =>
               getAgentColor(stageName, getColor)
@@ -1742,13 +1739,13 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       {/* Backend-driven panels (/context, /mcp, /help, ...) replace the input
           area while open. They own Esc via Panel.tsx; the always-armed handler
           short-circuits Esc when anyPanelOpen so it doesn't also cancel. */}
-      {!showApproval && anyPanelOpen && (
+      {!showInteraction && anyPanelOpen && (
         <Box flexDirection="column">
           <BackendPanels handlers={handlers} />
         </Box>
       )}
 
-      {!showApproval && !anyPanelOpen && (
+      {!showInteraction && !anyPanelOpen && (
         <Box flexDirection="column">
           {isEditingEntry() && (
             <Text>
@@ -1787,7 +1784,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
                   placeholder={getPlaceholder({
                     glyphs,
                     editingQueueIndex,
-                    pendingApproval: !!pendingApproval,
+                    pendingApproval: !!pendingApproval || !!pendingQuestion,
                     isShellEscape,
                     isProcessing,
                     isInitialized,
@@ -1815,6 +1812,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       {/* One row per active stage; Ctrl+O expands the focused row into a
           fixed-height trace panel. */}
       {activeSubagents.length > 0 &&
+        !pendingQuestion &&
         (() => {
           const visible = activeSubagents;
           const cols = Math.max(40, process.stdout.columns ?? 80);

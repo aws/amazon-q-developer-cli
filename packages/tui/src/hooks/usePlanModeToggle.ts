@@ -4,7 +4,7 @@ import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
 
 /** Shift+Tab toggles the active agent in/out of `kiro_planner` (plan mode). */
-export function usePlanModeToggle(): void {
+export function usePlanModeToggle(isActive = true): void {
   const kiro = useAppStore((s) => s.kiro);
   const currentAgent = useAppStore((s) => s.currentAgent);
   const previousAgentName = useAppStore((s) => s.previousAgentName);
@@ -14,7 +14,7 @@ export function usePlanModeToggle(): void {
   const showTransientAlert = useAppStore((s) => s.showTransientAlert);
 
   useKeypress((_input, key) => {
-    if (!(key.tab && key.shift)) return;
+    if (!isActive || !(key.tab && key.shift)) return;
     const currentName = currentAgent?.name;
     // No active agent yet (session still initializing): the primitive no-ops
     // without a session, so toggling here would falsely flip the chip.

@@ -43,6 +43,7 @@ import {
   deriveToolDiff,
   type AgentStreamEvent,
   type ApprovalRequestInfo,
+  type QuestionRequestInfo,
   type ToolDiff,
   type ToolKind,
   type KasModelConfigUpdateEvent,
@@ -455,6 +456,7 @@ export type MessageType =
       agentName?: string;
       contextPercent?: number;
       kasMessageId?: string;
+      questionToolCallId?: string;
       /**
        * True when this user bubble was injected mid-turn via steering
        * (consumed from the steer queue) rather than sent as a standalone
@@ -481,6 +483,7 @@ export type MessageType =
       id: string;
       role: MessageRole.ToolUse;
       name: string;
+      isQuestion?: boolean;
       sessionId?: string;
       pipelineGroupId?: string;
       kind?: ToolKind;
@@ -910,6 +913,12 @@ interface BaseAppActions {
     _meta?: Record<string, unknown>
   ) => void;
   cancelApproval: () => void;
+  respondToQuestion: (
+    answer: string,
+    target: QuestionRequestInfo,
+    answerForAgent?: string
+  ) => boolean;
+  cancelQuestion: () => void;
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
@@ -1532,6 +1541,8 @@ export interface AppState {
   agentErrorGuidance: string | null;
   pendingApproval: ApprovalRequestInfo | null;
   approvalQueue: ApprovalRequestInfo[];
+  pendingQuestion: QuestionRequestInfo | null;
+  questionQueue: QuestionRequestInfo[];
   approvalMode: 'dropdown' | 'drill-in';
   autoApproveCrewTools: boolean;
   focusedCrewIndex: number;
@@ -2002,6 +2013,7 @@ function syncTerminalProgress(
     AppState,
     | 'agentError'
     | 'pendingApproval'
+    | 'pendingQuestion'
     | 'isProcessing'
     | 'isCompacting'
     | 'contextUsagePercent'
@@ -2014,7 +2026,7 @@ function syncTerminalProgress(
     if (state.agentError) {
       setTerminalProgressError(); // pulsing red
       cmuxStatus = 'error';
-    } else if (state.pendingApproval) {
+    } else if (state.pendingApproval || state.pendingQuestion) {
       setTerminalProgressWarning(100); // static yellow at 100%
       cmuxStatus = 'waiting-approval';
     } else if (state.isCompacting) {
@@ -2540,6 +2552,8 @@ export const createAppStore = (props: AppStoreProps) => {
     agentErrorGuidance: null,
     pendingApproval: null,
     approvalQueue: [],
+    pendingQuestion: null,
+    questionQueue: [],
     approvalMode: 'dropdown',
     autoApproveCrewTools: false,
     focusedCrewIndex: 0,
@@ -3400,16 +3414,18 @@ export const createAppStore = (props: AppStoreProps) => {
               // path). Lite parses the synthesized `content` above instead;
               // carrying both keeps each renderer on its own source.
               const diff = deriveToolDiff(event);
+              const isQuestion = event.meta?.kiro?.toolId === 'user_input';
 
               if (existingIndex !== -1) {
                 const existingMsg = state.messages[existingIndex];
                 if (existingMsg && existingMsg.role === MessageRole.ToolUse) {
                   const hasNewContent =
                     Object.keys(event.args).length > 0 || event.toolContent;
-                  if (hasNewContent) {
+                  if (hasNewContent || isQuestion) {
                     const messages = [...state.messages];
                     messages[existingIndex] = {
                       ...existingMsg,
+                      isQuestion: existingMsg.isQuestion || isQuestion,
                       sessionId: event.sessionId ?? existingMsg.sessionId,
                       pipelineGroupId:
                         event.meta?.kiro?.pipeline?.groupId ??
@@ -3487,6 +3503,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     id: event.id,
                     role: MessageRole.ToolUse,
                     name: event.name,
+                    ...(isQuestion && { isQuestion: true }),
                     sessionId: event.sessionId,
                     pipelineGroupId: event.meta?.kiro?.pipeline?.groupId,
                     kind: event.kind,
@@ -3691,6 +3708,80 @@ export const createAppStore = (props: AppStoreProps) => {
             if (wasEditing) {
               get().showTransientAlert({
                 message: 'Queue message edit cancelled — approval required',
+                status: 'info',
+                autoHideMs: 3000,
+              });
+            }
+            break;
+          }
+          case AgentEventType.QuestionRequest: {
+            if (get().wasCancelled) {
+              event.value.resolve({ action: 'dismissed' });
+              break;
+            }
+            if (
+              get().questionQueue.some(
+                (question) => question.toolCallId === event.value.toolCallId
+              )
+            ) {
+              event.value.resolve({ action: 'dismissed' });
+              break;
+            }
+            const wasEditing = get().editingQueueIndex != null;
+            set((state) => {
+              const isSubagentQuestion =
+                event.value.sessionId !== state.sessionId;
+              const agentName = isSubagentQuestion
+                ? (state.sessions.get(event.value.sessionId)?.name ??
+                  event.value.sessionId)
+                : state.currentAgent?.name;
+              const existing = state.messages.some(
+                (message) =>
+                  message.role === MessageRole.ToolUse &&
+                  message.id === event.value.toolCallId
+              );
+              const messages = existing
+                ? state.messages.map((message) =>
+                    message.role === MessageRole.ToolUse &&
+                    message.id === event.value.toolCallId
+                      ? {
+                          ...message,
+                          name: event.value.question,
+                          isQuestion: true,
+                          status: ToolUseStatus.Pending,
+                        }
+                      : message
+                  )
+                : [
+                    ...state.messages,
+                    {
+                      id: event.value.toolCallId,
+                      role: MessageRole.ToolUse as const,
+                      name: event.value.question,
+                      isQuestion: true,
+                      sessionId: event.value.sessionId,
+                      content: '{}',
+                      agentName,
+                      ...(isSubagentQuestion && { isSubagentTool: true }),
+                      status: ToolUseStatus.Pending,
+                      startTime: Date.now(),
+                    },
+                  ];
+              const questionQueue = [...state.questionQueue, event.value];
+              return {
+                messages,
+                questionQueue,
+                pendingQuestion: state.pendingQuestion ?? event.value,
+                editingQueueIndex: null,
+                commandInputValue:
+                  state.editingQueueIndex != null
+                    ? ''
+                    : state.commandInputValue,
+              };
+            });
+            if (wasEditing) {
+              get().showTransientAlert({
+                message: 'Queue message edit cancelled - answer required',
                 status: 'info',
                 autoHideMs: 3000,
               });
@@ -4293,8 +4384,9 @@ export const createAppStore = (props: AppStoreProps) => {
         // `finally` below still clears it as the belt-and-suspenders safety net.
         set({ isProcessing: false });
 
-        // Cancel any pending approval
+        // Resolve pending UI callbacks before cancelling the agent turn.
         get().cancelApproval();
+        get().cancelQuestion();
 
         // Mark any unfinished tool uses as finished with cancelled status
         // immediately — before async calls. This stops spinners and prevents
@@ -4917,6 +5009,82 @@ export const createAppStore = (props: AppStoreProps) => {
       }
     },
 
+    respondToQuestion: (answer, target, answerForAgent = answer) => {
+      const { pendingQuestion, questionQueue } = get();
+      if (!pendingQuestion || target !== pendingQuestion) return false;
+
+      const remainingQueue = questionQueue.filter(
+        (question) => question !== pendingQuestion
+      );
+      set((state) => {
+        const answerAgentName =
+          pendingQuestion.sessionId !== state.sessionId
+            ? (state.sessions.get(pendingQuestion.sessionId)?.name ??
+              pendingQuestion.sessionId)
+            : state.currentAgent?.name;
+        const messages = state.messages.map((message) =>
+          message.role === MessageRole.ToolUse &&
+          message.id === pendingQuestion.toolCallId
+            ? { ...message, status: ToolUseStatus.Approved }
+            : message
+        );
+        const answerMessage: MessageType = {
+          id: crypto.randomUUID(),
+          role: MessageRole.User,
+          content: answer,
+          agentName: answerAgentName,
+          questionToolCallId: pendingQuestion.toolCallId,
+        };
+        const questionIndex = messages.findIndex(
+          (message) =>
+            message.role === MessageRole.ToolUse &&
+            message.id === pendingQuestion.toolCallId
+        );
+        messages.splice(
+          questionIndex < 0 ? messages.length : questionIndex + 1,
+          0,
+          answerMessage
+        );
+        return {
+          messages,
+          questionQueue: remainingQueue,
+          pendingQuestion: remainingQueue[0] ?? null,
+        };
+      });
+      pendingQuestion.resolve({
+        action: 'answered',
+        answer: answerForAgent,
+      });
+      return true;
+    },
+
+    cancelQuestion: () => {
+      const { questionQueue } = get();
+      if (questionQueue.length === 0) return;
+      const questionIds = new Set(
+        questionQueue.map((question) => question.toolCallId)
+      );
+      for (const question of questionQueue) {
+        question.resolve({ action: 'dismissed' });
+      }
+      set((state) => ({
+        pendingQuestion: null,
+        questionQueue: [],
+        messages: state.messages.map((message) =>
+          message.role === MessageRole.ToolUse &&
+          questionIds.has(message.id) &&
+          !message.isFinished
+            ? {
+                ...message,
+                isFinished: true,
+                status: ToolUseStatus.Rejected,
+                result: { status: 'cancelled' as const },
+              }
+            : message
+        ),
+      }));
+    },
+
     setApprovalMode: (mode) => set({ approvalMode: mode }),
 
     setAutoApproveCrewTools: (value) => set({ autoApproveCrewTools: value }),
@@ -4957,6 +5125,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     resetMessages: () => {
+      get().cancelQuestion();
       // Single coordinated session reset: drop the messages array AND every
       // piece of view-state derived from it, in one atomic update.
       //
@@ -5918,13 +6087,23 @@ export const createAppStore = (props: AppStoreProps) => {
       }),
 
     cleanupTerminatedSession: (sessionId) => {
-      const { approvalQueue, pendingApproval } = get();
+      const { approvalQueue, pendingApproval, questionQueue, pendingQuestion } =
+        get();
       // Cancel pending approvals for this session
       const sessionApprovals = approvalQueue.filter(
         (a) => a.sessionId === sessionId
       );
       for (const a of sessionApprovals) {
         a.resolve({ outcome: 'cancelled' });
+      }
+      const sessionQuestions = questionQueue.filter(
+        (question) => question.sessionId === sessionId
+      );
+      const remainingQuestions = questionQueue.filter(
+        (question) => question.sessionId !== sessionId
+      );
+      for (const question of sessionQuestions) {
+        question.resolve({ action: 'dismissed' });
       }
       // Find the agent name for this session to mark its tool calls finished
       const session = get().sessions.get(sessionId);
@@ -5938,6 +6117,14 @@ export const createAppStore = (props: AppStoreProps) => {
           pendingApproval?.sessionId === sessionId
             ? null
             : state.pendingApproval,
+        questionQueue:
+          sessionQuestions.length > 0
+            ? remainingQuestions
+            : state.questionQueue,
+        pendingQuestion:
+          pendingQuestion?.sessionId === sessionId
+            ? (remainingQuestions[0] ?? null)
+            : state.pendingQuestion,
         messages: agentName
           ? state.messages.map((msg) =>
               msg.role === MessageRole.ToolUse &&
@@ -7512,7 +7699,7 @@ export const createAppStore = (props: AppStoreProps) => {
     const onAltScreen =
       state.mode === 'crew-monitor' || state.mode === 'session-view';
     // Derive a cache key from the fields that affect the progress indicator
-    const key = `${onAltScreen}|${state.agentError ?? ''}|${state.pendingApproval != null}|${state.isProcessing}|${state.isCompacting}|${state.contextUsagePercent}`;
+    const key = `${onAltScreen}|${state.agentError ?? ''}|${state.pendingApproval != null}|${state.pendingQuestion != null}|${state.isProcessing}|${state.isCompacting}|${state.contextUsagePercent}`;
     if (key !== lastProgressKey) {
       lastProgressKey = key;
       // Defer so the OSC 9;4 escape lands after twinki's nextTick render frame.
@@ -7526,16 +7713,19 @@ export const createAppStore = (props: AppStoreProps) => {
     }
   });
 
-  // Terminal notifications (bell / OSC 9) on turn-end and tool approval.
+  // Terminal notifications (bell / OSC 9) on turn-end and required input.
   let prevProcessing = false;
   let prevApproval: unknown = null;
+  let prevQuestion: unknown = null;
 
   store.subscribe((state) => {
     const enabled = state.settings?.[Settings.CHAT_ENABLE_NOTIFICATIONS];
     const wasProcessing = prevProcessing;
     const hadApproval = prevApproval;
+    const hadQuestion = prevQuestion;
     prevProcessing = state.isProcessing;
     prevApproval = state.pendingApproval;
+    prevQuestion = state.pendingQuestion;
 
     // Turn completed cleanly — bump our survey turn counter regardless of
     // whether the terminal bell is enabled. The store action decides whether
@@ -7567,6 +7757,9 @@ export const createAppStore = (props: AppStoreProps) => {
     // Tool approval requested
     if (!hadApproval && state.pendingApproval) {
       playNotification(method, 'Permission required');
+    }
+    if (!hadQuestion && state.pendingQuestion) {
+      playNotification(method, 'Input required');
     }
   });
 

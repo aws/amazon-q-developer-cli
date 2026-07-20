@@ -48,6 +48,7 @@ import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useExpandableOutput } from '../../hooks/useExpandableOutput.js';
 import { useHideToolArgs } from './HideToolArgsContext.js';
+import { MarkdownRenderer } from './MarkdownRenderer.js';
 import {
   collapsedToolPreview,
   shouldCollapseToolCard,
@@ -57,6 +58,7 @@ import { useAppStore } from '../../stores/app-store.js';
 export interface ToolUseMessageProps {
   id: string;
   name: string;
+  isQuestion?: boolean;
   content: string;
   diff?: ToolDiff;
   isFinished?: boolean;
@@ -75,6 +77,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
   function ToolUseMessage({
     id,
     name,
+    isQuestion,
     content,
     diff,
     isFinished = false,
@@ -123,6 +126,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
         <ToolUseContent
           id={id}
           name={name}
+          isQuestion={isQuestion}
           kind={kind}
           content={content}
           diff={diff}
@@ -155,6 +159,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
 interface ToolContentProps {
   id: string;
   name: string;
+  isQuestion?: boolean;
   kind?: ToolKind;
   content: string;
   diff?: ToolDiff;
@@ -231,6 +236,7 @@ const CollapsedToolEntry = React.memo(function CollapsedToolEntry(
 const FullToolContent = React.memo(function FullToolContent({
   id,
   name,
+  isQuestion,
   kind,
   content,
   diff,
@@ -241,6 +247,7 @@ const FullToolContent = React.memo(function FullToolContent({
   locations,
 }: ToolContentProps) {
   const { requestRemeasure } = useStatusBar();
+  const { getColor } = useTheme();
   const glyphs = useGlyphs();
 
   // A tool is only visually complete if it's finished AND no longer pending approval
@@ -250,6 +257,17 @@ const FullToolContent = React.memo(function FullToolContent({
   useEffect(() => {
     requestRemeasure();
   }, [status, isFinished, requestRemeasure]);
+
+  if (isQuestion) {
+    const cancelled =
+      status === ToolUseStatus.Rejected || result?.status === 'cancelled';
+    return (
+      <Box flexDirection="column">
+        <MarkdownRenderer content={name} color={getColor('primary')} />
+        {cancelled && <Text>{getColor('error')('Cancelled')}</Text>}
+      </Box>
+    );
+  }
 
   if (status === ToolUseStatus.Rejected || result?.status === 'cancelled') {
     const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';

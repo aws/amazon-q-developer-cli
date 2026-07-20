@@ -24,6 +24,7 @@ import { SnackBar } from '../chat/prompt-bar/SnackBar.js';
 import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
+import { Question } from '../ui/Question.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
 import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
@@ -51,6 +52,7 @@ import {
 } from '../../stores/app-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useKeypress } from '../../hooks/useKeypress';
+import { useInteractionReady } from '../../hooks/useInteractionReady.js';
 import {
   resolveKeybinding,
   formatKeybinding,
@@ -139,9 +141,12 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     isCompacting,
     isShellEscape,
     pendingApproval,
+    pendingQuestion,
+    cancelMessage,
     noInteractive,
   } = useProcessingState();
   const { respondToApproval, approvalMode } = useApprovalState();
+  const respondToQuestion = useAppStore((state) => state.respondToQuestion);
   const globalPaused = useAnimationPaused();
   const keybindings = useKeybindings();
   const trustAllToolsAccepted = useAppStore(
@@ -256,6 +261,11 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const approvalSessionMessages = useSessionConversation(
     pendingApproval?.sessionId ?? ''
   );
+  const sessions = useAppStore((state) => state.sessions);
+  const questionStageName =
+    pendingQuestion?.sessionId && pendingQuestion.sessionId !== sessionId
+      ? sessions.get(pendingQuestion.sessionId)?.name
+      : undefined;
 
   const handleCrewConfigure = useCallback(() => {
     process.stdout.write('\x1b[?1049h');
@@ -310,7 +320,13 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   );
 
   // Shift+Tab toggles plan mode (shared with LiteLayout).
-  usePlanModeToggle();
+  usePlanModeToggle(!pendingQuestion);
+  const interactionReady = useInteractionReady(
+    pendingQuestion ?? pendingApproval
+  );
+  const showQuestion = interactionReady ? pendingQuestion : null;
+  const showApproval =
+    interactionReady && !pendingQuestion ? pendingApproval : null;
 
   // Build the header - ContextBar
   const promptBarHeader = useMemo(() => {
@@ -611,7 +627,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
 
   return (
     <AnimationPausedContext.Provider
-      value={globalPaused || !!pendingApproval || !!agentError}
+      value={
+        globalPaused || !!pendingApproval || !!pendingQuestion || !!agentError
+      }
     >
       <Box flexDirection="column">
         {agentError && (
@@ -747,7 +765,8 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               showSessionPicker ||
               showRepoPicker ||
               showCloudQuitPrompt ||
-              !!pendingApproval
+              !!pendingApproval ||
+              !!pendingQuestion
                 ? undefined
                 : toolOutputsExpanded
                   ? (dimmedPromptBarHeader ?? undefined)
@@ -768,7 +787,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
             placeholder={getPlaceholder({
               glyphs,
               editingQueueIndex,
-              pendingApproval: !!pendingApproval,
+              pendingApproval: !!pendingApproval || !!pendingQuestion,
               isShellEscape,
               isProcessing,
               isInitialized,
@@ -794,6 +813,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   toolOutputsExpanded ||
                   noInteractive ||
                   !!pendingApproval ||
+                  !!pendingQuestion ||
                   showContextBreakdown ||
                   showHelpPanel ||
                   showTuiPanel ||
@@ -817,16 +837,30 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   showCloudQuitPrompt
             }
           >
-            <CommandMenu />
-            {pendingApproval &&
+            {!pendingQuestion && <CommandMenu />}
+            {showQuestion && mode === 'inline' && (
+              <Question
+                key={`${showQuestion.sessionId}:${showQuestion.toolCallId}`}
+                question={showQuestion.question}
+                options={showQuestion.options}
+                onAnswer={(answer, answerForAgent) =>
+                  respondToQuestion(answer, showQuestion, answerForAgent)
+                }
+                onCancel={() => void cancelMessage()}
+                titlePrefix={
+                  questionStageName ? `${questionStageName} > ` : undefined
+                }
+              />
+            )}
+            {showApproval &&
               mode === 'inline' &&
               (isCrewApproval ? (
                 <CrewApprovalRequest onConfigure={handleCrewConfigure} />
               ) : (
                 <ApprovalPrompt
-                  key={pendingApproval?.toolCall.toolCallId}
+                  key={showApproval.toolCall.toolCallId}
                   messages={messages}
-                  approval={pendingApproval}
+                  approval={showApproval}
                   respondToApproval={respondToApproval}
                   getStageInputColor={(stageName: string) =>
                     getAgentColor(stageName, getColor)
@@ -835,7 +869,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   onInputSubmit={handleSubmit}
                 />
               ))}
-            <BackendPanels handlers={backendPanelHandlers} />
+            {!pendingQuestion && (
+              <BackendPanels handlers={backendPanelHandlers} />
+            )}
             <ActionHint
               text={`Showing detailed output ${glyphs.smallDot} ctrl+o to toggle`}
               visible={toolOutputsExpanded}
@@ -850,6 +886,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 !toolOutputsExpanded &&
                 !isProcessing &&
                 !pendingApproval &&
+                !pendingQuestion &&
                 !activeCommand &&
                 !showContextBreakdown &&
                 !showHelpPanel &&

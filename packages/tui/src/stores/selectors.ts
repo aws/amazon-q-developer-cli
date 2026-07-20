@@ -109,6 +109,7 @@ export const useProcessingState = () =>
       isCompacting: state.isCompacting,
       isShellEscape: state.isShellEscape,
       pendingApproval: state.pendingApproval,
+      pendingQuestion: state.pendingQuestion,
       cancelMessage: state.cancelMessage,
       noInteractive: state.noInteractive,
     }))

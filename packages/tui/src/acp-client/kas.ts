@@ -9,6 +9,8 @@ import type {
   SourceProviderResourcePage,
   SourceProviderResourcesRequest,
   KiroSessionListItemMeta,
+  UserInputRequest,
+  UserInputResponse,
 } from '@kiro/acp-type-covenant';
 import { logger } from '../utils/logger';
 import {
@@ -23,6 +25,7 @@ import { maybeWrapStreamWithRecorder } from '../acp-recorder';
 import { createGetAccessTokenCapability } from '../auth/acp-auth-callback';
 import { createCopyUrlToClipboardCapability } from '../capabilities/copy-url-to-clipboard';
 import { createSecretStorageCapabilities } from '../capabilities/secret-storage';
+import { createUserInputCapability } from '../capabilities/user-input';
 import { spawn } from 'node:child_process';
 import type {
   ChatSlashCommandTelemetryPayload,
@@ -337,6 +340,17 @@ export class KasAcpClient extends BaseAcpClient {
    */
   private readonly version: string;
 
+  private handleUserInputRequest(
+    request: UserInputRequest
+  ): Promise<UserInputResponse> {
+    return new Promise((resolve) => {
+      this.broadcastStreamEvent({
+        type: AgentEventType.QuestionRequest,
+        value: { ...request, resolve },
+      });
+    });
+  }
+
   /**
    * Construct a KAS ACP client.
    *
@@ -376,7 +390,12 @@ export class KasAcpClient extends BaseAcpClient {
           version: this.version,
           _meta: KAS_CLIENT_INFO_META,
         },
-        capabilities: [createGetAccessTokenCapability()],
+        capabilities: [
+          createGetAccessTokenCapability(),
+          createUserInputCapability((request) =>
+            this.handleUserInputRequest(request)
+          ),
+        ],
       });
       return;
     }
@@ -460,6 +479,9 @@ export class KasAcpClient extends BaseAcpClient {
       },
       capabilities: [
         createGetAccessTokenCapability(),
+        createUserInputCapability((request) =>
+          this.handleUserInputRequest(request)
+        ),
         createCopyUrlToClipboardCapability(),
         ...createSecretStorageCapabilities(),
       ],

@@ -120,6 +120,7 @@ const StaticMessage = React.memo(function StaticMessage({
         <ToolUseMessage
           id={message.id}
           name={message.name}
+          isQuestion={message.isQuestion}
           kind={message.kind}
           content={message.content}
           diff={message.diff}
@@ -265,6 +266,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
               <ToolUseMessage
                 id={message.id}
                 name={message.name}
+                isQuestion={message.isQuestion}
                 kind={message.kind}
                 content={message.content}
                 diff={message.diff}

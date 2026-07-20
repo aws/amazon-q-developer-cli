@@ -11,6 +11,7 @@ import { getAgentDisplayName } from '../utils/agentColors.js';
 import {
   parseMarkdown,
   parseInlineMarkdown,
+  stripInlineMarkdown,
   type MarkdownSegment,
 } from '../utils/markdown.js';
 import {
@@ -2886,6 +2887,7 @@ export interface MessageLike {
   role: 'user' | 'model' | 'tool_use' | 'system';
   content: string;
   name?: string;
+  isQuestion?: boolean;
   isFinished?: boolean;
   result?: { status: string; error?: string; output?: unknown };
   /** `'rejected'` when the user denied the call. Kept as `string` (like
@@ -3129,25 +3131,27 @@ export function renderMessageToText(
         // taskBlock === null — args malformed; fall through to generic.
       }
 
-      // Reasoning slot (gated by showToolReasoning) only ever surfaces the
-      // agent's real `__tool_use_purpose`, never a synthesized args one-liner
-      // — so purple always means "the agent reasoned about this call".
-      const inlineArg =
-        display.toolArgsMode === 'inline'
-          ? extractInlineArg(msg.name || '', msg.content, display.argsMaxChars)
-          : undefined;
+      const isQuestion = msg.isQuestion === true;
       const reasoning = display.showToolReasoning
         ? extractToolReasoning(msg.content, msg.purpose)
         : undefined;
 
       const info: ToolCallRenderInfo = {
-        name: toolDisplayName(msg.name || 'unknown'),
+        name: isQuestion ? 'Question:' : toolDisplayName(msg.name || 'unknown'),
+        inlineArg: isQuestion
+          ? stripInlineMarkdown(msg.name || '')
+          : display.toolArgsMode === 'inline'
+            ? extractInlineArg(
+                msg.name || '',
+                msg.content,
+                display.argsMaxChars
+              )
+            : undefined,
         // Triviality is a wire-name fact; compute it here since `name` is the
         // canonical label, which TRIVIAL_TOOLS (wire names) wouldn't match.
         isTrivial: TRIVIAL_TOOLS.has(msg.name || ''),
         status,
         description: reasoning,
-        inlineArg,
         agentPrefix,
         rejected: isRejected,
         elapsed:

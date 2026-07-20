@@ -15,6 +15,10 @@ import type {
 import type { KasCommand } from '../kas-commands.js';
 import type { SessionsChangedNotification } from './session-client.js';
 import type { ContextBreakdownData } from './context.js';
+import type {
+  UserInputRequest,
+  UserInputResponse,
+} from '@kiro/acp-type-covenant';
 
 export enum AgentEventType {
   Content = 'content',
@@ -24,6 +28,7 @@ export enum AgentEventType {
   ToolCallUpdate = 'tool_call_update',
   ToolCallFinished = 'tool_call_finished',
   ApprovalRequest = 'approval_request',
+  QuestionRequest = 'question_request',
   CommandsUpdate = 'commands_update',
   PromptsUpdate = 'prompts_update',
   SkillsUpdate = 'skills_update',
@@ -372,16 +377,17 @@ export interface ApprovalRequestInfo {
   sessionId?: string;
   toolCall: { toolCallId: string; title?: string; rawInput?: unknown };
   /**
-   * The tool being approved, from `_meta.kiro.toolId`. Present for real tool
-   * approvals; absent for `user_input` questions, which reuse the permission
-   * channel but have no underlying tool. Clients branch on this to render a
-   * question instead of an approval.
+   * Stable KAS tool identifier from `_meta.kiro.toolId`, when available.
    */
   toolId?: string;
   permissionOptions: PermissionOption[];
   trustOptions?: TrustOption[];
   consentContext?: ConsentContext;
   resolve: (response: PermissionResponse) => void;
+}
+
+export interface QuestionRequestInfo extends UserInputRequest {
+  resolve: (response: UserInputResponse) => void;
 }
 
 export interface KiroPipelineStage {
@@ -402,6 +408,7 @@ export interface KiroMeta {
     stages: KiroPipelineStage[];
   };
   toolName?: string;
+  toolId?: string;
   /** Content-policy refusal marker on a KAS message chunk; all fields optional. */
   refusal?: {
     category?: string;
@@ -467,6 +474,11 @@ export interface ToolCallFinishedEvent {
 export interface ApprovalRequestEvent {
   type: AgentEventType.ApprovalRequest;
   value: ApprovalRequestInfo;
+}
+
+export interface QuestionRequestEvent {
+  type: AgentEventType.QuestionRequest;
+  value: QuestionRequestInfo;
 }
 
 export interface CommandsUpdateEvent {
@@ -761,6 +773,7 @@ export type AgentStreamEvent =
   | ToolCallUpdateEvent
   | ToolCallFinishedEvent
   | ApprovalRequestEvent
+  | QuestionRequestEvent
   | CommandsUpdateEvent
   | PromptsUpdateEvent
   | SkillsUpdateEvent

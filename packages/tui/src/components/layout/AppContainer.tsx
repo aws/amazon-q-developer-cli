@@ -74,6 +74,7 @@ export const AppContainer: React.FC = () => {
   const cancelMessage = useAppStore((state) => state.cancelMessage);
   const reverseSearchActive = useAppStore((state) => state.reverseSearchActive);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
+  const pendingQuestion = useAppStore((state) => state.pendingQuestion);
   const editingQueueIndex = useAppStore((state) => state.editingQueueIndex);
   const editingSteerLineIndex = useAppStore(
     (state) => state.editingSteerLineIndex
@@ -144,7 +145,7 @@ export const AppContainer: React.FC = () => {
       isShellEscape,
       hasCommandInput,
       reverseSearchActive,
-      pendingApproval: !!pendingApproval,
+      pendingApproval: !!pendingApproval || !!pendingQuestion,
       editingQueueIndex: editingQueueIndex ?? null,
       editingSteerLineIndex: editingSteerLineIndex ?? null,
       transientAlertHasAction: !!transientAlert?.action,

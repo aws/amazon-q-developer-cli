@@ -366,6 +366,11 @@ const wireUpHandlers = () => {
     approvalHandler(event);
   });
 
+  const questionHandler = appStore.getState().createStreamEventHandler();
+  kiro.onQuestionRequest((event) => {
+    questionHandler(event);
+  });
+
   // ── KAS-only wiring: spec artifact view ──
   //
   // Engine is fixed at process start (see kas-commands.ts comment),
@@ -1231,6 +1236,18 @@ const startApp = async () => {
             'Use --trust-all-tools to automatically approve tools.'
           );
         setTimeout(() => process.exit(1), 200);
+        return;
+      }
+
+      if (state.pendingQuestion) {
+        isExiting = true;
+        appStore
+          .getState()
+          .setAgentError(
+            'User input required but --no-interactive was specified.'
+          );
+        setTimeout(() => process.exit(1), 200);
+        return;
       }
 
       // Exit after the turn completes

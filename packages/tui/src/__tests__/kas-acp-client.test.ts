@@ -487,6 +487,36 @@ describe('KasAcpClient', () => {
     });
   });
 
+  it('emits and resolves user input through its own capability', async () => {
+    const client = new KasAcpClient();
+    let received: any;
+    client.onUpdate((event: any) => {
+      if (event.type === AgentEventType.QuestionRequest) received = event;
+    });
+    const capability = capturedKiroClientConfig.capabilities.find(
+      (item: any) => item.method === '_kiro/userInput'
+    );
+
+    const response = capability.handler({
+      sessionId: 'kas-session-1',
+      toolCallId: 'question-1',
+      question: 'Which path?',
+      options: [{ title: 'Requirements' }, { title: 'Design' }],
+    });
+
+    expect(capability).toMatchObject({
+      type: 'other',
+      key: 'userInput',
+      value: true,
+    });
+    expect(received.value.toolCallId).toBe('question-1');
+    received.value.resolve({ action: 'answered', answer: 'Design' });
+    expect(await response).toEqual({
+      action: 'answered',
+      answer: 'Design',
+    });
+  });
+
   it('close() calls kill("SIGTERM") on the agent process', () => {
     const client = new KasAcpClient();
     client.close();

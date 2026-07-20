@@ -703,3 +703,14 @@ export function parseInlineMarkdown(text: string): MarkdownSegment[] {
   const tokens = Lexer.lexInline(text);
   return tokensToSegments(tokens);
 }
+
+export function stripInlineMarkdown(text: string): string {
+  const flatten = (segments: MarkdownSegment[]): string =>
+    segments
+      .map(
+        (segment) =>
+          segment.text + (segment.children ? flatten(segment.children) : '')
+      )
+      .join('');
+  return flatten(parseInlineMarkdown(text)).trim();
+}

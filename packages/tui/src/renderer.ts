@@ -13,6 +13,8 @@ export {
   Region,
   Scrollbar,
   StreamingPanel,
+  Input,
+  useTwinkiContext,
   useInput,
   useApp,
   useStdin,

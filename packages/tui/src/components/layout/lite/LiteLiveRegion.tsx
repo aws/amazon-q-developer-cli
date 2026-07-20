@@ -11,7 +11,10 @@ import {
   type MessageType,
 } from '../../../stores/app-store.js';
 import { usePendingSwap } from './usePendingSwap.js';
-import { computeActiveToolBatchIds } from './static-flush.js';
+import {
+  computeActiveToolBatchIds,
+  selectStaticEligible,
+} from './static-flush.js';
 import { getVerboseFilters, getVerboseDisplay } from '../../../lite/verbose.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
@@ -53,6 +56,35 @@ const SPINNER_INTERVAL = 150;
 // so the heavy args/diff/reasoning render isn't redone every 150ms.
 const SPINNER_PLACEHOLDER = '\x1F\x1F';
 
+export function selectLiteLiveHistory(
+  messages: MessageType[],
+  isProcessing: boolean,
+  mainAgentName?: string | null
+): { rows: MessageType[]; lastStaticMessage: MessageType | null } {
+  if (!isProcessing) return { rows: [], lastStaticMessage: null };
+
+  const activeToolIds = computeActiveToolBatchIds(messages, mainAgentName);
+  const staticMessages = selectStaticEligible(
+    messages,
+    true,
+    activeToolIds,
+    mainAgentName
+  );
+  const staticIds = new Set(staticMessages.map((message) => message.id));
+  const rows = messages.filter(
+    (message) =>
+      (message.role === MessageRole.ToolUse && activeToolIds.has(message.id)) ||
+      (message.role === MessageRole.User &&
+        message.questionToolCallId !== undefined &&
+        !staticIds.has(message.id))
+  );
+
+  return {
+    rows,
+    lastStaticMessage: staticMessages.at(-1) ?? null,
+  };
+}
+
 export const LiteLiveRegion: React.FC = () => {
   const isProcessing = useAppStore((s) => s.isProcessing);
   const messages = useAppStore((s) => s.messages);
@@ -66,6 +98,7 @@ export const LiteLiveRegion: React.FC = () => {
   // here, deleted on finish).
   const liveOutputs = useAppStore((s) => s.liveOutputs);
   const pendingApproval = useAppStore((s) => s.pendingApproval);
+  const pendingQuestion = useAppStore((s) => s.pendingQuestion);
   const currentAgent = useAppStore((s) => s.currentAgent);
   // Shell-escape (`!command`) suppresses spinner/thinking/tool paths — a
   // "thinking" indicator over interactive bash (mwinit/sudo/brew-OTP) is the
@@ -143,12 +176,23 @@ export const LiteLiveRegion: React.FC = () => {
       }
       // Don't count elapsed while waiting for approval or a mid-flight /agent
       // swap (the model isn't running, a climbing timer would lie).
-      if (!pendingApproval && !pendingSwap && elapsedVisibleRef.current) {
+      if (
+        !pendingApproval &&
+        !pendingQuestion &&
+        !pendingSwap &&
+        elapsedVisibleRef.current
+      ) {
         setElapsed(Date.now() - thinkingStartRef.current);
       }
     }, SPINNER_INTERVAL);
     return () => clearInterval(t);
-  }, [isProcessing, pendingApproval, pendingSwap, animationPaused]);
+  }, [
+    isProcessing,
+    pendingApproval,
+    pendingQuestion,
+    pendingSwap,
+    animationPaused,
+  ]);
 
   // Reset the thinking start time the moment the swap clears so the timer
   // counts from when the model *actually* starts working, not from when the
@@ -213,62 +257,40 @@ export const LiteLiveRegion: React.FC = () => {
     glyphs,
   ]);
 
-  // Active tool batch via computeActiveToolBatchIds (shared with LiteLayout)
-  // so a finished tool can't appear in both static and the live region.
-  const activeTools = useMemo(() => {
-    if (!isProcessing) return [];
-    const batch = computeActiveToolBatchIds(messages, currentAgent?.name);
-    if (batch.size === 0) return [];
-    const out: Array<{
-      id: string;
-      name: string;
-      isFinished: boolean;
-      msg: MessageType;
-    }> = [];
-    for (const m of messages) {
-      if (m.role !== MessageRole.ToolUse) continue;
-      if (!batch.has(m.id)) continue;
-      out.push({
-        id: m.id,
-        name: m.name,
-        isFinished: !!m.isFinished,
-        msg: m,
-      });
-    }
-    return out;
-  }, [messages, isProcessing, currentAgent]);
+  const liveHistory = useMemo(
+    () =>
+      selectLiteLiveHistory(messages, isProcessing, currentAgent?.name ?? null),
+    [messages, isProcessing, currentAgent?.name]
+  );
+  const liveRows = liveHistory.rows;
+  const activeTools = useMemo(
+    () =>
+      liveRows.flatMap((message) =>
+        message.role === MessageRole.ToolUse
+          ? [
+              {
+                id: message.id,
+                name: message.name,
+                isFinished: !!message.isFinished,
+                msg: message,
+              },
+            ]
+          : []
+      ),
+    [liveRows]
+  );
 
   // Leading blank for the live region? Mirrors the static separator rule so
   // the gap is identical before/after flush (no "chat shifted up a row").
-  // The "next" role is the live content about to render (tool batch / model).
   const needsLeadingSeparator = useMemo(() => {
     if (!isProcessing) return false;
-    if (activeTools.length === 0 && !liveContent) return false;
-    // Find the most recent message that would be visible in static.
-    let prev: (typeof messages)[number] | undefined;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]!;
-      // Skip the currently-streaming model message — that lives in the live
-      // region itself and isn't a previous static row.
-      if (
-        m.role === MessageRole.Model &&
-        i === messages.length - 1 &&
-        !m.standalone
-      )
-        continue;
-      // Skip tools that are part of the active in-flight batch (they're in
-      // the live region, not above it).
-      if (m.role === MessageRole.ToolUse && !m.isFinished) continue;
-      prev = m;
-      break;
-    }
+    const nextRole =
+      liveRows[0]?.role ?? (liveContent ? MessageRole.Model : null);
+    if (!nextRole) return false;
+    const prev = liveHistory.lastStaticMessage;
     if (!prev) return false;
-    // Tools take precedence — when a tool batch is in flight, the live region
-    // opens with tool rows even if streaming text also arrived.
-    const nextRole: 'tool_use' | 'model' =
-      activeTools.length > 0 ? 'tool_use' : 'model';
     return needsLeadingBlankByRole(prev.role, nextRole);
-  }, [messages, isProcessing, activeTools, liveContent]);
+  }, [isProcessing, liveRows, liveContent, liveHistory.lastStaticMessage]);
 
   // Per-tool live output bars through the shared bar formatter so the preview
   // matches the eventual static rendering. Hooks run unconditionally, so
@@ -322,7 +344,10 @@ export const LiteLiveRegion: React.FC = () => {
     const stageColor = (stageName: string) =>
       getAgentColor(stageName, getColor);
     const ctx: RenderContext = {
-      pendingApprovalToolCallId: pendingApproval?.toolCall.toolCallId ?? null,
+      pendingApprovalToolCallId:
+        pendingQuestion?.toolCallId ??
+        pendingApproval?.toolCall.toolCallId ??
+        null,
       termCols,
       theme: renderTheme,
       filtersOverride,
@@ -344,12 +369,26 @@ export const LiteLiveRegion: React.FC = () => {
   }, [
     activeTools,
     pendingApproval,
+    pendingQuestion,
     termCols,
     renderTheme,
     filtersOverride,
     currentAgent?.name,
     getColor,
   ]);
+  const renderedQuestionAnswers = useMemo(() => {
+    const out = new Map<string, string>();
+    const ctx: RenderContext = { termCols, theme: renderTheme, glyphs };
+    for (const row of liveRows) {
+      if (
+        row.role === MessageRole.User &&
+        row.questionToolCallId !== undefined
+      ) {
+        out.set(row.id, renderMessageToText(row, currentAgent?.name, ctx));
+      }
+    }
+    return out;
+  }, [liveRows, termCols, renderTheme, glyphs, currentAgent?.name]);
 
   if (!isProcessing) return null;
 
@@ -404,10 +443,10 @@ export const LiteLiveRegion: React.FC = () => {
   // the idle/thinking-only branch; the spinner shows idle OR tools OR thinking
   // (streaming-only has none — skip setFrame so long text streams don't
   // re-render every 150ms).
-  const idleVisible = !liveContent && toolLines.length === 0;
+  const idleVisible = !liveContent && liveRows.length === 0;
   elapsedVisibleRef.current = idleVisible;
   spinnerVisibleRef.current =
-    idleVisible || toolLines.length > 0 || !!thinkingContent;
+    idleVisible || activeTools.length > 0 || !!thinkingContent;
   // Round-boundary reset: re-entering idle restarts the counter (else "thinking
   // 47s" persists whole-turn). setElapsed(0) in render is safe — prevIdle flips
   // true next pass, so it doesn't loop.
@@ -417,7 +456,7 @@ export const LiteLiveRegion: React.FC = () => {
   }
   prevIdleVisibleRef.current = idleVisible;
 
-  if (!liveContent && toolLines.length === 0) {
+  if (!liveContent && liveRows.length === 0) {
     const secs = Math.floor(elapsed / 1000);
     const timeStr = secs > 0 ? chalk.dim(` ${secs}s`) : '';
     // While an /agent swap is mid-flight, the message the user just submitted
@@ -477,61 +516,55 @@ export const LiteLiveRegion: React.FC = () => {
   const showThinkingPreviewBlock = showThinkingContent && !!thinkingContent;
   const thinkingBlockText = showThinkingPreviewBlock ? thinkingBlockMemo : '';
   const hasThinkingBlock = !!thinkingBlockText;
-  // Row order: [leading blank] → thinking block → [blank] → tools → [blank] →
-  // streaming. Blanks below the block live inside its own Text (baked '\n') so
-  // an empty sibling can't collapse out.
+  // Blanks below the thinking block live inside its own Text so an empty
+  // sibling cannot collapse out.
   const thinkingBlockWithBreaks = hasThinkingBlock
     ? (needsLeadingSeparator ? '\n' : '') +
       thinkingBlockText +
-      // Trailing blank so the bottom rule doesn't glue to the next row.
-      (toolLines.length > 0 || liveContent ? '\n' : '')
+      (liveRows.length > 0 || liveContent ? '\n' : '')
     : null;
-  // When the thinking block took the leading-separator slot, tools + streaming
-  // don't bake their own.
-  const firstToolWithBreak =
-    needsLeadingSeparator && toolLines.length > 0 && !hasThinkingBlock
-      ? '\n' + toolLines[0]!
-      : (toolLines[0] ?? null);
-  const standaloneStreamingWithBreak =
-    needsLeadingSeparator &&
-    liveContent &&
-    toolLines.length === 0 &&
-    !hasThinkingBlock
-      ? '\n' + streamingBlockMemo
-      : null;
+  const toolIndexById = new Map(
+    activeTools.map((tool, index) => [tool.id, index])
+  );
+  const liveHistoryLines = liveRows.map((row, index) => {
+    let body: string;
+    if (row.role === MessageRole.ToolUse) {
+      const toolIndex = toolIndexById.get(row.id);
+      const head = toolIndex === undefined ? '' : toolLines[toolIndex]!;
+      const bar = liveBarsByToolId.get(row.id);
+      body = bar?.length ? `${head}\n${bar.join('\n')}` : head;
+    } else {
+      body = renderedQuestionAnswers.get(row.id) ?? '';
+    }
+    const needsBreak =
+      index === 0
+        ? needsLeadingSeparator && !hasThinkingBlock
+        : needsLeadingBlankByRole(liveRows[index - 1]!.role, row.role);
+    return { id: row.id, text: (needsBreak ? '\n' : '') + body };
+  });
+  const previousLiveRole = liveRows.at(-1)?.role;
+  const streamingNeedsBreak = previousLiveRole
+    ? needsLeadingBlankByRole(previousLiveRole, MessageRole.Model)
+    : needsLeadingSeparator && !hasThinkingBlock;
+  const streamingWithBreak =
+    streamingNeedsBreak && liveContent ? '\n' + streamingBlockMemo : null;
 
   return (
     <Box flexDirection="column">
       {hasThinkingBlock && <Text>{thinkingBlockWithBreaks}</Text>}
-      {/* Tool line + its output bar concatenated via \n into one <Text>: a
-          separate sibling would race the tool line on each spinner tick. */}
-      {toolLines.map((line, i) => {
-        const tool = activeTools[i]!;
-        const head =
-          i === 0 && firstToolWithBreak != null && !hasThinkingBlock
-            ? firstToolWithBreak
-            : line;
-        const bar = liveBarsByToolId.get(tool.id);
-        const body =
-          bar && bar.length > 0 ? `${head}\n${bar.join('\n')}` : head;
-        // wrap="overflow" — body is pre-formatted with its own structural \n;
-        // overflow keeps single-line semantics so a long command copies as one
-        // line (default wrap would bake extra \n into it).
+      {liveHistoryLines.map((row) => {
         return (
-          <Text key={tool.id} wrap="overflow">
-            {body}
+          <Text key={row.id} wrap="overflow">
+            {row.text}
           </Text>
         );
       })}
-      {liveContent && toolLines.length > 0 && <Text> </Text>}
       {/* Streaming content through the same renderAgentMessage pipeline as
           finalized rows (live→static flush is a no-op). Carries the leading
           blank itself when it's the only live row. wrap="overflow" as in
           LiteLayout's Static <Text>. */}
       {liveContent && (
-        <Text wrap="overflow">
-          {standaloneStreamingWithBreak ?? streamingBlockMemo}
-        </Text>
+        <Text wrap="overflow">{streamingWithBreak ?? streamingBlockMemo}</Text>
       )}
     </Box>
   );

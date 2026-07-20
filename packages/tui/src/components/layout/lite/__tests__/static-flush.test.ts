@@ -7,6 +7,7 @@ import {
   needsLeadingBlank,
   selectStaticEligible,
 } from '../static-flush.js';
+import { selectLiteLiveHistory } from '../LiteLiveRegion.js';
 import { MessageRole, type MessageType } from '../../../../stores/app-store.js';
 
 function tool(
@@ -26,6 +27,15 @@ function tool(
 
 function user(id: string): MessageType {
   return { id, role: MessageRole.User, content: 'q' };
+}
+
+function questionAnswer(id: string, questionToolCallId: string): MessageType {
+  return {
+    id,
+    role: MessageRole.User,
+    content: 'answer',
+    questionToolCallId,
+  };
 }
 
 function model(
@@ -100,6 +110,22 @@ describe('computeActiveToolBatchIds', () => {
     const ids = computeActiveToolBatchIds(msgs);
     expect([...ids].sort()).toEqual([...expectedIds].sort());
   });
+});
+
+test('keeps a question answer visible behind an unfinished subagent', () => {
+  const messages: MessageType[] = [
+    user('prompt'),
+    tool('parent', false, { agentName: 'main', name: 'subagent' }),
+    tool('question-1', true, { name: 'user_input' }),
+    questionAnswer('answer-1', 'question-1'),
+    tool('question-2', false, { name: 'user_input' }),
+  ];
+
+  expect(
+    selectLiteLiveHistory(messages, true, 'main').rows.map(
+      (message) => message.id
+    )
+  ).toEqual(['parent', 'question-1', 'answer-1', 'question-2']);
 });
 
 describe('firstUnfinishedToolIndex', () => {
