@@ -1,0 +1,60 @@
+# .github/workflows/assign-community-reviewers.yml
+# Round-robin a reviewer from `kiro-cli-community-reviewer` onto every PR whose
+# author is NOT in `kiro-cli-core`. Native team review-assignment can't branch on
+# author team membership, so the condition lives here; GitHub does the rest.
+name: Assign community reviewers
+
+on:
+  pull_request_target:            # fork PRs need base-repo token + secrets
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+
+concurrency:                      # one assignment pass per PR
+  group: assign-community-reviewers-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          # Reuse the repo's existing bot PAT. Needs `repo` (PR write — already has it,
+          # used for push in auto-format.yml) + `read:org` for the kiro-cli-core check,
+          # since GITHUB_TOKEN can't read org team membership.
+          github-token: ${{ secrets.KIRO_WORKFLOWS_PAT }}
+          script: |
+            const org  = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr   = context.payload.pull_request;
+            const author = pr.user.login;
+
+            if (pr.draft) return core.info('Draft PR — skipping.');
+            if (pr.user.type === 'Bot') return core.info(`${author} is a bot — skipping.`);
+
+            // Skip PRs authored by kiro-cli-core members.
+            const inTeam = async (team_slug) => {
+              try { await github.rest.teams.getMembershipForUserInOrg({ org, team_slug, username: author }); return true; }
+              catch (e) { if (e.status === 404) return false; throw e; }
+            };
+            if (await inTeam('kiro-cli-core')) return core.info(`${author} is kiro-cli-core — skipping.`);
+
+            // Round-robin over community reviewers, excluding the author.
+            const members = (await github.paginate(
+              github.rest.teams.listMembersInOrg,
+              { org, team_slug: 'kiro-cli-community-reviewer', per_page: 100 },
+            )).map(m => m.login).filter(l => l !== author).sort();
+
+            if (members.length === 0) return core.warning('No eligible community reviewers.');
+
+            // ponytail: stateless round-robin via PR number. Ceiling: not a strict least-recently-used
+            // cycle. Upgrade path: enable native "Round robin" review assignment on the team and swap
+            // the block below for `team_reviewers: ['kiro-cli-community-reviewer']`.
+            const pick = members[pr.number % members.length];
+
+            await github.rest.pulls.requestReviewers({
+              owner: org, repo, pull_number: pr.number, reviewers: [pick],
+            });
+            core.info(`Requested review from ${pick} (author: ${author}).`);
