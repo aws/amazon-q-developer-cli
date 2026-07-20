@@ -357,7 +357,7 @@ For issues found, cross-reference with:
 
 ### Post to Slack
 
-Post via `curl` with bot token and Block Kit `blocks` array. Single message. See AGENTS.md for template.
+Follow the `slack-publish` skill: one one-line summary to `#kiro-cli-pr-reviews`, full review detail as a threaded reply (`thread_ts`). Keeps the channel a scannable PR list.
 
 ### Cleanup
 

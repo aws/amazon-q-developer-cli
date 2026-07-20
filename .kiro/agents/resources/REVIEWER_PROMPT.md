@@ -99,7 +99,7 @@ Read and follow `.kiro/skills/publish-pr-review/SKILL.md` using the generated Ma
 
 ## Step 5: Slack summary
 
-Post condensed summary to Slack using the slack-publish skill. Only if new findings.
+Post to `#kiro-cli-pr-reviews` using the slack-publish skill. Only if new findings. Post a **one-line summary to the channel** (PR link, title, recommendation, author, size), then post the condensed review detail as a **threaded reply** under it (`thread_ts` = the summary message's `ts`). Never post the detail as its own channel message — the channel stays a scannable list of PRs, detail lives in the thread.
 
 ## Step 6: Save synopsis to PR memory (REQUIRED)
 
