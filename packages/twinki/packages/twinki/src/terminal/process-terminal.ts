@@ -153,6 +153,10 @@ export class ProcessTerminal implements Terminal {
 			const newRows = process.stdout.rows || 24;
 			// Skip invalid dimensions (iTerm can report 0 during transitions)
 			if (newCols < 1 || newRows < 1) return;
+			// A same-geometry reattach (e.g. iTerm2 tmux -CC over SSH) fires a
+			// resize with unchanged dims but resets the terminal's DEC private
+			// modes, so re-assert the enables before the unchanged-dims skip.
+			this.reassertModeEnables();
 			// Skip if dimensions haven't changed (e.g. tmux pane focus, attach/detach)
 			if (newCols === this._columns && newRows === this._rows) return;
 			this._columns = newCols;
@@ -264,6 +268,22 @@ export class ProcessTerminal implements Terminal {
 		setKittyProtocolActive(true);
 		process.stdout.write(`\x1b[>${KITTY_FLAGS}u`);
 		this.disableModifyOtherKeys();
+	}
+
+	/**
+	 * Re-emits the currently-active terminal-mode enables without re-running
+	 * detection. A same-geometry reattach (iTerm2 tmux -CC over SSH) resets the
+	 * terminal's DEC private modes; this restores bracketed paste and whichever
+	 * keyboard protocol was negotiated at startup (Kitty XOR modifyOtherKeys).
+	 * Mode-set sequences are idempotent, so it is safe to call on every resize.
+	 */
+	private reassertModeEnables(): void {
+		process.stdout.write("\x1b[?2004h");
+		if (this._kittyProtocolActive) {
+			process.stdout.write(`\x1b[>${KITTY_FLAGS}u`);
+		} else if (this._modifyOtherKeysActive) {
+			process.stdout.write(MODIFY_OTHER_KEYS_ENABLE);
+		}
 	}
 
 	/**

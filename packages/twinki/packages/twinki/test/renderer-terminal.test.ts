@@ -3,7 +3,7 @@
  * resize handling, static output) and process-terminal (Kitty protocol
  * negotiation, signal handling, raw mode lifecycle).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React, { useState, useEffect } from 'react';
 import { TestTerminal, MutableComponent, wait } from './helpers.js';
 import { TUI } from '../src/renderer/tui.js';
@@ -972,5 +972,71 @@ describe('public API exports', () => {
 	it('render export works', async () => {
 		const { render: renderFn } = await import('../src/index.js');
 		expect(typeof renderFn).toBe('function');
+	});
+});
+
+// ── process-terminal mode re-assert on same-geometry reattach (P470536061) ────
+//
+// Repro-of-record: a tmux -CC / SSH reattach fires a resize with UNCHANGED
+// window geometry but resets the terminal's DEC private modes. Before the fix
+// ProcessTerminal.start() negotiated the enables exactly once and the resize
+// handler early-returned on unchanged dims, so bracketed paste + the keyboard
+// protocol stayed OFF (Shift+Enter degraded to bare CR, paste un-bracketed).
+// The fix re-asserts the currently-active enables before the unchanged-dims
+// skip. These tests are RED on unpatched main and GREEN after the patch.
+describe('ProcessTerminal mode re-assert on unchanged-dims resize (P470536061)', () => {
+	const KITTY_ENABLE = '\x1b[>1u';
+	const BRACKETED_PASTE_ENABLE = '\x1b[?2004h';
+	const MODIFY_OTHER_KEYS_ENABLE = '\x1b[>4;1m';
+
+	const envKeys = ['TERM', 'TERM_PROGRAM', 'COLORTERM', 'KITTY_WINDOW_ID'];
+	const saved: Record<string, string | undefined> = {};
+	let writeSpy: ReturnType<typeof vi.spyOn>;
+
+	beforeEach(() => {
+		for (const k of envKeys) {
+			saved[k] = process.env[k];
+			delete process.env[k];
+		}
+		writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+	});
+
+	afterEach(() => {
+		writeSpy.mockRestore();
+		for (const k of envKeys) {
+			if (saved[k] !== undefined) process.env[k] = saved[k];
+			else delete process.env[k];
+		}
+	});
+
+	async function newTerminal() {
+		const { ProcessTerminal } = await import('../src/terminal/process-terminal.js');
+		return new ProcessTerminal();
+	}
+
+	it('re-emits bracketed paste + Kitty enable on a same-geometry reattach (iTerm2)', async () => {
+		process.env.TERM_PROGRAM = 'iTerm.app'; // known Kitty terminal
+		const term = await newTerminal();
+		term.start(() => {}, () => {});
+		// Startup negotiated the enables; isolate the reattach.
+		writeSpy.mockClear();
+		// A -CC reattach fires a resize with dims identical to startup.
+		process.stdout.emit('resize');
+		const written = writeSpy.mock.calls.map((c) => c[0]).join('');
+		expect(written).toContain(BRACKETED_PASTE_ENABLE);
+		expect(written).toContain(KITTY_ENABLE);
+		term.stop();
+	});
+
+	it('re-emits bracketed paste + modifyOtherKeys on a same-geometry reattach (unknown terminal)', async () => {
+		// No known-Kitty env → startup enables modifyOtherKeys fallback.
+		const term = await newTerminal();
+		term.start(() => {}, () => {});
+		writeSpy.mockClear();
+		process.stdout.emit('resize');
+		const written = writeSpy.mock.calls.map((c) => c[0]).join('');
+		expect(written).toContain(BRACKETED_PASTE_ENABLE);
+		expect(written).toContain(MODIFY_OTHER_KEYS_ENABLE);
+		term.stop();
 	});
 });
