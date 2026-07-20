@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Queue steering: send mid-turn messages to redirect the agent at tool boundaries"
-}

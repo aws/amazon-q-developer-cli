@@ -1,4 +1,0 @@
-{
-  "type": "changed",
-  "description": "Export internal theme functions for testability (ThemeProvider, UserThemeBridge)"
-}

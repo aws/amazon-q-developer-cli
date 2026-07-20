@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Pass trailing text as context when invoking a skill slash command whose body has no `$ARGUMENTS` or `${N}` placeholders"
-}

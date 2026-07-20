@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Add --list-models flag to non-interactively display available models with optional --format (plain/json) output"
-}

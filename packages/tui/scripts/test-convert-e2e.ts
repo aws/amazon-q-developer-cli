@@ -133,7 +133,7 @@ for (const fx of fixtures) seed(home, fx);
 const env: Record<string, string> = {
   KIRO_HOME: home,
   KIRO_CHAT_CLI_BIN: CHAT_CLI,
-  KIRO_FEED_FILE: resolve(REPO_ROOT, 'crates/chat-cli-v2/src/cli/feed.json'),
+  KIRO_FEED_FILE: resolve(REPO_ROOT, 'crates/chat-cli/src/cli/feed.json'),
 };
 if (engine === 'kas') {
   env.KIRO_AGENT_ENGINE = 'kas';

@@ -18,7 +18,7 @@ description: Kiro CLI release standard operating procedure. Use when performing 
    - **Hotfix release**: Cherry-pick specific commits from `main` → `prod`
 
 2. Review changes for documentation updates:
-   - Check `.changes/unreleased/` for user-facing changes
+   - Check `.changes/` for user-facing changes
    - Coordinate with the team and docs POC @jayrava in the #kiro-cli-team Slack channel
 
 ## Step 1: Bug Bash
@@ -43,7 +43,7 @@ The current approach is to bug bash the nightly build.
 2. Run the `@release` prompt and provide the version when asked. This will:
    - Update version in `Cargo.toml`
    - Update `Cargo.lock`
-   - Generate changelog from `.changes/unreleased/`
+   - Generate changelog from fragments in `.changes/` (via the tag diff)
    - Create release branch and PR
 
 3. Merge the PR after approval.

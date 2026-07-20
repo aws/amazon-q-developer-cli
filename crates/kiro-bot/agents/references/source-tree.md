@@ -42,7 +42,7 @@ KAS engine: --agent-engine=kas → KasAcpClient (TypeScript engine from Kiro IDE
 | Flag parsing, `--tui`/`--legacy-ui`/`--agent-engine` resolution | `crates/chat-cli/src/cli/mod.rs`, `crates/chat-cli/src/cli/chat/mod.rs` |
 | Rust UI protocol shim (input bar, conduit — small crate, NOT the TUI) | `crates/chat-cli-ui/src/` |
 | kiro-bot runtime, frontends, config (this bot itself) | `crates/kiro-bot/` |
-| Release notes / changelog | `crates/chat-cli/src/cli/feed.json`, `crates/chat-cli-v2/src/cli/feed.json` |
+| Release notes / changelog | `crates/chat-cli/src/cli/feed.json` |
 
 **V1 binary (legacy but maintained — read for parity checks and explicit classic questions):**
 

@@ -165,7 +165,6 @@ pub async fn launch_tui(asset_paths: &TuiAssetPaths) -> Result<ExitCode> {
         // Related: https://github.com/anthropics/claude-code/issues/38092
         // Related: https://github.com/oven-sh/bun/issues/17723
         .env("JSC_numberOfGCMarkers", "1")
-        .env("KIRO_FEED_FILE", crate::util::paths::feed_json_path()?)
         .kill_on_drop(true)
         .spawn()?;
 

@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Interactive shell prompts now display immediately without waiting for newlines"
-}

@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Skills from .kiro/skills/ and ~/.kiro/skills/ are now automatically available to the default agent"
-}

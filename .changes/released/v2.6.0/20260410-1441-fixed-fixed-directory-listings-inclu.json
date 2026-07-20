@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "V2 agent directory listings now exclude `.git`, `node_modules`, and build directories by default"
-}

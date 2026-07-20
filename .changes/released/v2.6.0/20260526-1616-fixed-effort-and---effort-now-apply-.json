@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "`/effort` and `--effort` now apply to models that declare effort under `reasoning.effort` (e.g. GPT-5.1)"
-}

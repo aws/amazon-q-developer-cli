@@ -2,7 +2,7 @@
 
 ## Format
 
-Each entry is a JSON file in `.changes/unreleased/` with two fields:
+Each entry is a JSON file in `.changes/` with two fields:
 
 ```json
 {

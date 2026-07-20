@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed knowledge base include/exclude patterns not being applied during agent resource sync"
-}

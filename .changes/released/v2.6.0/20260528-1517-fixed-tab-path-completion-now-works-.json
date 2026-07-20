@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Tab path completion now works after prompt invocations (e.g. `/agent-sop:pdd` `./path`)"
-}

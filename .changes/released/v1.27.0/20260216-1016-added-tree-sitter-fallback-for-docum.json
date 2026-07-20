@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Tree-sitter fallback for document symbols when LSP server does not support textDocument/documentSymbol"
-}

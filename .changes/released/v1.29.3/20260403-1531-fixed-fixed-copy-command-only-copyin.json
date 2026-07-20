@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed /copy command only copying the tail end of responses that include tool calls"
-}

@@ -1,4 +1,0 @@
-{
-  "type": "security",
-  "description": "Enforce MCP governance (Kiro console MCP toggle) in V2 TUI mode for enterprise and API key users."
-}

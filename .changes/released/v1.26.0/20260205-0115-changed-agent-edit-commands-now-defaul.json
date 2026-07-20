@@ -1,4 +1,0 @@
-{
-  "type": "changed",
-  "description": "Agent edit commands now default to editing the current agent when no arguments are provided"
-}

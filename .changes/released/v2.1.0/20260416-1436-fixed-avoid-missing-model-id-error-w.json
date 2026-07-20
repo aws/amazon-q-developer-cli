@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Avoid missing model ID error when invoking subagents in legacy CLI"
-}

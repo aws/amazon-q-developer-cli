@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Reset context manager on /clear so loaded skills revert to frontmatter-only"
-}

@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Added `/settings terminal` to enable Shift+Enter / Option+Enter for multi-line input."
-}

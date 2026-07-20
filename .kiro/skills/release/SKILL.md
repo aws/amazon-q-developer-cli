@@ -125,22 +125,32 @@ gh api repos/kiro-team/kiro-cli-autocomplete/branches/release/<version> --jq '.n
 
 #### Updating feed.json
 
-Feed files: `crates/chat-cli/src/cli/feed.json` + `crates/chat-cli-v2/src/cli/feed.json`
+Feed file: `crates/chat-cli/src/cli/feed.json` (chat-cli is the sole owner; the TUI and legacy chat both read this copy)
 
 **For a minor release** (nightly base tag):
 
 1. Identify new fragments added since the last stable release:
    ```bash
-   git diff <last_stable_tag>..<base_tag> --name-only -- .changes/unreleased/
+   git diff <last_stable_tag>..<base_tag> --name-only --diff-filter=A -- '.changes/*.json'
    ```
-2. Only these fragments go into the new feed.json entry — not everything in `unreleased/`.
-   (`unreleased/` on main accumulates fragments across releases and is never cleaned.)
-3. Insert the new entry into feed.json via text-level insertion after the `0.0.0` placeholder entry.
+2. Only these fragments go into the new feed.json entry — not every fragment in `.changes/`.
+   (`.changes/` on main accumulates fragments across releases and is never cleaned; releases
+   are cut from tags, so the diff between tags defines a release's changes.)
+   Read each fragment and assemble one release entry:
+   ```json
+   {
+     "type": "release",
+     "date": "<today, YYYY-MM-DD>",
+     "version": "<version>",
+     "title": "Version <version>",
+     "changes": [ { "type": "<fragment type>", "description": "<fragment description>" } ]
+   }
+   ```
+3. Insert the new entry into `crates/chat-cli/src/cli/feed.json` via text-level insertion
+   immediately after the `0.0.0` `hidden` placeholder entry (`entries[0]`).
    Do NOT re-serialize the entire file — this changes unicode escapes and formatting in old entries.
-4. Move the used fragments to `.changes/released/v<version>/`.
-5. Copy the updated feed.json to both chat-cli and chat-cli-v2 paths.
-6. Submit as a PR against `release/<version>` (branch protection requires PRs).
-7. **Sync feed.json to autocomplete repo**: The autocomplete repo has its own `feed.json` at the repo root. Copy the updated feed.json from `crates/chat-cli/src/cli/feed.json` to the autocomplete repo's `release/<version>` branch:
+4. Submit as a PR against `release/<version>` (branch protection requires PRs).
+5. **Sync feed.json to autocomplete repo**: The autocomplete repo has its own `feed.json` at the repo root. Copy the updated feed.json from `crates/chat-cli/src/cli/feed.json` to the autocomplete repo's `release/<version>` branch:
    ```bash
    cd <autocomplete-worktree>
    cp <kiro-cli-worktree>/crates/chat-cli/src/cli/feed.json ./feed.json

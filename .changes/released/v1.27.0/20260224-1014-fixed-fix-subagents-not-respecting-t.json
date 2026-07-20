@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fix subagents not respecting the model field"
-}

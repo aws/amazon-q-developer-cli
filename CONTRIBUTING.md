@@ -172,10 +172,10 @@ bun run dev --local-kas --skip-rust-build
 
 Every PR with user-facing changes **must** include a changelog fragment. CI will block your PR if one is missing.
 
-Create a JSON file in `.changes/unreleased/` with this naming convention:
+Create a JSON file in `.changes/` with this naming convention:
 
 ```
-.changes/unreleased/YYYYMMDD-HHMM-<type>-<short-slug>.json
+.changes/YYYYMMDD-HHMM-<type>-<short-slug>.json
 ```
 
 **Use the helper script** to automate this:

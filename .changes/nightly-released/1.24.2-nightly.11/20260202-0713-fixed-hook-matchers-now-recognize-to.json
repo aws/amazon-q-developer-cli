@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Hook matchers now recognize tool aliases (e.g., 'read' for 'fs_read')"
-}

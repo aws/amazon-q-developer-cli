@@ -1,4 +1,0 @@
-{
-  "type": "changed",
-  "description": "`/settings` and its sub-commands use a consistent overlay frame, footer hints, and ESC back-navigation"
-}

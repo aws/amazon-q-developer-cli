@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fix /clear command showing garbled ANSI output instead of confirmation prompt"
-}

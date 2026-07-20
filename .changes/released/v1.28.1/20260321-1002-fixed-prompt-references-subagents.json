@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed prompt references not being resolved when passed to subagents"
-}

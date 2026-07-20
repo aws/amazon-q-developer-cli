@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed MCP server env variables being overridden by shell env"
-}

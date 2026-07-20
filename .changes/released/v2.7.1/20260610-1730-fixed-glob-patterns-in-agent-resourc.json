@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Glob patterns in agent resource paths no longer fail to match on Windows mapped drives"
-}

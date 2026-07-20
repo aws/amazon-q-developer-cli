@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Set TERM=xterm in transcript test so less works on CI"
-}

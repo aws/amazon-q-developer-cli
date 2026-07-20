@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Ctrl+C now restores cursor and kills child processes instead of leaving orphans"
-}

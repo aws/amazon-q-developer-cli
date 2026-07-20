@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Added `/chat new` command to start a fresh conversation without restarting the CLI"
-}

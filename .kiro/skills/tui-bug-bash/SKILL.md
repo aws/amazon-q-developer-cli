@@ -113,7 +113,7 @@ Re-dispatch is normal if a subagent misfires at startup. Always give substantive
 
 ## CI reality (kiro-cli)
 
-- The `no-changelog` label gates OFF the "Changelog fragment required" check AND the changelog auto-job. Add it right after `gh pr create`. The docs-check bot may still RACE a `.changes/unreleased/*.json` fragment onto the branch shortly after (after the first check) — so RE-verify `gh pr view <n> --json files` has zero `.changes/` entries; if one landed, `git rm` it, commit `docs: drop auto-generated changelog fragment (no-changelog)`, push.
+- The `no-changelog` label gates OFF the "Changelog fragment required" check AND the changelog auto-job. Add it right after `gh pr create`. The docs-check bot may still RACE a `.changes/*.json` fragment onto the branch shortly after (after the first check) — so RE-verify `gh pr view <n> --json files` has zero `.changes/` entries; if one landed, `git rm` it, commit `docs: drop auto-generated changelog fragment (no-changelog)`, push.
 - Known flakes (rerun, don't code-fix — they fail on pristine main too): macOS `clang_rt.osx` link, Windows IPC on the KAS acp-integ test, ubuntu input-editing wordmark snapshots, wall-clock perf asserts, and order-dependent unit tests that pass in isolation but flip under CI's file scheduling. Required aggregators mirror the whole matrix, so one flaky leg blocks merge — the leg must catch a green rerun. `gh run rerun <id> --failed` only works once the whole run is terminal.
 - Many PRs auto-get a `needs-ux-review` label — a human-review gate, not CI. Green CI ≠ mergeable; say so.
 

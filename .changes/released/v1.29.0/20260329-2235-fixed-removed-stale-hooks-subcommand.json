@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Removed stale /hooks subcommand entries from autocomplete"
-}

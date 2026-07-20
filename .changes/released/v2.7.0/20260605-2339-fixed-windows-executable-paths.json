@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Windows executable paths for `bun` and `node` now include `.exe` extension"
-}

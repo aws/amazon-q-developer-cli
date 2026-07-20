@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Clean up MCP child processes on SIGTERM"
-}

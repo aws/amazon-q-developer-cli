@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Improved --from flag performance during agent creation"
-}

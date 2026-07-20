@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "`KIRO_HOME` environment variable to override the `~/.kiro` directory used for global agents, prompts, skills, steering, settings, and sessions"
-}

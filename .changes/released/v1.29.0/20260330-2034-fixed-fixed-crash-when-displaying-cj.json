@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed crash when displaying CJK characters in MCP prompt descriptions"
-}

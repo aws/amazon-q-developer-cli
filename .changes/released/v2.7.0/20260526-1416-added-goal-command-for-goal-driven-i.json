@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "`/goal` command for goal-driven iterative agent loops with `--max` flag"
-}

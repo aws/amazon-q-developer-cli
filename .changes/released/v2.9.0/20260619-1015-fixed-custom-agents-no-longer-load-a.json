@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Custom agents no longer load a file twice when it is both listed in resources and matched by an inherited resource glob"
-}

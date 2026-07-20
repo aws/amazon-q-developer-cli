@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Support user-configurable OAuth `clientId` for MCP servers that don't support Dynamic Client Registration (e.g. Slack, GitHub, Figma)"
-}

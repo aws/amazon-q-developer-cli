@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "External IdP token refresh now replays scopes, fixing session expiration for Entra ID (Azure AD) users"
-}

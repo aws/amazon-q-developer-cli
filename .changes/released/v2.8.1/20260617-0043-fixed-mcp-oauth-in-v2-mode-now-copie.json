@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "MCP OAuth in V2 mode now copies the authorization URL to the clipboard instead of failing silently"
-}

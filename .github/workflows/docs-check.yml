@@ -78,7 +78,7 @@ jobs:
           # Check if changelog already exists
           echo ""
           echo "=== Changelog status ==="
-          HAS_CHANGELOG=$(git diff --name-only origin/main...HEAD -- '.changes/unreleased/*.json' || true)
+          HAS_CHANGELOG=$(git diff --name-only origin/main...HEAD -- '.changes/*.json' || true)
           if [ -n "$HAS_CHANGELOG" ]; then
             echo "has_changelog=true" >> "$GITHUB_OUTPUT"
             echo "Existing changelog: $HAS_CHANGELOG"
@@ -139,7 +139,7 @@ jobs:
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
         run: |
-          NEW_FILES=$(git ls-files --others --exclude-standard .changes/unreleased/*.json)
+          NEW_FILES=$(git ls-files --others --exclude-standard '.changes/*.json' || true)
           if [ -n "$NEW_FILES" ]; then
             if ! ./scripts/lint-changelog.sh $NEW_FILES; then
               echo "Lint failed — asking agent to fix..."
@@ -176,7 +176,7 @@ jobs:
         id: generated
         run: |
           echo "=== Files modified by agents ==="
-          git add autodocs-v2/ .changes/unreleased/ 2>/dev/null || true
+          git add autodocs-v2/ .changes/ 2>/dev/null || true
           git diff --cached --name-only || true
           echo ""
           CHANGES=""
@@ -185,10 +185,10 @@ jobs:
             echo "Docs changes detected:"
             git diff --cached --name-only -- autodocs-v2/
           fi
-          if git diff --cached --name-only | grep -q ".changes/unreleased/"; then
+          if git diff --cached --name-only | grep -qE '\.changes/[^/]+\.json$'; then
             CHANGES="${CHANGES:+$CHANGES }changelog"
             echo "Changelog changes detected:"
-            git diff --cached --name-only -- .changes/unreleased/
+            git diff --cached --name-only -- '.changes/*.json'
           fi
           if [ -n "$CHANGES" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
@@ -203,7 +203,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add autodocs-v2/ .changes/unreleased/
+          git add autodocs-v2/ .changes/
           git commit -m "docs: auto-generated for PR #${{ steps.pr.outputs.number }}"
           git push origin HEAD:${{ steps.pr.outputs.ref }}
 
@@ -212,7 +212,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ .changes/unreleased/ 2>/dev/null || true)
+          FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ .changes/ 2>/dev/null || true)
           BODY="🤖 Updated docs/changelog artifacts:
           $(echo "$FILES" | sed 's/^/- /')
 

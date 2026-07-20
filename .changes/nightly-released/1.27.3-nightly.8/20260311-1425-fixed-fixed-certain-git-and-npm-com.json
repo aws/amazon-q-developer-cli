@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed certain git and npm commands being marked as readonly"
-}

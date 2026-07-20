@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Lint changelog fragments in .changes/unreleased/ for format compliance.
+# Lint changelog fragments in .changes/ for format compliance.
 # Usage: ./scripts/lint-changelog.sh [file1.json file2.json ...]
-# If no files given, lints all files in .changes/unreleased/
+# If no files given, lints all fragments in .changes/
 set -e
 
 VALID_TYPES="added changed deprecated removed fixed security"
@@ -143,7 +143,7 @@ if [ $# -gt 0 ]; then
   files=("$@")
 else
   shopt -s nullglob
-  files=(.changes/unreleased/*.json)
+  files=(.changes/*.json)
   shopt -u nullglob
 fi
 

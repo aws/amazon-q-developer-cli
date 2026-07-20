@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed /agent list to correctly display source location for newly created agents"
-}

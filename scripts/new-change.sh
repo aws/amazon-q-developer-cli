@@ -17,9 +17,9 @@ fi
 
 SLUG=$(echo "$DESC" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | cut -c1-30)
 TIMESTAMP=$(date +%Y%m%d-%H%M)
-FILE=".changes/unreleased/${TIMESTAMP}-${TYPE}-${SLUG}.json"
+FILE=".changes/${TIMESTAMP}-${TYPE}-${SLUG}.json"
 
-mkdir -p .changes/unreleased
+mkdir -p .changes
 
 jq -n --arg type "$TYPE" --arg desc "$DESC" '{type: $type, description: $desc}' > "$FILE"
 

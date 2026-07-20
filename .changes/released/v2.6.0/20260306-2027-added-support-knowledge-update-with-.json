@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Support `/knowledge update` with no arguments to update all knowledge bases at once"
-}

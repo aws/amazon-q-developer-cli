@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed Alt/Option+Enter not inserting newline on terminals without Kitty keyboard protocol support (e.g. VS Code terminal)"
-}

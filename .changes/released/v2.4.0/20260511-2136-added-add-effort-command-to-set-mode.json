@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Add /effort command to set model reasoning effort level (low/medium/high/xhigh/max)"
-}

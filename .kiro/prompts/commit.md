@@ -129,7 +129,7 @@ Types: `added`, `changed`, `deprecated`, `removed`, `fixed`, `security`
 
 **Writing the description:** Follow the rules in `.changes/GUIDELINES.md`. The linter (`./scripts/lint-changelog.sh`) enforces them — CI will reject non-compliant entries.
 
-Include the fragment in your commit by adding `.changes/unreleased/*.json` to the staged files.
+Include the fragment in your commit by adding `.changes/*.json` to the staged files.
 
 ### 7. Ask about pushing
 

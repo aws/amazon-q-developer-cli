@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Use truncate_safe for UTF-8 safe string truncation to prevent panics on multi-byte characters"
-}

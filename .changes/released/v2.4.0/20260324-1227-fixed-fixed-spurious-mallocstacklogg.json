@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed spurious MallocStackLogging warning on macOS"
-}

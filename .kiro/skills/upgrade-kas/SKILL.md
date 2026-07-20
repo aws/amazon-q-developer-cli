@@ -137,7 +137,7 @@ Record the results in a table for the PR description (Step 10c):
 
 ### Step 9 — Create `[V3]` changelog fragments
 
-V3 is available to all users via `--v3` / `kiro-cli chat --agent-engine=kas`. Create `.changes/unreleased/` fragments for commits that change observable behavior in V3 mode.
+V3 is available to all users via `--v3` / `kiro-cli chat --agent-engine=kas`. Create `.changes/` fragments for commits that change observable behavior in V3 mode.
 
 > **Skip fragments for features gated behind settings the CLI doesn't send yet** (e.g. `kiroMemoryEnable`). If a feature requires a client-side opt-in that doesn't exist, it's invisible to users — no fragment needed until the CLI wires up the setting.
 
@@ -167,7 +167,7 @@ If the validator rejects valid descriptions (e.g. paths like `~/.kiro/hooks/` tr
 
 ```bash
 TIMESTAMP=$(date +%Y%m%d-%H%M)
-echo '{"type":"added","description":"[V3] Description here"}' | jq . > ".changes/unreleased/${TIMESTAMP}-added-v3-slug.json"
+echo '{"type":"added","description":"[V3] Description here"}' | jq . > ".changes/${TIMESTAMP}-added-v3-slug.json"
 ```
 
 #### Convention

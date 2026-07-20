@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Added 'workspace' and 'global' special values for --directory flag that resolve to system agent directories"
-}

@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed @ file picker ignoring nested .gitignore files, causing slow scans in large directories"
-}

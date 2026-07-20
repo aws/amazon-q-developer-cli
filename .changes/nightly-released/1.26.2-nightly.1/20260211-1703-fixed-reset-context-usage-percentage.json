@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Reset context usage percentage on agent swap to prevent displaying stale values"
-}

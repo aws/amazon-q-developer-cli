@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Added `/model set-current-as-default` to save the current model as the default"
-}

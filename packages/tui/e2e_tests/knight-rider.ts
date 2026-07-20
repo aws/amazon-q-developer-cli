@@ -149,7 +149,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
         // OIDC tokens via `_kiro/auth/getAccessToken`. The TUI handler
         // shells out to this binary for `chat _ get-kas-token`.
         KIRO_CHAT_CLI_BIN: CARGO_BIN,
-        KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli-v2/src/cli/feed.json'),
+        KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli/src/cli/feed.json'),
         ...(serverPath && { KIRO_KAS_SERVER_PATH: serverPath }),
       },
     };
@@ -159,7 +159,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
     cmd: 'bun ./src/index.tsx',
     env: {
       KIRO_CHAT_CLI_BIN: CARGO_BIN,
-      KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli-v2/src/cli/feed.json'),
+      KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli/src/cli/feed.json'),
     },
   };
 }

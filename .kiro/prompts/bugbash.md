@@ -22,7 +22,7 @@ toolbox install kiro-cli --channel nightly --force
 ## Change Log
 
 {{
-Lists for each of the change types under `./.changes/released`. Use the description as the list item content.
+Lists for each of the change types in the changelog fragments for this release. Release changes are the fragments added to `.changes/` between the previous release tag and this version's tag — e.g. `git diff <previous_tag>..<this_tag> --name-only --diff-filter=A -- '.changes/*.json'`. Read each fragment's `type` and use its `description` as the list item content.
 
 For example:
 

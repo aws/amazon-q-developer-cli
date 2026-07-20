@@ -1,4 +1,0 @@
-{
-  "type": "changed",
-  "description": "Wrap URLs in hyperlinks so they remain clickable across line wraps"
-}

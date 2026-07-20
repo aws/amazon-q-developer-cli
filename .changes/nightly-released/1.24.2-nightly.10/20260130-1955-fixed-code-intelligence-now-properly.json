@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Code intelligence now properly uses custom LSP servers for languages not supported by tree-sitter"
-}

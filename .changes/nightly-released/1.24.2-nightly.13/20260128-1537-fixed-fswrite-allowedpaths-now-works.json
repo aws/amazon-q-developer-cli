@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "fs_write allowedPaths now works for both create and edit operations on systems with symlinks"
-}

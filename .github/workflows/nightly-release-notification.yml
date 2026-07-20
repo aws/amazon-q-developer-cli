@@ -55,11 +55,11 @@ jobs:
           CURRENT_TAG="${{ steps.tags.outputs.current }}"
 
           if [[ -z "$LAST_TAG" ]]; then
-            # First nightly — show all unreleased fragments
-            FRAGMENTS=$(find .changes/unreleased -name '*.json' 2>/dev/null)
+            # First nightly — show all fragments
+            FRAGMENTS=$(find .changes -maxdepth 1 -name '*.json' 2>/dev/null)
           else
             # Fragments added between the two tags
-            FRAGMENTS=$(git diff --name-only --diff-filter=A "$LAST_TAG".."$CURRENT_TAG" -- .changes/unreleased/)
+            FRAGMENTS=$(git diff --name-only --diff-filter=A "$LAST_TAG".."$CURRENT_TAG" -- '.changes/*.json' || true)
           fi
 
           CHANGELOG=""

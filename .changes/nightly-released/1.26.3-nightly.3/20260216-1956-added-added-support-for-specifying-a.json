@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Added support for specifying agent creation arguments at invocation time, bypassing interactive menu"
-}

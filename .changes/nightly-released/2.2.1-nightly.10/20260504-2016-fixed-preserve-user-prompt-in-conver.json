@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Preserve user prompt in conversation history after cancelling a turn with ctrl-C"
-}

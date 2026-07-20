@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fix \"profileArn is required but no profiles are available\" error for some users"
-}

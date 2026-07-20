@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed panic on corrupted history file by replacing unwrap() in InputSource Drop impl"
-}

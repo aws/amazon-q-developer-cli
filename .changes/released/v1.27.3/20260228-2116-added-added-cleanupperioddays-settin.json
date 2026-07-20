@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Added cleanup.periodDays setting to automatically delete old conversations, sessions, and knowledge bases"
-}

@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed knowledgeBase resources being loaded as regular context files, causing duplicate content in the agent context window"
-}

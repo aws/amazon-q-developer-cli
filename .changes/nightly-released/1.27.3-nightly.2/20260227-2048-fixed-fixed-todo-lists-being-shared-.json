@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Fixed todo lists being shared across concurrent sessions in the same directory"
-}

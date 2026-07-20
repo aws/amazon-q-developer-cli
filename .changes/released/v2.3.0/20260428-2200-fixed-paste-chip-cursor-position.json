@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Cursor now positions correctly after the chip when pasting multiple collapsible texts"
-}

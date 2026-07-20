@@ -28,7 +28,7 @@ jobs:
         id: check
         run: |
           BASE_SHA=$(git merge-base origin/${{ github.event.pull_request.base.ref }} HEAD)
-          NEW_FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '.changes/unreleased/*.json')
+          NEW_FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '.changes/*.json' || true)
 
           if [ -z "$NEW_FRAGMENTS" ]; then
             echo "found=false" >> "$GITHUB_OUTPUT"
@@ -42,7 +42,7 @@ jobs:
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') && steps.check.outputs.found == 'true' }}
         run: |
           BASE_SHA=$(git merge-base origin/${{ github.event.pull_request.base.ref }} HEAD)
-          NEW_FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '.changes/unreleased/*.json')
+          NEW_FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '.changes/*.json' || true)
           ./scripts/lint-changelog.sh $NEW_FRAGMENTS
 
       - name: Note missing changelog

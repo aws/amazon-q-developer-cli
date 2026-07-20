@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Prefer $VISUAL over $EDITOR environment variable per Unix convention"
-}

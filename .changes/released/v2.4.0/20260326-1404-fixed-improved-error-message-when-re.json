@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "Improved error message when remote MCP server OAuth discovery fails"
-}

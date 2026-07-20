@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Implement @file and @directory expansion for inline content references"
-}

@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "LSP client now respects server capabilities and dynamic registration before sending requests"
-}

@@ -1,4 +1,0 @@
-{
-  "type": "fixed",
-  "description": "`mcp.json` env, header, and timeout overrides for registry-type MCP server entries now flow to the launched server"
-}

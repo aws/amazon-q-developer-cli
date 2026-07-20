@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Record parent session ID in persisted subagent sessions"
-}
