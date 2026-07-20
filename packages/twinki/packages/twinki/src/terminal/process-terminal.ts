@@ -35,6 +35,11 @@ function resolveRenderLogPath(): string {
  * enhances terminal key reporting so the application can distinguish keypresses
  * that legacy VT sequences cannot (e.g. Shift+Enter vs Enter, Ctrl+I vs Tab).
  *
+ * Despite the name, this protocol is NOT specific to the Kitty terminal — it is
+ * a cross-terminal standard also implemented by several others (see
+ * KNOWN_KITTY_TERMINALS below). Terminals that don't support it silently ignore
+ * the enable/disable sequences.
+ *
  * Flags are a bitmask:
  *   1 = disambiguateEscapeCodes  — report modified keys as CSI u sequences
  *   2 = reportEventTypes         — include press/repeat/release event type
@@ -110,6 +115,8 @@ export class ProcessTerminal implements Terminal {
 	private resizeHandler?: () => void;
 	private _kittyProtocolActive = false;
 	private _modifyOtherKeysActive = false;
+	private _suspendedKitty = false;
+	private _suspendedModify = false;
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
 	private writeLogPath = resolveRenderLogPath();
@@ -275,6 +282,41 @@ export class ProcessTerminal implements Terminal {
 			this._modifyOtherKeysActive = false;
 			process.stdout.write(MODIFY_OTHER_KEYS_DISABLE);
 		}
+	}
+
+	/**
+	 * Temporarily disables enhanced keyboard reporting (Kitty keyboard
+	 * protocol + xterm modifyOtherKeys) so control keys reach the parent
+	 * shell as legacy bytes while the process is backgrounded (e.g. after
+	 * Ctrl+Z / SIGTSTP). Remembers which modes were active so
+	 * {@link resumeKeyboard} can restore the pre-suspend state, and keeps the
+	 * shared `kittyProtocolActive` parser flag in sync with the terminal.
+	 */
+	suspendKeyboard(): void {
+		this._suspendedKitty = this._kittyProtocolActive;
+		this._suspendedModify = this._modifyOtherKeysActive;
+		if (this._kittyProtocolActive) {
+			process.stdout.write("\x1b[<u");
+			this._kittyProtocolActive = false;
+			setKittyProtocolActive(false);
+		}
+		this.disableModifyOtherKeys();
+	}
+
+	/**
+	 * Re-enables the enhanced keyboard modes that {@link suspendKeyboard}
+	 * disabled, restoring the pre-suspend state. Reuses the same enable paths
+	 * as startup so the terminal mode and the `kittyProtocolActive` parser
+	 * flag are turned back on together.
+	 */
+	resumeKeyboard(): void {
+		if (this._suspendedKitty) {
+			this.enableKittyProtocol();
+		} else if (this._suspendedModify) {
+			this.enableModifyOtherKeys();
+		}
+		this._suspendedKitty = false;
+		this._suspendedModify = false;
 	}
 
 	/**

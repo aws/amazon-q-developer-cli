@@ -73,6 +73,10 @@ export interface Instance {
 	unmount(): void;
 	/** Drains stdin to prevent buffered escape sequences from leaking to the parent shell */
 	drainInput(maxMs?: number, idleMs?: number): Promise<void>;
+	/** Suspends enhanced keyboard reporting (Kitty protocol / modifyOtherKeys) before the process is backgrounded via Ctrl+Z. */
+	suspendKeyboard(): void;
+	/** Restores enhanced keyboard reporting after the process resumes (SIGCONT). */
+	resumeKeyboard(): void;
 	/** Returns a promise that resolves when the application exits */
 	waitUntilExit(): Promise<void>;
 	/** Clears the display and forces a full redraw */
@@ -377,6 +381,12 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		},
 		async drainInput(maxMs?: number, idleMs?: number) {
 			await tui.terminal.drainInput(maxMs, idleMs);
+		},
+		suspendKeyboard() {
+			tui.terminal.suspendKeyboard?.();
+		},
+		resumeKeyboard() {
+			tui.terminal.resumeKeyboard?.();
 		},
 		waitUntilExit() {
 			return exitPromise;

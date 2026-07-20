@@ -100,6 +100,21 @@ export interface Terminal {
 	drainInput(maxMs?: number, idleMs?: number): Promise<void>;
 
 	/**
+	 * Temporarily disables enhanced keyboard reporting (Kitty keyboard
+	 * protocol / xterm modifyOtherKeys) so control keys reach the parent
+	 * shell as legacy bytes while the process is suspended (e.g. Ctrl+Z).
+	 * Pair with {@link resumeKeyboard}. Optional: terminals without enhanced
+	 * keyboard support may omit it.
+	 */
+	suspendKeyboard?(): void;
+
+	/**
+	 * Re-enables the enhanced keyboard modes disabled by {@link suspendKeyboard}.
+	 * Optional: terminals without enhanced keyboard support may omit it.
+	 */
+	resumeKeyboard?(): void;
+
+	/**
 	 * Writes data to the terminal output.
 	 * 
 	 * Sends raw data to the terminal, typically containing text content

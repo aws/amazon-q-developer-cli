@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Garbled control keys in the parent shell after Ctrl+Z suspend"
+}

@@ -27,12 +27,33 @@ import { useAllowAnimations } from '../../hooks/useGlyphs.js';
 import { UI_VARIANTS } from './ui-variants.js';
 
 /**
+ * Enhanced-keyboard controls published on globalThis by index.tsx (the
+ * twinki render instance). Kept as a narrow shape so this module doesn't
+ * need twinki's full `Instance` type. Undefined in unit tests that don't
+ * mount the renderer.
+ */
+type TwinkiKeyboardControls = {
+  suspendKeyboard?: () => void;
+  resumeKeyboard?: () => void;
+};
+
+function twinkiInstance(): TwinkiKeyboardControls | undefined {
+  return (globalThis as { __TWINKI_INSTANCE__?: TwinkiKeyboardControls })
+    .__TWINKI_INSTANCE__;
+}
+
+/**
  * Suspends the process by restoring terminal state and sending SIGTSTP
  * to the entire process group (Bun TUI + parent Rust process).
  */
 function suspendProcess(): void {
   if (process.platform === 'win32') return;
   try {
+    // Disable the enhanced keyboard protocol (Kitty CSI-u / modifyOtherKeys)
+    // through twinki so the terminal mode and its parser flag stay in sync.
+    // Without this the parent shell receives CSI-u-encoded control keys after
+    // SIGTSTP (e.g. Ctrl+R prints `13;5u`).
+    twinkiInstance()?.suspendKeyboard?.();
     process.stdin.setRawMode?.(false);
     process.stdout.write(DISABLE_BRACKETED_PASTE);
     process.stdout.write(SHOW_CURSOR);
@@ -100,6 +121,9 @@ export const AppContainer: React.FC = () => {
         process.stdin.setRawMode?.(true);
         process.stdout.write(ENABLE_BRACKETED_PASTE);
         process.stdout.write(HIDE_CURSOR);
+        // Re-enable the enhanced keyboard protocol through twinki so the
+        // terminal mode and parser flag are restored together.
+        twinkiInstance()?.resumeKeyboard?.();
       } catch {
         // stdin/stdout may not be available
       }
