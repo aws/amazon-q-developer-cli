@@ -577,9 +577,12 @@ describe('runEffect routing', () => {
       runEffect(cmd, null, ctx, '');
 
       expect(ctx._spies.setUiMode!).toHaveBeenCalledWith('lite');
-      expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
-        'Switched to lite mode'
+      expect(ctx._spies.addSystemMessage!).toHaveBeenCalledWith(
+        '[EXPERIMENTAL] Switched to Lite UI',
+        true
       );
+      expect(ctx._spies.announceSystem!).not.toHaveBeenCalled();
+      expect(ctx._spies.showAlert!).not.toHaveBeenCalled();
     } finally {
       if (prev === undefined) delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
       else process.env.KIRO_LITE_ROLLOUT_ENABLED = prev;

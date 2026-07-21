@@ -590,45 +590,6 @@ export const ConversationView = React.memo(function ConversationView() {
   // only when a turn completes (~once per 10-60s).
   const turnSummaries = useAppStore((s) => s.turnSummaries);
 
-  // Coordinated session/mode reset. The store bumps `lite.scrollbackClearToken`
-  // when (a) the user runs /chat new or /chat <id>, (b) they swap from lite
-  // to tui. Both cases require the TUI's module-level singletons below to
-  // start empty — otherwise the staticItemsRef.current points at an array
-  // already filled with the prior session/mode's rows, and twinki's
-  // monotonic <Static> cursor has already advanced past those indices.
-  // Newly appended rows would then land at indices the cursor has already
-  // skipped past, which is what made messages "flash and disappear" or
-  // never reach scrollback during mode swaps.
-  //
-  // Why this runs in the render body (not a useEffect): the singletons feed
-  // refs created on the next two lines (staticItemsRef, emittedIdsRef,
-  // flushedRef). If we wiped them in an effect, the FIRST render after a
-  // bump would already have committed appends against the stale arrays
-  // and called twinki's writeStaticLines with cross-mode rows. By the time
-  // the effect fired we'd be undoing damage. Synchronous wipe = safe.
-  //
-  // Token is read with a single store subscription so React re-renders this
-  // component when the store dispatches the bump.
-  const clearToken = useAppStore((s) => s.lite.scrollbackClearToken);
-  if (clearToken !== _lastObservedClearToken) {
-    _lastObservedClearToken = clearToken;
-    // Mutate in place — refs declared below already point at these arrays.
-    _staticItems.length = 0;
-    _emittedIds.clear();
-    _flushedMap.clear();
-    // Reset the "have we ever seen messages" trackers so the post-clear
-    // welcome path treats this like a fresh session.
-    _hadMessages = false;
-    _hadUserMessage = false;
-    _welcomeInStatic = false;
-    // Wipe the visible terminal + scrollback + reset twinki's monotonic
-    // write cursor. Mirrors LiteLayout's clear effect verbatim — the
-    // sequence below makes twinki's stdout interceptor invoke
-    // handleExternalClear(), which drops accumulatedStaticOutput too.
-    process.stdout.write('\x1b[3J\x1b[H\x1b[2J');
-    adjustStaticCursor?.(Number.MAX_SAFE_INTEGER);
-  }
-
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
 
@@ -679,6 +640,8 @@ export const ConversationView = React.memo(function ConversationView() {
   const prevStaticLenRef = React.useRef(0);
   const staticItemsSnapshotRef = React.useRef<StaticItem[]>([]);
 
+  // This must be the sole consumer of _lastObservedClearToken. The replay path
+  // below depends on seeing the token change in this render.
   const liteScrollbackClearToken = useAppStore(
     (s) => s.lite.scrollbackClearToken
   );

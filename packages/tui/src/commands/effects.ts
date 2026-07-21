@@ -1451,7 +1451,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         sessionId: ctx.kiro.sessionId,
       });
     }
-    ctx.announceSystem('Switched to lite mode');
+    ctx.addSystemMessage('[EXPERIMENTAL] Switched to Lite UI', true);
   },
 
   switchToTui: (_result, ctx) => {

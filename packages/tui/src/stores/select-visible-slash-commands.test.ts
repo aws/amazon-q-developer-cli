@@ -259,7 +259,7 @@ describe('UI mode commands — KAS vs V2', () => {
         const cmd = selectVisibleSlashCommands(
           createAppStore({ kiro: new Kiro(), agentEngine }).getState()
         ).find((c) => c.name === '/lite');
-        expect(cmd?.description).toContain('Switch to lite mode');
+        expect(cmd?.description).toBe('[EXPERIMENTAL] Switch to Lite UI');
       });
       withRollout(undefined, () => {
         const cmd = selectVisibleSlashCommands(

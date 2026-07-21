@@ -2478,7 +2478,7 @@ export const createAppStore = (props: AppStoreProps) => {
         // conversation in the destination mode's form. From TUI mode, /tui
         // falls through to the info panel (origin/main behavior).
         name: '/lite',
-        description: 'Switch to lite mode',
+        description: '[EXPERIMENTAL] Switch to Lite UI',
         source: 'local' as const,
         meta: { local: true },
       },

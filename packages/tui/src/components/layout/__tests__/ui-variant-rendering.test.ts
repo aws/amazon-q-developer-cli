@@ -20,15 +20,21 @@ import { LiteTaskTray } from '../lite/LiteTaskTray.js';
 import { ActivityTray as TuiActivityTray } from '../../ui/activity-tray/index.js';
 import type { VariantLayoutProps } from '../variant-layout.js';
 import type { StatusSurfaceProps } from '../status-surface.js';
-import { AppStoreContext, createAppStore } from '../../../stores/app-store.js';
+import {
+  AppStoreContext,
+  createAppStore,
+  MessageRole,
+} from '../../../stores/app-store.js';
 import { Kiro } from '../../../kiro.js';
 import type { ApprovalRequestInfo } from '../../../types/agent-events.js';
 
 class MockTerminal implements Terminal {
   public output = '';
 
+  constructor(private readonly width = 120) {}
+
   get columns() {
-    return 120;
+    return this.width;
   }
 
   get rows() {
@@ -332,6 +338,162 @@ describe('UI variant layout rendering', () => {
       expect(output).not.toContain('Cloud');
       expect(output).not.toContain('~/kiro/cloud-app');
       expect(output).not.toContain('cloud-main');
+
+      activeInstance.unmount();
+      activeInstance = null;
+    }
+  });
+
+  it('keeps the /lite switch notice in static scrollback without a transient duplicate', async () => {
+    const previousRollout = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
+    const store = createVariantStore('tui');
+    const terminal = new MockTerminal();
+    Object.assign(store.getState().kiro, {
+      sendChatSlashCommandTelemetry: () => {},
+      sendUiModeChanged: () => {},
+    });
+
+    try {
+      await store.getState().handleUserInput('/lite');
+
+      expect(store.getState().uiMode).toBe('lite');
+      expect(store.getState().transientAlert).toBeNull();
+      expect(
+        store
+          .getState()
+          .messages.filter((message) => message.role === MessageRole.System)
+          .map((message) => message.content)
+      ).toEqual(['[EXPERIMENTAL] Switched to Lite UI']);
+
+      activeInstance = render(
+        React.createElement(
+          AppStoreContext.Provider,
+          { value: store },
+          React.createElement(AppContainer)
+        ),
+        { terminal, exitOnCtrlC: false }
+      );
+      await flush();
+
+      store.setState((state) => ({
+        messages: [
+          ...state.messages,
+          {
+            id: 'subsequent-frame',
+            role: MessageRole.System,
+            content: 'Subsequent scrollback frame',
+            success: true,
+          },
+        ],
+      }));
+      await flush();
+
+      const output = stripAnsi(terminal.output);
+      expect(output).toContain('Subsequent scrollback frame');
+      expect(
+        output.match(/\[EXPERIMENTAL\] Switched to Lite UI/g)
+      ).toHaveLength(1);
+      expect(store.getState().transientAlert).toBeNull();
+    } finally {
+      if (previousRollout === undefined) {
+        delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+      } else {
+        process.env.KIRO_LITE_ROLLOUT_ENABLED = previousRollout;
+      }
+    }
+  });
+
+  it('preserves switch notice chronology after returning to TUI', async () => {
+    const previousRollout = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
+    const store = createVariantStore('tui');
+    const terminal = new MockTerminal();
+    Object.assign(store.getState().kiro, {
+      sendChatSlashCommandTelemetry: () => {},
+      sendUiModeChanged: () => {},
+    });
+
+    try {
+      activeInstance = render(
+        React.createElement(
+          AppStoreContext.Provider,
+          { value: store },
+          React.createElement(AppContainer)
+        ),
+        { terminal, exitOnCtrlC: false }
+      );
+      await flush();
+
+      await store.getState().handleUserInput('/lite');
+      store.setState((state) => ({
+        messages: [
+          ...state.messages,
+          {
+            id: 'roundtrip-user',
+            role: MessageRole.User,
+            content: 'hello there',
+          },
+          {
+            id: 'roundtrip-model',
+            role: MessageRole.Model,
+            content: 'Hello! What are we working on?',
+          },
+        ],
+      }));
+      await flush();
+      await store.getState().handleUserInput('/lite');
+      await flush();
+
+      terminal.output = '';
+      await store.getState().handleUserInput('/tui');
+      await flush();
+
+      const output = stripAnsi(terminal.output);
+      const notice = '[EXPERIMENTAL] Switched to Lite UI';
+      const firstNotice = output.indexOf(notice);
+      const user = output.indexOf('hello there');
+      const model = output.indexOf('Hello! What are we working on?');
+      const secondNotice = output.indexOf(notice, firstNotice + notice.length);
+      const tuiNotice = output.indexOf('Switched to TUI mode');
+
+      expect(firstNotice).toBeGreaterThanOrEqual(0);
+      expect(user).toBeGreaterThan(firstNotice);
+      expect(model).toBeGreaterThan(user);
+      expect(secondNotice).toBeGreaterThan(model);
+      expect(tuiNotice).toBeGreaterThan(secondNotice);
+    } finally {
+      if (previousRollout === undefined) {
+        delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+      } else {
+        process.env.KIRO_LITE_ROLLOUT_ENABLED = previousRollout;
+      }
+    }
+  });
+
+  it('renders the Lite experimental header notice at normal and narrow widths', async () => {
+    const notice =
+      'Lite UI is currently an experimental feature. If you find any bugs or issues, please report it with /feedback';
+
+    for (const width of [120, 40]) {
+      const store = createVariantStore('lite');
+      const terminal = new MockTerminal(width);
+
+      activeInstance = render(
+        React.createElement(
+          AppStoreContext.Provider,
+          { value: store },
+          React.createElement(
+            LiteLayout,
+            createSurfaceStubs(surfaceNames(UI_VARIANTS.lite))
+          )
+        ),
+        { terminal, exitOnCtrlC: false }
+      );
+      await flush();
+
+      const output = stripAnsi(terminal.output).replace(/\s+/g, ' ');
+      expect(output).toContain(notice);
 
       activeInstance.unmount();
       activeInstance = null;

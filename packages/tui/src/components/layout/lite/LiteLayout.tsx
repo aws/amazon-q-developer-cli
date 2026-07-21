@@ -596,7 +596,11 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       engine: tipEngine,
       recommendLiteUi: tipRecommendLiteUi,
     });
-    let out = `${kiroArt}\n${chalk.dim(`  v${version} ${glyphs.smallDot} lite`)}`;
+    const experimentalNotice = brand(
+      '  Lite UI is currently an experimental feature.\n' +
+        '  If you find any bugs or issues, please report it with /feedback'
+    );
+    let out = `${kiroArt}\n${chalk.dim(`  v${version} ${glyphs.smallDot} lite`)}\n${experimentalNotice}`;
     if (tip) out += `\n${formatTipLine(tip)}`;
     return out;
   }, [allowAsciiArt, glyphs, tipRecommendLiteUi, tipEngine]);
