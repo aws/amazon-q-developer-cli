@@ -13,6 +13,25 @@ scenario you must:
 4. **Capture evidence** — frame at every interesting moment
 5. **Judge** — pass, fail, or observation
 
+## Test Leg Identity
+
+Before pre-flight checks or startup, record the exact engine and UI mode from
+the environment. Print them so they appear in `session.log`, and use the same
+values in `summary-results.md`:
+
+```bash
+SMOKE_ENGINE_RECORDED="${SMOKE_ENGINE:-rust}"
+SMOKE_UI_MODE_RECORDED="${KIRO_UI_MODE:-tui}"
+printf 'Smoke test leg: engine=%s ui_mode=%s\n' \
+  "$SMOKE_ENGINE_RECORDED" "$SMOKE_UI_MODE_RECORDED"
+```
+
+Do not change or unset `SMOKE_ENGINE` or `KIRO_UI_MODE`. Both UI modes use the
+same `scenarios.json`, scenario order, skip rules, observation requirements,
+verify checks, and pass/fail thresholds. Never filter, skip, downgrade, or mark
+a failure as advisory because `KIRO_UI_MODE=lite`. A Lite failure is a smoke
+failure under the same rules as TUI.
+
 ## Pre-flight: Validate Scenarios
 
 Before starting Knight Rider, validate that `scenarios.json` is in sync with
@@ -45,9 +64,10 @@ NEVER run raw `nohup bun run knight-rider` — it WILL hang without timeout guar
 bash scripts/knight-rider.sh start
 ```
 
-In CI, the wrapper reads the current checkout, `SMOKE_OUTPUT_DIR`, and `SMOKE_ENGINE` from
-the environment. Use the command exactly as shown on every platform; do not add `--dir`, `--out`,
-or `--kas` in CI.
+In CI, the wrapper reads the current checkout, `SMOKE_OUTPUT_DIR`, and
+`SMOKE_ENGINE` from the environment, and the launched process inherits
+`KIRO_UI_MODE`. Use the command exactly as shown on every platform; do not add
+`--dir`, `--out`, or `--kas` in CI.
 
 The script handles: engine selection, the evidence output directory, killing stale instances,
 a 30s boot guard, building the Rust binary if missing, and polling for readiness. Unix process
@@ -101,9 +121,28 @@ wait_text() {
 }
 ```
 
+## Verify Rendered UI Mode
+
+Before the first scenario, capture a `boot-<ui-mode>` frame and read the boot
+screen. The Lite welcome banner has a version line ending in `. lite` or
+`· lite`; the TUI welcome screen does not.
+
+- For `KIRO_UI_MODE=lite`, require a version line matching
+  `v<version> [.·] lite`.
+- For `KIRO_UI_MODE=tui`, require that marker to be absent.
+
+Record `Rendered UI mode | verified` in `summary-results.md`. If the marker
+contradicts the requested mode or the boot frame is missing, record a failed
+`boot-ui-mode` result with the observed screen, print
+`SMOKE FAIL rendered UI mode mismatch`, and stop. This is an evidence failure:
+do not run scenarios under the wrong UI and do not infer the rendered mode only
+from environment variables.
+
 ## Running Scenarios
 
-Read `packages/tui/e2e_tests/smoke/scenarios.json`. For each scenario:
+Read `packages/tui/e2e_tests/smoke/scenarios.json` once. Run that same list
+regardless of `KIRO_UI_MODE`; each CI leg runs only its requested mode. Do not
+branch the scenario set on `KIRO_UI_MODE`. For each scenario:
 
 ### Step translation
 
@@ -194,6 +233,7 @@ For scenarios that exit the TUI (`/quit`, `ctrlc-twice`), restart Knight Rider.
 - **`/editor`, `/reply`, `/paste`** — skip in headless (no editor/clipboard)
 - **`/quit`, `keyboard-ctrlc-exit`** — run LAST (they kill the TUI)
 - **ALL other scenarios MUST run** — including conversations, tool-use, and subagents
+- **No UI-specific skips** — Lite and TUI attempt the same scenarios and use the same verdict rules
 - **`prompt:*` steps** — the real agent responds; wait for idle after (up to 90s)
 - **`tool-use-*`** — with `--trust-all-tools` set, approvals are auto-granted. Still run
   these — verify the tool executes and output appears. Do NOT skip them.
@@ -214,7 +254,9 @@ If a verify fails or the screen shows unexpected output:
 
 ## Output
 
-When all scenarios are done, write `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}/summary-results.md`.
+Initialize `${SMOKE_OUTPUT_DIR:-$GITHUB_WORKSPACE/.smoke-frames}/summary-results.md`
+before the first scenario so partial evidence includes the leg identity. When
+all scenarios are done, finish the same file with the complete results.
 
 **IMPORTANT**: Write this file using bash (`echo >>`) or the `write` tool — NOT PowerShell.
 Use actual UTF-8 characters (✅ ⚠️ ❌ ⏭️), NOT PowerShell escape sequences like `$([char]0x2705)`.
@@ -224,6 +266,9 @@ Use actual UTF-8 characters (✅ ⚠️ ❌ ⏭️), NOT PowerShell escape seque
 
 | Metric | Value |
 |--------|-------|
+| Engine (`SMOKE_ENGINE`) | <engine> |
+| UI mode (`KIRO_UI_MODE`) | <tui-or-lite> |
+| Rendered UI mode | verified |
 | Scenarios run | <N> |
 | Passed | <P> |
 | Failed | <F> |
@@ -292,9 +337,11 @@ python3 -c "import urllib.request,json; urllib.request.urlopen(urllib.request.Re
 
 ## Incremental Results
 
-After EACH scenario, immediately append the result to `summary-results.md` using the
-`write` tool (append mode). Do NOT wait until all scenarios finish — if the step times
-out at 30 minutes, partial results must already be on disk for the judge to evaluate.
+Before the first scenario, create `summary-results.md` with the recorded engine
+and UI mode. After EACH scenario, immediately append the result using the
+`write` tool (append mode). Do NOT wait until all scenarios finish — if the step
+times out at 30 minutes, partial results and leg attribution must already be on
+disk for the judge to evaluate.
 
 ## Constraints
 

@@ -22,6 +22,14 @@ on:
           - all
           - rust
           - kas
+      ui_mode:
+        description: "UI mode to test"
+        type: choice
+        required: true
+        default: "tui"
+        options:
+          - tui
+          - lite
       reason:
         description: "Why are you running this?"
         required: false
@@ -53,6 +61,7 @@ jobs:
     outputs:
       platforms: ${{ steps.set.outputs.platforms }}
       engines: ${{ steps.set.outputs.engines }}
+      ui_modes: ${{ steps.set.outputs.ui_modes }}
     steps:
       - id: set
         run: |
@@ -67,9 +76,18 @@ jobs:
             kas)  echo 'engines=["kas"]' >> "$GITHUB_OUTPUT" ;;
             *)    echo 'engines=["rust","kas"]' >> "$GITHUB_OUTPUT" ;;
           esac
+          case "${{ inputs.channel }}" in
+            nightly) echo 'ui_modes=["tui","lite"]' >> "$GITHUB_OUTPUT" ;;
+            *)
+              case "${{ inputs.ui_mode }}" in
+                lite) echo 'ui_modes=["lite"]' >> "$GITHUB_OUTPUT" ;;
+                *)    echo 'ui_modes=["tui"]' >> "$GITHUB_OUTPUT" ;;
+              esac
+              ;;
+          esac
 
   smoke:
-    name: Smoke (${{ matrix.os }}/${{ matrix.engine }})
+    name: Smoke (${{ matrix.os }}/${{ matrix.engine }}/${{ matrix.ui_mode }})
     needs: matrix
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -78,10 +96,13 @@ jobs:
       matrix:
         os: ${{ fromJSON(needs.matrix.outputs.platforms) }}
         engine: ${{ fromJSON(needs.matrix.outputs.engines) }}
+        ui_mode: ${{ fromJSON(needs.matrix.outputs.ui_modes) }}
     env:
-      RUN_ID: smoke-${{ github.run_id }}-${{ matrix.os }}-${{ matrix.engine }}
+      RUN_ID: smoke-${{ github.run_id }}-${{ matrix.os }}-${{ matrix.engine }}-${{ matrix.ui_mode }}
       KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/debug/chat_cli
       KIRO_AGENT_ENGINE: ${{ matrix.engine == 'kas' && 'kas' || '' }}
+      KIRO_UI_MODE: ${{ matrix.ui_mode }}
+      KIRO_LITE_ROLLOUT_ENABLED: ${{ matrix.ui_mode == 'lite' && '1' || '' }}
       TERM: xterm-256color
       COLORTERM: truecolor
       FORCE_COLOR: '3'
@@ -155,7 +176,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$SMOKE_OUTPUT_DIR"
-          prompt="Run all scenarios. Engine: ${{ matrix.engine }}. Use the smoke prompt's exact Knight Rider command."
+          prompt="Run all scenarios. Engine: ${{ matrix.engine }}. UI mode: ${{ matrix.ui_mode }}. Use the smoke prompt's exact Knight Rider command."
           if [ "$RUNNER_OS" = "Windows" ]; then
             # A long-lived child can retain the workflow pipe on Windows after the agent finishes.
             kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
@@ -209,12 +230,13 @@ jobs:
           FRAMES_DIR="${{ github.workspace }}/.smoke-frames"
           frames=$(find "$FRAMES_DIR" -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
           {
-            echo "## Smoke Tests — ${{ matrix.os }} / ${{ matrix.engine }}"
+            echo "## Smoke Tests — ${{ matrix.os }} / ${{ matrix.engine }} / ${{ matrix.ui_mode }}"
             echo ""
             echo "| Property | Value |"
             echo "|----------|-------|"
             echo "| **Frames captured** | $frames |"
             echo "| **Engine** | ${{ matrix.engine }} |"
+            echo "| **UI mode** | ${{ matrix.ui_mode }} |"
             echo "| **Run ID** | \`${RUN_ID}\` |"
             echo "| **Reason** | ${{ inputs.reason }} |"
             echo ""
@@ -246,10 +268,10 @@ jobs:
 
   judge:
     name: LLM Judge
-    needs: smoke
+    needs: [matrix, smoke]
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
@@ -260,7 +282,6 @@ jobs:
         with:
           pattern: smoke-frames-*
           path: ${{ github.workspace }}/evidence
-          merge-multiple: true
 
       - name: Install kiro-cli
         run: |
@@ -280,9 +301,14 @@ jobs:
           aws-region: us-east-1
 
       - name: Run LLM Judge
+        id: run_judge
+        timeout-minutes: 25
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
           SMOKE_EVIDENCE_DIR: ${{ github.workspace }}/evidence
+          SMOKE_EXPECTED_PLATFORMS: ${{ needs.matrix.outputs.platforms }}
+          SMOKE_EXPECTED_ENGINES: ${{ needs.matrix.outputs.engines }}
+          SMOKE_EXPECTED_UI_MODES: ${{ needs.matrix.outputs.ui_modes }}
         shell: bash
         run: |
           kiro-cli chat --no-interactive --trust-all-tools --agent smoke-judge \
@@ -291,17 +317,295 @@ jobs:
 
       - name: Check verdict
         if: always()
+        env:
+          SMOKE_EXPECTED_PLATFORMS: ${{ needs.matrix.outputs.platforms }}
+          SMOKE_EXPECTED_ENGINES: ${{ needs.matrix.outputs.engines }}
+          SMOKE_EXPECTED_UI_MODES: ${{ needs.matrix.outputs.ui_modes }}
+          JUDGE_STEP_OUTCOME: ${{ steps.run_judge.outcome }}
         shell: bash
         run: |
           VERDICT_FILE="${{ github.workspace }}/evidence/judge-verdict.json"
+          write_fail_verdict() {
+            local summary="$1"
+            local reason="$2"
+            local expected="${3:-[]}"
+            local actual="${4:-[]}"
+            jq \
+              --arg summary "$summary" \
+              --arg reason "$reason" \
+              --argjson expected "$expected" \
+              --argjson actual "$actual" \
+              '.verdict = "fail"
+               | .summary = $summary
+               | .critical_failures = ((
+                   if (.critical_failures | type) == "array"
+                   then .critical_failures
+                   else []
+                   end
+                 ) + [{
+                   "reason": $reason,
+                   "expected": $expected,
+                   "actual": $actual
+                 }])' \
+              "$VERDICT_FILE" > "$VERDICT_FILE.tmp"
+            mv "$VERDICT_FILE.tmp" "$VERDICT_FILE"
+          }
+
           if [ ! -f "$VERDICT_FILE" ]; then
-            echo "⚠️ Judge did not produce verdict file"
+            SUMMARY="Judge did not produce a verdict file"
+            jq -n \
+              --arg summary "$SUMMARY" \
+              '{verdict: "fail", summary: $summary, checks: {}, legs: [],
+                critical_failures: [{reason: "missing-verdict-file"}],
+                warnings: []}' > "$VERDICT_FILE"
             echo "## LLM Judge" >> "$GITHUB_STEP_SUMMARY"
-            echo "⚠️ No verdict produced — judge agent may have failed" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            echo "❌ $SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$SUMMARY"
+            exit 1
           fi
+
+          if ! jq -e 'type == "object"' "$VERDICT_FILE" > /dev/null; then
+            SUMMARY="Judge produced malformed verdict JSON"
+            jq -n \
+              --arg summary "$SUMMARY" \
+              '{verdict: "fail", summary: $summary, checks: {}, legs: [],
+                critical_failures: [{reason: "malformed-verdict-json"}],
+                warnings: []}' > "$VERDICT_FILE.tmp"
+            mv "$VERDICT_FILE.tmp" "$VERDICT_FILE"
+            echo "::error::$SUMMARY"
+            exit 1
+          fi
+
+          if [ "$JUDGE_STEP_OUTCOME" != "success" ]; then
+            SUMMARY="LLM judge step did not complete successfully"
+            write_fail_verdict "$SUMMARY" "judge-step-$JUDGE_STEP_OUTCOME"
+            echo "::error::$SUMMARY"
+            exit 1
+          fi
+
+          if ! EXPECTED_LEGS=$(jq -cn \
+            --argjson platforms "$SMOKE_EXPECTED_PLATFORMS" \
+            --argjson engines "$SMOKE_EXPECTED_ENGINES" \
+            --argjson ui_modes "$SMOKE_EXPECTED_UI_MODES" \
+            '[$platforms[] as $os | $engines[] as $engine | $ui_modes[] as $ui_mode | "\($os)/\($engine)/\($ui_mode)"] | sort'); then
+            SUMMARY="Smoke matrix outputs are missing or invalid"
+            write_fail_verdict "$SUMMARY" "invalid-expected-matrix"
+            echo "::error::$SUMMARY"
+            exit 1
+          fi
+
+          DISCOVERED_LEGS=$(
+            for artifact_dir in \
+              "${{ github.workspace }}/evidence"/smoke-frames-smoke-"${{ github.run_id }}"-*; do
+              [ -d "$artifact_dir" ] || continue
+              identity="${artifact_dir##*/smoke-frames-smoke-${{ github.run_id }}-}"
+              ui_mode="${identity##*-}"
+              without_ui="${identity%-*}"
+              engine="${without_ui##*-}"
+              os="${without_ui%-*}"
+              printf '%s/%s/%s\n' "$os" "$engine" "$ui_mode"
+            done | jq -Rsc 'split("\n") | map(select(length > 0)) | sort'
+          )
+          if [ "$DISCOVERED_LEGS" != "$EXPECTED_LEGS" ]; then
+            SUMMARY="Downloaded smoke artifact set does not match the expected matrix"
+            write_fail_verdict \
+              "$SUMMARY" "artifact-leg-mismatch" \
+              "$EXPECTED_LEGS" "$DISCOVERED_LEGS"
+            echo "::error::$SUMMARY"
+            echo "Expected: $EXPECTED_LEGS"
+            echo "Actual:   $DISCOVERED_LEGS"
+            exit 1
+          fi
+
+          if ! jq -e \
+            --arg artifact_prefix \
+              "smoke-frames-smoke-${{ github.run_id }}-" '
+            def checks_valid:
+              if type != "object" then false
+              else
+                . as $checks
+                | (
+                [
+                  $checks["process-alive"],
+                  $checks["no-crash"],
+                  $checks["command-recognized"],
+                  $checks["panel-opened"],
+                  $checks["prompt-ready"],
+                  $checks["response-received"]
+                ] | all(.[];
+                  if type != "object" then false
+                  else (.pass | type) == "boolean"
+                  end
+                ))
+                and (
+                  $checks["command-recognized"].failures | type
+                ) == "array"
+                and ($checks["panel-opened"].failures | type) == "array"
+                and ($checks["prompt-ready"].failures | type) == "array"
+                and (
+                  $checks["response-received"].failures | type
+                ) == "array"
+                and $checks["command-recognized"].pass == (
+                  ($checks["command-recognized"].failures | length) == 0
+                )
+                and $checks["panel-opened"].pass == (
+                  ($checks["panel-opened"].failures | length) == 0
+                )
+                and $checks["prompt-ready"].pass == (
+                  ($checks["prompt-ready"].failures | length) == 0
+                )
+                and $checks["response-received"].pass == (
+                  ($checks["response-received"].failures | length) == 0
+                )
+              end;
+            if (.legs | type) != "array" then false
+            elif (.critical_failures | type) != "array" then false
+            elif (.warnings | type) != "array" then false
+            elif (.summary | type) != "string" then false
+            elif (.checks | checks_valid | not) then false
+            else
+              all(.legs[];
+                if type != "object" then false
+                else
+                  (.os | type) == "string"
+                  and (.engine | type) == "string"
+                  and (.ui_mode | type) == "string"
+                  and (.artifact_directory | type) == "string"
+                  and .artifact_directory == (
+                    $artifact_prefix
+                    + .os + "-" + .engine + "-" + .ui_mode
+                  )
+                  and .rendered_ui_verified == true
+                  and (
+                    .verdict == "pass"
+                    or .verdict == "warn"
+                    or .verdict == "fail"
+                  )
+                  and (.critical_failures | type) == "array"
+                  and (.warnings | type) == "array"
+                  and (.checks | checks_valid)
+                end
+              )
+            end' \
+            "$VERDICT_FILE" > /dev/null; then
+            SUMMARY="Judge produced invalid or unverified leg results"
+            write_fail_verdict "$SUMMARY" "invalid-leg-report"
+            echo "::error::$SUMMARY"
+            exit 1
+          fi
+
+          REPORTED_LEGS=$(jq -c \
+            '[.legs[] | "\(.os)/\(.engine)/\(.ui_mode)"] | sort' \
+            "$VERDICT_FILE")
+          if [ "$REPORTED_LEGS" != "$EXPECTED_LEGS" ]; then
+            SUMMARY="Judge-reported smoke leg set does not match the expected matrix"
+            write_fail_verdict \
+              "$SUMMARY" "reported-leg-mismatch" \
+              "$EXPECTED_LEGS" "$REPORTED_LEGS"
+            echo "::error::$SUMMARY"
+            echo "Expected: $EXPECTED_LEGS"
+            echo "Actual:   $REPORTED_LEGS"
+            exit 1
+          fi
+
           VERDICT=$(jq -r '.verdict' "$VERDICT_FILE")
           SUMMARY=$(jq -r '.summary' "$VERDICT_FILE")
+          case "$VERDICT" in
+            pass|warn|fail) ;;
+            *)
+              INVALID_VERDICT="$VERDICT"
+              SUMMARY="Judge produced invalid verdict: $INVALID_VERDICT"
+              write_fail_verdict "$SUMMARY" "invalid-verdict"
+              echo "::error::$SUMMARY"
+              exit 1
+              ;;
+          esac
+
+          if ! jq -e '
+            def check_values:
+              [
+                .checks["process-alive"].pass,
+                .checks["no-crash"].pass,
+                .checks["command-recognized"].pass,
+                .checks["panel-opened"].pass,
+                .checks["prompt-ready"].pass,
+                .checks["response-received"].pass
+              ];
+            def hard_failure:
+              .checks["process-alive"].pass == false
+              or .checks["no-crash"].pass == false
+              or (
+                .checks["command-recognized"].failures | length
+              ) >= 3
+              or (.checks["panel-opened"].failures | length) >= 3
+              or (.checks["prompt-ready"].failures | length) >= 3
+              or (
+                .checks["response-received"].failures | length
+              ) >= 2;
+            def blocking_legs:
+              if any(.legs[]; .engine == "rust")
+              then [.legs[] | select(.engine == "rust")]
+              else .legs
+              end;
+            def leg_consistent:
+              if .verdict == "pass" then
+                all(check_values[]; . == true)
+                and (.critical_failures | length) == 0
+                and (.warnings | length) == 0
+              elif .verdict == "warn" then
+                (hard_failure | not)
+                and (.critical_failures | length) == 0
+                and (.warnings | length) > 0
+              else
+                .verdict == "fail"
+                and (.critical_failures | length) > 0
+              end;
+            def aggregate_checks_match:
+              . as $report
+              | ($report | blocking_legs) as $blocking
+              | [
+                  "process-alive",
+                  "no-crash",
+                  "command-recognized",
+                  "panel-opened",
+                  "prompt-ready",
+                  "response-received"
+                ] as $names
+              | all($names[];
+                  . as $name
+                  | $report.checks[$name].pass == (
+                      [$blocking[].checks[$name].pass]
+                      | all(.[]; . == true)
+                    )
+                );
+            . as $report
+            | ($report | blocking_legs) as $blocking
+            | all(.legs[]; leg_consistent)
+            and aggregate_checks_match
+            and (
+              if .verdict == "pass" then
+                all(check_values[]; . == true)
+                and all($blocking[]; .verdict == "pass")
+                and (.critical_failures | length) == 0
+                and (.warnings | length) == 0
+              elif .verdict == "warn" then
+                any($blocking[]; .verdict == "warn")
+                and all($blocking[]; .verdict != "fail")
+                and (.critical_failures | length) == 0
+                and (.warnings | length) > 0
+              else
+                .verdict == "fail"
+                and any($blocking[]; .verdict == "fail")
+                and (.critical_failures | length) > 0
+              end
+            )' \
+            "$VERDICT_FILE" > /dev/null; then
+            SUMMARY="Judge verdict contradicts its per-leg results"
+            write_fail_verdict "$SUMMARY" "inconsistent-aggregate-verdict"
+            echo "::error::$SUMMARY"
+            exit 1
+          fi
+
           {
             echo "## LLM Judge Verdict"
             echo ""
@@ -334,6 +638,7 @@ jobs:
         shell: bash
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
+          RUN_REASON: ${{ inputs.reason || 'scheduled' }}
         run: |
           if [ -z "$SLACK_BOT_TOKEN" ]; then exit 0; fi
           VERDICT_FILE="${{ github.workspace }}/evidence/judge-verdict.json"
@@ -352,7 +657,16 @@ jobs:
           esac
           RUN_URL="https://github.com/kiro-team/kiro-cli/actions/runs/${{ github.run_id }}"
           DASHBOARD_URL="https://kiro-bot-dashboard.beta.harmony.a2z.com/?tab=smoke&runId=smoke-${{ github.run_id }}"
+          MESSAGE="${EMOJI} *${VERDICT^^}* — ${SUMMARY}"$'\n\n'"<${RUN_URL}|GitHub Run> | <${DASHBOARD_URL}|Dashboard> | Reason: ${RUN_REASON}"
+          PAYLOAD=$(jq -cn \
+            --arg text "$MESSAGE" \
+            '{channel: "C0ARG53D0NL", unfurl_links: false, blocks: [
+              {type: "header", text: {
+                type: "plain_text", text: "Smoke Test Judge Verdict"
+              }},
+              {type: "section", text: {type: "mrkdwn", text: $text}}
+            ]}')
           curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"channel\":\"C0ARG53D0NL\",\"unfurl_links\":false,\"blocks\":[{\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"Smoke Test Judge Verdict\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"${EMOJI} *${VERDICT^^}* — ${SUMMARY}\n\n<${RUN_URL}|GitHub Run> | <${DASHBOARD_URL}|Dashboard> | Reason: ${{ inputs.reason || 'scheduled' }}\"}}]}" || true
+            -d "$PAYLOAD" || true
