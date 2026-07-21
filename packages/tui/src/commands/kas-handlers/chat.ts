@@ -13,6 +13,7 @@ import {
 } from '../../utils/cross-engine-session-id';
 import { formatRelativeTime } from '../../utils/sessions';
 import { formatSessionState } from '../../utils/session-picker';
+import { isCloudExecutionTargetKind } from '../../types/multi-session';
 import { Feature, features } from '../../features';
 import { sanitizeSessionTitleForDisplay } from '../../utils/sanitize-title';
 import { unquote } from '../../utils/string';
@@ -112,7 +113,7 @@ async function showSessionPicker(
       (s) =>
         s.sessionId !== currentSessionId &&
         !shellIds.has(s.sessionId) &&
-        s.executionTarget?.kind === 'cloud-sandbox'
+        isCloudExecutionTargetKind(s.executionTarget?.kind)
     )
     .map((s) => ({
       sessionId: s.sessionId,
@@ -142,7 +143,7 @@ async function showSessionPicker(
     const live = liveMeta.get(s.sessionId);
     const executionTarget = live?.executionTarget?.kind ?? s.executionTarget;
     const status = live?.status ?? s.status;
-    const isCloud = executionTarget === 'cloud-sandbox';
+    const isCloud = isCloudExecutionTargetKind(executionTarget);
     return {
       sessionId: s.sessionId,
       title: sanitizeSessionTitleForDisplay(s.title),

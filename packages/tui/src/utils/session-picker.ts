@@ -14,6 +14,7 @@ import {
 import type { V2SessionFsEntry } from './sessions.js';
 import type { SessionEntry } from './list-all-sessions-cli.js';
 import { sanitizeSessionTitleForDisplay } from './sanitize-title.js';
+import { isCloudExecutionTargetKind } from '../types/multi-session.js';
 import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 
 /**
@@ -176,7 +177,7 @@ export function formatMergedEntry(
   // at least one cloud row (showEnvironment) — so a purely local listing renders
   // exactly as before (dark-safe). When shown, every row is tagged local|cloud.
   const environment = showEnvironment
-    ? entry.executionTarget === 'cloud-sandbox'
+    ? isCloudExecutionTargetKind(entry.executionTarget)
       ? ' | cloud'
       : ' | local'
     : '';
@@ -226,8 +227,8 @@ export async function pickSessionFromEntries(
       const totalLines = visibleCount + 2;
       process.stderr.write(`\x1b[${totalLines}A\x1b[J`);
       process.stderr.write('Select a chat session to resume:\n');
-      const showEnvironment = entries.some(
-        (e) => e.executionTarget === 'cloud-sandbox'
+      const showEnvironment = entries.some((e) =>
+        isCloudExecutionTargetKind(e.executionTarget)
       );
       for (let vi = 0; vi < visibleCount; vi++) {
         const i = scrollOffset + vi;

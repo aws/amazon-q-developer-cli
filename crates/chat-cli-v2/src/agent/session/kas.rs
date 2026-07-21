@@ -158,6 +158,31 @@ pub fn kiro_meta_string(meta: &Option<serde_json::Map<String, serde_json::Value>
         .map(str::to_string)
 }
 
+/// Reads WHERE a `session/list` row runs from the nested
+/// `_meta.kiro.executionTarget.kind` string (`"local"` | `"cloud-sandbox"`,
+/// or a future/renamed placement). Returns `None` only when `executionTarget`
+/// itself is absent — a local row (no `_meta.kiro`) yields `None` and is
+/// treated as local. An `executionTarget` that is PRESENT but unreadable (a
+/// bare string, a missing or non-string `kind`) reads as `Some("unknown")`
+/// rather than `None`, so a wire-shape change lands on the hidden side of the
+/// rollout gate instead of silently passing as local (fail-closed). Distinct
+/// from [`kiro_meta_string`] because the value is nested one level deeper (an
+/// object with a `kind`), not a flat string. `pub` so it can be unit-tested
+/// from a crate whose `#[cfg(test)]` runs (this crate is `#![cfg(not(test))]`).
+pub fn kiro_execution_target(meta: &Option<serde_json::Map<String, serde_json::Value>>) -> Option<String> {
+    let target = meta
+        .as_ref()
+        .and_then(|m| m.get("kiro"))
+        .and_then(|k| k.get("executionTarget"))?;
+    Some(
+        target
+            .get("kind")
+            .and_then(|kind| kind.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+    )
+}
+
 #[async_trait::async_trait(?Send)]
 impl KasSessionClient for KasAcpSessionClient {
     async fn list_sessions(&self, cwd: &Path) -> Result<Vec<SessionInfoEntry>> {
@@ -200,14 +225,7 @@ impl KasSessionClient for KasAcpSessionClient {
                     // `None` today (KAS advertises no remote store, so
                     // no row carries it) -> the merged picker treats it as local. Remove the
                     // read once remote rows are always present; the field itself is harmless.
-                    execution_target: info
-                        .meta
-                        .as_ref()
-                        .and_then(|m| m.get("kiro"))
-                        .and_then(|k| k.get("executionTarget"))
-                        .and_then(|et| et.get("kind"))
-                        .and_then(|kind| kind.as_str())
-                        .map(str::to_string),
+                    execution_target: kiro_execution_target(&info.meta),
                     cwd: info.cwd,
                     title: info.title.or(meta_description),
                     updated_at: info.updated_at.or(meta_created_at),

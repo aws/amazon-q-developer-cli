@@ -45,6 +45,17 @@ describe('resolveResumeTarget', () => {
     expect(r.resumeId).toBe(full);
   });
 
+  it('flips cloud on for any non-local kind (fail-closed)', () => {
+    // A future or separate non-local placement (e.g. remote-control) must still
+    // route the resume to cloud mode, not be mistaken for local.
+    const full = 'abc12345-1111-4aaa-8bbb-cccccccccccc';
+    const r = resolveResumeTarget('abc12345', false, [
+      entry(full, 'remote-control'),
+    ]);
+    expect(r.cloud).toBe(true);
+    expect(r.resumeId).toBe(full);
+  });
+
   it('leaves cloud unchanged for a local row', () => {
     const full = 'abc12345-1111-4aaa-8bbb-cccccccccccc';
     expect(resolveResumeTarget('abc12345', false, [entry(full)]).cloud).toBe(

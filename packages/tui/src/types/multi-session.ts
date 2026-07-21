@@ -38,6 +38,23 @@ export interface AgentSession {
 }
 
 /**
+ * True when an execution-target *kind* string denotes a cloud (non-local)
+ * placement. Fail-closed: absent/`'local'` is local; every other value is
+ * treated as cloud and gated accordingly — `'cloud-sandbox'` (the cloud-session
+ * feature), and, defensively, any future or unknown kind so a new value can
+ * never be silently mislabeled local. Note `'remote-control'` is a separate,
+ * not-yet-shipped feature; until it has dedicated handling this fail-closed
+ * check also returns true for it. Single source of truth for the
+ * local-vs-cloud classification (mirrors the Rust `is_definitively_local`
+ * gate); prefer it over inline `=== 'cloud-sandbox'` checks.
+ */
+export function isCloudExecutionTargetKind(
+  kind: string | undefined | null
+): boolean {
+  return kind !== undefined && kind !== null && kind !== 'local';
+}
+
+/**
  * True when a session runs somewhere other than the local machine (cloud
  * sandbox or remote-control). Absent/`local` execution target == not remote.
  * This is the single gate used to vary TUI behavior for remote sessions.
@@ -45,8 +62,7 @@ export interface AgentSession {
 export function isRemoteSession(
   session: Pick<AgentSession, 'executionTarget'> | undefined | null
 ): boolean {
-  const kind = session?.executionTarget?.kind;
-  return kind !== undefined && kind !== 'local';
+  return isCloudExecutionTargetKind(session?.executionTarget?.kind);
 }
 
 export interface InboxMessage {

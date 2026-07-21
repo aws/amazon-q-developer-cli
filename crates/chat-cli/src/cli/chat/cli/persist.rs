@@ -481,9 +481,19 @@ impl<'a> SessionListingJson<'a> {
     /// Build the envelope from raw entries, canonicalizing `cwd` so
     /// the JSON output is symlink-stable. Falls back to the
     /// unresolved path if canonicalization fails.
-    pub fn from_entries(cwd: &std::path::Path, entries: &'a [SessionEntry]) -> Self {
+    ///
+    /// `cloud_sessions_enabled` mirrors the plain renderer's rollout gate: while
+    /// the cloud-session rollout is off, the per-row `executionTarget`/`status`
+    /// members are suppressed so the released JSON is byte-identical to prod.
+    /// (`collect_sessions` already drops cloud/non-local *rows*; this also stops
+    /// a surviving local KAS row from emitting `executionTarget: "local"` or a
+    /// status snapshot that a released build never had.)
+    pub fn from_entries(cwd: &std::path::Path, entries: &'a [SessionEntry], cloud_sessions_enabled: bool) -> Self {
         let canonical = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-        let sessions = entries.iter().map(SessionEntryJson::from_entry).collect();
+        let sessions = entries
+            .iter()
+            .map(|e| SessionEntryJson::from_entry(e, cloud_sessions_enabled))
+            .collect();
         Self {
             cwd: canonical.display().to_string(),
             sessions,
@@ -492,7 +502,7 @@ impl<'a> SessionListingJson<'a> {
 }
 
 impl<'a> SessionEntryJson<'a> {
-    fn from_entry(e: &'a SessionEntry) -> Self {
+    fn from_entry(e: &'a SessionEntry, cloud_sessions_enabled: bool) -> Self {
         let updated_at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(e.updated_at_ms)
             .unwrap_or_default()
             .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -502,8 +512,20 @@ impl<'a> SessionEntryJson<'a> {
             title: &e.summary,
             updated_at,
             message_count: e.msg_count,
-            execution_target: e.execution_target.as_deref(),
-            status: e.activity_status.as_deref(),
+            // Gated on the rollout, mirroring `render_session_entries`: off →
+            // omitted entirely, so the released JSON carries no cloud members.
+            // TODO(RemoteSandbox-release): drop the gate (emit unconditionally)
+            // once the rollout is fully released.
+            execution_target: if cloud_sessions_enabled {
+                e.execution_target.as_deref()
+            } else {
+                None
+            },
+            status: if cloud_sessions_enabled {
+                e.activity_status.as_deref()
+            } else {
+                None
+            },
         }
     }
 }
@@ -626,7 +648,7 @@ pub async fn handle_list_delete_session_flags(
     list_sessions: bool,
     delete_session: Option<&str>,
     delete_source: Option<SessionSource>,
-    cloud_delete_enabled: bool,
+    cloud_sessions_enabled: bool,
     format: crate::cli::OutputFormat,
     os: &Os,
 ) -> Option<ExitCode> {
@@ -638,7 +660,7 @@ pub async fn handle_list_delete_session_flags(
                 return Some(ExitCode::FAILURE);
             },
         };
-        let entries = collect_sessions(os, &cwd).await;
+        let entries = collect_sessions(os, &cwd, cloud_sessions_enabled).await;
         match format {
             crate::cli::OutputFormat::Plain => {
                 if let Err(e) = render_session_entries(&mut std::io::stderr(), &cwd.display().to_string(), &entries) {
@@ -647,7 +669,7 @@ pub async fn handle_list_delete_session_flags(
                 }
             },
             crate::cli::OutputFormat::Json | crate::cli::OutputFormat::JsonPretty => {
-                let envelope = SessionListingJson::from_entries(&cwd, &entries);
+                let envelope = SessionListingJson::from_entries(&cwd, &entries, cloud_sessions_enabled);
                 // Top-level shape is an array of `{cwd, sessions}` so a
                 // future `--all-cwds` flag can extend the listing without
                 // a breaking rename. Today the array is single-element.
@@ -669,19 +691,45 @@ pub async fn handle_list_delete_session_flags(
     }
 
     if let Some(session_id) = delete_session {
-        return Some(handle_delete_session(os, session_id, delete_source, cloud_delete_enabled).await);
+        return Some(handle_delete_session(os, session_id, delete_source, cloud_sessions_enabled).await);
     }
 
     None
 }
 
-/// Collect V1+V2 sessions, plus KAS sessions when KAS launch succeeds. KAS
-/// launch failures are logged via `tracing::warn` and do not abort the listing.
-async fn collect_sessions(os: &Os, cwd: &std::path::Path) -> Vec<SessionEntry> {
+/// A row is "definitively local" and therefore safe to show while the
+/// cloud-session rollout is off (the `RemoteSandbox` feature gate). Absent
+/// execution target (V1/V2 rows and local KAS rows) and the explicit `"local"`
+/// kind qualify; every other value — `"cloud-sandbox"`, the separate
+/// not-yet-shipped `"remote-control"`, or any future/unknown kind — is treated
+/// as cloud/non-local and hidden. This is the fail-closed contract the
+/// released-build listing gate relies on: unknown kinds are dropped by
+/// default, never leaked.
+///
+/// TODO(RemoteSandbox-release): once the `RemoteSandbox` rollout is fully
+/// released, remove the listing/delete gating that calls this (grep for
+/// `TODO(RemoteSandbox-release)`); the predicate itself stays as the
+/// local-vs-cloud classifier for the environment column.
+fn is_definitively_local(execution_target: Option<&str>) -> bool {
+    matches!(execution_target, None | Some("local"))
+}
+
+/// Collect V1+V2 sessions, plus KAS sessions when KAS launch succeeds. While
+/// the cloud-session rollout is disabled, only definitively-local rows are
+/// kept — any cloud/non-local execution target is dropped.
+async fn collect_sessions(os: &Os, cwd: &std::path::Path, cloud_sessions_enabled: bool) -> Vec<SessionEntry> {
     let mut entries = collect_all_sessions(&os.database, cwd);
     match collect_kas_via_mock_or_spawn(os, cwd).await {
         Ok(mut kas) => entries.append(&mut kas),
         Err(e) => tracing::warn!("KAS sessions unavailable: {e:#}"),
+    }
+    if !cloud_sessions_enabled {
+        // Fail closed: keep only rows that are definitively local, so an
+        // unknown or future remote kind (e.g. `remote-control`) can never leak
+        // into a released listing. See [`is_definitively_local`].
+        // TODO(RemoteSandbox-release): remove this filter once the rollout is
+        // fully released and cloud rows are meant to show everywhere.
+        entries.retain(|entry| is_definitively_local(entry.execution_target.as_deref()));
     }
     entries.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
     entries
@@ -733,7 +781,7 @@ async fn handle_delete_session(
     os: &Os,
     session_id: &str,
     source: Option<SessionSource>,
-    cloud_delete_enabled: bool,
+    cloud_sessions_enabled: bool,
 ) -> ExitCode {
     // Short-id support: resolve a unique prefix to the full id the stores key
     // on. A prefix is honored only from eight characters — the length
@@ -748,7 +796,7 @@ async fn handle_delete_session(
     // and on released builds.
     let cwd = std::env::current_dir().unwrap_or_default();
     let is_prefix = is_session_id_prefix(session_id);
-    let resolved: Option<String> = if cloud_delete_enabled && is_prefix {
+    let resolved: Option<String> = if cloud_sessions_enabled && is_prefix {
         let local: Vec<String> = collect_all_sessions(&os.database, &cwd)
             .into_iter()
             .map(|e| e.session_id)
@@ -761,7 +809,10 @@ async fn handle_delete_session(
         } else {
             // Consult both stores so a prefix shared across local and cloud
             // sessions is flagged ambiguous instead of picking local blindly.
-            collect_sessions(os, &cwd)
+            // `cloud_sessions_enabled` is always true in this block (guarded by
+            // the outer `if`), so the collect-time filter is a no-op here — the
+            // merged cloud+local view is intentional on the delete path.
+            collect_sessions(os, &cwd, cloud_sessions_enabled)
                 .await
                 .into_iter()
                 .map(|e| e.session_id)
@@ -812,7 +863,7 @@ async fn handle_delete_session(
             // delete removes a cloud session too. KAS has no combined-store delete
             // and rejects "all", so this is two calls.
             client.delete_session(session_id, None).await?;
-            if cloud_delete_enabled {
+            if cloud_sessions_enabled {
                 client.delete_session(session_id, Some("remote")).await?;
                 // KAS reports delete success unconditionally, so verify: the
                 // delete counts only when the id no longer appears in the
@@ -854,7 +905,7 @@ async fn handle_delete_session(
         // Gated: released builds keep the plain not-found message. The hint
         // fires when a sub-8-char value matched nothing exactly, since prefix
         // resolution refused it.
-        if cloud_delete_enabled && !session_id.is_empty() && session_id.len() < 8 {
+        if cloud_sessions_enabled && !session_id.is_empty() && session_id.len() < 8 {
             eprintln!(
                 "Error: chat session {session_id} not found (a partial session id must be at least 8 characters; copy the id from --list-sessions)"
             );
@@ -920,7 +971,7 @@ fn render_session_entries(
 
     // Environment (local/cloud) + status tags ride the rollout: released
     // builds keep the pre-existing row format byte-identical.
-    let remote_enabled = crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox);
+    let cloud_sessions_enabled = crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox);
 
     for entry in entries {
         let timestamp = format_timestamp(entry.updated_at_ms);
@@ -928,11 +979,16 @@ fn render_session_entries(
             Some(n) => format!("{} | ", format!("{n} msgs").dim()),
             None => String::new(),
         };
-        let where_segment = if remote_enabled {
-            let env = if entry.execution_target.as_deref() == Some("cloud-sandbox") {
-                "cloud"
-            } else {
+        let where_segment = if cloud_sessions_enabled {
+            // Fail-closed classification (mirrors the listing gate and
+            // [`is_definitively_local`]): only a definitively-local row reads
+            // `local`; any cloud/non-local kind — cloud sandbox, or a future
+            // placement such as the separate `remote-control` — reads `cloud`,
+            // never mislabeled local.
+            let env = if is_definitively_local(entry.execution_target.as_deref()) {
                 "local"
+            } else {
+                "cloud"
             };
             format!(" | {}", env.to_string().dim())
         } else {
@@ -940,7 +996,7 @@ fn render_session_entries(
         };
         // Activity status (idle/working/waiting/...): a row without a live
         // status is at rest, so it reads `idle`.
-        let status_segment = if remote_enabled {
+        let status_segment = if cloud_sessions_enabled {
             let status = entry.activity_status.as_deref().map_or("idle", format_session_state);
             format!(" | {}", status.to_string().dim())
         } else {
@@ -1721,6 +1777,28 @@ mod kas_tests {
         assert_eq!(local.execution_target, None);
     }
 
+    #[test]
+    fn definitively_local_gate_is_fail_closed() {
+        // The released-build listing gate keeps only these:
+        assert!(is_definitively_local(None), "absent target (V1/V2, local KAS) is local");
+        assert!(is_definitively_local(Some("local")), "explicit local kind is local");
+        // …and drops everything else, including the known cloud kind and any
+        // unknown/future kind. A regression to an exclude-list
+        // (`!= Some(\"cloud-sandbox\")`) would flip the last two to `true`.
+        assert!(
+            !is_definitively_local(Some("cloud-sandbox")),
+            "cloud-sandbox is non-local"
+        );
+        assert!(
+            !is_definitively_local(Some("remote-control")),
+            "the separate not-yet-shipped remote-control kind must be hidden by default"
+        );
+        assert!(
+            !is_definitively_local(Some("some-future-kind")),
+            "unknown non-local kind must be hidden by default"
+        );
+    }
+
     #[tokio::test]
     async fn collect_kas_sessions_propagates_error() {
         let client = KasMockSessionClient::new().with_list_err("rpc timeout");
@@ -1755,7 +1833,7 @@ mod kas_tests {
                 activity_status: Some("waiting_on_user".to_string()),
             },
         ];
-        let json = SessionListingJson::from_entries(&cwd, &entries);
+        let json = SessionListingJson::from_entries(&cwd, &entries, true);
         let parsed: serde_json::Value = serde_json::from_str(&serde_json::to_string(&json).unwrap()).unwrap();
         assert!(parsed.get("cwd").and_then(|v| v.as_str()).is_some());
         let sessions = parsed.get("sessions").and_then(|v| v.as_array()).unwrap();
@@ -1794,13 +1872,51 @@ mod kas_tests {
     }
 
     #[test]
+    fn session_listing_json_suppresses_cloud_members_when_cloud_disabled() {
+        // Released shape: even if a surviving row still carries an execution
+        // target / status (e.g. a local KAS row tagged "local"), the JSON must
+        // omit both members so it stays byte-identical to prod — mirroring the
+        // plain renderer's rollout gate.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/tmp"));
+        let entries = vec![SessionEntry {
+            session_id: "kas-local-1".to_string(),
+            summary: "local kas row".to_string(),
+            msg_count: None,
+            updated_at_ms: 1_700_000_000_000,
+            source: SessionSource::Kas,
+            execution_target: Some("local".to_string()),
+            activity_status: Some("in_progress".to_string()),
+        }];
+
+        let off: serde_json::Value = serde_json::from_str(
+            &serde_json::to_string(&SessionListingJson::from_entries(&cwd, &entries, false)).unwrap(),
+        )
+        .unwrap();
+        let row_off = &off["sessions"][0];
+        assert!(
+            row_off.get("executionTarget").is_none() && row_off.get("status").is_none(),
+            "released JSON must omit executionTarget/status: {row_off}"
+        );
+
+        // Sanity: with the feature on, the same row DOES surface both members,
+        // so the suppression above is the gate — not an unconditional drop.
+        let on: serde_json::Value = serde_json::from_str(
+            &serde_json::to_string(&SessionListingJson::from_entries(&cwd, &entries, true)).unwrap(),
+        )
+        .unwrap();
+        let row_on = &on["sessions"][0];
+        assert_eq!(row_on.get("executionTarget").and_then(|v| v.as_str()), Some("local"));
+        assert_eq!(row_on.get("status").and_then(|v| v.as_str()), Some("in_progress"));
+    }
+
+    #[test]
     fn session_listing_json_canonicalizes_cwd() {
         let entries: Vec<SessionEntry> = vec![];
         // `/tmp` is a symlink to `/private/tmp` on macOS - canonicalize
         // resolves it. On Linux the path is already canonical and the
         // assertion still holds (canonical of `/tmp` == `/tmp`).
         let canonical = std::fs::canonicalize("/tmp").unwrap();
-        let json = SessionListingJson::from_entries(Path::new("/tmp"), &entries);
+        let json = SessionListingJson::from_entries(Path::new("/tmp"), &entries, true);
         assert_eq!(json.cwd, canonical.display().to_string());
     }
 
@@ -1867,6 +1983,78 @@ mod kas_tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn kiro_execution_target_reads_nested_kind() {
+        use chat_cli_v2::agent::session::kas::kiro_execution_target as et;
+        // The production `session/list` walk: `_meta.kiro.executionTarget.kind`.
+        assert_eq!(
+            et(&caps(serde_json::json!({
+                "kiro": { "executionTarget": { "kind": "cloud-sandbox" } }
+            })))
+            .as_deref(),
+            Some("cloud-sandbox")
+        );
+        // An explicit local kind round-trips (kept by the fail-closed listing gate).
+        assert_eq!(
+            et(&caps(serde_json::json!({
+                "kiro": { "executionTarget": { "kind": "local" } }
+            })))
+            .as_deref(),
+            Some("local")
+        );
+        // A future/unknown non-local kind is read verbatim — the listing gate is
+        // what hides it, so this walk must surface it rather than swallow it.
+        assert_eq!(
+            et(&caps(serde_json::json!({
+                "kiro": { "executionTarget": { "kind": "remote-control" } }
+            })))
+            .as_deref(),
+            Some("remote-control")
+        );
+    }
+
+    #[test]
+    fn kiro_execution_target_is_none_only_when_absent() {
+        use chat_cli_v2::agent::session::kas::kiro_execution_target as et;
+        // Local row (no `_meta.kiro` / no executionTarget) -> None -> treated
+        // as local (dark-safe).
+        assert_eq!(et(&None), None);
+        assert_eq!(et(&caps(serde_json::json!({}))), None);
+        assert_eq!(et(&caps(serde_json::json!({ "kiro": {} }))), None);
+    }
+
+    #[test]
+    fn kiro_execution_target_reads_unknown_for_present_but_malformed_target() {
+        use chat_cli_v2::agent::session::kas::kiro_execution_target as et;
+        // An executionTarget that EXISTS but can't be read as `{ kind: <string> }`
+        // must NOT collapse to None (= local): a KAS wire-shape change would
+        // then fail open and leak the row into a released listing. It reads as
+        // the "unknown" sentinel, which `is_definitively_local` hides.
+        assert_eq!(
+            et(&caps(serde_json::json!({ "kiro": { "executionTarget": {} } }))).as_deref(),
+            Some("unknown"),
+            "missing `kind` is present-but-unreadable, not local"
+        );
+        assert_eq!(
+            et(&caps(serde_json::json!({
+                "kiro": { "executionTarget": { "kind": 7 } }
+            })))
+            .as_deref(),
+            Some("unknown"),
+            "non-string `kind` is present-but-unreadable, not local"
+        );
+        assert_eq!(
+            et(&caps(
+                serde_json::json!({ "kiro": { "executionTarget": "cloud-sandbox" } })
+            ))
+            .as_deref(),
+            Some("unknown"),
+            "a bare-string executionTarget has no `.kind` and must not read as local"
+        );
+        // And the gate drops the sentinel.
+        assert!(!is_definitively_local(Some("unknown")));
     }
 
     #[test]

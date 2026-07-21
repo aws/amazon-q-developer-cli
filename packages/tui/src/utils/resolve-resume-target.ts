@@ -1,5 +1,7 @@
 import type { SessionEntry } from './list-all-sessions-cli';
 
+import { isCloudExecutionTargetKind } from '../types/multi-session';
+
 /**
  * A full-form session id starts `xxxxxxxx-xxxx…`; anything shorter is treated as
  * a short prefix (the value `--list-sessions` renders is an 8-char head).
@@ -40,7 +42,7 @@ export function resolveResumeTarget(
     const row = matches[0]!;
     return {
       resumeId: row.sessionId,
-      cloud: cloud || row.executionTarget === 'cloud-sandbox',
+      cloud: cloud || isCloudExecutionTargetKind(row.executionTarget),
       ambiguous: false,
       matchCount: 1,
     };
