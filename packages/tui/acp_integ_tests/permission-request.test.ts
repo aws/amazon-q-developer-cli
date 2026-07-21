@@ -14,6 +14,7 @@ import type {
   NewSessionResponse,
   PromptRequest,
   PromptResponse,
+  SessionNotification,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
@@ -33,6 +34,12 @@ function setupHandshake(tc: AcpTestCase): void {
   }));
 
   tc.mock.on('session/set_config_option', () => ({}));
+}
+
+async function launchInitialized(tc: AcpTestCase): Promise<void> {
+  await tc.launch();
+  await tc.mock.awaitConnection();
+  await tc.waitForStore((state) => state.isInitialized, 10_000);
 }
 
 describe('permission request + session info updates', () => {
@@ -62,10 +69,10 @@ describe('permission request + session info updates', () => {
           sessionUpdate: 'tool_call',
           toolCallId: 'tool-1',
           title: 'execute_bash',
-          kind: 'shell',
+          kind: 'execute',
           rawInput: { command: 'rm -rf /tmp/test' },
         },
-      });
+      } satisfies SessionNotification);
 
       await new Promise((r) => setTimeout(r, 300));
 
@@ -91,27 +98,26 @@ describe('permission request + session info updates', () => {
       return response as PromptResponse;
     });
 
-    await tc.launch();
-    await tc.mock.awaitConnection();
-    await tc.sleepMs(300);
+    await launchInitialized(tc);
 
     // Send a prompt to trigger the permission flow
     await tc.sendKeys('delete temp files');
     await tc.pressEnter();
 
     // Wait for the approval panel to appear
-    await tc.waitForVisibleText('requires approval', 5000);
-    await tc.sleepMs(300);
+    await tc.waitForVisibleText('requires approval', 10_000);
 
     // Press Enter to select the first option (allow_once)
     await tc.pressEnter();
-    await tc.sleepMs(500);
 
     // The mock.request promise should have resolved with the user's choice
     // (verified by the prompt handler completing without error)
-    const store = await tc.getStore();
+    const store = await tc.waitForStore(
+      (state) => state.pendingApproval === null,
+      10_000
+    );
     expect(store.pendingApproval).toBeNull();
-  });
+  }, 20_000);
 
   it('session_info_update with context_usage updates store percent', async () => {
     /**
@@ -122,9 +128,7 @@ describe('permission request + session info updates', () => {
     tc = new AcpTestCase({ testName: 'context-usage-update' });
     setupHandshake(tc);
 
-    await tc.launch();
-    await tc.mock.awaitConnection();
-    await tc.sleepMs(300);
+    await launchInitialized(tc);
 
     tc.mock.notify('session/update', {
       sessionId: 'perm-session-1',
@@ -139,11 +143,12 @@ describe('permission request + session info updates', () => {
         },
       },
     });
-    await tc.sleepMs(300);
-
-    const store = await tc.getStore();
+    const store = await tc.waitForStore(
+      (state) => state.contextUsagePercent === 75,
+      10_000
+    );
     expect(store.contextUsagePercent).toBe(75);
-  });
+  }, 20_000);
 
   it('session_info_update with turn_completion clears processing state', async () => {
     /**
@@ -179,17 +184,15 @@ describe('permission request + session info updates', () => {
       return { sessionId: 'perm-session-1' } as unknown as PromptResponse;
     });
 
-    await tc.launch();
-    await tc.mock.awaitConnection();
-    await tc.sleepMs(300);
+    await launchInitialized(tc);
 
     await tc.sendKeys('test');
     await tc.pressEnter();
-    await tc.sleepMs(800);
 
-    const store = await tc.getStore();
+    await tc.waitForStore((state) => state.isProcessing, 10_000);
+    const store = await tc.waitForStore((state) => !state.isProcessing, 10_000);
     expect(store.isProcessing).toBe(false);
-  });
+  }, 20_000);
 
   it('session/request_permission cancelled via Escape resolves with cancelled', async () => {
     /**
@@ -209,10 +212,10 @@ describe('permission request + session info updates', () => {
           sessionUpdate: 'tool_call',
           toolCallId: 'tool-2',
           title: 'fs_write',
-          kind: 'write',
+          kind: 'edit',
           rawInput: { path: '/etc/passwd', content: 'hacked' },
         },
-      });
+      } satisfies SessionNotification);
 
       await new Promise((r) => setTimeout(r, 300));
 
@@ -241,24 +244,23 @@ describe('permission request + session info updates', () => {
       return permissionResponse as PromptResponse;
     });
 
-    await tc.launch();
-    await tc.mock.awaitConnection();
-    await tc.sleepMs(300);
+    await launchInitialized(tc);
 
     await tc.sendKeys('write to etc passwd');
     await tc.pressEnter();
 
-    await tc.waitForVisibleText('requires approval', 5000);
-    await tc.sleepMs(300);
+    await tc.waitForVisibleText('requires approval', 10_000);
 
     // Press Escape to cancel
     await tc.pressEscape();
-    await tc.sleepMs(500);
 
-    const store = await tc.getStore();
+    const store = await tc.waitForStore(
+      (state) => state.pendingApproval === null && permissionResponse !== null,
+      10_000
+    );
     expect(store.pendingApproval).toBeNull();
     expect(permissionResponse).toBeDefined();
     const resp = permissionResponse as { outcome: { outcome: string } };
     expect(resp.outcome.outcome).toBe('cancelled');
-  });
+  }, 20_000);
 });

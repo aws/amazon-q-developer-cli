@@ -6,6 +6,7 @@ import type {
   NewSessionResponse,
   PromptRequest,
   PromptResponse,
+  SessionNotification,
 } from '@agentclientprotocol/sdk';
 import { AcpTestCase } from './shared/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
@@ -27,6 +28,12 @@ function setupHandshake(tc: AcpTestCase): void {
   tc.mock.on('session/set_config_option', () => ({}));
 }
 
+async function launchInitialized(tc: AcpTestCase): Promise<void> {
+  await tc.launch();
+  await tc.mock.awaitConnection();
+  await tc.waitForStore((state) => state.isInitialized, 10_000);
+}
+
 describe('interaction hints', () => {
   let tc: AcpTestCase | null = null;
 
@@ -39,9 +46,7 @@ describe('interaction hints', () => {
     tc = new AcpTestCase({ testName: 'slash-menu-hints' });
     setupHandshake(tc);
 
-    await tc.launch();
-    await tc.mock.awaitConnection();
-    await tc.sleepMs(200);
+    await launchInitialized(tc);
 
     tc.mock.notify('session/update', {
       sessionId: 'hints-session-1',
@@ -56,16 +61,13 @@ describe('interaction hints', () => {
         ],
       },
     });
-    await tc.sleepMs(300);
-
     await tc.sendKeys('/');
-    await tc.sleepMs(300);
 
-    await tc.waitForVisibleText('to navigate', 5000);
+    await tc.waitForVisibleText('to navigate', 10_000);
     const snap = tc.getSnapshotFormatted();
     expect(snap).toContain('to navigate');
     expect(snap).toContain('to select');
-  });
+  }, 20_000);
 
   it('approval panel surfaces navigate/select/edit hints', async () => {
     tc = new AcpTestCase({ testName: 'approval-hints' });
@@ -78,10 +80,10 @@ describe('interaction hints', () => {
           sessionUpdate: 'tool_call',
           toolCallId: 'tool-1',
           title: 'execute_bash',
-          kind: 'shell',
+          kind: 'execute',
           rawInput: { command: 'echo hello' },
         },
-      });
+      } satisfies SessionNotification);
 
       await new Promise((r) => setTimeout(r, 300));
 
@@ -101,15 +103,12 @@ describe('interaction hints', () => {
       })) as PromptResponse;
     });
 
-    await tc.launch();
-    await tc.mock.awaitConnection();
-    await tc.sleepMs(300);
+    await launchInitialized(tc);
 
     await tc.sendKeys('run echo');
     await tc.pressEnter();
 
-    await tc.waitForVisibleText('requires approval', 5000);
-    await tc.sleepMs(300);
+    await tc.waitForVisibleText('requires approval', 10_000);
 
     const snap = tc.getSnapshotFormatted();
     expect(snap).toContain('to navigate');
@@ -117,6 +116,6 @@ describe('interaction hints', () => {
     expect(snap).toContain('to edit');
 
     await tc.pressEscape();
-    await tc.sleepMs(200);
-  });
+    await tc.waitForStore((state) => state.pendingApproval === null, 10_000);
+  }, 20_000);
 });
