@@ -29,6 +29,12 @@ __pycache__
 **/*.pb.ts
 
 target/
+
+# Release revert script output
+/results/
+
+# Semantic review output
+/semantic-review/
 build
 book/
 .vscode-test/

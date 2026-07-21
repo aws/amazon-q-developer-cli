@@ -13,7 +13,7 @@ This SOP defines the release process for Kiro CLI, covering pre-release validati
 
 This SOP applies to all Kiro CLI releases: regular weekly releases, feature flag rollouts, and hotfixes. It covers both internal (Amazon toolbox) and external (CloudFront) distribution channels simultaneously. Every team member who ships a Kiro CLI version must follow this process.
 
-**Automation**: This process is executed by the oncall agent, which is pointed at the step-by-step SOP in GitHub (`docs/oncall/kiro_cli_release_sop.md`). The oncall engineer's role is to monitor the agent's execution and intervene only if it strays. Refine the agent prompts as needed based on observed behavior.
+**Automation**: This process is executed by the oncall agent, which uses the release skill (`.kiro/skills/release/SKILL.md`). The oncall engineer's role is to monitor the agent's execution and intervene only if it strays. Refine the agent prompts as needed based on observed behavior.
 
 ## Roles and Escalation
 
@@ -164,7 +164,7 @@ The release owner may compress further for active Sev-2 incidents, but must docu
 
 If a hotfix or release must be recalled after shipping:
 
-1. Recall via documented SOP (see "Recalling a Toolbox Version" in `docs/oncall/kiro_cli_release_sop.md`).
+1. Recall via documented SOP (see "Revert a Bad Release" in `.kiro/skills/release/SKILL.md`).
 2. Post in `#kiro-cli-internal-software-builders` with: what happened, which versions are affected, and the workaround.
 3. File a Sev-2 ticket for the regression introduced by the hotfix.
 4. The next hotfix attempt must pass the full smoke test suite with no exceptions.
@@ -250,9 +250,9 @@ The review is documented in the release ticket and does not require a meeting.
 
 ## References
 
-- Existing release SOP (step-by-step commands): `docs/oncall/kiro_cli_release_sop.md`
+- Release skill (step-by-step commands): `.kiro/skills/release/SKILL.md`
 - Build and release infrastructure: `docs/oncall/build_release_process.md`
 - Rollout configuration: `crates/chat-cli/rollout.json`
 - COE: COE-393225
-- Recall procedure: See "Recalling a Toolbox Version" in `docs/oncall/kiro_cli_release_sop.md`
+- Recall procedure: See "Revert a Bad Release" in `.kiro/skills/release/SKILL.md`
 - Release tracker template: `docs/oncall/releases/TEMPLATE.md`

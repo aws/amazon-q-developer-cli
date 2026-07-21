@@ -76,7 +76,7 @@ First, cross-check with spikes in failures and system failures to see what cause
 
 ### Deploying a new version of the app
 
-See [Kiro CLI Release SOP](kiro_cli_release_sop.md).
+See the release skill (`.kiro/skills/release/SKILL.md`).
 
 ### Install Script Infra Setup and Deployment Process
 
