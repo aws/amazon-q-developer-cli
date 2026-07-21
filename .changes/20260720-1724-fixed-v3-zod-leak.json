@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Raw schema validation errors no longer leak to users on invalid tool input"
+}

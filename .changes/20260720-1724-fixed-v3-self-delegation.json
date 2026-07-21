@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Active agent no longer appears in its own sub-agent delegation list"
+}

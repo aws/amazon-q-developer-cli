@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Turn approvals in supervised mode now persist across session reopen"
+}

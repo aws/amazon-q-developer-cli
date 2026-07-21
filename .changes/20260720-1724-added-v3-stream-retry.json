@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "[V3] Automatic retry on empty or truncated model response streams"
+}

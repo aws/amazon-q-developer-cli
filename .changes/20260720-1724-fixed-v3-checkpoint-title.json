@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Session title resets correctly when a checkpoint revert removes the first prompt"
+}

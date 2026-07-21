@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] `web_fetch` no longer retries twice on transient failures (collapsed to single retry)"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] `/plan` no longer deadlocks when the model asks 2+ clarifying questions"
+}
