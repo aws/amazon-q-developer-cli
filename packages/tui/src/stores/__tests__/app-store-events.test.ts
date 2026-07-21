@@ -142,6 +142,104 @@ describe('Stream event handler — ToolCall', () => {
     ).toBe(true);
   });
 
+  it('preserves sessions owned by another active orchestration parent', () => {
+    const store = makeStore();
+    const activeSession = {
+      id: 'session-a',
+      name: 'worker',
+      status: 'busy',
+      type: 'ephemeral',
+      group: 'group-a',
+      created: new Date(),
+      lastActivity: new Date(),
+    };
+    const staleSession = {
+      ...activeSession,
+      id: 'stale-session',
+      group: 'old-group',
+      status: 'terminated',
+    };
+    store.setState({
+      sessionId: 'main-session',
+      currentAgent: { name: 'main-agent' },
+      sessions: new Map([
+        [activeSession.id, activeSession],
+        [staleSession.id, staleSession],
+      ]),
+      sessionMessages: new Map([
+        [activeSession.id, []],
+        [staleSession.id, []],
+      ]),
+      sessionEventBuffer: {
+        [activeSession.id]: [],
+        [staleSession.id]: [],
+      },
+      messages: [
+        {
+          id: 'parent-a',
+          role: MessageRole.ToolUse,
+          name: 'orchestrate_subagent',
+          pipelineGroupId: 'group-a',
+          content: '{}',
+        },
+        {
+          id: 'child-a',
+          role: MessageRole.ToolUse,
+          name: 'read',
+          sessionId: activeSession.id,
+          pipelineGroupId: 'group-a',
+          agentName: 'worker',
+          content: '{}',
+          isSubagentTool: true,
+        },
+        {
+          id: 'stale-child',
+          role: MessageRole.ToolUse,
+          name: 'read',
+          sessionId: staleSession.id,
+          pipelineGroupId: 'old-group',
+          agentName: 'worker',
+          content: '{}',
+          isSubagentTool: true,
+        },
+      ],
+    });
+
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'parent-b',
+      name: 'orchestrate_subagent',
+      args: {},
+      meta: {
+        kiro: {
+          pipeline: {
+            groupId: 'group-b',
+            stages: [],
+          },
+        },
+      },
+    });
+
+    const state = store.getState();
+    expect(state.sessions.has(activeSession.id)).toBe(true);
+    expect(state.sessions.has(staleSession.id)).toBe(false);
+    expect(state.sessionMessages.has(activeSession.id)).toBe(true);
+    expect(state.sessionMessages.has(staleSession.id)).toBe(false);
+    expect(state.sessionEventBuffer[activeSession.id]).toBeDefined();
+    expect(state.sessionEventBuffer[staleSession.id]).toBeUndefined();
+    expect(
+      state.messages.some((message: any) => message.id === 'child-a')
+    ).toBe(true);
+    expect(
+      state.messages.some((message: any) => message.id === 'stale-child')
+    ).toBe(false);
+    expect(
+      state.messages.find((message: any) => message.id === 'parent-b')
+        ?.pipelineGroupId
+    ).toBe('group-b');
+  });
+
   it('updates existing tool call with new content', async () => {
     const store = makeStore();
     const handler = store.getState().createStreamEventHandler();

@@ -40,6 +40,7 @@ import {
   ApprovalOptionId,
   TASK_TOOL_NAMES,
   SESSION_TOOL_NAMES,
+  isParentSubagentTool,
   deriveToolDiff,
   type AgentStreamEvent,
   type ApprovalRequestInfo,
@@ -3450,30 +3451,67 @@ export const createAppStore = (props: AppStoreProps) => {
               let clearedSessionMessages = state.sessionMessages;
               let clearedEventBuffer = state.sessionEventBuffer;
               if (SESSION_TOOL_NAMES.has(event.name)) {
+                const activeParentGroups = new Set<string>();
+                let hasActiveUngroupedParent = false;
+                for (const message of state.messages) {
+                  if (
+                    message.role !== MessageRole.ToolUse ||
+                    !isParentSubagentTool(message.name) ||
+                    message.isFinished
+                  ) {
+                    continue;
+                  }
+                  if (message.pipelineGroupId === undefined) {
+                    hasActiveUngroupedParent = true;
+                  } else {
+                    activeParentGroups.add(message.pipelineGroupId);
+                  }
+                }
+
                 const staleNames = new Set<string>();
+                const staleSessionIds = new Set<string>();
                 const newSessions = new Map<string, AgentSession>();
                 for (const [id, s] of state.sessions) {
-                  if (s.type === 'ephemeral' && id !== state.sessionId) {
+                  const belongsToActiveInvocation =
+                    s.group === undefined
+                      ? hasActiveUngroupedParent
+                      : activeParentGroups.has(s.group);
+                  if (
+                    s.type === 'ephemeral' &&
+                    id !== state.sessionId &&
+                    !belongsToActiveInvocation
+                  ) {
                     staleNames.add(s.name);
+                    staleSessionIds.add(id);
                   } else {
                     newSessions.set(id, s);
                   }
                 }
-                if (staleNames.size > 0) {
+                if (staleSessionIds.size > 0) {
                   clearedSessions = newSessions;
-                  clearedMessages = state.messages.filter(
-                    (msg) =>
-                      msg.role !== MessageRole.ToolUse ||
-                      !msg.agentName ||
-                      !staleNames.has(msg.agentName)
-                  );
+                  clearedMessages = state.messages.filter((message) => {
+                    if (message.role !== MessageRole.ToolUse) return true;
+                    if (
+                      message.sessionId &&
+                      staleSessionIds.has(message.sessionId)
+                    ) {
+                      return false;
+                    }
+                    if (
+                      message.pipelineGroupId &&
+                      activeParentGroups.has(message.pipelineGroupId)
+                    ) {
+                      return true;
+                    }
+                    return (
+                      !message.agentName || !staleNames.has(message.agentName)
+                    );
+                  });
                   clearedSessionMessages = new Map(state.sessionMessages);
                   clearedEventBuffer = { ...state.sessionEventBuffer };
-                  for (const [id, s] of state.sessions) {
-                    if (s.type === 'ephemeral' && id !== state.sessionId) {
-                      clearedSessionMessages.delete(id);
-                      delete clearedEventBuffer[id];
-                    }
+                  for (const id of staleSessionIds) {
+                    clearedSessionMessages.delete(id);
+                    delete clearedEventBuffer[id];
                   }
                 }
               }

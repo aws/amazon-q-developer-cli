@@ -100,11 +100,23 @@ import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
 import { ArtifactGenerationCard } from '../../ui/ArtifactView/ArtifactGenerationCard.js';
 import { SurveyPromptBar } from '../../ui/SurveyPromptBar.js';
 import { useUIState } from '../../../stores/selectors.js';
+import {
+  selectActiveSubagentToolScopes,
+  selectSubagentToolMessagesForScope,
+  selectSubagentToolSessions,
+  activePipelineGroupConstraint,
+  selectScopeSeedSessions,
+} from '../../ui/subagent-session-filter.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
   { key: '@', type: 'inline' as const },
 ];
+
+type ActiveSubagentRow = SubagentRow & {
+  key: string;
+  sessionId?: string;
+};
 
 // Last `lite.scrollbackClearToken` observed. MODULE-LEVEL (not a per-mount ref)
 // so the reset block below survives bare unmount/remount (Ctrl+G, session-view)
@@ -1054,12 +1066,37 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     const estimatedPctIncrease = Math.floor(estimatedNewTokens / 200); // ~0.5% per 1000 chars
     return Math.min(99, base + estimatedPctIncrease);
   }, [contextUsagePercent, isProcessing, streamingContent]);
+
+  const activeParentSubagentTools = useMemo(
+    () => selectActiveSubagentToolScopes(messages),
+    [messages]
+  );
+
+  const activePipelineGroupIds = useMemo(
+    () => activePipelineGroupConstraint(activeParentSubagentTools),
+    [activeParentSubagentTools]
+  );
+
+  const activeCrewSessions = useMemo(
+    () =>
+      selectSubagentToolSessions(sessions.values(), {
+        pipelineGroupIds: activePipelineGroupIds,
+      }),
+    [sessions, activePipelineGroupIds]
+  );
+
+  const sessionGroupById = useMemo(
+    () =>
+      new Map(activeCrewSessions.map((session) => [session.id, session.group])),
+    [activeCrewSessions]
+  );
+
   // Active-subagents footer strip: one row per running stage in spawn order
   // with a per-stage phase (running → summarizing → complete). When every stage
   // is complete but the parent `subagent` tool is still in flight, a
   // "Summarizing N agents..." footnote shows the finalize phase.
   const { activeSubagents, summarizingPhase } = useMemo<{
-    activeSubagents: SubagentRow[];
+    activeSubagents: ActiveSubagentRow[];
     summarizingPhase: boolean;
   }>(() => {
     if (!isProcessing) return { activeSubagents: [], summarizingPhase: false };
@@ -1067,86 +1104,92 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     if (!hasAnySubagentTool)
       return { activeSubagents: [], summarizingPhase: false };
 
-    const anyParentSubagentRunning = messages.some(
-      (m) =>
-        m.role === MessageRole.ToolUse &&
-        isParentSubagentTool(m.name) &&
-        !m.isFinished
-    );
     // Strip is empty unless a parent subagent is in flight — bail early.
-    if (!anyParentSubagentRunning)
+    if (activeParentSubagentTools.length === 0)
       return { activeSubagents: [], summarizingPhase: false };
-
-    const byStage = new Map<string, SubagentRow>();
-    const order: string[] = [];
-
-    // Seed rows from sessions FIRST (in spawn order): the ACP session exists at
-    // spawn, but a stage only emits ToolUse after its first tool call, so
-    // without this seed a thinking/streaming stage wouldn't appear until its
-    // summary fires. Seeding terminated stages too lets the message walk update
-    // in place instead of reshuffling the row to the tail when a stage finishes.
-    for (const session of sessions.values()) {
-      const stageName = session.name;
-      if (!stageName || stageName === agentName) continue;
-      if (byStage.has(stageName)) continue;
-      order.push(stageName);
-      byStage.set(stageName, {
-        name: stageName,
-        // `killed` reflects explicit user kills ONLY (userKilledSessionsRef) —
-        // the backend terminates sessions on normal completion too.
-        phase: userKilledSessionsRef.current.has(session.id)
-          ? 'killed'
-          : 'running',
-        activeToolName: null,
-        activeToolDetail: null,
-        activeToolFinished: false,
-      });
-    }
 
     // Toolcall id for the current approval (if any) — flips the requesting
     // stage's row to "blocked on user" instead of a misleading "running".
     const approvalToolCallId = pendingApproval?.toolCall.toolCallId ?? null;
+    const rows: ActiveSubagentRow[] = [];
 
-    for (const m of messages) {
-      if (m.role !== MessageRole.ToolUse) continue;
-      if (!m.agentName || m.agentName === agentName) continue;
-      if (!byStage.has(m.agentName)) {
-        order.push(m.agentName);
-        byStage.set(m.agentName, {
-          name: m.agentName,
-          phase: 'running',
+    // Build each invocation independently. Pipeline events can interleave, and
+    // stage names can repeat across invocations, so neither message position
+    // nor agent name alone is a safe ownership key.
+    for (const scope of activeParentSubagentTools) {
+      const byStage = new Map<string, ActiveSubagentRow>();
+      const order: string[] = [];
+
+      // Seed rows from sessions FIRST (in spawn order): the ACP session exists
+      // at spawn, but a stage only emits ToolUse after its first tool call.
+      for (const session of selectScopeSeedSessions(
+        scope,
+        activeCrewSessions
+      )) {
+        const stageName = session.name;
+        if (!stageName || stageName === agentName) continue;
+        if (byStage.has(stageName)) continue;
+        order.push(stageName);
+        byStage.set(stageName, {
+          key: `${scope.key}::${stageName}`,
+          name: stageName,
+          sessionId: session.id,
+          // `killed` reflects explicit user kills ONLY. The backend also
+          // terminates sessions on normal completion.
+          phase: userKilledSessionsRef.current.has(session.id)
+            ? 'killed'
+            : 'running',
           activeToolName: null,
           activeToolDetail: null,
           activeToolFinished: false,
         });
       }
-      const row = byStage.get(m.agentName)!;
-      // Phases: running → (requesting-permission ↔ running) → summarizing →
-      // complete. Permission is reversible (falls back to running when approval
-      // clears). Complete + killed are terminal — early-continue so the walk
-      // can't downgrade them back to running.
-      if (row.phase === 'complete' || row.phase === 'killed') continue;
-      if (isSubagentSummaryToolName(m.name)) {
-        row.phase = m.isFinished ? 'complete' : 'summarizing';
-        row.activeToolName = null;
-        row.activeToolDetail = null;
-        row.activeToolFinished = !!m.isFinished;
-        continue;
-      }
-      if (row.phase === 'summarizing') continue;
-      row.activeToolName = toolDisplayName(m.name);
-      row.activeToolDetail = extractFooterToolDetail(m.name, m.content);
-      row.activeToolFinished = !!m.isFinished;
-      // Set after activeToolName/Detail so the chip includes the tool name.
-      if (approvalToolCallId && m.id === approvalToolCallId) {
-        row.phase = 'requesting-permission';
-      }
-    }
 
-    // Rows only surface while a parent subagent tool is in flight (gated by the
-    // early-return above) — else a prior run's completed rows would resurrect
-    // when isProcessing flips on for the next turn.
-    const rows: SubagentRow[] = order.map((name) => byStage.get(name)!);
+      for (const message of selectSubagentToolMessagesForScope(
+        messages,
+        scope,
+        sessionGroupById
+      )) {
+        if (!message.agentName || message.agentName === agentName) continue;
+        if (!byStage.has(message.agentName)) {
+          order.push(message.agentName);
+          byStage.set(message.agentName, {
+            key: `${scope.key}::${message.agentName}`,
+            name: message.agentName,
+            sessionId: message.sessionId,
+            phase: 'running',
+            activeToolName: null,
+            activeToolDetail: null,
+            activeToolFinished: false,
+          });
+        }
+        const row = byStage.get(message.agentName)!;
+        if (!row.sessionId && message.sessionId) {
+          row.sessionId = message.sessionId;
+        }
+        // Complete + killed are terminal; later messages cannot downgrade them.
+        if (row.phase === 'complete' || row.phase === 'killed') continue;
+        if (isSubagentSummaryToolName(message.name)) {
+          row.phase = message.isFinished ? 'complete' : 'summarizing';
+          row.activeToolName = null;
+          row.activeToolDetail = null;
+          row.activeToolFinished = !!message.isFinished;
+          continue;
+        }
+        if (row.phase === 'summarizing') continue;
+        row.activeToolName = toolDisplayName(message.name);
+        row.activeToolDetail = extractFooterToolDetail(
+          message.name,
+          message.content
+        );
+        row.activeToolFinished = !!message.isFinished;
+        if (approvalToolCallId && message.id === approvalToolCallId) {
+          row.phase = 'requesting-permission';
+        }
+      }
+
+      rows.push(...order.map((name) => byStage.get(name)!));
+    }
 
     // Parent finalize phase: every known stage is complete but the parent tool
     // is still concatenating their summaries. Surface one footnote.
@@ -1158,21 +1201,12 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     messages,
     isProcessing,
     agentName,
-    sessions,
+    activeCrewSessions,
+    activeParentSubagentTools,
     hasAnySubagentTool,
     pendingApproval,
+    sessionGroupById,
   ]);
-
-  // Map subagent display names to sessionIds so the open panel can subscribe to
-  // the right slice. Name-based (backend doesn't expose stage→session), but
-  // stage names are unique within one invocation so it's reliable.
-  const subagentSessionIdByName = useMemo(() => {
-    const out = new Map<string, string>();
-    for (const [id, s] of sessions) {
-      if (!out.has(s.name)) out.set(s.name, id);
-    }
-    return out;
-  }, [sessions]);
 
   // Auto-clamp / close the panel when the focused subagent disappears (e.g.
   // the parent subagent tool finished and activeSubagents drained). Without
@@ -1194,7 +1228,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // (the chat log hides inner subagent activity). Snapshot prior panel state on
   // request, restore on clear — keyed by toolCallId (via a ref) so consecutive
   // requests don't re-snapshot from an already-overridden state.
-  const subagentRequestingName = useMemo<string | null>(() => {
+  const subagentRequestingTarget = useMemo<{
+    name: string;
+    sessionId?: string;
+  } | null>(() => {
     if (!pendingApproval) return null;
     const id = pendingApproval.toolCall.toolCallId;
     if (!id) return null;
@@ -1204,7 +1241,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     if (!msg || msg.role !== MessageRole.ToolUse) return null;
     if (!msg.agentName) return null;
     if (msg.agentName === agentName) return null;
-    return msg.agentName;
+    return { name: msg.agentName, sessionId: msg.sessionId };
   }, [pendingApproval, messages, agentName]);
   const autoExpandSnapshotRef = useRef<{
     toolCallId: string;
@@ -1222,7 +1259,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   useEffect(() => {
     const id = pendingApproval?.toolCall.toolCallId ?? null;
     // Approval cleared (or moved to a non-subagent tool) — restore prior state.
-    if (!subagentRequestingName) {
+    if (!subagentRequestingTarget) {
       const snap = autoExpandSnapshotRef.current;
       if (snap) {
         setSubagentOpenIndex(snap.openIndex);
@@ -1236,9 +1273,14 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     // scrolled / cycled within the auto-opened panel).
     if (autoExpandSnapshotRef.current?.toolCallId === id) return;
     if (!id) return;
-    // Map the requesting stage name to its index in the current strip.
+    // Prefer the owning session id because concurrent invocations may reuse a
+    // stage name. Fall back to the name for the pre-registration race.
     const targetIdx = activeSubagents.findIndex(
-      (s) => s.name === subagentRequestingName
+      (subagent) =>
+        (subagentRequestingTarget.sessionId !== undefined &&
+          subagent.sessionId === subagentRequestingTarget.sessionId) ||
+        (subagentRequestingTarget.sessionId === undefined &&
+          subagent.name === subagentRequestingTarget.name)
     );
     if (targetIdx < 0) return;
     autoExpandSnapshotRef.current = {
@@ -1250,7 +1292,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     setSubagentOpenIndex(targetIdx);
     setSubagentScrollOffset(0);
     setSubagentFollowBottom(true);
-  }, [subagentRequestingName, pendingApproval, activeSubagents]);
+  }, [subagentRequestingTarget, pendingApproval, activeSubagents]);
 
   // Panel keypress handler: ctrl+o toggle, esc close, shift+←/→ cycle (←/→ stay
   // free for the prompt cursor), ↑/↓ scroll, pgup/pgdn page, ctrl+a top, ctrl+z
@@ -1277,7 +1319,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         focused.phase === 'killed'
       )
         return;
-      const sessionId = subagentSessionIdByName.get(focused.name);
+      const sessionId = focused.sessionId;
       if (!sessionId) return;
       if (armedKillSessionId === sessionId) {
         // Second press — kill. Logged at info for trace correlation. (Backend
@@ -1821,9 +1863,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
           ).length;
           const openIdx = subagentOpenIndex;
           const focused = openIdx != null ? activeSubagents[openIdx] : null;
-          const focusedSessionId = focused
-            ? (subagentSessionIdByName.get(focused.name) ?? null)
-            : null;
+          const focusedSessionId = focused?.sessionId ?? null;
           // PANEL_LINES here MUST match the keypress handler's constant so the
           // floor-detection math stays consistent.
           return (
@@ -1833,7 +1873,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
                 if (openIdx === i && focused && focusedSessionId) {
                   return (
                     <LiteSubagentPanel
-                      key={`panel-${sub.name}`}
+                      key={`panel-${sub.key}`}
                       sessionId={focusedSessionId}
                       name={focused.name}
                       position={openIdx + 1}
@@ -1856,7 +1896,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
                     getColor
                   )(`[${focused.name}]`);
                   return (
-                    <Text key={`panel-${sub.name}`}>
+                    <Text key={`panel-${sub.key}`}>
                       {chalk.dim(
                         `${glyphs.cornerTopLeft}${glyphs.lineHorizontal} `
                       )}
@@ -1866,7 +1906,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
                   );
                 }
                 return (
-                  <Text key={sub.name}>
+                  <Text key={sub.key}>
                     {formatSubagentRow(
                       sub,
                       cols,

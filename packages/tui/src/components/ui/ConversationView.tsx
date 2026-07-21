@@ -278,7 +278,9 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
                 locations={message.locations}
                 barColor={agentBarColor}
               />
-              {isSessionTool && !message.isFinished && <SubagentToolPanel />}
+              {isSessionTool && !message.isFinished && (
+                <SubagentToolPanel pipelineGroupId={message.pipelineGroupId} />
+              )}
             </React.Fragment>
           );
         }

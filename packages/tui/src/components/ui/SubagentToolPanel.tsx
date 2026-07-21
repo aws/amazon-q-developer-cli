@@ -11,10 +11,12 @@ import { useAppStore, MessageRole } from '../../stores/app-store.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import { resolveToolId } from '../../types/agent-events.js';
 import { getToolLabel } from '../../types/tool-status.js';
-import type { AgentSession } from '../../types/multi-session.js';
+import { selectSubagentToolSessions } from './subagent-session-filter.js';
 
 interface SubagentToolPanelProps {
   isStatic?: boolean;
+  /** KAS pipeline group owned by the parent orchestration tool. */
+  pipelineGroupId?: string;
 }
 
 const MAX_TOOL_COL = 50;
@@ -55,7 +57,7 @@ interface AgentRow {
 }
 
 export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
-  function SubagentToolPanel({ isStatic = false }) {
+  function SubagentToolPanel({ isStatic = false, pipelineGroupId }) {
     const { getColor } = useTheme();
     const glyphs = useGlyphs();
     const { allowIcons } = useAllowIcons();
@@ -75,31 +77,10 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
     );
 
     const rows = useMemo(() => {
-      const allEphemeral: AgentSession[] = [];
-      for (const s of sessions.values()) {
-        if (s.id === sessionId) continue;
-        if (s.id.startsWith('pending:')) continue;
-        if (s.type !== 'ephemeral') continue;
-        allEphemeral.push(s);
-      }
-      // Deduplicate by name+group: keep only the latest loop iteration per stage
-      // (mirrors CrewMonitorScreen logic). Prevents stale completed stages from
-      // previous iterations showing in the outside view.
-      const deduped = new Map<string, AgentSession>();
-      for (const s of allEphemeral) {
-        const key = `${s.group ?? ''}::${s.name}`;
-        const existing = deduped.get(key);
-        if (!existing) {
-          deduped.set(key, s);
-        } else if ((s.loopIteration ?? 0) > (existing.loopIteration ?? 0)) {
-          deduped.set(key, s);
-        } else if ((s.loopIteration ?? 0) === (existing.loopIteration ?? 0)) {
-          if (s.created.getTime() > existing.created.getTime()) {
-            deduped.set(key, s);
-          }
-        }
-      }
-      const subagentSessions = [...deduped.values()];
+      const subagentSessions = selectSubagentToolSessions(sessions.values(), {
+        mainSessionId: sessionId,
+        pipelineGroupId,
+      });
 
       const activeToolByAgent = new Map<
         string,
@@ -144,7 +125,7 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         });
       }
       return result;
-    }, [sessions, sessionId, messages, sessionsWithApproval]);
+    }, [sessions, sessionId, pipelineGroupId, messages, sessionsWithApproval]);
 
     // Clamp focused index to valid range
     const clampedIndex = Math.min(focusedCrewIndex, rows.length - 1);
