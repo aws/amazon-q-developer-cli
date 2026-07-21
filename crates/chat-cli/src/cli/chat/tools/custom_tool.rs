@@ -515,16 +515,12 @@ impl CustomTool {
             },
         };
 
-        if resp.is_error.is_none_or(|v| !v) {
-            Ok(InvokeOutput {
-                output: super::OutputKind::Json(serde_json::json!(resp)),
-            })
-        } else {
+        if resp.is_error.is_some_and(|v| v) {
             warn!("Tool call for {} failed", self.name);
-            Ok(InvokeOutput {
-                output: super::OutputKind::Json(serde_json::json!(resp)),
-            })
         }
+        Ok(InvokeOutput {
+            output: super::OutputKind::Json(agent::mcp::tool_result_to_model_json(resp)),
+        })
     }
 
     pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {

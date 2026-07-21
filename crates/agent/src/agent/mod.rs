@@ -4131,16 +4131,12 @@ impl Agent {
                     };
                     match res {
                         Ok(resp) => {
-                            if resp.is_error.is_none_or(|v| !v) {
-                                Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
-                                    serde_json::json!(resp),
-                                )]))
-                            } else {
+                            if resp.is_error.is_some_and(|v| v) {
                                 warn!(?mcp_tool, "Tool call failed");
-                                Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
-                                    serde_json::json!(resp),
-                                )]))
                             }
+                            Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
+                                mcp::tool_result_to_model_json(resp),
+                            )]))
                         },
                         Err(err) => {
                             let msg = err.to_string();

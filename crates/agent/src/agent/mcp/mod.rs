@@ -865,10 +865,76 @@ impl From<McpServerActorEvent> for McpServerEvent {
     }
 }
 
+/// Builds the tool-result JSON forwarded to the model backend from an MCP tool result.
+///
+/// The payload is constructed field-by-field instead of serializing the whole rmcp
+/// [`CallToolResult`], so fields outside the model request schema never leak into the outbound
+/// request. In particular `structuredContent` (valid MCP) embeds the tool result as raw JSON, and
+/// keys with protocol meaning to the backend — e.g. Coral's `__type` — break request parsing with
+/// a ValidationException (REQUEST_BODY_INVALID). The same data in `content` is an escaped string
+/// and safe. Servers SHOULD mirror structured results into `content`, but that is not guaranteed;
+/// when `content` is empty the structured result is forwarded as a text block so the data still
+/// reaches the model.
+pub fn tool_result_to_model_json(mut resp: CallToolResult) -> serde_json::Value {
+    if resp.content.is_empty()
+        && let Some(structured) = resp.structured_content.take()
+    {
+        resp.content
+            .push(rmcp::model::ContentBlock::text(structured.to_string()));
+    }
+    let mut payload = serde_json::Map::new();
+    payload.insert("content".to_string(), serde_json::json!(resp.content));
+    if let Some(is_error) = resp.is_error {
+        payload.insert("isError".to_string(), serde_json::Value::Bool(is_error));
+    }
+    serde_json::Value::Object(payload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::agent::agent_config::definitions::LocalMcpServerConfig;
+
+    fn call_tool_result_with_structured_content() -> CallToolResult {
+        let mut resp = CallToolResult::success(vec![rmcp::model::ContentBlock::text(
+            r#"{"id":"cust-4821","plan":"enterprise"}"#,
+        )]);
+        resp.structured_content = Some(serde_json::json!({"id": "cust-4821", "plan": "enterprise"}));
+        resp
+    }
+
+    #[test]
+    fn test_tool_result_json_excludes_structured_content() {
+        let payload = tool_result_to_model_json(call_tool_result_with_structured_content());
+
+        assert!(payload.get("structuredContent").is_none(), "{payload}");
+        let content = payload["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert!(content[0]["text"].as_str().unwrap().contains("cust-4821"));
+    }
+
+    #[test]
+    fn test_tool_result_json_falls_back_to_structured_content_when_content_empty() {
+        let mut resp = CallToolResult::success(vec![]);
+        resp.structured_content = Some(serde_json::json!({"plan": "enterprise"}));
+
+        let payload = tool_result_to_model_json(resp);
+
+        assert!(payload.get("structuredContent").is_none(), "{payload}");
+        let content = payload["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert!(content[0]["text"].as_str().unwrap().contains("enterprise"));
+    }
+
+    #[test]
+    fn test_tool_result_json_forwards_is_error() {
+        let resp = CallToolResult::error(vec![rmcp::model::ContentBlock::text("boom")]);
+
+        let payload = tool_result_to_model_json(resp);
+
+        assert_eq!(payload["isError"], serde_json::Value::Bool(true));
+        assert!(payload["content"][0]["text"].as_str().unwrap().contains("boom"));
+    }
 
     #[test]
     fn test_mcp_manager_error_display() {
