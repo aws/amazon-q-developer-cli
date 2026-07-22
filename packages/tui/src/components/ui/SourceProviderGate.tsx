@@ -1,7 +1,10 @@
 /** Cloud-entry gate shown when a `--cloud` session has no connected source
- *  provider. A blocking 3-option menu (open browser / retry / quit); cloud
- *  bring-up stays parked behind it until a retry finds a connected provider. */
-import React, { useState } from 'react';
+ *  provider. A blocking menu (open browser / retry / quit); cloud bring-up
+ *  stays parked behind it until a retry finds a connected provider. Over SSH
+ *  the browser row is omitted — a browser opened on the remote host could
+ *  never reach the user — and a hint points at connecting from another
+ *  signed-in device instead. */
+import React, { useMemo, useState } from 'react';
 import { Box, useInput } from '../../renderer.js';
 import { Text } from './text/Text.js';
 import { Spinner } from './spinner/Spinner.js';
@@ -9,9 +12,10 @@ import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import chalk from 'chalk';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../utils/cloud-urls.js';
+import { isRemoteEnvironment } from '../../utils/browser.js';
 
 type OptionKey = 'browser' | 'retry' | 'quit';
-const OPTIONS: { key: OptionKey; label: string }[] = [
+const ALL_OPTIONS: { key: OptionKey; label: string }[] = [
   { key: 'browser', label: 'Open in browser' },
   { key: 'retry', label: 'Refresh and try again' },
   { key: 'quit', label: 'Quit' },
@@ -26,6 +30,8 @@ export interface SourceProviderGateProps {
   onRetry: () => Promise<void> | void;
   /** Exit the session cleanly. */
   onQuit: () => void;
+  /** Test override for remote/headless detection (defaults to env probe). */
+  isRemote?: boolean;
 }
 
 export const SourceProviderGate: React.FC<SourceProviderGateProps> = ({
@@ -33,6 +39,7 @@ export const SourceProviderGate: React.FC<SourceProviderGateProps> = ({
   onOpenBrowser,
   onRetry,
   onQuit,
+  isRemote,
 }) => {
   const { getColor, colors } = useTheme();
   const glyphs = useGlyphs();
@@ -42,6 +49,12 @@ export const SourceProviderGate: React.FC<SourceProviderGateProps> = ({
   const accentHex =
     (colors as { accent?: { truecolor?: string } }).accent?.truecolor ??
     '#ff00ff';
+
+  const envRemote = useMemo(() => isRemoteEnvironment(), []);
+  const remote = isRemote ?? envRemote;
+  const options = remote
+    ? ALL_OPTIONS.filter((o) => o.key !== 'browser')
+    : ALL_OPTIONS;
 
   const [cursor, setCursor] = useState(0);
   const [checking, setChecking] = useState(false);
@@ -53,11 +66,11 @@ export const SourceProviderGate: React.FC<SourceProviderGateProps> = ({
       return;
     }
     if (key.downArrow) {
-      setCursor((i) => Math.min(OPTIONS.length - 1, i + 1));
+      setCursor((i) => Math.min(options.length - 1, i + 1));
       return;
     }
     if (key.return) {
-      const opt = OPTIONS[cursor];
+      const opt = options[cursor];
       if (!opt) return;
       if (opt.key === 'browser') {
         onOpenBrowser();
@@ -78,11 +91,24 @@ export const SourceProviderGate: React.FC<SourceProviderGateProps> = ({
     <Box flexDirection="column" paddingX={1}>
       <Text>{primary.bold('Source provider not found')}</Text>
       <Box height={1} />
-      <Text>{dim('Cloud sessions require a source provider.')}</Text>
+      {/* Body sentences full-strength; only the remote hint is dimmed. */}
+      <Text>{primary('Cloud sessions require a source provider.')}</Text>
       <Text>
-        {dim('Connect one on kiro.dev: ')}
+        {primary('Connect one on kiro.dev: ')}
         {brand(url)}
       </Text>
+      {remote && (
+        <>
+          <Box height={1} />
+          <Text wrap="wrap">
+            {dim(
+              "Open the URL above on any device where you're signed in, " +
+                "connect a source provider, then select 'Refresh and try " +
+                "again' below."
+            )}
+          </Text>
+        </>
+      )}
       <Box height={1} />
 
       {checking ? (
@@ -91,7 +117,7 @@ export const SourceProviderGate: React.FC<SourceProviderGateProps> = ({
           <Text>{dim(' Connecting…')}</Text>
         </Box>
       ) : (
-        OPTIONS.map((opt, i) => {
+        options.map((opt, i) => {
           const isCursor = i === cursor;
           const line = isCursor
             ? chalk.hex(accentHex).bold(`${glyphs.chevron} ${opt.label}`)

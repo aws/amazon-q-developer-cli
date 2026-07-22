@@ -32,6 +32,25 @@ export function browserOpenCommand(
 }
 
 /**
+ * Whether a locally-opened browser cannot reach the user: an SSH session, or
+ * the fake-remote test override. WSL is intentionally not remote here —
+ * wslview opens the Windows-side browser, so URL opening works there.
+ */
+export function isRemoteEnvironment(
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  // Set-but-empty counts: SSH_TTY can be empty for forced-command sessions.
+  const set = (name: string) => env[name] !== undefined;
+  return (
+    set('KIRO_FAKE_IS_REMOTE') ||
+    set('Q_FAKE_IS_REMOTE') ||
+    set('SSH_CLIENT') ||
+    set('SSH_CONNECTION') ||
+    set('SSH_TTY')
+  );
+}
+
+/**
  * Open a URL in the user's default browser. Returns true on success, false if
  * the platform opener could not be spawned (caller should then surface the URL
  * for manual copy). Never throws.

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import React from 'react';
 import { render, type Instance, type Terminal } from 'twinki';
+import stripAnsi from 'strip-ansi';
 import { SourceProviderGate } from '../SourceProviderGate.js';
 
 const DOWN = '\x1b[B';
@@ -59,6 +60,7 @@ function mountGate(overrides?: {
   onOpenBrowser?: () => void;
   onRetry?: () => Promise<void> | void;
   onQuit?: () => void;
+  isRemote?: boolean;
 }) {
   const onOpenBrowser = overrides?.onOpenBrowser ?? vi.fn();
   const onRetry = overrides?.onRetry ?? vi.fn();
@@ -70,6 +72,7 @@ function mountGate(overrides?: {
       onOpenBrowser={onOpenBrowser}
       onRetry={onRetry}
       onQuit={onQuit}
+      isRemote={overrides?.isRemote ?? false}
     />,
     { terminal, exitOnCtrlC: false }
   );
@@ -83,6 +86,24 @@ describe('SourceProviderGate', () => {
     expect(h.terminal.output).toContain('Source provider not found');
     expect(h.terminal.output).toContain(
       'https://kiro.dev/settings/source-providers'
+    );
+  });
+
+  test('local device: no remote guidance (browser option works)', async () => {
+    const h = mountGate();
+    await flush();
+    expect(h.terminal.output).not.toContain('Open the URL above');
+  });
+
+  test('remote device: renders the guidance under the URL', async () => {
+    const h = mountGate({ isRemote: true });
+    await flush();
+    // The hint wraps across terminal lines and carries ANSI styling — strip
+    // both and collapse whitespace before asserting on the sentence.
+    const flat = stripAnsi(h.terminal.output).replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "Open the URL above on any device where you're signed in, connect a " +
+        "source provider, then select 'Refresh and try again' below."
     );
   });
 
@@ -128,5 +149,46 @@ describe('SourceProviderGate', () => {
     await flush();
     // Still on the first option after clamping — opens the browser.
     expect(h.onOpenBrowser).toHaveBeenCalledTimes(1);
+  });
+
+  describe('remote/headless device (isRemote)', () => {
+    test('omits the "Open in browser" option entirely', async () => {
+      const h = mountGate({ isRemote: true });
+      await flush();
+      expect(h.terminal.output).not.toContain('Open in browser');
+      expect(h.terminal.output).toContain('Refresh and try again');
+      expect(h.terminal.output).toContain('Quit');
+    });
+
+    test('cursor starts on "Refresh and try again" and Enter retries', async () => {
+      const h = mountGate({ isRemote: true });
+      await flush();
+      h.terminal.sendInput(ENTER);
+      await flush();
+      expect(h.onRetry).toHaveBeenCalledTimes(1);
+      expect(h.onOpenBrowser).not.toHaveBeenCalled();
+    });
+
+    test('up-arrow clamps at the top; the browser handler is unreachable', async () => {
+      const h = mountGate({ isRemote: true });
+      await flush();
+      h.terminal.sendInput(UP);
+      h.terminal.sendInput(UP);
+      await flush();
+      h.terminal.sendInput(ENTER);
+      await flush();
+      expect(h.onRetry).toHaveBeenCalledTimes(1);
+      expect(h.onOpenBrowser).not.toHaveBeenCalled();
+    });
+
+    test('navigation still reaches Quit below', async () => {
+      const h = mountGate({ isRemote: true });
+      await flush();
+      h.terminal.sendInput(DOWN);
+      await flush();
+      h.terminal.sendInput(ENTER);
+      await flush();
+      expect(h.onQuit).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -35,7 +35,7 @@ export interface CloudStartupChecklistGlyphs {
  * to "✓ Connected to kiro.dev"). Later steps stay hidden until reached. Once
  * every step is done, the final row is `✓ N repositories found, /repo to select
  * (optional)` when the repo count is known, else a bare dim "/repo to select
- * (optional)" hint, followed by the "upload your local setup" guidance.
+ * (optional)" hint.
  */
 export function formatCloudStartupChecklist(
   state: CloudStartupChecklistState,
@@ -79,16 +79,6 @@ export function formatCloudStartupChecklist(
     } else {
       rows.push(chalk.dim(`  ${repoHint}`));
     }
-    // Guidance: the cloud workspace starts without the user's local ~/.kiro
-    // config; point them at the web upload flow. Blank line then the paragraph.
-    rows.push('');
-    rows.push(
-      chalk.dim(
-        "  Your cloud workspace doesn't have your local setup yet. Go to " +
-          `${chalk.magenta('kiro.dev/config/upload')} to bring your agents, MCP ` +
-          'servers, hooks, and steering from ~/.kiro/ (home directory) to the cloud.'
-      )
-    );
   }
   return rows;
 }

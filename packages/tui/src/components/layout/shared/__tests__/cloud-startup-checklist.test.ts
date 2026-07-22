@@ -29,23 +29,21 @@ describe('formatCloudStartupChecklist', () => {
     ]);
   });
 
-  test('all done: ✓ lines + provider line + /repo hint + upload guidance', () => {
+  test('all done: ✓ lines + provider line + /repo hint, nothing after', () => {
     const rows = visible(
       formatCloudStartupChecklist(
         { connected: true, sessionCreated: true, provider: 'GitHub' },
         G
       )
     );
-    expect(rows.slice(0, 4)).toEqual([
+    // The /repo hint is the final row — no local-setup upload guidance
+    // (cloud config upload is not launching with cloud sessions).
+    expect(rows).toEqual([
       '  ✓ Connected to kiro.dev',
       '  ✓ Connected to GitHub',
       '  ✓ Cloud session created',
       '  /repo to select (optional)',
     ]);
-    // A blank spacer then the upload-setup guidance paragraph.
-    expect(rows[4]).toBe('');
-    expect(rows[5]).toContain("doesn't have your local setup yet");
-    expect(rows[5]).toContain('kiro.dev/config/upload');
   });
 
   test('a known repo count renders "✓ N repositories found, /repo to select"', () => {
