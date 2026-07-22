@@ -57,6 +57,12 @@
     "segment": "internal",
     "channel": "nightly"
   },
+  "workflows": {
+    "description": "KAS dynamic workflows and TUI workflow management. Dark-shipped at 0% until release certification is complete; enable locally through KIRO_ENABLED_FEATURES.",
+    "treatment_percent": 0,
+    "segment": "internal",
+    "channel": "nightly"
+  },
   "c2s": {
     "description": "Code-to-Spec Explore agent and analysis pipeline. Internal nightly only; launcher exports KIRO_C2S_ROLLOUT_ENABLED and the TUI honors chat.enableC2s + shows the Explore agent only when enabled.",
     "treatment_percent": 100,

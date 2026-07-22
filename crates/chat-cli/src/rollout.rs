@@ -39,6 +39,9 @@ pub enum Feature {
     /// `infraSafetyEnforce` settings only for users in the cohort.
     InfraSafety,
     Memory,
+    /// KAS dynamic workflows and the TUI workflow management surfaces.
+    /// Dark-shipped at 0% until the feature is ready to ramp.
+    Workflows,
     /// Code-to-Spec Explore agent and analysis pipeline. Internal nightly only;
     /// launcher exports `KIRO_C2S_ROLLOUT_ENABLED` and the TUI honors
     /// `chat.enableC2s` + shows the Explore agent only when enabled.
@@ -364,6 +367,7 @@ mod tests {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(features.contains_key(<&str>::from(Feature::Tui)));
         assert!(features.contains_key(<&str>::from(Feature::Voice)));
+        assert!(features.contains_key(<&str>::from(Feature::Workflows)));
         // NOTE: no `lite` key in rollout.json yet — it is added in the final
         // flag-flip PR, which keeps lite dark until then. The config-driven
         // `Feature::Lite` tests land with that PR.
@@ -391,6 +395,7 @@ mod tests {
             !json.contains("\"remote_sandbox\""),
             "remote_sandbox must stay dark: {json}"
         );
+        assert!(!json.contains("\"workflows\""), "workflows must stay dark: {json}");
         assert!(
             json.contains("\"memory\""),
             "memory should be enabled for internal nightly: {json}"
@@ -431,6 +436,23 @@ mod tests {
             assert!(
                 !r.is_enabled(Feature::RemoteSandbox),
                 "remote_sandbox must be dark for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_workflows_is_present_but_dark_in_all_real_builds() {
+        let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            features.contains_key(<&str>::from(Feature::Workflows)),
+            "workflows must be declared in rollout.json"
+        );
+
+        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
+            let rollout = Rollout::new_for_test(is_internal, is_nightly);
+            assert!(
+                !rollout.is_enabled(Feature::Workflows),
+                "workflows must be dark for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

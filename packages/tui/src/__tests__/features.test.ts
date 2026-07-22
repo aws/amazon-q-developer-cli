@@ -20,9 +20,10 @@ describe('FeatureManager', () => {
   });
 
   it('enables features listed in KIRO_ENABLED_FEATURES', () => {
-    setEnv('["voice","memory"]');
+    setEnv('["voice","memory","workflows"]');
     expect(features.isEnabled(Feature.Voice)).toBe(true);
     expect(features.isEnabled(Feature.Memory)).toBe(true);
+    expect(features.isEnabled(Feature.Workflows)).toBe(true);
     expect(features.isEnabled(Feature.Lite)).toBe(false);
   });
 

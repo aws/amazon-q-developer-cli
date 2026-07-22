@@ -83,6 +83,11 @@ export enum Feature {
 	InfraSafety = "infra_safety",
 	Memory = "memory",
 	/**
+	 * KAS dynamic workflows and the TUI workflow management surfaces.
+	 * Dark-shipped at 0% until the feature is ready to ramp.
+	 */
+	Workflows = "workflows",
+	/**
 	 * Code-to-Spec Explore agent and analysis pipeline. Internal nightly only;
 	 * launcher exports `KIRO_C2S_ROLLOUT_ENABLED` and the TUI honors
 	 * `chat.enableC2s` + shows the Explore agent only when enabled.
