@@ -4484,6 +4484,58 @@ describe('MCP OAuth flow', () => {
   // ── Task 2: _meta.kiro extraction in convertAcpUpdateToEvent ──
 
   describe('_meta.kiro extraction', () => {
+    it('drops malformed persisted workflow progress instead of emitting user chat', async () => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+      handler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: '{invalid json' },
+          _meta: {
+            kiro: {
+              kind: 'workflow-progress',
+              messageId: 'wf-progress-malformed',
+            },
+          },
+        },
+      });
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('drops unknown persisted workflow events instead of emitting user chat', async () => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+      handler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: '{}' },
+          _meta: {
+            kiro: {
+              messageId: 'wf-progress-unknown',
+              notification: {
+                kind: 'workflow-progress',
+                eventType: 'future_event',
+                workflowId: 'wf-123',
+              },
+            },
+          },
+        },
+      });
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
     it('tool_call with _meta.kiro.pipeline produces event with meta.kiro', async () => {
       const client = new KasAcpClient();
       const handler = mock((_event: any) => {});

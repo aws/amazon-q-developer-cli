@@ -36,6 +36,7 @@ import type {
   TuiCommand,
 } from '../types/commands';
 import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
+import { parsePersistedWorkflowProgress } from '../utils/workflow-protocol';
 
 /**
  * Strip the `@serverName/` prefix from KAS MCP tool titles.
@@ -1253,14 +1254,26 @@ export abstract class BaseAcpClient implements SessionClient {
     notifSessionId?: string
   ): AgentStreamEvent | null {
     switch (update.sessionUpdate) {
-      case 'user_message_chunk':
+      case 'user_message_chunk': {
+        const workflowProgress = parsePersistedWorkflowProgress(update);
+        if (workflowProgress.kind === 'workflow-progress') {
+          return {
+            type: AgentEventType.WorkflowProgress,
+            id: workflowProgress.progress.messageId ?? crypto.randomUUID(),
+            event: workflowProgress.progress.event,
+          };
+        }
+        if (workflowProgress.kind === 'invalid-workflow') return null;
+        const kiroMeta = extractKiroMetaFromUpdate(update);
         return update.content.type === 'text'
           ? {
               type: AgentEventType.UserMessage,
-              id: crypto.randomUUID(),
+              id: kiroMeta?.messageId ?? crypto.randomUUID(),
               content: { type: ContentType.Text, text: update.content.text },
+              ...(kiroMeta && { meta: { kiro: kiroMeta } }),
             }
           : null;
+      }
 
       case 'agent_message_chunk':
         switch (update.content.type) {

@@ -19,6 +19,7 @@ import type {
   UserInputRequest,
   UserInputResponse,
 } from '@kiro/acp-type-covenant';
+import type { WorkflowEvent } from './workflow.js';
 
 export enum AgentEventType {
   Content = 'content',
@@ -66,6 +67,7 @@ export enum AgentEventType {
   KasMessageIdAssigned = 'kas_message_id_assigned',
   ModelRefusal = 'model_refusal',
   SessionRosterDelta = 'session_roster_delta',
+  WorkflowProgress = 'workflow_progress',
 }
 
 export enum ContentType {
@@ -401,7 +403,7 @@ export interface KiroPipelineStage {
 export interface KiroMeta {
   /** Discriminator for per-stage events. The pipeline parent itself has no
    *  `kind` — it is identified by the presence of `pipeline`. */
-  kind?: 'agent-subtask';
+  kind?: 'agent-subtask' | 'system-notification' | 'workflow-progress';
   agentSubtaskId?: string;
   pipeline?: {
     groupId: string;
@@ -416,6 +418,29 @@ export interface KiroMeta {
     recommendedModel?: string;
   };
   mcpServerName?: string;
+  /** Workflow child ownership stamped on every persisted step event. */
+  workflow?: {
+    workflowId: string;
+    workflowName?: string;
+    nodeId: string;
+    nodePath?: readonly string[];
+    type?: 'step';
+    iteration?: number;
+    branchId?: string;
+  };
+  /** Typed identity for workflow notifications and persisted lifecycle rows. */
+  notification?: {
+    kind: 'system-notification' | 'workflow-progress';
+    status?: string;
+    workflowId?: string;
+    agentName?: string;
+    nodeName?: string;
+    notifyId?: string;
+    eventType?: string;
+  };
+  messageId?: string;
+  timestamp?: string;
+  steeringClearedIds?: readonly string[];
 }
 
 export interface AgentContentEvent {
@@ -441,6 +466,7 @@ export interface UserMessageEvent {
   type: AgentEventType.UserMessage;
   id: string;
   content: ContentChunk;
+  meta?: { kiro?: KiroMeta };
 }
 
 export interface ToolCallEvent {
@@ -765,6 +791,12 @@ export interface SteeringClearedEvent {
   type: AgentEventType.SteeringCleared;
 }
 
+export interface WorkflowProgressStreamEvent {
+  type: AgentEventType.WorkflowProgress;
+  id: string;
+  event: WorkflowEvent;
+}
+
 export type AgentStreamEvent =
   | AgentContentEvent
   | AgentThoughtEvent
@@ -810,4 +842,5 @@ export type AgentStreamEvent =
   | McpRegistrySnapshotEvent
   | GoalStatusEvent
   | ModelRefusalEvent
-  | SessionRosterDeltaEvent;
+  | SessionRosterDeltaEvent
+  | WorkflowProgressStreamEvent;
