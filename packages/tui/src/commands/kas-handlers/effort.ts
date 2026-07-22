@@ -2,8 +2,6 @@ import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import { formatEffort } from '../../utils/string';
 import { extractRpcErrorMessage } from '../../utils/error-handling';
-import { readCliSettings } from '../../utils/cli-settings';
-import { Settings } from '../../constants/settings';
 import { persistEffortDefault } from '../../utils/effort-defaults';
 import { logger } from '../../utils/logger';
 
@@ -11,8 +9,14 @@ import { logger } from '../../utils/logger';
  * `/effort` selection menu + switch for KAS. Levels come from the
  * `kasAvailableEfforts` store slice (parsed from the `effortLevel`
  * configOption, present only when the active model declares a thought-level
- * schema). Selecting a level switches via
+ * schema).
+ *
+ * Selecting a level switches via
  * `ctx.kiro.setConfigOption('effortLevel', …)`.
+ *
+ * Switching is session-only;
+ * `/effort set-current-as-default` persists the current level for the current model
+ * to the user's settings.
  */
 export async function handleEffort(
   cmd: KasCommand,
@@ -22,6 +26,9 @@ export async function handleEffort(
   const trimmed = args.trim();
   if (!trimmed) {
     return showEffortPicker(ctx, cmd);
+  }
+  if (trimmed === 'set-current-as-default') {
+    return saveCurrentAsDefault(ctx);
   }
   return switchEffort(ctx, trimmed);
 }
@@ -68,40 +75,57 @@ async function switchEffort(ctx: CommandContext, level: string): Promise<void> {
     ctx.showAlert(`Effort '${level}' not available`, 'error', 5000);
     return;
   }
-  // Best-effort persist of the per-model default at the model's advertised
-  // effort schema path; no path advertised -> skip rather than guess. The
-  // switch already took effect, so a failed write never fails the command;
-  // the suffix is shown only when a write actually happened.
+  ctx.showAlert(`Effort set to ${formatEffort(level)}`, 'success', 3000);
+}
+
+async function saveCurrentAsDefault(ctx: CommandContext): Promise<void> {
   const model = ctx.getCurrentModel?.();
-  const optedOut =
-    readCliSettings()[Settings.CHAT_DISABLE_AUTO_DEFAULT_EFFORT] === true;
-  let savedForModel = false;
-  if (model && !optedOut) {
-    const entry = ctx.kasAvailableModels.find((m) => m.id === model.id);
-    if (entry?.effortSchemaPath) {
-      try {
-        await persistEffortDefault(
-          model.id,
-          level,
-          `${entry.effortSchemaPath}.effort`
-        );
-        savedForModel = true;
-      } catch (err) {
-        logger.warn('[effort] failed to persist effort default:', err);
-      }
-    } else {
-      logger.debug(
-        `[effort] no effortSchemaPath advertised for ${model.id}; skipping persist`
-      );
-    }
-  }
-  if (savedForModel) {
+  if (!model) {
     ctx.showAlert(
-      `Effort set to ${formatEffort(level)} (saved for ${model!.name}; disable with kiro-cli settings ${Settings.CHAT_DISABLE_AUTO_DEFAULT_EFFORT} true)`,
-      'success',
-      4000
+      'Select a model with an effort configured to save as the default',
+      'error',
+      3000
     );
-  } else {
-    ctx.showAlert(`Effort set to ${formatEffort(level)}`, 'success', 3000);
+    return;
   }
+  const level = ctx.getCurrentEffort?.();
+  if (!level) {
+    ctx.showAlert(
+      `No effort level is currently set. Effort may not be available on ${model.name}.`,
+      'error',
+      3000
+    );
+    return;
+  }
+  const entry = ctx.kasAvailableModels.find((m) => m.id === model.id);
+  if (!entry?.effortSchemaPath) {
+    ctx.showAlert(
+      `Effort defaults are not available for ${model.name}`,
+      'error',
+      5000
+    );
+    return;
+  }
+  // Persisting is the whole command, so a failed write is reported as an
+  // error - but gracefully, never as an unhandled throw.
+  try {
+    await persistEffortDefault(
+      model.id,
+      level,
+      `${entry.effortSchemaPath}.effort`
+    );
+  } catch (err) {
+    logger.warn('[effort] failed to save default effort:', err);
+    ctx.showAlert(
+      `Failed to save ${formatEffort(level)} as default effort for ${model.name}`,
+      'error',
+      5000
+    );
+    return;
+  }
+  ctx.showAlert(
+    `Set ${formatEffort(level)} as default effort for ${model.name}`,
+    'success',
+    3000
+  );
 }

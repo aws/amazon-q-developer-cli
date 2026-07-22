@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-26
-  commit: f49c99c49
+  validated: 2026-07-20
+  commit: 1b7046191
   status: validated
   testable_headless: true
   category: slash_command
   title: /model
   description: Select AI model for current conversation session
-  keywords: [model, ai, claude, select, switch, autocomplete, default, sticky]
-  related: [default-model, cmd-chat, disable-auto-default-model]
+  keywords: [model, ai, claude, select, switch, autocomplete, default, set-current-as-default]
+  related: [default-model, cmd-chat]
 ---
 
 # /model
@@ -17,7 +17,7 @@ Select AI model for current conversation session.
 
 ## Overview
 
-The `/model` command selects an AI model for the current session. You can either use the interactive picker or specify a model name directly. Changes apply immediately and are automatically saved as your default for future sessions (disable with `chat.disableAutoDefaultModel`).
+The `/model` command selects an AI model for the current session. You can either use the interactive picker or specify a model name directly. Changes apply immediately and last for the current session only. To make the current model your default for new sessions, use `/model set-current-as-default`.
 
 ## Usage
 
@@ -54,7 +54,7 @@ Supports partial matching and is case-insensitive.
 
 ### set-current-as-default
 
-Save the current session's model as the default for new sessions. This is generally unnecessary since `/model` now auto-persists your selection, but remains available for explicit control.
+Save the current session's model as the default for new sessions.
 
 ```
 /model set-current-as-default
@@ -88,10 +88,10 @@ Shows current model, rate multipliers, and descriptions.
 
 **Output**:
 ```
- Using claude-sonnet-4 (saved as default; disable with kiro-cli settings chat.disableAutoDefaultModel true)
+Model changed to Claude Sonnet 4
 ```
 
-The model is automatically persisted as your default for new sessions.
+The change lasts for the current session only. Use `/model set-current-as-default` to persist it.
 
 ### Example 3: Model Not Found with Suggestion
 
@@ -166,7 +166,6 @@ Run `/model` without arguments to see the interactive picker with all available 
 ## Related
 
 - [chat.defaultModel](../settings/default-model.md) - Set default model
-- [chat.disableAutoDefaultModel](../settings/disable-auto-default-model.md) - Disable auto-saving model
 - [kiro-cli chat --model](../commands/chat.md) - Start with specific model
 - [/usage](usage.md) - Check account usage
 
@@ -203,4 +202,4 @@ Run `/model` without arguments to see the interactive picker with all available 
 
 **Tab Completion**: Model names are fetched dynamically and filtered by prefix as you type.
 
-**Persistence**: Model selection is automatically saved as your default (disable with `chat.disableAutoDefaultModel`). When resuming, the saved model is restored.
+**Persistence**: Model selection is session-only. Save a default explicitly with `/model set-current-as-default` or the `chat.defaultModel` setting. When resuming, the session's saved model is restored.

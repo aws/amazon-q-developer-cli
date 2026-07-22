@@ -208,7 +208,7 @@ describe('/effort command (KAS)', () => {
     expect(params.sessionId).toBe('test-1');
     expect(params.value).toBe('xhigh');
 
-    // Message locked to "Effort set to xHigh" (no "(saved for …)" suffix).
+    // Message locked to the plain "Effort set to xHigh" confirmation.
     await tc.waitForVisibleText('Effort set to xHigh', 2000);
 
     // Scenario 4: store + chip reflect the new level.

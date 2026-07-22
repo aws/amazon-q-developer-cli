@@ -3956,8 +3956,8 @@ async fn cli_effort_flag_reasoning_path() {
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
-async fn model_switch_persists_as_default() {
-    let (harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_switch_persists")
+async fn model_switch_does_not_persist_default() {
+    let (harness, client, session_id, _) = AcpTestHarnessBuilder::new("model_switch_no_persist")
         .with_trust_all(true)
         .build_with_session()
         .await;
@@ -3968,7 +3968,7 @@ async fn model_switch_persists_as_default() {
         .await
         .expect("model switch failed");
 
-    // Verify the success message indicates persistence
+    // The confirmation is plain: no "saved" wording
     let captured = client.captured().await;
     let has_saved_message = captured.session_updates.iter().any(|update| {
         if let SessionUpdate::AgentMessageChunk(chunk) = update {
@@ -3978,32 +3978,26 @@ async fn model_switch_persists_as_default() {
             false
         }
     });
-    assert!(
-        has_saved_message,
-        "Model switch message should indicate the preference was saved"
-    );
+    assert!(!has_saved_message, "Model switch message should not mention saving");
 
-    // Verify the setting was persisted to disk
-    let settings_content = std::fs::read_to_string(&harness.paths.settings_path).expect("failed to read settings file");
-    let settings: serde_json::Value = serde_json::from_str(&settings_content).expect("failed to parse settings");
-    assert_eq!(
-        settings.get("chat.defaultModel").and_then(|v| v.as_str()),
-        Some("claude-sonnet-4.6"),
-        "chat.defaultModel should be persisted when switching models"
-    );
+    // Nothing was written to the settings file
+    let default_model = std::fs::read_to_string(&harness.paths.settings_path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        .and_then(|s| s.get("chat.defaultModel").cloned());
+    assert_eq!(default_model, None, "chat.defaultModel should not be written on switch");
 }
 
-/// /effort should persist the effort level as a per-model default
+/// Plain /effort <level> is session-only: it must not write settings
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
-async fn effort_command_persists_to_model_defaults() {
-    let (_harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_persists")
+async fn effort_command_does_not_persist() {
+    let (harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_no_persist")
         .with_trust_all(true)
         .build_with_session()
         .await;
 
-    // Set effort to "low" via execute_command
     let result = client
         .execute_command(
             session_id.clone(),
@@ -4012,42 +4006,103 @@ async fn effort_command_persists_to_model_defaults() {
         .await
         .expect("execute_command for effort failed");
     assert!(result.success, "effort execute should succeed: {}", result.message);
-    assert!(
-        result.message.to_lowercase().contains("saved"),
-        "effort message should indicate persistence: {}",
-        result.message
-    );
+    assert_eq!(result.message, "Effort set to low");
 
-    // Verify the setting was persisted to disk under chat.modelDefaults
-    let settings_content =
-        std::fs::read_to_string(&_harness.paths.settings_path).expect("failed to read settings file");
-    let settings: serde_json::Value = serde_json::from_str(&settings_content).expect("failed to parse settings");
-    let model_defaults = settings
-        .get("chat.modelDefaults")
-        .expect("chat.modelDefaults should exist");
-    // The default model is claude-opus-4.7, so effort should be saved under that key
-    let effort = model_defaults
-        .pointer("/claude-opus-4.7/output_config/effort")
-        .and_then(|v| v.as_str());
+    let model_defaults = std::fs::read_to_string(&harness.paths.settings_path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        .and_then(|s| s.get("chat.modelDefaults").cloned());
     assert_eq!(
-        effort,
-        Some("low"),
-        "effort should be persisted under chat.modelDefaults for the current model"
+        model_defaults, None,
+        "chat.modelDefaults should not be written by a plain /effort switch"
     );
 }
 
-/// Regression: setting effort on two different models in one session must preserve both.
-/// Previously the agent's stale local settings copy caused the second write to clobber the first.
+/// /effort set-current-as-default persists the current effort for the current
+/// model and a new session in the same process picks it up.
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
-async fn effort_persists_for_multiple_models_in_one_session() {
+async fn effort_set_current_as_default_picked_up_by_new_session() {
+    let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("effort_set_default_new_session")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // Set a session effort, then explicitly save it for the current model
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "low" } }),
+        )
+        .await
+        .expect("execute_command for effort failed");
+    assert!(result.success, "effort execute should succeed: {}", result.message);
+
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "set-current-as-default" } }),
+        )
+        .await
+        .expect("execute_command for set-current-as-default failed");
+    assert!(
+        result.success,
+        "set-current-as-default should succeed: {}",
+        result.message
+    );
+    assert!(
+        result.message.contains("default effort"),
+        "message should confirm the default was set: {}",
+        result.message
+    );
+
+    // Persisted to disk under chat.modelDefaults for the current model only
+    let settings_content = std::fs::read_to_string(&harness.paths.settings_path).expect("failed to read settings file");
+    let settings: serde_json::Value = serde_json::from_str(&settings_content).expect("failed to parse settings");
+    assert_eq!(
+        settings
+            .pointer("/chat.modelDefaults/claude-opus-4.7/output_config/effort")
+            .and_then(|v| v.as_str()),
+        Some("low"),
+        "effort should be persisted under chat.modelDefaults for the current model"
+    );
+
+    // A new session (same default model) picks up the persisted effort
+    let second_resp = client.new_session(cwd).await.expect("second new_session failed");
+    let second_session_id = second_resp.session_id;
+
+    harness
+        .push_mock_responses_from_file(&second_session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+    client
+        .prompt_text(second_session_id.clone(), "hello")
+        .await
+        .expect("prompt in second session failed");
+
+    let captured_requests = harness.get_captured_requests(&second_session_id.0).await;
+    assert_eq!(captured_requests.len(), 1, "should have one captured request");
+    let additional_fields = captured_requests[0]
+        .additional_model_request_fields
+        .as_ref()
+        .expect("additional_model_request_fields should be set");
+    assert_eq!(
+        additional_fields["output_config"]["effort"], "low",
+        "new session should use the persisted per-model effort default"
+    );
+}
+
+/// Saving effort defaults for two different models in one session must preserve both.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn effort_set_current_as_default_preserves_other_models() {
     let (harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_multi_model")
         .with_trust_all(true)
         .build_with_session()
         .await;
 
-    // Set effort on the default model (claude-opus-4.7)
+    // Save an effort default on the default model (claude-opus-4.7)
     let result = client
         .execute_command(
             session_id.clone(),
@@ -4056,6 +4111,14 @@ async fn effort_persists_for_multiple_models_in_one_session() {
         .await
         .expect("effort on opus-4.7 failed");
     assert!(result.success);
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "set-current-as-default" } }),
+        )
+        .await
+        .expect("set-current-as-default on opus-4.7 failed");
+    assert!(result.success, "should succeed: {}", result.message);
 
     // Switch to a different model via set_session_model (bypasses model list)
     client
@@ -4071,8 +4134,16 @@ async fn effort_persists_for_multiple_models_in_one_session() {
         .await
         .expect("effort on opus-4.6 failed");
     assert!(result.success, "effort should succeed: {}", result.message);
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "set-current-as-default" } }),
+        )
+        .await
+        .expect("set-current-as-default on opus-4.6 failed");
+    assert!(result.success, "should succeed: {}", result.message);
 
-    // Both models' effort settings must be present on disk
+    // Both models' effort defaults must be present on disk
     let settings_content = std::fs::read_to_string(&harness.paths.settings_path).expect("failed to read settings file");
     let settings: serde_json::Value = serde_json::from_str(&settings_content).expect("failed to parse settings");
     let model_defaults = settings
@@ -4084,7 +4155,7 @@ async fn effort_persists_for_multiple_models_in_one_session() {
             .pointer("/claude-opus-4.7/output_config/effort")
             .and_then(|v| v.as_str()),
         Some("low"),
-        "opus-4.7 effort should still be 'low' after setting effort on another model"
+        "opus-4.7 effort should still be 'low' after saving a default on another model"
     );
     assert_eq!(
         model_defaults
@@ -4092,6 +4163,121 @@ async fn effort_persists_for_multiple_models_in_one_session() {
             .and_then(|v| v.as_str()),
         Some("high"),
         "opus-4.6 effort should be 'high'"
+    );
+}
+
+/// A stale effort leaf at a different schema path for the same model is
+/// removed by /effort set-current-as-default, leaving exactly one effort leaf,
+/// while other models' entries and non-effort keys on the model survive.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn effort_set_current_as_default_prunes_stale_sibling_leaf() {
+    let (harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_prune_stale_sibling")
+        .with_setting(
+            "chat.modelDefaults",
+            serde_json::json!({
+                "claude-opus-4.7": {
+                    "reasoning": { "effort": "high" },
+                    "temperature": 0.5
+                },
+                "gpt-5.1": { "reasoning": { "effort": "medium" } }
+            }),
+        )
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "low" } }),
+        )
+        .await
+        .expect("effort switch failed");
+    assert!(result.success, "effort should succeed: {}", result.message);
+
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "set-current-as-default" } }),
+        )
+        .await
+        .expect("set-current-as-default failed");
+    assert!(result.success, "should succeed: {}", result.message);
+    assert_eq!(result.message, "Set Low as default effort for Claude Opus 4.7");
+
+    let settings_content = std::fs::read_to_string(&harness.paths.settings_path).expect("failed to read settings file");
+    let settings: serde_json::Value = serde_json::from_str(&settings_content).expect("failed to parse settings");
+    let model_defaults = settings
+        .get("chat.modelDefaults")
+        .expect("chat.modelDefaults should exist");
+
+    assert_eq!(
+        model_defaults
+            .pointer("/claude-opus-4.7/output_config/effort")
+            .and_then(|v| v.as_str()),
+        Some("low"),
+        "the schema-resolved effort leaf should hold the saved level"
+    );
+    assert_eq!(
+        model_defaults.pointer("/claude-opus-4.7/reasoning"),
+        None,
+        "the stale sibling effort leaf should be pruned"
+    );
+    assert_eq!(
+        model_defaults
+            .pointer("/claude-opus-4.7/temperature")
+            .and_then(|v| v.as_f64()),
+        Some(0.5),
+        "non-effort keys on the model should survive"
+    );
+    assert_eq!(
+        model_defaults
+            .pointer("/gpt-5.1/reasoning/effort")
+            .and_then(|v| v.as_str()),
+        Some("medium"),
+        "other models' entries should survive"
+    );
+}
+
+/// /effort set-current-as-default on a model with no effort level set errors
+/// out and does not write chat.modelDefaults.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn effort_set_current_as_default_errors_without_effort() {
+    let (harness, client, session_id, _) = AcpTestHarnessBuilder::new("effort_set_default_no_effort")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    // amazon-nova-pro exposes no effort schema, so no level can be in effect
+    client
+        .set_session_model(session_id.clone(), "amazon-nova-pro".to_string())
+        .await
+        .expect("set_session_model failed");
+
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "effort", "args": { "value": "set-current-as-default" } }),
+        )
+        .await
+        .expect("execute_command failed");
+    assert!(!result.success, "should fail: {}", result.message);
+    assert_eq!(
+        result.message,
+        "No effort level is currently set. Effort may not be available on Amazon Nova Pro."
+    );
+
+    let model_defaults = std::fs::read_to_string(&harness.paths.settings_path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        .and_then(|s| s.get("chat.modelDefaults").cloned());
+    assert_eq!(
+        model_defaults, None,
+        "chat.modelDefaults should not be written on error"
     );
 }
 

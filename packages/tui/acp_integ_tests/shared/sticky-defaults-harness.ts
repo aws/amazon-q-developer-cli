@@ -53,10 +53,10 @@ export const LEVELS: SelectEntry[] = [
 /**
  * Build the `category: 'model'` config option. Each model advertises
  * `_meta.kiro.effortSchemaPath: 'output_config'` (KAS's authoritative path for
- * Claude-family models) unless it appears in `noEffortSchema`, so a persisted
- * effort default lands at `output_config.effort` — matching the cli.json shape
- * these tests assert. A model in `noEffortSchema` advertises no path, so the
- * TUI skips effort persistence for it.
+ * Claude-family models) unless it appears in `noEffortSchema`, so an effort
+ * default saved via `/effort set-current-as-default` lands at
+ * `output_config.effort`, matching the cli.json shape these tests assert.
+ * A model in `noEffortSchema` advertises no path.
  */
 export function modelConfigOption(
   currentValue: string,

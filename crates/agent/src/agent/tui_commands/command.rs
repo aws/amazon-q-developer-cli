@@ -393,7 +393,7 @@ impl TuiCommand {
             TuiCommand::Guide(_) => "/guide [question]",
             TuiCommand::Rewind(_) => "/rewind",
             TuiCommand::Stats(_) => "/stats [N|save <filename>]",
-            TuiCommand::Effort(_) => "/effort [level]",
+            TuiCommand::Effort(_) => "/effort [level|set-current-as-default]",
             TuiCommand::Goal(_) => "/goal [description --validate criteria --agent name --max N] | clear",
         }
     }
@@ -403,6 +403,7 @@ impl TuiCommand {
         match self {
             TuiCommand::Agent(_) => vec!["create", "edit", "swap"],
             TuiCommand::Model(_) => vec!["set-current-as-default"],
+            TuiCommand::Effort(_) => vec!["set-current-as-default"],
             TuiCommand::Context(_) => vec!["show", "add", "remove", "clear"],
             TuiCommand::Knowledge(_) => vec!["show", "add", "remove", "update", "clear", "cancel"],
             TuiCommand::Tools(_) => vec!["trust-all", "trust", "untrust", "reset"],
@@ -975,6 +976,24 @@ mod tests {
     #[test]
     fn test_model_subcommands_listed() {
         let cmd = TuiCommand::Model(ModelArgs::default());
+        let subs = cmd.subcommands();
+        assert!(subs.contains(&"set-current-as-default"));
+    }
+
+    #[test]
+    fn test_parse_effort_set_current_as_default() {
+        let cmd = TuiCommand::parse("effort", "set-current-as-default").unwrap();
+        match cmd {
+            TuiCommand::Effort(args) => {
+                assert_eq!(args.level, Some("set-current-as-default".to_string()));
+            },
+            _ => panic!("expected Effort"),
+        }
+    }
+
+    #[test]
+    fn test_effort_subcommands_listed() {
+        let cmd = TuiCommand::Effort(EffortArgs::default());
         let subs = cmd.subcommands();
         assert!(subs.contains(&"set-current-as-default"));
     }

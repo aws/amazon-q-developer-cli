@@ -29,29 +29,17 @@ export const MODEL_DEFAULTS_SETTING = Settings.CHAT_MODEL_DEFAULTS;
  * expose effort under `output_config.effort`; GPT/openai under
  * `reasoning.effort`.
  *
- * The authoritative path is now resolved at the call site from KAS's
+ * The authoritative path is resolved at the call site from KAS's
  * `_meta.kiro.effortSchemaPath` (advertised per model option) and passed into
  * {@link persistEffortDefault}. This list remains the source of truth for (a)
- * the family heuristic fallback used when KAS omits the path (older servers),
- * and (b) the single-leaf invariant — writing one path prunes the other so a
- * model never holds both.
+ * path-tolerant reads via {@link readSavedEffortDefault}, and (b) the
+ * single-leaf invariant - writing one path prunes the other so a model never
+ * holds both.
  */
 export const KNOWN_EFFORT_PATHS = [
   'output_config.effort',
   'reasoning.effort',
 ] as const;
-
-/**
- * Resolve the schema path the given model uses for effort. Heuristic mirror of
- * v2's family split, used as a FALLBACK only when KAS does not advertise the
- * authoritative `effortSchemaPath` for the model (see KNOWN_EFFORT_PATHS).
- */
-export function effortPathForModel(modelId: string): string {
-  const id = modelId.toLowerCase();
-  return id.includes('gpt') || id.includes('openai')
-    ? 'reasoning.effort'
-    : 'output_config.effort';
-}
 
 /** Read a dotted path out of a plain object, returning the leaf or undefined. */
 function getByPath(obj: Record<string, unknown>, path: string): unknown {
@@ -160,25 +148,22 @@ export function readSavedEffortDefault(modelId: string): string | undefined {
 
 /**
  * Persist `level` as the per-model effort default for `modelId`, writing the
- * nested v2-compatible shape at the model's effort schema path. When the caller
- * has resolved the authoritative path from KAS's `_meta.kiro.effortSchemaPath`
- * (e.g. `"reasoning.effort"`), pass it as `resolvedPath`; otherwise the family
- * name heuristic ({@link effortPathForModel}) is used as a fallback. The entire
- * read-merge-write runs inside cli-settings' serialized write queue (via
- * {@link updateCliSettingWith}) so a concurrent in-process writer to
- * `chat.modelDefaults` cannot cause a lost update. Deep-merges into the
- * existing value so other models (and other fields on the same model) are
- * preserved, then deletes the OTHER known effort path under this model so a
- * model never holds both `output_config.effort` and `reasoning.effort` — a
- * stale leaf at the unused path could otherwise be read back by the
- * family-tolerant {@link readSavedEffortDefault}.
+ * nested v2-compatible shape at `path` - the model's effort schema path as
+ * resolved by the caller from KAS's `_meta.kiro.effortSchemaPath` (e.g.
+ * `"reasoning.effort"`). The entire read-merge-write runs inside cli-settings'
+ * serialized write queue (via {@link updateCliSettingWith}) so a concurrent
+ * in-process writer to `chat.modelDefaults` cannot cause a lost update.
+ * Deep-merges into the existing value so other models (and other fields on the
+ * same model) are preserved, then deletes the OTHER known effort path under
+ * this model so a model never holds both `output_config.effort` and
+ * `reasoning.effort` - a stale leaf at the unused path could otherwise be read
+ * back by the path-tolerant {@link readSavedEffortDefault}.
  */
 export async function persistEffortDefault(
   modelId: string,
   level: string,
-  resolvedPath?: string
+  path: string
 ): Promise<void> {
-  const path = resolvedPath ?? effortPathForModel(modelId);
   const node = buildNested(path, level);
   await updateCliSettingWith(MODEL_DEFAULTS_SETTING, (existing) => {
     const base =

@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-26
-  commit: f49c99c49
+  validated: 2026-07-20
+  commit: 1b7046191
   status: validated
   testable_headless: true
   category: slash_command
   title: /effort
   description: Set reasoning effort level for the current model
-  keywords: [effort, reasoning, low, medium, high, model, performance, output_config, reasoning.effort, sticky, default]
-  related: [slash-model, default-model, disable-auto-default-effort]
+  keywords: [effort, reasoning, low, medium, high, model, performance, output_config, reasoning.effort, default, set-current-as-default]
+  related: [slash-model, default-model]
 ---
 
 # /effort
@@ -17,16 +17,17 @@ Set reasoning effort level for the current model.
 
 ## Overview
 
-The `/effort` command controls how much reasoning effort the model applies to responses. Lower effort means faster, cheaper responses; higher effort means more thorough reasoning. Changes apply immediately and are automatically saved as your per-model default for future sessions (disable with `chat.disableAutoDefaultEffort`).
+The `/effort` command controls how much reasoning effort the model applies to responses. Lower effort means faster, cheaper responses; higher effort means more thorough reasoning. Changes apply immediately and last for the current session only. To make the current effort the default for the current model, use `/effort set-current-as-default`.
 
 ## Usage
 
 ```
-/effort [level]
+/effort [level|set-current-as-default]
 ```
 
 - Without arguments: Shows available effort levels
 - With level: Sets effort directly
+- With `set-current-as-default`: Persists the current session's effort as the default for the current model
 
 ## Available Levels
 
@@ -66,12 +67,25 @@ Available effort levels: low, medium, high, xhigh
 
 **Output**:
 ```
-Effort set to low (saved for Claude Opus 4.7; disable with kiro-cli settings chat.disableAutoDefaultEffort true)
+Effort set to low
 ```
 
-The effort level is automatically persisted as a per-model default in your settings. To disable this auto-save behavior, set `chat.disableAutoDefaultEffort` to `true`.
+The change lasts for the current session only.
 
-### Example 3: Model Without Effort Support
+### Example 3: Save Current Effort as the Model's Default
+
+```
+/effort set-current-as-default
+```
+
+**Output**:
+```
+Set Low as default effort for Claude Opus 4.7
+```
+
+Persists the current session's effort level as the default for the current model, stored under `chat.modelDefaults`. Future sessions using that model apply it automatically.
+
+### Example 4: Model Without Effort Support
 
 ```
 /effort
@@ -150,7 +164,6 @@ Workspace-level settings (`.kiro/settings/cli.json`) override global settings, s
 
 - [/model](model.md) - Switch models in session
 - [chat.defaultModel](../settings/default-model.md) - Set default model
-- [chat.disableAutoDefaultEffort](../settings/disable-auto-default-effort.md) - Disable auto-saving effort
 - [kiro-cli chat](../commands/chat.md) - Start session with `--effort` flag
 
 ## Limitations

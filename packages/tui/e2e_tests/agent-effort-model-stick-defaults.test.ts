@@ -1,17 +1,17 @@
 /**
- * E2E tests for sticky model/effort defaults on the V2 (Rust) engine, observed
+ * E2E tests for model/effort defaults on the V2 (Rust) engine, observed
  * through the real TUI. The V2 engine resolves the static model list + effort
  * ladders locally (no network — see effort-status-bar.test.ts), so seeding
  * cli.json and reading the store back is fully deterministic.
  *
- * Coverage mirrors the KAS integ file's core, using the real Rust-known model
- * ids (`claude-opus-4.7` → native xhigh, `claude-sonnet-4.6` → native high):
+ * Coverage, using the real Rust-known model ids (`claude-opus-4.7` → native
+ * xhigh, `claude-sonnet-4.6` → native high):
  *   - apply a saved default model / per-model effort on a new session
- *   - persist `/model` + `/effort` to cli.json
- *   - opt-out (chat.disableAutoDefaultModel/Effort) suppresses the write while
- *     still applying a pre-existing default
+ *   - `/model` and `/effort` are session-only: switching writes nothing
+ *   - `/effort set-current-as-default` persists the current effort for the
+ *     current model
  *
- * Agent stickiness (`chat.defaultAgent`) and resume reconciliation are covered
+ * The agent default (`chat.defaultAgent`) and resume reconciliation are covered
  * on the KAS side; the agent apply path is engine-agnostic TUI code (index.tsx)
  * and resume needs a seeded on-disk session — both deferred here.
  */
@@ -57,7 +57,7 @@ async function waitForCli(
 // TUI-driven slash-command flows are unreliable under the Windows CI PTY
 // (see effort-status-bar / chat-command, similarly skipped). The feature is not
 // Windows-specific; coverage runs on macOS + Linux.
-describe.skipIf(process.platform === 'win32')('sticky model/effort defaults (V2)', () => {
+describe.skipIf(process.platform === 'win32')('saved model/effort defaults (V2)', () => {
   let tc: E2ETestCase | null = null;
 
   afterEach(async () => {
@@ -103,29 +103,11 @@ describe.skipIf(process.platform === 'win32')('sticky model/effort defaults (V2)
     expect(store.currentEffort).toBe('low');
   }, 30000);
 
-  // ── Persistence ───────────────────────────────────────────────────────────
+  // ── Session-only switching ────────────────────────────────────────────────
 
-  it('persists /model to chat.defaultModel', async () => {
+  it('/model and /effort switch the session without writing settings', async () => {
     tc = await E2ETestCase.builder()
-      .withTestName('v2-persist-model')
-      .withTerminal({ width: 120, height: 40 })
-      .launch();
-
-    await tc.waitForText('ask a question', 15000);
-    await tc.waitForSlashCommands();
-
-    await tc.sendKeys(`/model ${SONNET}`);
-    await tc.sleepMs(200);
-    await tc.pressEnter();
-    await tc.waitForStoreCondition((s) => s.currentModel?.id === SONNET, 10000);
-
-    const cli = await waitForCli(tc, (c) => c['chat.defaultModel'] === SONNET);
-    expect(cli['chat.defaultModel']).toBe(SONNET);
-  }, 30000);
-
-  it('persists /effort to chat.modelDefaults and re-applies it on a model switch-back', async () => {
-    tc = await E2ETestCase.builder()
-      .withTestName('v2-persist-effort')
+      .withTestName('v2-session-only-switch')
       .withTerminal({ width: 120, height: 40 })
       .launch();
 
@@ -133,85 +115,44 @@ describe.skipIf(process.platform === 'win32')('sticky model/effort defaults (V2)
     await tc.waitForSlashCommands();
     await tc.waitForStoreCondition((s) => s.currentEffort !== null, 10000);
 
-    // /effort persists a per-model default at the model's effort schema path.
-    await tc.sendKeys('/effort low');
-    await tc.sleepMs(200);
-    await tc.pressEnter();
-    await tc.waitForStoreCondition((s) => s.currentEffort === 'low', 10000);
-
-    const cli = await waitForCli(tc, (c) => savedEffort(c, OPUS) === 'low');
-    expect(savedEffort(cli, OPUS)).toBe('low');
-
-    // Switch-back regression: leaving OPUS and returning must re-apply the
-    // in-session saved 'low' rather than OPUS's native effort. This exercises
-    // the shared Settings store — before it, the switch-back read a stale
-    // per-session settings clone that never saw the in-session /effort write.
     await tc.sendKeys(`/model ${SONNET}`);
     await tc.sleepMs(200);
     await tc.pressEnter();
     await tc.waitForStoreCondition((s) => s.currentModel?.id === SONNET, 10000);
 
-    await tc.sendKeys(`/model ${OPUS}`);
+    await tc.sendKeys('/effort low');
     await tc.sleepMs(200);
     await tc.pressEnter();
-    const back = await tc.waitForStoreCondition(
-      (s) => s.currentModel?.id === OPUS && s.currentEffort === 'low',
-      10000
-    );
-    expect(back.currentEffort).toBe('low');
+    await tc.waitForStoreCondition((s) => s.currentEffort === 'low', 10000);
+
+    await tc.sleepMs(500);
+    const cli = readCli(tc);
+    expect(cli['chat.defaultModel']).toBeUndefined();
+    expect(cli['chat.modelDefaults']).toBeUndefined();
   }, 45000);
 
-  // ── Opt-out: gates the WRITE, not the APPLY ───────────────────────────────
+  // ── Explicit persistence ──────────────────────────────────────────────────
 
-  it('disableAutoDefaultEffort suppresses the /effort write but still applies a pre-existing default', async () => {
+  it('/effort set-current-as-default persists the current effort for the current model', async () => {
     tc = await E2ETestCase.builder()
-      .withTestName('v2-optout-effort')
+      .withTestName('v2-effort-set-default')
       .withTerminal({ width: 120, height: 40 })
-      .withGlobalSettings({
-        'chat.disableAutoDefaultEffort': true,
-        'chat.modelDefaults': { [OPUS]: { output_config: { effort: 'low' } } },
-      })
       .launch();
 
     await tc.waitForText('ask a question', 15000);
     await tc.waitForSlashCommands();
+    await tc.waitForStoreCondition((s) => s.currentEffort !== null, 10000);
 
-    // apply-NOT-suppressed: the pre-existing 'low' is applied at startup.
-    await tc.waitForStoreCondition((s) => s.currentEffort === 'low', 15000);
-
-    // write-SUPPRESSED: changing effort takes effect but must not persist.
-    await tc.sendKeys('/effort high');
+    await tc.sendKeys('/effort low');
     await tc.sleepMs(200);
     await tc.pressEnter();
-    await tc.waitForStoreCondition((s) => s.currentEffort === 'high', 10000);
+    await tc.waitForStoreCondition((s) => s.currentEffort === 'low', 10000);
 
-    await tc.sleepMs(500);
-    expect(savedEffort(readCli(tc), OPUS)).toBe('low');
-  }, 30000);
-
-  it('disableAutoDefaultModel suppresses the /model write but still applies the saved default', async () => {
-    tc = await E2ETestCase.builder()
-      .withTestName('v2-optout-model')
-      .withTerminal({ width: 120, height: 40 })
-      .withGlobalSettings({
-        'chat.disableAutoDefaultModel': true,
-        'chat.defaultModel': SONNET,
-      })
-      .launch();
-
-    await tc.waitForText('ask a question', 15000);
-    await tc.waitForSlashCommands();
-
-    // apply-NOT-suppressed: saved default SONNET is applied at startup.
-    await tc.waitForStoreCondition((s) => s.currentModel?.id === SONNET, 15000);
-
-    // write-SUPPRESSED: switching to OPUS must not overwrite the saved default.
-    await tc.sendKeys(`/model ${OPUS}`);
+    await tc.sendKeys('/effort set-current-as-default');
     await tc.sleepMs(200);
     await tc.pressEnter();
-    await tc.waitForStoreCondition((s) => s.currentModel?.id === OPUS, 10000);
 
-    await tc.sleepMs(500);
-    expect(readCli(tc)['chat.defaultModel']).toBe(SONNET);
-  }, 30000);
+    const cli = await waitForCli(tc, (c) => savedEffort(c, OPUS) === 'low');
+    expect(savedEffort(cli, OPUS)).toBe('low');
+  }, 45000);
 });

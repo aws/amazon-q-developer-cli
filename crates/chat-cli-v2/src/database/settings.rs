@@ -22,7 +22,7 @@ const SETTINGS_FILE_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Recursively merge `patch` into `base`. Objects are merged key-by-key; all
 /// other types are replaced.
-fn deep_merge(base: &mut Value, patch: Value) {
+pub(crate) fn deep_merge(base: &mut Value, patch: Value) {
     match (base, patch) {
         (Value::Object(base_map), Value::Object(patch_map)) => {
             for (k, v) in patch_map {
@@ -237,12 +237,6 @@ pub enum Setting {
         message = "Disable inheriting default resources — global/workspace steering, skills, and project marker files like AGENTS.md — in custom (user-defined) agents (boolean, default: false)"
     )]
     ChatDisableInheritingDefaultResources,
-    #[strum(message = "Disable automatically saving the selected model as the default (boolean, default: false)")]
-    ChatDisableAutoDefaultModel,
-    #[strum(
-        message = "Disable automatically saving the selected effort level as a per-model default (boolean, default: false)"
-    )]
-    ChatDisableAutoDefaultEffort,
 }
 
 impl Setting {
@@ -325,8 +319,6 @@ impl AsRef<str> for Setting {
             Self::ChatDefaultInterruptBehavior => "chat.defaultInterruptBehavior",
             Self::ChatKeybindingsToggleInterruptBehavior => "chat.keybindings.toggleInterruptBehavior",
             Self::ChatDisableInheritingDefaultResources => "chat.disableInheritingDefaultResources",
-            Self::ChatDisableAutoDefaultModel => "chat.disableAutoDefaultModel",
-            Self::ChatDisableAutoDefaultEffort => "chat.disableAutoDefaultEffort",
             #[cfg(feature = "voice")]
             Self::VoiceServerUrl => "voice.serverUrl",
             #[cfg(feature = "voice")]
@@ -431,8 +423,6 @@ impl TryFrom<&str> for Setting {
             "chat.defaultInterruptBehavior" => Ok(Self::ChatDefaultInterruptBehavior),
             "chat.keybindings.toggleInterruptBehavior" => Ok(Self::ChatKeybindingsToggleInterruptBehavior),
             "chat.disableInheritingDefaultResources" => Ok(Self::ChatDisableInheritingDefaultResources),
-            "chat.disableAutoDefaultModel" => Ok(Self::ChatDisableAutoDefaultModel),
-            "chat.disableAutoDefaultEffort" => Ok(Self::ChatDisableAutoDefaultEffort),
             #[cfg(feature = "voice")]
             "voice.serverUrl" => Ok(Self::VoiceServerUrl),
             #[cfg(feature = "voice")]
@@ -705,6 +695,17 @@ impl Settings {
             let mut current = map.get(key.as_ref()).cloned().unwrap_or_else(|| serde_json::json!({}));
             deep_merge(&mut current, patch);
             map.insert(key.to_string(), current);
+        })
+        .await
+    }
+
+    /// Replace the global value of `key` with `f` applied to the current value
+    /// (`None` when unset), as one atomic RMW under the settings file lock.
+    /// The closure can remove nested keys, which a deep merge cannot.
+    pub async fn update(&self, key: Setting, f: impl FnOnce(Option<Value>) -> Value) -> Result<(), DatabaseError> {
+        self.locked_write(PersistTarget::Global, |map| {
+            let current = map.get(key.as_ref()).cloned();
+            map.insert(key.to_string(), f(current));
         })
         .await
     }

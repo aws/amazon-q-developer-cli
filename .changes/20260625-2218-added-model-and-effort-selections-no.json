@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "KAS agent: model and effort selections now persist as sticky defaults, automatically applying to new sessions (opt out with `chat.disableAutoDefaultModel` or `chat.disableAutoDefaultEffort`)"
-}

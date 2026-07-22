@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Make `/model` and `/effort` selections session-only; use `set-current-as-default` to save a default"
+}

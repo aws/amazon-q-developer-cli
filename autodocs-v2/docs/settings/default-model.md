@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-06-26
-  commit: f49c99c49
+  validated: 2026-07-20
+  commit: 1b7046191
   status: validated
   testable_headless: true
   category: setting
   title: chat.defaultModel
   description: Set default AI model for new chat sessions
   keywords: [setting, model, default, ai, switch]
-  related: [slash-model, cmd-chat, disable-auto-default-model]
+  related: [slash-model, cmd-chat]
 ---
 
 # chat.defaultModel
@@ -97,7 +97,6 @@ Shows all models with their IDs, which you can use with this setting.
 ## Related
 
 - [/model](../slash-commands/model.md) - Switch models mid-session
-- [chat.disableAutoDefaultModel](disable-auto-default-model.md) - Disable auto-saving model on switch
 - [kiro-cli chat --model](../commands/chat.md) - Start with specific model
 - [/usage](../slash-commands/usage.md) - Check model usage
 

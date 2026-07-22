@@ -116,6 +116,7 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       inputType: 'selection',
       hint: '',
+      subcommands: ['set-current-as-default'],
     },
   },
   {
@@ -124,6 +125,7 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       inputType: 'selection',
       hint: '',
+      subcommands: ['set-current-as-default'],
     },
   },
   {

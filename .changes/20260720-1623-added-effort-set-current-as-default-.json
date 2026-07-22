@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`/effort set-current-as-default` to save the current effort level as the default for the current model"
+}

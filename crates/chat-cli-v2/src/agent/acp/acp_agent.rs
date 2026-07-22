@@ -4803,6 +4803,7 @@ fn send_agent_load_notifications(
 fn tui_command_telemetry_subcommand(command: &TuiCommand) -> Option<String> {
     let value = match command {
         TuiCommand::Model(args) => args.model_name.as_deref(),
+        TuiCommand::Effort(args) => args.level.as_deref(),
         TuiCommand::Agent(args) => args.agent_name.as_deref(),
         TuiCommand::Context(args) => args.subcommand.as_deref(),
         TuiCommand::Mcp(args) => args.subcommand.as_deref(),
@@ -4827,6 +4828,7 @@ mod command_usage_telemetry_tests {
     use agent::tui_commands::{
         AgentArgs,
         ChatArgs,
+        EffortArgs,
         ModelArgs,
         TuiCommand,
     };
@@ -4847,6 +4849,12 @@ mod command_usage_telemetry_tests {
         let model_selection = TuiCommand::Model(ModelArgs {
             model_name: Some("claude-sonnet-4".to_string()),
         });
+        let effort = TuiCommand::Effort(EffortArgs {
+            level: Some("set-current-as-default".to_string()),
+        });
+        let effort_selection = TuiCommand::Effort(EffortArgs {
+            level: Some("high".to_string()),
+        });
 
         assert_eq!(
             tui_command_telemetry_subcommand(&model).as_deref(),
@@ -4855,6 +4863,11 @@ mod command_usage_telemetry_tests {
         assert_eq!(tui_command_telemetry_subcommand(&chat).as_deref(), Some("new"));
         assert_eq!(tui_command_telemetry_subcommand(&agent).as_deref(), Some("swap"));
         assert_eq!(tui_command_telemetry_subcommand(&model_selection), None);
+        assert_eq!(
+            tui_command_telemetry_subcommand(&effort).as_deref(),
+            Some("set-current-as-default")
+        );
+        assert_eq!(tui_command_telemetry_subcommand(&effort_selection), None);
     }
 }
 

@@ -1,6 +1,6 @@
 import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
-import { readCliSettings, updateCliSetting } from '../../utils/cli-settings';
+import { updateCliSetting } from '../../utils/cli-settings';
 import { Settings } from '../../constants/settings';
 import { extractRpcErrorMessage } from '../../utils/error-handling';
 import { logger } from '../../utils/logger';
@@ -74,34 +74,13 @@ async function switchModel(
     ctx.showAlert(`Model '${modelId}' not available`, 'error', 5000);
     return;
   }
-  // Best-effort persist: the switch already took effect, so a failed write
-  // never fails the command; the suffix is shown only on an actual write.
-  const optedOut =
-    readCliSettings()[Settings.CHAT_DISABLE_AUTO_DEFAULT_MODEL] === true;
-  let saved = false;
-  if (!optedOut) {
-    try {
-      await updateCliSetting(Settings.CHAT_DEFAULT_MODEL, current.id);
-      saved = true;
-    } catch (err) {
-      logger.warn('[model] failed to persist default model:', err);
-    }
-  }
-  if (saved) {
-    ctx.showAlert(
-      `Switched to ${current.name} (saved as default; disable with kiro-cli settings ${Settings.CHAT_DISABLE_AUTO_DEFAULT_MODEL} true)`,
-      'success',
-      4000
-    );
-  } else {
-    ctx.showAlert(`Switched to ${current.name}`, 'success', 3000);
-  }
+  ctx.showAlert(`Switched to ${current.name}`, 'success', 3000);
 }
 
 async function saveCurrentAsDefault(ctx: CommandContext): Promise<void> {
   const current = ctx.getCurrentModel?.();
   if (!current) {
-    ctx.showAlert('No model is currently active', 'error', 3000);
+    ctx.showAlert('Select a model to save as the default', 'error', 3000);
     return;
   }
   // Persisting is the whole command, so a failed write is reported as an

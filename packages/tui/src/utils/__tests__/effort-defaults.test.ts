@@ -5,7 +5,6 @@ import { tmpdir } from 'os';
 import {
   readSavedEffortDefault,
   persistEffortDefault,
-  effortPathForModel,
   MODEL_DEFAULTS_SETTING,
 } from '../effort-defaults.js';
 
@@ -46,20 +45,6 @@ afterEach(() => {
 });
 
 describe('effort-defaults', () => {
-  describe('effortPathForModel (family heuristic)', () => {
-    it('uses reasoning.effort for GPT/openai models', () => {
-      expect(effortPathForModel('gpt-5.1')).toBe('reasoning.effort');
-      expect(effortPathForModel('openai-o3')).toBe('reasoning.effort');
-    });
-
-    it('uses output_config.effort for other (Claude-family) models', () => {
-      expect(effortPathForModel('claude-opus-4.7')).toBe(
-        'output_config.effort'
-      );
-      expect(effortPathForModel('qwen3-coder')).toBe('output_config.effort');
-    });
-  });
-
   describe('readSavedEffortDefault (tolerant of both schema paths)', () => {
     it('reads the Claude-family output_config.effort path', () => {
       writeCliJson({
@@ -97,7 +82,11 @@ describe('effort-defaults', () => {
 
   describe('persistEffortDefault (v2-compatible nested shape)', () => {
     it('writes the Claude-family nested output_config.effort shape', async () => {
-      await persistEffortDefault('claude-opus-4.7', 'low');
+      await persistEffortDefault(
+        'claude-opus-4.7',
+        'low',
+        'output_config.effort'
+      );
       const saved = readCliJson();
       expect(saved[MODEL_DEFAULTS_SETTING]).toEqual({
         'claude-opus-4.7': { output_config: { effort: 'low' } },
@@ -105,7 +94,7 @@ describe('effort-defaults', () => {
     });
 
     it('writes the GPT-family nested reasoning.effort shape', async () => {
-      await persistEffortDefault('gpt-5.1', 'high');
+      await persistEffortDefault('gpt-5.1', 'high', 'reasoning.effort');
       const saved = readCliJson();
       expect(saved[MODEL_DEFAULTS_SETTING]).toEqual({
         'gpt-5.1': { reasoning: { effort: 'high' } },
@@ -118,7 +107,11 @@ describe('effort-defaults', () => {
           'claude-opus-4.7': { output_config: { effort: 'xhigh' } },
         },
       });
-      await persistEffortDefault('claude-opus-4.6', 'high');
+      await persistEffortDefault(
+        'claude-opus-4.6',
+        'high',
+        'output_config.effort'
+      );
       const defaults = readCliJson()[MODEL_DEFAULTS_SETTING] as Record<
         string,
         unknown
@@ -132,40 +125,34 @@ describe('effort-defaults', () => {
     });
 
     it('round-trips through readSavedEffortDefault', async () => {
-      await persistEffortDefault('claude-opus-4.7', 'medium');
+      await persistEffortDefault(
+        'claude-opus-4.7',
+        'medium',
+        'output_config.effort'
+      );
       expect(readSavedEffortDefault('claude-opus-4.7')).toBe('medium');
     });
   });
 
-  describe('persistEffortDefault with resolved path (KAS meta beats heuristic)', () => {
-    it('honors an explicit reasoning.effort path for a non-GPT-named model', async () => {
-      // The name heuristic would pick output_config for "claude-*"; the
-      // authoritative resolved path must win and land at reasoning.effort.
+  describe('persistEffortDefault honors the resolved path over model naming', () => {
+    it('writes reasoning.effort for a claude-named model when resolved so', async () => {
       await persistEffortDefault('claude-opus-4.7', 'high', 'reasoning.effort');
       expect(readCliJson()[MODEL_DEFAULTS_SETTING]).toEqual({
         'claude-opus-4.7': { reasoning: { effort: 'high' } },
       });
     });
 
-    it('honors an explicit output_config.effort path for a GPT-named model', async () => {
-      // Inverse: heuristic would pick reasoning for "gpt-*"; resolved path wins.
+    it('writes output_config.effort for a GPT-named model when resolved so', async () => {
       await persistEffortDefault('gpt-5.1', 'low', 'output_config.effort');
       expect(readCliJson()[MODEL_DEFAULTS_SETTING]).toEqual({
         'gpt-5.1': { output_config: { effort: 'low' } },
       });
     });
 
-    it('falls back to the family heuristic when no resolved path is given', async () => {
-      await persistEffortDefault('claude-opus-4.7', 'high');
-      expect(readCliJson()[MODEL_DEFAULTS_SETTING]).toEqual({
-        'claude-opus-4.7': { output_config: { effort: 'high' } },
-      });
-    });
-
-    it('prunes the stale heuristic-path leaf when the resolved path differs', async () => {
-      // Pre-seed the heuristic path (output_config) for a claude-named model,
-      // then persist via the authoritative reasoning path: the old leaf must be
-      // pruned so readSavedEffortDefault never returns the stale value.
+    it('prunes the stale other-path leaf when the resolved path differs', async () => {
+      // Pre-seed output_config for a claude-named model, then persist via the
+      // reasoning path: the old leaf must be pruned so readSavedEffortDefault
+      // never returns the stale value.
       writeCliJson({
         [MODEL_DEFAULTS_SETTING]: {
           'claude-opus-4.7': { output_config: { effort: 'low' } },
@@ -195,7 +182,7 @@ describe('effort-defaults', () => {
           },
         },
       });
-      await persistEffortDefault('gpt-5.1', 'medium');
+      await persistEffortDefault('gpt-5.1', 'medium', 'reasoning.effort');
       const node = (
         readCliJson()[MODEL_DEFAULTS_SETTING] as Record<string, unknown>
       )['gpt-5.1'];
@@ -213,7 +200,11 @@ describe('effort-defaults', () => {
           },
         },
       });
-      await persistEffortDefault('claude-opus-4.7', 'xhigh');
+      await persistEffortDefault(
+        'claude-opus-4.7',
+        'xhigh',
+        'output_config.effort'
+      );
       const node = (
         readCliJson()[MODEL_DEFAULTS_SETTING] as Record<string, unknown>
       )['claude-opus-4.7'];
@@ -232,7 +223,7 @@ describe('effort-defaults', () => {
           },
         },
       });
-      await persistEffortDefault('gpt-5.1', 'high');
+      await persistEffortDefault('gpt-5.1', 'high', 'reasoning.effort');
       expect(readSavedEffortDefault('gpt-5.1')).toBe('high');
     });
 
@@ -245,7 +236,7 @@ describe('effort-defaults', () => {
           },
         },
       });
-      await persistEffortDefault('gpt-5.1', 'medium');
+      await persistEffortDefault('gpt-5.1', 'medium', 'reasoning.effort');
       const node = (
         readCliJson()[MODEL_DEFAULTS_SETTING] as Record<string, unknown>
       )['gpt-5.1'];

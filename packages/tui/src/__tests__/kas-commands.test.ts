@@ -60,6 +60,18 @@ describe('kas-commands', () => {
       expect(chatCmd!.meta?.subcommands).toEqual(['new', 'save', 'load']);
     });
 
+    it('/model and /effort expose set-current-as-default as a subcommand', async () => {
+      const { KAS_COMMANDS } = await import('../kas-commands');
+      const modelCmd = KAS_COMMANDS.find(
+        (cmd: KasCommand) => cmd.name === '/model'
+      );
+      const effortCmd = KAS_COMMANDS.find(
+        (cmd: KasCommand) => cmd.name === '/effort'
+      );
+      expect(modelCmd!.meta?.subcommands).toEqual(['set-current-as-default']);
+      expect(effortCmd!.meta?.subcommands).toEqual(['set-current-as-default']);
+    });
+
     it('/sessions is a cloud-gated alias of /chat: same handler, same meta plus cloudOnly', async () => {
       const { KAS_COMMANDS, KasCommandName } = await import('../kas-commands');
       const { kasHandlers } = await import('../commands/kas-handlers');

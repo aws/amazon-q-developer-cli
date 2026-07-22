@@ -1,12 +1,13 @@
 /**
- * Wire-level tests for the KAS sticky agent/model/effort defaults, covering the
+ * Wire-level tests for the KAS saved agent/model/effort defaults, covering the
  * three dimensions the TUI reconciles from cli.json:
  *
- *   - model  — `chat.defaultModel` (global), opt-out `chat.disableAutoDefaultModel`
+ *   - model  - `chat.defaultModel` (global), written only by
+ *              `/model set-current-as-default`
  *   - effort — `chat.modelDefaults[<model>]` (per-model, at the model's effort
- *              schema path), opt-out `chat.disableAutoDefaultEffort`
+ *              schema path), written only by `/effort set-current-as-default`
  *   - agent  — `chat.defaultAgent` (global); applied at startup only, never
- *              auto-persisted (there is no agent write path)
+ *              persisted from a session (there is no agent write path)
  *
  * The stateful mock KAS ({@link installStatefulKas}) models the v3 wire contract
  * faithfully so each test exercises the TUI's OWN apply/reconcile/persist logic
@@ -14,7 +15,7 @@
  * it writes — rather than any KAS-internal behavior.
  *
  * Behavior groups: A apply-on-new, B reconcile-on-load, C mid-session switch,
- * D persistence, E opt-out.
+ * D persistence.
  */
 import { describe, it, expect, afterEach } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
@@ -80,7 +81,7 @@ async function bootReady(tc: AcpTestCase): Promise<void> {
 // (see effort-status-bar / chat-command, similarly skipped). The feature is not
 // Windows-specific; coverage runs on macOS + Linux.
 describe.skipIf(process.platform === 'win32')(
-  'sticky agent/model/effort defaults (KAS)',
+  'saved agent/model/effort defaults (KAS)',
   () => {
     let tc: AcpTestCase | null = null;
 
@@ -546,12 +547,10 @@ describe.skipIf(process.platform === 'win32')(
 
     // ── Group D — persistence ─────────────────────────────────────────────────
 
-    it('D: persists /model + /effort to cli.json and reapplies them on a fresh session', async () => {
+    it('D: switching /model and /effort is session-only and writes nothing to cli.json', async () => {
       const home = makeKiroHome();
-
-      // Session 1: set a model + effort, assert they land in cli.json.
       tc = new AcpTestCase({
-        testName: 'persist-write',
+        testName: 'session-only-switch',
         extraEnv: { KIRO_HOME: home },
       });
       installStatefulKas(tc, {
@@ -565,27 +564,55 @@ describe.skipIf(process.platform === 'win32')(
       await tc.sendKeys(`/model ${B}`);
       await tc.pressEnter();
       await tc.waitForStore((s) => s.currentModel?.id === B, 6000);
-      await tc.waitForVisibleText('saved as default', 3000);
+      await tc.waitForVisibleText('Switched to Claude Opus 4.7', 3000);
+      expect(tc.getSnapshotFormatted()).not.toContain('saved as default');
 
       await tc.sendKeys('/effort low');
       await tc.pressEnter();
       await tc.waitForStore((s) => s.currentEffort === 'low', 6000);
-      await tc.waitForVisibleText('saved for', 3000);
+      await tc.waitForVisibleText('Effort set to Low', 3000);
+      expect(tc.getSnapshotFormatted()).not.toContain('saved for');
 
-      const cli1 = await waitForCliJson(
+      await tc.sleepMs(500);
+      const cli = readCliJson(home);
+      expect(cli['chat.defaultModel']).toBeUndefined();
+      expect(cli['chat.modelDefaults']).toBeUndefined();
+    });
+
+    it('D: /model set-current-as-default persists and a fresh session reapplies it', async () => {
+      const home = makeKiroHome();
+
+      // Session 1: switch to B and explicitly save it as the default.
+      tc = new AcpTestCase({
+        testName: 'model-set-default-write',
+        extraEnv: { KIRO_HOME: home },
+      });
+      installStatefulKas(tc, {
+        sessionId: 's1',
+        models: MODELS,
+        initialModel: A,
+        initialEffort: 'high',
+      });
+      await bootReady(tc);
+
+      await tc.sendKeys(`/model ${B}`);
+      await tc.pressEnter();
+      await tc.waitForStore((s) => s.currentModel?.id === B, 6000);
+
+      await tc.sendKeys('/model set-current-as-default');
+      await tc.pressEnter();
+      const cli = await waitForCliJson(
         home,
-        (c) => c['chat.defaultModel'] === B && savedEffort(c, B) === 'low'
+        (c) => c['chat.defaultModel'] === B
       );
-      expect(cli1['chat.defaultModel']).toBe(B);
-      expect(savedEffort(cli1, B)).toBe('low');
+      expect(cli['chat.defaultModel']).toBe(B);
 
       await tc.cleanup();
       tc = null;
 
-      // Session 2: fresh process, SAME KIRO_HOME. Startup applies the saved
-      // model (B) and B's saved per-model effort (low).
+      // Session 2: fresh process, SAME KIRO_HOME. Startup applies the saved B.
       tc = new AcpTestCase({
-        testName: 'persist-reapply',
+        testName: 'model-set-default-reapply',
         extraEnv: { KIRO_HOME: home },
       });
       const kas2 = installStatefulKas(tc, {
@@ -597,18 +624,16 @@ describe.skipIf(process.platform === 'win32')(
       await bootReady(tc);
 
       await waitForConfigSet(tc, 'model', B);
-      await waitForConfigSet(tc, 'effortLevel', 'low');
       resync(tc, 's2', kas2);
-      await tc.waitForStore(
-        (s) => s.currentModel?.id === B && s.currentEffort === 'low',
-        6000
-      );
+      await tc.waitForStore((s) => s.currentModel?.id === B, 6000);
     });
 
-    it('D: /model set-current-as-default persists even when auto-default-model is disabled (P4)', async () => {
-      const home = makeKiroHome({ 'chat.disableAutoDefaultModel': true });
+    it('D: /effort set-current-as-default persists the current effort for the current model and a fresh session reapplies it', async () => {
+      const home = makeKiroHome();
+
+      // Session 1: set effort low, then explicitly save it for the model.
       tc = new AcpTestCase({
-        testName: 'persist-set-default',
+        testName: 'effort-set-default-write',
         extraEnv: { KIRO_HOME: home },
       });
       installStatefulKas(tc, {
@@ -619,94 +644,43 @@ describe.skipIf(process.platform === 'win32')(
       });
       await bootReady(tc);
 
-      // Auto-write is off: switching does NOT persist a default.
-      await tc.sendKeys(`/model ${B}`);
+      await tc.sendKeys('/effort low');
       await tc.pressEnter();
-      await tc.waitForStore((s) => s.currentModel?.id === B, 6000);
-      await tc.sleepMs(400);
-      expect(readCliJson(home)['chat.defaultModel']).toBeUndefined();
-
-      // Explicit set-current-as-default writes regardless of the opt-out.
-      await tc.sendKeys('/model set-current-as-default');
-      await tc.pressEnter();
-      const cli = await waitForCliJson(
-        home,
-        (c) => c['chat.defaultModel'] === B
-      );
-      expect(cli['chat.defaultModel']).toBe(B);
-    });
-
-    // ── Group E — opt-out ─────────────────────────────────────────────────────
-
-    it('E: disableAutoDefaultEffort suppresses the /effort write but still applies a pre-existing default', async () => {
-      const home = makeKiroHome({
-        'chat.disableAutoDefaultEffort': true,
-        'chat.modelDefaults': { [A]: { output_config: { effort: 'low' } } },
-      });
-      tc = new AcpTestCase({
-        testName: 'optout-effort',
-        extraEnv: { KIRO_HOME: home },
-      });
-      const kas = installStatefulKas(tc, {
-        sessionId: 's1',
-        models: MODELS,
-        initialModel: A,
-        initialEffort: 'high',
-      });
-      await bootReady(tc);
-
-      // apply-NOT-suppressed: the pre-existing default is applied at startup.
-      await waitForConfigSet(tc, 'effortLevel', 'low');
-      resync(tc, 's1', kas);
       await tc.waitForStore((s) => s.currentEffort === 'low', 6000);
 
-      // write-SUPPRESSED: changing effort takes effect but must not persist.
-      await tc.sendKeys('/effort high');
+      await tc.sendKeys('/effort set-current-as-default');
       await tc.pressEnter();
-      await tc.waitForStore((s) => s.currentEffort === 'high', 6000);
-      await tc.waitForVisibleText('Effort set to High', 3000);
+      await tc.waitForVisibleText(
+        'Set Low as default effort for Claude Opus 4.8',
+        3000
+      );
+      const cli = await waitForCliJson(
+        home,
+        (c) => savedEffort(c, A) === 'low'
+      );
+      expect(savedEffort(cli, A)).toBe('low');
+      // Only the current model's default was written.
+      expect(savedEffort(cli, B)).toBeUndefined();
 
-      const snap = tc.getSnapshotFormatted();
-      expect(snap).toContain('Effort set to High');
-      expect(snap).not.toContain('saved for');
+      await tc.cleanup();
+      tc = null;
 
-      await tc.sleepMs(500);
-      expect(savedEffort(readCliJson(home), A)).toBe('low');
-    });
-
-    it('E: disableAutoDefaultModel suppresses the /model write but still applies the saved default', async () => {
-      const home = makeKiroHome({
-        'chat.disableAutoDefaultModel': true,
-        'chat.defaultModel': B,
-      });
+      // Session 2: fresh process, SAME KIRO_HOME. Startup applies A's saved low.
       tc = new AcpTestCase({
-        testName: 'optout-model',
+        testName: 'effort-set-default-reapply',
         extraEnv: { KIRO_HOME: home },
       });
-      installStatefulKas(tc, {
-        sessionId: 's1',
+      const kas2 = installStatefulKas(tc, {
+        sessionId: 's2',
         models: MODELS,
         initialModel: A,
         initialEffort: 'high',
       });
       await bootReady(tc);
 
-      // apply-NOT-suppressed: saved default model B is applied at startup.
-      await waitForConfigSet(tc, 'model', B);
-      await tc.waitForStore((s) => s.currentModel?.id === B, 6000);
-
-      // write-SUPPRESSED: switching to A must not overwrite the saved default.
-      await tc.sendKeys(`/model ${A}`);
-      await tc.pressEnter();
-      await tc.waitForStore((s) => s.currentModel?.id === A, 6000);
-      await tc.waitForVisibleText('Switched to Claude Opus 4.8', 3000);
-
-      const snap = tc.getSnapshotFormatted();
-      expect(snap).toContain('Switched to Claude Opus 4.8');
-      expect(snap).not.toContain('saved as default');
-
-      await tc.sleepMs(500);
-      expect(readCliJson(home)['chat.defaultModel']).toBe(B);
+      await waitForConfigSet(tc, 'effortLevel', 'low');
+      resync(tc, 's2', kas2);
+      await tc.waitForStore((s) => s.currentEffort === 'low', 6000);
     });
   }
 );

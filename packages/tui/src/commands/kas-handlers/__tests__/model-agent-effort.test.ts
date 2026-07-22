@@ -18,9 +18,6 @@ let originalHome: string | undefined;
 function cliJsonPath() {
   return join(testHome, '.kiro', 'settings', 'cli.json');
 }
-function writeCliJson(data: Record<string, unknown>) {
-  writeFileSync(cliJsonPath(), JSON.stringify(data), 'utf-8');
-}
 function readCliJson(): Record<string, unknown> {
   return JSON.parse(readFileSync(cliJsonPath(), 'utf-8'));
 }
@@ -95,7 +92,7 @@ describe('handleModel', () => {
     );
   });
 
-  it('switches via setConfigOption and confirms from the store', async () => {
+  it('switches via setConfigOption without persisting a default', async () => {
     const setConfigOption = mock(() => Promise.resolve());
     const ctx = createMockCommandContext({
       kasAvailableModels: [{ id: 'opus', name: 'Opus' }],
@@ -104,11 +101,11 @@ describe('handleModel', () => {
     });
     await handleModel(MODEL_CMD, 'opus', ctx);
     expect(setConfigOption).toHaveBeenCalledWith('model', 'opus');
-    expect(readCliJson()['chat.defaultModel']).toBe('opus');
+    expect(readCliJson()['chat.defaultModel']).toBeUndefined();
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Switched to Opus (saved as default; disable with kiro-cli settings chat.disableAutoDefaultModel true)',
+      'Switched to Opus',
       'success',
-      4000
+      3000
     );
   });
 
@@ -138,15 +135,20 @@ describe('handleEffort', () => {
     );
   });
 
-  it('switches and confirms with display-cased label', async () => {
+  it('switches and confirms with display-cased label without persisting', async () => {
     const setConfigOption = mock(() => Promise.resolve());
     const ctx = createMockCommandContext({
       kasAvailableEfforts: [{ value: 'xhigh', name: 'xHigh' }],
+      kasAvailableModels: [
+        { id: 'opus', name: 'Opus', effortSchemaPath: 'output_config' },
+      ],
+      currentModel: { id: 'opus', name: 'Opus' },
       currentEffort: 'xhigh',
       kiro: { setConfigOption } as any,
     });
     await handleEffort(EFFORT_CMD, 'xhigh', ctx);
     expect(setConfigOption).toHaveBeenCalledWith('effortLevel', 'xhigh');
+    expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
       'Effort set to xHigh',
       'success',
@@ -205,24 +207,8 @@ describe('handleAgent', () => {
   });
 });
 
-describe('sticky-default persistence', () => {
-  it('does not persist the model and omits the suffix when disableAutoDefaultModel is set', async () => {
-    writeCliJson({ 'chat.disableAutoDefaultModel': true });
-    const ctx = createMockCommandContext({
-      kasAvailableModels: [{ id: 'opus', name: 'Opus' }],
-      currentModel: { id: 'opus', name: 'Opus' },
-      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
-    });
-    await handleModel(MODEL_CMD, 'opus', ctx);
-    expect(readCliJson()['chat.defaultModel']).toBeUndefined();
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Switched to Opus',
-      'success',
-      3000
-    );
-  });
-
-  it('set-current-as-default persists the active model to cli.json', async () => {
+describe('set-current-as-default persistence', () => {
+  it('/model set-current-as-default persists the active model to cli.json', async () => {
     const ctx = createMockCommandContext({
       currentModel: { id: 'opus', name: 'Opus' },
     });
@@ -235,20 +221,20 @@ describe('sticky-default persistence', () => {
     );
   });
 
-  it('set-current-as-default errors when no model is active', async () => {
+  it('/model set-current-as-default errors when no model is active', async () => {
     const ctx = createMockCommandContext({ currentModel: null });
     await handleModel(MODEL_CMD, 'set-current-as-default', ctx);
     expect(readCliJson()['chat.defaultModel']).toBeUndefined();
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'No model is currently active',
+      'Select a model to save as the default',
       'error',
       3000
     );
   });
 
-  it('set-current-as-default reports an error when persistence fails', async () => {
-    // Persisting IS the command here, so unlike a model switch a failed write
-    // must surface as an error - but gracefully, not as an unhandled throw.
+  it('/model set-current-as-default reports an error when persistence fails', async () => {
+    // Persisting IS the command here, so a failed write must surface as an
+    // error - but gracefully, not as an unhandled throw.
     writeFileSync(cliJsonPath(), 'not json', 'utf-8');
     const ctx = createMockCommandContext({
       currentModel: { id: 'opus', name: 'Opus' },
@@ -261,7 +247,7 @@ describe('sticky-default persistence', () => {
     );
   });
 
-  it('persists the per-model effort default at the advertised schema path', async () => {
+  it('/effort set-current-as-default persists at the advertised schema path', async () => {
     const ctx = createMockCommandContext({
       kasAvailableEfforts: [{ value: 'high', name: 'High' }],
       kasAvailableModels: [
@@ -269,91 +255,77 @@ describe('sticky-default persistence', () => {
       ],
       currentModel: { id: 'opus', name: 'Opus' },
       currentEffort: 'high',
-      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
     });
-    await handleEffort(EFFORT_CMD, 'high', ctx);
+    await handleEffort(EFFORT_CMD, 'set-current-as-default', ctx);
     const defaults = readCliJson()['chat.modelDefaults'] as
       | Record<string, any>
       | undefined;
     expect(defaults?.opus?.output_config?.effort).toBe('high');
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Effort set to High (saved for Opus; disable with kiro-cli settings chat.disableAutoDefaultEffort true)',
+      'Set High as default effort for Opus',
       'success',
-      4000
+      3000
     );
   });
 
-  it('does not persist effort or add a suffix when disableAutoDefaultEffort is set', async () => {
-    writeCliJson({ 'chat.disableAutoDefaultEffort': true });
+  it('/effort set-current-as-default errors without writing when no schema path is advertised', async () => {
     const ctx = createMockCommandContext({
-      kasAvailableEfforts: [{ value: 'high', name: 'High' }],
+      kasAvailableEfforts: [{ value: 'low', name: 'Low' }],
+      kasAvailableModels: [{ id: 'gpt-5.1', name: 'GPT 5.1' }],
+      currentModel: { id: 'gpt-5.1', name: 'GPT 5.1' },
+      currentEffort: 'low',
+    });
+    await handleEffort(EFFORT_CMD, 'set-current-as-default', ctx);
+    expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Effort defaults are not available for GPT 5.1',
+      'error',
+      5000
+    );
+  });
+
+  it('/effort set-current-as-default errors when no model is active', async () => {
+    const ctx = createMockCommandContext({
+      currentModel: null,
+      currentEffort: 'high',
+    });
+    await handleEffort(EFFORT_CMD, 'set-current-as-default', ctx);
+    expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Select a model with an effort configured to save as the default',
+      'error',
+      3000
+    );
+  });
+
+  it('/effort set-current-as-default errors when no effort level is set', async () => {
+    const ctx = createMockCommandContext({
+      currentModel: { id: 'opus', name: 'Opus' },
+      currentEffort: null,
+    });
+    await handleEffort(EFFORT_CMD, 'set-current-as-default', ctx);
+    expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'No effort level is currently set. Effort may not be available on Opus.',
+      'error',
+      3000
+    );
+  });
+
+  it('/effort set-current-as-default reports an error when persistence fails', async () => {
+    writeFileSync(cliJsonPath(), 'not json', 'utf-8');
+    const ctx = createMockCommandContext({
       kasAvailableModels: [
         { id: 'opus', name: 'Opus', effortSchemaPath: 'output_config' },
       ],
       currentModel: { id: 'opus', name: 'Opus' },
       currentEffort: 'high',
-      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
     });
-    await handleEffort(EFFORT_CMD, 'high', ctx);
-    expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
+    await handleEffort(EFFORT_CMD, 'set-current-as-default', ctx);
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Effort set to High',
-      'success',
-      3000
-    );
-  });
-
-  it('skips effort persistence when the model advertises no schema path', async () => {
-    const ctx = createMockCommandContext({
-      kasAvailableEfforts: [{ value: 'high', name: 'High' }],
-      kasAvailableModels: [{ id: 'opus', name: 'Opus' }],
-      currentModel: { id: 'opus', name: 'Opus' },
-      currentEffort: 'high',
-      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
-    });
-    await handleEffort(EFFORT_CMD, 'high', ctx);
-    expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Effort set to High',
-      'success',
-      3000
-    );
-  });
-
-  it('reports a successful model switch without the suffix when persistence fails', async () => {
-    // A corrupt settings file makes the write path reject (it refuses to
-    // overwrite unreadable settings). The switch already took effect, so the
-    // handler must still report success - just without the "saved" suffix.
-    writeFileSync(cliJsonPath(), 'not json', 'utf-8');
-    const ctx = createMockCommandContext({
-      kasAvailableModels: [{ id: 'opus', name: 'Opus' }],
-      currentModel: { id: 'opus', name: 'Opus' },
-      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
-    });
-    await handleModel(MODEL_CMD, 'opus', ctx);
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Switched to Opus',
-      'success',
-      3000
-    );
-  });
-
-  it('reports a successful effort switch without the suffix when persistence fails', async () => {
-    writeFileSync(cliJsonPath(), 'not json', 'utf-8');
-    const ctx = createMockCommandContext({
-      kasAvailableEfforts: [{ value: 'high', name: 'High' }],
-      kasAvailableModels: [
-        { id: 'opus', name: 'Opus', effortSchemaPath: 'output_config' },
-      ],
-      currentModel: { id: 'opus', name: 'Opus' },
-      currentEffort: 'high',
-      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
-    });
-    await handleEffort(EFFORT_CMD, 'high', ctx);
-    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Effort set to High',
-      'success',
-      3000
+      'Failed to save High as default effort for Opus',
+      'error',
+      5000
     );
   });
 });
