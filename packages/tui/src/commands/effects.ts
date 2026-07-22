@@ -1427,9 +1427,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   },
 
   switchToLite: (_result, ctx) => {
-    // Gated on Feature::Lite rollout (internal + nightly). Outside the
-    // cohort, /lite is a no-op so stable users keep the modern TUI
-    // behavior they had before this branch existed.
+    // The launcher-owned rollout flag also guards direct /lite execution.
     if (process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1') {
       ctx.announceSystem('Lite mode is not available in this build');
       return;

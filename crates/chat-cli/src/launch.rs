@@ -342,12 +342,7 @@ async fn launch_acp_interactive(
         // CARGO_PKG_VERSION, set from KIRO_VERSION at build time) to show the
         // correct version in its footer.
         .env("KIRO_VERSION", env!("CARGO_PKG_VERSION"))
-        // Lite-mode gate. The TUI's resolveUiMode() / `/lite` honor lite mode
-        // only when this is "1". Set it server-authoritatively from the
-        // Feature::Lite rollout decision (internal+nightly via rollout.json,
-        // or the toolbox insider channel via install-path detection) and
-        // write "0" otherwise — overwriting any inherited value so a user
-        // can't force lite on by exporting the var in their shell.
+        // Overwrite inherited values so the stable-internal Lite rollout cannot be bypassed.
         .env(
             "KIRO_LITE_ROLLOUT_ENABLED",
             if crate::rollout::rollout().is_enabled(crate::rollout::Feature::Lite) {

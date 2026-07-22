@@ -26,10 +26,10 @@
     "segment": "internal"
   },
   "lite": {
-    "description": "Lite TUI mode - internal nightly only initially",
+    "description": "Lite TUI mode - stable channel, Amazon employees only",
     "treatment_percent": 100,
     "segment": "internal",
-    "channel": "nightly"
+    "channel": "stable"
   },
   "test": {
     "description": "Test experiment for unit tests",

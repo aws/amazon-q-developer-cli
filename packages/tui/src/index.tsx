@@ -1336,9 +1336,7 @@ const startApp = async () => {
   type UiMode = 'tui' | 'lite';
   type UiModeSourceTag = 'envVar' | 'setting' | 'default';
 
-  // Lite mode is gated on the Rust-side rollout (Feature::Lite, internal+nightly).
-  // The chat-cli-v2 process exports KIRO_LITE_ROLLOUT_ENABLED=1 when the user
-  // is in the cohort. Outside the cohort, lite-mode requests fall back to TUI.
+  // The Rust launcher exports the stable-internal rollout decision; denied requests fall back to TUI.
   const liteRolloutEnabled = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
   // resolveUiMode returns both the chosen mode AND which input source won, so
