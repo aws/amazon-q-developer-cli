@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Startup spinner so the terminal isn't blank while the CLI launches"
+}

@@ -41,6 +41,7 @@ use crate::util::consts::env_var::{
     KIRO_TELEMETRY_CLIENT_ID,
     KIRO_VERSION_OVERRIDE,
 };
+use crate::util::launch_spinner::start_launch_spinner;
 
 /// Launch the session according to the configured options.
 pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
@@ -293,6 +294,13 @@ async fn launch_acp_interactive(
     mode: Option<AgentMode>,
     cli_session_completion_emitted: &mut bool,
 ) -> Result<ExitCode> {
+    // Show a spinner immediately so the user knows the CLI is starting. The
+    // guard stops the spinner and clears its line on every exit path — normal
+    // return, `?`/`bail!` early return, or panic unwind — so a startup failure
+    // never leaves a stuck spinner colliding with the error message. It is
+    // `None` (no spinner) when stderr is not a TTY or NO_COLOR is set.
+    let spinner = start_launch_spinner();
+
     // Long-lived session: resolve the Toolbox version in the background so a later
     // mid-session issue report / diagnostics does not block on it. A plain OS thread
     // (not a Tokio task) is used so process exit never waits on the probe.
@@ -503,6 +511,10 @@ async fn launch_acp_interactive(
     if let Some(mode) = mode {
         cmd.env("KIRO_MODE", mode.to_string());
     }
+
+    // Stop the spinner and clear its line before handing the terminal to the
+    // TUI process. On any error path above, the guard's Drop already did this.
+    drop(spinner);
 
     let mut child = cmd.spawn()?;
 

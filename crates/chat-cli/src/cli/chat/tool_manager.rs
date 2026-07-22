@@ -108,13 +108,13 @@ use crate::telemetry::TelemetryThread;
 use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::consts::BUILTIN_TOOLS_PREFIX;
+use crate::util::launch_spinner::SPINNER_FRAMES;
 
 const NAMESPACE_DELIMITER: &str = "___";
 /// Delimiter used to separate user-visible error from LLM-only details in validation messages
 pub const ERROR_DETAILS_DELIMITER: &str = " [DETAILS] ";
 // This applies for both mcp server and tool name
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
-const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub fn workspace_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
     Ok(os.path_resolver().workspace().mcp_config()?)
@@ -1560,13 +1560,13 @@ fn spawn_display_task(
                             },
                         },
                         Err(_e) => {
-                            spinner_logo_idx = (spinner_logo_idx + 1) % SPINNER_CHARS.len();
+                            spinner_logo_idx = (spinner_logo_idx + 1) % SPINNER_FRAMES.len();
                             execute!(
                                 output,
                                 cursor::SavePosition,
                                 cursor::MoveToColumn(0),
                                 cursor::MoveUp(1),
-                                style::Print(SPINNER_CHARS[spinner_logo_idx]),
+                                style::Print(SPINNER_FRAMES[spinner_logo_idx]),
                                 cursor::RestorePosition
                             )?;
                         },
@@ -2329,7 +2329,7 @@ fn queue_init_message(
     } else if total == complete + failed {
         queue!(output, StyledText::error_fg(), style::Print("✗"), StyledText::reset(),)?;
     } else {
-        queue!(output, style::Print(SPINNER_CHARS[spinner_logo_idx]))?;
+        queue!(output, style::Print(SPINNER_FRAMES[spinner_logo_idx]))?;
     }
     queue!(
         output,
