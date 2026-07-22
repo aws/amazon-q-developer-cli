@@ -123,7 +123,14 @@ const emitDetachNoticeIfCloud = (): void => {
   }
 };
 
-const cleanup = () => {
+let terminalReset = false;
+
+// Restore every terminal mode the TUI turns on: focus reporting (1004),
+// bracketed paste (2004), raw mode, progress, and title. Synchronous and
+// run-once, so it is safe to invoke from the 'exit' event.
+const resetTerminal = () => {
+  if (terminalReset) return;
+  terminalReset = true;
   try {
     disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
@@ -134,6 +141,12 @@ const cleanup = () => {
   } catch {
     // stdout/stdin may already be dead (e.g. PTY closed), ignore errors
   }
+};
+
+process.on('exit', resetTerminal);
+
+const cleanup = () => {
+  resetTerminal();
   emitDetachNoticeIfCloud();
   process.exit(0);
 };

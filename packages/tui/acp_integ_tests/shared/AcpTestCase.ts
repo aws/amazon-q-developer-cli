@@ -215,6 +215,12 @@ export class AcpTestCase {
   getOutputCleaned(): string {
     return this.inner.getOutputCleaned();
   }
+  waitForRawOutput(sequences: string[], timeoutMs?: number): Promise<void> {
+    return this.inner.waitForRawOutput(sequences, timeoutMs);
+  }
+  sendSignal(signal: NodeJS.Signals): void {
+    this.inner.sendSignal(signal);
+  }
   expectExit(timeoutMs?: number): Promise<number> {
     return this.inner.expectExit(timeoutMs);
   }

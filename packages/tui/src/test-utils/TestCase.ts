@@ -434,6 +434,21 @@ export class TestCase {
   }
 
   /**
+   * Waits for every given raw escape sequence to appear in the unstripped
+   * PTY output. See {@link PtyManager.waitForRawOutput}.
+   */
+  waitForRawOutput(sequences: string[], timeoutMs?: number): Promise<void> {
+    return this.ptyManager.waitForRawOutput(sequences, timeoutMs);
+  }
+
+  /**
+   * Sends a POSIX signal to the TUI process. See {@link PtyManager.sendSignal}.
+   */
+  sendSignal(signal: NodeJS.Signals): void {
+    this.ptyManager.sendSignal(signal);
+  }
+
+  /**
    * Polls the TUI's Zustand store until `predicate(state)` returns
    * truthy or `timeoutMs` elapses. Resolves with the matching state.
    * Throws on timeout. Useful for waiting on async TUI state changes

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Terminal modes (focus reporting, bracketed paste) now properly restored on all exit paths including `/quit`, `/exit`, and double Ctrl-C"
+}

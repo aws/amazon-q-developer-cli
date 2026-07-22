@@ -137,6 +137,32 @@ export class PtyManager {
   }
 
   /**
+   * Waits for every given escape sequence (or raw string) to appear in the
+   * unstripped terminal output. Use for asserting control sequences that
+   * `waitForText` would strip.
+   *
+   * @param sequences - Raw strings that must all be present
+   * @param timeout_ms - Timeout in milliseconds (defaults to 10000)
+   */
+  async waitForRawOutput(
+    sequences: string[],
+    timeout_ms: number = 10000
+  ): Promise<void> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout_ms) {
+      if (sequences.every((seq) => this.output.includes(seq))) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    throw new Error(
+      `Timeout waiting for raw output sequences: ${JSON.stringify(sequences)}`
+    );
+  }
+
+  /**
    * Returns the current terminal output.
    */
   getOutput(): string {
@@ -209,6 +235,16 @@ export class PtyManager {
     if (this.pty) {
       this.pty.kill();
     }
+  }
+
+  /**
+   * Sends a POSIX signal to the spawned process (e.g. 'SIGTERM', 'SIGHUP').
+   * Throws if the process was never spawned or has no PID.
+   */
+  sendSignal(signal: NodeJS.Signals): void {
+    const pid = this.pty?.pid;
+    if (!pid) throw new Error('PTY not spawned');
+    process.kill(pid, signal);
   }
 
   /**
