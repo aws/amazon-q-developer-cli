@@ -158,7 +158,7 @@ describe.skipIf(process.platform === 'win32')(
       await tc.waitForStore((s) => s.currentEffort === 'low', 6000);
     });
 
-    it('A: an explicit --effort flag suppresses the saved per-model effort apply', async () => {
+    it('A: an explicit --effort flag is applied and suppresses the saved per-model effort apply', async () => {
       const home = makeKiroHome({
         'chat.modelDefaults': { [A]: { output_config: { effort: 'low' } } },
       });
@@ -167,18 +167,20 @@ describe.skipIf(process.platform === 'win32')(
         args: ['--effort', 'high'],
         extraEnv: { KIRO_HOME: home },
       });
-      installStatefulKas(tc, {
+      const kas = installStatefulKas(tc, {
         sessionId: 's1',
         models: MODELS,
         initialModel: A,
-        initialEffort: 'high', // KAS applied the flag
+        initialEffort: 'medium', // engine default differs from flag and saved
       });
       await bootReady(tc);
 
-      // Give any (erroneous) auto-apply a chance to fire, then assert absence:
-      // the saved 'low' must NOT be auto-applied when --effort is explicit.
+      // The product applied the flag's level to the session...
+      await waitForConfigSet(tc, 'effortLevel', 'high');
+      // ...and the saved 'low' must NOT be auto-applied when --effort is explicit.
       await tc.sleepMs(600);
       expect(effortSetValues(tc)).not.toContain('low');
+      resync(tc, 's1', kas);
       await tc.waitForStore((s) => s.currentEffort === 'high', 6000);
     });
 

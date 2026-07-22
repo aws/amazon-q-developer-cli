@@ -648,6 +648,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // Pass the explicit --model flag only; the saved `chat.defaultModel` is
       // re-read fresh inside newSession so a mid-run sticky write is honored.
       initialModel: cliArgs.model,
+      initialEffort: cliArgs.effort,
       // Cloud sandbox (dark-shipped): --cloud maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,
@@ -1026,6 +1027,7 @@ const startApp = async () => {
         cliArgs.agent || readOptionalStringSetting('chat.defaultAgent'),
       // Explicit --model only; saved default is re-read inside newSession.
       initialModel: cliArgs.model,
+      initialEffort: cliArgs.effort,
       // Cloud sandbox (dark-shipped): --cloud maps to a cloud-sandbox
       // execution target, sent as _meta.kiro.executionTarget on session/new.
       executionTarget: cliArgs.cloud ? { kind: 'cloud-sandbox' } : undefined,

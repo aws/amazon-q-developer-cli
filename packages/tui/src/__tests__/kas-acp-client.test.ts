@@ -679,6 +679,76 @@ describe('KasAcpClient', () => {
     }
   });
 
+  it('newSession() applies initialEffort as effortLevel after the model', async () => {
+    const client = new KasAcpClient({
+      initialModel: 'm1',
+      initialEffort: 'low',
+    });
+    await client.newSession();
+
+    const configCalls = mockKiroSetSessionConfigOption.mock.calls.map(
+      ([req]: any[]) => req
+    );
+    expect(configCalls.find((r: any) => r?.configId === 'effortLevel')).toEqual(
+      expect.objectContaining({
+        sessionId: 'kas-session-1',
+        configId: 'effortLevel',
+        value: 'low',
+      })
+    );
+    // The level must land on the session's effective model, so the effort
+    // write happens only after the model write.
+    const modelIdx = configCalls.findIndex((r: any) => r?.configId === 'model');
+    const effortIdx = configCalls.findIndex(
+      (r: any) => r?.configId === 'effortLevel'
+    );
+    expect(modelIdx).toBeGreaterThanOrEqual(0);
+    expect(effortIdx).toBeGreaterThan(modelIdx);
+  });
+
+  it('newSession() sets no effortLevel when initialEffort is absent', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const effortCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+      ([req]: any[]) => req?.configId === 'effortLevel'
+    );
+    expect(effortCalls.length).toBe(0);
+  });
+
+  it('newSession() still resolves when config writes fail (autopilot, model, effort)', async () => {
+    mockKiroSetSessionConfigOption.mockImplementation(() =>
+      Promise.reject(new Error('rpc failure'))
+    );
+    try {
+      const client = new KasAcpClient({
+        initialModel: 'm1',
+        initialEffort: 'low',
+      });
+      const result = await client.newSession();
+      expect(result.sessionId).toBe('kas-session-1');
+      // All three writes were attempted despite each rejecting.
+      const attempted = mockKiroSetSessionConfigOption.mock.calls.map(
+        ([req]: any[]) => req?.configId
+      );
+      expect(attempted).toEqual(
+        expect.arrayContaining(['autopilot', 'model', 'effortLevel'])
+      );
+    } finally {
+      mockKiroSetSessionConfigOption.mockImplementation((_req: any) =>
+        Promise.resolve()
+      );
+    }
+  });
+
+  it('loadSession() does NOT apply initialEffort (persisted session effort wins)', async () => {
+    const client = new KasAcpClient({ initialEffort: 'low' });
+    await client.loadSession('existing-session');
+    const effortCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
+      ([req]: any[]) => req?.configId === 'effortLevel'
+    );
+    expect(effortCalls.length).toBe(0);
+  });
+
   it('loadSession() does NOT apply initialAgent (V2 parity, persisted agent wins)', async () => {
     const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
     await client.loadSession('existing-session');

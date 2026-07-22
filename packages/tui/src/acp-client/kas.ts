@@ -232,6 +232,7 @@ export interface KasAcpClientOptions {
   stream?: Stream;
   initialAgent?: string;
   initialModel?: string;
+  initialEffort?: string;
   version?: string;
   executionTarget?: ExecutionTarget;
   repos?: string[];
@@ -279,6 +280,15 @@ export class KasAcpClient extends BaseAcpClient {
    * sessions. An explicit flag always takes precedence over the saved default.
    */
   private readonly initialModel?: string;
+
+  /**
+   * Explicit `--effort` CLI flag value to apply on `newSession`, if any.
+   * Written to the session config after the model so the level lands on the
+   * session's effective model. Applied whenever a new session is created,
+   * including mid-run; `loadSession` keeps the persisted effort. The agent
+   * silently ignores a level the model does not support.
+   */
+  private readonly initialEffort?: string;
 
   /**
    * Execution target for the first `newSession`, from the `--cloud` CLI flag.
@@ -379,6 +389,7 @@ export class KasAcpClient extends BaseAcpClient {
       this.kasSubagentRoutingStore = kasSubagentRoutingStore;
       this.initialAgent = options.initialAgent;
       this.initialModel = options.initialModel;
+      this.initialEffort = options.initialEffort;
       this.version = options.version ?? getCliVersion();
       this.executionTarget = options.executionTarget;
       this.repos = options.repos;
@@ -464,6 +475,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.kasSubagentRoutingStore = kasSubagentRoutingStore;
     this.initialAgent = options.initialAgent;
     this.initialModel = options.initialModel;
+    this.initialEffort = options.initialEffort;
     this.version = version;
     this.executionTarget = options.executionTarget;
     this.repos = options.repos;
@@ -1142,6 +1154,21 @@ export class KasAcpClient extends BaseAcpClient {
           configOptions;
       } catch (e) {
         logger.debug('Failed to set default model:', e);
+      }
+    }
+
+    if (this.initialEffort) {
+      try {
+        const effortResp = await this.kiroClient.setSessionConfigOption({
+          sessionId: sid,
+          configId: 'effortLevel',
+          value: this.initialEffort,
+        });
+        configOptions =
+          (effortResp as { configOptions?: unknown }).configOptions ??
+          configOptions;
+      } catch (e) {
+        logger.debug('Failed to set initial effort:', e);
       }
     }
 
