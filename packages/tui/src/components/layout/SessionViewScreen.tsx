@@ -18,7 +18,6 @@ import { sessionConversationsStore } from '../../stores/session-conversations.js
 export const SessionViewScreen: React.FC = () => {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
-  const sessionMessages = useAppStore((s) => s.sessionMessages);
   const kiro = useAppStore((s) => s.kiro);
   const showTransientAlert = useAppStore((s) => s.showTransientAlert);
   const { clearInput } = useInputActions();
@@ -28,9 +27,6 @@ export const SessionViewScreen: React.FC = () => {
   const glyphs = useGlyphs();
 
   const session = activeSessionId ? sessions.get(activeSessionId) : undefined;
-  const messages = activeSessionId
-    ? sessionMessages.get(activeSessionId) || []
-    : [];
   const agentColor = session
     ? getAgentColor(session.name, getColor).hex
     : 'cyan';
@@ -89,11 +85,7 @@ export const SessionViewScreen: React.FC = () => {
       />
 
       <Box flexGrow={1} overflow="hidden">
-        <SessionOutput
-          sessionId={activeSessionId!}
-          session={session}
-          messages={messages}
-        />
+        <SessionOutput sessionId={activeSessionId!} session={session} />
       </Box>
 
       <PromptBar

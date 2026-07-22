@@ -81,7 +81,6 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
                 state.pendingOAuthServers
               ),
               sessions: Object.fromEntries(state.sessions),
-              sessionMessages: Object.fromEntries(state.sessionMessages),
             } as unknown as SerializedAppState,
           };
 

@@ -559,9 +559,8 @@ describe('tool rendering — all KAS tool types', () => {
     );
     // If subagent tool doesn't appear in main messages, check it was at least received
     if (!subMsg) {
-      // This documents the behavior: subagent tools ARE broadcast but may
-      // be stored in sessionMessages map rather than the flat messages array.
-      // The important thing is invoke_sub_agent itself rendered.
+      // Subagent tools are broadcast but may not land in the flat messages
+      // array. The important thing is invoke_sub_agent itself rendered.
       expect(invokeMsg).toBeDefined();
     } else {
       expect((subMsg as any).name).toBe('read_file');

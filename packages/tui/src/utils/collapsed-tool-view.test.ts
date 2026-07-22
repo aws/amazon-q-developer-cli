@@ -250,8 +250,6 @@ describe('isSubagentCard', () => {
   it('is false for non-spawn session tools', () => {
     // These must keep their normal render — they are not subagent spawns.
     expect(isSubagentCard('session_management')).toBe(false);
-    expect(isSubagentCard('send_message')).toBe(false);
-    expect(isSubagentCard('read_messages')).toBe(false);
     expect(isSubagentCard('subagent_response')).toBe(false);
     expect(isSubagentCard('Subagent Response')).toBe(false);
   });

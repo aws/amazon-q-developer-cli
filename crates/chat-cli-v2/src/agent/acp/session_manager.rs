@@ -45,12 +45,10 @@ use crate::agent::acp::acp_agent::{
 };
 use crate::agent::acp::extensions::SubagentInfo;
 use crate::agent::acp::mcp_conversion::convert_mcp_server;
-use crate::agent::acp::orchestration::inbox::InboxStore;
 use crate::agent::acp::orchestration::naming;
 use crate::agent::acp::orchestration::permissions::PermissionStore;
 use crate::agent::acp::orchestration::types::{
     GroupMembership,
-    InboxMessage,
     OrchestratedSession,
     SessionGroup,
     SessionStatus,
@@ -627,8 +625,6 @@ pub struct SessionManager {
     /// Telemetry event store for recording events in test scenarios.
     /// Shared with the IPC server so tests can drain and assert on events. `None` in production.
     telemetry_event_store: Option<TelemetryEventStore>,
-    /// Orchestration: inbox storage for inter-session messaging
-    inbox_store: InboxStore,
     /// Orchestration: permission tracking for messaging
     permission_store: PermissionStore,
     /// Orchestration: metadata about orchestrated sessions
@@ -716,7 +712,6 @@ impl SessionManager {
             trust_tools,
             acp_client_info: None,
             telemetry_event_store,
-            inbox_store: InboxStore::new(),
             permission_store: PermissionStore::new(),
             orchestrated_sessions: HashMap::new(),
             groups: HashMap::new(),
@@ -1437,32 +1432,6 @@ impl SessionManager {
                 let subagents = self.get_subagent_sessions();
                 _ = resp_sender.send(subagents);
             },
-            SessionManagerRequestData::DeliverSubagentResult {
-                target_session,
-                message,
-                resp_sender,
-            } => {
-                let from_id = SessionId::new("subagent-result".to_string());
-                let _ = self
-                    .inbox_store
-                    .send_message(&target_session, &from_id, "subagent", message, false);
-                self.send_inbox_notification(&target_session).await;
-
-                // Auto-wake if idle
-                if let Some(orch) = self.orchestrated_sessions.get(&target_session.to_string())
-                    && orch.status == SessionStatus::Idle
-                    && !orch.human_attached
-                    && let Some(handle) = self.sessions.get(&target_session)
-                {
-                    let wake_msg = "You have new messages in your inbox. Use read_messages to check them.".to_string();
-                    let handle_clone = handle.clone();
-                    tokio::spawn(async move {
-                        let _ = handle_clone.wake_session(wake_msg).await;
-                    });
-                }
-
-                _ = resp_sender.send(());
-            },
             SessionManagerRequestData::RegisterPendingStages {
                 group,
                 pending_stages,
@@ -1546,7 +1515,6 @@ impl SessionManager {
                         let deps = stage.depends_on.clone();
 
                         // Collect results from completed dependencies stored on OrchestratedSession
-                        // This is inbox-independent — works even if parent already read messages
                         let task_with_context = {
                             let dep_context: Vec<String> = deps
                                 .iter()
@@ -1753,64 +1721,12 @@ impl SessionManager {
                 }
                 _ = resp_sender.send(result);
             },
-            SessionManagerRequestData::SendOrchestrationMessage {
-                from_session,
-                target,
-                message,
-                is_escalation,
-                resp_sender,
-            } => {
-                // Resolve target before consuming it
-                let target_id = if let Some(t) = target.as_deref() {
-                    self.resolve_target(t).ok()
-                } else if is_escalation {
-                    self.resolve_escalation_target(&from_session).ok()
-                } else {
-                    None
-                };
-                let result =
-                    self.handle_send_orchestration_message(&from_session, target.as_deref(), &message, is_escalation);
-                // Notify TUI so it can show the notification bar alert
-                if result.is_ok()
-                    && let Some(tid) = target_id
-                {
-                    self.send_inbox_notification(&tid).await;
-                    // Auto-wake if idle — inject message content directly
-                    if let Some(orch) = self.orchestrated_sessions.get(&tid.to_string())
-                        && orch.status == SessionStatus::Idle
-                        && !orch.human_attached
-                        && let Some(handle) = self.sessions.get(&tid)
-                    {
-                        let wake_msg = format!("You have a new message:\n\n{}", message);
-                        let handle_clone = handle.clone();
-                        tokio::spawn(async move {
-                            let _ = handle_clone.wake_session(wake_msg).await;
-                        });
-                    }
-                }
-                _ = resp_sender.send(result.map(|_| ()));
-            },
-            SessionManagerRequestData::ReadOrchestrationMessages {
-                session_id: sid,
-                limit,
-                resp_sender,
-            } => {
-                let messages = self.inbox_store.read_messages(&sid, limit);
-                _ = resp_sender.send(Ok(messages));
-            },
             SessionManagerRequestData::ListOrchestratedSessions { filter, resp_sender } => {
                 let sessions = self.handle_list_orchestrated(filter);
                 _ = resp_sender.send(Ok(sessions));
             },
             SessionManagerRequestData::GetOrchestratedSessionStatus { target, resp_sender } => {
                 let result = self.handle_get_orchestrated_status(&target);
-                _ = resp_sender.send(result);
-            },
-            SessionManagerRequestData::GetOrchestratedSessionById {
-                session_id,
-                resp_sender,
-            } => {
-                let result = self.orchestrated_sessions.get(&session_id.to_string()).cloned();
                 _ = resp_sender.send(result);
             },
             SessionManagerRequestData::InterruptOrchestratedSession {
@@ -1834,22 +1750,13 @@ impl SessionManager {
                 _ = resp_sender.send(result);
             },
             SessionManagerRequestData::ManageOrchestrationGroup {
-                from_session,
                 action,
                 group,
                 target,
                 role,
-                message,
                 resp_sender,
             } => {
-                let result = self.handle_manage_group(
-                    &from_session,
-                    action,
-                    group.as_deref(),
-                    target.as_deref(),
-                    role.as_deref(),
-                    message.as_deref(),
-                );
+                let result = self.handle_manage_group(action, group.as_deref(), target.as_deref(), role.as_deref());
                 _ = resp_sender.send(result);
             },
             SessionManagerRequestData::ReviveOrchestratedSession {
@@ -1898,9 +1805,9 @@ impl SessionManager {
     ///    - Calls `start_session` with `parent_session_id` set (cloned `connection_cx`).
     ///    - Waits for MCP init (`ready_rx`).
     ///    - Calls `internal_prompt(task)` — blocks until the agent calls the `summary` tool.
-    ///    - On success: delivers summary to parent inbox, marks session `Terminated`, terminates
-    ///      it, then calls `trigger_pending_stages` to advance the DAG.
-    ///    - On error: delivers error message, same cleanup.
+    ///    - On success: stores the result on the orchestrated session, marks it `Terminated`,
+    ///      terminates it, then calls `trigger_pending_stages` to advance the DAG.
+    ///    - On error: fails the group, same cleanup.
     /// 4. Returns immediately (the task runs in background).
     ///
     /// # Invariants
@@ -2020,8 +1927,6 @@ impl SessionManager {
                     match result.handle.internal_prompt(task_str).await {
                         Ok(summary) => {
                             info!(name = %session_name_clone, "Orchestrated session completed task");
-                            let msg = format!("[Results from {}]\n\n{}", session_name_clone, summary.task_result);
-                            session_tx.deliver_subagent_result(&parent_sid, &msg).await;
                             let changes_needed = summary.result_type.as_deref() == Some("changes_needed");
                             session_tx
                                 .store_session_result(&new_sid, summary.task_result, changes_needed)
@@ -2041,10 +1946,7 @@ impl SessionManager {
                         Err(e) => {
                             let cancelled = e.is_cancelled();
                             error!(name = %session_name_clone, "Orchestrated session task failed: {}", e);
-                            if !cancelled {
-                                let msg = format!("[{} failed: {}]", session_name_clone, e);
-                                session_tx.deliver_subagent_result(&parent_sid, &msg).await;
-                            } else {
+                            if cancelled {
                                 // Stamp a placeholder result so the parent's
                                 // agent_crew/subagent output shows "[Cancelled
                                 // by user]" for this stage instead of an
@@ -2088,8 +1990,6 @@ impl SessionManager {
                 },
                 Err(e) => {
                     error!("Failed to start orchestrated session {}: {}", new_sid, e);
-                    let msg = format!("[{} failed to start: {}]", session_name_clone, e);
-                    session_tx.deliver_subagent_result(&parent_sid, &msg).await;
                     session_tx
                         .update_session_status(&new_sid, SessionStatus::Terminated)
                         .await;
@@ -2120,7 +2020,7 @@ impl SessionManager {
 
         if old_session.status != SessionStatus::Terminated {
             return Err(sacp::util::internal_error(format!(
-                "Session '{}' is {:?}, not terminated — use send_message instead",
+                "Session '{}' is {:?} — only terminated sessions can be revived",
                 target, old_session.status
             )));
         }
@@ -2251,81 +2151,6 @@ impl SessionManager {
             .map_or_else(|| session_id.to_string(), |s| s.name.clone())
     }
 
-    fn handle_send_orchestration_message(
-        &mut self,
-        from_session: &SessionId,
-        target: Option<&str>,
-        message: &str,
-        is_escalation: bool,
-    ) -> Result<bool, sacp::Error> {
-        // Resolve target: explicit target, or escalation auto-route to parent chain
-        let target_id = if let Some(t) = target {
-            self.resolve_target(t)?
-        } else if is_escalation {
-            self.resolve_escalation_target(from_session)?
-        } else {
-            return Err(sacp::util::internal_error(
-                "target is required for non-escalation messages",
-            ));
-        };
-
-        // Check permissions
-        self.permission_store
-            .can_message(from_session, &target_id)
-            .map_err(sacp::util::internal_error)?;
-
-        // Check rate limit
-        self.permission_store
-            .check_rate_limit(from_session)
-            .map_err(sacp::util::internal_error)?;
-
-        let sender_name = self.resolve_sender_name(from_session);
-
-        self.inbox_store
-            .send_message(
-                &target_id,
-                from_session,
-                &sender_name,
-                message.to_string(),
-                is_escalation,
-            )
-            .map_err(sacp::util::internal_error)?;
-
-        Ok(true)
-    }
-
-    fn resolve_escalation_target(&self, from_session: &SessionId) -> Result<SessionId, sacp::Error> {
-        let mut current = from_session.clone();
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(current.to_string());
-
-        loop {
-            let parent = self
-                .orchestrated_sessions
-                .get(&current.to_string())
-                .and_then(|s| s.parent_session.clone());
-
-            match parent {
-                Some(pid) => {
-                    if !visited.insert(pid.to_string()) {
-                        return Err(sacp::util::internal_error("Cycle detected in parent chain"));
-                    }
-                    // If parent is human-attached, deliver there
-                    if self
-                        .orchestrated_sessions
-                        .get(&pid.to_string())
-                        .is_some_and(|s| s.human_attached)
-                    {
-                        return Ok(pid);
-                    }
-                    current = pid;
-                },
-                // No parent — deliver to current (root)
-                None => return Ok(current),
-            }
-        }
-    }
-
     fn handle_list_orchestrated(&self, filter: Option<SessionFilter>) -> Vec<OrchestratedSession> {
         self.orchestrated_sessions
             .values()
@@ -2359,7 +2184,7 @@ impl SessionManager {
         let target_id = self.resolve_target(target)?;
 
         self.permission_store
-            .can_message(from_session, &target_id)
+            .can_interact(from_session, &target_id)
             .map_err(sacp::util::internal_error)?;
 
         // Cancel the target session and send new prompt
@@ -2393,7 +2218,7 @@ impl SessionManager {
         let target_id = self.resolve_target(target)?;
 
         self.permission_store
-            .can_message(from_session, &target_id)
+            .can_interact(from_session, &target_id)
             .map_err(sacp::util::internal_error)?;
 
         // Inject context via the agent's dynamic context
@@ -2410,12 +2235,10 @@ impl SessionManager {
 
     fn handle_manage_group(
         &mut self,
-        from_session: &SessionId,
         action: GroupAction,
         group: Option<&str>,
         target: Option<&str>,
         role: Option<&str>,
-        message: Option<&str>,
     ) -> Result<String, sacp::Error> {
         match action {
             GroupAction::Create => {
@@ -2482,100 +2305,6 @@ impl SessionManager {
                 };
                 Ok(serde_json::json!({"groups": groups}).to_string())
             },
-            GroupAction::Broadcast => {
-                let group_name = group.ok_or_else(|| sacp::util::internal_error("Group name required"))?;
-                let msg = message.ok_or_else(|| sacp::util::internal_error("Message required"))?;
-
-                let group_entry = self
-                    .groups
-                    .get(group_name)
-                    .ok_or_else(|| sacp::util::internal_error(format!("Group not found: {}", group_name)))?;
-
-                let member_ids: Vec<SessionId> = group_entry.members.iter().map(|m| m.session_id.clone()).collect();
-                let sender_name = self.resolve_sender_name(from_session);
-
-                let mut delivered = 0;
-                for member_id in &member_ids {
-                    if member_id.to_string() != from_session.to_string()
-                        && self
-                            .inbox_store
-                            .send_message(member_id, from_session, &sender_name, msg.to_string(), false)
-                            .is_ok()
-                    {
-                        delivered += 1;
-                    }
-                }
-
-                Ok(serde_json::json!({"status": "broadcast", "delivered": delivered}).to_string())
-            },
-        }
-    }
-
-    /// Send a TUI notification about new inbox messages for a session.
-    async fn send_inbox_notification(&self, session_id: &SessionId) {
-        let summary = self.inbox_store.get_unread_summary(session_id);
-        if let Some(handle) = self.sessions.get(session_id) {
-            let senders: Vec<String> = summary.senders.iter().map(|(n, _)| n.clone()).collect();
-            let params = serde_json::json!({
-                "sessionId": session_id.to_string(),
-                "sessionName": self.orchestrated_sessions
-                    .get(&session_id.to_string())
-                    .map_or("main", |s| s.name.as_str()),
-                "messageCount": summary.unread_count,
-                "escalationCount": summary.escalation_count,
-                "senders": senders,
-            });
-            handle
-                .send_ext_notification_raw(super::extensions::methods::INBOX_NOTIFICATION.to_string(), params)
-                .await;
-        }
-    }
-
-    /// Emit an activity event to the TUI.
-    async fn emit_activity(&self, event_type: &str, session_name: &str, description: &str) {
-        let params = serde_json::json!({
-            "type": event_type,
-            "sessionName": session_name,
-            "description": description,
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-        });
-        for handle in self.sessions.values() {
-            handle
-                .send_ext_notification_raw(super::extensions::methods::SESSION_ACTIVITY.to_string(), params.clone())
-                .await;
-        }
-    }
-
-    async fn send_session_list_update(&self) {
-        let sessions: Vec<serde_json::Value> = self
-            .orchestrated_sessions
-            .values()
-            .map(|s| {
-                let inbox_summary = self.inbox_store.get_unread_summary(&s.session_id);
-                serde_json::json!({
-                    "sessionId": s.session_id.to_string(),
-                    "name": s.name,
-                    "role": s.role,
-                    "agentName": s.agent_name,
-                    "task": s.task,
-                    "status": s.status,
-                    "group": s.group,
-                    "parentSessionId": s.parent_session.as_ref().map(|p| p.to_string()),
-                    "inboxCount": inbox_summary.unread_count,
-                    "escalationCount": inbox_summary.escalation_count,
-                    "persistent": s.persistent,
-                })
-            })
-            .collect();
-
-        let params = serde_json::json!({ "sessions": sessions });
-        for handle in self.sessions.values() {
-            handle
-                .send_ext_notification_raw(
-                    super::extensions::methods::SESSION_LIST_UPDATE.to_string(),
-                    params.clone(),
-                )
-                .await;
         }
     }
 
@@ -2864,11 +2593,6 @@ pub(crate) enum SessionManagerRequestData {
     GetSubagentSessions {
         resp_sender: oneshot::Sender<Vec<SubagentInfo>>,
     },
-    DeliverSubagentResult {
-        target_session: SessionId,
-        message: String,
-        resp_sender: oneshot::Sender<()>,
-    },
     RegisterPendingStages {
         group: String,
         pending_stages: Vec<agent::tools::agent_crew::PendingStageSpec>,
@@ -2911,18 +2635,6 @@ pub(crate) enum SessionManagerRequestData {
         persistent: bool,
         resp_sender: oneshot::Sender<Result<SpawnOrchestratedResult, sacp::Error>>,
     },
-    SendOrchestrationMessage {
-        from_session: SessionId,
-        target: Option<String>,
-        message: String,
-        is_escalation: bool,
-        resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
-    },
-    ReadOrchestrationMessages {
-        session_id: SessionId,
-        limit: usize,
-        resp_sender: oneshot::Sender<Result<Vec<InboxMessage>, sacp::Error>>,
-    },
     ListOrchestratedSessions {
         filter: Option<SessionFilter>,
         resp_sender: oneshot::Sender<Result<Vec<OrchestratedSession>, sacp::Error>>,
@@ -2930,10 +2642,6 @@ pub(crate) enum SessionManagerRequestData {
     GetOrchestratedSessionStatus {
         target: String,
         resp_sender: oneshot::Sender<Result<OrchestratedSession, sacp::Error>>,
-    },
-    GetOrchestratedSessionById {
-        session_id: SessionId,
-        resp_sender: oneshot::Sender<Option<OrchestratedSession>>,
     },
     InterruptOrchestratedSession {
         from_session: SessionId,
@@ -2948,12 +2656,10 @@ pub(crate) enum SessionManagerRequestData {
         resp_sender: oneshot::Sender<Result<(), sacp::Error>>,
     },
     ManageOrchestrationGroup {
-        from_session: SessionId,
         action: GroupAction,
         group: Option<String>,
         target: Option<String>,
         role: Option<String>,
-        message: Option<String>,
         resp_sender: oneshot::Sender<Result<String, sacp::Error>>,
     },
     ReviveOrchestratedSession {
@@ -3187,29 +2893,6 @@ impl SessionManagerHandle {
         }
     }
 
-    /// Deliver a subagent's result to the parent session's inbox.
-    ///
-    /// Puts `message` into the parent's inbox via `InboxStore`, then sends an
-    /// `INBOX_NOTIFICATION` to the TUI so the user sees "Bob finished  r: read".
-    ///
-    /// Called from the `tokio::spawn` in `handle_spawn_orchestrated` after `internal_prompt`
-    /// returns. The message format is: `"[Results from {name}]\n\n{summary}"`.
-    pub async fn deliver_subagent_result(&self, target_session: &SessionId, message: &str) {
-        let (resp_sender, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(SessionManagerRequest {
-                session_id: target_session.clone(),
-                data: SessionManagerRequestData::DeliverSubagentResult {
-                    target_session: target_session.clone(),
-                    message: message.to_string(),
-                    resp_sender,
-                },
-            })
-            .await;
-        let _ = rx.await;
-    }
-
     /// Update the status of an orchestrated session and notify the TUI.
     ///
     /// After updating, fires `send_subagent_list_update` so the TUI crew monitor reflects the
@@ -3378,52 +3061,6 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to receive spawn response"))?
     }
 
-    pub async fn send_orchestration_message(
-        &self,
-        from_session: &SessionId,
-        target: Option<&str>,
-        message: &str,
-        is_escalation: bool,
-    ) -> Result<(), sacp::Error> {
-        let (resp_sender, rx) = oneshot::channel();
-        self.tx
-            .send(SessionManagerRequest {
-                session_id: from_session.clone(),
-                data: SessionManagerRequestData::SendOrchestrationMessage {
-                    from_session: from_session.clone(),
-                    target: target.map(String::from),
-                    message: message.to_string(),
-                    is_escalation,
-                    resp_sender,
-                },
-            })
-            .await
-            .map_err(|_e| sacp::util::internal_error("Failed to send message request"))?;
-        rx.await
-            .map_err(|_e| sacp::util::internal_error("Failed to receive message response"))?
-    }
-
-    pub async fn read_orchestration_messages(
-        &self,
-        session_id: &SessionId,
-        limit: usize,
-    ) -> Result<Vec<InboxMessage>, sacp::Error> {
-        let (resp_sender, rx) = oneshot::channel();
-        self.tx
-            .send(SessionManagerRequest {
-                session_id: session_id.clone(),
-                data: SessionManagerRequestData::ReadOrchestrationMessages {
-                    session_id: session_id.clone(),
-                    limit,
-                    resp_sender,
-                },
-            })
-            .await
-            .map_err(|_e| sacp::util::internal_error("Failed to send read request"))?;
-        rx.await
-            .map_err(|_e| sacp::util::internal_error("Failed to receive read response"))?
-    }
-
     pub async fn list_orchestrated_sessions(
         &self,
         filter: Option<SessionFilter>,
@@ -3454,21 +3091,6 @@ impl SessionManagerHandle {
             .map_err(|_e| sacp::util::internal_error("Failed to send status request"))?;
         rx.await
             .map_err(|_e| sacp::util::internal_error("Failed to receive status response"))?
-    }
-
-    pub async fn get_orchestrated_session_by_id(&self, session_id: &SessionId) -> Option<OrchestratedSession> {
-        let (resp_sender, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(SessionManagerRequest {
-                session_id: session_id.clone(),
-                data: SessionManagerRequestData::GetOrchestratedSessionById {
-                    session_id: session_id.clone(),
-                    resp_sender,
-                },
-            })
-            .await;
-        rx.await.unwrap_or(None)
     }
 
     pub async fn interrupt_orchestrated_session(
@@ -3524,19 +3146,16 @@ impl SessionManagerHandle {
         group: Option<&str>,
         target: Option<&str>,
         role: Option<&str>,
-        message: Option<&str>,
     ) -> Result<String, sacp::Error> {
         let (resp_sender, rx) = oneshot::channel();
         self.tx
             .send(SessionManagerRequest {
                 session_id: from_session.clone(),
                 data: SessionManagerRequestData::ManageOrchestrationGroup {
-                    from_session: from_session.clone(),
                     action,
                     group: group.map(String::from),
                     target: target.map(String::from),
                     role: role.map(String::from),
-                    message: message.map(String::from),
                     resp_sender,
                 },
             })

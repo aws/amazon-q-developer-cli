@@ -1,26 +1,16 @@
-//! Permission model for inter-session messaging.
+//! Permission model for inter-session operations.
 
 use std::collections::HashMap;
-use std::time::{
-    Duration,
-    SystemTime,
-};
 
 use sacp::schema::SessionId;
 
-/// Maximum messages per session per minute.
-const RATE_LIMIT: usize = 10;
-const RATE_WINDOW: Duration = Duration::from_secs(60);
-
-/// Tracks parent-child relationships and rate limits.
+/// Tracks parent-child relationships and group membership.
 #[derive(Debug, Default, Clone)]
 pub struct PermissionStore {
     /// Maps session_id -> parent_session_id
     parents: HashMap<String, String>,
     /// Maps session_id -> group name
     groups: HashMap<String, String>,
-    /// Rate limit tracking: session_id -> list of send timestamps
-    send_timestamps: HashMap<String, Vec<SystemTime>>,
 }
 
 impl PermissionStore {
@@ -38,20 +28,20 @@ impl PermissionStore {
         self.groups.insert(session_id.to_string(), group.to_string());
     }
 
-    /// Check if sender can message target.
+    /// Check if sender may interrupt or inject context into target.
     ///
     /// Rules:
-    /// - No self-messaging
-    /// - Can message sessions you spawned (you are parent)
-    /// - Can message your parent
-    /// - Can message sessions in your group
-    pub fn can_message(&self, sender: &SessionId, target: &SessionId) -> Result<(), String> {
+    /// - No targeting self
+    /// - Can target sessions you spawned (you are parent)
+    /// - Can target your parent
+    /// - Can target sessions in your group
+    pub fn can_interact(&self, sender: &SessionId, target: &SessionId) -> Result<(), String> {
         let sender_id = sender.to_string();
         let target_id = target.to_string();
 
-        // No self-messaging
+        // No targeting self
         if sender_id == target_id {
-            return Err("Cannot send message to self".to_string());
+            return Err("Cannot target self".to_string());
         }
 
         // Check parent-child relationship
@@ -70,25 +60,9 @@ impl PermissionStore {
         }
 
         Err(format!(
-            "Session {} is not authorized to message session {}",
+            "Session {} is not authorized to interact with session {}",
             sender_id, target_id
         ))
-    }
-
-    /// Check and update rate limit. Returns error if rate exceeded.
-    pub fn check_rate_limit(&mut self, sender: &SessionId) -> Result<(), String> {
-        let now = SystemTime::now();
-        let timestamps = self.send_timestamps.entry(sender.to_string()).or_default();
-
-        // Remove timestamps outside the window
-        timestamps.retain(|t| now.duration_since(*t).unwrap_or(Duration::ZERO) < RATE_WINDOW);
-
-        if timestamps.len() >= RATE_LIMIT {
-            return Err(format!("Rate limit exceeded: max {} messages per minute", RATE_LIMIT));
-        }
-
-        timestamps.push(now);
-        Ok(())
     }
 
     /// Remove all tracking for a terminated session.
@@ -96,7 +70,6 @@ impl PermissionStore {
         let id = session_id.to_string();
         self.parents.remove(&id);
         self.groups.remove(&id);
-        self.send_timestamps.remove(&id);
     }
 }
 
@@ -109,63 +82,52 @@ mod tests {
     }
 
     #[test]
-    fn test_parent_child_can_message() {
+    fn test_parent_child_can_interact() {
         let mut store = PermissionStore::new();
         let parent = sid("parent");
         let child = sid("child");
         store.register_child(&parent, &child);
 
-        assert!(store.can_message(&parent, &child).is_ok());
-        assert!(store.can_message(&child, &parent).is_ok());
+        assert!(store.can_interact(&parent, &child).is_ok());
+        assert!(store.can_interact(&child, &parent).is_ok());
     }
 
     #[test]
-    fn test_no_self_messaging() {
+    fn test_no_self_interaction() {
         let store = PermissionStore::new();
         let session = sid("session-1");
-        assert!(store.can_message(&session, &session).is_err());
+        assert!(store.can_interact(&session, &session).is_err());
     }
 
     #[test]
-    fn test_group_can_message() {
+    fn test_group_can_interact() {
         let mut store = PermissionStore::new();
         let a = sid("a");
         let b = sid("b");
         store.register_group(&a, "team");
         store.register_group(&b, "team");
 
-        assert!(store.can_message(&a, &b).is_ok());
+        assert!(store.can_interact(&a, &b).is_ok());
     }
 
     #[test]
-    fn test_unrelated_cannot_message() {
+    fn test_unrelated_cannot_interact() {
         let store = PermissionStore::new();
         let a = sid("a");
         let b = sid("b");
-        assert!(store.can_message(&a, &b).is_err());
+        assert!(store.can_interact(&a, &b).is_err());
     }
 
     #[test]
-    fn test_rate_limit() {
-        let mut store = PermissionStore::new();
-        let sender = sid("sender");
-
-        for _ in 0..RATE_LIMIT {
-            assert!(store.check_rate_limit(&sender).is_ok());
-        }
-        assert!(store.check_rate_limit(&sender).is_err());
-    }
-
-    #[test]
-    fn test_different_groups_cannot_message() {
+    fn test_different_groups_cannot_interact() {
         let mut store = PermissionStore::new();
         let a = sid("a");
         let b = sid("b");
         store.register_group(&a, "team1");
         store.register_group(&b, "team2");
 
-        assert!(store.can_message(&a, &b).is_err());
-        assert!(store.can_message(&b, &a).is_err());
+        assert!(store.can_interact(&a, &b).is_err());
+        assert!(store.can_interact(&b, &a).is_err());
     }
 
     #[test]
@@ -176,26 +138,10 @@ mod tests {
         store.register_child(&parent, &child);
         store.register_group(&child, "team");
 
-        assert!(store.can_message(&parent, &child).is_ok());
+        assert!(store.can_interact(&parent, &child).is_ok());
 
         store.remove_session(&child);
-        assert!(store.can_message(&parent, &child).is_err());
-    }
-
-    #[test]
-    fn test_rate_limit_resets() {
-        let mut store = PermissionStore::new();
-        let sender = sid("sender");
-
-        // Fill up the rate limit
-        for _ in 0..RATE_LIMIT {
-            assert!(store.check_rate_limit(&sender).is_ok());
-        }
-        assert!(store.check_rate_limit(&sender).is_err());
-
-        // Verify the structure exists and has timestamps
-        assert!(store.send_timestamps.contains_key(&sender.to_string()));
-        assert_eq!(store.send_timestamps[&sender.to_string()].len(), RATE_LIMIT);
+        assert!(store.can_interact(&parent, &child).is_err());
     }
 
     #[test]
@@ -206,8 +152,8 @@ mod tests {
         store.register_child(&parent, &child);
 
         // Both directions should work
-        assert!(store.can_message(&parent, &child).is_ok());
-        assert!(store.can_message(&child, &parent).is_ok());
+        assert!(store.can_interact(&parent, &child).is_ok());
+        assert!(store.can_interact(&child, &parent).is_ok());
     }
 
     #[test]
@@ -218,14 +164,14 @@ mod tests {
 
         store.register_group(&session, "team1");
         store.register_group(&other, "team1");
-        assert!(store.can_message(&session, &other).is_ok());
+        assert!(store.can_interact(&session, &other).is_ok());
 
         // Register in different group - last wins
         store.register_group(&session, "team2");
-        assert!(store.can_message(&session, &other).is_err());
+        assert!(store.can_interact(&session, &other).is_err());
 
         // Verify session is now in team2
         store.register_group(&other, "team2");
-        assert!(store.can_message(&session, &other).is_ok());
+        assert!(store.can_interact(&session, &other).is_ok());
     }
 }

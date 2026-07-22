@@ -166,10 +166,6 @@ describe('Stream event handler — ToolCall', () => {
         [activeSession.id, activeSession],
         [staleSession.id, staleSession],
       ]),
-      sessionMessages: new Map([
-        [activeSession.id, []],
-        [staleSession.id, []],
-      ]),
       sessionEventBuffer: {
         [activeSession.id]: [],
         [staleSession.id]: [],
@@ -224,8 +220,6 @@ describe('Stream event handler — ToolCall', () => {
     const state = store.getState();
     expect(state.sessions.has(activeSession.id)).toBe(true);
     expect(state.sessions.has(staleSession.id)).toBe(false);
-    expect(state.sessionMessages.has(activeSession.id)).toBe(true);
-    expect(state.sessionMessages.has(staleSession.id)).toBe(false);
     expect(state.sessionEventBuffer[activeSession.id]).toBeDefined();
     expect(state.sessionEventBuffer[staleSession.id]).toBeUndefined();
     expect(
@@ -2235,13 +2229,6 @@ describe('Session management', () => {
     const store = makeStore();
     store.getState().setActiveSession('s1');
     expect(store.getState().activeSessionId).toBe('s1');
-  });
-
-  it('addMessage adds to sessionMessages', () => {
-    const store = makeStore();
-    store.getState().addMessage('s1', { role: 'user', content: 'hi' } as any);
-    const msgs = store.getState().sessionMessages.get('s1');
-    expect(msgs).toHaveLength(1);
   });
 
   it('toggleCrewMonitor toggles visibility', () => {

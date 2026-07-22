@@ -31,7 +31,6 @@ function makeFakeKiro(): any {
     onSubagentListUpdate: () => {},
     onSessionEvent: () => {},
     onMultiSessionUpdate: () => {},
-    onInboxNotification: () => {},
   };
 }
 

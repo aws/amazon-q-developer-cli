@@ -166,7 +166,7 @@ The app uses **two** Zustand stores:
 
 ### Notable Conventions
 
-- **Map for sessions/messages**: `sessions: Map<string, AgentSession>`, `sessionMessages: Map<string, InboxMessage[]>` — always copy-on-write (`new Map(state.x)`) to trigger reactivity.
+- **Map for sessions**: `sessions: Map<string, AgentSession>` — always copy-on-write (`new Map(state.x)`) to trigger reactivity.
 - **16ms streaming batch**: `createStreamEventHandler` batches content chunk `set()` calls via `setTimeout(flush, 16)` to avoid starving Ink's render loop.
 - **Shared `createMessageStreamHandler` factory**: used by both stores for consistent stream event processing.
 - **`.flush` attached post-creation**: `(handler as any).flush = ...` — commits buffered content when stream ends.

@@ -7,7 +7,7 @@ import { SessionOutput } from '../../multi-agent/SessionOutput.js';
 import { ScrollableBox } from '../../ui/ScrollableBox.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import type { Stage } from './types.js';
-import { truncate, EMPTY_INBOX } from './types.js';
+import { truncate } from './types.js';
 
 export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
   selectedStage,
@@ -24,11 +24,6 @@ export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
   const sessionId = selectedStage?.sessionId;
   const selectedSession = useAppStore((state) =>
     sessionId ? state.sessions.get(sessionId) : undefined
-  );
-  const selectedMessages = useAppStore((state) =>
-    sessionId
-      ? (state.sessionMessages.get(sessionId) ?? EMPTY_INBOX)
-      : EMPTY_INBOX
   );
 
   return (
@@ -50,7 +45,6 @@ export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
           <SessionOutput
             sessionId={selectedStage!.sessionId}
             session={selectedSession}
-            messages={selectedMessages}
             width={width - 2}
             height={workerOutputH}
           />

@@ -9,6 +9,7 @@ import type {
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type { ContextBreakdownData } from './context';
 import type { AgentStreamEvent } from './agent-events';
+import type { SessionLifecycleEvent } from './multi-session';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -263,36 +264,50 @@ export interface SessionClient {
   clearSteering(sessionId: string): Promise<void>;
 
   /**
-   * Registers a callback for subagent list updates.
+   * Registers a callback for crew roster snapshots.
    *
-   * @param handler - Callback function that receives subagent list
+   * Each invocation delivers the COMPLETE current roster (live subagents
+   * plus planned-but-unspawned DAG stages), not a delta; consumers
+   * reconcile by replacement, treating rows absent from a snapshot as
+   * terminated. This is the only channel carrying roster identity and
+   * DAG/loop metadata. The main session never appears in it.
+   *
+   * @param handler - Receives the full subagent list and pending stages
+   * @returns Unsubscribe function
    */
   onSubagentListUpdate?(
     handler: (subagents: any[], pendingStages?: any[]) => void
   ): () => void;
 
   /**
-   * Registers a callback for session events.
+   * Registers a callback for individual subagent lifecycle events. Unlike
+   * `onSubagentListUpdate` snapshots, these are incremental single-session
+   * mutations: created adds a roster row, terminated flips its status.
    *
-   * @param handler - Callback function that receives session events
+   * Only the v3 engine broadcasts these; the V2 engine conveys lifecycle
+   * implicitly through roster snapshots, so under V2 the handler never
+   * fires.
+   *
+   * @param handler - Receives one lifecycle event per created/terminated subagent
+   * @returns Unsubscribe function
    */
-  onSessionEvent?(handler: (event: any) => void): () => void;
+  onSessionEvent?(handler: (event: SessionLifecycleEvent) => void): () => void;
 
   /**
-   * Registers a callback for multi-session updates.
+   * Registers a callback for the per-subagent turn stream: content,
+   * thoughts, and tool-call lifecycle for every session OTHER than this
+   * client's main session, tagged with the emitting subagent's id. The
+   * main session's own stream never arrives here (it goes to `onUpdate`),
+   * but subagent tool events are additionally mirrored onto `onUpdate`
+   * with the subagent's id stamped, so `onUpdate` consumers must branch on
+   * `event.sessionId`.
    *
-   * @param handler - Callback function that receives session ID and event
+   * @param handler - Receives the subagent session ID and its stream event
+   * @returns Unsubscribe function
    */
   onMultiSessionUpdate?(
     handler: (sessionId: string, event: AgentStreamEvent) => void
   ): () => void;
-
-  /**
-   * Registers a callback for inbox notifications.
-   *
-   * @param handler - Callback function that receives inbox notifications
-   */
-  onInboxNotification?(handler: (notification: any) => void): () => void;
 
   /**
    * Resolves (or creates) the ACP session the agent uses to work on a

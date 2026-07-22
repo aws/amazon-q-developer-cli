@@ -26,12 +26,6 @@ pub mod methods {
     pub const CLEAR_STATUS: &str = "_kiro.dev/clear/status";
     /// Subagent list update notification
     pub const SUBAGENT_LIST_UPDATE: &str = "_kiro.dev/subagent/list_update";
-    /// Inbox notification for orchestration
-    pub const INBOX_NOTIFICATION: &str = "_kiro.dev/session/inbox_notification";
-    /// Session list update for orchestration
-    pub const SESSION_LIST_UPDATE: &str = "_kiro.dev/session/list_update";
-    /// Session activity event for orchestration
-    pub const SESSION_ACTIVITY: &str = "_kiro.dev/session/activity";
     /// Agent switched notification
     pub const AGENT_SWITCHED: &str = "_kiro.dev/agent/switched";
     /// Agent not found — requested agent fell back to default
@@ -177,17 +171,6 @@ pub struct PendingStageInfo {
     pub group: String,
     pub depends_on: Vec<String>,
     pub agent_name: String,
-}
-
-/// Inbox notification payload for orchestration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InboxNotification {
-    pub session_id: SessionId,
-    pub session_name: String,
-    pub message_count: usize,
-    pub escalation_count: usize,
-    pub senders: Vec<String>,
 }
 
 /// Agent switched notification payload.

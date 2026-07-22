@@ -40,4 +40,3 @@ export const truncate = (s: string, max: number, ellipsis = '…') =>
   s.length > max ? s.slice(0, max - 1) + ellipsis : s;
 export const ATTENTION_TEXT = 'tool approval needed';
 export const ATTENTION_COL_W = ATTENTION_TEXT.length + 3;
-export const EMPTY_INBOX: never[] = [];

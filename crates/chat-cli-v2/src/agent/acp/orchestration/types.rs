@@ -8,18 +8,6 @@ use serde::{
     Serialize,
 };
 
-/// A message stored in a session's inbox.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InboxMessage {
-    pub from_session: SessionId,
-    pub from_name: String,
-    pub message: String,
-    pub timestamp: SystemTime,
-    pub read: bool,
-    #[serde(default)]
-    pub is_escalation: bool,
-}
-
 /// Metadata about an orchestrated session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrchestratedSession {
@@ -39,8 +27,7 @@ pub struct OrchestratedSession {
     pub persistent: bool,
     /// DAG edges: names of stages this session depends on
     pub depends_on: Vec<String>,
-    /// Result stored on completion — injected into dependent stages' context regardless of inbox
-    /// state
+    /// Result stored on completion — injected into dependent stages' context
     pub result: Option<String>,
     /// Loop-back config: when this session completes and output contains trigger, re-run target.
     #[serde(default)]

@@ -73,7 +73,7 @@ import type {
 } from '../utils/kas-config-options';
 import type { StatusType } from '../types/componentTypes';
 import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
-import type { AgentSession, InboxMessage } from '../types/multi-session.js';
+import type { AgentSession } from '../types/multi-session.js';
 import type {
   SessionActivityStatus,
   SessionsChangedNotification,
@@ -1070,7 +1070,6 @@ interface BaseAppActions {
   setActiveSession: (id: string) => void;
   setSelectedSession: (id: string) => void;
   toggleCrewMonitor: () => void;
-  addMessage: (sessionId: string, message: InboxMessage) => void;
   incrementExitSequence: () => void;
   resetExitSequence: () => void;
   armSuspend: () => void;
@@ -1585,7 +1584,6 @@ export interface AppState {
   activeSessionId: string;
   selectedSessionId?: string;
   crewMonitorVisible: boolean;
-  sessionMessages: Map<string, InboxMessage[]>;
   sessionEventBuffer: Record<string, AgentStreamEvent[]>;
   exitSequence: number;
   exitTimer: NodeJS.Timeout | null;
@@ -2590,7 +2588,6 @@ export const createAppStore = (props: AppStoreProps) => {
     activeSessionId: '',
     selectedSessionId: undefined,
     crewMonitorVisible: false,
-    sessionMessages: new Map(),
     sessionEventBuffer: {},
 
     exitSequence: 0,
@@ -3448,7 +3445,6 @@ export const createAppStore = (props: AppStoreProps) => {
               // Wipe previous subagent state when a new crew invocation starts
               let clearedMessages = state.messages;
               let clearedSessions = state.sessions;
-              let clearedSessionMessages = state.sessionMessages;
               let clearedEventBuffer = state.sessionEventBuffer;
               if (SESSION_TOOL_NAMES.has(event.name)) {
                 const activeParentGroups = new Set<string>();
@@ -3507,10 +3503,8 @@ export const createAppStore = (props: AppStoreProps) => {
                       !message.agentName || !staleNames.has(message.agentName)
                     );
                   });
-                  clearedSessionMessages = new Map(state.sessionMessages);
                   clearedEventBuffer = { ...state.sessionEventBuffer };
                   for (const id of staleSessionIds) {
-                    clearedSessionMessages.delete(id);
                     delete clearedEventBuffer[id];
                   }
                 }
@@ -3533,7 +3527,6 @@ export const createAppStore = (props: AppStoreProps) => {
               }
               return {
                 sessions: clearedSessions,
-                sessionMessages: clearedSessionMessages,
                 sessionEventBuffer: clearedEventBuffer,
                 messages: [
                   ...clearedMessages,
@@ -6069,19 +6062,16 @@ export const createAppStore = (props: AppStoreProps) => {
             ? { sessions: newSessions, messages: backfilledMessages }
             : { sessions: newSessions };
         }
-        // Also clear stale messages, event buffers, and inbox messages
+        // Also clear stale messages and event buffers
         const staleNames = new Set(
           staleIds.map((id) => state.sessions.get(id)?.name).filter(Boolean)
         );
-        const newMessages = new Map(state.sessionMessages);
         const newBuffer = { ...state.sessionEventBuffer };
         for (const id of staleIds) {
-          newMessages.delete(id);
           delete newBuffer[id];
         }
         return {
           sessions: newSessions,
-          sessionMessages: newMessages,
           sessionEventBuffer: newBuffer,
           messages: backfilledMessages.filter(
             (msg) =>
@@ -6105,15 +6095,12 @@ export const createAppStore = (props: AppStoreProps) => {
     removeSession: (id) =>
       set((state) => {
         const newSessions = new Map(state.sessions);
-        const newMessages = new Map(state.sessionMessages);
         newSessions.delete(id);
-        newMessages.delete(id);
         // Clean up event buffer for terminated session
         const newBuffer = { ...state.sessionEventBuffer };
         delete newBuffer[id];
         return {
           sessions: newSessions,
-          sessionMessages: newMessages,
           sessionEventBuffer: newBuffer,
           activeSessionId:
             state.activeSessionId === id ? '' : state.activeSessionId,
@@ -6200,14 +6187,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
     toggleCrewMonitor: () =>
       set((state) => ({ crewMonitorVisible: !state.crewMonitorVisible })),
-
-    addMessage: (sessionId, message) =>
-      set((state) => {
-        const newMessages = new Map(state.sessionMessages);
-        const existing = newMessages.get(sessionId) || [];
-        newMessages.set(sessionId, [...existing, message]);
-        return { sessionMessages: newMessages };
-      }),
 
     incrementExitSequence: () => {
       set((state) => {

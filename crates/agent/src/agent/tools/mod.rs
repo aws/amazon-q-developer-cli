@@ -62,7 +62,6 @@ use serde::{
 };
 pub use session::{
     GroupAction,
-    MessagePriority,
     SessionFilter,
     SessionTool,
     SessionToolRequest,

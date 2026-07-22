@@ -8,6 +8,7 @@ import type {
   ListSessionsResponse,
 } from '../types/session-client';
 import type { ContextBreakdownData } from '../types/context';
+import type { SessionLifecycleEvent } from '../types/multi-session';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type {
   ModeChangedNotification,
@@ -147,13 +148,8 @@ export const EXT_METHODS = {
   AGENT_CONFIG_ERROR: 'kiro.dev/agent/config_error',
   RATE_LIMIT_ERROR: 'kiro.dev/error/rate_limit',
   SUBAGENT_LIST_UPDATE: 'kiro.dev/subagent/list_update',
-  SESSION_ACTIVITY: 'kiro.dev/session/activity',
-  SESSION_LIST_UPDATE: 'kiro.dev/session/list_update',
-  INBOX_NOTIFICATION: 'kiro.dev/session/inbox_notification',
-  SESSION_LIST: 'session/list',
   SESSION_SPAWN: 'session/spawn',
   SESSION_TERMINATE: 'session/terminate',
-  SESSION_ATTACH: 'session/attach',
   MESSAGE_SEND: 'message/send',
   SESSION_STEER: 'session/steer',
   SESSION_STEER_CLEAR: 'session/steer/clear',
@@ -639,8 +635,8 @@ export abstract class BaseAcpClient implements SessionClient {
   private multiSessionHandlers: Set<
     (sessionId: string, event: AgentStreamEvent) => void
   > = new Set();
-  private inboxHandlers: Set<(notification: any) => void> = new Set();
-  private sessionEventHandlers: Set<(event: any) => void> = new Set();
+  private sessionEventHandlers: Set<(event: SessionLifecycleEvent) => void> =
+    new Set();
   private subagentListHandlers: Set<
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
@@ -770,12 +766,8 @@ export abstract class BaseAcpClient implements SessionClient {
     return this.addHandler(this.subagentListHandlers, handler);
   }
 
-  onSessionEvent(handler: (event: any) => void): () => void {
+  onSessionEvent(handler: (event: SessionLifecycleEvent) => void): () => void {
     return this.addHandler(this.sessionEventHandlers, handler);
-  }
-
-  onInboxNotification(handler: (notification: any) => void): () => void {
-    return this.addHandler(this.inboxHandlers, handler);
   }
 
   private addHandler<T>(handlers: Set<T>, handler: T): () => void {
@@ -800,7 +792,6 @@ export abstract class BaseAcpClient implements SessionClient {
     this.closed = true;
     this.updateHandlers.clear();
     this.multiSessionHandlers.clear();
-    this.inboxHandlers.clear();
     this.sessionEventHandlers.clear();
     this.subagentListHandlers.clear();
     this.resetCompactCompletionFallback();
@@ -897,7 +888,7 @@ export abstract class BaseAcpClient implements SessionClient {
     this.multiSessionHandlers.forEach((h) => h(sessionId, event));
   }
 
-  protected broadcastSessionEvent(event: any): void {
+  protected broadcastSessionEvent(event: SessionLifecycleEvent): void {
     this.sessionEventHandlers.forEach((h) => h(event));
   }
 
@@ -906,10 +897,6 @@ export abstract class BaseAcpClient implements SessionClient {
     pendingStages?: any[]
   ): void {
     this.subagentListHandlers.forEach((h) => h(subagents, pendingStages));
-  }
-
-  protected broadcastInbox(notification: any): void {
-    this.inboxHandlers.forEach((h) => h(notification));
   }
 
   // ── Shared ext notification handlers ──
@@ -935,9 +922,6 @@ export abstract class BaseAcpClient implements SessionClient {
     [EXT_METHODS.AGENT_CONFIG_ERROR]: (p) => this.handleAgentConfigError(p),
     [EXT_METHODS.RATE_LIMIT_ERROR]: (p) => this.handleRateLimitError(p),
     [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (p) => this.handleSubagentListUpdate(p),
-    [EXT_METHODS.SESSION_ACTIVITY]: (p) => this.handleSessionActivity(p),
-    [EXT_METHODS.SESSION_LIST_UPDATE]: (p) => this.handleSessionListUpdate(p),
-    [EXT_METHODS.INBOX_NOTIFICATION]: (p) => this.handleInboxNotification(p),
     [EXT_METHODS.AGENT_SWITCHED]: (p) => this.handleAgentSwitched(p),
     [EXT_METHODS.SESSION_UPDATE]: (p) => this.handleExtSessionUpdate(p),
     [EXT_METHODS.GOAL_STATUS]: (p) => this.handleGoalStatus(p),
@@ -1118,20 +1102,6 @@ export abstract class BaseAcpClient implements SessionClient {
       (params as any)?.subagents ?? [],
       (params as any)?.pendingStages ?? []
     );
-  }
-
-  private handleSessionActivity(params: Record<string, unknown>) {
-    const sessionId = (params as any)?.sessionId as string;
-    const event = (params as any)?.event as AgentStreamEvent;
-    if (sessionId && event) this.broadcastMultiSession(sessionId, event);
-  }
-
-  private handleSessionListUpdate(params: Record<string, unknown>) {
-    this.broadcastSubagentList((params as any)?.sessions ?? []);
-  }
-
-  private handleInboxNotification(params: Record<string, unknown>) {
-    this.broadcastInbox(params);
   }
 
   protected handleAgentSwitched(params: Record<string, unknown>) {

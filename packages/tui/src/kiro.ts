@@ -15,6 +15,7 @@ import {
   type SpecArtifactPathMatch,
 } from './utils/spec-artifact-path';
 import type { ProcessHealthSnapshot } from './utils/process-health-collector';
+import type { SessionLifecycleEvent } from './types/multi-session';
 import type {
   SessionClient,
   ListSessionsResponse,
@@ -58,11 +59,7 @@ export interface RepoProviderSource {
   ): Promise<SourceProviderResourcePage | undefined>;
 }
 
-type ClientSubscription =
-  | 'sessionEvent'
-  | 'multiSession'
-  | 'subagentList'
-  | 'inbox';
+type ClientSubscription = 'sessionEvent' | 'multiSession' | 'subagentList';
 
 /**
  * Stateless Kiro class that only manages session client lifecycle.
@@ -111,9 +108,8 @@ export class Kiro {
     subagents: any[],
     pendingStages?: any[]
   ) => void;
-  private sessionEventHandler?: (event: any) => void;
+  private sessionEventHandler?: (event: SessionLifecycleEvent) => void;
   private multiSessionHandler?: (sessionId: string, event: any) => void;
-  private inboxHandler?: (notification: any) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private initNotificationHandler?: (event: AgentStreamEvent) => void;
@@ -248,7 +244,7 @@ export class Kiro {
     }
   }
 
-  onSessionEvent(handler: (event: any) => void): void {
+  onSessionEvent(handler: (event: SessionLifecycleEvent) => void): void {
     this.sessionEventHandler = handler;
     const sessionClient = this.sessionClient;
     if (sessionClient?.onSessionEvent) {
@@ -264,16 +260,6 @@ export class Kiro {
     if (sessionClient?.onMultiSessionUpdate) {
       this.replaceClientSubscription('multiSession', () =>
         sessionClient.onMultiSessionUpdate!(handler)
-      );
-    }
-  }
-
-  onInboxNotification(handler: (notification: any) => void): void {
-    this.inboxHandler = handler;
-    const sessionClient = this.sessionClient;
-    if (sessionClient?.onInboxNotification) {
-      this.replaceClientSubscription('inbox', () =>
-        sessionClient.onInboxNotification!(handler)
       );
     }
   }
@@ -788,11 +774,6 @@ export class Kiro {
     if (this.subagentListHandler && sessionClient.onSubagentListUpdate) {
       this.replaceClientSubscription('subagentList', () =>
         sessionClient.onSubagentListUpdate!(this.subagentListHandler!)
-      );
-    }
-    if (this.inboxHandler && sessionClient.onInboxNotification) {
-      this.replaceClientSubscription('inbox', () =>
-        sessionClient.onInboxNotification!(this.inboxHandler!)
       );
     }
 

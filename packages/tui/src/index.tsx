@@ -566,7 +566,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
   });
 
   // Wire session events
-  kiro.onSessionEvent((event: any) => {
+  kiro.onSessionEvent((event) => {
     const state = appStore.getState();
     if (event.type === 'session_terminated') {
       state.updateSession(event.sessionId, {
@@ -617,11 +617,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
     resetSessionHandler: (sessionId: string) =>
       sessionHandlers.delete(sessionId),
   } as any);
-
-  // Wire inbox notifications — no alert, agent reads inbox automatically
-  kiro.onInboxNotification?.((notification: any) => {
-    logger.info('[tui] inbox notification:', notification);
-  });
 
   // Boot stages — visible above the per-MCP list while connecting. Each
   // flips loading → ready as the corresponding async step completes, so the

@@ -108,7 +108,7 @@ Spawn and coordinate multiple AI agents in a pipeline (DAG). Each stage runs as 
 persistent session. Stages with no depends_on start immediately in parallel.
 
 MODES:
-- background (not yet implemented): Fire-and-forget. Returns immediately, results arrive in inbox.
+- background (not yet implemented): Fire-and-forget. Returns immediately.
 - blocking (default): Waits for all stages to complete, returns consolidated results.
 
 USE THIS when you need multi-step work with specialized agents:

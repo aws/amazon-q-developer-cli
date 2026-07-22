@@ -4,7 +4,7 @@ import {
   type AgentStreamEvent,
   type KiroMeta,
 } from '../types/agent-events';
-import type { AgentSession } from '../types/multi-session.js';
+import type { SessionLifecycleEvent } from '../types/multi-session.js';
 
 export interface KasSubagentRoutingState {
   /** Maps every routed child tool call to its owning subtask. */
@@ -32,10 +32,6 @@ export interface KasSubagentRoutingState {
   pipelineStageSubtasks: Set<string>;
 }
 
-type KasRoutingSessionEvent =
-  | { type: 'session_created'; session: AgentSession }
-  | { type: 'session_terminated'; sessionId: string };
-
 export interface KasPipelineRoutingResult {
   subagents: Array<{
     sessionId: string;
@@ -56,10 +52,35 @@ export interface KasPipelineRoutingResult {
   }>;
 }
 
+/**
+ * Output sinks for KAS subagent routing. KAS streams every subagent's
+ * activity inline on the main session's wire connection; the routing logic
+ * classifies each event and uses exactly one of these sinks to re-broadcast
+ * it on the client channel where an equivalent V2 event would have arrived,
+ * so downstream stores and views stay engine-agnostic.
+ */
 export interface KasSubagentRoutingEmitter {
+  /**
+   * Main-transcript stream. Events emitted here render in the primary chat
+   * log, attributed to the main turn (used for subtask tool calls that
+   * should stay visible inline rather than behind a subagent session).
+   */
   emitMain: (event: AgentStreamEvent) => void;
+  /**
+   * Per-subagent stream, tagged with the owning subagent's session id.
+   * Delivers a stream event scoped to a single subagent session, for
+   * per-session buffering and rendering.
+   */
   emitMultiSession: (sessionId: string, event: AgentStreamEvent) => void;
-  emitSession: (event: KasRoutingSessionEvent) => void;
+  /**
+   * Subagent lifecycle (created/terminated). Drives incremental roster
+   * mutation: created adds a session row, terminated flips its status.
+   */
+  emitSession: (event: SessionLifecycleEvent) => void;
+  /**
+   * Crew roster snapshot: the complete set of live pipeline subagents plus
+   * not-yet-spawned stages. Replace-on-arrival, not a delta.
+   */
   emitSubagentList: (
     subagents: KasPipelineRoutingResult['subagents'],
     pendingStages: KasPipelineRoutingResult['pendingStages']

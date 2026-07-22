@@ -23,7 +23,6 @@ export enum IconType {
   SPARKLE = 'sparkle',
   PENCIL = 'pencil',
   WRENCH = 'wrench',
-  MAIL = 'mail',
   PAUSE = 'pause',
   LOOP = 'loop',
 }
@@ -60,7 +59,6 @@ export const Icon = ({ type, color }: IconProps) => {
       [IconType.SPARKLE]: glyphs.sparkle,
       [IconType.PENCIL]: glyphs.pencil,
       [IconType.WRENCH]: glyphs.wrench,
-      [IconType.MAIL]: glyphs.mail,
       [IconType.PAUSE]: glyphs.pause,
       [IconType.LOOP]: glyphs.loop,
     }),

@@ -3053,29 +3053,6 @@ impl AcpSession {
                     let _ = respond_to.respond(PromptResponse::new(StopReason::EndTurn));
                 }
             },
-            AgentEvent::SubagentSummary(summary) => {
-                if self.is_subagent {
-                    let session_tx = self.session_tx.clone();
-                    let session_id = self.session_id.clone();
-                    let task_result = summary.task_result.clone();
-                    let task_desc = summary.task_description.clone();
-                    let ctx_summary = summary.context_summary.clone();
-                    tokio::spawn(async move {
-                        if let Some(orch) = session_tx.get_orchestrated_session_by_id(&session_id).await
-                            && let Some(parent_sid) = orch.parent_session
-                        {
-                            let result_text = format!(
-                                "Task: {}\n\n{}\n\n{}",
-                                task_desc,
-                                ctx_summary.as_deref().unwrap_or(""),
-                                task_result
-                            );
-                            let msg = format!("[Results from {}]\n\n{}", orch.name, result_text);
-                            let _ = session_tx.deliver_subagent_result(&parent_sid, &msg).await;
-                        }
-                    });
-                }
-            },
             AgentEvent::SteeringQueued { message_id, content } => {
                 let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
                     session_id: self.session_id.clone(),

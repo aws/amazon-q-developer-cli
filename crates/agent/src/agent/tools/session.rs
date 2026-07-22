@@ -1,8 +1,7 @@
 //! Session management tool for agent-to-agent orchestration.
 //!
-//! This tool allows agents to spawn persistent sessions, send messages,
-//! read their inbox, and manage session groups. The actual session
-//! operations are handled by the ACP layer.
+//! This tool allows agents to spawn persistent sessions and manage session
+//! groups. The actual session operations are handled by the ACP layer.
 
 use std::sync::Arc;
 
@@ -27,15 +26,6 @@ use super::{
 use crate::agent_config::parse::CanonicalToolName;
 use crate::protocol::AgentEvent;
 
-/// Priority level for inter-session messages.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum MessagePriority {
-    #[default]
-    Normal,
-    Escalation,
-}
-
 /// Filter for listing sessions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -55,7 +45,6 @@ pub enum GroupAction {
     Add,
     Remove,
     List,
-    Broadcast,
 }
 
 /// Session management tool — all orchestration operations.
@@ -81,23 +70,6 @@ pub enum SessionTool {
         /// task (ephemeral worker).
         #[serde(default)]
         persistent: Option<bool>,
-    },
-    /// Send a message to another session's inbox
-    SendMessage {
-        /// Target session ID or name (omit for escalation auto-route to parent)
-        #[serde(default)]
-        target: Option<String>,
-        /// Message content
-        message: String,
-        /// Priority: normal (default) or escalation
-        #[serde(default)]
-        priority: MessagePriority,
-    },
-    /// Read messages from this session's inbox
-    ReadMessages {
-        /// Max messages to return (default 5)
-        #[serde(default = "default_read_limit")]
-        limit: usize,
     },
     /// List all active sessions
     ListSessions {
@@ -140,9 +112,6 @@ pub enum SessionTool {
         /// Role within group (for add)
         #[serde(default)]
         role: Option<String>,
-        /// Message content (for broadcast)
-        #[serde(default)]
-        message: Option<String>,
     },
     /// Revive a terminated session with a new task (keeps same name/group)
     ReviveSession {
@@ -163,10 +132,6 @@ pub enum SessionTool {
         /// Group name to wait for completion
         group: String,
     },
-}
-
-fn default_read_limit() -> usize {
-    5
 }
 
 /// Response from session tool execution.
@@ -205,13 +170,11 @@ pub struct SessionToolRequest {
 }
 
 const TOOL_DESCRIPTION: &str = r#"
-Manage persistent agent sessions for orchestration. Sessions are long-lived agents
-that communicate via inbox messaging, unlike subagents which are ephemeral.
+Manage persistent agent sessions for orchestration. Sessions are long-lived agents,
+unlike subagents which are ephemeral.
 
 COMMANDS:
 - spawn_session: Create a new persistent session with any agent config
-- send_message: Send a message to another session's inbox
-- read_messages: Read messages from your inbox
 - list_sessions: List all active sessions
 - get_session_status: Get detailed status of a session
 - interrupt: Cancel a session's current work and redirect it
@@ -222,19 +185,15 @@ COMMANDS:
 WHEN TO USE:
 - Use spawn_session for complex, multi-step tasks (code reviews, refactoring, research)
 - Handle simple tasks yourself — only spawn sessions when the work genuinely benefits from delegation
-- Use send_message for async communication between sessions
-- Use read_messages when your system prompt shows unread messages — results arrive automatically
 - Use interrupt to redirect a session that's going off track
 - Use revive_session to re-spawn a terminated worker with a new task
 
 HOW RESULTS ARRIVE:
-- Workers deliver results to your inbox automatically when they finish
-- Your system prompt shows unread message counts — use read_messages when you see them
+- Worker results are consolidated and returned when the group completes
 - For checking on a specific worker, use get_session_status
 
 NOTES:
 - Sessions persist and maintain full conversation history
-- Messages appear in the target's system prompt as unread count
 - Use use_subagent for one-off tasks; use sessions for ongoing collaboration
 "#;
 
@@ -246,8 +205,6 @@ const TOOL_SCHEMA: &str = r#"
       "type": "string",
       "enum": [
         "spawn_session",
-        "send_message",
-        "read_messages",
         "list_sessions",
         "get_session_status",
         "interrupt",
@@ -275,20 +232,11 @@ const TOOL_SCHEMA: &str = r#"
     },
     "target": {
       "type": "string",
-      "description": "Target session ID or name for send_message, get_session_status, interrupt, inject_context, manage_group add/remove. Omit for escalation auto-route to parent."
+      "description": "Target session ID or name for get_session_status, interrupt, inject_context, manage_group add/remove."
     },
     "message": {
       "type": "string",
-      "description": "Message content for send_message, interrupt, or manage_group broadcast"
-    },
-    "priority": {
-      "type": "string",
-      "enum": ["normal", "escalation"],
-      "description": "Message priority for send_message. 'escalation' auto-routes to parent if no target specified."
-    },
-    "limit": {
-      "type": "integer",
-      "description": "Max messages to return for read_messages (default 5)"
+      "description": "Message content for interrupt"
     },
     "filter": {
       "type": "string",
@@ -305,7 +253,7 @@ const TOOL_SCHEMA: &str = r#"
     },
     "action": {
       "type": "string",
-      "enum": ["create", "add", "remove", "list", "broadcast"],
+      "enum": ["create", "add", "remove", "list"],
       "description": "Action for manage_group"
     },
     "group": {
@@ -384,40 +332,11 @@ mod tests {
     }
 
     #[test]
-    fn test_session_tool_serialize_send_message() {
-        let tool = SessionTool::SendMessage {
-            target: Some("session-1".to_string()),
-            message: "hello".to_string(),
-            priority: MessagePriority::Normal,
-        };
-        let json = serde_json::to_string(&tool).unwrap();
-        assert!(json.contains(r#""command":"send_message""#));
-        assert!(json.contains(r#""target":"session-1""#));
-        assert!(json.contains(r#""message":"hello""#));
-    }
-
-    #[test]
-    fn test_session_tool_serialize_read_messages() {
-        let tool = SessionTool::ReadMessages { limit: 5 };
-        let json = serde_json::to_string(&tool).unwrap();
-        assert!(json.contains(r#""command":"read_messages""#));
-        assert!(json.contains(r#""limit":5"#));
-    }
-
-    #[test]
     fn test_session_tool_deserialize_spawn() {
         let json = r#"{"command":"spawn_session","agent_name":"test","task":"work"}"#;
         let tool: SessionTool = serde_json::from_str(json).unwrap();
         assert!(matches!(tool, SessionTool::SpawnSession { agent_name, task, .. } 
             if agent_name == "test" && task == "work"));
-    }
-
-    #[test]
-    fn test_session_tool_deserialize_send_message() {
-        let json = r#"{"command":"send_message","target":"s1","message":"hi"}"#;
-        let tool: SessionTool = serde_json::from_str(json).unwrap();
-        assert!(matches!(tool, SessionTool::SendMessage { target: Some(t), message, .. }
-            if t == "s1" && message == "hi"));
     }
 
     #[test]
@@ -430,26 +349,6 @@ mod tests {
     #[test]
     fn test_session_tool_name() {
         assert_eq!(SessionTool::name(), BuiltInToolName::SessionManagement);
-    }
-
-    #[test]
-    fn test_default_read_limit() {
-        assert_eq!(default_read_limit(), 5);
-    }
-
-    #[test]
-    fn test_message_priority_default() {
-        let p = MessagePriority::default();
-        assert_eq!(p, MessagePriority::Normal);
-    }
-
-    #[test]
-    fn test_message_priority_serde() {
-        for p in [MessagePriority::Normal, MessagePriority::Escalation] {
-            let json = serde_json::to_string(&p).unwrap();
-            let parsed: MessagePriority = serde_json::from_str(&json).unwrap();
-            assert_eq!(p, parsed);
-        }
     }
 
     #[test]
@@ -474,7 +373,6 @@ mod tests {
             GroupAction::Add,
             GroupAction::Remove,
             GroupAction::List,
-            GroupAction::Broadcast,
         ] {
             let json = serde_json::to_string(&a).unwrap();
             let parsed: GroupAction = serde_json::from_str(&json).unwrap();
@@ -554,12 +452,6 @@ mod tests {
                 group: Some("g".into()),
                 persistent: Some(true),
             },
-            SessionTool::SendMessage {
-                target: None,
-                message: "m".into(),
-                priority: MessagePriority::Escalation,
-            },
-            SessionTool::ReadMessages { limit: 10 },
             SessionTool::ListSessions {
                 filter: Some(SessionFilter::Busy),
             },
@@ -576,11 +468,10 @@ mod tests {
                 context: "c".into(),
             },
             SessionTool::ManageGroup {
-                action: GroupAction::Broadcast,
+                action: GroupAction::Add,
                 group: Some("g".into()),
                 target: Some("t".into()),
                 role: Some("r".into()),
-                message: Some("m".into()),
             },
             SessionTool::ReviveSession {
                 target: "t".into(),
@@ -635,7 +526,7 @@ mod tests {
     async fn test_execute_channel_closed() {
         let (event_tx, _rx) = broadcast::channel::<AgentEvent>(1);
         drop(_rx);
-        let tool = SessionTool::ReadMessages { limit: 5 };
+        let tool = SessionTool::ListSessions { filter: None };
         let result = tool.execute(event_tx).await;
         assert!(result.is_err());
     }
@@ -643,7 +534,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_response_dropped() {
         let (event_tx, mut event_rx) = broadcast::channel::<AgentEvent>(1);
-        let tool = SessionTool::ReadMessages { limit: 5 };
+        let tool = SessionTool::ListSessions { filter: None };
 
         let handle = tokio::spawn(async move { tool.execute(event_tx).await });
 
@@ -699,10 +590,10 @@ mod tests {
     #[test]
     fn test_session_tool_request_debug() {
         let req = SessionToolRequest {
-            request: SessionTool::ReadMessages { limit: 5 },
+            request: SessionTool::ListSessions { filter: None },
             response_tx: SessionResponseSender::default(),
         };
         let debug = format!("{:?}", req);
-        assert!(debug.contains("ReadMessages"));
+        assert!(debug.contains("ListSessions"));
     }
 }

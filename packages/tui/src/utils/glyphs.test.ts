@@ -42,7 +42,6 @@ describe('Glyph registry', () => {
       'treeCorner', // └──
       'treeBranch', // ├──
       'wrench', // 🔧 astral emoji (JS length 2)
-      'mail', // 📧 astral emoji (JS length 2)
       'cloud', // ☁️ emoji-presentation (base + VS16, JS length 2)
     ]);
     for (const [key, value] of Object.entries(UNICODE_GLYPHS)) {
@@ -65,7 +64,6 @@ describe('Glyph registry', () => {
       'bar',
       'pencil',
       'wrench',
-      'mail',
     ] as const;
     for (const key of extended) {
       expect(UNICODE_GLYPHS[key]).toBeTruthy();

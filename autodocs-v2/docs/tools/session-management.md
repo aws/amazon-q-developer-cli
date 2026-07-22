@@ -1,23 +1,25 @@
 ---
 doc_meta:
   title: session-management
-  description: Agent-to-agent orchestration tool for spawning sessions, messaging, and group management
+  description: Agent-to-agent orchestration tool for spawning sessions, managing groups, and controlling lifecycle
   category: tool
-  keywords: [session, orchestration, spawn, message, group, agent, inbox, escalation]
+  keywords: [session, orchestration, spawn, group, agent, interrupt, revive, persistent]
   related: [subagent, summary]
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-07-22
+  commit: 9256b96f2
   status: validated
   testable_headless: true
 ---
 
 ## Overview
 
-The session management tool provides agent-to-agent orchestration capabilities within the ACP (Agent Communication Protocol) layer. It allows agents to spawn persistent sessions, send messages between sessions, read their inbox, manage session groups, and control session lifecycle.
+The session management tool provides agent-to-agent orchestration capabilities within the ACP (Agent Communication Protocol) layer. It allows agents to spawn persistent sessions, manage session groups, control session lifecycle, and coordinate multi-agent work.
 
 > This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally.
 
 This tool is used internally by the agent system for multi-session coordination. It is not included in the default tool set for regular agents.
+
+Sessions are long-lived agents, unlike subagents which are ephemeral. Worker results are consolidated and returned when the group completes.
 
 ## Usage
 
@@ -32,21 +34,7 @@ Spawn a new persistent session with an agent.
 - `name` (optional) — Friendly name (auto-assigned if omitted)
 - `role` (optional) — Role description
 - `group` (optional) — Group to add the session to
-- `persistent` (optional) — If true, session stays alive after task; if false, terminates after task
-
-### send_message
-
-Send a message to another session's inbox.
-
-- `target` (optional) — Target session ID or name. Omit for escalation auto-route to parent
-- `message` (required) — Message content
-- `priority` (optional) — `normal` (default) or `escalation`
-
-### read_messages
-
-Read messages from this session's inbox.
-
-- `limit` (optional) — Max messages to return (default: 5)
+- `persistent` (optional) — If true, session stays alive after task; if false (default), terminates after task
 
 ### list_sessions
 
@@ -79,11 +67,10 @@ Silently inject context into a session without triggering a turn.
 
 Manage session groups for coordinated work.
 
-- `action` (required) — One of: `create`, `add`, `remove`, `list`, `broadcast`
+- `action` (required) — One of: `create`, `add`, `remove`, `list`
 - `group` (optional) — Group name
 - `target` (optional) — Session ID or name (for add/remove)
 - `role` (optional) — Role within group (for add)
-- `message` (optional) — Message content (for broadcast)
 
 ### revive_session
 
@@ -106,17 +93,6 @@ Revive a terminated session with a new task, keeping the same name and group.
 }
 ```
 
-### Sending a message with escalation
-
-```json
-{
-  "command": "send_message",
-  "target": "auth-reviewer",
-  "message": "Found a critical issue in token validation, please prioritize",
-  "priority": "escalation"
-}
-```
-
 ### Listing active sessions
 
 ```json
@@ -126,14 +102,23 @@ Revive a terminated session with a new task, keeping the same name and group.
 }
 ```
 
-### Broadcasting to a group
+### Managing a group
 
 ```json
 {
   "command": "manage_group",
-  "action": "broadcast",
+  "action": "create",
+  "group": "review-team"
+}
+```
+
+```json
+{
+  "command": "manage_group",
+  "action": "add",
   "group": "review-team",
-  "message": "All reviews complete, please submit your summaries"
+  "target": "auth-reviewer",
+  "role": "security-specialist"
 }
 ```
 
@@ -147,6 +132,26 @@ Revive a terminated session with a new task, keeping the same name and group.
 }
 ```
 
+### Reviving a terminated session
+
+```json
+{
+  "command": "revive_session",
+  "target": "auth-reviewer",
+  "task": "Review the new changes pushed to the auth module"
+}
+```
+
+### Injecting context
+
+```json
+{
+  "command": "inject_context",
+  "target": "auth-reviewer",
+  "context": "The team has decided to use JWT tokens instead of session cookies"
+}
+```
+
 ## Troubleshooting
 
 ### Session not found
@@ -156,11 +161,10 @@ If a target session cannot be found:
 - The session may have already terminated — use `filter: "terminated"` to check
 - Use `revive_session` to restart a terminated session
 
-### Messages not received
+### Results not appearing
 
-- Messages are delivered to the target session's inbox asynchronously
-- Use `read_messages` to check the inbox
-- Escalation priority messages are auto-routed to the parent session if no target is specified
+- Worker results are consolidated and returned when the group completes
+- Use `get_session_status` to check on a specific worker's progress
 
 ### Tool not available
 

@@ -15,26 +15,19 @@ function readFile(relativePath: string): string {
 }
 
 describe('Interactive Session Chat Flow - Static Checks', () => {
-  it('Test 1: acp_agent.rs handles AgentEvent::SubagentSummary', () => {
+  it('acp_agent.rs handles AgentEvent::SubagentSummary', () => {
     const content = readFile('crates/chat-cli/src/agent/subagent.rs');
     expect(content).toContain('AgentEvent::SubagentSummary');
   });
 
-  it('Test 2: SessionViewScreen.tsx adds user messages to sessionConversationsStore', () => {
+  it('SessionViewScreen.tsx adds user messages to sessionConversationsStore', () => {
     const content = readFile(
       'packages/tui/src/components/layout/SessionViewScreen.tsx'
     );
     expect(content).toContain('sessionConversationsStore');
   });
 
-  it('Test 3: session_manager.rs has auto-wake logic in DeliverSubagentResult handler', () => {
-    const content = readFile(
-      'crates/chat-cli-v2/src/agent/acp/session_manager.rs'
-    );
-    expect(content).toContain('DeliverSubagentResult');
-  });
-
-  it('Test 4: handle_spawn_orchestrated checks persistent flag before terminate_session', () => {
+  it('handle_spawn_orchestrated checks persistent flag before terminate_session', () => {
     const content = readFile(
       'crates/chat-cli-v2/src/agent/acp/session_manager.rs'
     );
@@ -43,13 +36,13 @@ describe('Interactive Session Chat Flow - Static Checks', () => {
     expect(content).toContain('terminate_session');
   });
 
-  it('Test 5: AcpSessionHandle has wake_session method and AcpSessionRequest::Wake variant', () => {
+  it('AcpSessionHandle has wake_session method and AcpSessionRequest::Wake variant', () => {
     const content = readFile('crates/chat-cli-v2/src/agent/acp/acp_agent.rs');
     expect(content).toContain('wake_session');
     expect(content).toContain('AcpSessionRequest::Wake');
   });
 
-  it('Test 6: SessionViewScreen.tsx renders PromptBar with isProcessing prop', () => {
+  it('SessionViewScreen.tsx renders PromptBar with isProcessing prop', () => {
     const content = readFile(
       'packages/tui/src/components/layout/SessionViewScreen.tsx'
     );
@@ -57,7 +50,7 @@ describe('Interactive Session Chat Flow - Static Checks', () => {
     expect(content).toContain('isProcessing');
   });
 
-  it('Test 7: switchSession effect in effects.ts writes alt screen escape and sets session-view mode', () => {
+  it('switchSession effect in effects.ts writes alt screen escape and sets session-view mode', () => {
     const content = readFile('packages/tui/src/commands/effects.ts');
     expect(content).toContain('switchSession');
     expect(content).toContain('\\x1b[?1049h');

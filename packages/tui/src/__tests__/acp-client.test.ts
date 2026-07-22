@@ -158,27 +158,26 @@ describe('AcpClient', () => {
     const multiSession = mock(() => {});
     const sessionEvent = mock(() => {});
     const subagentList = mock(() => {});
-    const inbox = mock(() => {});
     client.onUpdate(update);
     client.onMultiSessionUpdate(multiSession);
     client.onSessionEvent(sessionEvent);
     client.onSubagentListUpdate(subagentList);
-    client.onInboxNotification(inbox);
 
     client.close();
     (client as any).broadcastStreamEvent({ type: AgentEventType.Content });
     (client as any).broadcastMultiSession('session-1', {
       type: AgentEventType.Content,
     });
-    (client as any).broadcastSessionEvent({});
+    (client as any).broadcastSessionEvent({
+      type: 'session_terminated',
+      sessionId: 'session-1',
+    });
     (client as any).broadcastSubagentList([], []);
-    (client as any).broadcastInbox({});
 
     expect(update).not.toHaveBeenCalled();
     expect(multiSession).not.toHaveBeenCalled();
     expect(sessionEvent).not.toHaveBeenCalled();
     expect(subagentList).not.toHaveBeenCalled();
-    expect(inbox).not.toHaveBeenCalled();
   });
 
   it('onUpdate registers a handler and returns unsubscribe function', () => {

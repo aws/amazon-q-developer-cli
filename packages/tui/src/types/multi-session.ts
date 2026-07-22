@@ -1,5 +1,3 @@
-import type { AgentStreamEvent } from './agent-events';
-
 import type { ExecutionTarget } from './session-client';
 
 export type SessionStatus =
@@ -65,29 +63,12 @@ export function isRemoteSession(
   return isCloudExecutionTargetKind(session?.executionTarget?.kind);
 }
 
-export interface InboxMessage {
-  id: string;
-  from: string;
-  to: string;
-  content: string;
-  timestamp: Date;
-  priority: 'normal' | 'escalation';
-  read: boolean;
-}
-
-export interface SessionEvent {
-  type: 'session_created' | 'session_terminated' | 'session_status_changed';
-  sessionId: string;
-  session: AgentSession;
-}
-
-export interface MessageEvent {
-  type: 'message_received' | 'message_sent';
-  sessionId: string;
-  message: InboxMessage;
-}
-
-export interface MultiAgentEvent {
-  sessionId: string;
-  event: AgentStreamEvent;
-}
+/**
+ * Subagent lifecycle event: `session_created` carries the full roster entry
+ * for a newly started subagent session; `session_terminated` carries only
+ * the ended session's id. Emitted on the v3 engine path only - the V2 engine
+ * conveys lifecycle implicitly through roster snapshots.
+ */
+export type SessionLifecycleEvent =
+  | { type: 'session_created'; session: AgentSession }
+  | { type: 'session_terminated'; sessionId: string };

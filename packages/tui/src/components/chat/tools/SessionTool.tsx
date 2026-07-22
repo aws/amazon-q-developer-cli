@@ -18,8 +18,6 @@ export interface SessionToolProps {
 /** Action labels: [in-progress, done] */
 const ACTION_LABELS: Record<string, [string, string]> = {
   spawn_session: ['Spawning agent', 'Spawned agent'],
-  send_message: ['Sending message', 'Sent message'],
-  read_messages: ['Reading inbox', 'Read inbox'],
   list_sessions: ['Listing sessions', 'Listed sessions'],
   get_session_status: ['Checking session', 'Checked session'],
   interrupt: ['Interrupting session', 'Interrupted session'],
@@ -87,20 +85,6 @@ export const SessionTool = React.memo(function SessionTool({
     }
   }, [content, isCrewTool]);
 
-  // For read_messages: show message count from result
-  const messageCount = useMemo(() => {
-    if (action !== 'read_messages' || !isFinished) return null;
-    try {
-      const parsed = JSON.parse(
-        result?.status === 'success' ? String(result.output ?? '{}') : '{}'
-      );
-      const msgs = parsed.messages as any[] | undefined;
-      return msgs?.length ?? null;
-    } catch {
-      return null;
-    }
-  }, [action, isFinished, result]);
-
   if (result?.status === 'error') {
     return (
       <Box flexDirection="column">
@@ -131,15 +115,6 @@ export const SessionTool = React.memo(function SessionTool({
         bold={isCrewTool}
         underline={isCrewTool}
       />
-      {isFinished && messageCount != null && (
-        <Box marginLeft={2}>
-          <Text>
-            {getColor('secondary')(
-              `${messageCount} message${messageCount !== 1 ? 's' : ''}`
-            )}
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 });

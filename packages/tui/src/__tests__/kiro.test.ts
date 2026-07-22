@@ -19,7 +19,6 @@ const mockUpdateHandlers = new Set<(event: AgentStreamEvent) => void>();
 const mockSessionEventUnsubscribe = mock(() => {});
 const mockMultiSessionUnsubscribe = mock(() => {});
 const mockSubagentListUnsubscribe = mock(() => {});
-const mockInboxUnsubscribe = mock(() => {});
 
 function broadcastMockUpdate(event: AgentStreamEvent): void {
   for (const handler of [...mockUpdateHandlers]) handler(event);
@@ -70,9 +69,6 @@ const mockSessionClient = {
       return mockSubagentListUnsubscribe;
     }
   ),
-  onInboxNotification: mock((_handler: (notification: any) => void) => {
-    return mockInboxUnsubscribe;
-  }),
   executeCommand: mock(() => Promise.resolve({ success: true, message: 'ok' })),
   getCommandOptions: mock(() => Promise.resolve({ options: [] })),
   setConfigOption: mock(() => Promise.resolve()),
@@ -106,7 +102,6 @@ const MockAcpClientClass = class MockAcpClient {
   onSessionEvent = mockSessionClient.onSessionEvent;
   onMultiSessionUpdate = mockSessionClient.onMultiSessionUpdate;
   onSubagentListUpdate = mockSessionClient.onSubagentListUpdate;
-  onInboxNotification = mockSessionClient.onInboxNotification;
   executeCommand = mockSessionClient.executeCommand;
   getCommandOptions = mockSessionClient.getCommandOptions;
   setConfigOption = mockSessionClient.setConfigOption;
@@ -156,11 +151,9 @@ describe('Kiro', () => {
     mockSessionClient.onSessionEvent.mockClear();
     mockSessionClient.onMultiSessionUpdate.mockClear();
     mockSessionClient.onSubagentListUpdate.mockClear();
-    mockSessionClient.onInboxNotification.mockClear();
     mockSessionEventUnsubscribe.mockClear();
     mockMultiSessionUnsubscribe.mockClear();
     mockSubagentListUnsubscribe.mockClear();
-    mockInboxUnsubscribe.mockClear();
     mockSessionClient.onSessionEvent.mockImplementation(
       () => mockSessionEventUnsubscribe
     );
@@ -169,9 +162,6 @@ describe('Kiro', () => {
     );
     mockSessionClient.onSubagentListUpdate.mockImplementation(
       () => mockSubagentListUnsubscribe
-    );
-    mockSessionClient.onInboxNotification.mockImplementation(
-      () => mockInboxUnsubscribe
     );
     mockSessionClient.executeCommand.mockClear();
     mockSessionClient.getCommandOptions.mockClear();
@@ -413,7 +403,6 @@ describe('Kiro', () => {
     kiro.onSessionEvent(() => {});
     kiro.onMultiSessionUpdate(() => {});
     kiro.onSubagentListUpdate(() => {});
-    kiro.onInboxNotification(() => {});
     await kiro.initialize('/path/to/agent');
     await kiro.createSession();
 
@@ -422,7 +411,6 @@ describe('Kiro', () => {
     expect(mockSessionEventUnsubscribe).toHaveBeenCalledTimes(1);
     expect(mockMultiSessionUnsubscribe).toHaveBeenCalledTimes(1);
     expect(mockSubagentListUnsubscribe).toHaveBeenCalledTimes(1);
-    expect(mockInboxUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it('unsubscribes a retained channel before registering its replacement', async () => {
@@ -1124,13 +1112,6 @@ describe('Kiro — session methods', () => {
     const kiro = new Kiro();
     const handler = mock(() => {});
     kiro.onSubagentListUpdate(handler);
-    expect(handler).not.toHaveBeenCalled();
-  });
-
-  it('onInboxNotification registers handler', async () => {
-    const kiro = new Kiro();
-    const handler = mock(() => {});
-    kiro.onInboxNotification(handler);
     expect(handler).not.toHaveBeenCalled();
   });
 });

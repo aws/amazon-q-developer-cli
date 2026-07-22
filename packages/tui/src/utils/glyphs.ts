@@ -50,7 +50,6 @@ export interface Glyphs {
   bar: string;
   pencil: string;
   wrench: string;
-  mail: string;
   emDash: string;
   cloud: string;
 }
@@ -112,7 +111,6 @@ export const UNICODE_GLYPHS: Glyphs = {
   bar: '█',
   pencil: '✎',
   wrench: '🔧',
-  mail: '📧',
   emDash: '—',
   cloud: '☁️',
 };
@@ -167,7 +165,6 @@ export const ASCII_GLYPHS: Glyphs = {
   bar: '#',
   pencil: 'e',
   wrench: 'T',
-  mail: 'M',
   emDash: '-',
   cloud: '*',
 };

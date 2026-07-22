@@ -1,12 +1,11 @@
 //! Handler for session management tool requests from the agent.
 //!
 //! Routes SessionToolRequest events to the SessionManager's orchestration
-//! infrastructure (inbox, permissions, naming, groups).
+//! infrastructure (permissions, naming, groups).
 
 use agent::AgentHandle;
 use agent::tools::session::{
     GroupAction,
-    MessagePriority,
     SessionFilter,
     SessionTool,
     SessionToolRequest,
@@ -58,22 +57,6 @@ pub async fn handle_session_tool_request(
             )
             .await
         },
-        SessionTool::SendMessage {
-            target,
-            message,
-            priority,
-        } => {
-            let is_escalation = *priority == MessagePriority::Escalation;
-            handle_send_message(
-                &session_tx,
-                &caller_session_id,
-                target.as_deref(),
-                message,
-                is_escalation,
-            )
-            .await
-        },
-        SessionTool::ReadMessages { limit } => handle_read_messages(&session_tx, &caller_session_id, *limit).await,
         SessionTool::ListSessions { filter } => handle_list_sessions(&session_tx, *filter).await,
         SessionTool::GetSessionStatus { target, verbose } => {
             handle_get_session_status(&session_tx, target, verbose.unwrap_or(false)).await
@@ -89,7 +72,6 @@ pub async fn handle_session_tool_request(
             group,
             target,
             role,
-            message,
         } => {
             handle_manage_group(
                 &session_tx,
@@ -98,7 +80,6 @@ pub async fn handle_session_tool_request(
                 group.as_deref(),
                 target.as_deref(),
                 role.as_deref(),
-                message.as_deref(),
             )
             .await
         },
@@ -177,58 +158,7 @@ async fn handle_spawn_session(
         "session_id": result.session_id,
         "name": result.name,
         "status": "spawned",
-        "next_step": "Tell the user what you started. Results arrive in your inbox automatically."
-    })
-    .to_string())
-}
-
-async fn handle_send_message(
-    session_tx: &SessionManagerHandle,
-    caller_session_id: &SessionId,
-    target: Option<&str>,
-    message: &str,
-    is_escalation: bool,
-) -> Result<String, String> {
-    info!(
-        from = %caller_session_id.to_string(),
-        to = ?target,
-        escalation = is_escalation,
-        "Sending inter-session message"
-    );
-
-    session_tx
-        .send_orchestration_message(caller_session_id, target, message, is_escalation)
-        .await
-        .map_err(|e| format!("{}", e))?;
-
-    Ok(serde_json::json!({"status": "delivered", "target": target, "escalation": is_escalation}).to_string())
-}
-
-async fn handle_read_messages(
-    session_tx: &SessionManagerHandle,
-    session_id: &SessionId,
-    limit: usize,
-) -> Result<String, String> {
-    let messages = session_tx
-        .read_orchestration_messages(session_id, limit)
-        .await
-        .map_err(|e| format!("{}", e))?;
-
-    let formatted: Vec<serde_json::Value> = messages
-        .iter()
-        .map(|m| {
-            serde_json::json!({
-                "from_name": m.from_name,
-                "from_session_id": m.from_session.to_string(),
-                "message": m.message,
-                "timestamp": format!("{:?}", m.timestamp),
-            })
-        })
-        .collect();
-
-    Ok(serde_json::json!({
-        "messages": formatted,
-        "count": messages.len(),
+        "next_step": "Tell the user what you started. Results are consolidated and returned when the group completes."
     })
     .to_string())
 }
@@ -347,10 +277,9 @@ async fn handle_manage_group(
     group: Option<&str>,
     target: Option<&str>,
     role: Option<&str>,
-    message: Option<&str>,
 ) -> Result<String, String> {
     session_tx
-        .manage_orchestration_group(caller_session_id, action, group, target, role, message)
+        .manage_orchestration_group(caller_session_id, action, group, target, role)
         .await
         .map_err(|e| format!("{}", e))
 }

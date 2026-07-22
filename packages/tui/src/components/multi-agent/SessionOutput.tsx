@@ -14,38 +14,17 @@ import { Text } from '../ui/text/Text';
 import { getAgentColor } from '../../utils/agentColors';
 import { useTheme } from '../../hooks/useThemeContext';
 import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
-import { Icon, IconType } from '../ui/icon/index.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
-import type { AgentSession, InboxMessage } from '../../types/multi-session';
+import type { AgentSession } from '../../types/multi-session';
 import type { AgentStreamEvent } from '../../types/agent-events';
 
 export interface SessionOutputProps {
   sessionId: string;
   session?: AgentSession;
-  messages: InboxMessage[];
   events?: AgentStreamEvent[];
   width?: number;
   height?: number;
 }
-
-const NudgeMessage = React.memo(function NudgeMessage({
-  message,
-}: {
-  message: InboxMessage;
-}) {
-  const { getColor: _getColor } = useTheme();
-
-  return (
-    <Box paddingX={1} marginY={1}>
-      <StatusBar status="info">
-        <Text>
-          <Icon type={IconType.MAIL} /> Message from {message.from}:{' '}
-          {message.content}
-        </Text>
-      </StatusBar>
-    </Box>
-  );
-});
 
 const _SystemMessage = React.memo(function _SystemMessage({
   message,
@@ -267,7 +246,6 @@ const SessionHeader = React.memo(function SessionHeader({
 export const SessionOutput = React.memo(function SessionOutput({
   sessionId,
   session,
-  messages,
   events: _events = [],
   width,
   height = 20,
@@ -341,9 +319,6 @@ export const SessionOutput = React.memo(function SessionOutput({
               agentBarColor={agentBarColor}
               isProcessing={isProcessing && i === turns.length - 1}
             />
-          ))}
-          {messages.map((m) => (
-            <NudgeMessage key={m.id} message={m} />
           ))}
           {session.status === 'terminated' && session.summary && (
             <Box paddingX={1} marginTop={1}>
