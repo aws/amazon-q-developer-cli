@@ -14,7 +14,7 @@ import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { hyperlink } from '../../utils/terminal-capabilities.js';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 import { visibleWidth } from '../../utils/text-width.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import {

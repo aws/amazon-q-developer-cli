@@ -203,6 +203,10 @@ pub mod env_var {
         /// also set it directly to test version-gated features.
         KIRO_VERSION_OVERRIDE = "KIRO_VERSION_OVERRIDE",
 
+        /// Terminal color level for the TUI child, kept on a private variable
+        /// so the tools the TUI spawns do not inherit a forced color level.
+        KIRO_TUI_FORCE_COLOR = "KIRO_TUI_FORCE_COLOR",
+
         /// Path to the KAS ACP server JS entrypoint (`acp-server.js`).
         /// Set in two scenarios:
         ///   * The launcher always sets this on the TUI child to forward

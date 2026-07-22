@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Box } from './../../renderer.js';
 import { Text } from './text/Text.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 
 interface SurveyPromptBarProps {
   message: string;

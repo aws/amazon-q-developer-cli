@@ -15,7 +15,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from '../../utils/text-width.js';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 import { sanitizeSessionTitleForDisplay } from '../../utils/sanitize-title.js';
 import { formatRelativeTimeShort } from '../../utils/sessions.js';
 import { CLOUD_SESSIONS_URL } from '../../utils/cloud-urls.js';

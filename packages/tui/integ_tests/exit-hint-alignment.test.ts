@@ -33,9 +33,14 @@ describe('Exit hint alignment', () => {
     const trimmedStart = exitLine!.search(/\S/);
     expect(trimmedStart).toBeLessThan(5);
 
-    // The /copy hint should NOT be visible when exit hint is showing
-    const fullScreen = snapshot.join('\n');
-    expect(fullScreen).not.toContain('/copy');
+    // The /copy hint should NOT be visible when exit hint is showing.
+    // Only check below the banner divider: the footer hint is what's under
+    // test, and the randomly-picked startup tip above the divider may itself
+    // mention /copy.
+    const dividerIdx = snapshot.findLastIndex((line) => line.includes('────'));
+    expect(dividerIdx).toBeGreaterThanOrEqual(0);
+    const belowBanner = snapshot.slice(dividerIdx).join('\n');
+    expect(belowBanner).not.toContain('/copy');
 
     // Clean exit
     await testCase.pressCtrlC();

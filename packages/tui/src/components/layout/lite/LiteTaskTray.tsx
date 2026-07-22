@@ -11,7 +11,7 @@ import { wrapAtWords } from '../../../lite/render.js';
 import { getVerboseDisplay } from '../../../lite/verbose.js';
 import { visibleWidth } from '../../../utils/text-width.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 const MAX_VISIBLE_LINES = 6;
 

@@ -9,7 +9,7 @@
  * "why" of the redesign. This file owns the *what*: phase priority and
  * row formatting.
  */
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 export interface BootProgressEntry {
   label: string;

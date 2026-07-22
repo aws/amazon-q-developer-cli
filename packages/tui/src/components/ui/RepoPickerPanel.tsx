@@ -12,7 +12,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from '../../utils/text-width.js';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import {
   filterRepoResources,

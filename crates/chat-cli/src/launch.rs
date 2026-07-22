@@ -39,6 +39,7 @@ use crate::util::consts::env_var::{
     KIRO_KAS_NODE_PATH,
     KIRO_KAS_SERVER_PATH,
     KIRO_TELEMETRY_CLIENT_ID,
+    KIRO_TUI_FORCE_COLOR,
     KIRO_VERSION_OVERRIDE,
 };
 use crate::util::launch_spinner::start_launch_spinner;
@@ -205,10 +206,10 @@ fn should_emit_launch_error_completion(result: &Result<ExitCode>, completion_emi
     result.is_err() && !completion_emitted
 }
 
-/// Determine the `FORCE_COLOR` value to pass to the bun/chalk process.
+/// Determine the color level for the TUI process.
 ///
 /// Returns `None` when color should not be forced (i.e. `NO_COLOR` is set),
-/// otherwise returns the appropriate chalk color level:
+/// otherwise returns the color level:
 /// - User's explicit `FORCE_COLOR` value if already set
 /// - `"3"` (truecolor) when `COLORTERM` is `truecolor` or `24bit`
 /// - `"3"` (truecolor) when a known truecolor-capable terminal is detected by identity
@@ -253,8 +254,13 @@ fn resolve_force_color(
 ///
 /// The caller resolves the version override and effective telemetry identity so
 /// this helper stays free of process-env reads and is testable with explicit inputs.
-fn tui_child_env(current_exe: &Path, version: OsString, telemetry_client_id: Uuid) -> Vec<(&'static str, OsString)> {
-    vec![
+fn tui_child_env(
+    current_exe: &Path,
+    version: OsString,
+    telemetry_client_id: Uuid,
+    force_color: Option<String>,
+) -> Vec<(&'static str, OsString)> {
+    let mut env = vec![
         // Path to chat_cli itself, so the TUI can invoke its headless
         // `chat _ export-session` / `chat _ import-session` subcommands for
         // /chat save and /chat load, so V2 spawns the ACP child from this
@@ -274,7 +280,13 @@ fn tui_child_env(current_exe: &Path, version: OsString, telemetry_client_id: Uui
             KIRO_TELEMETRY_CLIENT_ID,
             telemetry_client_id.hyphenated().to_string().into(),
         ),
-    ]
+    ];
+    // Kept on a private variable, not FORCE_COLOR: the TUI forwards its env to
+    // the tools it spawns, which must not inherit a forced color level.
+    if let Some(force_color) = force_color {
+        env.push((KIRO_TUI_FORCE_COLOR, force_color.into()));
+    }
+    env
 }
 
 /// The launcher owns the effective OTLP endpoint: it honors a non-empty parent
@@ -365,7 +377,7 @@ async fn launch_acp_interactive(
     // it; fall back to the crate's compile-time version when unset.
     let version_override =
         std::env::var_os(KIRO_VERSION_OVERRIDE).unwrap_or_else(|| OsString::from(env!("CARGO_PKG_VERSION")));
-    for (key, value) in tui_child_env(&current_exe, version_override, os.telemetry.client_id()) {
+    for (key, value) in tui_child_env(&current_exe, version_override, os.telemetry.client_id(), force_color) {
         cmd.env(key, value);
     }
 
@@ -406,10 +418,6 @@ async fn launch_acp_interactive(
         "KIRO_ENABLED_FEATURES",
         serde_json::to_string(&crate::rollout::rollout().enabled_features()).unwrap_or_default(),
     );
-
-    if let Some(ref force_color) = force_color {
-        cmd.env("FORCE_COLOR", force_color);
-    }
 
     // Resolve telemetry identity for the TUI
     let telemetry_enabled = !crate::util::env_var::is_telemetry_disabled()
@@ -862,6 +870,7 @@ mod tests {
             exe,
             OsString::from(env!("CARGO_PKG_VERSION")),
             uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            None,
         );
         let version = env
             .iter()
@@ -885,6 +894,7 @@ mod tests {
             exe,
             OsString::from("7.7.7-test"),
             uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            None,
         );
         let version = env
             .iter()
@@ -901,13 +911,51 @@ mod tests {
     fn test_tui_child_env_forwards_telemetry_client_id() {
         let exe = Path::new("/tmp/kiro-cli");
         let client_id = uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e");
-        let env = tui_child_env(exe, OsString::from("7.7.7-test"), client_id);
+        let env = tui_child_env(exe, OsString::from("7.7.7-test"), client_id, None);
         let forwarded = env
             .iter()
             .find(|(key, _)| *key == KIRO_TELEMETRY_CLIENT_ID)
             .map(|(_, value)| value.clone());
 
         assert_eq!(forwarded, Some(OsString::from("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e")));
+    }
+
+    #[test]
+    fn test_tui_child_env_uses_private_force_color_var() {
+        // The color level must ride on a private variable so the tools the TUI
+        // spawns do not inherit a forced color level via FORCE_COLOR.
+        let exe = Path::new("/tmp/kiro-cli");
+        let env = tui_child_env(
+            exe,
+            OsString::from("7.7.7-test"),
+            uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            Some("3".to_string()),
+        );
+        let forwarded = env
+            .iter()
+            .find(|(key, _)| *key == KIRO_TUI_FORCE_COLOR)
+            .map(|(_, value)| value.clone());
+        assert_eq!(forwarded, Some(OsString::from("3")));
+        assert!(
+            env.iter().all(|(key, _)| *key != "FORCE_COLOR"),
+            "TUI child env must never set FORCE_COLOR"
+        );
+    }
+
+    #[test]
+    fn test_tui_child_env_omits_color_var_when_unresolved() {
+        let exe = Path::new("/tmp/kiro-cli");
+        let env = tui_child_env(
+            exe,
+            OsString::from("7.7.7-test"),
+            uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            None,
+        );
+        assert!(
+            env.iter()
+                .all(|(key, _)| *key != KIRO_TUI_FORCE_COLOR && *key != "FORCE_COLOR"),
+            "no color variable should be set when color is not forced"
+        );
     }
 
     #[test]

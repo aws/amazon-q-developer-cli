@@ -24,7 +24,7 @@ import {
   toolDisplayName,
 } from '../../../lite/render.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 export const WRITE_TOOL_NAMES = new Set([
   'fs_write',

@@ -90,7 +90,7 @@ import {
 } from './subagent-summaries.js';
 import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 import { BackendPanels } from '../shared/BackendPanels.js';
 import { SourceProviderGate } from '../../ui/SourceProviderGate.js';
 import { openUrlInBrowser } from '../../../utils/browser.js';

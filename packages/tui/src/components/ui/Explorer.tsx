@@ -12,7 +12,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from '../../utils/text-width.js';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 
 /**
  * Clamp `lines` to at most `max` rows. When they overflow, keep the head and

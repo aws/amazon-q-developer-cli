@@ -1,4 +1,4 @@
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 export interface CloudStartupChecklistState {
   connected: boolean;

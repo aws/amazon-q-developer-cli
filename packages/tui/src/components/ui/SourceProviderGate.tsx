@@ -10,7 +10,7 @@ import { Text } from './text/Text.js';
 import { Spinner } from './spinner/Spinner.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../utils/cloud-urls.js';
 import { isRemoteEnvironment } from '../../utils/browser.js';
 

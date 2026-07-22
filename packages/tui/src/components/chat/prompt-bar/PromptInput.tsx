@@ -13,7 +13,7 @@ import { useGlyphs, useAllowAsciiArt } from '../../../hooks/useGlyphs.js';
 import { getBarRamp } from '../../../utils/glyphs.js';
 import { Text } from '../../ui/text/Text.js';
 import { useAppStore } from '../../../stores/app-store.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
 import {

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 import { renderAgentMessage } from '../render.js';
 import stripAnsi from 'strip-ansi';
 

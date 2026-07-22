@@ -34,7 +34,7 @@ import {
   useAllowAsciiArt,
 } from '../../../hooks/useGlyphs.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 // Lite pacman frames (Unicode only). ASCII mode falls back to quarterSpinner.
 const PACMAN_SPINNER_FRAMES: readonly string[] = [

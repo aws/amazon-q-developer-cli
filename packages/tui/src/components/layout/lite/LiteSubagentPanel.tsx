@@ -20,7 +20,7 @@ import { getAgentColor } from '../../../utils/agentColors.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { needsLeadingBlank } from './static-flush.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 interface LiteSubagentPanelProps {
   sessionId: string;

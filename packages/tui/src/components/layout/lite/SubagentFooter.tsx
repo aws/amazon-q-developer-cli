@@ -1,4 +1,4 @@
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 import { UNICODE_GLYPHS, type Glyphs } from '../../../utils/glyphs.js';
 import { extractInlineArg } from '../../../lite/render.js';
 

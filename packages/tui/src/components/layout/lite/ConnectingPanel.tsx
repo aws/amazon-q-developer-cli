@@ -2,7 +2,7 @@ import {
   getAgentColor,
   getAgentDisplayName,
 } from '../../../utils/agentColors.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 // Footer indicator while an `/agent` RPC is in flight. Spinner + the target
 // agent's name in its color — no extra label; the spinner-next-to-the-name

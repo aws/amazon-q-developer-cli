@@ -30,7 +30,23 @@ export default tseslint.config(
         paths: [{
           name: 'supports-color',
           message: 'Use { supportsColor } from "chalk" instead to stay in sync with chalk\'s detection.',
+        }, {
+          name: 'chalk',
+          message: 'Import the shared { chalk } instance from utils/color instead, so the color level stays consistent across modules and FORCE_COLOR is never mutated.',
         }],
+        patterns: ['chalk/*'],
+      }],
+    },
+  },
+  {
+    files: ['src/utils/color.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'supports-color',
+          message: 'Use { supportsColor } from "chalk" instead to stay in sync with chalk\'s detection.',
+        }],
+        patterns: ['chalk/*'],
       }],
     },
   },

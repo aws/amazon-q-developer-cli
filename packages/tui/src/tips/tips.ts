@@ -1,7 +1,7 @@
 // One tip is shown per launch below the KIRO banner. Ephemeral in the TUI,
 // baked into the banner in Lite. Pure module: callers build a TipContext and
 // call pickTip; selection is stateless and random per launch (seed rng in tests).
-import chalk from 'chalk';
+import { chalk } from '../utils/color.js';
 
 import type { AgentEngine } from '../agent-engine.js';
 import { getActiveGlyphs } from '../hooks/useGlyphs.js';

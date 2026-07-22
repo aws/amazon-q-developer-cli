@@ -1,5 +1,5 @@
 import React from 'react';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 import { Box, Text } from '../../../renderer.js';
 import {
   useAllowIcons,

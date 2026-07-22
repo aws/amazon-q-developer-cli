@@ -9,7 +9,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import chalk from 'chalk';
+import { chalk } from '../utils/color.js';
 import type { TerminalColor } from '../types/themeTypes.js';
 import { getTerminalChalkColor } from '../utils/colorUtils.js';
 import { kiroHomePath } from '../utils/kiro-home.js';

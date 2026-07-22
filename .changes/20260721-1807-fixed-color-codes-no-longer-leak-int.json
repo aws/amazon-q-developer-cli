@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Color codes no longer leak into tool subprocess output when the TUI forces color detection"
+}

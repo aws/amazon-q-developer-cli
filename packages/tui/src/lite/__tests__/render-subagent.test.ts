@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterAll } from 'vitest';
-import chalk from 'chalk';
+import { chalk } from '../../utils/color.js';
 import {
   formatSubagentApprovalLines,
   renderSubagentFinalBlock,

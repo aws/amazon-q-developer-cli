@@ -20,7 +20,7 @@ import {
   truncateToWidth,
   padToWidth,
 } from '../../../utils/text-width.js';
-import chalk from 'chalk';
+import { chalk } from '../../../utils/color.js';
 
 export interface MenuItem {
   label: string;

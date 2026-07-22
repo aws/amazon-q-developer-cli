@@ -1,7 +1,6 @@
 import './setup-chalk-level.js';
 
 import { describe, test, it, expect, beforeEach, afterAll } from 'vitest';
-import chalk from 'chalk';
 import {
   renderToolCall,
   renderMessageToText,

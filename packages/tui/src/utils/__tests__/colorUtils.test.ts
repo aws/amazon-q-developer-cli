@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import chalk from 'chalk';
+import { chalk } from '../color.js';
 import {
   getTerminalChalkColor,
   getStatusColor,

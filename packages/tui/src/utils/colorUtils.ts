@@ -1,4 +1,4 @@
-import chalk, { Chalk, supportsColor } from 'chalk';
+import { chalk } from './color.js';
 import type { ChalkColorName, TerminalColor } from '../types/themeTypes.js';
 import type { StatusType } from '../types/componentTypes.js';
 
@@ -48,10 +48,9 @@ export const getTerminalChalkColor = (
   // with no color applied — it supports .bold/.italic chaining without
   // emitting color reset codes.
   if (named === 'default') {
-    const baseChalk = new Chalk();
     const colorWrapper = (text: string) => text;
     colorWrapper.hex = 'inherit';
-    Object.setPrototypeOf(colorWrapper, baseChalk);
+    Object.setPrototypeOf(colorWrapper, chalk);
     return colorWrapper;
   }
 
@@ -72,23 +71,15 @@ export const getTerminalChalkColor = (
     return (chalk as any)[key] || chalk;
   };
 
-  // For hex value, use the appropriate color based on terminal capabilities
-  const stdout = supportsColor;
+  // Capability follows the shared instance's resolved color level.
+  const has16m = chalk.level >= 3;
+  const has256 = chalk.level >= 2;
+  const hasColor = chalk.level >= 1;
 
-  if (
-    stdout &&
-    typeof stdout === 'object' &&
-    'has16m' in stdout &&
-    stdout.has16m
-  ) {
+  if (has16m) {
     // Truecolor terminal - use truecolor hex
     resolvedHex = truecolor || (named && namedColorToHex[named]) || '#000000';
-  } else if (
-    stdout &&
-    typeof stdout === 'object' &&
-    'has256' in stdout &&
-    stdout.has256
-  ) {
+  } else if (has256) {
     // 256-color terminal - pass ansi256(N) format to preserve the original
     // color index and avoid double-conversion through hex approximation
     resolvedHex =
@@ -104,12 +95,7 @@ export const getTerminalChalkColor = (
   // Create chalk function based on terminal capabilities
 
   // Prefer truecolor (16 million colors) if terminal supports it
-  if (
-    stdout &&
-    typeof stdout === 'object' &&
-    'has16m' in stdout &&
-    stdout.has16m
-  ) {
+  if (has16m) {
     if (truecolor) {
       chalkFunction = hexFn(truecolor);
     } else if (color256 !== undefined) {
@@ -119,12 +105,7 @@ export const getTerminalChalkColor = (
     }
   }
   // Fall back to 256-color mode if supported
-  else if (
-    stdout &&
-    typeof stdout === 'object' &&
-    'has256' in stdout &&
-    stdout.has256
-  ) {
+  else if (has256) {
     if (color256 !== undefined) {
       chalkFunction = ansi256Fn(color256);
     } else if (truecolor) {
@@ -134,7 +115,7 @@ export const getTerminalChalkColor = (
     }
   }
   // Fall back to named colors if available
-  else if (stdout && named) {
+  else if (hasColor && named) {
     chalkFunction = namedFn(named);
   }
   // Final fallback

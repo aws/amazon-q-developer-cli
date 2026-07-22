@@ -2,7 +2,7 @@ import { createStore, useStore, type StoreApi } from 'zustand';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Kiro } from '../kiro';
-import chalk from 'chalk';
+import { chalk } from '../utils/color.js';
 import type { TerminalColor } from '../types/themeTypes';
 import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';

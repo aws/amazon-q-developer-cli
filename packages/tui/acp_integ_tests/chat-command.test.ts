@@ -239,11 +239,18 @@ describe('/chat command', () => {
     await tc.sleepMs(300);
 
     await tc.waitForVisibleText('/chat', 5000);
-    const snapshot = tc.getSnapshotFormatted();
-    expect(snapshot).toContain('/chat');
+    // Only check from the typed input line down (the dropdown renders below
+    // it): the randomly-picked startup tip above may itself name a command.
+    const lines = tc.getSnapshotFormatted().split('\n');
+    const inputIdx = lines.findIndex(
+      (l) => l.replace(/[│|]/g, '').trim() === '/ch'
+    );
+    expect(inputIdx).toBeGreaterThanOrEqual(0);
+    const dropdown = lines.slice(inputIdx).join('\n');
+    expect(dropdown).toContain('/chat');
     // Commands that don't match `/ch` should be filtered out.
-    expect(snapshot).not.toContain('/agent');
-    expect(snapshot).not.toContain('/help');
+    expect(dropdown).not.toContain('/agent');
+    expect(dropdown).not.toContain('/help');
   }, 30000);
 
   it("typing '/chat' + Enter renders sessions returned by --list-sessions", async () => {

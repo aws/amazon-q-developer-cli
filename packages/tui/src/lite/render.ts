@@ -2,7 +2,7 @@
  * Lite-mode render core: markdown / diff / syntax-highlight rendering for the
  * lite TUI.
  */
-import chalk from 'chalk';
+import { chalk } from '../utils/color.js';
 import { highlight } from 'cli-highlight';
 import { diffLines } from 'diff';
 import { visibleWidth } from '../utils/text-width.js';

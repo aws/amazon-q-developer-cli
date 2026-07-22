@@ -242,10 +242,14 @@ describe('Multi-line input editing', () => {
     await testCase.sleepMs(200);
 
     const snapshot = testCase.getSnapshot();
-    const screenText = snapshot.join('\n');
-    expect(screenText).toContain('abc');
-    expect(screenText).not.toContain('def');
-    expect(screenText).toContain('ghijkl');
+    // Only check the input region below the banner divider: the
+    // randomly-picked startup tip above it may contain "def" (e.g. "default").
+    const dividerIdx = snapshot.findLastIndex((line) => line.includes('────'));
+    expect(dividerIdx).toBeGreaterThanOrEqual(0);
+    const inputRegion = snapshot.slice(dividerIdx).join('\n');
+    expect(inputRegion).toContain('abc');
+    expect(inputRegion).not.toContain('def');
+    expect(inputRegion).toContain('ghijkl');
 
     await exitCleanly(testCase);
   }, 20000);
