@@ -22,6 +22,7 @@ import { TestCase } from '../src/test-utils/TestCase';
 
 const CTRL_J = '\x0a'; // Ctrl+J — newline
 const SHIFT_ENTER = '\x1b[27;2;13~'; // xterm modifyOtherKeys: keycode 13, mod 2 (shift)
+const SHIFT_ENTER_CSI_U = '\x1b[13;2u'; // CSI-u: codepoint 13, mod 2 (shift) — sent by tmux extended-keys
 const ALT_ENTER = '\x1b\r'; // ESC + CR — parses to shift+enter / newline
 
 async function exitCleanly(tc: TestCase) {
@@ -83,6 +84,14 @@ describe('Newline-insertion shortcuts', () => {
       .withTestName('newline-shift-enter')
       .launch();
     await expectInsertsNewline(testCase, SHIFT_ENTER);
+    await exitCleanly(testCase);
+  }, 20000);
+
+  it('Shift+Enter (CSI-u encoding) inserts a newline instead of submitting', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('newline-shift-enter-csi-u')
+      .launch();
+    await expectInsertsNewline(testCase, SHIFT_ENTER_CSI_U);
     await exitCleanly(testCase);
   }, 20000);
 

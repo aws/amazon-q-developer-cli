@@ -229,6 +229,23 @@ describe('parseKey', () => {
 		});
 	});
 
+	describe('CSI-u enter without Kitty protocol', () => {
+		it('parses shift+enter when Kitty is inactive', () => {
+			setKittyProtocolActive(false);
+			expect(parseKey('\x1b[13;2u')).toBe('shift+enter');
+		});
+
+		it('parses ctrl+enter when Kitty is inactive', () => {
+			setKittyProtocolActive(false);
+			expect(parseKey('\x1b[13;5u')).toBe('ctrl+enter');
+		});
+
+		it('parses plain CSI-u enter when Kitty is inactive', () => {
+			setKittyProtocolActive(false);
+			expect(parseKey('\x1b[13;1u')).toBe('enter');
+		});
+	});
+
 	describe('alt+enter (non-Kitty)', () => {
 		it('parses ESC+CR as alt+enter when Kitty is inactive', () => {
 			setKittyProtocolActive(false);

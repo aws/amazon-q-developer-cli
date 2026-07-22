@@ -983,5 +983,30 @@ export function parseKey(data: string): KeyId | undefined {
 		return `alt+${data[1]}` as KeyId;
 	}
 
+	// CSI-u format: CSI codepoint ; modifier u — some terminals (e.g. tmux with
+	// extended-keys enabled) emit this encoding without ever answering the Kitty
+	// protocol query, so decode it even when the Kitty protocol is inactive.
+	// Safe as a last resort: every legacy encoding has been tried above and the
+	// format is unambiguous.
+	const csiUMatch = data.match(/^\x1b\[(\d+);(\d+)u$/);
+	if (csiUMatch) {
+		const codepoint = parseInt(csiUMatch[1]!, 10);
+		const modifier = parseInt(csiUMatch[2]!, 10) - 1;
+		const mods: string[] = [];
+		if (modifier & MODIFIERS.shift) mods.push("shift");
+		if (modifier & MODIFIERS.ctrl) mods.push("ctrl");
+		if (modifier & MODIFIERS.alt) mods.push("alt");
+		let keyName: string | undefined;
+		if (codepoint === CODEPOINTS.enter) keyName = "enter";
+		else if (codepoint === CODEPOINTS.tab) keyName = "tab";
+		else if (codepoint === CODEPOINTS.space) keyName = "space";
+		else if (codepoint === CODEPOINTS.backspace) keyName = "backspace";
+		else if (codepoint === CODEPOINTS.escape) keyName = "escape";
+		else if (codepoint >= 97 && codepoint <= 122) keyName = String.fromCharCode(codepoint);
+		if (keyName) {
+			return (mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName) as KeyId;
+		}
+	}
+
 	return undefined;
 }
