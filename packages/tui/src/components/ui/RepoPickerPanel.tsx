@@ -52,6 +52,11 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
   // Seed from the session's already-attached repos so reopening /repo shows them
   // checked. Mount-only: later toggles are the user's, not prop-driven.
   const [selected, setSelected] = useState<string[]>(initialSelected ?? []);
+  // Which panel arrow/space act on. Tab toggles; the Selected panel gets its
+  // own cursor so a repo buried deep in All can be unchecked without
+  // scrolling or searching for it.
+  const [focus, setFocus] = useState<'selected' | 'all'>('all');
+  const [selCursor, setSelCursor] = useState(0);
 
   const filtered = useMemo(
     () => filterRepoResources(resources, search),
@@ -78,29 +83,56 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
 
   useInput((input, key) => {
     if (key.escape) {
-      // esc saves the current selection.
+      // esc saves the current selection (from either panel).
       onSubmit(selected);
       onClose();
       return;
     }
+    if (key.tab) {
+      // tab switches which panel arrow/space act on. An empty Selected panel
+      // is skipped — there is nothing to move a cursor through. Handled
+      // before the search fallthrough so \t never lands in the query.
+      setFocus((f) =>
+        f === 'all' && selected.length > 0 ? 'selected' : 'all'
+      );
+      return;
+    }
     if (key.upArrow) {
-      setCursor((i) => Math.max(0, i - 1));
+      if (focus === 'selected') setSelCursor((i) => Math.max(0, i - 1));
+      else setCursor((i) => Math.max(0, i - 1));
       return;
     }
     if (key.downArrow) {
-      setCursor((i) => Math.min(filtered.length - 1, i + 1));
+      if (focus === 'selected')
+        setSelCursor((i) => Math.min(selected.length - 1, i + 1));
+      else setCursor((i) => Math.min(filtered.length - 1, i + 1));
       return;
     }
     if (input === ' ') {
       // space toggles selection rather than typing into the search box.
-      const row = filtered[cursor];
-      if (row) setSelected((s) => toggleRepoSelection(s, row.name));
+      // In the Selected panel it unchecks the repo under that panel's cursor
+      // (which may not be in the filtered All list at all).
+      const name =
+        focus === 'selected' ? selected[selCursor] : filtered[cursor]?.name;
+      if (name) {
+        const nextSelected = toggleRepoSelection(selected, name);
+        setSelected(nextSelected);
+        if (nextSelected.length < selected.length) {
+          setSelCursor((i) =>
+            Math.min(i, Math.max(0, nextSelected.length - 1))
+          );
+        }
+        if (nextSelected.length === 0) setFocus('all');
+      }
       return;
     }
     if (key.backspace || key.delete) {
       setSearch((s) => s.slice(0, -1));
       return;
     }
+    // Typing always edits the search query regardless of panel focus —
+    // there is only one text field, so routing by focus would just make
+    // keystrokes silently disappear while the Selected panel is active.
     if (input && input.length === 1 && input > ' ' && !key.ctrl && !key.meta) {
       setSearch((s) => s + input);
     }
@@ -175,16 +207,22 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
           <Text>{hint('tab', 'to switch panels')}</Text>
         </Box>
         {/* Each chosen repo with its default branch, so the user sees exactly
-            what will be cloned. The row is accented while its cursor is on it. */}
-        {selectedRows.map((row) => {
+            what will be cloned. When this panel is focused (tab) the row under
+            its own cursor is accented; otherwise the accent mirrors the All
+            cursor so the two views stay visually linked. Checkmarks are always
+            accent — they mark selection, not cursor position. */}
+        {selectedRows.map((row, si) => {
           const branch = row.defaultBranch?.trim();
           const label = branch ? `${row.name} ${branch}` : row.name;
-          const isCursorRow = filtered[cursor]?.name === row.name;
+          const isCursorRow =
+            focus === 'selected'
+              ? si === selCursor
+              : filtered[cursor]?.name === row.name;
           const styled = isCursorRow
             ? chalk
                 .hex(accentHex)
                 .bold(`${glyphs.chevron}[${glyphs.checkmark}] ${label}`)
-            : ` [${glyphs.checkmark}] ${label}`;
+            : ` [${chalk.hex(accentHex)(glyphs.checkmark)}] ${label}`;
           return (
             <Text key={`sel:${row.providerType}:${row.name}`}>{styled}</Text>
           );
@@ -213,12 +251,20 @@ export const RepoPickerPanel: React.FC<RepoPickerPanelProps> = ({
 
         {windowRows.map((row, wi) => {
           const idx = start + wi;
-          const isCursor = idx === cursor;
+          const isCursor = idx === cursor && focus === 'all';
           const isChecked = selected.includes(row.name);
           const cursorGlyph = isCursor
             ? chalk.hex(accentHex).bold(`${glyphs.chevron}`)
             : ' ';
-          const checkbox = `[${isChecked ? glyphs.checkmark : ' '}]`;
+          // Checked rows keep an accent checkmark even off-cursor, matching
+          // the Selected panel — the mark tracks selection, not the cursor.
+          // The cursor row accents the whole bracket group (as the Selected
+          // panel's cursor row does), so both panels highlight identically.
+          const checkbox = isCursor
+            ? chalk
+                .hex(accentHex)
+                .bold(`[${isChecked ? glyphs.checkmark : ' '}]`)
+            : `[${isChecked ? chalk.hex(accentHex)(glyphs.checkmark) : ' '}]`;
           const name = truncateToWidth(row.name, nameWidth);
           const nameStyled = isCursor
             ? chalk.hex(accentHex).bold(padToWidth(name, nameWidth))

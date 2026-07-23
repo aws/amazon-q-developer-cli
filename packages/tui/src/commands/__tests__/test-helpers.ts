@@ -50,6 +50,8 @@ export interface CreateMockCtxOptions {
   mcpServerCache?: CommandContext['mcpServerCache'];
   /** Cached KAS MCP registry snapshot. Default: [] */
   mcpRegistryCache?: CommandContext['mcpRegistryCache'];
+  /** Whether the current session is a cloud session. Default: false */
+  cloudSessionActive?: boolean;
 }
 
 /**
@@ -84,7 +86,7 @@ export function createMockCommandContext(
   return {
     kiro: { ...defaultKiro, ...opts.kiro } as any,
     agentEngine: 'v2',
-    cloudSessionActive: false,
+    cloudSessionActive: opts.cloudSessionActive ?? false,
     slashCommands: opts.slashCommands ?? [],
     kasCommands: opts.kasCommands ?? [],
     prompts: opts.prompts ?? [],
@@ -98,7 +100,11 @@ export function createMockCommandContext(
     setLoadingMessage: spy('setLoadingMessage') as any,
     setActiveCommand: spy('setActiveCommand') as any,
     setCurrentModel: spy('setCurrentModel') as any,
-    beginKasSession: mock(() => () => {}) as any,
+    beginKasSession: (() => {
+      const fn = mock(() => () => {});
+      spies['beginKasSession'] = fn;
+      return fn;
+    })() as any,
     getCurrentModel: (() => opts.currentModel ?? null) as any,
     setCurrentEffort: spy('setCurrentEffort') as any,
     getCurrentEffort: (() => opts.currentEffort ?? null) as any,

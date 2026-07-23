@@ -453,6 +453,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // Preserve the current agent across /clear — the user expects to stay
       // on the same agent, just with a fresh conversation.
       const previousAgent = ctx.currentAgent;
+      // A cleared cloud session has no prior history, even when the replaced session was resumed.
+      if (ctx.cloudSessionActive) ctx.beginKasSession('new');
       ctx.clearUIState();
       ctx.resetMessages();
       ctx.setSessionId(data.sessionId);

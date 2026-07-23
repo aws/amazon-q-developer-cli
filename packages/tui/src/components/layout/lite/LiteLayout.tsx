@@ -175,6 +175,11 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const cloudProviderChecked = useAppStore((s) => s.cloudProviderChecked);
   const cloudProvider = useAppStore((s) => s.cloudProvider);
   const cloudRepoCount = useAppStore((s) => s.cloudRepoCount);
+  // Resume vs create wording for the session checklist row: the boot path
+  // records the origin (via beginKasSession) before the session RPC runs.
+  const cloudSessionResumed = useAppStore(
+    (s) => s.kas.sessionOrigin === 'resumed'
+  );
   const cloudExtraRepos = useAppStore((s) => s.cloudExtraRepos);
   const cloudRepo = useAppStore((s) => s.cloudRepo);
   const cloudBranch = useAppStore((s) => s.cloudBranch);
@@ -1592,6 +1597,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
               connected: bootProgress.get('agent_connect')?.status === 'ready',
               sessionCreated: false,
               sessionFailed: cloudSessionFailed,
+              resumed: cloudSessionResumed,
               provider: cloudProvider ?? undefined,
               repoCount: cloudRepoCount ?? undefined,
             },
@@ -1720,6 +1726,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
               connected: bootProgress.get('agent_connect')?.status === 'ready',
               sessionCreated:
                 bootProgress.get('session_create')?.status === 'ready',
+              resumed: cloudSessionResumed,
               provider: cloudProvider ?? undefined,
               repoCount: cloudRepoCount ?? undefined,
             },

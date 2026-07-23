@@ -104,6 +104,42 @@ describe('/clear effect — clearMessages', () => {
     );
   });
 
+  it("resets the session origin to 'new' when clearing a cloud session", () => {
+    const ctx = createMockCommandContext({
+      currentAgent: null,
+      cloudSessionActive: true,
+      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
+    });
+
+    const result = {
+      success: true,
+      message: '',
+      data: { sessionId: 'new-session-after-clear' },
+    };
+
+    runEffect(clearCmd, result, ctx, '');
+
+    expect(ctx._spies.beginKasSession!).toHaveBeenCalledWith('new');
+  });
+
+  it('does not reset the session origin when clearing a local session', () => {
+    const ctx = createMockCommandContext({
+      currentAgent: null,
+      cloudSessionActive: false,
+      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
+    });
+
+    const result = {
+      success: true,
+      message: '',
+      data: { sessionId: 'new-local-session-after-clear' },
+    };
+
+    runEffect(clearCmd, result, ctx, '');
+
+    expect(ctx._spies.beginKasSession!).not.toHaveBeenCalled();
+  });
+
   it('falls through to clearMessages when no sessionId (Rust mode)', () => {
     const ctx = createMockCommandContext();
 

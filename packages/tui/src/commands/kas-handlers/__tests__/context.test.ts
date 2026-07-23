@@ -517,4 +517,109 @@ describe('handleContext (KAS-mode dispatch)', () => {
       expect(String(showAlert.mock.calls[0][0])).toContain('Unknown');
     });
   });
+
+  // ── cloud-session gate ──────────────────────────────────────────────
+
+  describe('cloud-session gate (mutations refuse; show + local untouched)', () => {
+    function cloudCtx(): ReturnType<typeof ctxWith> {
+      const ctx = ctxWith();
+      ctx.cloudSessionActive = true;
+      return ctx;
+    }
+
+    it('cloud: add refuses with the exact message and never calls the RPC', async () => {
+      const ctx = cloudCtx();
+      await handleContext(CONTEXT_CMD, 'add /tmp/a.md', ctx);
+
+      expect((ctx.kiro.contextAdd as any).mock.calls.length).toBe(0);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert.mock.calls).toEqual([
+        [
+          '/context add is not available for a cloud session yet.',
+          'error',
+          5000,
+        ],
+      ]);
+    });
+
+    it('cloud: remove refuses with the exact message and never calls the RPC', async () => {
+      const ctx = cloudCtx();
+      await handleContext(CONTEXT_CMD, 'remove /tmp/a.md', ctx);
+
+      expect((ctx.kiro.contextRemove as any).mock.calls.length).toBe(0);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert.mock.calls).toEqual([
+        [
+          '/context remove is not available for a cloud session yet.',
+          'error',
+          5000,
+        ],
+      ]);
+    });
+
+    it('cloud: rm alias refuses with the remove wording', async () => {
+      const ctx = cloudCtx();
+      await handleContext(CONTEXT_CMD, 'rm /tmp/a.md', ctx);
+
+      expect((ctx.kiro.contextRemove as any).mock.calls.length).toBe(0);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(String(showAlert.mock.calls[0][0])).toBe(
+        '/context remove is not available for a cloud session yet.'
+      );
+    });
+
+    it('cloud: clear refuses with the exact message and never calls the RPC', async () => {
+      const ctx = cloudCtx();
+      await handleContext(CONTEXT_CMD, 'clear', ctx);
+
+      expect((ctx.kiro.contextClear as any).mock.calls.length).toBe(0);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert.mock.calls).toEqual([
+        [
+          '/context clear is not available for a cloud session yet.',
+          'error',
+          5000,
+        ],
+      ]);
+    });
+
+    it('cloud: show stays available (read-only, no refusal)', async () => {
+      const ctx = cloudCtx();
+      await handleContext(CONTEXT_CMD, 'show', ctx);
+
+      expect((ctx.kiro.contextShow as any).mock.calls.length).toBe(1);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some((c: any[]) =>
+          String(c[0]).includes('not available for a cloud session')
+        )
+      ).toBe(false);
+    });
+
+    it('local: add is untouched by the gate (RPC still runs, no refusal)', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'add /tmp/a.md', ctx);
+
+      expect((ctx.kiro.contextAdd as any).mock.calls.length).toBe(1);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some((c: any[]) =>
+          String(c[0]).includes('not available for a cloud session')
+        )
+      ).toBe(false);
+    });
+
+    it('local: clear is untouched by the gate (RPC still runs, no refusal)', async () => {
+      const ctx = ctxWith();
+      await handleContext(CONTEXT_CMD, 'clear', ctx);
+
+      expect((ctx.kiro.contextClear as any).mock.calls.length).toBe(1);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some((c: any[]) =>
+          String(c[0]).includes('not available for a cloud session')
+        )
+      ).toBe(false);
+    });
+  });
 });

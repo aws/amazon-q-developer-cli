@@ -7551,6 +7551,20 @@ export const createAppStore = (props: AppStoreProps) => {
         const command = trimmed.slice(1).trim();
         if (!command) return;
 
+        // Cloud sessions: `!` runs on the LOCAL machine, not the sandbox,
+        // which is misleading (and some paths error outright) — refuse
+        // before the terminal is touched. Strictly cloud-gated (dark-ship):
+        // local sessions never reach this branch.
+        if (state.cloudSessionActive) {
+          state.showTransientAlert({
+            message:
+              'Shell commands are not available for a cloud session yet.',
+            status: 'error',
+            autoHideMs: 5000,
+          });
+          return;
+        }
+
         const {
           needsTTY,
           isClearCommand,

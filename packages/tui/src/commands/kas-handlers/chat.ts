@@ -37,10 +37,32 @@ export async function handleChat(
     return showSessionPicker(ctx, cmd);
   }
   if (trimmed === 'save' || trimmed.startsWith('save ')) {
+    // Cloud sessions: save/load shell out to the LOCAL session store, which
+    // has no record of a relayed session — refuse up front instead of
+    // failing oddly. Strictly cloud-gated (dark-ship): local sessions never
+    // reach this branch.
+    if (ctx.cloudSessionActive) {
+      // cmd.name so the alias reports itself (/sessions save vs /chat save).
+      ctx.showAlert(
+        `${cmd.name} save is not available for a cloud session yet.`,
+        'error',
+        5000
+      );
+      return;
+    }
     const rest = trimmed === 'save' ? '' : trimmed.slice(5).trim();
     return handleChatSave(ctx, rest);
   }
   if (trimmed === 'load' || trimmed.startsWith('load ')) {
+    // Same cloud gate as `save` above: import targets the local store.
+    if (ctx.cloudSessionActive) {
+      ctx.showAlert(
+        `${cmd.name} load is not available for a cloud session yet.`,
+        'error',
+        5000
+      );
+      return;
+    }
     const rest = trimmed === 'load' ? '' : trimmed.slice(5).trim();
     return handleChatLoad(ctx, rest);
   }

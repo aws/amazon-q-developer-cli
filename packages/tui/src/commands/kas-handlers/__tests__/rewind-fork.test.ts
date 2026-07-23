@@ -34,6 +34,40 @@ function makeMessages(turns: string[]) {
 }
 
 describe('handleRewind fork', () => {
+  it('refuses the picker in a cloud session without reading local turns', async () => {
+    const ctx = createMockCommandContext({
+      messages: makeMessages(['local turn']) as any,
+      cloudSessionActive: true,
+    });
+
+    await handleRewind(REWIND_CMD, '', ctx as any);
+
+    expect(ctx._spies.setShowRewindExplorer).not.toHaveBeenCalled();
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      '/rewind is not available for a cloud session yet.',
+      'error',
+      5000
+    );
+  });
+
+  it('refuses a cloud rewind selection before session/fork', async () => {
+    const executeCommand = mock(() => Promise.resolve({ success: true }));
+    const ctx = createMockCommandContext({
+      messages: makeMessages(['local turn']) as any,
+      kiro: { executeCommand } as any,
+      cloudSessionActive: true,
+    });
+
+    await handleRewind(REWIND_CMD, '0', ctx as any);
+
+    expect(executeCommand).not.toHaveBeenCalled();
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      '/rewind is not available for a cloud session yet.',
+      'error',
+      5000
+    );
+  });
+
   it('passes the selected turn kasMessageId (not array index) to session/fork', async () => {
     const messages = makeMessages([
       'What is aws?',

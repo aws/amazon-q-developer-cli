@@ -200,6 +200,31 @@ describe('cloud sessions — interactive flows (mock BFF)', () => {
   );
 
   it.skipIf(skip)(
+    '/rewind refuses local-history forking in a cloud session',
+    async () => {
+      harness = await CloudHarness.launch({ testName: 'cloud-rewind-gate' });
+      const tc = harness.testCase!;
+      await tc.waitForText('Cloud session created', BOOT_TIMEOUT);
+      await tc.waitForText('ask a question', 20_000);
+
+      for (const ch of '/rewind') {
+        await tc.sendKeys(ch);
+        await tc.sleepMs(50);
+      }
+      await tc.pressEnter();
+
+      await tc.waitForText(
+        '/rewind is not available for a cloud session yet.',
+        10_000
+      );
+      expect(tc.getSnapshotFormatted()).not.toContain(
+        'Fork from a previous prompt'
+      );
+    },
+    120_000
+  );
+
+  it.skipIf(skip)(
     'opt-in: same env WITHOUT --cloud boots a plain local session',
     async () => {
       // Same KAS engine + endpoint env — only the flag differs. NOTE: the

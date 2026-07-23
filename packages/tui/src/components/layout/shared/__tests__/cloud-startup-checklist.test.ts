@@ -103,6 +103,54 @@ describe('formatCloudStartupChecklist', () => {
     expect(rows).toContain('  /repo to select (optional)');
   });
 
+  test('resumed session shows resume wording on the pending step', () => {
+    const rows = visible(
+      formatCloudStartupChecklist(
+        { connected: true, sessionCreated: false, resumed: true },
+        G
+      )
+    );
+    expect(rows).toEqual([
+      '  ✓ Connected to kiro.dev',
+      '  ⠋ Resuming cloud session…',
+    ]);
+  });
+
+  test('resumed session ticks to "✓ Cloud session resumed" when done', () => {
+    const rows = visible(
+      formatCloudStartupChecklist(
+        {
+          connected: true,
+          sessionCreated: true,
+          resumed: true,
+          provider: 'GitHub',
+        },
+        G
+      )
+    );
+    expect(rows).toEqual([
+      '  ✓ Connected to kiro.dev',
+      '  ✓ Connected to GitHub',
+      '  ✓ Cloud session resumed',
+      '  /repo to select (optional)',
+    ]);
+  });
+
+  test('a failed resume keeps the generic "Cloud session failed" row', () => {
+    const rows = visible(
+      formatCloudStartupChecklist(
+        {
+          connected: true,
+          sessionCreated: false,
+          sessionFailed: true,
+          resumed: true,
+        },
+        G
+      )
+    );
+    expect(rows[1]).toBe('  ✗ Cloud session failed');
+  });
+
   test('failed create shows a ✗ row, no spinner, no /repo hint', () => {
     const rows = visible(
       formatCloudStartupChecklist(
@@ -130,6 +178,7 @@ describe('formatCloudStartupChecklist', () => {
         repoCount: 3,
       },
       { connected: true, sessionCreated: false, sessionFailed: true },
+      { connected: true, sessionCreated: true, resumed: true },
     ];
     for (const state of states) {
       const out = visible(formatCloudStartupChecklist(state, ascii)).join('\n');

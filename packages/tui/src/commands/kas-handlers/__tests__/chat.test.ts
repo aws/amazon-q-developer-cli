@@ -790,4 +790,110 @@ describe('handleChat (KAS-mode dispatch)', () => {
       ).toBe(true);
     });
   });
+
+  describe('cloud-session gate (save/load refuse; local untouched)', () => {
+    beforeEach(() => {
+      mockExportSession.mockReset();
+      mockImportSession.mockReset();
+    });
+
+    it('cloud: save refuses with the exact message and never spawns', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess-cloud' } as any,
+        cloudSessionActive: true,
+      });
+      await handleChat(CHAT_CMD, 'save /tmp/x.zip', ctx);
+      expect(mockExportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert.mock.calls).toEqual([
+        ['/chat save is not available for a cloud session yet.', 'error', 5000],
+      ]);
+    });
+
+    it('cloud: load refuses with the exact message and never spawns', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess-cloud' } as any,
+        cloudSessionActive: true,
+      });
+      await handleChat(CHAT_CMD, 'load /tmp/x.zip', ctx);
+      expect(mockImportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert.mock.calls).toEqual([
+        ['/chat load is not available for a cloud session yet.', 'error', 5000],
+      ]);
+    });
+
+    it('cloud: the /sessions alias refuses under its own name', async () => {
+      // /sessions routes to this same handler; the refusal must name the
+      // command the user actually typed, not /chat.
+      const SESSIONS_CMD: KasCommand = {
+        ...CHAT_CMD,
+        name: KasCommandName.Sessions,
+      };
+      const ctx = createMockCommandContext({
+        kasCommands: [SESSIONS_CMD],
+        kiro: { sessionId: 'sess-cloud' } as any,
+        cloudSessionActive: true,
+      });
+      await handleChat(SESSIONS_CMD, 'load /tmp/x.zip', ctx);
+      expect(mockImportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(showAlert.mock.calls).toEqual([
+        [
+          '/sessions load is not available for a cloud session yet.',
+          'error',
+          5000,
+        ],
+      ]);
+    });
+
+    it('cloud: bare "save" (no path) still refuses before the usage check', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess-cloud' } as any,
+        cloudSessionActive: true,
+      });
+      await handleChat(CHAT_CMD, 'save', ctx);
+      expect(mockExportSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(String(showAlert.mock.calls.at(-1)?.[0])).toBe(
+        '/chat save is not available for a cloud session yet.'
+      );
+    });
+
+    it('local: save is untouched by the gate (export still runs, no refusal)', async () => {
+      mockExportSession.mockReturnValue({ ok: true, path: '/abs/x.zip' });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess-local' } as any,
+        cloudSessionActive: false,
+      });
+      await handleChat(CHAT_CMD, 'save /tmp/x.zip', ctx);
+      expect(mockExportSession).toHaveBeenCalledTimes(1);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some((c: any[]) =>
+          String(c[0]).includes('not available for a cloud session')
+        )
+      ).toBe(false);
+    });
+
+    it('local: load is untouched by the gate (usage error, no refusal)', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { sessionId: 'sess-local' } as any,
+        cloudSessionActive: false,
+      });
+      await handleChat(CHAT_CMD, 'load', ctx);
+      const showAlert = ctx._spies.showAlert as any;
+      expect(String(showAlert.mock.calls.at(-1)?.[0])).toContain('Usage');
+      expect(
+        showAlert.mock.calls.some((c: any[]) =>
+          String(c[0]).includes('not available for a cloud session')
+        )
+      ).toBe(false);
+    });
+  });
 });

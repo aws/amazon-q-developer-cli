@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { mock } from 'bun:test';
 import React from 'react';
+import { chalk } from '../../../utils/color.js';
 import { render, type Instance, type Terminal } from 'twinki';
 
 const mockTermSize = { width: 80, height: 24 };
@@ -16,9 +17,14 @@ import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 const DOWN = '\x1b[B';
 const UP = '\x1b[A';
 const ESC = '\x1b';
+const TAB = '\t';
 
 class MockTerminal implements Terminal {
   private onInput: ((data: string) => void) | null = null;
+  /** Keystrokes sent before the renderer attaches its listener. Without this
+   *  buffer the first sendInput of a test can race render() and be silently
+   *  dropped (source of intermittent first-test failures). */
+  private pending: string[] = [];
   public output = '';
   get columns() {
     return 80;
@@ -31,6 +37,7 @@ class MockTerminal implements Terminal {
   }
   start(onInput: (data: string) => void): void {
     this.onInput = onInput;
+    for (const data of this.pending.splice(0)) onInput(data);
   }
   stop(): void {}
   async drainInput(): Promise<void> {}
@@ -47,7 +54,8 @@ class MockTerminal implements Terminal {
   disableMouse(): void {}
   setTitle(): void {}
   sendInput(data: string): void {
-    this.onInput?.(data);
+    if (this.onInput) this.onInput(data);
+    else this.pending.push(data);
   }
 }
 
@@ -62,6 +70,18 @@ async function flush(): Promise<void> {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 20));
   await Promise.resolve();
+}
+
+/** Wait until the panel has painted at least once before sending keys.
+ *  The first mount in a test file can outlast a fixed 20ms sleep (module
+ *  warm-up), and keys sent before useInput attaches are dropped — the
+ *  historical source of intermittent first-test failures. */
+async function waitForPaint(terminal: MockTerminal): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (!terminal.output.includes('/repo') && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await flush();
 }
 
 function repo(name: string): SourceProviderResource {
@@ -93,7 +113,7 @@ function mountPicker(
 describe('RepoPickerPanel key wiring', () => {
   test('esc with no changes submits an empty selection and closes', async () => {
     const { terminal, onSubmit, onClose } = mountPicker([repo('acme/app')]);
-    await flush();
+    await waitForPaint(terminal);
     terminal.sendInput(ESC);
     await flush();
     expect(onSubmit).toHaveBeenCalledWith([]);
@@ -105,7 +125,7 @@ describe('RepoPickerPanel key wiring', () => {
       repo('acme/app'),
       repo('acme/lib'),
     ]);
-    await flush();
+    await waitForPaint(terminal);
     terminal.sendInput(' '); // select acme/app
     await flush();
     terminal.sendInput(' '); // toggle it back off
@@ -122,7 +142,7 @@ describe('RepoPickerPanel key wiring', () => {
       repo('acme/app'),
       repo('acme/lib'),
     ]);
-    await flush();
+    await waitForPaint(terminal);
     terminal.sendInput(UP); // already at top — must clamp, not go negative
     await flush();
     terminal.sendInput(DOWN);
@@ -142,7 +162,7 @@ describe('RepoPickerPanel key wiring', () => {
       repo('acme/lib'),
       repo('other/tool'),
     ]);
-    await flush();
+    await waitForPaint(terminal);
     for (const ch of 'tool') terminal.sendInput(ch);
     await flush();
     terminal.sendInput(' ');
@@ -157,7 +177,7 @@ describe('RepoPickerPanel key wiring', () => {
       repo('acme/app'),
       repo('zeta/z'),
     ]);
-    await flush();
+    await waitForPaint(terminal);
     for (const ch of 'zeta') terminal.sendInput(ch);
     await flush();
     for (let i = 0; i < 4; i++) terminal.sendInput('\x7f'); // backspace all
@@ -171,7 +191,7 @@ describe('RepoPickerPanel key wiring', () => {
 
   test('space on an empty filtered list is a no-op (no crash, empty submit)', async () => {
     const { terminal, onSubmit } = mountPicker([repo('acme/app')]);
-    await flush();
+    await waitForPaint(terminal);
     for (const ch of 'nomatch') terminal.sendInput(ch);
     await flush();
     terminal.sendInput(' ');
@@ -186,7 +206,7 @@ describe('RepoPickerPanel key wiring', () => {
       [repo('acme/app'), repo('acme/lib')],
       ['acme/app']
     );
-    await flush();
+    await waitForPaint(terminal);
     terminal.sendInput(ESC);
     await flush();
     expect(onSubmit).toHaveBeenCalledWith(['acme/app']);
@@ -197,12 +217,154 @@ describe('RepoPickerPanel key wiring', () => {
       [repo('acme/app')],
       ['acme/app']
     );
-    await flush();
+    await waitForPaint(terminal);
     terminal.sendInput(' '); // cursor on acme/app -> uncheck the seeded selection
     await flush();
     terminal.sendInput(ESC);
     await flush();
     expect(onSubmit).toHaveBeenCalledWith([]);
+  });
+
+  test('tab focuses the Selected panel; arrows + space uncheck under its own cursor', async () => {
+    const { terminal, onSubmit } = mountPicker([
+      repo('acme/app'),
+      repo('acme/lib'),
+      repo('acme/tool'),
+    ]);
+    await waitForPaint(terminal);
+    terminal.sendInput(' '); // select acme/app
+    await flush();
+    terminal.sendInput(DOWN);
+    terminal.sendInput(DOWN);
+    await flush();
+    terminal.sendInput(' '); // select acme/tool -> Selected = [app, tool]
+    await flush();
+    terminal.sendInput(TAB); // focus Selected panel (cursor at app)
+    await flush();
+    terminal.sendInput(DOWN); // Selected cursor -> tool
+    await flush();
+    terminal.sendInput(' '); // uncheck tool from the Selected panel
+    await flush();
+    terminal.sendInput(ESC);
+    await flush();
+    expect(onSubmit).toHaveBeenCalledWith(['acme/app']);
+  });
+
+  test('Selected-panel space unchecks a repo hidden by the current filter', async () => {
+    const { terminal, onSubmit } = mountPicker([
+      repo('acme/app'),
+      repo('zeta/z'),
+    ]);
+    await waitForPaint(terminal);
+    terminal.sendInput(DOWN);
+    await flush();
+    terminal.sendInput(' '); // select zeta/z
+    await flush();
+    for (const ch of 'acme') terminal.sendInput(ch); // filter zeta/z out of All
+    await flush();
+    terminal.sendInput(TAB); // Selected panel still lists it
+    await flush();
+    terminal.sendInput(' '); // uncheck it without clearing the filter
+    await flush();
+    terminal.sendInput(ESC);
+    await flush();
+    expect(onSubmit).toHaveBeenCalledWith([]);
+  });
+
+  test('Selected cursor clamps at both edges and when the last row is removed', async () => {
+    const { terminal, onSubmit } = mountPicker(
+      [repo('acme/app'), repo('acme/lib'), repo('acme/tool')],
+      ['acme/app', 'acme/lib']
+    );
+    await waitForPaint(terminal);
+    terminal.sendInput(TAB);
+    await flush();
+    terminal.sendInput(UP); // already at top — must clamp, not go negative
+    terminal.sendInput(DOWN);
+    terminal.sendInput(DOWN); // at bottom — must clamp on acme/lib
+    await flush();
+    terminal.sendInput(' '); // uncheck the last row -> cursor clamps back to 0
+    await flush();
+    terminal.sendInput(' '); // uncheck acme/app -> panel empties, focus -> All
+    await flush();
+    terminal.sendInput(' '); // now toggles the All cursor row (acme/app again)
+    await flush();
+    terminal.sendInput(ESC);
+    await flush();
+    expect(onSubmit).toHaveBeenCalledWith(['acme/app']);
+  });
+
+  test('tab with nothing selected is a no-op — All keeps arrow/space', async () => {
+    const { terminal, onSubmit } = mountPicker([
+      repo('acme/app'),
+      repo('acme/lib'),
+    ]);
+    await waitForPaint(terminal);
+    terminal.sendInput(TAB); // empty Selected panel — focus must stay on All
+    await flush();
+    terminal.sendInput(DOWN);
+    await flush();
+    terminal.sendInput(' ');
+    await flush();
+    terminal.sendInput(ESC);
+    await flush();
+    expect(onSubmit).toHaveBeenCalledWith(['acme/lib']);
+  });
+
+  test('tab never leaks a \\t into the search query', async () => {
+    const { terminal, onSubmit } = mountPicker([repo('acme/app')]);
+    await waitForPaint(terminal);
+    terminal.sendInput(TAB); // if \t reached search, the filter would go empty
+    terminal.sendInput(TAB);
+    await flush();
+    terminal.sendInput(' '); // still toggles the (unfiltered) cursor row
+    await flush();
+    terminal.sendInput(ESC);
+    await flush();
+    expect(onSubmit).toHaveBeenCalledWith(['acme/app']);
+  });
+
+  test('typing while the Selected panel is focused still edits the search', async () => {
+    const { terminal, onSubmit } = mountPicker(
+      [repo('acme/app'), repo('other/tool')],
+      ['acme/app']
+    );
+    await waitForPaint(terminal);
+    terminal.sendInput(TAB); // focus Selected
+    await flush();
+    for (const ch of 'tool') terminal.sendInput(ch); // goes to search, not lost
+    await flush();
+    terminal.sendInput(TAB); // back to All (filtered to other/tool)
+    await flush();
+    terminal.sendInput(' ');
+    await flush();
+    terminal.sendInput(ESC);
+    await flush();
+    expect(onSubmit).toHaveBeenCalledWith(['acme/app', 'other/tool']);
+  });
+
+  test('checked non-cursor rows render an accent checkmark in the All list', async () => {
+    const prevLevel = chalk.level;
+    chalk.level = 3; // force truecolor so the accent SGR codes are emitted
+    try {
+      // acme/lib is pre-checked but the cursor sits on acme/app, so the only
+      // checkmarks anywhere in the frame belong to non-cursor rows. They must
+      // still be accent-colored (kiroDark accent #ff00ff), matching Selected.
+      const { terminal } = mountPicker(
+        [repo('acme/app'), repo('acme/lib')],
+        ['acme/lib']
+      );
+      await waitForPaint(terminal);
+      const accented = [
+        chalk.hex('#ff00ff')('✓'), // unicode glyph set
+        chalk.hex('#ff00ff')('+'), // ascii fallback glyph set
+      ];
+      expect(accented.some((mark) => terminal.output.includes(mark))).toBe(
+        true
+      );
+    } finally {
+      chalk.level = prevLevel;
+    }
   });
 
   test('renders without overflow on a short terminal (derived row window)', async () => {

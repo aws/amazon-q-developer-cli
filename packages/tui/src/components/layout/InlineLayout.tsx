@@ -206,6 +206,11 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   );
   const cloudProvider = useAppStore((state) => state.cloudProvider);
   const cloudRepoCount = useAppStore((state) => state.cloudRepoCount);
+  // Resume vs create wording for the session checklist row: the boot path
+  // records the origin (via beginKasSession) before the session RPC runs.
+  const cloudSessionResumed = useAppStore(
+    (state) => state.kas.sessionOrigin === 'resumed'
+  );
   const cloudExtraRepos = useAppStore((state) => state.cloudExtraRepos);
   const bootProgress = useAppStore((state) => state.bootProgress);
   const inlineSpinners = useSpinners();
@@ -603,6 +608,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                     bootProgress.get('agent_connect')?.status === 'ready',
                   sessionCreated: false,
                   sessionFailed: cloudSessionFailed,
+                  resumed: cloudSessionResumed,
                   provider: cloudProvider ?? undefined,
                   repoCount: cloudRepoCount ?? undefined,
                 },
@@ -657,6 +663,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   bootProgress.get('agent_connect')?.status === 'ready',
                 sessionCreated:
                   bootProgress.get('session_create')?.status === 'ready',
+                resumed: cloudSessionResumed,
                 provider: cloudProvider ?? undefined,
                 repoCount: cloudRepoCount ?? undefined,
               },

@@ -52,6 +52,19 @@ export async function handleContext(
     return runShow(ctx, explicitShow);
   }
 
+  // Cloud sessions: add/remove/clear mutate the context with LOCAL file
+  // paths, which mean nothing inside the sandbox — refuse up front instead
+  // of failing oddly. `show` stays available (read-only). Strictly
+  // cloud-gated (dark-ship): local sessions never reach this branch.
+  if (ctx.cloudSessionActive) {
+    ctx.showAlert(
+      `/context ${subcommand} is not available for a cloud session yet.`,
+      'error',
+      5000
+    );
+    return;
+  }
+
   if (subcommand === 'clear') {
     return runMutation(ctx, () => ctx.kiro.contextClear(), 'clear');
   }

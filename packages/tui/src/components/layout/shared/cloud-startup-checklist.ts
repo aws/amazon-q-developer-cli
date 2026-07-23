@@ -5,6 +5,13 @@ export interface CloudStartupChecklistState {
   sessionCreated: boolean;
   /** Cloud session creation failed — renders a failed row instead of a spinner. */
   sessionFailed?: boolean;
+  /**
+   * The session was entered via resume (`--resume`, `/sessions` picker) rather
+   * than newly created, so the session step reads "Resuming cloud session…" /
+   * "✓ Cloud session resumed" instead of the create-flow wording. The failed
+   * row stays the generic "Cloud session failed" for both flows.
+   */
+  resumed?: boolean;
   /** Display name of the connected source provider (e.g. "GitHub"), if any. */
   provider?: string;
   /**
@@ -68,7 +75,19 @@ export function formatCloudStartupChecklist(
     rows.push(failed('Cloud session failed'));
     return rows;
   }
-  step(state.sessionCreated, 'Cloud session created', 'Creating cloud session');
+  if (state.resumed) {
+    step(
+      state.sessionCreated,
+      'Cloud session resumed',
+      'Resuming cloud session'
+    );
+  } else {
+    step(
+      state.sessionCreated,
+      'Cloud session created',
+      'Creating cloud session'
+    );
+  }
   if (state.connected && state.sessionCreated) {
     const repoHint = `${chalk.magenta('/repo')} to select (optional)`;
     if (state.repoCount && state.repoCount > 0) {

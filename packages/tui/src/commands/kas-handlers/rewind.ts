@@ -22,6 +22,15 @@ export async function handleRewind(
 ): Promise<void> {
   const turnIndex = args.trim();
 
+  if (ctx.cloudSessionActive) {
+    ctx.showAlert(
+      '/rewind is not available for a cloud session yet.',
+      'error',
+      5000
+    );
+    return;
+  }
+
   if (!turnIndex) {
     const turns = buildTurnList(ctx);
     if (turns.length === 0) {
