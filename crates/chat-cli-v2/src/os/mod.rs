@@ -11,7 +11,6 @@ pub use fs::Fs;
 pub use sysinfo::SysInfo;
 
 use crate::api_client::ApiClient;
-use crate::auth::builder_id::BuilderIdToken;
 use crate::database::{
     AuthProfile,
     Database,
@@ -67,11 +66,8 @@ impl Os {
         let client = ApiClient::new(&env, &fs, &mut database, endpoint)
             .await
             .log_on_err("Os::new: ApiClient::new failed")?;
-        let token = BuilderIdToken::load(&database, None)
-            .await
-            .log_on_err("Os::new: BuilderIdToken::load failed")?;
-        let region = token.as_ref().and_then(|t| t.region.as_deref());
-        let host_config = build_v2_host_config(&env, &fs, &mut database, region)
+        let region = client.region().to_string();
+        let host_config = build_v2_host_config(&env, &fs, &mut database, Some(&region))
             .await
             .log_on_err("Os::new: build_v2_host_config failed")?;
         let telemetry = TelemetryThread::new(host_config)
@@ -105,10 +101,10 @@ impl Os {
             .refresh_auth_profile(&self.env, &self.fs, &mut self.database)
             .await?;
 
-        let region = profile.arn.split(':').nth(3);
+        let region = self.client.region().to_string();
 
         // reconstruct telemetry thread and clients
-        let host_config = build_v2_host_config(&self.env, &self.fs, &mut self.database, region).await?;
+        let host_config = build_v2_host_config(&self.env, &self.fs, &mut self.database, Some(&region)).await?;
         let old_telemetry = std::mem::replace(&mut self.telemetry, TelemetryThread::new(host_config).await?);
 
         old_telemetry.finish().await?;
@@ -154,5 +150,6 @@ mod tests {
         os.set_auth_profile(&profile).await.unwrap();
         assert_eq!(os.database.get_auth_profile().unwrap().unwrap(), profile);
         assert_eq!(os.client.get_profile().unwrap(), profile);
+        assert_eq!(os.client.region(), "us-gov-east-1");
     }
 }

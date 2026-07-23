@@ -9,6 +9,18 @@ const KIRO_TELEMETRY_EXPORT_INTERVAL_MS: &str = "KIRO_TELEMETRY_EXPORT_INTERVAL_
 const KIRO_TELEMETRY_MACHINE_ID: &str = "KIRO_TELEMETRY_MACHINE_ID";
 const KIRO_TELEMETRY_DEPLOYMENT_ENVIRONMENT: &str = "KIRO_TELEMETRY_DEPLOYMENT_ENVIRONMENT";
 const KIRO_TELEMETRY_OTLP_LOGS_ENABLED: &str = "KIRO_TELEMETRY_OTLP_LOGS_ENABLED";
+const KUTS_ENDPOINT_EU_CENTRAL_1: &str = "https://prod.eu-central-1.telemetry-v2.kiro.dev";
+const KUTS_ENDPOINT_US_EAST_1: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
+
+pub fn resolve_otlp_endpoint(endpoint_override: Option<String>, region: Option<&str>) -> String {
+    match endpoint_override {
+        Some(endpoint) if !endpoint.trim().is_empty() => endpoint,
+        _ => match region {
+            Some("eu-central-1") => KUTS_ENDPOINT_EU_CENTRAL_1.to_string(),
+            _ => KUTS_ENDPOINT_US_EAST_1.to_string(),
+        },
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OtelMode {
@@ -272,6 +284,38 @@ mod tests {
         )]);
 
         assert_eq!(config.deployment_environment, "gamma");
+    }
+
+    #[test]
+    fn resolves_otlp_endpoint() {
+        assert_eq!(
+            resolve_otlp_endpoint(None, Some("eu-central-1")),
+            "https://prod.eu-central-1.telemetry-v2.kiro.dev"
+        );
+        assert_eq!(
+            resolve_otlp_endpoint(None, Some("us-east-1")),
+            "https://prod.us-east-1.telemetry-v2.kiro.dev"
+        );
+        assert_eq!(
+            resolve_otlp_endpoint(None, Some("us-west-2")),
+            "https://prod.us-east-1.telemetry-v2.kiro.dev"
+        );
+        assert_eq!(
+            resolve_otlp_endpoint(Some(String::new()), Some("eu-central-1")),
+            "https://prod.eu-central-1.telemetry-v2.kiro.dev"
+        );
+        assert_eq!(
+            resolve_otlp_endpoint(Some("   ".to_string()), None),
+            "https://prod.us-east-1.telemetry-v2.kiro.dev"
+        );
+        assert_eq!(
+            resolve_otlp_endpoint(Some("https://otel.example.test".to_string()), Some("eu-central-1")),
+            "https://otel.example.test"
+        );
+
+        let default = resolve_otlp_endpoint(None, None);
+        assert!(!default.contains("14318"));
+        assert!(!default.contains("127.0.0.1"));
     }
 
     #[test]

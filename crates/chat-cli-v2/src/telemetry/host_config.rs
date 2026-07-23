@@ -58,7 +58,7 @@ pub async fn build_v2_host_config(
     let client_id = legacy_sink::resolve_client_id(env, database, telemetry_enabled)?;
     let legacy_sink =
         legacy_sink::V2LegacySink::build(env, fs, database, govcloud_partition, client_id, telemetry_enabled).await?;
-    let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id)
+    let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id, region)
         .with_user_id(database.get_telemetry_user_id().ok().flatten());
     Ok(HostConfig {
         client_id,
@@ -87,10 +87,12 @@ fn state_dir() -> std::path::PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("kiro-cli"))
 }
 
-/// Default OTLP collector endpoint when `KIRO_TELEMETRY_OTLP_ENDPOINT` is not overridden.
-const DEFAULT_OTLP_ENDPOINT: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
-
-fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: uuid::Uuid) -> kiro_telemetry::TelemetryConfig {
+fn otel_telemetry_config(
+    env: &Env,
+    telemetry_enabled: bool,
+    client_id: uuid::Uuid,
+    region: Option<&str>,
+) -> kiro_telemetry::TelemetryConfig {
     use crate::util::consts::env_var::{
         KIRO_TELEMETRY_OTEL,
         KIRO_TELEMETRY_OTLP_ENDPOINT,
@@ -104,10 +106,10 @@ fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: uuid::Uu
         .map_or(kiro_telemetry::OtelMode::DualWrite, |value| {
             kiro_telemetry::OtelMode::parse(&value)
         });
-    let otlp_endpoint = env
-        .get(KIRO_TELEMETRY_OTLP_ENDPOINT)
-        .ok()
-        .or_else(|| Some(DEFAULT_OTLP_ENDPOINT.to_string()));
+    let otlp_endpoint = Some(kiro_telemetry::resolve_otlp_endpoint(
+        env.get(KIRO_TELEMETRY_OTLP_ENDPOINT).ok(),
+        region,
+    ));
     let otlp_logs_enabled = env
         .get(KIRO_TELEMETRY_OTLP_LOGS_ENABLED)
         .is_ok_and(|value| value.trim() != "0");
@@ -205,6 +207,21 @@ mod test {
         assert_eq!(govcloud_partition("us-gov-east-1"), Some("aws-us-gov"));
         assert_eq!(govcloud_partition("us-gov-west-1"), Some("aws-us-gov"));
         assert_eq!(govcloud_partition("us-east-1"), None);
+    }
+
+    #[test]
+    fn otel_config_uses_fra_endpoint_for_eu_central_1() {
+        let config = otel_telemetry_config(
+            &Env::from_slice(&[]),
+            true,
+            uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            Some("eu-central-1"),
+        );
+
+        assert_eq!(
+            config.otlp_endpoint.as_deref(),
+            Some("https://prod.eu-central-1.telemetry-v2.kiro.dev")
+        );
     }
 
     #[tokio::test]

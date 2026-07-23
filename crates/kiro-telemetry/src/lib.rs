@@ -27,6 +27,7 @@ pub use client::{
 pub use config::{
     OtelMode,
     TelemetryConfig,
+    resolve_otlp_endpoint,
 };
 pub use consent::{
     consent_file_integrity_records,

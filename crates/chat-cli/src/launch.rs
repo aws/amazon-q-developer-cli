@@ -289,16 +289,6 @@ fn tui_child_env(
     env
 }
 
-/// The launcher owns the effective OTLP endpoint: it honors a non-empty parent
-/// override, else falls back to `crate::telemetry::DEFAULT_OTLP_ENDPOINT` (the
-/// single source of truth). Deliberately never returns a `:14318` loopback.
-fn resolve_otlp_endpoint(parent: Option<String>) -> String {
-    match parent {
-        Some(value) if !value.trim().is_empty() => value,
-        _ => crate::telemetry::DEFAULT_OTLP_ENDPOINT.to_string(),
-    }
-}
-
 /// Launch the interactive TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
 async fn launch_acp_interactive(
     os: &Os,
@@ -434,7 +424,6 @@ async fn launch_acp_interactive(
     );
     for env_var in [
         crate::util::consts::env_var::KIRO_TELEMETRY_OTEL,
-        crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT,
         crate::util::consts::env_var::KIRO_TELEMETRY_EXPORT_INTERVAL_MS,
         crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
     ] {
@@ -445,17 +434,12 @@ async fn launch_acp_interactive(
         }
     }
 
-    // Supply the default only when telemetry is enabled AND there's no parent
-    // override; when disabled, leave the endpoint unset so opt-out users never
-    // emit to prod (the TUI treats unset as "do not emit").
+    // Preserve a non-empty override or supply the regional default only when telemetry is enabled.
     let parent_otlp_endpoint = std::env::var(crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT).ok();
-    let has_parent_override = parent_otlp_endpoint
-        .as_ref()
-        .is_some_and(|value| !value.trim().is_empty());
-    if telemetry_enabled && !has_parent_override {
+    if telemetry_enabled {
         cmd.env(
             crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_ENDPOINT,
-            resolve_otlp_endpoint(parent_otlp_endpoint),
+            kiro_telemetry::resolve_otlp_endpoint(parent_otlp_endpoint, Some(os.client.region())),
         );
     }
 
@@ -950,42 +934,6 @@ mod tests {
             env.iter()
                 .all(|(key, _)| *key != KIRO_TUI_FORCE_COLOR && *key != "FORCE_COLOR"),
             "no color variable should be set when color is not forced"
-        );
-    }
-
-    #[test]
-    fn resolve_otlp_endpoint_resolution() {
-        // Empty/whitespace fall back to the default; a non-empty override wins.
-        let default = crate::telemetry::DEFAULT_OTLP_ENDPOINT;
-        let cases = [
-            (None, default),
-            (Some(String::new()), default),
-            (Some("   ".to_string()), default),
-            (
-                Some("https://otlp.example.test:4318".to_string()),
-                "https://otlp.example.test:4318",
-            ),
-        ];
-        for (parent, want) in cases {
-            assert_eq!(
-                resolve_otlp_endpoint(parent.clone()),
-                want,
-                "resolve_otlp_endpoint({parent:?})"
-            );
-        }
-    }
-
-    #[test]
-    fn resolve_otlp_endpoint_default_is_never_loopback() {
-        // Lock in the "no collector loopback" contract.
-        let default = resolve_otlp_endpoint(None);
-        assert!(
-            !default.contains("14318"),
-            "default OTLP endpoint must not be the collector loopback port :14318, got {default}"
-        );
-        assert!(
-            !default.contains("127.0.0.1"),
-            "default OTLP endpoint must not be a loopback address, got {default}"
         );
     }
 

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Telemetry data is now routed to a region-local endpoint for EU users"
+}

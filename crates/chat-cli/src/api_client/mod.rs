@@ -253,6 +253,7 @@ pub struct ApiClient {
     resolve_profile: ProfileResolver,
     model_cache: ModelCache,
     auth_mode: AuthMode,
+    endpoint: Endpoint,
 }
 
 impl ApiClient {
@@ -260,7 +261,6 @@ impl ApiClient {
         env: &Env,
         fs: &Fs,
         database: &mut Database,
-        // endpoint is only passed here for list_profiles where it needs to be called for each region
         endpoint: Option<Endpoint>,
     ) -> Result<Self, ApiClientError> {
         let endpoint = endpoint.unwrap_or(Endpoint::configured_value(database));
@@ -340,6 +340,7 @@ impl ApiClient {
                 resolve_profile: ProfileResolver::new(None),
                 model_cache: Arc::new(RwLock::new(None)),
                 auth_mode: auth_mode.clone(),
+                endpoint: endpoint.clone(),
             };
 
             if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
@@ -395,6 +396,7 @@ impl ApiClient {
             resolve_profile,
             model_cache: Arc::new(RwLock::new(None)),
             auth_mode,
+            endpoint,
         };
 
         if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
@@ -790,14 +792,17 @@ impl ApiClient {
     /// client to succeed.
     pub async fn refresh_auth_profile(
         &mut self,
-        _env: &Env,
-        _fs: &Fs,
+        env: &Env,
+        fs: &Fs,
         database: &mut Database,
     ) -> Result<(), ApiClientError> {
         match database.get_auth_profile() {
             Ok(Some(profile)) => {
                 tracing::debug!("Refreshed auth profile: {:?}", profile);
-                self.resolve_profile.set(profile);
+                let endpoint = Endpoint::configured_value(database);
+                let new_client = Self::new(env, fs, database, Some(endpoint)).await?;
+                new_client.resolve_profile.set(profile);
+                *self = new_client;
             },
             Ok(None) => {},
             Err(err) => {
@@ -805,6 +810,10 @@ impl ApiClient {
             },
         }
         Ok(())
+    }
+
+    pub fn region(&self) -> &str {
+        self.endpoint.region().as_ref()
     }
 
     /// If the profile is not yet resolved, resolves it via `list_available_profiles` and
@@ -1183,6 +1192,38 @@ mod tests {
         let fs = Fs::new();
         let mut database = crate::database::Database::new_default().await.unwrap();
         let _ = ApiClient::new(&env, &fs, &mut database, None).await;
+    }
+
+    #[tokio::test]
+    async fn refresh_auth_profile_rebuilds_with_configured_endpoint() {
+        let env = Env::new();
+        let fs = Fs::new();
+        let mut database = crate::database::Database::new_default().await.unwrap();
+        let mut client = ApiClient::new(&env, &fs, &mut database, None).await.unwrap();
+        let profile = AuthProfile {
+            arn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/test".to_string(),
+            profile_name: "test".to_string(),
+        };
+
+        database
+            .settings
+            .set(
+                Setting::ApiCodeWhispererService,
+                serde_json::json!({
+                    "endpoint": "https://custom.example.com",
+                    "region": "eu-central-1",
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        database.set_auth_profile(&profile).unwrap();
+
+        client.refresh_auth_profile(&env, &fs, &mut database).await.unwrap();
+
+        assert_eq!(client.endpoint.url(), "https://custom.example.com");
+        assert_eq!(client.region(), "eu-central-1");
+        assert_eq!(client.get_profile(), Some(profile));
     }
 
     #[tokio::test]

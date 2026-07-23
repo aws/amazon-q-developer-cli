@@ -233,7 +233,7 @@ impl TelemetryThread {
     ) -> Result<Self, TelemetryError> {
         // govcloud does not have the infrastructure to support toolkit telemetry
         let govcloud_partition = region.and_then(govcloud_partition);
-        let telemetry_client = TelemetryClient::new(env, fs, database, govcloud_partition).await?;
+        let telemetry_client = TelemetryClient::new(env, fs, database, region).await?;
         let client_id = telemetry_client.client_id;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
@@ -804,12 +804,8 @@ struct TelemetryClient {
 }
 
 impl TelemetryClient {
-    async fn new(
-        env: &Env,
-        fs: &Fs,
-        database: &mut Database,
-        govcloud_partition: Option<&str>,
-    ) -> Result<Self, TelemetryError> {
+    async fn new(env: &Env, fs: &Fs, database: &mut Database, region: Option<&str>) -> Result<Self, TelemetryError> {
+        let govcloud_partition = region.and_then(govcloud_partition);
         let telemetry_enabled = !cfg!(test)
             && !crate::util::env_var::is_telemetry_disabled()
             && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
@@ -868,7 +864,7 @@ impl TelemetryClient {
             None
         };
         let client_id = client_id(env, database, telemetry_enabled)?;
-        let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id)
+        let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id, region)
             .with_user_id(database.get_telemetry_user_id().ok().flatten());
         let otel_providers = init_otel(&otel_config);
         let mut otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
@@ -1202,24 +1198,22 @@ impl TelemetryClient {
     }
 }
 
-/// Default OTLP endpoint (KUTS) when `KIRO_TELEMETRY_OTLP_ENDPOINT` is not overridden.
-///
-/// `pub(crate)` so the launcher (`crate::launch`) can resolve the same endpoint
-/// it forwards to the TUI child from the single source of truth the host's own
-/// OTel pipeline uses — no dependency on the collector crate.
-pub(crate) const DEFAULT_OTLP_ENDPOINT: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
-
-fn otel_telemetry_config(env: &Env, telemetry_enabled: bool, client_id: Uuid) -> OtelTelemetryConfig {
+fn otel_telemetry_config(
+    env: &Env,
+    telemetry_enabled: bool,
+    client_id: Uuid,
+    region: Option<&str>,
+) -> OtelTelemetryConfig {
     // Default to DualWrite (KUTS/OTel + legacy Toolkit) so pre-existing metrics
     // dual-hit both backends without opt-in. An explicit `KIRO_TELEMETRY_OTEL=0`
     // still parses to Off (the user opt-out), and `2` selects OtelOnly.
     let otel_mode = env
         .get(KIRO_TELEMETRY_OTEL)
         .map_or(OtelMode::DualWrite, |value| OtelMode::parse(&value));
-    let otlp_endpoint = env
-        .get(KIRO_TELEMETRY_OTLP_ENDPOINT)
-        .ok()
-        .or_else(|| Some(DEFAULT_OTLP_ENDPOINT.to_string()));
+    let otlp_endpoint = Some(kiro_telemetry::resolve_otlp_endpoint(
+        env.get(KIRO_TELEMETRY_OTLP_ENDPOINT).ok(),
+        region,
+    ));
     let state_dir = GlobalPaths::database_path_static()
         .ok()
         .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
@@ -1298,7 +1292,7 @@ mod test {
             (KIRO_TELEMETRY_OTLP_LOGS_ENABLED, "0"),
         ]);
         let client_id = uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e");
-        let config = otel_telemetry_config(&env, true, client_id);
+        let config = otel_telemetry_config(&env, true, client_id, Some("eu-central-1"));
 
         assert_eq!(config.otel_mode, OtelMode::DualWrite);
         assert!(config.exports_enabled());
@@ -1314,10 +1308,19 @@ mod test {
     #[test]
     fn otel_config_defaults_kuts_logs_off() {
         let env = Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "2")]);
-        let config = otel_telemetry_config(&env, true, uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"));
+        let config = otel_telemetry_config(
+            &env,
+            true,
+            uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            Some("eu-central-1"),
+        );
 
         assert!(config.exports_enabled());
         assert!(!config.otlp_logs_enabled());
+        assert_eq!(
+            config.otlp_endpoint.as_deref(),
+            Some("https://prod.eu-central-1.telemetry-v2.kiro.dev")
+        );
     }
 
     #[test]
