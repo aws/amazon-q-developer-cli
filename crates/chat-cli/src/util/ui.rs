@@ -93,9 +93,8 @@ pub fn render_migration_message(output: &mut impl Write) -> Result<()> {
     Ok(())
 }
 
-/// Render changelog content from feed.json with manual formatting
-pub fn render_changelog_content(output: &mut impl Write, show_tip: bool) -> Result<()> {
-    let feed = Feed::load();
+/// Render changelog content from the provided feed with manual formatting
+pub fn render_changelog_content(output: &mut impl Write, feed: &Feed, show_tip: bool) -> Result<()> {
     let recent_entries = feed.get_all_changelogs()
         .into_iter()
         .take(2) // Show last 2 releases

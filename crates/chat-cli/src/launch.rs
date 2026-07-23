@@ -385,7 +385,13 @@ async fn launch_acp_interactive(
     if let Some(parent) = feed_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&feed_path, include_str!("cli/feed.json"))?;
+    // Nightly builds serve the remotely published feed via a cache refreshed
+    // in the background, so launch never blocks on the network: this launch
+    // snapshots what the previous launch fetched (bundled feed on cache miss).
+    // Written atomically so a concurrent launch never tears the file under a
+    // running TUI. Other channels always get the bundled feed.
+    crate::cli::feed::atomic_write(&feed_path, &crate::cli::feed::Feed::load_cached_json())?;
+    crate::cli::feed::Feed::refresh_cache_in_background();
     cmd.env("KIRO_FEED_FILE", &feed_path);
 
     // Signal Amazon-internal authentication to the TUI so KAS-mode /feedback

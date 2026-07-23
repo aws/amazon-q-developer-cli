@@ -13,9 +13,12 @@ function statePath(): string {
  * Version match: returns true if cliVersion >= entryVersion.
  * Supports X wildcards in entryVersion: "2.X.X" matches any 2.x.x,
  * "2.0.X" matches any 2.0.x.
+ * Prerelease cli versions sort below their release (semver): for equal
+ * numeric triples, "2.13.2-nightly.3" does NOT match entry "2.13.2".
  */
 function versionMatch(cliVersion: string, entryVersion: string): boolean {
-  const cli = cliVersion.split('.').map(Number);
+  const [cliCore, cliPrerelease] = cliVersion.split(/-(.*)/s);
+  const cli = (cliCore ?? '').split('.').map(Number);
   if (cli.some(Number.isNaN)) return false;
   const entry = entryVersion.split('.');
   for (let i = 0; i < 3; i++) {
@@ -26,7 +29,8 @@ function versionMatch(cliVersion: string, entryVersion: string): boolean {
     if (c > e) return true;
     if (c < e) return false;
   }
-  return true;
+  // Equal numeric triples: a prerelease build predates the release itself.
+  return !cliPrerelease;
 }
 
 export function getShowCounts(): Record<string, number> {

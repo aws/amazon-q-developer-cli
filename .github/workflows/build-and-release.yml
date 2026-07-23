@@ -267,6 +267,35 @@ jobs:
     with:
       commit_sha: ${{ needs.prepare.outputs.commit_sha }}
 
+  publish_changelog:
+    name: Publish Changelog to Gamma
+    needs: [prepare, build_darwin, build_linux, build_windows, build_windows_retry]
+    # Stable builds run from release/X.Y.Z, which carries the cumulative
+    # feed.json; main holds only the placeholder. Nightly clients read the
+    # gamma feed published by the last stable release. The channel output is
+    # also 'stable' for rc tags, so exclude them explicitly: the release
+    # branch feed already contains the upcoming version's entry, which must
+    # not be published before the release ships. always() is required because
+    # build_windows_retry is usually skipped, which would otherwise skip this
+    # job too.
+    if: |
+      always() &&
+      needs.prepare.outputs.channel == 'stable' &&
+      !contains(needs.prepare.outputs.version, '-rc.') &&
+      needs.build_darwin.result == 'success' &&
+      needs.build_linux.result == 'success' &&
+      (needs.build_windows.result == 'success' || needs.build_windows_retry.result == 'success')
+    # Matches the group used by manual publish-changelog dispatches; workflow-level
+    # concurrency in the called workflow does not apply to workflow_call runs.
+    concurrency:
+      group: publish-changelog-gamma
+      cancel-in-progress: false
+    uses: ./.github/workflows/publish-changelog.yml
+    secrets: inherit
+    with:
+      environment: gamma
+      ref: ${{ needs.prepare.outputs.commit_sha }}
+
   build_darwin:
     name: Darwin Build (${{ matrix.environment }})
     needs: [prepare, generate_embeddings]

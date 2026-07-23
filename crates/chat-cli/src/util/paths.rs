@@ -134,6 +134,18 @@ pub fn feed_json_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("feed.json"))
 }
 
+/// Path to the cached remote changelog feed, refreshed in the background on
+/// nightly builds and snapshotted into feed.json at the next launch
+pub fn feed_cache_json_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("feed-cache.json"))
+}
+
+/// Path to the ETag of the cached remote changelog feed, used for
+/// conditional GETs when refreshing
+pub fn feed_cache_etag_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("feed-cache.etag"))
+}
+
 /// Path to extracted Node.js executable (for KAS agent)
 pub fn node_path() -> Result<PathBuf> {
     let name = if cfg!(windows) { "node.exe" } else { "node" };
@@ -684,6 +696,12 @@ fn test_settings_path() -> PathBuf {
         .clone()
 }
 
+/// Serializes tests that mutate process env vars (KIRO_DATA_DIR,
+/// KIRO_VERSION_OVERRIDE, ...), since cargo's harness runs tests
+/// concurrently in one process.
+#[cfg(test)]
+pub(crate) static ENV_MUTATION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod migration_tests {
     use std::collections::HashSet;
@@ -906,9 +924,10 @@ mod migration_tests {
 
     #[test]
     fn test_kiro_data_dir_override() {
-        // Combined into one test (no other test reads KIRO_DATA_DIR) so the
-        // set/unset steps stay sequential without needing a serial guard.
-        // SAFETY: KIRO_DATA_DIR is read only by data_dir(), exercised here.
+        // Serialized with other tests that touch KIRO_DATA_DIR via the shared
+        // lock; the set/unset steps below must stay sequential.
+        // SAFETY: exclusive access guaranteed by ENV_MUTATION_TEST_LOCK.
+        let _guard = ENV_MUTATION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe { std::env::set_var(KIRO_DATA_DIR, "/enterprise/kiro") };
         assert_eq!(data_dir().unwrap(), PathBuf::from("/enterprise/kiro"));
 

@@ -2192,8 +2192,12 @@ impl ChatSession {
 
         if should_show {
             // Use the shared rendering function
-            // Pass true to show the tip when auto-showing changelog on startup
-            ui::render_changelog_content(&mut self.stderr, true)?;
+            // Pass true to show the tip when auto-showing changelog on startup.
+            // Startup must not block on the network: render the cached feed and
+            // refresh the cache in the background for the next startup.
+            crate::cli::feed::Feed::refresh_cache_in_background();
+            let feed = crate::cli::feed::Feed::load_cached();
+            ui::render_changelog_content(&mut self.stderr, &feed, true)?;
 
             // Update the database entries
             os.database.set_changelog_last_version(current_version)?;

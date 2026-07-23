@@ -1,3 +1,4 @@
+pub mod channel;
 pub mod consts;
 pub mod editor;
 pub mod env_var;

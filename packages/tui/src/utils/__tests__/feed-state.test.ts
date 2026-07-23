@@ -333,8 +333,29 @@ describe('feed-state', () => {
     });
 
     it('malformed CLI version does not match anything', () => {
+      process.env.KIRO_VERSION_OVERRIDE = 'unknown';
+      const msgs = [makeAnnouncement({ id: 'any', version: '2.X.X' })];
+      expect(getActiveAnnouncement(msgs)).toBeNull();
+      delete process.env.KIRO_VERSION_OVERRIDE;
+    });
+
+    it('prerelease CLI version matches wildcard for its major line', () => {
       process.env.KIRO_VERSION_OVERRIDE = '2.0.0-beta.1';
       const msgs = [makeAnnouncement({ id: 'any', version: '2.X.X' })];
+      expect(getActiveAnnouncement(msgs)?.id).toBe('any');
+      delete process.env.KIRO_VERSION_OVERRIDE;
+    });
+
+    it('nightly build matches entries up to the previous stable release', () => {
+      process.env.KIRO_VERSION_OVERRIDE = '2.13.2-nightly.3';
+      const msgs = [makeAnnouncement({ id: 'prev-stable', version: '2.13.1' })];
+      expect(getActiveAnnouncement(msgs)?.id).toBe('prev-stable');
+      delete process.env.KIRO_VERSION_OVERRIDE;
+    });
+
+    it('nightly build does not match the stable release it precedes', () => {
+      process.env.KIRO_VERSION_OVERRIDE = '2.13.2-nightly.3';
+      const msgs = [makeAnnouncement({ id: 'upcoming', version: '2.13.2' })];
       expect(getActiveAnnouncement(msgs)).toBeNull();
       delete process.env.KIRO_VERSION_OVERRIDE;
     });

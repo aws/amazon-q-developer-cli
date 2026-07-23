@@ -10,6 +10,16 @@ on:
         options:
           - gamma
           - prod
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment (gamma or prod)'
+        required: true
+        type: string
+      ref:
+        description: 'Commit SHA to publish the feed from (defaults to the triggering SHA)'
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -25,27 +35,73 @@ jobs:
     timeout-minutes: 10
     environment: ${{ inputs.environment }}
     steps:
+      - name: Validate environment
+        run: |
+          case "${{ inputs.environment }}" in
+            gamma|prod) ;;
+            *) echo "Invalid environment: '${{ inputs.environment }}' (must be gamma or prod)"; exit 1 ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
-      - name: Validate feed.json
-        run: python3 -c "import json, sys; json.load(open(sys.argv[1]))" crates/chat-cli/src/cli/feed.json
+      - name: Validate and filter feed.json
+        id: validate
+        run: |
+          pip install --quiet jsonschema
+          python3 - <<'EOF'
+          import json, os
+          from jsonschema import validate
+
+          feed = json.load(open('crates/chat-cli/src/cli/feed.json'))
+          schema = json.load(open('crates/chat-cli/src/cli/feed-schema.json'))
+          validate(feed, schema)
+
+          # The Rust Feed struct requires type/date/version with no serde
+          # default; a feed missing one would silently drop every CLI client
+          # to its embedded copy.
+          for entry in feed['entries']:
+              for field in ('type', 'date', 'version'):
+                  value = entry.get(field)
+                  assert isinstance(value, str) and value, f"entry missing required '{field}': {entry}"
+
+          # Publish only released, non-hidden entries so unreleased or hidden
+          # content never reaches the public feed.
+          feed['entries'] = [
+              e for e in feed['entries']
+              if e['type'] == 'release' and not e.get('hidden', False)
+          ]
+          json.dump(feed, open('feed-publish.json', 'w'), indent=1)
+
+          # An empty feed is valid JSON that clients would accept, silently
+          # replacing all hosted changelog content. Never publish one; skip
+          # instead (the checked-out ref may carry only the placeholder).
+          publish = 'true' if feed['entries'] else 'false'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'publish={publish}\n')
+          print(f"validated; publishable entries: {len(feed['entries'])} (publish={publish})")
+          EOF
 
       - name: Configure AWS credentials
+        if: steps.validate.outputs.publish == 'true'
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Upload to S3
+        if: steps.validate.outputs.publish == 'true'
         run: |
-          aws s3 cp crates/chat-cli/src/cli/feed.json \
+          aws s3 cp feed-publish.json \
             s3://${{ secrets.CHANGELOG_BUCKET }}/stable/changelog/feed.json \
             --content-type application/json \
             --cache-control "public, max-age=300"
 
       - name: Invalidate CloudFront
+        if: steps.validate.outputs.publish == 'true'
         run: |
           aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CHANGELOG_CF_DISTRIBUTION_ID }} \
-            --paths "/changelog/feed.json"
+            --paths "/stable/changelog/feed.json"

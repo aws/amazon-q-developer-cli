@@ -310,7 +310,7 @@ impl RootSubcommand {
                 Self::Profile => user::profile(os).await,
                 Self::Settings(settings_args) => settings_args.execute(os).await,
                 Self::Issue(args) => args.execute(os).await,
-                Self::Version { changelog } => Cli::print_version(changelog),
+                Self::Version { changelog } => Cli::print_version(changelog).await,
                 Self::Chat(mut args) => {
                     // Dark-ship gate: reject gated-off `--cloud` / `--repo` as
                     // unknown args BEFORE any other handling or side effects, so
@@ -495,7 +495,7 @@ impl RootSubcommand {
             Self::Profile => user::profile(os).await,
             Self::Settings(settings_args) => settings_args.execute(os).await,
             Self::Issue(args) => args.execute(os).await,
-            Self::Version { changelog } => Cli::print_version(changelog),
+            Self::Version { changelog } => Cli::print_version(changelog).await,
             Self::Chat(mut args) => {
                 // Dark-ship gate: reject gated-off `--cloud` / `--repo` as
                 // unknown args BEFORE any other handling or side effects, so
@@ -1123,7 +1123,7 @@ impl Cli {
         Ok(())
     }
 
-    fn print_version(changelog: Option<String>) -> Result<ExitCode> {
+    async fn print_version(changelog: Option<String>) -> Result<ExitCode> {
         // If no changelog is requested, display normal version information
         if changelog.is_none() {
             let _ = writeln!(stdout(), "{}", Self::command().render_version());
@@ -1131,7 +1131,7 @@ impl Cli {
         }
 
         let changelog_value = changelog.unwrap_or_default();
-        let feed = Feed::load();
+        let feed = Feed::load_remote().await;
 
         // Display changelog for all versions
         if changelog_value == "all" {

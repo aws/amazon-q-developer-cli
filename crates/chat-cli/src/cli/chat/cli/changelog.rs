@@ -15,7 +15,8 @@ impl ChangelogArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Use the shared rendering function from util::ui
         // Pass false to not show the tip when user explicitly runs /changelog
-        ui::render_changelog_content(&mut session.stderr, false)
+        let feed = crate::cli::feed::Feed::load_remote().await;
+        ui::render_changelog_content(&mut session.stderr, &feed, false)
             .map_err(|e| ChatError::Std(std::io::Error::other(e)))?;
 
         Ok(ChatState::PromptUser {

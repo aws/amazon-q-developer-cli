@@ -36,6 +36,17 @@ pub fn new_client() -> Result<Client, RequestError> {
         .build()?)
 }
 
+/// Client for fetching fixed first-party URLs that never redirect, so a
+/// compromised or misconfigured origin cannot bounce requests cross-origin
+/// or downgrade to http.
+pub fn new_client_no_redirects() -> Result<Client, RequestError> {
+    Ok(Client::builder()
+        .use_preconfigured_tls(client_config())
+        .user_agent(USER_AGENT.chars().filter(|c| c.is_ascii_graphic()).collect::<String>())
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
+}
+
 pub fn create_default_root_cert_store() -> RootCertStore {
     let mut root_cert_store: RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
 

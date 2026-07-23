@@ -155,7 +155,7 @@ impl Rollout {
 
         let features = serde_json::from_str::<HashMap<String, FeatureRollout>>(EMBEDDED_CONFIG).unwrap_or_default();
         let is_internal = is_amzn_start_url(start_url.as_deref());
-        let is_nightly = env!("CARGO_PKG_VERSION").contains("-nightly");
+        let is_nightly = crate::util::channel::channel() == crate::util::channel::Channel::Nightly;
         let _ = INSTANCE.set(Rollout {
             features,
             client_id,

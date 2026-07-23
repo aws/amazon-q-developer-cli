@@ -200,7 +200,9 @@ pub mod env_var {
         /// (`getCliVersion()` in `packages/tui/src/utils/version.ts`) reports
         /// the binary's real compile-time version instead of the bundled
         /// `0.0.0-dev` placeholder / `99.99.99-dev` dev fallback. Users can
-        /// also set it directly to test version-gated features.
+        /// also set it directly to test version-gated features. Read by
+        /// `util::channel` as the effective version, so it also selects the
+        /// release channel (changelog feed gate, rollout nightly gating).
         KIRO_VERSION_OVERRIDE = "KIRO_VERSION_OVERRIDE",
 
         /// Terminal color level for the TUI child, kept on a private variable
@@ -264,6 +266,24 @@ pub mod env_var {
 
         /// Override the update release URL at runtime
         KIRO_DESKTOP_RELEASE_URL = "KIRO_DESKTOP_RELEASE_URL",
+
+        /// Override the URL used to fetch the remote changelog feed
+        /// (feed.json). Must be https (or http on localhost, for tests).
+        /// Redirects the fetch but does not bypass the nightly channel gate;
+        /// combine with KIRO_VERSION_OVERRIDE to test on other channels.
+        KIRO_FEED_URL = "KIRO_FEED_URL",
+
+        /// Path to a feed.json that replaces the binary's embedded changelog
+        /// feed (the guaranteed fallback / embedded floor). A test/dev seam
+        /// for exercising the version cap and floor against fixtures; falls
+        /// back to the embedded copy when unset or unreadable.
+        KIRO_BUNDLED_FEED_FILE = "KIRO_BUNDLED_FEED_FILE",
+
+        /// Kill switch: disable remote changelog feed fetching entirely
+        /// (distinct from KIRO_FEED_URL, which only redirects it). The
+        /// changelog then renders from the bundled feed, as before the
+        /// remote feed existed.
+        KIRO_NO_REMOTE_CHANGELOG = "KIRO_NO_REMOTE_CHANGELOG",
 
         /// Comma-separated MCP server names (matching entries in mcp.json) that must
         /// always be loaded and their tools always available, regardless of agent profile.
