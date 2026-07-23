@@ -91,11 +91,22 @@ Before starting the release, compute the changelog to decide the version number.
    echo "Added entries: $ADDED_COUNT"
    ```
 
-4. **Version decision:**
-   - If `ADDED_COUNT >= 2` → **minor** version bump: `X.Y+1.0`
-   - Otherwise → **patch** version bump: `X.Y.Z+1`
+4. **Version suggestion (heuristic only — the operator makes the final call):**
+   - `ADDED_COUNT >= 2` → suggest **minor** (`X.Y+1.0`)
+   - otherwise → suggest **patch** (`X.Y.Z+1`)
 
-5. Present the proposed version and changelog summary to the user for confirmation before proceeding.
+   The count is only a starting signal. A single large/breaking/risky change can warrant a
+   minor even with a low `added` count, and two trivial adds can stay a patch — so the count
+   never decides on its own.
+
+5. **Present to the operator and let them assess complexity — don't proceed on the heuristic alone.**
+   Show the full fragment list (type + description) with the suggested bump, then ask the operator
+   to confirm or override:
+   > Heuristic suggests **`<minor|patch>`** → `<version>` (from `<N>` `added` fragments).
+   > Full changelog (`<M>` fragments): `<type: description list>`
+   > Does the complexity/risk match, or should we adjust? Please confirm the version.
+
+6. **Ask the operator for the target deploy date.** Ask when they intend to deploy this release, as `YYYY-MM-DD`, and record it as `<deploy_date>`. It is used as the `date` field of the release entry when writing `feed.json` in Step 2 (instead of "today"). If they don't have a firm date yet, default to today and note that the feed.json date can be updated when Step 2 runs.
 
 ## Release Steps
 
@@ -175,7 +186,7 @@ The release branch's feed.json should contain **exactly two entries** (plus the 
    ```json
    {
      "type": "release",
-     "date": "<today, YYYY-MM-DD>",
+     "date": "<deploy_date from Determine Version, YYYY-MM-DD>",
      "version": "<version>",
      "title": "Version <version>",
      "changes": [ { "type": "<fragment type>", "description": "<fragment description>" } ]
