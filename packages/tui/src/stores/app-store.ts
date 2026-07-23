@@ -30,6 +30,7 @@ import type {
   MigrationWarning,
 } from '../utils/agent-migration/index.js';
 import { selectVisibleSlashCommands } from './visible-slash-commands';
+import { normalizeAtPrompt } from '../utils/normalize-at-prompt';
 import { synthesizeToolUseContent } from './tool-use-synthesis';
 import {
   isHistoryOnlyAssistantMessage,
@@ -5470,7 +5471,11 @@ export const createAppStore = (props: AppStoreProps) => {
       if (pendingSteerContent != null) {
         const steer = pendingSteerContent;
         set({ pendingSteerContent: null });
-        await get().sendMessage(steer);
+        await get().sendMessage(
+          normalizeAtPrompt(steer, selectVisibleSlashCommands(get())),
+          undefined,
+          steer
+        );
         return; // After this turn ends, processQueue will be called again for the queue.
       }
 
@@ -5581,7 +5586,15 @@ export const createAppStore = (props: AppStoreProps) => {
         return;
       }
 
-      await get().sendMessage(nextMessage);
+      // Queued @prompts are stored verbatim; resolve them against the
+      // prompt registry as they leave the queue, not when they entered it.
+      // The typed text stays as display content so the rendered row and
+      // history match what the user submitted.
+      await get().sendMessage(
+        normalizeAtPrompt(nextMessage, selectVisibleSlashCommands(get())),
+        undefined,
+        nextMessage
+      );
     },
 
     clearQueue: () => {
@@ -7545,9 +7558,21 @@ export const createAppStore = (props: AppStoreProps) => {
         set({ announcement: null, announcementExpanded: false });
       }
 
+      // A typed `@name` that exactly matches a known prompt is routed as its
+      // slash form. Interception must not depend on the @ menu being open:
+      // menu state is async (debounced search, late MCP prompt advertisement)
+      // and pasted input never opens it.
+      const routed = normalizeAtPrompt(
+        trimmed,
+        selectVisibleSlashCommands(state)
+      );
+
       // Handle slash commands via command registry
-      if (trimmed.startsWith('/')) {
-        CommandHistory.getInstance().add(trimmed);
+      if (routed.startsWith('/')) {
+        // Rewritten @prompts always end in a message send, which records
+        // history itself; recording here too would double-add since the
+        // history dedupe only collapses consecutive identical entries.
+        if (routed === trimmed) CommandHistory.getInstance().add(routed);
         const ctx: CommandContext = buildCommandContext(state, set, get);
 
         applyLiteAlertRouting(ctx, state, set);
@@ -7559,27 +7584,34 @@ export const createAppStore = (props: AppStoreProps) => {
         // command's own handler can show the proper error.
         if (state.uiMode === 'lite') {
           const allCommands = liteGateCommands(state);
-          if (isKnownSlashCommandToken(trimmed, allCommands)) {
-            await executeCommand(trimmed, ctx);
+          if (isKnownSlashCommandToken(routed, allCommands)) {
+            await executeCommand(routed, ctx);
             return;
           }
-          await state.sendMessage(trimmed, undefined, trimmed);
+          await state.sendMessage(routed, undefined, trimmed);
           return;
         }
 
-        const handled = await executeCommand(trimmed, ctx);
+        const handled = await executeCommand(routed, ctx);
         if (handled) return;
+        // Dispatch declined a rewritten @prompt (the command parser can
+        // reject names its heuristics read as file paths); send the typed
+        // text untouched rather than letting the fallthrough mangle it.
+        if (routed !== trimmed) {
+          await state.sendMessage(trimmed);
+          return;
+        }
         // Not a recognized command — could be a file path like /Users/...
         // Strip the leading "/" only for file paths to match V1 behavior
         // (leaving it confuses the LLM's path extraction for tool calls).
         // For other inputs like "// hello world", send as-is.
-        const afterSlash = trimmed.slice(1);
+        const afterSlash = routed.slice(1);
         const isFilePath =
           afterSlash.length > 0 &&
           afterSlash[0] !== '/' &&
           afterSlash[0] !== ' ';
 
-        const messageText = isFilePath ? afterSlash : trimmed;
+        const messageText = isFilePath ? afterSlash : routed;
         await state.sendMessage(messageText, undefined, trimmed);
         return;
       }

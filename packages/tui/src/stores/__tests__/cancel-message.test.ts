@@ -295,7 +295,11 @@ describe('cancelMessage in steering mode', () => {
     await store.getState().cancelMessage();
 
     // Queue was captured and replayed as a fresh prompt
-    expect(sendMessage).toHaveBeenCalledWith('redirect to counting');
+    expect(sendMessage).toHaveBeenCalledWith(
+      'redirect to counting',
+      undefined,
+      'redirect to counting'
+    );
     // Local queue display was cleared so the tray doesn't show stale "pending"
     expect(store.getState().pendingSteerContent).toBeNull();
     // Backend clears the queue on cancel (emits SteeringCleared), so no

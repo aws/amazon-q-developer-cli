@@ -1,13 +1,21 @@
-import type { SlashCommand } from '../stores/app-store';
+import type { AvailableCommand } from '../types/commands';
 
-/** Convert `@name args` → `/name args` if `name` matches a known prompt. */
+/**
+ * Convert `@name args` → `/name args` if `name` matches a known prompt.
+ * Only rewrites when the name is followed by a space or end of input:
+ * downstream command parsing splits on spaces only, so rewriting across
+ * other whitespace would produce a token no command matches.
+ */
 export const normalizeAtPrompt = (
   input: string,
-  commands: SlashCommand[]
+  commands: readonly AvailableCommand[]
 ): string => {
-  if (!input.startsWith('@')) return input;
-  const name = input.slice(1).split(/\s/, 1)[0]!;
-  if (commands.some((c) => c.meta?.type === 'prompt' && c.name === `/${name}`))
-    return '/' + input.slice(1);
-  return input;
+  const match = /^@(\S+)( |$)/.exec(input);
+  if (!match) return input;
+  const lowerName = match[1]!.toLowerCase();
+  const prompt = commands.find(
+    (c) => c.meta?.type === 'prompt' && c.name.toLowerCase() === `/${lowerName}`
+  );
+  if (!prompt) return input;
+  return prompt.name + input.slice(1 + match[1]!.length);
 };

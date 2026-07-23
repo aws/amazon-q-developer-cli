@@ -3,6 +3,7 @@ import {
   filterPromptsByQuery,
   buildAtMenuItems,
   findPromptByMenuLabel,
+  atMenuShowsPrompts,
 } from './command-menu-utils';
 import type { SlashCommand } from '../../stores/app-store';
 
@@ -126,5 +127,57 @@ describe('findPromptByMenuLabel', () => {
 
   it('handles empty commands list', () => {
     expect(findPromptByMenuLabel([], 'anything')).toBeUndefined();
+  });
+});
+
+describe('atMenuShowsPrompts', () => {
+  const atTrigger = (position: number) => ({ key: '@', position });
+
+  it('is true when the text after @ prefix-matches a prompt', () => {
+    expect(atMenuShowsPrompts(commands, '@rese', atTrigger(0))).toBe(true);
+  });
+
+  it('is true for an exact full prompt name', () => {
+    expect(atMenuShowsPrompts(commands, '@research', atTrigger(0))).toBe(true);
+  });
+
+  it('is false once args are typed after the name - Enter belongs to submit, not the menu', () => {
+    expect(
+      atMenuShowsPrompts(commands, '@research some topic', atTrigger(0))
+    ).toBe(false);
+    expect(atMenuShowsPrompts(commands, '@research ', atTrigger(0))).toBe(
+      false
+    );
+  });
+
+  it('is false when nothing matches', () => {
+    expect(atMenuShowsPrompts(commands, '@nomatch', atTrigger(0))).toBe(false);
+  });
+
+  it('is false when the query matches only non-prompt commands', () => {
+    expect(atMenuShowsPrompts(commands, '@save', atTrigger(0))).toBe(false);
+  });
+
+  it('is false for a bare @ (empty query)', () => {
+    expect(atMenuShowsPrompts(commands, '@', atTrigger(0))).toBe(false);
+  });
+
+  it('is false when there is no active trigger', () => {
+    expect(atMenuShowsPrompts(commands, '@research', null)).toBe(false);
+  });
+
+  it('is false when the trigger is not @', () => {
+    expect(
+      atMenuShowsPrompts(commands, '/research', { key: '/', position: 0 })
+    ).toBe(false);
+  });
+
+  it('is false for an inline @ mid-message - prompts are leading-only, mid-message @ stays file attach', () => {
+    expect(atMenuShowsPrompts(commands, 'hello @rese', atTrigger(6))).toBe(
+      false
+    );
+    expect(atMenuShowsPrompts(commands, 'hello @research', atTrigger(6))).toBe(
+      false
+    );
   });
 });

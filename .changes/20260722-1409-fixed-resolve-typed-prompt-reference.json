@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Resolve typed @prompt references at submit time so they load reliably instead of intermittently passing through as plain text"
+}

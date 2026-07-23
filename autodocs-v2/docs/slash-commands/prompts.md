@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-08
-  commit: 1a984cb0
+  validated: 2026-07-22
+  commit: 293919d18
   status: validated
   testable_headless: false
   category: slash_command
   title: /prompts
   description: Select and execute available prompts from MCP servers and local files
-  keywords: [prompts, mcp, template, reusable, select]
+  keywords: [prompts, mcp, template, reusable, select, at-sign, @]
   related: [mcp, agent-configuration]
 ---
 
@@ -17,12 +17,21 @@ The `/prompts` command lists available prompts from MCP servers and local/global
 
 ## Quick Access with @
 
-Type `@` followed by Tab to auto-complete available prompts from all sources (local, global, and MCP).
+Type `@` at the start of your input to invoke a prompt directly. The name is matched case-insensitively against all available prompts (local, global, and MCP).
 
 ```
-@<Tab>           # Shows all available prompts
-@code<Tab>       # Filters to prompts matching "code"
+@code-review src/main.rs   # Executes the code-review prompt with arguments
+@research                   # Executes the research prompt
 ```
+
+As you type after `@`, a menu filters matching prompts. You can select from the menu or simply press Enter — the typed name resolves to the prompt at submit time regardless of menu state.
+
+```
+@code            # Menu shows prompts matching "code"
+@code-review     # Full name typed — Enter submits, menu or not
+```
+
+The `@` shortcut only triggers prompts when typed at the beginning of the input line. An `@` in the middle of a message is treated as a file reference.
 
 ## Usage
 

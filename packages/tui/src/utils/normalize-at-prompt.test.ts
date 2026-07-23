@@ -62,4 +62,23 @@ describe('normalizeAtPrompt', () => {
   it('works with an empty commands list', () => {
     expect(normalizeAtPrompt('@research topic', [])).toBe('@research topic');
   });
+
+  it('passes multiline input through verbatim', () => {
+    expect(normalizeAtPrompt('@research\nmore text', commands)).toBe(
+      '@research\nmore text'
+    );
+  });
+
+  it('passes tab-separated input through verbatim', () => {
+    expect(normalizeAtPrompt('@research\tmore', commands)).toBe(
+      '@research\tmore'
+    );
+  });
+
+  it('matches prompt names case-insensitively, emitting the canonical name', () => {
+    expect(normalizeAtPrompt('@Research topic', commands)).toBe(
+      '/research topic'
+    );
+    expect(normalizeAtPrompt('@RESEARCH', commands)).toBe('/research');
+  });
 });

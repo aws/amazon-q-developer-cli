@@ -18,6 +18,7 @@ import type { AvailableCommand } from '../../types/commands';
 import { searchFilesAbortable } from '../../utils/file-search.js';
 import {
   filterPromptsByQuery,
+  atMenuPromptQuery,
   buildAtMenuItems,
   isCommandVisibleInUiMode,
 } from './command-menu-utils.js';
@@ -378,10 +379,11 @@ export const CommandMenu: React.FC = () => {
 
   const filteredPrompts = useMemo(
     () =>
-      activeTrigger?.key === '@'
-        ? filterPromptsByQuery(slashCommands, atQuery)
-        : [],
-    [activeTrigger, atQuery, slashCommands]
+      filterPromptsByQuery(
+        slashCommands,
+        atMenuPromptQuery(commandInputValue, activeTrigger)
+      ),
+    [activeTrigger, commandInputValue, slashCommands]
   );
 
   const atMenuItems = useMemo(

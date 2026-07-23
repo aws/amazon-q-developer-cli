@@ -23,7 +23,10 @@ import {
   stripNonPrintable,
 } from '../../../utils/index.js';
 import { computeInputSpans } from '../../../utils/input-syntax.js';
-import { isCommandVisibleInUiMode } from '../../ui/command-menu-utils.js';
+import {
+  isCommandVisibleInUiMode,
+  atMenuShowsPrompts,
+} from '../../ui/command-menu-utils.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
@@ -1025,6 +1028,14 @@ export const PromptInput = React.memo(function PromptInput({
       // Check if file picker menu is visible
       const filePickerVisible =
         activeTrigger?.key === '@' && filePickerHasResults;
+      // Prompt-item visibility is derived synchronously from the same inputs
+      // the menu renders from, so this gate and the menu cannot disagree the
+      // way the async file-search flag can.
+      const atMenuPromptsVisible = atMenuShowsPrompts(
+        slashCommands,
+        commandInputValue,
+        activeTrigger
+      );
 
       if (key.return) {
         if (key.meta || key.shift) {
@@ -1077,7 +1088,8 @@ export const PromptInput = React.memo(function PromptInput({
           // SAME Enter, which already queues the completed command — so bail
           // when a menu is up or PromptInput double-queues the raw typed prefix.
           if (isProcessing) {
-            if (slashMenuVisible || filePickerVisible) return;
+            if (slashMenuVisible || filePickerVisible || atMenuPromptsVisible)
+              return;
             const content = buildContent(segments);
             // Don't submit whitespace-only prompts, but preserve indentation
             // (e.g. pasted code) in the submitted content.
@@ -1091,6 +1103,9 @@ export const PromptInput = React.memo(function PromptInput({
           if (filePickerVisible) return;
           // Block Enter if slash command menu is visible
           if (slashMenuVisible) return;
+          // Block Enter while the @ menu shows prompt items — the menu's
+          // own Enter handler selects the highlighted prompt.
+          if (atMenuPromptsVisible) return;
           const content = buildContent(segments);
           const hasImages = segments.some((s) => s.type === 'image');
           if (content.trim() || hasImages) {
@@ -1100,7 +1115,8 @@ export const PromptInput = React.memo(function PromptInput({
         }
       } else if (key.tab && !key.shift) {
         // Skip if a menu is handling tab
-        if (slashMenuVisible || filePickerVisible) return;
+        if (slashMenuVisible || filePickerVisible || atMenuPromptsVisible)
+          return;
         // Accept shadow text completion (e.g. /agent ro → /agent roberto)
         if (commandShadowText) {
           const text = getVisibleText(segments);
@@ -1237,7 +1253,13 @@ export const PromptInput = React.memo(function PromptInput({
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
-        if (slashMenuVisible || filePickerVisible || activeCommand) return;
+        if (
+          slashMenuVisible ||
+          filePickerVisible ||
+          atMenuPromptsVisible ||
+          activeCommand
+        )
+          return;
         // Multi-line or visually wrapped: move cursor up a visual line
         if (isVisuallyMultiLine(segments, termWidth)) {
           const newPos = moveCursorUpVisual(segments, cursor, termWidth);
@@ -1282,7 +1304,13 @@ export const PromptInput = React.memo(function PromptInput({
         // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
-        if (slashMenuVisible || filePickerVisible || activeCommand) return;
+        if (
+          slashMenuVisible ||
+          filePickerVisible ||
+          atMenuPromptsVisible ||
+          activeCommand
+        )
+          return;
         // Multi-line or visually wrapped: move cursor down a visual line
         if (isVisuallyMultiLine(segments, termWidth)) {
           const newPos = moveCursorDownVisual(segments, cursor, termWidth);
@@ -1690,7 +1718,9 @@ export const PromptInput = React.memo(function PromptInput({
               .toLowerCase()
               .startsWith(commandInputValue.slice(1).toLowerCase())
         )) ||
-      (activeTrigger?.key === '@' && filePickerHasResults);
+      (activeTrigger?.key === '@' &&
+        (filePickerHasResults ||
+          atMenuShowsPrompts(slashCommands, commandInputValue, activeTrigger)));
 
     // Reverse search mode: show the search prompt
     if (reverseSearchRef.current.active) {

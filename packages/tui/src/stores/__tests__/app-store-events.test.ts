@@ -1650,7 +1650,11 @@ describe('handleCompactionEvent', () => {
       'next prompt',
       'partial answer',
     ]);
-    expect(sendMessage).toHaveBeenCalledWith('next prompt');
+    expect(sendMessage).toHaveBeenCalledWith(
+      'next prompt',
+      undefined,
+      'next prompt'
+    );
   });
 
   it('inserts a late report at the compact boundary after fallback drains queued input', async () => {
@@ -1702,7 +1706,11 @@ describe('handleCompactionEvent', () => {
       'next prompt',
       'partial answer',
     ]);
-    expect(sendMessage).toHaveBeenCalledWith('next prompt');
+    expect(sendMessage).toHaveBeenCalledWith(
+      'next prompt',
+      undefined,
+      'next prompt'
+    );
   });
 
   it('handles failed status', async () => {

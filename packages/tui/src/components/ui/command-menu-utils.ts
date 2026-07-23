@@ -31,6 +31,35 @@ export function filterPromptsByQuery(
   );
 }
 
+/**
+ * Query used to match prompt entries in the @ menu. Empty unless the @ is
+ * the first character of the input: prompts are commands, and commands are
+ * leading-only, so a mid-message @ stays a pure file reference. Also empty
+ * once the text after the trigger contains whitespace: prompt items only
+ * show while the user is still typing the name, so exactly one Enter owner
+ * exists at a time (menu during name-typing, submit once args follow).
+ */
+export function atMenuPromptQuery(
+  text: string,
+  trigger: { key: string; position: number } | null | undefined
+): string {
+  if (trigger?.key !== '@' || trigger.position !== 0) return '';
+  const afterAt = text.slice(trigger.position + 1);
+  return /\s/.test(afterAt) ? '' : afterAt;
+}
+
+/** Whether the @ menu is showing prompt items for the current input. */
+export function atMenuShowsPrompts(
+  slashCommands: readonly AvailableCommand[],
+  text: string,
+  trigger: { key: string; position: number } | null | undefined
+): boolean {
+  return (
+    filterPromptsByQuery(slashCommands, atMenuPromptQuery(text, trigger))
+      .length > 0
+  );
+}
+
 export function buildAtMenuItems(
   filteredPrompts: readonly AvailableCommand[],
   fileResults: string[]
