@@ -102,7 +102,7 @@ jobs:
       KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/debug/chat_cli
       KIRO_AGENT_ENGINE: ${{ matrix.engine == 'kas' && 'kas' || '' }}
       KIRO_UI_MODE: ${{ matrix.ui_mode }}
-      KIRO_LITE_ROLLOUT_ENABLED: ${{ matrix.ui_mode == 'lite' && '1' || '' }}
+      KIRO_LITE_ROLLOUT_ENABLED: ${{ matrix.ui_mode == 'lite' && '1' || '0' }}
       TERM: xterm-256color
       COLORTERM: truecolor
       FORCE_COLOR: '3'
@@ -166,6 +166,15 @@ jobs:
           role-to-assume: arn:aws:iam::551670267384:role/KiroReviewerGitHubActionsRole
           aws-region: us-east-1
 
+      - name: Start Knight Rider (Windows)
+        if: runner.os == 'Windows'
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+          SMOKE_OUTPUT_DIR: ${{ github.workspace }}/.smoke-frames
+          SMOKE_ENGINE: ${{ matrix.engine }}
+        shell: bash
+        run: bash scripts/knight-rider.sh start
+
       - name: Run smoke scenarios
         timeout-minutes: 30
         continue-on-error: true
@@ -173,10 +182,11 @@ jobs:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
           SMOKE_OUTPUT_DIR: ${{ github.workspace }}/.smoke-frames
           SMOKE_ENGINE: ${{ matrix.engine }}
+          SMOKE_KNIGHT_RIDER_PRESTARTED: ${{ runner.os == 'Windows' && '1' || '0' }}
         shell: bash
         run: |
           mkdir -p "$SMOKE_OUTPUT_DIR"
-          prompt="Run all scenarios. Engine: ${{ matrix.engine }}. UI mode: ${{ matrix.ui_mode }}. Use the smoke prompt's exact Knight Rider command."
+          prompt="Run all scenarios. Engine: ${{ matrix.engine }}. UI mode: ${{ matrix.ui_mode }}. On Windows, Knight Rider is already running; verify it and do not start or restart it. Follow the smoke prompt exactly."
           if [ "$RUNNER_OS" = "Windows" ]; then
             # A long-lived child can retain the workflow pipe on Windows after the agent finishes.
             kiro-cli chat --no-interactive --trust-all-tools --agent smoke-test \
@@ -265,6 +275,16 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Require captured frames
+        if: always()
+        shell: bash
+        run: |
+          frames=$(find "${{ github.workspace }}/.smoke-frames" -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$frames" -eq 0 ]; then
+            echo "::error::Smoke leg captured zero evidence frames"
+            exit 1
+          fi
 
   judge:
     name: LLM Judge

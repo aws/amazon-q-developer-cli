@@ -68,7 +68,13 @@ status() {
     return 0
   fi
   local pids
-  pids=$(lsof -ti:$PORT 2>/dev/null || true)
+  if [ "$WINDOWS" = "true" ]; then
+    pids=$(powershell.exe -NoProfile -NonInteractive -Command \
+      "Get-NetTCPConnection -LocalPort $PORT -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique" \
+      2>/dev/null | tr -d '\r' || true)
+  else
+    pids=$(lsof -ti:$PORT 2>/dev/null || true)
+  fi
   if [ -n "$pids" ]; then
     echo "⏳ Port $PORT is bound but not ready yet"
     return 1
@@ -128,6 +134,14 @@ start() {
   if [ ! -d "$TUI_DIR" ]; then
     echo "❌ TUI directory not found: $TUI_DIR"
     exit 1
+  fi
+  if [ "${SMOKE_KNIGHT_RIDER_PRESTARTED:-0}" = "1" ]; then
+    if status; then
+      echo "Knight Rider was prestarted; leaving the healthy instance running."
+      return 0
+    fi
+    echo "❌ Prestarted Knight Rider is not healthy; refusing to replace it."
+    return 1
   fi
   local chat_cli_bin="$REPO_ROOT/target/debug/chat_cli"
   [ "$WINDOWS" = "true" ] && chat_cli_bin="${chat_cli_bin}.exe"

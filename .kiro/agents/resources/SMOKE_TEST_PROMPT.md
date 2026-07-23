@@ -57,8 +57,18 @@ that scenario and log it as: `⏭️ <id>: skipped (command not implemented)`
 
 ## Startup
 
-**ALWAYS** use the `scripts/knight-rider.sh` wrapper to start Knight Rider.
-NEVER run raw `nohup bun run knight-rider` — it WILL hang without timeout guards.
+When `SMOKE_KNIGHT_RIDER_PRESTARTED=1`, Knight Rider was started by the CI
+workflow before this agent. Verify it with:
+
+```bash
+bash scripts/knight-rider.sh status
+```
+
+If that command reports healthy, proceed without starting or restarting
+Knight Rider. If it fails, report the startup failure and stop.
+
+Otherwise, use the wrapper to start Knight Rider. NEVER run raw
+`nohup bun run knight-rider` — it WILL hang without timeout guards.
 
 ```bash
 bash scripts/knight-rider.sh start
