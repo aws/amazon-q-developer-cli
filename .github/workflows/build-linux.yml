@@ -151,12 +151,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-registry-
 
-      - name: Cache Rust dependencies (cross builds)
-        if: inputs.branch_name != 'prod' && (matrix.musl || matrix.cross_target)
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-bin: "false"
-
       - name: Install cross (for cross-compilation)
         if: matrix.musl || matrix.cross_target
         run: cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.4 --locked
