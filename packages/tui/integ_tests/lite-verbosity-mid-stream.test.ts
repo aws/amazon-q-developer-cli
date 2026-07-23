@@ -40,7 +40,7 @@ describe('lite /verbosity mid-stream cycling', () => {
 
     // Three /verbosity presets mid-turn must hit the lite slash-queue branch in
     // handleUserInput (queued, not dispatched immediately).
-    await testCase.typeAndSubmit('/verbosity minimal');
+    await testCase.typeAndSubmit('/verbosity default');
     await testCase.sleepMs(150);
     await testCase.typeAndSubmit('/verbosity full');
     await testCase.sleepMs(150);
@@ -54,7 +54,7 @@ describe('lite /verbosity mid-stream cycling', () => {
     ).length;
     expect(queuedSlashCount).toBe(3);
 
-    // End the streaming turn; the queue drains FIFO (minimal → full → lean).
+    // End the streaming turn; the queue drains FIFO (default → full → lean).
     await testCase.waitForStore(
       (s) =>
         s.queuedMessages.filter((m) => m.startsWith('/verbosity')).length ===

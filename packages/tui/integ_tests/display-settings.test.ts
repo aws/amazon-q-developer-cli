@@ -60,7 +60,7 @@ describe('Display settings panel', () => {
   it('renders with correct items and default values', async () => {
     testCase = await TestCase.builder()
       .withTestName('display-settings-render')
-      .withEnv({ KIRO_HOME: testDir })
+      .withEnv({ KIRO_HOME: testDir, KIRO_LITE_ROLLOUT_ENABLED: '0' })
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
@@ -73,18 +73,16 @@ describe('Display settings panel', () => {
     expect(snap).toContain('Animations');
     expect(snap).toContain('ASCII art');
     expect(snap).toContain('Icons');
-    expect(snap).toContain('Show thinking');
-    // Default values: Animations on, ASCII art on (inverted: asciiMode=false shows as on), Icons on, Show thinking expanded
+    // Default values: Animations on, ASCII art on (inverted: asciiMode=false shows as on), Icons on
     expect(snap).toMatch(/Animations\s+on/);
     expect(snap).toMatch(/ASCII art\s+on/);
     expect(snap).toMatch(/Icons\s+on/);
-    expect(snap).toMatch(/Show thinking\s+expanded/);
   }, 30000);
 
   it('toggling ASCII art updates UI', async () => {
     testCase = await TestCase.builder()
       .withTestName('display-settings-ascii-toggle')
-      .withEnv({ KIRO_HOME: testDir })
+      .withEnv({ KIRO_HOME: testDir, KIRO_LITE_ROLLOUT_ENABLED: '0' })
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
@@ -106,7 +104,7 @@ describe('Display settings panel', () => {
   it('toggling animations updates UI', async () => {
     testCase = await TestCase.builder()
       .withTestName('display-settings-animations-toggle')
-      .withEnv({ KIRO_HOME: testDir })
+      .withEnv({ KIRO_HOME: testDir, KIRO_LITE_ROLLOUT_ENABLED: '0' })
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
@@ -125,7 +123,7 @@ describe('Display settings panel', () => {
   it('arrow key navigation highlights items with descriptions', async () => {
     testCase = await TestCase.builder()
       .withTestName('display-settings-navigation')
-      .withEnv({ KIRO_HOME: testDir })
+      .withEnv({ KIRO_HOME: testDir, KIRO_LITE_ROLLOUT_ENABLED: '0' })
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
@@ -150,12 +148,12 @@ describe('Display settings panel', () => {
     snap = testCase.getSnapshot().join('\n');
     expect(snap).toContain('Symbols for status');
 
-    // Navigate down to Show thinking
+    // Navigate down to Terminal title
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(300);
 
     snap = testCase.getSnapshot().join('\n');
-    expect(snap).toContain('collapsed: header only');
+    expect(snap).toContain('update terminal window title');
   }, 30000);
 
   it('respects pre-existing settings on open', async () => {
@@ -169,7 +167,7 @@ describe('Display settings panel', () => {
 
     testCase = await TestCase.builder()
       .withTestName('display-settings-preexisting')
-      .withEnv({ KIRO_HOME: testDir })
+      .withEnv({ KIRO_HOME: testDir, KIRO_LITE_ROLLOUT_ENABLED: '0' })
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 
@@ -181,58 +179,10 @@ describe('Display settings panel', () => {
     expect(snap).toMatch(/ASCII art\s+off/);
   }, 30000);
 
-  it('toggling Show thinking updates UI', async () => {
-    testCase = await TestCase.builder()
-      .withTestName('display-settings-thinking-toggle')
-      .withEnv({ KIRO_HOME: testDir })
-      .launch();
-    await testCase.waitForVisibleText('ask a question', 15000);
-
-    await openDisplaySettings(testCase);
-    await testCase.waitForVisibleText('Animations', 5000);
-
-    // Show thinking is the 4th item (Animations, ASCII art, Icons, Show thinking);
-    // the gated "Default UI" row is absent here, so navigate down 3 times then toggle.
-    await testCase.sendKeys(DOWN_ARROW);
-    await testCase.sleepMs(200);
-    await testCase.sendKeys(DOWN_ARROW);
-    await testCase.sleepMs(200);
-    await testCase.sendKeys(DOWN_ARROW);
-    await testCase.sleepMs(200);
-    await testCase.sendKeys(RIGHT_ARROW);
-    await testCase.sleepMs(500);
-
-    // Verify the cycle advanced in the UI: default 'expanded' -> 'off'
-    // (cycle order is ['collapsed', 'expanded', 'off']).
-    const snap = testCase.getSnapshot().join('\n');
-    expect(snap).toMatch(/Show thinking\s+off/);
-  }, 30000);
-
-  it('respects pre-existing showThinking=false setting on open', async () => {
-    const settingsPath = join(testDir, 'settings', 'cli.json');
-    writeFileSync(
-      settingsPath,
-      JSON.stringify({ 'chat.showThinking': false }),
-      'utf-8'
-    );
-
-    testCase = await TestCase.builder()
-      .withTestName('display-settings-preexisting-thinking')
-      .withEnv({ KIRO_HOME: testDir })
-      .launch();
-    await testCase.waitForVisibleText('ask a question', 15000);
-
-    await openDisplaySettings(testCase);
-    await testCase.waitForVisibleText('Animations', 5000);
-
-    const snap = testCase.getSnapshot().join('\n');
-    expect(snap).toMatch(/Show thinking\s+off/);
-  }, 30000);
-
   it('Enter closes the panel entirely', async () => {
     testCase = await TestCase.builder()
       .withTestName('display-settings-enter-closes')
-      .withEnv({ KIRO_HOME: testDir })
+      .withEnv({ KIRO_HOME: testDir, KIRO_LITE_ROLLOUT_ENABLED: '0' })
       .launch();
     await testCase.waitForVisibleText('ask a question', 15000);
 

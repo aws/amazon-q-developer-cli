@@ -75,6 +75,7 @@ export function createMockCommandContext(
     ),
     isCloudSessionActive: mock(() => false),
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
+    setSetting: mock(() => Promise.resolve()),
     setConfigOption: mock(() => Promise.resolve()),
     sendModeChanged: mock(() => undefined),
     sendChatSlashCommandTelemetry: mock(() => undefined),

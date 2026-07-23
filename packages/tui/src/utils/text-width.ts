@@ -12,6 +12,12 @@ export { visibleWidth };
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
+export function maxVisibleWidth(lines: Iterable<string>): number {
+  let max = 0;
+  for (const line of lines) max = Math.max(max, visibleWidth(line));
+  return max;
+}
+
 /**
  * Truncate a string to fit within `maxCols` visible terminal columns.
  * Uses grapheme segmentation so multi-codepoint emoji are never split.

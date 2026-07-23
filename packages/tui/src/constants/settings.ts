@@ -20,14 +20,11 @@ export const Settings = {
   CHAT_ICONS: 'chat.allowIcons',
   CHAT_SHOW_THINKING: 'chat.showThinking',
   CHAT_HISTORY_MODE: 'chat.historyMode',
-  // Verbosity-config mirror keys. The lite UI's /verbosity menu is the
-  // primary write surface for these; the modern TUI consumes them via
-  // getVerboseDisplay() so the same toggle takes effect in both modes.
-  // Lite's setVerboseConfig() writes both lite_verbose.json (legacy
-  // mirror) and cli.json (canonical), and getVerboseDisplay() resolves
-  // each field with cli.json > lite_verbose.json > DEFAULT_DISPLAY.
-  // See packages/tui/src/lite/verbose.ts for the field-by-field
-  // semantics.
+  // Independent verbosity records stored in the existing global cli.json.
+  CHAT_VERBOSITY_LITE: 'chat.verbosity.lite',
+  CHAT_VERBOSITY_TUI: 'chat.verbosity.tui',
+  // Legacy shared verbosity keys. Read only for migration by verbose.ts;
+  // new writes use the surface records above.
   CHAT_TOOLS_FILTERS: 'chat.tools.filters',
   CHAT_TOOLS_SHOW_REASONING: 'chat.tools.showReasoning',
   CHAT_TOOLS_ARGS_MODE: 'chat.tools.argsMode',
@@ -36,6 +33,10 @@ export const Settings = {
   CHAT_TOOLS_OUTPUT_MAX_LINES: 'chat.tools.outputMaxLines',
   CHAT_TOOLS_ARGS_MAX_CHARS: 'chat.tools.argsMaxChars',
   CHAT_TOOLS_OUTPUT_MAX_CHARS: 'chat.tools.outputMaxChars',
+  // Whether a finished tool call keeps its output body in scrollback after the
+  // turn ends (true) or collapses to a one-line summary on the next message
+  // (false). Consumed by the modern TUI's static-turn render.
+  CHAT_TOOLS_PERSIST_OUTPUT: 'chat.tools.persistOutput',
   CHAT_TOOLS_SHOW_WRITE_DIFFS: 'chat.tools.showWriteDiffs',
   CHAT_SHOW_TASKS: 'chat.showTasks',
   CHAT_SUBAGENT_SHOW_PIPELINE: 'chat.subagent.showPipeline',

@@ -6,12 +6,14 @@ import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 
 interface ActivityTrayCollapsedProps {
+  hasTasks: boolean;
   hasSteer: boolean;
   hasQueue: boolean;
   queueCount: number;
 }
 
 export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
+  hasTasks,
   hasSteer,
   hasQueue,
   queueCount,
@@ -30,7 +32,6 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
   const rawMuted = getColor('muted').hex;
   const muted = rawMuted === 'inherit' ? undefined : rawMuted;
 
-  const hasTasks = tasks.length > 0;
   const done = tasks.filter((t) => t.status === 'completed').length;
   const remaining = tasks.length - done;
 

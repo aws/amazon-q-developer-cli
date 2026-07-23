@@ -25,6 +25,22 @@ describe('KAS tool rendering', () => {
   it('renders KAS read/str_replace/fs_write as clean headers and diffs', async () => {
     testCase = await TestCase.builder()
       .withTestName('kas-tool-rendering')
+      // Hermetic verbosity config: this test asserts the write DIFF body
+      // renders (gated on chat.tools.showWriteDiffs) AND that a routed Read does
+      // not dump its raw result. Without a sandboxed cli.json the spawned TUI
+      // inherits the real ~/.kiro/settings/cli.json — a minimal/lean preset
+      // there sets showWriteDiffs:false and the diff body vanishes.
+      // filters:'all' (NOT []) keeps tool OUTPUT visible so the anti-leak
+      // assertions below stay meaningful: if a KAS read regressed into the
+      // generic raw-JSON Tool renderer, 'secret body' would surface and fail —
+      // an empty filter would gate output off and mask that regression. A
+      // correctly-routed Read shows only its header regardless of filters.
+      // outputMaxLines:null renders the full diff.
+      .withGlobalSettings({
+        'chat.tools.showWriteDiffs': true,
+        'chat.tools.filters': ['all'],
+        'chat.tools.outputMaxLines': null,
+      })
       .withTimeout(15000)
       .launch();
 
@@ -115,6 +131,12 @@ describe('KAS tool rendering', () => {
   it('renders a failed KAS read with a friendly "Read" label, not the raw id', async () => {
     testCase = await TestCase.builder()
       .withTestName('kas-tool-rendering-failed-read')
+      // Hermetic: don't inherit the dev/CI ~/.kiro verbosity config (see above).
+      .withGlobalSettings({
+        'chat.tools.showWriteDiffs': true,
+        'chat.tools.filters': [],
+        'chat.tools.outputMaxLines': null,
+      })
       .withTimeout(15000)
       .launch();
 

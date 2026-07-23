@@ -62,6 +62,76 @@ export function extractResultText(
   return null;
 }
 
+/** Pull a text string out of a single result item across the known envelopes:
+ *  `{Text}` | `{text}` | `{content}` | ACP `{content:[{text}]}` | KAS `{message}`. */
+function itemText(item: unknown): string | null {
+  if (typeof item === 'string') return item;
+  if (!item || typeof item !== 'object') return null;
+  const o = item as Record<string, unknown>;
+  if (typeof o.Text === 'string') return o.Text;
+  if (typeof o.text === 'string') return o.text;
+  if (typeof o.message === 'string') return o.message;
+  if (Array.isArray(o.content)) {
+    const parts = o.content
+      .map((c) => (c && typeof c === 'object' ? (c as any).text : null))
+      .filter((t): t is string => typeof t === 'string');
+    if (parts.length > 0) return parts.join('\n');
+  }
+  if (typeof o.content === 'string') return o.content;
+  const json = 'Json' in o ? o.Json : null;
+  if (json && typeof json === 'object') return itemText(json);
+  return null;
+}
+
+/**
+ * Full body text a read/knowledge result carries, concatenating EVERY item
+ * (multi-file reads emit one item per file) across the `{items:[...]}`,
+ * ACP `{content:[{text}]}`, and KAS `{message}` envelopes. Returns null when
+ * nothing textual is present. Distinct from extractResultText, which peeks
+ * only at the first item.
+ */
+export function extractResultBodyItems(
+  result: ToolResult | undefined
+): string[] {
+  if (!result || result.status !== 'success') return [];
+  const raw = result.output;
+  if (typeof raw === 'string') return [raw];
+  if (!raw || typeof raw !== 'object') return [];
+  const o = raw as Record<string, unknown>;
+  if (Array.isArray(o.items)) {
+    return o.items
+      .map(itemText)
+      .filter((t): t is string => typeof t === 'string');
+  }
+  const text = itemText(o);
+  return text == null ? [] : [text];
+}
+
+export function extractResultBodyText(
+  result: ToolResult | undefined
+): string | null {
+  const parts = extractResultBodyItems(result);
+  return parts.length > 0 ? parts.join('\n') : null;
+}
+
+/** Turn JSON-escaped line breaks into display rows for unknown result shapes. */
+export function unescapeJsonNewlines(text: string): string {
+  return text
+    .replace(/(^|[^\\])((?:\\\\)*)\\r\\n/g, '$1$2\n')
+    .replace(/(^|[^\\])((?:\\\\)*)\\n/g, '$1$2\n');
+}
+
+/** Split a tool result body into rows, dropping leading/trailing blank (incl.
+ *  whitespace-only / CRLF) lines so an all-whitespace payload collapses to `[]`
+ *  (→ a `(no output)` placeholder rather than an orphan header over blanks). */
+export function splitBodyLines(text: string | null): string[] {
+  if (!text || text.trim().length === 0) return [];
+  const rows = text.replace(/\r\n/g, '\n').split('\n');
+  while (rows.length && rows[0]!.trim() === '') rows.shift();
+  while (rows.length && rows[rows.length - 1]!.trim() === '') rows.pop();
+  return rows;
+}
+
 /** Format text length as a human-readable char count */
 export function formatCharCount(text: string): string {
   const chars = text.length;

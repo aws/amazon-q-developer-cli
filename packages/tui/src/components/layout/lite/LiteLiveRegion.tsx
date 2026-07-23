@@ -296,9 +296,8 @@ export const LiteLiveRegion: React.FC = () => {
   // matches the eventual static rendering. Hooks run unconditionally, so
   // hoisted above the early returns.
   const display = getVerboseDisplay();
-  // getVerboseFilters() (not getVerboseConfig().filters) so the cli.json
-  // CHAT_TOOLS_FILTERS override reaches the live gate. Key the memo on the
-  // joined content so the array identity stays stable across spinner ticks.
+  // Key the saved filters by content so the array identity stays stable across
+  // spinner ticks.
   const filtersKey = getVerboseFilters().join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filtersOverride = useMemo(() => getVerboseFilters(), [filtersKey]);
@@ -473,7 +472,7 @@ export const LiteLiveRegion: React.FC = () => {
     }
     if (thinkingContent) {
       // Gated by /verbose Thinking content: off → spinner + "thinking" label
-      // but no preview body (lean/minimal presets).
+      // but no preview body (for example, the lean preset).
       const showThinking = getVerboseDisplay().showThinkingContent;
       if (!showThinking) {
         return (

@@ -133,6 +133,8 @@ export class E2ETestCase {
       ...(process.platform === 'win32'
         ? {
             KIRO_TEST_CHAT_IPC_PIPE_NAME: this.paths.agentIpcSocket,
+            // Windows spawns the TUI directly, bypassing the Rust rollout export.
+            KIRO_LITE_ROLLOUT_ENABLED: '1',
           }
         : {}),
       KIRO_TEST_TUI_JS_PATH: tuiJsPath,

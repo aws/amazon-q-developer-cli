@@ -121,31 +121,39 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     75000
   );
 
-  it('lite→tui preserves interleaved system rows before completed model text', async () => {
-    testCase = await launchLiteInteg('swap-lite-to-tui-interleaved-system');
+  it('tui→lite→tui preserves turn and mode-notice order', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('swap-tui-lite-tui-order')
+      .withGlobalSettings({ 'chat.ui.mode': 'tui' })
+      .withEnv({ KIRO_LITE_ROLLOUT_ENABLED: '1' })
+      .withTimeout(15000)
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 10000);
 
-    await testCase.typeAndSubmit('hello lite');
+    await testCase.typeAndSubmit('hello before roundtrip');
     await testCase.waitForStore((s) => s.isProcessing, 10000);
     await testCase.mockSessionUpdate({
       type: AgentEventType.GoalStatus,
       state: 'active',
       iteration: 0,
       maxIterations: 3,
-      message: 'INTERLEAVED_SYSTEM_BEFORE_MODEL',
+      message: 'ROUNDTRIP_SYSTEM_BEFORE_MODEL',
     });
     await testCase.mockSessionUpdate({
       type: AgentEventType.Content,
-      id: 'lite-interleaved-model',
+      id: 'roundtrip-model',
       content: {
         type: 'text' as any,
-        text: 'LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM',
+        text: 'ROUNDTRIP_MODEL_AFTER_SYSTEM',
       },
     });
     await testCase.completeTurn();
     await testCase.waitForStore((s) => !s.isProcessing, 10000);
-    await testCase.waitForVisibleText('LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM');
+    await testCase.waitForVisibleText('ROUNDTRIP_MODEL_AFTER_SYSTEM');
 
     const tokenBefore = (await testCase.getStore()).lite.scrollbackClearToken;
+    await switchToLite(testCase);
+    await testCase.waitForStore((s) => s.uiMode === 'lite', 10000);
     await switchToTui(testCase);
 
     const storeAfter = await testCase.getStore();
@@ -153,22 +161,29 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
     expect(storeAfter.lite.scrollbackClearToken).toBeGreaterThan(tokenBefore);
 
     const snap = testCase.getSnapshot();
-    const statusRow = '⟳ Goal: "INTERLEAVED_SYSTEM_BEFORE_MODEL"';
+    const statusRow = '⟳ Goal: "ROUNDTRIP_SYSTEM_BEFORE_MODEL"';
     expect(visibleCount(snap, statusRow)).toBe(1);
+    expect(visibleCount(snap, '[EXPERIMENTAL] Switched to Lite UI')).toBe(1);
+    expect(visibleCount(snap, 'Switched to TUI mode')).toBe(1);
 
+    const promptIdx = visibleIndex(snap, 'hello before roundtrip');
     const goalIdx = visibleIndex(snap, statusRow);
-    const responseIdx = visibleIndex(
+    const responseIdx = visibleIndex(snap, 'ROUNDTRIP_MODEL_AFTER_SYSTEM');
+    const liteSwitchIdx = visibleIndex(
       snap,
-      'LITE_RESPONSE_AFTER_INTERLEAVED_SYSTEM'
+      '[EXPERIMENTAL] Switched to Lite UI'
     );
-    const switchIdx = visibleIndex(snap, 'Switched to TUI mode');
+    const tuiSwitchIdx = visibleIndex(snap, 'Switched to TUI mode');
 
+    expect(promptIdx).toBeGreaterThanOrEqual(0);
     expect(goalIdx).toBeGreaterThanOrEqual(0);
+    expect(goalIdx).toBeGreaterThan(promptIdx);
     expect(responseIdx).toBeGreaterThan(goalIdx);
-    expect(switchIdx).toBeGreaterThanOrEqual(0);
+    expect(liteSwitchIdx).toBeGreaterThan(responseIdx);
+    expect(tuiSwitchIdx).toBeGreaterThan(liteSwitchIdx);
 
     await exitLiteInteg(testCase);
-  }, 30000);
+  }, 45000);
 
   it('post-switch TUI turn keeps interleaved system rows owned by the turn', async () => {
     testCase = await launchLiteInteg('swap-lite-to-tui-post-switch-system');

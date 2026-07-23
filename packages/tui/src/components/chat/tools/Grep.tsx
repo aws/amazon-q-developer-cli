@@ -11,12 +11,17 @@ import {
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { ToolOutputSection } from './ToolOutput.js';
 import { expandTabs } from '../../../utils/string.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_FILES = 3;
 const PREVIEW_MATCHES_PER_FILE = 3;
+// The `╰ output:` tree is the in-cohort output-differentiation feature;
+// off-cohort renders the mainline layout (results with no header).
+const PORT_ACTIVE = () => process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
 /** Grep result for a single file */
 interface GrepFileResult {
@@ -169,10 +174,7 @@ export const Grep = React.memo(function Grep({
   );
   const results = grepOutput?.results || [];
 
-  // Expandability must account for BOTH dimensions: more files than the
-  // preview shows, AND per-file matches beyond PREVIEW_MATCHES_PER_FILE.
-  // Keying only on file count missed the common case of many matches in a
-  // few files (ctrl+o never registered). Count total vs. shown match lines.
+  // Count match rows so one file with many matches still registers Ctrl+O.
   const totalMatchLines = results.reduce(
     (sum, f) => sum + (f.matches?.length ?? 0),
     0
@@ -184,13 +186,14 @@ export const Grep = React.memo(function Grep({
         sum + Math.min(f.matches?.length ?? 0, PREVIEW_MATCHES_PER_FILE),
       0
     );
+  const outputVisible = useToolOutputVisible();
 
-  // Use expandable output hook
   const { expanded, expandHint, hiddenCount } = useExpandableOutput({
-    totalItems: totalMatchLines,
+    totalItems: !PORT_ACTIVE() || outputVisible ? totalMatchLines : 0,
     previewCount: shownMatchLines,
     isStatic,
     unit: 'matches',
+    applyVerbosityOutputCap: true,
   });
 
   // Extract filename from path
@@ -208,64 +211,97 @@ export const Grep = React.memo(function Grep({
 
   const target = searchPattern ? `"${searchPattern}"` : undefined;
 
+  const head = (
+    <>
+      <StatusInfo title={title} target={target} shimmer={!isFinished} />
+      <ToolMeta params={params} />
+    </>
+  );
+
+  const bodyRows = useMemo(() => {
+    if (!grepOutput || grepOutput.numMatches === 0) return [];
+    const rows: string[] = [];
+    const summary = getSecondarySummary();
+    if (summary) rows.push(summary);
+    for (const f of results) {
+      rows.push(`${glyphs.arrow} ${getFileName(f.file)} (${f.count})`);
+      for (const m of f.matches ?? []) rows.push(`  ${m}`);
+    }
+    if (grepOutput.truncated) rows.push('(results truncated)');
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grepOutput, results, isFinished, glyphs.arrow]);
+
   const renderContent = () => {
+    if (PORT_ACTIVE()) {
+      let lines: string[] | null = null;
+      let isError = false;
+      if (result?.status === 'error') {
+        lines = result.error.split('\n');
+        isError = true;
+      } else if (grepOutput && outputVisible) {
+        if (grepOutput.numMatches === 0) {
+          const summary = getSecondarySummary();
+          lines = summary ? [summary] : [];
+        } else {
+          lines = bodyRows;
+        }
+      }
+      return (
+        <Box flexDirection="column">
+          {head}
+          {lines && (
+            <ToolOutputSection
+              lines={lines}
+              isError={isError}
+              isStatic={isStatic}
+            />
+          )}
+        </Box>
+      );
+    }
+
     const secondarySummary = getSecondarySummary();
 
-    // Error state
     if (result?.status === 'error') {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
+          {head}
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
         </Box>
       );
     }
-
-    // No result yet or still searching
     if (!grepOutput) {
-      return (
-        <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
-        </Box>
-      );
+      return <Box flexDirection="column">{head}</Box>;
     }
-
-    // No matches found — show only the summary.
     if (grepOutput.numMatches === 0) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
+          {head}
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
         </Box>
       );
     }
-
     // Static view: just show summary
     if (isStatic && !expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
+          {head}
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
         </Box>
       );
     }
-
     // Expanded view: show all results
     if (expanded) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
+          {head}
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
@@ -292,12 +328,10 @@ export const Grep = React.memo(function Grep({
         </Box>
       );
     }
-
     // Collapsed view: show preview
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={target} shimmer={!isFinished} />
-        <ToolMeta params={params} />
+        {head}
         {secondarySummary && (
           <Text>{getColor('secondary')(secondarySummary)}</Text>
         )}

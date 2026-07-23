@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Box, Text as InkText } from './../../renderer.js';
 import { StatusBar, useStatusBar } from '../chat/status-bar/StatusBar.js';
 import { StatusInfo } from './status/StatusInfo.js';
@@ -19,8 +19,16 @@ import { WebFetch } from '../chat/tools/WebFetch.js';
 import { SessionTool } from '../chat/tools/SessionTool.js';
 import { Tool } from '../chat/tools/Tool.js';
 import { ToolMeta } from '../chat/tools/ToolMeta.js';
+import {
+  ToolOutput as ToolOutputBar,
+  ToolOutputSection,
+} from '../chat/tools/ToolOutput.js';
 import { formatToolParams } from '../../utils/tool-params.js';
-import { parseToolArg } from '../../utils/tool-result.js';
+import {
+  parseToolArg,
+  extractResultBodyText,
+  splitBodyLines,
+} from '../../utils/tool-result.js';
 import { ToolUseStatus, type ToolResult } from '../../stores/app-store.js';
 import {
   WRITE_TOOL_NAMES,
@@ -54,6 +62,16 @@ import {
   shouldCollapseToolCard,
 } from '../../utils/collapsed-tool-view.js';
 import { useAppStore } from '../../stores/app-store.js';
+import {
+  useVerboseDisplay,
+  useShouldShowToolOutput,
+} from '../../hooks/useVerbose.js';
+import { extractToolReasoning } from '../../lite/render.js';
+import {
+  VerbosityToolContext,
+  useToolOutputVisible,
+  useVerbosityToolContext,
+} from './VerbosityToolContext.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -68,9 +86,11 @@ export interface ToolUseMessageProps {
   locations?: ToolCallLocation[];
   barColor?: string;
   isStatic?: boolean;
-  /** If set, shows a colored agent name prefix (for subagent tool calls) */
   agentLabel?: string;
   agentLabelColor?: string;
+  purpose?: string;
+  startTime?: number;
+  finishTime?: number;
 }
 
 export const ToolUseMessage = React.memo<ToolUseMessageProps>(
@@ -89,13 +109,29 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     isStatic = false,
     agentLabel,
     agentLabelColor,
+    purpose,
+    startTime,
+    finishTime,
   }) {
     const { getColor, wrapDisabled } = useTheme();
-    const glyphs = useGlyphs();
-    // Live read so a /tui swap restores the StatusBar bar on subsequent rows.
     const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
     const keybindings = useKeybindings();
-    // Map tool status to StatusBar status icon
+    const display = useVerboseDisplay();
+    const outputVisible = useShouldShowToolOutput(name);
+    const toolOutputsExpanded = useAppStore((s) => s.toolOutputsExpanded);
+    const frozenArgsExpanded = useRef(toolOutputsExpanded);
+    if (!isStatic) frozenArgsExpanded.current = toolOutputsExpanded;
+    const argsExpanded = isStatic
+      ? frozenArgsExpanded.current
+      : toolOutputsExpanded;
+    const reasoning =
+      display.showToolReasoning && !SESSION_TOOL_NAMES.has(name)
+        ? extractToolReasoning(content, purpose)
+        : undefined;
+    const elapsed =
+      display.showElapsed && startTime != null && finishTime != null
+        ? finishTime - startTime
+        : undefined;
     const statusIcon: StatusType | undefined = useMemo(() => {
       if (status === ToolUseStatus.Rejected) return 'error';
       if (result?.status === 'cancelled') return 'error';
@@ -107,15 +143,35 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     }, [status, isFinished, result]);
 
     const showEscHint = statusIcon === 'executing' && !isStatic;
-
-    // Under wrapDisabled, drop the StatusBar chrome (vertical colored bar +
-    // margin) entirely, both in live and static contexts. This keeps layout
-    // identical across live/static transitions and produces clean copy-paste
-    // output with no leading whitespace. Lite mode does the same.
     const skipStatusBar = wrapDisabled || isLiteUi;
 
+    const portActive = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
+    const toolContextValue = useMemo(
+      () => ({
+        outputVisible,
+        reasoning,
+        elapsedMs: elapsed,
+        argsMode: portActive ? display.toolArgsMode : undefined,
+        argsMaxLines: portActive ? display.argsMaxLines : undefined,
+        argsMaxChars: portActive ? display.argsMaxChars : undefined,
+        argsExpanded,
+        isStatic,
+      }),
+      [
+        outputVisible,
+        reasoning,
+        elapsed,
+        portActive,
+        display.toolArgsMode,
+        display.argsMaxLines,
+        display.argsMaxChars,
+        argsExpanded,
+        isStatic,
+      ]
+    );
+
     const inner = (
-      <>
+      <VerbosityToolContext.Provider value={toolContextValue}>
         {agentLabel && (
           <Box>
             <InkText color={agentLabelColor ?? 'gray'} dimColor>
@@ -143,7 +199,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
             )}
           </Text>
         )}
-      </>
+      </VerbosityToolContext.Provider>
     );
 
     if (skipStatusBar) return inner;
@@ -170,51 +226,37 @@ interface ToolContentProps {
   locations?: ToolCallLocation[];
 }
 
-/**
- * Inner component — routes between the collapsed (spec mode) and full tool
- * renders. Spec mode hides verbose args/diff/command/output by default to keep
- * the conversation uncluttered; Ctrl+O expands to the full render. Every other
- * mode defaults to the full render, byte-identical to before.
- */
 const ToolUseContent = React.memo(function ToolUseContent(
   props: ToolContentProps
 ) {
   const hideArgs = useHideToolArgs();
-  // Collapse to a one-line preview when either (a) spec mode hides all tool
-  // args, or (b) this is a subagent spawn card — those always collapse, in
-  // every mode, so KAS "Sub-agent: <role>"/"Orchestrate Sub-agent" wrappers
-  // show a prompt preview instead of a verbose name/prompt/explanation dump.
   if (shouldCollapseToolCard(props.name, props.kind, props.content, hideArgs)) {
     return <CollapsedToolEntry {...props} />;
   }
   return <FullToolContent {...props} />;
 });
 
-/**
- * Spec-mode collapsed render: a title + the first line of the primary arg
- * (e.g. a spawned subagent's prompt), with a "ctrl+o to expand" affordance.
- * Expansion reuses the global `toolOutputsExpanded` flag (shared with tool
- * output expansion), so a single Ctrl+O reveals the full render below.
- */
 const CollapsedToolEntry = React.memo(function CollapsedToolEntry(
   props: ToolContentProps
 ) {
   const { name, kind, content, isStatic } = props;
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
-  // Register this entry as Ctrl+O-expandable and read the shared expanded flag.
+  const argsOff = useVerbosityToolContext().argsMode === 'off';
   const { expanded } = useExpandableOutput({
-    totalItems: 2,
+    totalItems: argsOff ? 0 : 2,
     previewCount: 1,
     isStatic,
   });
 
-  if (expanded) return <FullToolContent {...props} />;
+  if (expanded && !argsOff) return <FullToolContent {...props} />;
 
-  const { title, target, preview } = collapsedToolPreview(name, kind, content);
+  const collapsed = collapsedToolPreview(name, kind, content);
+  const { title, target } = collapsed;
+  const preview = argsOff ? undefined : collapsed.preview;
   const muted = getColor('muted');
   const hint = getColor('secondary');
-  const showMeta = !!preview || !isStatic;
+  const showMeta = !argsOff && (!!preview || !isStatic);
 
   return (
     <Box flexDirection="column">
@@ -224,7 +266,9 @@ const CollapsedToolEntry = React.memo(function CollapsedToolEntry(
           <Text wrap="wrap">
             {muted(`${glyphs.cornerBottomLeftRound} `)}
             {preview && muted(preview)}
-            {!isStatic && hint(`${preview ? ' ' : ''}(ctrl+o to expand)`)}
+            {!isStatic &&
+              !argsOff &&
+              hint(`${preview ? ' ' : ''}(ctrl+o to expand)`)}
           </Text>
         </Box>
       )}
@@ -232,7 +276,6 @@ const CollapsedToolEntry = React.memo(function CollapsedToolEntry(
   );
 });
 
-/** Full tool render — lives inside StatusBar to access requestRemeasure */
 const FullToolContent = React.memo(function FullToolContent({
   id,
   name,
@@ -250,10 +293,8 @@ const FullToolContent = React.memo(function FullToolContent({
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
 
-  // A tool is only visually complete if it's finished AND no longer pending approval
   const effectiveFinished = isFinished && status !== ToolUseStatus.Pending;
 
-  // Remeasure when status or isFinished changes — these change the rendered content height
   useEffect(() => {
     requestRemeasure();
   }, [status, isFinished, requestRemeasure]);
@@ -273,9 +314,6 @@ const FullToolContent = React.memo(function FullToolContent({
     const label = result?.status === 'cancelled' ? 'Cancelled' : 'Rejected';
     try {
       const parsed = JSON.parse(content);
-      // Session tools (subagent, agent_crew, session_management) carry no
-      // path/command; surface the user-meaningful field instead so the
-      // cancelled chip reads "Cancelled <task>" not "Cancelled file".
       let target: string;
       if (SESSION_TOOL_NAMES.has(name)) {
         const task = (['task', 'target', 'name'] as const)
@@ -293,22 +331,15 @@ const FullToolContent = React.memo(function FullToolContent({
     }
   }
 
-  // Write/Read/ImageRead/Task components don't accept a `result` prop and
-  // therefore can't render errors themselves. Route failed calls for those
-  // tools through FallbackError so the user still sees the error and the
-  // attempted arguments. All other tool components handle errors inline.
   if (result?.status === 'error' && effectiveFinished) {
     const toolRendersOwnError =
       !WRITE_TOOL_NAMES.has(name) &&
       kind !== 'edit' &&
-      !READ_TOOL_NAMES.has(name) &&
-      kind !== 'read' &&
+      (INTROSPECT_TOOL_NAMES.has(name) ||
+        (!READ_TOOL_NAMES.has(name) && kind !== 'read')) &&
       !IMAGE_READ_TOOL_NAMES.has(name) &&
       !TASK_TOOL_NAMES.has(name);
     if (!toolRendersOwnError) {
-      // Resolve a friendly label by name, falling back to kind — KAS sends
-      // wire names (e.g. "read_files") that aren't in the builtin name sets,
-      // but routing already keyed on kind, so reuse it for the label too.
       const toolId = resolveToolId(name) ?? kindToToolId(kind);
       const displayName = toolId ? getToolLabel(toolId) : name;
       return (
@@ -321,8 +352,18 @@ const FullToolContent = React.memo(function FullToolContent({
     }
   }
 
+  if (INTROSPECT_TOOL_NAMES.has(name)) {
+    return (
+      <Introspect
+        isFinished={effectiveFinished}
+        isStatic={isStatic}
+        content={content}
+        result={result}
+      />
+    );
+  }
+
   if (WRITE_TOOL_NAMES.has(name) || kind === 'edit') {
-    // Extract start line from locations for accurate diff line numbers
     const startLine = locations?.[0]?.line;
     return (
       <Write
@@ -344,6 +385,7 @@ const FullToolContent = React.memo(function FullToolContent({
         isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
+        result={result}
       />
     );
   }
@@ -417,8 +459,6 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  // TODO: Remove Ls and ImageRead branches once legacy tool names are cleaned up.
-  // These only render for old saved conversations that had separate ls/imageRead tool calls.
   if (LS_TOOL_NAMES.has(name)) {
     return (
       <Ls
@@ -446,18 +486,8 @@ const FullToolContent = React.memo(function FullToolContent({
   if (SESSION_TOOL_NAMES.has(name)) {
     return (
       <SessionTool
+        id={id}
         name={name}
-        isFinished={effectiveFinished}
-        isStatic={isStatic}
-        content={content}
-        result={result}
-      />
-    );
-  }
-
-  if (INTROSPECT_TOOL_NAMES.has(name)) {
-    return (
-      <Introspect
         isFinished={effectiveFinished}
         isStatic={isStatic}
         content={content}
@@ -477,7 +507,6 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  // Goal tool — compact one-liner showing command result
   if (name === 'goal') {
     const labels: Record<string, string> = {
       complete: `${glyphs.checkmark} Goal complete`,
@@ -490,7 +519,6 @@ const FullToolContent = React.memo(function FullToolContent({
       if (parsed.command && labels[parsed.command]) {
         label = labels[parsed.command]!;
       }
-      // Show relevant detail per action
       if (parsed.summary) detail = parsed.summary;
       else if (parsed.description) detail = parsed.description;
     } catch {
@@ -504,7 +532,6 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  // Task tool — show a compact one-liner since the Activity Tray surfaces task state
   if (TASK_TOOL_NAMES.has(name)) {
     const labels: Record<string, string> = {
       create: 'Task list created',
@@ -522,26 +549,42 @@ const FullToolContent = React.memo(function FullToolContent({
     } catch {
       /* ignore */
     }
-    return <StatusInfo title={label} />;
-  }
-
-  // Knowledge tool — show "Knowledge <command>" + remaining args, same pattern
-  // as Grep (primary arg as target, the rest via ToolMeta). The rich
-  // KnowledgePanel surfaces full knowledge-base state separately.
-  if (KNOWLEDGE_TOOL_NAMES.has(name)) {
-    const title = getToolLabel('knowledge');
-    const command = parseToolArg(content, 'command');
-    const params = formatToolParams(content, ['command']);
+    const showBody = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
     return (
       <>
-        <StatusInfo title={title} target={command || undefined} />
-        <ToolMeta params={params} />
+        <StatusInfo title={label} />
+        {showBody && (
+          <ResultTextBody
+            result={result}
+            isFinished={effectiveFinished}
+            isStatic={isStatic}
+          />
+        )}
       </>
     );
   }
 
-  // Fallback: use generic Tool component
-  // For unrecognized tools that failed, show a one-liner matching Rejected/Cancelled pattern
+  if (KNOWLEDGE_TOOL_NAMES.has(name)) {
+    const title = getToolLabel('knowledge');
+    const command = parseToolArg(content, 'command');
+    const params = formatToolParams(content, ['command']);
+    // Do not register expandable output off-cohort.
+    const showBody = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
+    return (
+      <>
+        <StatusInfo title={title} target={command || undefined} />
+        <ToolMeta params={params} />
+        {showBody && (
+          <ResultTextBody
+            result={result}
+            isFinished={effectiveFinished}
+            isStatic={isStatic}
+          />
+        )}
+      </>
+    );
+  }
+
   if (result?.status === 'error' && effectiveFinished) {
     return <FallbackError name={name} content={content} error={result.error} />;
   }
@@ -561,9 +604,31 @@ const FullToolContent = React.memo(function FullToolContent({
   );
 });
 
-/** Fallback renderer for failed tool calls. Shows the tool name, a target
- *  extracted from the args (path/command/pattern/etc), the remaining args
- *  as meta, and the error message. */
+const ResultTextBody = React.memo(function ResultTextBody({
+  result,
+  isFinished,
+  isStatic,
+}: {
+  result?: ToolResult;
+  isFinished: boolean;
+  isStatic: boolean;
+}) {
+  const outputVisible = useToolOutputVisible();
+  const text = extractResultBodyText(result);
+  const lines = splitBodyLines(text);
+
+  if (!isFinished || !outputVisible || result?.status !== 'success')
+    return null;
+  return (
+    <ToolOutputSection
+      lines={lines}
+      isStatic={isStatic}
+      previewCount={5}
+      emptyPlaceholder
+    />
+  );
+});
+
 const FallbackError = React.memo(function FallbackError({
   name,
   content,
@@ -577,7 +642,6 @@ const FallbackError = React.memo(function FallbackError({
   let target: string | undefined;
   try {
     const parsed = JSON.parse(content);
-    // Most tools have one of these at the top level.
     target =
       parsed.path ||
       parsed.command ||
@@ -585,7 +649,6 @@ const FallbackError = React.memo(function FallbackError({
       parsed.url ||
       parsed.query ||
       undefined;
-    // fs_read uses `operations: [{ mode, path|image_paths }]` (or legacy `ops`).
     if (!target) {
       const ops = parsed.operations ?? parsed.ops;
       if (Array.isArray(ops) && ops.length > 0) {
@@ -605,7 +668,6 @@ const FallbackError = React.memo(function FallbackError({
   } catch {
     target = undefined;
   }
-  // Exclude fields already surfaced as the target to avoid duplication.
   const params = formatToolParams(content, [
     'path',
     'command',
@@ -617,9 +679,13 @@ const FallbackError = React.memo(function FallbackError({
     <Box flexDirection="column">
       <StatusInfo title={name} target={target} />
       <ToolMeta params={params} />
-      <Box marginLeft={2}>
-        <Text>{getColor('error')(error)}</Text>
-      </Box>
+      {process.env.KIRO_LITE_ROLLOUT_ENABLED === '1' ? (
+        <ToolOutputBar lines={error.split('\n')} isError />
+      ) : (
+        <Box marginLeft={2}>
+          <Text>{getColor('error')(error)}</Text>
+        </Box>
+      )}
     </Box>
   );
 });

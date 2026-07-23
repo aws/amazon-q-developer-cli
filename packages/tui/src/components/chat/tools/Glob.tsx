@@ -10,11 +10,15 @@ import {
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { ToolOutputSection } from './ToolOutput.js';
 import { FileList } from './FileList.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_FILES = 3;
+// `╰ output:` tree is the in-cohort output-differentiation feature.
+const PORT_ACTIVE = () => process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
 /** Parsed glob output structure */
 interface GlobOutput {
@@ -144,13 +148,14 @@ export const Glob = React.memo(function Glob({
     () => filePaths.map((p) => p.split('/').pop() || p),
     [filePaths]
   );
+  const outputVisible = useToolOutputVisible();
 
-  // Use expandable output hook
   const { expanded, expandHint, hiddenCount } = useExpandableOutput({
-    totalItems: filePaths.length,
+    totalItems: !PORT_ACTIVE() || outputVisible ? filePaths.length : 0,
     previewCount: PREVIEW_FILES,
     isStatic,
     unit: 'files',
+    applyVerbosityOutputCap: true,
   });
 
   // Build secondary summary text (shown on second line)
@@ -166,49 +171,85 @@ export const Glob = React.memo(function Glob({
 
   const target = globPattern ? `"${globPattern}"` : undefined;
 
+  const head = (
+    <>
+      <StatusInfo title={title} target={target} shimmer={!isFinished} />
+      <ToolMeta params={params} />
+    </>
+  );
+
+  const bodyRows = useMemo(() => {
+    if (!globOutput || globOutput.totalFiles === 0) return [];
+    const rows: string[] = [];
+    const summary = getSecondarySummary();
+    if (summary) rows.push(summary);
+    rows.push(...fileNames);
+    if (globOutput.truncated) {
+      rows.push(
+        `(showing ${filePaths.length} of ${globOutput.totalFiles} files)`
+      );
+    }
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globOutput, fileNames, filePaths.length, isFinished]);
+
   const renderContent = () => {
+    if (PORT_ACTIVE()) {
+      let lines: string[] | null = null;
+      let isError = false;
+      if (result?.status === 'error') {
+        lines = result.error.split('\n');
+        isError = true;
+      } else if (globOutput && outputVisible) {
+        if (globOutput.totalFiles === 0) {
+          const summary = getSecondarySummary();
+          lines = summary ? [summary] : [];
+        } else {
+          lines = bodyRows;
+        }
+      }
+      return (
+        <Box flexDirection="column">
+          {head}
+          {lines && (
+            <ToolOutputSection
+              lines={lines}
+              isError={isError}
+              isStatic={isStatic}
+            />
+          )}
+        </Box>
+      );
+    }
+
     const secondarySummary = getSecondarySummary();
 
-    // Error state
     if (result?.status === 'error') {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
+          {head}
           <Box marginLeft={2}>
             <Text>{getColor('error')(result.error)}</Text>
           </Box>
         </Box>
       );
     }
-
-    // No result yet or still searching
     if (!globOutput) {
-      return (
-        <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
-        </Box>
-      );
+      return <Box flexDirection="column">{head}</Box>;
     }
-
-    // No files found — show only the summary (e.g. "no matches").
     if (globOutput.totalFiles === 0) {
       return (
         <Box flexDirection="column">
-          <StatusInfo title={title} target={target} shimmer={!isFinished} />
-          <ToolMeta params={params} />
+          {head}
           {secondarySummary && (
             <Text>{getColor('secondary')(secondarySummary)}</Text>
           )}
         </Box>
       );
     }
-
     return (
       <Box flexDirection="column">
-        <StatusInfo title={title} target={target} shimmer={!isFinished} />
-        <ToolMeta params={params} />
+        {head}
         {secondarySummary && (
           <Text>{getColor('secondary')(secondarySummary)}</Text>
         )}

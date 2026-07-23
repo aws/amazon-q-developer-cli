@@ -5,8 +5,11 @@ import { chalk } from '../../../utils/color.js';
 import { render, type Instance, type Terminal } from 'twinki';
 
 const mockTermSize = { width: 80, height: 24 };
+const subscribeToMockTermSize = () => () => {};
+const getMockTermSize = () => mockTermSize;
 mock.module('../../../hooks/useTerminalSize.js', () => ({
-  useTerminalSize: () => ({ ...mockTermSize }),
+  useTerminalSize: () =>
+    React.useSyncExternalStore(subscribeToMockTermSize, getMockTermSize),
 }));
 
 import { AppStoreContext, createAppStore } from '../../../stores/app-store.js';

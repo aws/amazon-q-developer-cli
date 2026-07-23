@@ -33,9 +33,9 @@ import {
 import { verbosityBreadcrumb } from './settings-panel-model.js';
 import type { VerbosityPreviewKey } from '../../lite/render.js';
 import {
-  DENSITY_DISPLAY,
-  DENSITY_FILTERS,
   DENSITY_PRESETS,
+  getDensityPresetDisplay,
+  getDensityPresetFilters,
   type DensityPreset,
 } from '../../lite/verbose.js';
 
@@ -99,7 +99,6 @@ export const CommandMenu: React.FC = () => {
   const kiro = useAppStore((state) => state.kiro);
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
-  const secondaryColor = useMemo(() => getColor('secondary'), [getColor]);
 
   const [fileResults, setFileResults] = useState<string[]>([]);
 
@@ -117,14 +116,13 @@ export const CommandMenu: React.FC = () => {
     }
   }, [activeCommandName]);
 
-  // Arming keymap. Gated to liteOnly commands with a preview fixture; Menu.tsx
-  // yields Ctrl+P on liteOnly menus so this can claim it. (Ctrl+C-as-Esc and
-  // the expanded-collapse live in the shared handler below.)
+  // Arming keymap. Gated to menus that carry a preview fixture (only
+  // /verbosity does); Menu.tsx yields Ctrl+P for those so this can claim it.
+  // Fires in both lite and TUI. (Ctrl+C-as-Esc and the expanded-collapse live
+  // in the shared handler below.)
   useKeypress((input, key) => {
-    const isLiteMenu =
-      activeCommand?.command.meta?.liteOnly === true &&
-      activeCommand.previewKey;
-    if (!isLiteMenu) return;
+    const hasPreview = Boolean(activeCommand?.previewKey);
+    if (!hasPreview) return;
     if (key.ctrl && (input === 'p' || input === 'P')) {
       setPreviewMode((m) => (m === 'hidden' ? 'mini' : 'hidden'));
       return;
@@ -621,12 +619,12 @@ export const CommandMenu: React.FC = () => {
         /^truncation:(argsLines|argsChars|outputLines|outputChars):edit$/
       );
 
-    // Lite /verbosity gets the settings panel chrome: a breadcrumb header +
-    // divider where the input row sat (LiteLayout hides it; see
-    // isLiteVerbosityMenu there). Gated to lite — TUI filters /verbosity out.
-    const isLiteVerbosityMenu =
-      uiMode === 'lite' && activeCommand.command.name === '/verbosity';
-    const verbosityHeader = isLiteVerbosityMenu ? (
+    // /verbosity gets the settings panel chrome: a breadcrumb header +
+    // divider where the input row sat (in lite, LiteLayout hides the input
+    // row — see verbosityMenuActive there; in TUI the breadcrumb renders
+    // below PromptBar). Rendered in BOTH modes — /verbosity is a peer command.
+    const isVerbosityMenu = activeCommand.command.name === '/verbosity';
+    const verbosityHeader = isVerbosityMenu ? (
       <Box flexDirection="column">
         <Box paddingX={1}>
           <Text>{getColor('primary')(verbosityBreadcrumb(previewKey))}</Text>
@@ -664,8 +662,13 @@ export const CommandMenu: React.FC = () => {
 
     // A highlighted density preset draft-renders that preset's display/filters
     // in the preview without persisting; no draft = saved config.
-    const draftDisplay = draftPreset ? DENSITY_DISPLAY[draftPreset] : undefined;
-    const draftFilters = draftPreset ? DENSITY_FILTERS[draftPreset] : undefined;
+    const surface = uiMode === 'lite' ? 'lite' : 'tui';
+    const draftDisplay = draftPreset
+      ? getDensityPresetDisplay(draftPreset, surface)
+      : undefined;
+    const draftFilters = draftPreset
+      ? getDensityPresetFilters(draftPreset, surface)
+      : undefined;
 
     // Expanded preview: swap the menu for the scrollable pane (owns its keys).
     if (previewMode === 'expanded' && verbosityPreviewKey) {
@@ -734,9 +737,25 @@ export const CommandMenu: React.FC = () => {
           preserveLabelColors={
             activeCommand.command.meta?.preserveLabelColors === true
           }
-          liteOnly={activeCommand.command.meta?.liteOnly === true}
+          // The verbosity menu needs Menu to yield Ctrl+P (so the preview
+          // arming above can claim it) and the lite arrow-cluster nav; it is
+          // the sole `liteOnly`-style consumer now that /verbosity is a peer
+          // command without the meta flag. Other menus keep standard nav.
+          liteOnly={isVerbosityMenu}
           closeMenuActionLabel={
             hasReturnStash ? `${glyphs.arrowLeft} back` : 'to close'
+          }
+          // Preview affordance shares the footer row (consistent brand/dim
+          // styling + alignment) instead of a separate offset line below.
+          footerHint={
+            verbosityPreviewKey
+              ? previewMode === 'hidden'
+                ? { key: 'ctrl+p', label: 'to show preview' }
+                : {
+                    key: 'p',
+                    label: `expand ${glyphs.smallDot} ctrl+p hide preview`,
+                  }
+              : undefined
           }
         />
         {verbosityPreviewKey && previewMode === 'mini' && (
@@ -745,17 +764,6 @@ export const CommandMenu: React.FC = () => {
             displayOverride={draftDisplay}
             filtersOverride={draftFilters}
           />
-        )}
-        {verbosityPreviewKey && (
-          <Box paddingX={1}>
-            <Text>
-              {secondaryColor(
-                previewMode === 'hidden'
-                  ? '  ctrl+p to show preview'
-                  : `  p to expand ${glyphs.smallDot} ctrl+p to hide preview`
-              )}
-            </Text>
-          </Box>
         )}
       </Box>
     );

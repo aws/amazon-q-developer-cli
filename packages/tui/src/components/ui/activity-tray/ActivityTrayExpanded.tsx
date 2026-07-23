@@ -17,7 +17,11 @@ const MAX_VISIBLE_LINES = 6;
 
 type ActiveTab = 'tasks' | 'queue';
 
-export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded() {
+export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
+  hasTasks,
+}: {
+  hasTasks: boolean;
+}) {
   const { tasks } = useTaskState();
   const { pendingSteerContent, queuedMessages, editingQueueIndex } =
     useQueueState();
@@ -30,7 +34,6 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded() {
   const { allowIcons } = useAllowIcons();
   const { width: termWidth } = useTerminalSize();
 
-  const hasTasks = tasks.length > 0;
   const hasSteer = pendingSteerContent != null;
   const hasQueue = queuedMessages.length > 0;
   const queueCount = queuedMessages.length;

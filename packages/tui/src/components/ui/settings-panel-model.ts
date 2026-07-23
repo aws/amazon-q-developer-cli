@@ -37,8 +37,6 @@ export type TopChoice =
   | 'keybindings'
   | 'history';
 
-/** UI mode — gates lite-only rows (e.g. verbosity) in {@link buildRows}. */
-export type UiMode = 'tui' | 'lite';
 export type HistoryChoice = 'session' | 'global';
 export type TerminalChoice = 'newlines' | 'interrupt';
 export type InterruptChoice = 'steer' | 'queue';
@@ -67,8 +65,8 @@ export type SelectResult =
 export type PanelAction =
   // Open a different overlay (theme/keybindings/display) — ESC returns here.
   | { type: 'open-panel'; panel: 'display' | 'theme' | 'keybindings' }
-  // Open the lite-only /verbosity command-menu (dispatched via handleUserInput);
-  // ESC out of that menu returns here. Lite-only row.
+  // Open the /verbosity command-menu (dispatched via handleUserInput); ESC out
+  // of that menu returns here. Available in both lite and TUI.
   | { type: 'open-verbosity' }
   // Run the async terminal newline setup flow, then close.
   | { type: 'run-terminal-setup' }
@@ -133,8 +131,8 @@ export interface TopItem {
   description: string;
 }
 
-/** Top-level rows shown in BOTH modes. Lite-only `verbosity` is spliced in by
- *  {@link buildRows} (see {@link VERBOSITY_ITEM}) so TUI never shows it. */
+/** Top-level rows shown in BOTH modes. `verbosity` is spliced in after Display
+ *  by {@link buildRows} (see {@link VERBOSITY_ITEM}) in both modes. */
 export const TOP_ITEMS: readonly TopItem[] = [
   {
     id: 'display',
@@ -163,12 +161,13 @@ export const TOP_ITEMS: readonly TopItem[] = [
   },
 ];
 
-/** Lite-only verbosity row, inserted after Display in lite mode. Must not
- *  surface in TUI: its renderer controls only run inside <LiteLayout>. */
+/** Verbosity row, inserted after Display. Available in both lite and TUI —
+ *  the /verbosity menu and its rendering controls are peers in both. */
 export const VERBOSITY_ITEM: TopItem = {
   id: 'verbosity',
   label: 'Verbosity',
-  description: 'Tool args, reasoning, output filters, density (lite mode only)',
+  description:
+    'Tool args, reasoning, output filters, density, subagent sections',
 };
 
 /** Terminal sub-screen rows. */
@@ -206,17 +205,17 @@ function withActiveMarker(
 export function buildRows(
   screen: Screen,
   settings: SettingsSnapshot,
-  uiMode?: UiMode,
   rolloutEnabled: boolean = true,
   dotFilled: string = '●'
 ): ExplorerRow[] {
   switch (screen.type) {
     case 'top': {
-      // Splice the lite-only verbosity row in after Display; TUI never sees it.
-      const topItems =
-        uiMode === 'lite'
-          ? [TOP_ITEMS[0]!, VERBOSITY_ITEM, ...TOP_ITEMS.slice(1)]
-          : TOP_ITEMS;
+      // Verbosity row splices in after Display. Always present in lite (lite
+      // implies the rollout); on the TUI only inside the cohort — the port is
+      // invisible off-rollout, matching /verbosity's command gate.
+      const topItems = rolloutEnabled
+        ? [TOP_ITEMS[0]!, VERBOSITY_ITEM, ...TOP_ITEMS.slice(1)]
+        : TOP_ITEMS;
       return topItems.map((item) => ({
         id: item.id,
         values: {

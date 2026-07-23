@@ -49,10 +49,13 @@ describe('/settings → Terminal → Interrupt behaviour', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
 
-    // Top-level rows: Display / Theme / Terminal / Keybindings / History.
+    // Top-level rows: Display / Verbosity / Theme / Terminal / Keybindings / History.
     await testCase.waitForText('Keybindings', 10000);
 
-    // Terminal is row index 2 — two ↓ from the default cursor lands on it.
+    // Terminal is row index 3 (Verbosity is spliced in after Display) — three ↓
+    // from the default cursor lands on it.
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(120);
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(120);
     await testCase.sendKeys(DOWN_ARROW);
@@ -116,6 +119,9 @@ describe('/settings → Terminal → Interrupt behaviour', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Keybindings', 10000);
 
+    // Terminal is row index 3 (Verbosity is spliced in after Display).
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(120);
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(120);
     await testCase.sendKeys(DOWN_ARROW);

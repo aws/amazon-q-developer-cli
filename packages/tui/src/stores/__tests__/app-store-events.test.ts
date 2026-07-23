@@ -118,6 +118,42 @@ describe('Stream event handler — ToolCall', () => {
     ).toBe(true);
   });
 
+  // Resumed history rows carry no persisted duration, so the handler must NOT
+  // stamp Date.now() timestamps (which would render a bogus ~0ms elapsed chip);
+  // live rows must stamp them so the elapsed chip renders.
+  it.each([
+    ['fromHistory', { fromHistory: true }, 'hist-tc', undefined],
+    ['live (non-history)', undefined, 'live-tc', 'positive'],
+  ] as const)(
+    'timestamps: %s ToolCall',
+    async (_label, opts, id, expectation) => {
+      const store = makeStore();
+      const handler = store.getState().createStreamEventHandler(opts as never);
+      handler({
+        type: AgentEventType.ToolCall,
+        id,
+        name: 'fs_read',
+        kind: 'read',
+        args: { path: '/tmp/x.ts' },
+      });
+      handler({
+        type: AgentEventType.ToolCallFinished,
+        id,
+        result: { status: 'success', output: { text: 'ok' } },
+      } as never);
+      await new Promise((r) => setTimeout(r, 50));
+      const msg: any = store.getState().messages.find((m: any) => m.id === id);
+      expect(msg).toBeDefined();
+      if (expectation === 'positive') {
+        expect(msg.startTime).toBeGreaterThan(0);
+        expect(msg.finishTime).toBeGreaterThan(0);
+      } else {
+        expect(msg.startTime).toBeUndefined();
+        expect(msg.finishTime).toBeUndefined();
+      }
+    }
+  );
+
   it('renders a tool card for a standalone-subagent ToolCall forwarded to main', async () => {
     // A hidden/standalone subagent's tool call is forwarded to the main stream
     // by KasAcpClient with sessionId stripped to undefined. Verify the main
@@ -814,6 +850,43 @@ describe('Stream event handler — cancel mid-reasoning', () => {
     expect(modelMsg).toBeDefined();
     expect((modelMsg as any).thinking).toBeUndefined();
     expect((modelMsg as any).thinkingMs).toBeUndefined();
+  });
+});
+
+describe('Stream event handler — history-only cancellation placeholders', () => {
+  it.each([
+    ['response', ['Response was ', 'interrupted by the user']],
+    [
+      'tool uses',
+      ['Tool uses were interrupted, ', 'waiting for the next user prompt'],
+    ],
+  ])('does not render the %s sentinel', async (_name, chunks) => {
+    for (const suffix of ['', '\n', '\r\n']) {
+      const store = makeStore();
+      const handler = store.getState().createStreamEventHandler();
+      for (const [index, text] of chunks.entries()) {
+        handler({
+          type: AgentEventType.Content,
+          id: 'sentinel',
+          content: {
+            type: ContentType.Text,
+            text: index === chunks.length - 1 ? `${text}${suffix}` : text,
+          },
+        });
+        await new Promise((r) => setTimeout(r, 25));
+        expect(
+          store
+            .getState()
+            .messages.some((message) => message.role === MessageRole.Model)
+        ).toBe(false);
+      }
+      handler.flush();
+      expect(
+        store
+          .getState()
+          .messages.some((message) => message.role === MessageRole.Model)
+      ).toBe(false);
+    }
   });
 });
 

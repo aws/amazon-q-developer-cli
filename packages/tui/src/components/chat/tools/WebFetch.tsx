@@ -6,6 +6,9 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { clipChars } from '../../../lite/render.js';
+import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { hyperlink } from '../../../utils/terminal-capabilities.js';
@@ -35,6 +38,10 @@ export const WebFetch = React.memo(function WebFetch({
   result,
 }: WebFetchProps) {
   const { getColor } = useTheme();
+
+  // outputMaxLines doesn't apply to this 1-line summary; only the char cap does.
+  const display = useVerboseDisplay();
+  const outputVisible = useToolOutputVisible();
 
   const url = useMemo(() => parseToolArg(content, 'url'), [content]);
 
@@ -79,7 +86,11 @@ export const WebFetch = React.memo(function WebFetch({
     <Box flexDirection="column">
       <StatusInfo title={title} target={target} shimmer={!isFinished} />
       <ToolMeta params={params} />
-      {isFinished && summary && <Text>{getColor('secondary')(summary)}</Text>}
+      {isFinished && summary && outputVisible && (
+        <Text>
+          {getColor('secondary')(clipChars(summary, display.outputMaxChars))}
+        </Text>
+      )}
     </Box>
   );
 });

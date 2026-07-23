@@ -8,8 +8,10 @@ import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js'
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import {
   getVerboseDisplay,
+  getTuiVerboseDisplay,
   type VerboseDisplayConfig,
 } from '../../../lite/verbose.js';
+import { useAppStore } from '../../../stores/app-store.js';
 
 const MAX_CAP = 99999;
 
@@ -41,7 +43,7 @@ const FIELD_META = {
   argsChars: {
     configKey: 'argsMaxChars',
     previewKey: 'truncation:args',
-    heading: 'Tool args · chars per value',
+    heading: 'Tool args · chars',
   },
   outputLines: {
     configKey: 'outputMaxLines',
@@ -72,9 +74,11 @@ export const VerbosityTruncationEditor: React.FC<{
   const glyphs = useGlyphs();
   const dim = useMemo(() => getColor('secondary'), [getColor]);
   const meta = FIELD_META[which];
+  const isLite = useAppStore((state) => state.uiMode === 'lite');
+  const currentDisplay = isLite ? getVerboseDisplay() : getTuiVerboseDisplay();
 
   const [value, setValue] = useState<number | null>(
-    () => getVerboseDisplay()[meta.configKey]
+    () => currentDisplay[meta.configKey]
   );
 
   // Honor /settings allowAnimations: when paused, hold the chevron steady-on.
@@ -151,13 +155,10 @@ export const VerbosityTruncationEditor: React.FC<{
   const valueText = value == null ? 'unlimited' : String(value);
 
   // Override the edited cap so the preview reflects the in-progress draft.
-  const display = useMemo(
-    (): VerboseDisplayConfig => ({
-      ...getVerboseDisplay(),
-      [meta.configKey]: value,
-    }),
-    [meta, value]
-  );
+  const display: VerboseDisplayConfig = {
+    ...currentDisplay,
+    [meta.configKey]: value,
+  };
 
   return (
     <Box flexDirection="column">

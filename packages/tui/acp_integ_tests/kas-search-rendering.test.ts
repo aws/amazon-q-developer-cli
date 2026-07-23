@@ -18,6 +18,13 @@ import { AcpTestCase } from './shared/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 
 const SESSION_ID = 'search-session-1';
+const OUTPUT_ALL = {
+  'chat.tools.filters': ['all'],
+  'chat.tools.outputMaxLines': null,
+};
+
+const createSearchCase = (testName: string): AcpTestCase =>
+  new AcpTestCase({ testName, settings: OUTPUT_ALL });
 
 function setupHandshake(tc: AcpTestCase): void {
   tc.mock.on<InitializeRequest, InitializeResponse>('initialize', () => ({
@@ -90,7 +97,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('file_search (glob) renders query as pattern target', async () => {
-    tc = new AcpTestCase({ testName: 'kas-file-search-query' });
+    tc = createSearchCase('kas-file-search-query');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -128,7 +135,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('grep_search renders query as pattern target', async () => {
-    tc = new AcpTestCase({ testName: 'kas-grep-search-query' });
+    tc = createSearchCase('kas-grep-search-query');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -166,7 +173,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('file_search incomplete results still render the file list', async () => {
-    tc = new AcpTestCase({ testName: 'kas-file-search-incomplete' });
+    tc = createSearchCase('kas-file-search-incomplete');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -204,7 +211,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('grep_search with many matches in one file is expandable', async () => {
-    tc = new AcpTestCase({ testName: 'kas-grep-many-in-one-file' });
+    tc = createSearchCase('kas-grep-many-in-one-file');
     setupHandshake(tc);
     // One file with 6 matches — more than PREVIEW_MATCHES_PER_FILE (3), so the
     // per-file matches overflow even though there's only a single file. ctrl+o
@@ -243,7 +250,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('V2 structured no-results (glob) renders no matches, not a fake file', async () => {
-    tc = new AcpTestCase({ testName: 'kas-glob-v2-no-results' });
+    tc = createSearchCase('kas-glob-v2-no-results');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -280,7 +287,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('V2 structured no-results (grep) renders no matches, not a fake file', async () => {
-    tc = new AcpTestCase({ testName: 'kas-grep-v2-no-results' });
+    tc = createSearchCase('kas-grep-v2-no-results');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -310,7 +317,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('grep_search with a colon in the query strips the full header', async () => {
-    tc = new AcpTestCase({ testName: 'kas-grep-colon-query' });
+    tc = createSearchCase('kas-grep-colon-query');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -345,7 +352,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('file_search no-delimiter no-match text renders no matches', async () => {
-    tc = new AcpTestCase({ testName: 'kas-glob-no-delim-no-match' });
+    tc = createSearchCase('kas-glob-no-delim-no-match');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -376,7 +383,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('V2 structured glob output (filePaths) still renders the file list', async () => {
-    tc = new AcpTestCase({ testName: 'v2-glob-structured' });
+    tc = createSearchCase('v2-glob-structured');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(
@@ -413,7 +420,7 @@ describe('KAS search tool rendering', () => {
   });
 
   it('V2 structured grep output (results) still renders matches', async () => {
-    tc = new AcpTestCase({ testName: 'v2-grep-structured' });
+    tc = createSearchCase('v2-grep-structured');
     setupHandshake(tc);
     tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
       await emitSearchTool(

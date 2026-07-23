@@ -116,6 +116,12 @@ const SHARED: readonly TipDef[] = [
     text: 'Type /settings to customize keybindings, display, terminal behavior, and more.',
   },
   {
+    id: 'verbosity',
+    chance: 0.05,
+    requiresFlag: 'KIRO_LITE_ROLLOUT_ENABLED',
+    text: 'Tune how much each tool call shows — args, reasoning, output caps, density — via /verbosity or /settings → verbosity.',
+  },
+  {
     id: 'goal',
     text: 'Use /goal <description> to set a persistent goal that keeps Kiro aligned across long, multi-turn tasks.',
   },
@@ -209,18 +215,6 @@ const LITE_ONLY: readonly TipDef[] = [
     id: 'lite-kill-subagent',
     engines: ['v2'], // kill-subagent UI dropped on v3 (kas)
     text: 'With the Ctrl+O inspect panel open, press Ctrl+X twice to kill a running subagent.',
-  },
-  {
-    id: 'lite-verbosity-preview',
-    text: 'Inside /verbosity, Ctrl+P toggles a live preview and p expands it so you can see a change before committing.',
-  },
-  {
-    id: 'lite-density-preset',
-    text: 'Pick a density preset (minimal, lean, default, full) in /verbosity to reset every output knob in one step.',
-  },
-  {
-    id: 'lite-show-output',
-    text: "If a tool's output isn't showing, /settings → verbosity → Show output controls which categories surface.",
   },
   {
     id: 'lite-queue-edit',

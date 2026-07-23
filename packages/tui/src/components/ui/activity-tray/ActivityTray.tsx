@@ -6,6 +6,7 @@ import {
   useQueueState,
 } from '../../../stores/selectors.js';
 import { useAppStore } from '../../../stores/app-store.js';
+import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
 import { ActivityTrayCollapsed } from './ActivityTrayCollapsed.js';
 import { ActivityTrayExpanded } from './ActivityTrayExpanded.js';
 
@@ -14,8 +15,11 @@ export const ActivityTray = React.memo(function ActivityTray() {
   const { pendingSteerContent } = useQueueState();
   const queuedMessages = useAppStore((s) => s.queuedMessages);
   const toggleActivityTray = useTaskActions();
+  // showTasks off → hide the task rows (parity with lite's LiteTaskTray gate);
+  // steer/queue are not tasks, so they remain visible.
+  const { showTasks } = useVerboseDisplay();
 
-  const hasTasks = tasks.length > 0;
+  const hasTasks = showTasks && tasks.length > 0;
 
   // Both steer and queue can be visible simultaneously
   const hasSteer = pendingSteerContent != null;
@@ -38,7 +42,7 @@ export const ActivityTray = React.memo(function ActivityTray() {
   if (activityTrayExpanded) {
     return (
       <Box flexDirection="column">
-        <ActivityTrayExpanded />
+        <ActivityTrayExpanded hasTasks={hasTasks} />
       </Box>
     );
   }
@@ -46,6 +50,7 @@ export const ActivityTray = React.memo(function ActivityTray() {
   return (
     <Box flexDirection="column">
       <ActivityTrayCollapsed
+        hasTasks={hasTasks}
         hasSteer={hasSteer}
         hasQueue={hasQueue}
         queueCount={queueCount}

@@ -1,22 +1,19 @@
 /**
- * Verbose-mode configuration for lite UI, persisted at
- * ~/.kiro/settings/lite_verbose.json. The filter list is the sole output-bar
- * gate (`[]` = none, `['all']` = every tool). KIRO_LITE_VERBOSE=1 seeds
- * `['all']` only when no saved config exists.
- *
- * CLI.JSON CONTRACT: each display field is unified with the modern TUI's
- * cli.json settings. Precedence on read is cli.json > lite_verbose.json >
- * DEFAULT_DISPLAY ({@link getVerboseDisplay}); {@link setVerboseConfig} mirrors
- * every patched field back to cli.json so both surfaces stay in lockstep. The
- * lite_verbose.json copy is a stale fallback.
+ * Surface-specific verbosity configuration stored in the global cli.json.
+ * Lite and TUI own independent records; legacy shared settings and
+ * lite_verbose.json are migration inputs only.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { readFileSync } from 'fs';
 import { kiroHomePath } from '../utils/kiro-home.js';
 import { logger } from '../utils/logger.js';
-import { readCliSettings, writeCliSettings } from '../utils/cli-settings.js';
+import {
+  readCliSettings,
+  readCliSettingsStrict,
+  writeCliSettings,
+} from '../utils/cli-settings.js';
 import { Settings } from '../constants/settings.js';
+import type { UiMode } from '../types/ui-mode.js';
 import {
   READ_TOOL_NAMES,
   SHELL_TOOL_NAMES,
@@ -31,10 +28,10 @@ import {
   SESSION_TOOL_NAMES,
 } from '../types/agent-events.js';
 
-/** off — name + reasoning only; inline — `tool [arg]` chip; block — key:value tree. */
 export type ToolArgsMode = 'off' | 'inline' | 'block';
 
-/** Per-section toggles for the subagent final block (default: all on). */
+export type ThinkingDisplayMode = 'off' | 'collapsed' | 'expanded';
+
 export interface SubagentDisplayConfig {
   pipeline: boolean;
   prompts: boolean;
@@ -43,23 +40,16 @@ export interface SubagentDisplayConfig {
   responses: boolean;
 }
 
-/**
- * Display knobs that shape the chat scrollback rendering itself, distinct
- * from `filters` which only gate the post-tool output bar.
- */
 export interface VerboseDisplayConfig {
   showToolReasoning: boolean;
   toolArgsMode: ToolArgsMode;
   showElapsed: boolean;
   subagent: SubagentDisplayConfig;
-  /** Distinct from showToolReasoning (per-tool why); unified with the modern
-   *  TUI's chat.showThinking — see CLI.JSON CONTRACT below. */
+  thinkingDisplay: ThinkingDisplayMode;
   showThinkingContent: boolean;
-  /** Suppress only the write diff body; the header still evidences the write. */
   showWriteDiffs: boolean;
   showTasks: boolean;
-  /** null = unbounded. Append-only: caps apply on first render only
-   *  (Static-owned scrollback never reflows). Same for the other *Max* fields. */
+  persistOutput: boolean;
   argsMaxLines: number | null;
   outputMaxLines: number | null;
   argsMaxChars: number | null;
@@ -67,14 +57,10 @@ export interface VerboseDisplayConfig {
 }
 
 export interface VerboseConfig {
-  /** Sole output-bar gate: `[]` = none, `["all"]` = every tool, else a tool
-   *  renders if its name OR category appears. See {@link VERBOSE_CATEGORIES}. */
   filters: string[];
-  /** Optional display config; missing fields fall back to defaults. */
-  display?: VerboseDisplayConfig;
+  display: VerboseDisplayConfig;
 }
 
-/** Default display: reasoning + block args + elapsed on, all subagent sections on. */
 export const DEFAULT_DISPLAY: VerboseDisplayConfig = {
   showToolReasoning: true,
   toolArgsMode: 'block',
@@ -86,22 +72,34 @@ export const DEFAULT_DISPLAY: VerboseDisplayConfig = {
     deps: true,
     responses: true,
   },
+  thinkingDisplay: 'expanded',
   showThinkingContent: true,
   showWriteDiffs: true,
   showTasks: true,
+  persistOutput: true,
   argsMaxLines: null,
-  // Tail-window the live output bar (paired with filters: ['shell']) so the
-  // default streams shell stdout in a bounded strip.
   outputMaxLines: 5,
   argsMaxChars: null,
   outputMaxChars: null,
 };
 
-export const DENSITY_PRESETS = ['minimal', 'lean', 'default', 'full'] as const;
+export const TUI_DEFAULT_DISPLAY: VerboseDisplayConfig = {
+  ...DEFAULT_DISPLAY,
+  showToolReasoning: false,
+  showElapsed: false,
+  subagent: {
+    pipeline: false,
+    prompts: false,
+    roles: false,
+    deps: false,
+    responses: false,
+  },
+  persistOutput: false,
+};
+
+export const DENSITY_PRESETS = ['lean', 'default', 'full'] as const;
 export type DensityPreset = (typeof DENSITY_PRESETS)[number];
 
-// Presets are overrides from DEFAULT_DISPLAY (subagent merged separately so a
-// partial subagent patch keeps the unspecified sections at their default).
 const display = (
   o: Partial<Omit<VerboseDisplayConfig, 'subagent'>> & {
     subagent?: Partial<SubagentDisplayConfig>;
@@ -113,36 +111,23 @@ const display = (
 });
 
 export const DENSITY_DISPLAY: Record<DensityPreset, VerboseDisplayConfig> = {
-  minimal: display({
-    showToolReasoning: false,
-    toolArgsMode: 'off',
-    showElapsed: false,
-    subagent: { prompts: false, roles: false, deps: false, responses: false },
-    showThinkingContent: false,
-    showWriteDiffs: false,
-    showTasks: false,
-    outputMaxLines: 5,
-    argsMaxChars: 60,
-  }),
   lean: display({
     showToolReasoning: false,
     toolArgsMode: 'inline',
     subagent: { prompts: false, roles: false },
+    thinkingDisplay: 'off',
     showThinkingContent: false,
     showWriteDiffs: false,
     outputMaxLines: 10,
     argsMaxChars: 80,
   }),
   default: { ...DEFAULT_DISPLAY },
-  // "show me everything" — caps off; pairs with DENSITY_FILTERS.full = ['all'].
   full: display({
     outputMaxLines: null,
   }),
 };
 
-/** Filter list per preset; picking a preset resets filters too. */
 export const DENSITY_FILTERS: Record<DensityPreset, readonly string[]> = {
-  minimal: [],
   lean: [],
   default: ['shell'], // stream shell stdout out of the box
   full: ['all'],
@@ -171,33 +156,85 @@ export const VERBOSE_CATEGORIES = [
 ] as const;
 export type VerboseCategory = (typeof VERBOSE_CATEGORIES)[number];
 
-// Expand the implicit `['all']` sentinel into the explicit category list so
-// filter arithmetic (add/remove/toggle) changes one token instead of wiping
-// the rest. Non-`all` lists pass through as a fresh copy.
-export const expandFilterBaseline = (filters: readonly string[]): string[] =>
-  filters.includes('all') ? Array.from(VERBOSE_CATEGORIES) : [...filters];
+const TUI_DEFAULT_FILTERS = ['all', '-subagent'];
 
-const DEFAULT_CONFIG: VerboseConfig = {
-  filters: ['shell'], // matches DENSITY_FILTERS.default
-  display: DEFAULT_DISPLAY,
+interface VerbosityVariantPolicy {
+  setting: string;
+  displayPresets: Record<DensityPreset, VerboseDisplayConfig>;
+  filterPresets: Record<DensityPreset, readonly string[]>;
+}
+
+// Complete defaults and persistence policy for each supported UI variant.
+const VERBOSITY_VARIANTS = {
+  lite: {
+    setting: Settings.CHAT_VERBOSITY_LITE,
+    displayPresets: DENSITY_DISPLAY,
+    filterPresets: DENSITY_FILTERS,
+  },
+  tui: {
+    setting: Settings.CHAT_VERBOSITY_TUI,
+    displayPresets: { ...DENSITY_DISPLAY, default: TUI_DEFAULT_DISPLAY },
+    filterPresets: { ...DENSITY_FILTERS, default: TUI_DEFAULT_FILTERS },
+  },
+} satisfies Record<UiMode, VerbosityVariantPolicy>;
+
+export type VerbositySurface = keyof typeof VERBOSITY_VARIANTS;
+
+export function getDensityPresetDisplay(
+  preset: DensityPreset,
+  surface: VerbositySurface = 'lite'
+): VerboseDisplayConfig {
+  return VERBOSITY_VARIANTS[surface].displayPresets[preset];
+}
+
+export function getDensityPresetFilters(
+  preset: DensityPreset,
+  surface: VerbositySurface = 'lite'
+): readonly string[] {
+  return VERBOSITY_VARIANTS[surface].filterPresets[preset];
+}
+
+const excludedFilter = (token: string): string | null =>
+  token.startsWith('-') && token.length > 1 ? token.slice(1) : null;
+
+function normalizeFilters(filters: readonly string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of filters) {
+    const token = raw.trim();
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    out.push(token);
+  }
+  if (!out.includes('all')) return out;
+  return ['all', ...out.filter((token) => excludedFilter(token) !== null)];
+}
+
+export const expandFilterBaseline = (filters: readonly string[]): string[] => {
+  if (!filters.includes('all')) return [...filters];
+  const excluded = new Set(
+    filters
+      .map(excludedFilter)
+      .filter((token): token is string => token !== null)
+  );
+  return VERBOSE_CATEGORIES.filter((category) => !excluded.has(category));
 };
 
-// ── Field metadata ──────────────────────────────────────────────────────────
-// One row per top-level display field maps the local key ↔ its cli.json
-// Settings key. mergeDisplay/getVerboseDisplay/sameDisplay/setVerboseConfig all
-// drive off these tables so a new field is added in one place. `toolArgsMode`
-// and `showThinkingContent` keep bespoke handling (enum / tri-state) below.
+// These tables define the display shape and map legacy shared cli.json keys
+// into the new surface records. New writes persist the complete record.
 
 type BoolDisplayKey =
   | 'showToolReasoning'
   | 'showElapsed'
   | 'showWriteDiffs'
-  | 'showTasks';
+  | 'showTasks'
+  | 'persistOutput';
 const BOOL_FIELDS: { local: BoolDisplayKey; setting: string }[] = [
   { local: 'showToolReasoning', setting: Settings.CHAT_TOOLS_SHOW_REASONING },
   { local: 'showElapsed', setting: Settings.CHAT_TOOLS_SHOW_ELAPSED },
   { local: 'showWriteDiffs', setting: Settings.CHAT_TOOLS_SHOW_WRITE_DIFFS },
   { local: 'showTasks', setting: Settings.CHAT_SHOW_TASKS },
+  { local: 'persistOutput', setting: Settings.CHAT_TOOLS_PERSIST_OUTPUT },
 ];
 
 type CapDisplayKey =
@@ -244,24 +281,70 @@ const SUBAGENT_FIELDS: { local: SubagentKey; setting: string }[] = [
   { local: 'responses', setting: Settings.CHAT_SUBAGENT_SHOW_RESPONSES },
 ];
 
-function configPath(): string {
+function legacyConfigPath(): string {
   return kiroHomePath('settings', 'lite_verbose.json');
 }
 
-let cached: VerboseConfig | null = null;
+const cached: Record<VerbositySurface, VerboseConfig | null> = {
+  lite: null,
+  tui: null,
+};
 
-/** Coerce a saved cap to `number | null`; null/missing/non-positive = unbounded. */
+let version = 0;
+const subscribers = new Set<() => void>();
+
+export function subscribeVerbose(cb: () => void): () => void {
+  subscribers.add(cb);
+  return () => subscribers.delete(cb);
+}
+
+export function getVerboseVersion(): number {
+  return version;
+}
+
+export function cacheByVerboseVersion<T>(read: () => T): () => T {
+  let cachedValue: { version: number; value: T } | undefined;
+  return () => {
+    const currentVersion = getVerboseVersion();
+    if (cachedValue?.version === currentVersion) return cachedValue.value;
+    cachedValue = { version: currentVersion, value: read() };
+    return cachedValue.value;
+  };
+}
+
+function notifyVerboseChanged(): void {
+  version++;
+  for (const cb of subscribers) cb();
+}
+
 function parseLineCap(raw: unknown): number | null {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
   const n = Math.floor(raw);
   return n > 0 ? n : null;
 }
 
-/** Merge a partial on-disk display object with defaults (older configs miss fields). */
-function mergeDisplay(raw: unknown): VerboseDisplayConfig {
+function cloneDisplay(display: VerboseDisplayConfig): VerboseDisplayConfig {
+  return {
+    ...display,
+    subagent: { ...display.subagent },
+  };
+}
+
+function defaultConfig(surface: VerbositySurface): VerboseConfig {
+  return {
+    filters: [...getDensityPresetFilters('default', surface)],
+    display: cloneDisplay(getDensityPresetDisplay('default', surface)),
+  };
+}
+
+function mergeDisplay(
+  raw: unknown,
+  fallback: VerboseDisplayConfig,
+  legacyCaps = false
+): VerboseDisplayConfig {
   const out: VerboseDisplayConfig = {
-    ...DEFAULT_DISPLAY,
-    subagent: { ...DEFAULT_DISPLAY.subagent },
+    ...fallback,
+    subagent: { ...fallback.subagent },
   };
   if (!raw || typeof raw !== 'object') return out;
   const obj = raw as Record<string, unknown>;
@@ -275,13 +358,22 @@ function mergeDisplay(raw: unknown): VerboseDisplayConfig {
   ) {
     out.toolArgsMode = obj.toolArgsMode;
   }
-  if (typeof obj.showThinkingContent === 'boolean')
-    out.showThinkingContent = obj.showThinkingContent;
+  if (
+    obj.thinkingDisplay === 'off' ||
+    obj.thinkingDisplay === 'collapsed' ||
+    obj.thinkingDisplay === 'expanded'
+  ) {
+    out.thinkingDisplay = obj.thinkingDisplay;
+  } else if (typeof obj.showThinkingContent === 'boolean') {
+    out.thinkingDisplay = obj.showThinkingContent ? 'collapsed' : 'off';
+  }
+  out.showThinkingContent = out.thinkingDisplay !== 'off';
   for (const { local, defaultOnMissing } of CAP_FIELDS) {
-    out[local] =
-      defaultOnMissing && obj[local] === undefined
-        ? DEFAULT_DISPLAY[local]
-        : parseLineCap(obj[local]);
+    if (obj[local] === undefined) {
+      if (legacyCaps && !defaultOnMissing) out[local] = null;
+      continue;
+    }
+    out[local] = parseLineCap(obj[local]);
   }
   if (obj.subagent && typeof obj.subagent === 'object') {
     const sa = obj.subagent as Record<string, unknown>;
@@ -293,86 +385,84 @@ function mergeDisplay(raw: unknown): VerboseDisplayConfig {
   return out;
 }
 
-/** Load config from disk. Cached after first call; safe across module
- *  reloads in tests because resetVerboseCache() clears it. */
-export function getVerboseConfig(): VerboseConfig {
-  if (cached) return cached;
-  let filters = DEFAULT_CONFIG.filters;
-  let display = DEFAULT_DISPLAY;
-  let fileExists = false;
-  try {
-    const raw = readFileSync(configPath(), 'utf-8');
-    fileExists = true;
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === 'object') {
-      const sanitized = Array.isArray(obj.filters)
-        ? obj.filters.filter(
-            (f: unknown) => typeof f === 'string' && f.length > 0
-          )
-        : [];
-      // Migration: legacy `enabled === false` forces filters off (dropped on
-      // next save; setVerboseConfig never writes `enabled`).
-      if (obj.enabled === false) {
-        filters = [];
-      } else {
-        filters = sanitized;
-      }
-      if (obj.display) {
-        display = mergeDisplay(obj.display);
-      }
-    }
-  } catch {
-    // Missing file or unparsable — start fresh from defaults.
+function parseConfig(
+  raw: unknown,
+  surface: VerbositySurface,
+  legacy = false
+): VerboseConfig | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const base = defaultConfig(surface);
+  let filters = base.filters;
+  if (Array.isArray(obj.filters)) {
+    filters = normalizeFilters(
+      obj.filters.filter((token): token is string => typeof token === 'string')
+    );
+  } else if (legacy) {
+    filters = [];
   }
-  // KIRO_LITE_VERBOSE=1 acts as a startup hint: when no config file exists,
-  // seed filters to ['all'] so debugging from a shell shows tool output
-  // without writing to disk. With a saved config it's a no-op.
-  if (!fileExists && process.env.KIRO_LITE_VERBOSE === '1') {
-    filters = ['all'];
-  }
-  cached = { filters, display };
-  return cached;
+  if (legacy && obj.enabled === false) filters = [];
+  return {
+    filters,
+    display:
+      obj.display === undefined
+        ? base.display
+        : mergeDisplay(obj.display, base.display, legacy),
+  };
 }
 
-/** Session display config with cli.json overrides applied (see CLI.JSON
- *  CONTRACT). Preserves object identity when nothing changed so upstream
- *  useMemo/Zustand selectors don't see a fresh reference each render. */
-export function getVerboseDisplay(): VerboseDisplayConfig {
-  const cur = getVerboseConfig().display ?? DEFAULT_DISPLAY;
-  const cli = readCliSettings();
+function readLegacyLiteConfig(): VerboseConfig | null {
+  try {
+    return parseConfig(
+      JSON.parse(readFileSync(legacyConfigPath(), 'utf-8')),
+      'lite',
+      true
+    );
+  } catch {
+    return null;
+  }
+}
 
-  // Each helper returns the well-typed cli.json value or falls back to `cur`
-  // (already DEFAULT_DISPLAY-merged) so a corrupt entry can't break rendering.
+const LEGACY_SETTINGS = [
+  Settings.CHAT_TOOLS_FILTERS,
+  Settings.CHAT_TOOLS_ARGS_MODE,
+  Settings.CHAT_SHOW_THINKING,
+  ...BOOL_FIELDS.map(({ setting }) => setting),
+  ...CAP_FIELDS.map(({ setting }) => setting),
+  ...SUBAGENT_FIELDS.map(({ setting }) => setting),
+];
+
+function resolveLegacyDisplay(
+  cur: VerboseDisplayConfig,
+  cli: Record<string, unknown>
+): VerboseDisplayConfig {
   const bool = (key: string, fallback: boolean): boolean => {
-    const v = cli[key];
-    return typeof v === 'boolean' ? v : fallback;
+    const value = cli[key];
+    return typeof value === 'boolean' ? value : fallback;
   };
   const cap = (key: string, fallback: number | null): number | null => {
     if (cli[key] === null) return null;
-    const v = cli[key];
-    if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
-      return Math.floor(v);
-    }
-    return fallback;
+    const value = cli[key];
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? Math.floor(value)
+      : fallback;
   };
   const argsMode = (fallback: ToolArgsMode): ToolArgsMode => {
-    const v = cli[Settings.CHAT_TOOLS_ARGS_MODE];
-    if (v === 'off' || v === 'inline' || v === 'block') return v;
-    return fallback;
+    const value = cli[Settings.CHAT_TOOLS_ARGS_MODE];
+    return value === 'off' || value === 'inline' || value === 'block'
+      ? value
+      : fallback;
   };
-
+  const thinkingDisplay = resolveThinkingDisplay(
+    cli[Settings.CHAT_SHOW_THINKING],
+    cur.thinkingDisplay
+  );
   const resolved: VerboseDisplayConfig = {
     ...cur,
     subagent: { ...cur.subagent },
     toolArgsMode: argsMode(cur.toolArgsMode),
-    // CHAT_SHOW_THINKING is a shared tri-state ('collapsed'|'expanded'|'off';
-    // legacy boolean honored). Lite collapses it to: shown unless 'off'/false.
-    showThinkingContent: (() => {
-      const v = cli[Settings.CHAT_SHOW_THINKING];
-      if (v === 'off' || v === false) return false;
-      if (v === 'collapsed' || v === 'expanded' || v === true) return true;
-      return cur.showThinkingContent;
-    })(),
+    thinkingDisplay,
+    showThinkingContent: thinkingDisplay !== 'off',
   };
   for (const { local, setting } of BOOL_FIELDS) {
     resolved[local] = bool(setting, cur[local]);
@@ -383,35 +473,99 @@ export function getVerboseDisplay(): VerboseDisplayConfig {
   for (const { local, setting } of SUBAGENT_FIELDS) {
     resolved.subagent[local] = bool(setting, cur.subagent[local]);
   }
-
-  if (sameDisplay(cur, resolved)) return cur; // preserve identity (see fn doc)
-  return resolved;
+  return sameDisplay(cur, resolved) ? cur : resolved;
 }
 
-/** Session filters with cli.json override (chat.tools.filters wins when it's a
- *  string array; else falls back to the cached lite_verbose list). */
-export function getVerboseFilters(): string[] {
-  const cur = getVerboseConfig().filters;
+function resolveLegacyFilters(
+  fallback: string[],
+  cli: Record<string, unknown>
+): string[] {
+  const value = cli[Settings.CHAT_TOOLS_FILTERS];
+  if (!Array.isArray(value)) return fallback;
+  return normalizeFilters(
+    value.filter((token): token is string => typeof token === 'string')
+  );
+}
+
+function loadConfig(surface: VerbositySurface): VerboseConfig {
   const cli = readCliSettings();
-  const v = cli[Settings.CHAT_TOOLS_FILTERS];
-  if (!Array.isArray(v)) return cur;
-  const out: string[] = [];
-  for (const t of v) {
-    if (typeof t === 'string' && t.length > 0) out.push(t);
+  const setting = VERBOSITY_VARIANTS[surface].setting;
+  const saved = parseConfig(cli[setting], surface);
+  if (saved) return saved;
+
+  const legacyLite = surface === 'lite' ? readLegacyLiteConfig() : null;
+  let config = legacyLite ?? defaultConfig(surface);
+  const hasLegacyShared = LEGACY_SETTINGS.some((key) =>
+    Object.prototype.hasOwnProperty.call(cli, key)
+  );
+  if (hasLegacyShared) {
+    config = {
+      filters: resolveLegacyFilters(config.filters, cli),
+      display: resolveLegacyDisplay(config.display, cli),
+    };
+  } else if (
+    surface === 'lite' &&
+    legacyLite == null &&
+    process.env.KIRO_LITE_VERBOSE === '1'
+  ) {
+    config.filters = ['all'];
   }
-  // ['all'] short-circuits any mixed list (matches setVerboseConfig).
-  return out.includes('all') ? ['all'] : out;
+
+  if (legacyLite || hasLegacyShared) {
+    try {
+      const writable = readCliSettingsStrict();
+      writable[setting] = config;
+      writeCliSettings(writable);
+    } catch (err) {
+      logger.warn('[verbose] failed to migrate verbosity into cli.json', err);
+    }
+  }
+  return config;
 }
 
-/** Structural equality on two VerboseDisplayConfig values. Used by
- *  getVerboseDisplay's identity-preservation guard and by the effect
- *  handler's density-preset detection. */
+export function getVerboseConfig(
+  surface: VerbositySurface = 'lite'
+): VerboseConfig {
+  cached[surface] ??= loadConfig(surface);
+  return cached[surface]!;
+}
+
+/** Coerce the legacy shared thinking value to the current tri-state. */
+export function resolveThinkingDisplay(
+  v: unknown,
+  fallback: ThinkingDisplayMode = 'expanded'
+): ThinkingDisplayMode {
+  if (v === 'off' || v === 'collapsed' || v === 'expanded') return v;
+  if (v === false) return 'off';
+  if (v === true) return 'collapsed';
+  return fallback;
+}
+
+export function getVerboseDisplay(): VerboseDisplayConfig {
+  return getVerboseConfig('lite').display;
+}
+
+export function getTuiVerboseDisplay(): VerboseDisplayConfig {
+  if (process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1') return TUI_DEFAULT_DISPLAY;
+  return getVerboseConfig('tui').display;
+}
+
+export function getVerboseFilters(): string[] {
+  return getVerboseConfig('lite').filters;
+}
+
+/** TUI filters preserve the pre-verbosity "all tool output" behavior. */
+export function getTuiVerboseFilters(): string[] {
+  if (process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1') return ['all'];
+  return getVerboseConfig('tui').filters;
+}
+
 export function sameDisplay(
   a: VerboseDisplayConfig,
   b: VerboseDisplayConfig
 ): boolean {
   if (a.toolArgsMode !== b.toolArgsMode) return false;
-  if (a.showThinkingContent !== b.showThinkingContent) return false;
+  if (a.thinkingDisplay !== b.thinkingDisplay) return false;
   for (const { local } of BOOL_FIELDS) if (a[local] !== b[local]) return false;
   for (const { local } of CAP_FIELDS) if (a[local] !== b[local]) return false;
   for (const { local } of SUBAGENT_FIELDS)
@@ -419,7 +573,6 @@ export function sameDisplay(
   return true;
 }
 
-/** Order-insensitive equality on short filter lists. */
 export function sameFilters(
   a: readonly string[],
   b: readonly string[]
@@ -433,8 +586,6 @@ export function sameFilters(
   return true;
 }
 
-/** Patch for {@link setVerboseConfig}: display (and subagent) fields are
- *  shallow-merged; filters is the canonical full list (normalized/deduped). */
 export interface VerboseConfigPatch {
   filters?: string[];
   display?: Partial<Omit<VerboseDisplayConfig, 'subagent'>> & {
@@ -442,124 +593,98 @@ export interface VerboseConfigPatch {
   };
 }
 
-/** Persist a config patch and update the cache. Returns true on success. */
-export function setVerboseConfig(patch: VerboseConfigPatch): boolean {
-  // Explicit `display: undefined` (some tests) clears the saved display so
-  // reads fall through to DEFAULT_DISPLAY; the merge below is gated on truthy.
-  const cur = getVerboseConfig();
-  const explicitlyClearedDisplay =
-    'display' in patch && patch.display === undefined;
+export function setVerboseConfig(
+  patch: VerboseConfigPatch,
+  surface: VerbositySurface = 'lite'
+): boolean {
+  const cur = getVerboseConfig(surface);
   const next: VerboseConfig = {
     filters: patch.filters !== undefined ? patch.filters : cur.filters,
-    display: explicitlyClearedDisplay ? undefined : cur.display,
+    display: cur.display,
   };
-  // Normalize filters: trim/dedupe; `[]` stays empty, `['all']` collapses.
-  if (patch.filters) {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const f of patch.filters) {
-      const t = f.trim();
-      if (!t || seen.has(t)) continue;
-      seen.add(t);
-      out.push(t);
-    }
-    next.filters = out.includes('all') ? ['all'] : out;
+  if (patch.filters !== undefined) {
+    next.filters = normalizeFilters(patch.filters);
   }
-  // Shallow-merge display (and subagent) so a single-key patch keeps the rest.
   if (patch.display) {
-    const curDisplay = getVerboseDisplay();
+    const curDisplay = cur.display;
     next.display = {
       ...curDisplay,
       ...patch.display,
       subagent: { ...curDisplay.subagent, ...(patch.display.subagent ?? {}) },
     };
-  }
-  // Cache before persisting so the new state holds for the session even if the
-  // disk write fails; the bool return is "applied + saved" vs "applied only".
-  cached = next;
-  // Mirror each patched field to cli.json (see CLI.JSON CONTRACT). Only the
-  // fields the patch sets are mirrored; best-effort (failure doesn't abort the
-  // lite_verbose.json save). ACP setSetting is the call site's job.
-  let mirroredAny = false;
-  let cli: Record<string, unknown> | null = null;
-  const stage = (key: string, value: unknown) => {
-    if (cli == null) cli = readCliSettings();
-    cli[key] = value;
-    mirroredAny = true;
-  };
-  if (patch.filters !== undefined) {
-    stage(Settings.CHAT_TOOLS_FILTERS, [...next.filters]);
-  }
-  if (patch.display) {
-    const d = patch.display;
-    for (const { local, setting } of BOOL_FIELDS) {
-      if (d[local] !== undefined) stage(setting, !!d[local]);
-    }
-    if (d.toolArgsMode !== undefined) {
-      stage(Settings.CHAT_TOOLS_ARGS_MODE, d.toolArgsMode);
-    }
-    if (d.showThinkingContent !== undefined) {
-      stage(Settings.CHAT_SHOW_THINKING, !!d.showThinkingContent);
-    }
-    for (const { local, setting } of CAP_FIELDS) {
-      if (d[local] !== undefined) stage(setting, d[local]);
-    }
-    if (d.subagent) {
-      const sa = d.subagent;
-      for (const { local, setting } of SUBAGENT_FIELDS) {
-        if (sa[local] !== undefined) stage(setting, !!sa[local]);
-      }
+    if (patch.display.thinkingDisplay !== undefined) {
+      next.display.showThinkingContent =
+        patch.display.thinkingDisplay !== 'off';
+    } else if (patch.display.showThinkingContent !== undefined) {
+      next.display.thinkingDisplay = patch.display.showThinkingContent
+        ? 'collapsed'
+        : 'off';
     }
   }
-  if (mirroredAny && cli) {
-    try {
-      writeCliSettings(cli);
-    } catch (err) {
-      logger.warn('[verbose] failed to mirror verbosity to cli.json', err);
-    }
-  }
+  // Keep the edit active for this session even if persistence fails; false
+  // means "applied only", while true means "applied and saved".
+  cached[surface] = next;
+  let saved = true;
   try {
-    const path = configPath();
-    mkdirSync(join(path, '..'), { recursive: true });
-    writeFileSync(path, JSON.stringify(next, null, 2) + '\n');
-    return true;
+    const cli = readCliSettingsStrict();
+    cli[VERBOSITY_VARIANTS[surface].setting] = next;
+    // The off-cohort Display panel still consumes the legacy shared thinking
+    // key; the verbosity rollout itself never writes shared settings.
+    if (process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1' && patch.display) {
+      const mode =
+        patch.display.thinkingDisplay ??
+        (patch.display.showThinkingContent === undefined
+          ? undefined
+          : patch.display.showThinkingContent
+            ? 'collapsed'
+            : 'off');
+      if (mode !== undefined) cli[Settings.CHAT_SHOW_THINKING] = mode;
+    }
+    writeCliSettings(cli);
   } catch (err) {
     logger.error('[verbose] failed to save config', err);
-    return false;
+    saved = false;
   }
+  notifyVerboseChanged();
+  return saved;
 }
 
-/** Apply a density preset: rewrite display AND reset filters to match. */
-export function applyDensityPreset(preset: DensityPreset): boolean {
-  const display = DENSITY_DISPLAY[preset];
-  const filters = [...DENSITY_FILTERS[preset]];
-  return setVerboseConfig({ display, filters });
+export function applyDensityPreset(
+  preset: DensityPreset,
+  surface: VerbositySurface = 'lite'
+): boolean {
+  const display = getDensityPresetDisplay(preset, surface);
+  const filters = [...getDensityPresetFilters(preset, surface)];
+  return setVerboseConfig({ display, filters }, surface);
 }
 
-/** Test/dev helper — drops the in-memory cache so the next get re-reads. */
 export function resetVerboseCache(): void {
-  cached = null;
+  cached.lite = null;
+  cached.tui = null;
+  notifyVerboseChanged();
 }
 
-/**
- * Whether a tool's output renders: `["all"]` → true; else an exact name or
- * matching category. `filtersOverride` lets the preview pane test a draft list.
- */
 export function shouldShowToolOutput(
   toolName: string,
   filtersOverride?: readonly string[]
 ): boolean {
-  // getVerboseFilters() (not the raw config) so the cli.json override applies
-  // on the static path, which doesn't thread filtersOverride.
   const filters = filtersOverride ?? getVerboseFilters();
+  const category = categorize(toolName);
+  if (
+    filters.some((token) => {
+      const excluded = excludedFilter(token);
+      return (
+        excluded === toolName || (category != null && excluded === category)
+      );
+    })
+  ) {
+    return false;
+  }
   if (filters.includes('all')) return true;
   if (filters.includes(toolName)) return true;
-  const cat = categorize(toolName);
-  return cat != null && filters.includes(cat);
+  return category != null && filters.includes(category);
 }
 
-/** Map a tool name to a category token; null when it fits none. No write
- *  category — see VERBOSE_CATEGORIES. */
 export function categorize(toolName: string): VerboseCategory | null {
   if (toolName.startsWith('mcp__')) return 'mcp';
   // KAS shell-process tools (titles on the wire) ride the shell category for
@@ -579,11 +704,6 @@ export function categorize(toolName: string): VerboseCategory | null {
   return null;
 }
 
-/**
- * Partition user tokens into accepted/rejected/unknown. Rejected = bad syntax;
- * unknown = accepted but neither a known category nor `mcp__`-prefixed (so the
- * caller can soft-warn typos while still allowing lazily-loaded tool names).
- */
 export function validateTokens(tokens: string[]): {
   accepted: string[];
   rejected: string[];
@@ -600,14 +720,13 @@ export function validateTokens(tokens: string[]): {
       accepted.push(t);
       continue;
     }
-    // Reject whitespace / shell metachars to keep stored config sane.
     if (/[^a-zA-Z0-9_:.\-*]/.test(t)) {
       rejected.push(t);
       continue;
     }
     accepted.push(t);
-    // Flag tokens that aren't a known category or mcp__ name as unknown.
-    if (!known.has(t) && !t.startsWith('mcp__')) {
+    const candidate = excludedFilter(t) ?? t;
+    if (!known.has(candidate) && !candidate.startsWith('mcp__')) {
       unknown.push(t);
     }
   }

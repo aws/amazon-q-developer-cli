@@ -68,7 +68,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   const setLoadingMessage = useAppStore((state) => state.setLoadingMessage);
   const showAlert = useAppStore((state) => state.showTransientAlert);
   const kiro = useAppStore((state) => state.kiro);
-  const uiMode = useAppStore((state) => state.uiMode);
   const handleUserInput = useAppStore((state) => state.handleUserInput);
   const glyphs = useGlyphs();
 
@@ -216,11 +215,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
             DEFAULT_INTERRUPT_MODE
           ),
         },
-        uiMode,
         process.env.KIRO_LITE_ROLLOUT_ENABLED === '1',
         glyphs.dotFilled
       ),
-    [screen, uiMode, glyphs.dotFilled]
+    [screen, glyphs.dotFilled]
   );
 
   // ─── Selection ──────────────────────────────────────────────────

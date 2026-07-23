@@ -4,18 +4,27 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
-import { unwrapResultOutput } from '../../../utils/tool-result.js';
+import {
+  unescapeJsonNewlines,
+  unwrapResultOutput,
+} from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { ToolOutput } from './ToolOutput.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
+import { maxVisibleWidth } from '../../../utils/text-width.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
 import { useHideToolArgs } from '../../ui/HideToolArgsContext.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import type { ToolCallLocation } from '../../../types/agent-events.js';
 
 const PREVIEW_LINES = 3;
+// The `╰ output:` tree + green body is the in-cohort output-differentiation
+// feature; off-cohort keeps mainline's bare primary lines (no header).
+const PORT_ACTIVE = () => process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
 export interface ToolProps {
   /** The tool name to display */
@@ -104,7 +113,10 @@ export const Tool = React.memo(function Tool({
       outputStr = obj.result;
     } else {
       try {
-        outputStr = JSON.stringify(obj, null, 2);
+        const serialized = JSON.stringify(obj, null, 2);
+        outputStr = PORT_ACTIVE()
+          ? unescapeJsonNewlines(serialized)
+          : serialized;
       } catch {
         // outputStr remains null
       }
@@ -115,13 +127,22 @@ export const Tool = React.memo(function Tool({
   }, [result]);
 
   const hasOutput = output && output.trim().length > 0;
+  const outputVisible = useToolOutputVisible();
 
-  // Use expandable output hook
-  const { expanded, expandHint } = useExpandableOutput({
-    totalItems: outputLines.length,
+  const {
+    expanded,
+    expandHint,
+    effectivePreviewCount,
+    outputMaxChars,
+    persistOutput,
+  } = useExpandableOutput({
+    totalItems: !PORT_ACTIVE() || outputVisible ? outputLines.length : 0,
     previewCount: PREVIEW_LINES,
+    maxContentWidth:
+      !PORT_ACTIVE() || outputVisible ? maxVisibleWidth(outputLines) : 0,
     isStatic,
     unit: 'lines',
+    applyVerbosityOutputCap: PORT_ACTIVE(),
   });
 
   // In spec mode, render all tool titles via MarkdownRenderer (questions get
@@ -148,8 +169,7 @@ export const Tool = React.memo(function Tool({
     );
   };
 
-  const renderContent = () => {
-    // Error display
+  const renderLegacyContent = () => {
     if (errorMessage) {
       return (
         <Box flexDirection="column">
@@ -162,8 +182,6 @@ export const Tool = React.memo(function Tool({
         </Box>
       );
     }
-
-    // Static view or no output: show title + meta + locations only
     if (isStatic || !hasOutput) {
       return (
         <Box flexDirection="column">
@@ -173,8 +191,6 @@ export const Tool = React.memo(function Tool({
         </Box>
       );
     }
-
-    // Expanded view: show all output
     if (expanded) {
       return (
         <Box flexDirection="column">
@@ -189,8 +205,6 @@ export const Tool = React.memo(function Tool({
         </Box>
       );
     }
-
-    // Collapsed view: show preview + hint
     return (
       <Box flexDirection="column">
         {renderTitle()}
@@ -202,6 +216,55 @@ export const Tool = React.memo(function Tool({
           ))}
           {expandHint && <Text>{getColor('secondary')(expandHint)}</Text>}
         </Box>
+      </Box>
+    );
+  };
+
+  const renderContent = () => {
+    if (!PORT_ACTIVE()) return renderLegacyContent();
+
+    if (errorMessage) {
+      return (
+        <Box flexDirection="column">
+          {renderTitle()}
+          {renderMeta()}
+          {renderLocations()}
+          <ToolOutput lines={errorMessage.split('\n')} isError />
+        </Box>
+      );
+    }
+
+    if ((isStatic && !persistOutput) || !hasOutput || !outputVisible) {
+      return (
+        <Box flexDirection="column">
+          {renderTitle()}
+          {renderMeta()}
+          {renderLocations()}
+        </Box>
+      );
+    }
+
+    if (expanded) {
+      return (
+        <Box flexDirection="column">
+          {renderTitle()}
+          {renderMeta()}
+          {renderLocations()}
+          <ToolOutput lines={outputLines} maxChars={outputMaxChars} />
+        </Box>
+      );
+    }
+
+    return (
+      <Box flexDirection="column">
+        {renderTitle()}
+        {renderMeta()}
+        {renderLocations()}
+        <ToolOutput
+          lines={outputLines.slice(0, effectivePreviewCount)}
+          maxChars={outputMaxChars}
+          expandHint={expandHint}
+        />
       </Box>
     );
   };

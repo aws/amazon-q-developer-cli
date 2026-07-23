@@ -36,15 +36,6 @@ export interface SettingsSubcommand {
   description: string;
   /** Dispatch logic for this subcommand */
   handle: (ctx: SettingsHandleContext) => void | Promise<void>;
-  /**
-   * Hide this entry from the /settings menu when the UI is not in lite
-   * mode. The entry stays in the registry — typing the full
-   * `/settings <value>` form still routes through `findSettingsSubcommand`
-   * — only the menu listing is affected. Used by lite-specific entries
-   * (e.g. verbosity) so the menu doesn't surface options that produce a
-   * lite-only error alert when selected from TUI mode.
-   */
-  liteOnly?: boolean;
 }
 
 /**
@@ -83,9 +74,7 @@ export const settingsSubcommands: readonly SettingsSubcommand[] = [
   {
     value: 'verbosity',
     label: 'verbosity',
-    description:
-      'Tool args, reasoning, output filters, density (lite mode only)',
-    liteOnly: true,
+    description: 'Tool args, reasoning, output filters, density',
     handle: ({ ctx, settingsCommand, resolveEffect, arg }) => {
       ctx.setSettingsReturnOnEscape(true);
 

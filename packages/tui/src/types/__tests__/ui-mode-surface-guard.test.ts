@@ -14,10 +14,10 @@ const allowedModeDataReaders = new Set([
   'components/chat/prompt-bar/PromptInput.tsx',
   'components/layout/lite/LiteLayout.tsx',
   'components/ui/CommandMenu.tsx',
-  'components/ui/SettingsPanel.tsx',
   'components/ui/ToolUseMessage.tsx',
   'components/ui/command-menu-utils.ts',
-  'components/ui/settings-panel-model.ts',
+  'components/ui/menu/VerbosityPreview.tsx',
+  'components/ui/menu/VerbosityTruncationEditor.tsx',
 ]);
 
 function sourceFiles(directory: string): string[] {

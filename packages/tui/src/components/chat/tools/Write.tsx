@@ -10,6 +10,7 @@ import { diffLines, type Change } from 'diff';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
 
 export interface WriteProps {
   /** Old text content for diff (empty string for new files). When undefined,
@@ -61,6 +62,13 @@ export const Write = React.memo<WriteProps>(function Write({
 }) {
   const { getColor, colors: themeColors } = useTheme();
   const highlightCode = useSyntaxHighlight();
+  // showWriteDiffs off → keep the header + added/removed summary (the write is
+  // still evidenced) but drop the diff body. Mirrors lite's suppressDiff.
+  // Off-cohort mainline ALWAYS shows the diff, so force it on there (a leaked
+  // verbosity `showWriteDiffs:false` must not suppress the body off-cohort).
+  const { showWriteDiffs: showWriteDiffsCfg } = useVerboseDisplay();
+  const showWriteDiffs =
+    process.env.KIRO_LITE_ROLLOUT_ENABLED === '1' ? showWriteDiffsCfg : true;
 
   // When foreground is set on diff colors, skip syntax highlighting and use flat color
   const addedFg = themeColors.diff.added.foreground
@@ -81,15 +89,22 @@ export const Write = React.memo<WriteProps>(function Write({
     }
   }, [content]);
 
-  // Prefer explicit props (set by ToolUseMessage from `msg.diff`) over
-  // anything we can recover from the JSON-encoded content blob.
+  // Explicit diff props win; only in-cohort accepts snake_case wire fields.
+  const portActive = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
   const displayPath = filePath ?? parsedContent?.path;
-  const displayOldText =
-    oldText !== undefined ? oldText : (parsedContent?.oldStr ?? '');
-  const displayNewText =
-    newText !== undefined
-      ? newText
-      : (parsedContent?.newStr ?? parsedContent?.content ?? '');
+  const recoveredOld = portActive
+    ? (parsedContent?.oldStr ?? parsedContent?.old_str)
+    : parsedContent?.oldStr;
+  const cmd = parsedContent?.command;
+  const fileText = parsedContent?.file_text ?? parsedContent?.content;
+  const newStr = parsedContent?.newStr ?? parsedContent?.new_str;
+  const recoveredNew = portActive
+    ? cmd === 'create' || cmd === 'append'
+      ? (fileText ?? newStr)
+      : (newStr ?? fileText)
+    : (parsedContent?.newStr ?? parsedContent?.content);
+  const displayOldText = oldText !== undefined ? oldText : (recoveredOld ?? '');
+  const displayNewText = newText !== undefined ? newText : (recoveredNew ?? '');
 
   // Show diff content when there's either new text or old text (deletions)
   const hasContent =
@@ -100,9 +115,16 @@ export const Write = React.memo<WriteProps>(function Write({
   const title = getToolLabel('write');
 
   const params = useMemo(
-    () => formatToolParams(content, ['path', 'command', 'insertLine']),
-    [content]
+    () =>
+      formatToolParams(
+        content,
+        portActive
+          ? ['path', 'command', 'insertLine', 'insert_line']
+          : ['path', 'command', 'insertLine']
+      ),
+    [content, portActive]
   );
+  const summaryIndent = portActive ? 2 : 0;
 
   // Line numbers should reflect the actual position in the source file.
   // startLine is the 1-based line number from the backend's ToolCallLocation.
@@ -155,16 +177,27 @@ export const Write = React.memo<WriteProps>(function Write({
 
   const PREVIEW_DIFF_LINES = 20;
 
-  // Use expandable output hook for collapsing large diffs
-  const { expanded: expandedFromHook, expandHint } = useExpandableOutput({
-    totalItems: totalDiffLines,
+  // Off-cohort keeps mainline's unbounded static diff.
+  const portActiveDiff = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
+  const {
+    expanded: expandedFromHook,
+    expandHint,
+    effectivePreviewCount,
+    persistOutput,
+  } = useExpandableOutput({
+    totalItems: showWriteDiffs ? totalDiffLines : 0,
     previewCount: PREVIEW_DIFF_LINES,
     isStatic,
     unit: 'lines',
+    applyVerbosityOutputCap: portActiveDiff,
   });
 
-  // Static/past turns always show full diff
-  const expanded = isStatic || expandedFromHook;
+  const expanded = isStatic
+    ? portActiveDiff
+      ? persistOutput
+      : true
+    : expandedFromHook;
+  const diffMaxLines = expanded ? undefined : effectivePreviewCount;
 
   // If content prop was provided, render with StatusInfo header
   if (content) {
@@ -174,6 +207,7 @@ export const Write = React.memo<WriteProps>(function Write({
         <ToolMeta params={params} />
         {hasDiffSummary && (
           <Text>
+            {summaryIndent > 0 && ' '.repeat(summaryIndent)}
             {linesAdded > 0 &&
               getColor('diff.added.bar')(
                 `added ${linesAdded} ${linesAdded === 1 ? 'line' : 'lines'}`
@@ -193,7 +227,7 @@ export const Write = React.memo<WriteProps>(function Write({
             )}
           </Text>
         )}
-        {hasContent && (
+        {hasContent && showWriteDiffs && (
           <Box>
             <WriteContent
               changes={changes}
@@ -202,12 +236,12 @@ export const Write = React.memo<WriteProps>(function Write({
               getColor={getColor}
               addedFg={addedFg}
               removedFg={removedFg}
-              maxLines={expanded ? undefined : PREVIEW_DIFF_LINES}
+              maxLines={diffMaxLines}
               diffStartLine={diffStartLine}
             />
           </Box>
         )}
-        {expandHint && !expanded && (
+        {!expanded && expandHint && showWriteDiffs && (
           <Text>{getColor('secondary')(expandHint)}</Text>
         )}
       </Box>

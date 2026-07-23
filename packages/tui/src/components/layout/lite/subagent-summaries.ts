@@ -9,9 +9,14 @@ import {
 } from '../../../lite/render.js';
 import {
   getVerboseDisplay,
+  shouldShowToolOutput,
   type VerboseDisplayConfig,
 } from '../../../lite/verbose.js';
 import { subagentSummaryToolKind } from './SubagentFooter.js';
+import {
+  orderSubagentStageItems,
+  parseSubagentStageNames,
+} from '../../../utils/subagent-display.js';
 
 function parseSummaryTool(
   msg: Extract<MessageType, { role: MessageRole.ToolUse }>,
@@ -101,6 +106,7 @@ export function collectSubagentSummariesByParent(
   const out = new Map<string, SubagentStageSummary[]>();
   const seen = new Map<string, Set<string>>();
   const parentIdByGroup = new Map<string, string>();
+  const stageNamesByParent = new Map<string, string[]>();
 
   let activeParentId: string | null = null;
   for (const msg of messages) {
@@ -111,6 +117,7 @@ export function collectSubagentSummariesByParent(
     if (isVisibleParent) {
       activeParentId = msg.id;
       if (!out.has(msg.id)) out.set(msg.id, []);
+      stageNamesByParent.set(msg.id, parseSubagentStageNames(msg.content));
       if (msg.pipelineGroupId) parentIdByGroup.set(msg.pipelineGroupId, msg.id);
       continue;
     }
@@ -132,19 +139,116 @@ export function collectSubagentSummariesByParent(
     }
   }
 
+  for (const [parentId, summaries] of out) {
+    out.set(
+      parentId,
+      orderSubagentStageItems(summaries, stageNamesByParent.get(parentId) ?? [])
+    );
+  }
+
   return out;
+}
+
+export function collectSettledSubagentStagesByParent(
+  messages: readonly MessageType[],
+  sessions: ReadonlyMap<string, AgentSession>,
+  mainAgentName?: string | null
+): Map<string, Set<string>> {
+  const parentIdByGroup = new Map<string, string>();
+  for (const msg of messages) {
+    if (
+      msg.role === MessageRole.ToolUse &&
+      isParentSubagentTool(msg.name) &&
+      (!msg.agentName || msg.agentName === mainAgentName) &&
+      msg.pipelineGroupId
+    ) {
+      parentIdByGroup.set(msg.pipelineGroupId, msg.id);
+    }
+  }
+
+  const settledByParent = new Map<string, Set<string>>();
+  for (const [sessionId, session] of sessions) {
+    if (
+      !session.group ||
+      session.status === 'busy' ||
+      session.status === 'pending'
+    ) {
+      continue;
+    }
+    const parentId = parentIdByGroup.get(session.group);
+    if (!parentId) continue;
+    const stageName = session.stageInfo?.name || session.name || sessionId;
+    const settled = settledByParent.get(parentId) ?? new Set<string>();
+    settled.add(stageName);
+    settledByParent.set(parentId, settled);
+  }
+  return settledByParent;
+}
+
+export function selectReadySubagentSummaries(
+  parent: Extract<MessageType, { role: MessageRole.ToolUse }>,
+  summaries: readonly SubagentStageSummary[],
+  settledStageNames: ReadonlySet<string> = new Set()
+): SubagentStageSummary[] {
+  const stageNames = parseSubagentStageNames(parent.content);
+  if (stageNames.length === 0) return [...summaries];
+
+  const byStage = new Map<string, SubagentStageSummary[]>();
+  for (const summary of summaries) {
+    const stage = byStage.get(summary.stageName) ?? [];
+    stage.push(summary);
+    byStage.set(summary.stageName, stage);
+  }
+
+  const ready: SubagentStageSummary[] = [];
+  for (const stageName of stageNames) {
+    const stageSummaries = byStage.get(stageName);
+    if (stageSummaries?.length) {
+      ready.push(...stageSummaries);
+      continue;
+    }
+    if (!settledStageNames.has(stageName)) return ready;
+  }
+
+  const declared = new Set(stageNames);
+  ready.push(
+    ...summaries.filter((summary) => !declared.has(summary.stageName))
+  );
+  return ready;
+}
+
+/**
+ * Last-args memo over {@link collectSubagentSummariesByParent}, so the N crew
+ * cards in one render pass share a single build instead of each re-scanning all
+ * messages. Invalidated when any argument's identity changes.
+ */
+type SummaryArgs = Parameters<typeof collectSubagentSummariesByParent>;
+let _summaryMapCache: {
+  args: SummaryArgs;
+  value: Map<string, SubagentStageSummary[]>;
+} | null = null;
+
+export function collectSubagentSummariesByParentCached(
+  ...args: SummaryArgs
+): Map<string, SubagentStageSummary[]> {
+  const c = _summaryMapCache;
+  if (c && args.every((a, i) => a === c.args[i])) return c.value;
+  const value = collectSubagentSummariesByParent(...args);
+  _summaryMapCache = { args, value };
+  return value;
 }
 
 export function shouldRenderSubagentResponseSummaries(
   msg: Extract<MessageType, { role: MessageRole.ToolUse }>,
   display: VerboseDisplayConfig,
-  summaries: readonly SubagentStageSummary[]
+  summaries: readonly SubagentStageSummary[],
+  filtersOverride?: readonly string[]
 ): boolean {
   if (summaries.length === 0) return false;
-  // KAS plain responses (kind:'response') are the subagent's actual output, not
-  // a synthesized summary — they render regardless of the responses toggle,
-  // mirroring renderSubagentFinalBlock's hasPlainResponses escape hatch.
   const hasPlainResponses = summaries.some((s) => s.kind === 'response');
+  if (hasPlainResponses && !shouldShowToolOutput('subagent', filtersOverride)) {
+    return false;
+  }
   if (!display.subagent.responses && !hasPlainResponses) return false;
   if (!msg.isFinished) return false;
   const result = msg.result as ToolResult | undefined;
@@ -171,25 +275,38 @@ export function selectPendingSubagentSummaryEntries(
   summariesById: ReadonlyMap<string, readonly SubagentStageSummary[]>,
   pushedStaticIds: ReadonlySet<string>,
   emittedByParent: ReadonlyMap<string, ReadonlySet<string>>,
-  display: VerboseDisplayConfig
+  display: VerboseDisplayConfig,
+  filtersOverride?: readonly string[],
+  settledStagesByParent: ReadonlyMap<string, ReadonlySet<string>> = new Map()
 ): PendingSubagentSummaryEntry[] {
+  if (!display.persistOutput) return [];
   const entries: PendingSubagentSummaryEntry[] = [];
   for (const [parentId, summaries] of summariesById) {
     if (summaries.length === 0) continue;
     if (!pushedStaticIds.has(parentId)) continue;
-    const newSummaries = selectUnemittedSubagentSummaries(
-      parentId,
-      summaries,
-      emittedByParent
-    );
-    if (newSummaries.length === 0) continue;
     const parent = messages.find(
       (msg): msg is Extract<MessageType, { role: MessageRole.ToolUse }> =>
         msg.role === MessageRole.ToolUse && msg.id === parentId
     );
+    if (!parent) continue;
+    const readySummaries = selectReadySubagentSummaries(
+      parent,
+      summaries,
+      settledStagesByParent.get(parentId)
+    );
+    const newSummaries = selectUnemittedSubagentSummaries(
+      parentId,
+      readySummaries,
+      emittedByParent
+    );
+    if (newSummaries.length === 0) continue;
     if (
-      !parent ||
-      !shouldRenderSubagentResponseSummaries(parent, display, newSummaries)
+      !shouldRenderSubagentResponseSummaries(
+        parent,
+        display,
+        newSummaries,
+        filtersOverride
+      )
     ) {
       continue;
     }
@@ -210,7 +327,15 @@ export function renderSubagentSummaryAppendix(
   summaries = renderCtx.subagentSummariesById?.get(msg.id) ?? []
 ): string | null {
   const display = renderCtx.display ?? getVerboseDisplay();
-  if (!shouldRenderSubagentResponseSummaries(msg, display, summaries)) {
+  if (renderCtx.isStatic && !display.persistOutput) return null;
+  if (
+    !shouldRenderSubagentResponseSummaries(
+      msg,
+      display,
+      summaries,
+      renderCtx.filtersOverride
+    )
+  ) {
     return null;
   }
 
@@ -222,6 +347,8 @@ export function renderSubagentSummaryAppendix(
     getStageInputColor: renderCtx.getStageInputColor,
     getStageOutputColor: renderCtx.getStageOutputColor,
     glyphs: renderCtx.glyphs,
+    outputMaxLines: display.outputMaxLines,
+    outputMaxChars: display.outputMaxChars,
   });
   if (lines.length === 0) return null;
   const title = summaries.every((summary) => summary.kind === 'response')

@@ -238,6 +238,39 @@ describe('useExpandableOutput', () => {
     expect(result.hasExpandableContent).toBe(false);
     expect(result.hiddenCount).toBe(0);
   });
+
+  test('tracks mounted expandable bodies as content changes', async () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    let itemCounts = [10, 10];
+
+    function TestComponent() {
+      useExpandableOutput({ totalItems: itemCounts[0]!, previewCount: 3 });
+      useExpandableOutput({ totalItems: itemCounts[1]!, previewCount: 3 });
+      return null;
+    }
+    const renderTree = () => (
+      <AppStoreContext.Provider value={store}>
+        <TestComponent />
+      </AppStoreContext.Provider>
+    );
+    const instance = render(renderTree(), {
+      terminal: new MockTerminal(),
+      exitOnCtrlC: false,
+    });
+    activeInstance = instance;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().hasExpandableToolOutputs).toBe(true);
+
+    itemCounts = [1, 10];
+    instance.rerender(renderTree());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().hasExpandableToolOutputs).toBe(true);
+
+    itemCounts = [1, 1];
+    instance.rerender(renderTree());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().hasExpandableToolOutputs).toBe(false);
+  });
 });
 
 describe('useKeypress', () => {

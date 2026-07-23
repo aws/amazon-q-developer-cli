@@ -52,6 +52,10 @@ export interface MenuProps {
   /** Wording after the close-menu key in the footer; the prop owns its leading
    *  separator (`← back` none, `to close` a space). Default `to cancel`. */
   closeMenuActionLabel?: string;
+  /** Extra footer segment appended after the standard hints, on the SAME row
+   *  with the SAME dim styling (e.g. the /verbosity `ctrl+p to show preview`).
+   *  `key` is brand-colored, `label` dim — matching the built-in hints. */
+  footerHint?: { key: string; label: string };
   /** Initial cursor row; clamped to range, applied on mount only (re-key to
    *  re-apply). Defaults to 0. */
   initialIndex?: number;
@@ -82,6 +86,7 @@ export const Menu = React.memo(function Menu({
   initialIndex,
   title,
   liteOnly = false,
+  footerHint,
 }: MenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(() => {
     if (initialIndex == null) return 0;
@@ -370,6 +375,12 @@ export const Menu = React.memo(function Menu({
                 <>
                   {dimText(` ${glyphs.smallDot} `)}
                   {brandText(glyphs.enter)} {dimText('to select')}
+                </>
+              )}
+              {footerHint && (
+                <>
+                  {dimText(' · ')}
+                  {brandText(footerHint.key)} {dimText(footerHint.label)}
                 </>
               )}
             </Text>

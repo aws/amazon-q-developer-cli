@@ -29,35 +29,33 @@ const defaultSnapshot: SettingsSnapshot = {
 };
 
 /** Pull the id list off a screen's rows for terse reachability assertions. */
-function rowIds(
-  screen: Screen,
-  snap: SettingsSnapshot = defaultSnapshot,
-  uiMode?: 'tui' | 'lite'
-) {
-  return buildRows(screen, snap, uiMode).map((r) => r.id);
+function rowIds(screen: Screen, snap: SettingsSnapshot = defaultSnapshot) {
+  return buildRows(screen, snap).map((r) => r.id);
 }
 
 describe('settings-panel-model', () => {
   describe('top-level menu', () => {
-    // verbosity is lite-only and must NOT appear in tui (or when uiMode is
-    // omitted) — its handler errors with "lite mode only".
-    it.each([[undefined], ['tui' as const]])(
-      'exposes the five shared top items in order (uiMode=%s)',
-      (uiMode) => {
-        expect(rowIds({ type: 'top' }, defaultSnapshot, uiMode)).toEqual([
-          'display',
-          'theme',
-          'terminal',
-          'keybindings',
-          'history',
-        ]);
-      }
-    );
-
-    it('splices the lite-only verbosity row in after display (lite)', () => {
-      expect(rowIds({ type: 'top' }, defaultSnapshot, 'lite')).toEqual([
+    // Inside the Lite rollout (default true) the verbosity row is spliced in
+    // after Display; lite always qualifies, TUI only in-cohort.
+    it('splices the verbosity row in after display when rollout-enabled', () => {
+      expect(rowIds({ type: 'top' })).toEqual([
         'display',
         'verbosity',
+        'theme',
+        'terminal',
+        'keybindings',
+        'history',
+      ]);
+    });
+
+    // Off the rollout the port doesn't exist on the TUI: no verbosity row.
+    it('drops the verbosity row off the rollout cohort', () => {
+      const ids = buildRows({ type: 'top' }, defaultSnapshot, false).map(
+        (r) => r.id
+      );
+      expect(ids).not.toContain('verbosity');
+      expect(ids).toEqual([
+        'display',
         'theme',
         'terminal',
         'keybindings',
@@ -78,12 +76,9 @@ describe('settings-panel-model', () => {
     // Parallels selectDisplayItems: the rollout-gated "Default UI at startup"
     // toggle is hidden off the cohort, so its preview clause drops too.
     const displayDesc = (rolloutEnabled: boolean) =>
-      buildRows(
-        { type: 'top' },
-        defaultSnapshot,
-        undefined,
-        rolloutEnabled
-      ).find((r) => r.id === 'display')?.values.description;
+      buildRows({ type: 'top' }, defaultSnapshot, rolloutEnabled).find(
+        (r) => r.id === 'display'
+      )?.values.description;
 
     it('drops "Default UI at startup" off the rollout, keeps it on', () => {
       expect(displayDesc(false)).not.toContain('Default UI');

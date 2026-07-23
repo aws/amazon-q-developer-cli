@@ -3,8 +3,8 @@
  *
  * Strategy: redirect KIRO_HOME to a tmp dir before importing the effects
  * module so verbose config writes don't clobber the developer's real
- * ~/.kiro/settings/lite_verbose.json. Tests reset the cache + clear the
- * temp file between cases so each starts from defaults.
+ * cli.json. Tests reset the cache + clear the temp file between cases so each
+ * starts from defaults.
  */
 
 import {
@@ -13,7 +13,6 @@ import {
   expect,
   beforeEach,
   beforeAll,
-  afterEach,
   afterAll,
 } from 'bun:test';
 import { mkdtempSync, rmSync } from 'fs';
@@ -22,16 +21,26 @@ import { join } from 'path';
 
 let tmpHome: string;
 let originalKiroHome: string | undefined;
+let originalRollout: string | undefined;
 
 // Set KIRO_HOME *before* importing the modules under test so kiroHomePath()
-// resolves into our throwaway dir for the entire suite.
+// resolves into our throwaway dir for the entire suite. Also set the Lite
+// rollout flag — the TUI /verbosity handler is gated behind it, and these
+// cases exercise the in-cohort TUI surface.
 beforeAll(() => {
   originalKiroHome = process.env.KIRO_HOME;
   tmpHome = mkdtempSync(join(tmpdir(), 'kiro-verbose-cmd-test-'));
   process.env.KIRO_HOME = tmpHome;
+  originalRollout = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+  process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
 });
 
 afterAll(() => {
+  if (originalRollout === undefined) {
+    delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+  } else {
+    process.env.KIRO_LITE_ROLLOUT_ENABLED = originalRollout;
+  }
   if (originalKiroHome === undefined) {
     delete process.env.KIRO_HOME;
   } else {
@@ -56,6 +65,22 @@ import {
 import type { VerboseDisplayConfig } from '../../lite/verbose.js';
 import type { SlashCommand } from '../../stores/app-store.js';
 import { createMockCommandContext } from './test-helpers.js';
+import { Settings } from '../../constants/settings.js';
+import { existsSync, readFileSync } from 'fs';
+
+// Read the temp cli.json (empty before a surface config is saved).
+const readCliJson = (): Record<string, unknown> => {
+  const p = join(tmpHome, 'settings', 'cli.json');
+  return existsSync(p) ? JSON.parse(readFileSync(p, 'utf-8')) : {};
+};
+
+// A TUI-surface command context (getUiMode → 'tui').
+function tuiCtx(agentEngine: 'v2' | 'kas' = 'v2') {
+  const ctx = createMockCommandContext({ slashCommands: [verbosityCmd] });
+  (ctx as any).agentEngine = agentEngine;
+  (ctx as any).getUiMode = () => 'tui';
+  return ctx;
+}
 
 // Most display-config fixtures only vary one or two fields off the default
 // shape; this deep-merges overrides (subagent included) so call sites declare
@@ -73,14 +98,15 @@ const verbosityCmd: SlashCommand = {
   name: '/verbosity',
   description: '',
   source: 'local' as const,
-  meta: { local: true, liteOnly: true },
+  meta: { local: true },
 };
 
+// /verbosity is a peer command — the routing tree is identical in lite and
+// TUI. These tests exercise it in lite by default (where the renderer hooks
+// historically lived); TUI parity is pinned in verbosity-menu.test.ts.
 function liteCtx(agentEngine: 'v2' | 'kas' = 'v2') {
   const ctx = createMockCommandContext({ slashCommands: [verbosityCmd] });
   (ctx as any).agentEngine = agentEngine;
-  // Override the default 'tui' to 'lite' so the verbosity handler's lite-only
-  // gate accepts the call.
   (ctx as any).getUiMode = () => 'lite';
   return ctx;
 }
@@ -103,23 +129,35 @@ const rowDesc = (ctx: ReturnType<typeof liteCtx>, label: string) =>
 const menuValues = (ctx: ReturnType<typeof liteCtx>): string[] =>
   lastMenu(ctx).options.map((o) => String(o.value));
 
-describe('/verbosity lite-mode gate', () => {
-  beforeEach(() => {
-    resetVerboseCache();
-    setVerboseConfig({ filters: ['all'] });
-  });
+// Wipe the temp settings dir before every test. Since detectActivePreset reads
+// the cli.json-mirrored config, a prior test's display mirror would otherwise
+// leak (the process + temp home are reused across it-blocks). resetVerboseCache
+// alone only drops the in-memory copy, not the on-disk cli.json.
+beforeEach(() => {
+  rmSync(join(tmpHome, 'settings'), { recursive: true, force: true });
+  resetVerboseCache();
+});
 
-  it('rejects with an error alert when called outside lite mode', () => {
-    const before = JSON.stringify(getVerboseConfig());
+describe('/verbosity is a TUI peer (no lite-only gate)', () => {
+  // Gate-removal regression: /verbosity used to error in TUI. This proves
+  // runEffect DISPATCHES to the handler in TUI mode (opens a menu); the
+  // no-lite-only-alert contract is pinned directly in verbosity-menu.test.ts.
+  it('routes /verbosity to the menu handler in TUI mode', () => {
     const ctx = createMockCommandContext({ slashCommands: [verbosityCmd] });
     // ctx.getUiMode defaults to 'tui'
     const handled = runEffect(verbosityCmd, null, ctx, '');
     expect(handled).toBe(true);
-    const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
-    expect(calls[0]![0]).toContain('only available in lite mode');
-    expect(calls[0]![1]).toBe('error');
-    // No mutation to config.
-    expect(JSON.stringify(getVerboseConfig())).toEqual(before);
+    expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
+  });
+
+  it('a TUI toggle writes only the TUI verbosity record', () => {
+    runEffect(verbosityCmd, null, tuiCtx(), 'set:showTasks');
+    const cli = readCliJson();
+    expect(cli[Settings.CHAT_VERBOSITY_TUI]).toMatchObject({
+      display: { showTasks: false },
+    });
+    expect(cli).not.toHaveProperty(Settings.CHAT_VERBOSITY_LITE);
+    expect(cli).not.toHaveProperty(Settings.CHAT_SHOW_TASKS);
   });
 });
 
@@ -406,11 +444,6 @@ describe('/verbosity density presets', () => {
     sub?: Record<string, unknown>;
   }> = [
     {
-      route: 'density minimal',
-      display: { toolArgsMode: 'off', showToolReasoning: false },
-      sub: { prompts: false },
-    },
-    {
       route: 'density lean',
       seedFilters: ['shell', 'mcp'],
       // Custom filter lists survive only via the Custom flow; preset clears.
@@ -463,33 +496,26 @@ describe('/verbosity density presets', () => {
     }
   );
 
-  it('density:apply:<preset> commits the preset and closes the menu', () => {
-    // The post-confirmation Yes row routes through density:apply:<preset>.
-    // Distinct regression: picking a preset is a finish action that must
-    // CLOSE the overlay — an open menu after commit read as "did that do
-    // anything?". The announceSystem call is what signals success.
-    setVerboseConfig({ filters: ['shell', 'mcp'] });
+  it('density:apply:<preset> commits the preset, announces, and closes the overlay', () => {
+    // The post-confirmation Yes row routes through density:apply:<preset>: it
+    // must mutate the config, signal success via announceSystem, and CLOSE the
+    // overlay (an open menu after commit read as "did that do anything?").
+    setVerboseConfig({ filters: ['shell'] });
     const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:apply:default');
-    const cfg = getVerboseConfig();
-    expect(cfg.display!.toolArgsMode).toBe('block');
-    // The preset rewrites filters to its exact shape (['shell']), dropping
-    // the prior 'mcp' override.
-    expect(cfg.filters).toEqual(['shell']);
+    runEffect(verbosityCmd, null, ctx, 'density:apply:full');
+    expect(getVerboseConfig().filters).toEqual(['all']); // full = every filter on
     const announced = (
       ctx._spies.announceSystem!.mock.calls as unknown as unknown[][]
     )
       .map((c) => c[0] as string)
       .join(' ');
-    expect(announced).toContain('density set to default');
-    // Last setActiveCommand call must be null (closes the overlay).
-    const calls = ctx._spies.setActiveCommand!.mock
-      .calls as unknown as unknown[][];
-    expect(calls[calls.length - 1]?.[0]).toBeNull();
+    expect(announced).toContain('density set to full');
+    expect(ctx._spies.setActiveCommand!).toHaveBeenLastCalledWith(null); // overlay closed
   });
 
   it.each([
     ['density', 'density needs a preset'],
+    ['density minimal', 'Unknown density preset'],
     ['density:custom', 'Unknown density preset'],
   ])('%p surfaces an error alert', (route, expected) => {
     const ctx = liteCtx();
@@ -497,14 +523,6 @@ describe('/verbosity density presets', () => {
     const calls = ctx._spies.showAlert!.mock.calls as unknown as unknown[][];
     expect(calls[0]![0]).toContain(expected);
     expect(calls[0]![1]).toBe('error');
-  });
-
-  it('density:apply:<preset> commits immediately and closes the overlay', () => {
-    setVerboseConfig({ filters: ['shell'] });
-    const ctx = liteCtx();
-    runEffect(verbosityCmd, null, ctx, 'density:apply:full');
-    expect(getVerboseConfig().filters).toEqual(['all']); // full = every filter on
-    expect(ctx._spies.setActiveCommand!).toHaveBeenLastCalledWith(null); // overlay closed
   });
 });
 
@@ -540,6 +558,11 @@ describe('/verbosity display flag toggles (set:)', () => {
   });
 
   it('set:subagent:prompts toggles only that section', () => {
+    setVerboseConfig({
+      display: display({
+        subagent: { pipeline: true, prompts: true, responses: true },
+      }),
+    });
     const ctx = liteCtx();
     runEffect(verbosityCmd, null, ctx, 'set:subagent:prompts');
     const sub = getVerboseConfig().display!.subagent;
@@ -591,6 +614,11 @@ describe('/verbosity drilldown menus', () => {
   ])(
     '$route opens its drilldown rows + back-link',
     ({ route, required, forbidden }) => {
+      if (route === 'menu:subagent') {
+        setVerboseConfig({
+          display: display({ subagent: { pipeline: true } }),
+        });
+      }
       const ctx = liteCtx();
       runEffect(verbosityCmd, null, ctx, route);
       const values = menuValues(ctx);
@@ -672,7 +700,7 @@ describe('/verbosity drilldown menus', () => {
     runEffect(verbosityCmd, null, ctx, 'menu:density');
     const values = menuValues(ctx);
     // Each preset row commits immediately via density:apply:* — no confirm gate.
-    for (const p of ['minimal', 'lean', 'default', 'full']) {
+    for (const p of ['lean', 'default', 'full']) {
       expect(values).toContain(`density:apply:${p}`);
     }
     // Custom row routes to the config (per-knob) menu.
@@ -800,14 +828,26 @@ describe('/verbosity config-menu row summaries', () => {
     {
       name: 'subagent every knob on',
       filters: ['all'],
-      subagent: {},
+      subagent: {
+        pipeline: true,
+        prompts: true,
+        roles: true,
+        deps: true,
+        responses: true,
+      },
       rowLabel: 'Subagent',
       expected: 'steps + instructions + roles · summary · full output',
     },
     {
       name: 'subagent only steps on collapses nested labels',
       filters: [],
-      subagent: { prompts: false, roles: false, deps: false, responses: false },
+      subagent: {
+        pipeline: true,
+        prompts: false,
+        roles: false,
+        deps: false,
+        responses: false,
+      },
       rowLabel: 'Subagent',
       expected: 'steps',
     },
@@ -948,27 +988,34 @@ describe('/verbosity case-insensitive command verbs', () => {
   });
 });
 
-// Sanity test: the help-panel local-command merge skips liteOnly entries when
-// the UI mode is 'tui'. Covers the gating change in effects.ts:showHelpPanel.
+// The help-panel local-command merge (effects.ts:showHelpPanel) skips liteOnly
+// entries in TUI. Uses a synthetic liteOnly command because /verbosity is now a
+// peer; the assertions pin both that the gate still works AND that /verbosity is
+// no longer filtered in TUI.
 describe('help merge gates liteOnly commands', () => {
   beforeEach(() => {
     resetVerboseCache();
     setVerboseConfig({ filters: ['all'] });
   });
 
-  // The liteOnly /verbosity entry is merged into help only in lite mode; TUI
-  // mode omits it. ctx differs only by getUiMode (tui default vs lite).
+  const liteOnlyCmd: SlashCommand = {
+    name: '/litethings',
+    description: 'lite-only thing',
+    source: 'local' as const,
+    meta: { local: true, liteOnly: true },
+  };
+
   it.each([
     ['tui', false],
     ['lite', true],
-  ] as const)('%s mode includesVerbosity=%s', (uiMode, shouldContain) => {
+  ] as const)('%s mode includesLiteOnly=%s', (uiMode, liteOnlyVisible) => {
     const helpCmd: SlashCommand = {
       name: '/help',
       description: 'Show help',
       source: 'backend',
     };
     const ctx = uiMode === 'lite' ? liteCtx() : createMockCommandContext({});
-    (ctx as any).slashCommands = [helpCmd, verbosityCmd];
+    (ctx as any).slashCommands = [helpCmd, verbosityCmd, liteOnlyCmd];
     const result = {
       success: true,
       message: 'Help',
@@ -979,8 +1026,10 @@ describe('help merge gates liteOnly commands', () => {
     runEffect(helpCmd, result, ctx, '');
     const call = ctx._spies.setShowHelpPanel!.mock.calls[0]!;
     const merged = call[1] as Array<{ name: string }>;
-    const found = merged.find((c) => c.name === '/verbosity');
-    if (shouldContain) expect(found).toBeDefined();
-    else expect(found).toBeUndefined();
+    const foundLiteOnly = merged.find((c) => c.name === '/litethings');
+    if (liteOnlyVisible) expect(foundLiteOnly).toBeDefined();
+    else expect(foundLiteOnly).toBeUndefined();
+    // /verbosity is a peer command: present in help regardless of mode.
+    expect(merged.find((c) => c.name === '/verbosity')).toBeDefined();
   });
 });

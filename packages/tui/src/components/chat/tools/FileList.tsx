@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-import { visibleWidth } from '../../../utils/text-width.js';
+import { truncateToWidth, visibleWidth } from '../../../utils/text-width.js';
 
 /** Margin used by the StatusBar dot + padding before file list content */
 const LEFT_MARGIN = 2;
@@ -20,6 +20,8 @@ export interface FileListProps {
   expandHint?: string;
   /** Number of hidden items (for static "+N more" suffix) */
   hiddenCount?: number;
+  /** verbosity: per-item char cap (outputMaxChars); null/≤0 = no clip. */
+  maxChars?: number | null;
 }
 
 /**
@@ -37,6 +39,7 @@ export const FileList = React.memo(function FileList({
   expanded,
   expandHint,
   hiddenCount = 0,
+  maxChars = null,
 }: FileListProps) {
   const { getColor } = useTheme();
   const color = getColor('primary');
@@ -44,7 +47,17 @@ export const FileList = React.memo(function FileList({
   const termWidth = process.stdout.columns || 80;
   const availableWidth = termWidth - LEFT_MARGIN - 4; // some right margin
 
-  const visibleItems = expanded ? items : items.slice(0, previewCount);
+  // verbosity: outputMaxChars — clip each item before layout/grouping.
+  const cappedItems = useMemo(
+    () =>
+      maxChars != null && maxChars > 0
+        ? items.map((it) => truncateToWidth(it, maxChars))
+        : items,
+    [items, maxChars]
+  );
+  const visibleItems = expanded
+    ? cappedItems
+    : cappedItems.slice(0, previewCount);
   const moreCount = expanded ? 0 : hiddenCount;
 
   // Group items into lines that fit within terminal width
@@ -94,7 +107,7 @@ export const FileList = React.memo(function FileList({
           </Box>
         );
       })}
-      {moreCount > 0 && expandHint && (
+      {!expanded && expandHint && (
         <Box marginLeft={LEFT_MARGIN}>
           <Text>{getColor('secondary')(expandHint)}</Text>
         </Box>

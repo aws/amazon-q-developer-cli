@@ -44,6 +44,11 @@ import {
   type VerboseDisplayConfig,
 } from './verbose.js';
 import { needsLeadingBlankByRole } from './blank-rules.js';
+import {
+  normalizeSubagentPrompt,
+  orderSubagentStageItems,
+} from '../utils/subagent-display.js';
+import { unescapeJsonNewlines } from '../utils/tool-result.js';
 
 // Number-column width shared by read/write + diff renderers so they line up.
 const LINE_NUM_WIDTH = 4;
@@ -453,6 +458,7 @@ export const softSuccessOutput = chalk.hex('#a3c0a3');
 // to a legacy hardcoded color when the theme is unavailable.
 export interface RenderTheme {
   brand: (s: string) => string;
+  primary: (s: string) => string;
   responseChip: (s: string) => string;
   userTag: (s: string) => string;
   userBody: (s: string) => string;
@@ -480,6 +486,7 @@ export interface RenderTheme {
 // constants exactly (applyBg re-asserts those SGRs across cli-highlight resets).
 const DEFAULT_RENDER_THEME: RenderTheme = {
   brand,
+  primary: chalk.white,
   responseChip,
   userTag: DEFAULT_USER_TAG,
   userBody: chalk.cyan,
@@ -572,6 +579,7 @@ export function buildRenderTheme(
   }
   return {
     brand: safeChalk('brand', brand),
+    primary: safeChalk('primary', chalk.white),
     // No dedicated "response chip" slot — accent is the closest, still shifts per theme.
     responseChip: safeChalk('accent', responseChip),
     userTag: (s: string) => chalk.bold(userTagColorFn(s)),
@@ -1728,15 +1736,6 @@ function formatShellEnvelope(obj: Record<string, unknown>): string | null {
 }
 
 /**
- * Replace literal `\n` (and `\r\n`) escape sequences in a JSON-stringified
- * blob with real newlines so unknown envelopes don't render as one
- * unreadable mass when they contain multi-line strings.
- */
-function unescapeJsonNewlines(s: string): string {
-  return s.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n');
-}
-
-/**
  * Pre-wrap cap on a single source line. wrapAnsiLine allocates a cell object
  * per code point, so one multi-MB line (minified bundle, no-newline JSON blob,
  * giant base64) is tens of millions of objects and OOMs the renderer — and the
@@ -2395,29 +2394,23 @@ interface SubagentStage {
   depends_on?: string[];
 }
 
-/**
- * Render a stage's `prompt_template` as styled markdown for both the approval
- * prompt and the final block. Unlike agent prose (which stays unwrapped at
- * col 0), stage prompts live under a tree-stem indent, so each markdown line
- * is re-wrapped through {@link wrapAnsiLine} (which preserves SGR closers
- * across wrap boundaries so styles don't bleed) and re-indented per visual row.
- */
+/** Render literal stage input under the pipeline tree. */
 export function renderStagePromptLines(
   prompt: string,
   avail: number,
   indent: string,
-  glyphs?: Glyphs
+  color: (text: string) => string = chalk.white
 ): string[] {
   if (!prompt) return [];
   const out: string[] = [];
-  for (const md of renderMarkdownToLines(prompt, avail, glyphs)) {
-    if (md.length === 0) {
-      out.push(''); // preserve paragraph separators
+  for (const line of prompt.split('\n')) {
+    if (line.length === 0) {
+      out.push('');
       continue;
     }
-    for (const visual of wrapAnsiLine(md, avail, avail)) {
-      if (visual.trim().length === 0) continue; // skip orphan-space rows
-      out.push(`${indent}${visual}`);
+    for (const visual of wrapAtWords(line, avail, avail)) {
+      if (visual.trim().length === 0) continue;
+      out.push(`${indent}${color(visual)}`);
     }
   }
   return out;
@@ -2434,6 +2427,7 @@ function renderPipelineStages(
   opts: {
     inputColor: (name: string) => (text: string) => string;
     cols: number;
+    theme?: RenderTheme;
     glyphs?: Glyphs;
     showRoles: boolean;
     showDeps: boolean;
@@ -2442,7 +2436,8 @@ function renderPipelineStages(
 ): string[] {
   const out: string[] = [];
   const g = resolveGlyphs(opts.glyphs);
-  out.push(chalk.dim('  pipeline:'));
+  const primary = resolveTheme(opts.theme).primary;
+  out.push(primary('  pipeline:'));
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i] ?? {};
     const isLast = i === stages.length - 1;
@@ -2465,8 +2460,11 @@ function renderPipelineStages(
     // {task} substituted on render so the display matches what the spawned
     // subagent receives (older binaries ship the raw template; backend also subs).
     const rawPrompt = stage.prompt_template;
-    const prompt =
-      rawPrompt && task ? rawPrompt.replace(/\{task\}/g, task) : rawPrompt;
+    const prompt = rawPrompt
+      ? normalizeSubagentPrompt(
+          task ? rawPrompt.replace(/\{task\}/g, task) : rawPrompt
+        )
+      : rawPrompt;
     if (
       opts.showPrompts &&
       prompt &&
@@ -2477,26 +2475,27 @@ function renderPipelineStages(
       // 7 = width of "    │ " + 1-col safety margin (stdout.columns can be off
       // by one, otherwise causing stray col-0 soft-wraps).
       const avail = Math.max(20, opts.cols - 7);
-      out.push(
-        ...renderStagePromptLines(prompt, avail, promptIndent, opts.glyphs)
-      );
+      out.push(...renderStagePromptLines(prompt, avail, promptIndent, primary));
     }
   }
   return out;
 }
 
-const TASK_RESULT_MAX_LINES = 30;
-
 /**
  * "Chip at col 7 + markdown body at col 9" digest section (shared by `full
- * output:` and `response summary:`), pre-wrapped via wrapAnsiLine (SGR carryover)
- * so continuations don't crash to col 0. `truncatedBy` (summary only) appends a
- * "(+N more lines)" row.
+ * output:` and `response summary:`), pre-wrapped via wrapAnsiLine (SGR
+ * carryover) so continuations don't crash to col 0.
  */
 function renderDigestSection(
   header: string,
-  entries: { stageName: string; body: string; truncatedBy?: number }[],
-  opts: { chipFn: (stageName: string) => string; cols: number; glyphs?: Glyphs }
+  entries: { stageName: string; body: string }[],
+  opts: {
+    chipFn: (stageName: string) => string;
+    cols: number;
+    glyphs?: Glyphs;
+    outputMaxLines?: number | null;
+    outputMaxChars?: number | null;
+  }
 ): string[] {
   const out: string[] = [];
   const chipIndent = '       ';
@@ -2505,24 +2504,51 @@ function renderDigestSection(
   out.push(header);
   for (let i = 0; i < entries.length; i++) {
     const stage = entries[i]!;
+    const renderedRows = renderSubagentDigestRows(stage.body, avail, {
+      glyphs: opts.glyphs,
+    });
+    const visibleRows =
+      opts.outputMaxLines != null && opts.outputMaxLines > 0
+        ? renderedRows.slice(0, opts.outputMaxLines)
+        : renderedRows;
+    const hiddenCount = renderedRows.length - visibleRows.length;
     out.push(`${chipIndent}${opts.chipFn(stage.stageName)}`);
-    for (const ml of renderMarkdownToLines(stage.body, avail, opts.glyphs)) {
-      if (ml.length === 0) {
+    for (const row of visibleRows) {
+      if (row.length === 0) {
         out.push('');
         continue;
       }
-      for (const visual of wrapAnsiLine(ml, avail, avail)) {
-        out.push(`${bodyIndent}${visual}`);
-      }
+      const clipped =
+        opts.outputMaxChars != null && opts.outputMaxChars > 0
+          ? clipVisibleWidth(row, opts.outputMaxChars)
+          : row;
+      out.push(`${bodyIndent}${clipped}`);
     }
-    if (stage.truncatedBy && stage.truncatedBy > 0) {
-      out.push(
-        `${bodyIndent}${chalk.dim(`(+${stage.truncatedBy} more lines)`)}`
-      );
+    if (hiddenCount > 0) {
+      out.push(`${bodyIndent}${chalk.dim(`(+${hiddenCount} more lines)`)}`);
     }
     if (i < entries.length - 1) out.push('');
   }
   return out;
+}
+
+export function renderSubagentDigestRows(
+  body: string,
+  width: number,
+  options: { glyphs?: Glyphs; theme?: RenderTheme } = {}
+): string[] {
+  const rows: string[] = [];
+  const normalized = body.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+  for (const markdownLine of renderMarkdownToLines(
+    normalized,
+    width,
+    options.glyphs,
+    options.theme
+  )) {
+    if (markdownLine.length === 0) rows.push('');
+    else rows.push(...wrapAnsiLine(markdownLine, width, width));
+  }
+  return rows;
 }
 
 export function renderSubagentResponseSummaryLines(
@@ -2532,12 +2558,13 @@ export function renderSubagentResponseSummaryLines(
     getStageInputColor?: (stageName: string) => (text: string) => string;
     getStageOutputColor?: (stageName: string) => (text: string) => string;
     glyphs?: Glyphs;
+    outputMaxLines?: number | null;
+    outputMaxChars?: number | null;
   }
 ): string[] {
   type RenderableStage = {
     stageName: string;
     body: string;
-    truncatedBy: number;
   };
   const g = resolveGlyphs(colors?.glyphs);
   const outputColor = (name: string): ((text: string) => string) =>
@@ -2553,29 +2580,15 @@ export function renderSubagentResponseSummaryLines(
       renderable.push({
         stageName: s.stageName,
         body: s.contextSummary,
-        truncatedBy: 0,
       });
       continue;
     }
     const tr = (s.taskResult ?? '').trim();
     if (tr.length === 0) continue;
-    // Plain responses (the subagent's actual answer) render in full, matching
-    // the inline block; only v2 summaries truncate to TASK_RESULT_MAX_LINES.
-    const trLines = s.taskResult.split('\n');
-    if (s.kind === 'response' || trLines.length <= TASK_RESULT_MAX_LINES) {
-      renderable.push({
-        stageName: s.stageName,
-        body: s.taskResult,
-        truncatedBy: 0,
-      });
-    } else {
-      const truncated = trLines.slice(0, TASK_RESULT_MAX_LINES).join('\n');
-      renderable.push({
-        stageName: s.stageName,
-        body: truncated,
-        truncatedBy: trLines.length - TASK_RESULT_MAX_LINES,
-      });
-    }
+    renderable.push({
+      stageName: s.stageName,
+      body: s.taskResult,
+    });
   }
   if (renderable.length === 0) return [];
   const allResponses = renderable.every((entry) => {
@@ -2596,6 +2609,8 @@ export function renderSubagentResponseSummaryLines(
       ),
     cols,
     glyphs: colors?.glyphs,
+    outputMaxLines: colors?.outputMaxLines,
+    outputMaxChars: colors?.outputMaxChars,
   });
 }
 
@@ -2609,6 +2624,7 @@ export function formatSubagentApprovalLines(
   termCols?: number,
   colors?: {
     getStageInputColor?: (stageName: string) => (text: string) => string;
+    theme?: RenderTheme;
     /** Active glyph set (Unicode/ASCII connectors). */
     glyphs?: Glyphs;
   }
@@ -2641,6 +2657,7 @@ export function formatSubagentApprovalLines(
       ...renderPipelineStages(stages, args.task, {
         inputColor,
         cols,
+        theme: colors?.theme,
         glyphs: colors?.glyphs,
         showRoles: true,
         showDeps: true,
@@ -2656,15 +2673,14 @@ export function formatSubagentApprovalLines(
  * Render the subagent tool's final state in scrollback: header, pipeline tree,
  * optional raw `full output:` (verbose) and `response summary:` sections, and
  * an error block. The summary prefers each stage's `contextSummary`, falling
- * back to `taskResult` capped at TASK_RESULT_MAX_LINES; stages with neither
- * are skipped.
+ * back to `taskResult`; configured output caps apply to every digest.
  */
 export function renderSubagentFinalBlock(
   content: string,
   result: { status: string; error?: string; output?: unknown } | undefined,
   status: ToolCallRenderInfo['status'],
   elapsed?: number,
-  stageSummaries?: SubagentStageSummary[],
+  stageSummaries?: readonly SubagentStageSummary[],
   colors?: {
     getStageInputColor?: (stageName: string) => (text: string) => string;
     getStageOutputColor?: (stageName: string) => (text: string) => string;
@@ -2675,6 +2691,9 @@ export function renderSubagentFinalBlock(
     display?: VerboseDisplayConfig;
     /** Filter override for the `subagent` output gate; reads disk when omitted. */
     filtersOverride?: readonly string[];
+    /** Static scrollback obeys persistOutput; live output remains expandable. */
+    isStatic?: boolean;
+    theme?: RenderTheme;
     /** Active glyph set, threaded to each stage's markdown body. */
     glyphs?: Glyphs;
     /** Running-tail spinner glyph (see STATUS-SLOT CONTRACT in tools.ts). */
@@ -2739,12 +2758,17 @@ export function renderSubagentFinalBlock(
   }
   // No standalone `task:` line (duplicates the {task} substitution below);
   // `task` is parsed above only for that substitution.
+  const orderedStageSummaries = orderSubagentStageItems(
+    stageSummaries ?? [],
+    stages.map((stage, index) => stage.name || `stage-${index + 1}`)
+  );
 
   if (sub.pipeline && stages.length > 0) {
     lines.push(
       ...renderPipelineStages(stages, task, {
         inputColor,
         cols,
+        theme: colors?.theme,
         glyphs: colors?.glyphs,
         showRoles: sub.roles,
         showDeps: sub.deps,
@@ -2754,17 +2778,21 @@ export function renderSubagentFinalBlock(
   }
 
   const finished = status === 'done' && result?.status !== 'error';
-  const hasPlainResponses =
-    Array.isArray(stageSummaries) &&
-    stageSummaries.some((s) => s.kind === 'response');
+  const showFinishedDigests =
+    finished && (!colors?.isStatic || display.persistOutput);
+  const hasPlainResponses = orderedStageSummaries.some(
+    (summary) => summary.kind === 'response'
+  );
+  const showSubagentOutput = shouldShowToolOutput(
+    'subagent',
+    colors?.filtersOverride
+  );
 
   // KAS plain responses (the subagent's actual final output): render them with
-  // the `full output:` digest style — full text, ▸ chips colored to MATCH the
-  // pipeline prompt's stage name (input color). Always shown (not gated on the
-  // verbose `subagent` filter) since this IS the subagent's answer. They are
-  // excluded from the summary/raw sections below so the output isn't doubled.
-  if (hasPlainResponses && finished) {
-    const responseStages = stageSummaries!
+  // the `full output:` digest style and gate them on the same explicit output
+  // filter. They are excluded from the raw/summary sections to avoid doubling.
+  if (hasPlainResponses && showFinishedDigests && showSubagentOutput) {
+    const responseStages = orderedStageSummaries
       .filter(
         (s) => s.kind === 'response' && (s.taskResult ?? '').trim().length > 0
       )
@@ -2775,6 +2803,8 @@ export function renderSubagentFinalBlock(
           chipFn: (n) => chalk.bold(inputColor(n)(`${g.arrowRight} ${n}`)),
           cols,
           glyphs: colors?.glyphs,
+          outputMaxLines: display.outputMaxLines,
+          outputMaxChars: display.outputMaxChars,
         })
       );
     }
@@ -2785,12 +2815,11 @@ export function renderSubagentFinalBlock(
   // the joiner discarded it. Order is pipeline → raw → summary so the eye
   // lands on the digest last. Plain responses already rendered above.
   const showRawSection =
-    finished &&
-    Array.isArray(stageSummaries) &&
-    stageSummaries.length > 0 &&
-    shouldShowToolOutput('subagent', colors?.filtersOverride);
+    showFinishedDigests &&
+    orderedStageSummaries.length > 0 &&
+    showSubagentOutput;
   if (showRawSection) {
-    const rawStages = stageSummaries!
+    const rawStages = orderedStageSummaries
       .filter(
         (s) => s.kind !== 'response' && (s.taskResult ?? '').trim().length > 0
       )
@@ -2801,6 +2830,8 @@ export function renderSubagentFinalBlock(
           chipFn: (n) => chalk.red.bold(`${g.arrowRight} ${n}`),
           cols,
           glyphs: colors?.glyphs,
+          outputMaxLines: display.outputMaxLines,
+          outputMaxChars: display.outputMaxChars,
         })
       );
     }
@@ -2808,14 +2839,16 @@ export function renderSubagentFinalBlock(
 
   // v2 summary digests (kind undefined: contextSummary/taskResult). Plain
   // responses are handled above, so this path is summaries-only now.
-  const summaryStages = Array.isArray(stageSummaries)
-    ? stageSummaries.filter((s) => s.kind !== 'response')
-    : [];
-  if (sub.responses && finished && summaryStages.length > 0) {
+  const summaryStages = orderedStageSummaries.filter(
+    (summary) => summary.kind !== 'response'
+  );
+  if (sub.responses && showFinishedDigests && summaryStages.length > 0) {
     lines.push(
       ...renderSubagentResponseSummaryLines(summaryStages, cols, {
         getStageOutputColor: outputColor,
         glyphs: colors?.glyphs,
+        outputMaxLines: display.outputMaxLines,
+        outputMaxChars: display.outputMaxChars,
       })
     );
   }
@@ -2953,6 +2986,8 @@ export interface RenderContext {
    *  left unset on the static path so flushed rows show settled status, not a
    *  frozen spinner. */
   runningSpinner?: string;
+  /** True while baking immutable scrollback rows. */
+  isStatic?: boolean;
   /** Active glyph set (Unicode/ASCII); defaults to UNICODE_GLYPHS. */
   glyphs?: Glyphs;
 }
@@ -3068,6 +3103,8 @@ export function renderMessageToText(
             getStageOutputColor: ctx.getStageOutputColor,
             display,
             filtersOverride: ctx.filtersOverride,
+            isStatic: ctx.isStatic,
+            theme: ctx.theme,
             glyphs: ctx.glyphs,
             rejected: isRejected,
             runningSpinner: ctx.runningSpinner,
@@ -3389,7 +3426,7 @@ const PREVIEW_SUBAGENT_CONTENT = {
   ],
 };
 
-const PREVIEW_SUBAGENT_SUMMARIES: SubagentStageSummary[] = [
+export const PREVIEW_SUBAGENT_SUMMARIES: SubagentStageSummary[] = [
   {
     stageName: 'scan',
     contextSummary:
@@ -3523,17 +3560,14 @@ function previewNeedsLeadingBlank(
 }
 
 /**
- * Render a synthetic scrollback example for the given display/filter draft.
- * Pure (no disk I/O); takes args as-is so the menu can pass an in-progress
- * draft. Tail-clipped to MAX_PREVIEW_ROWS (anchored at top so the diff between
- * two settings doesn't shift) unless `expanded`.
+ * The fixture message set + widened filters for a preview key. Single source
+ * of truth shared by the lite text preview ({@link renderVerbosityPreview}) and
+ * the TUI component preview, so both surfaces show the same synthetic scrollback.
  */
-export function renderVerbosityPreview(
+export function getVerbosityPreviewFixtures(
   key: VerbosityPreviewKey,
-  display: VerboseDisplayConfig,
-  filters: readonly string[],
-  options: { expanded?: boolean; theme?: RenderTheme } = {}
-): string {
+  filters: readonly string[]
+): { messages: MessageLike[]; previewFilters: readonly string[] } {
   // truncation:output: pick the fixture tool first, then widen filters only
   // if the user's filters don't already cover it.
   let outputFixture: MessageLike | null = null;
@@ -3544,18 +3578,6 @@ export function renderVerbosityPreview(
     key === 'truncation:output' && outputFixture
       ? widenFiltersForPreview(filters, outputFixture.name ?? 'shell')
       : filters;
-
-  const g = getActiveGlyphs();
-  const ctx: RenderContext = {
-    display,
-    filtersOverride: previewFilters,
-    subagentSummariesById: new Map([
-      [PREVIEW_FIXTURE_SUBAGENT.id, PREVIEW_SUBAGENT_SUMMARIES],
-    ]),
-    theme: options.theme,
-    // Honor chat.allowAsciiArt in the preview so it mirrors real scrollback.
-    glyphs: g,
-  };
 
   // truncation:output reuses outputFixture (built above) so previewFilters
   // stays aligned; truncation:args puts the 50-key fixture last so the cap
@@ -3583,7 +3605,33 @@ export function renderVerbosityPreview(
     ],
     'truncation:output': () => (outputFixture ? [outputFixture] : []),
   };
-  const messages = PREVIEW_SETS[key]();
+  return { messages: PREVIEW_SETS[key](), previewFilters };
+}
+
+export function renderVerbosityPreview(
+  key: VerbosityPreviewKey,
+  display: VerboseDisplayConfig,
+  filters: readonly string[],
+  options: { expanded?: boolean; theme?: RenderTheme } = {}
+): string {
+  const { messages, previewFilters } = getVerbosityPreviewFixtures(
+    key,
+    filters
+  );
+  const outputFixture =
+    key === 'truncation:output' ? (messages[0] ?? null) : null;
+
+  const g = getActiveGlyphs();
+  const ctx: RenderContext = {
+    display,
+    filtersOverride: previewFilters,
+    subagentSummariesById: new Map([
+      [PREVIEW_FIXTURE_SUBAGENT.id, PREVIEW_SUBAGENT_SUMMARIES],
+    ]),
+    theme: options.theme,
+    // Honor chat.allowAsciiArt in the preview so it mirrors real scrollback.
+    glyphs: g,
+  };
 
   const blocks: string[] = [];
 

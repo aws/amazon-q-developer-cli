@@ -1,19 +1,28 @@
 import { describe, expect, test } from 'vitest';
 import stripAnsi from 'strip-ansi';
 import { MessageRole, type MessageType } from '../../../../stores/app-store.js';
-import { DEFAULT_DISPLAY } from '../../../../lite/verbose.js';
+import { DEFAULT_DISPLAY, DENSITY_DISPLAY } from '../../../../lite/verbose.js';
 import type { AgentSession } from '../../../../types/multi-session.js';
 import { renderSubagentFinalBlock } from '../../../../lite/render.js';
 import {
   collectSubagentSummariesByParent,
+  collectSubagentSummariesByParentCached,
+  collectSettledSubagentStagesByParent,
   markSubagentSummariesEmitted,
   renderPendingSubagentSummaryAppendices,
   renderSubagentSummaryAppendix,
   selectUnemittedSubagentSummaries,
   selectPendingSubagentSummaryEntries,
+  selectReadySubagentSummaries,
   shouldRenderSubagentResponseSummaries,
   subagentSummaryKey,
 } from '../subagent-summaries.js';
+
+const FULL_DISPLAY = DENSITY_DISPLAY.full;
+const RESPONSES_OFF_DISPLAY = {
+  ...FULL_DISPLAY,
+  subagent: { ...FULL_DISPLAY.subagent, responses: false },
+};
 
 function parent(id: string, group: string): MessageType {
   return {
@@ -120,6 +129,41 @@ describe('collectSubagentSummariesByParent', () => {
     ]);
   });
 
+  test('orders collected summaries by pipeline declaration, not session completion', () => {
+    const parentMsg = {
+      ...parent('parent-1', 'crew-1'),
+      content: JSON.stringify({
+        stages: [{ name: 'first' }, { name: 'second' }],
+      }),
+    } as MessageType;
+    const sessions = new Map([
+      ['sub-second', session('sub-second', 'second', 'crew-1')],
+      ['sub-first', session('sub-first', 'first', 'crew-1')],
+    ]);
+    const conversations = new Map<string, MessageType[]>([
+      [
+        'sub-second',
+        [summary('summary-second', { contextSummary: '2', taskResult: '' })],
+      ],
+      [
+        'sub-first',
+        [summary('summary-first', { contextSummary: '1', taskResult: '' })],
+      ],
+    ]);
+
+    expect(
+      collectSubagentSummariesByParent(
+        [parentMsg],
+        sessions,
+        conversations,
+        'kiro'
+      ).get('parent-1')
+    ).toEqual([
+      { stageName: 'first', contextSummary: '1', taskResult: '' },
+      { stageName: 'second', contextSummary: '2', taskResult: '' },
+    ]);
+  });
+
   test('deduplicates summaries already present in the main message stream', () => {
     const messages = [
       parent('parent-1', 'crew-1'),
@@ -202,7 +246,8 @@ describe('collectSubagentSummariesByParent', () => {
     >;
     const text = renderSubagentSummaryAppendix(parentToolMsg, 'kiro', {
       subagentSummariesById: summaries,
-      display: DEFAULT_DISPLAY,
+      display: FULL_DISPLAY,
+      filtersOverride: ['subagent'],
     });
     const plain = stripAnsi(text ?? '');
     expect(plain).toContain('subagent response');
@@ -226,7 +271,7 @@ describe('collectSubagentSummariesByParent', () => {
         undefined,
         summaries.get('parent-1'),
         {
-          display: DEFAULT_DISPLAY,
+          display: FULL_DISPLAY,
           filtersOverride: ['subagent'],
         }
       )
@@ -280,7 +325,7 @@ describe('collectSubagentSummariesByParent', () => {
       'kiro',
       {
         subagentSummariesById: summaries,
-        display: DEFAULT_DISPLAY,
+        display: FULL_DISPLAY,
       }
     );
 
@@ -356,7 +401,7 @@ describe('collectSubagentSummariesByParent', () => {
       'kiro',
       {
         subagentSummariesById: new Map([['parent-1', summaries]]),
-        display: DEFAULT_DISPLAY,
+        display: FULL_DISPLAY,
       },
       newlyArrived
     );
@@ -385,10 +430,7 @@ describe('collectSubagentSummariesByParent', () => {
       parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
       'kiro',
       {
-        display: {
-          ...DEFAULT_DISPLAY,
-          subagent: { ...DEFAULT_DISPLAY.subagent, responses: false },
-        },
+        display: RESPONSES_OFF_DISPLAY,
       },
       summaries
     );
@@ -397,10 +439,7 @@ describe('collectSubagentSummariesByParent', () => {
     expect(
       shouldRenderSubagentResponseSummaries(
         parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
-        {
-          ...DEFAULT_DISPLAY,
-          subagent: { ...DEFAULT_DISPLAY.subagent, responses: false },
-        },
+        RESPONSES_OFF_DISPLAY,
         summaries
       )
     ).toBe(false);
@@ -419,10 +458,7 @@ describe('collectSubagentSummariesByParent', () => {
         taskResult: 'KASRESPONSEPROBE',
       },
     ];
-    const display = {
-      ...DEFAULT_DISPLAY,
-      subagent: { ...DEFAULT_DISPLAY.subagent, responses: false },
-    };
+    const display = RESPONSES_OFF_DISPLAY;
 
     // KAS plain responses are the subagent's real output, not a synthesized
     // summary, so they survive responses:false (Path B parity with render.ts's
@@ -432,16 +468,34 @@ describe('collectSubagentSummariesByParent', () => {
       shouldRenderSubagentResponseSummaries(
         parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
         display,
-        summaries
+        summaries,
+        ['subagent']
       )
     ).toBe(true);
     const text = renderSubagentSummaryAppendix(
       parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
       'kiro',
-      { display },
+      { display, filtersOverride: ['subagent'] },
       summaries
     );
     expect(stripAnsi(text ?? '')).toContain('KASRESPONSEPROBE');
+
+    expect(
+      shouldRenderSubagentResponseSummaries(
+        parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
+        DEFAULT_DISPLAY,
+        summaries,
+        ['shell']
+      )
+    ).toBe(false);
+    expect(
+      renderSubagentSummaryAppendix(
+        parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
+        'kiro',
+        { display: DEFAULT_DISPLAY, filtersOverride: ['shell'] },
+        summaries
+      )
+    ).toBeNull();
   });
 
   test('suppresses late summary appendix for failed or cancelled parents', () => {
@@ -465,7 +519,7 @@ describe('collectSubagentSummariesByParent', () => {
       renderSubagentSummaryAppendix(
         failedParent as Extract<MessageType, { role: MessageRole.ToolUse }>,
         'kiro',
-        { display: DEFAULT_DISPLAY },
+        { display: FULL_DISPLAY },
         summaries
       )
     ).toBeNull();
@@ -473,7 +527,7 @@ describe('collectSubagentSummariesByParent', () => {
       renderSubagentSummaryAppendix(
         cancelledParent as Extract<MessageType, { role: MessageRole.ToolUse }>,
         'kiro',
-        { display: DEFAULT_DISPLAY },
+        { display: FULL_DISPLAY },
         summaries
       )
     ).toBeNull();
@@ -498,7 +552,7 @@ describe('collectSubagentSummariesByParent', () => {
           { role: MessageRole.ToolUse }
         >,
         'kiro',
-        { display: DEFAULT_DISPLAY },
+        { display: FULL_DISPLAY },
         summaries
       )
     ).toBeNull();
@@ -508,7 +562,7 @@ describe('collectSubagentSummariesByParent', () => {
           MessageType,
           { role: MessageRole.ToolUse }
         >,
-        DEFAULT_DISPLAY,
+        FULL_DISPLAY,
         summaries
       )
     ).toBe(false);
@@ -564,12 +618,12 @@ describe('collectSubagentSummariesByParent', () => {
       summariesById,
       pushed,
       emitted,
-      DEFAULT_DISPLAY
+      FULL_DISPLAY
     );
     const firstPassAppendices = renderPendingSubagentSummaryAppendices(
       firstPassEntries,
       'kiro',
-      { display: DEFAULT_DISPLAY }
+      { display: FULL_DISPLAY }
     );
 
     expect(firstPassAppendices).toHaveLength(1);
@@ -589,9 +643,138 @@ describe('collectSubagentSummariesByParent', () => {
       summariesById,
       pushed,
       emitted,
-      DEFAULT_DISPLAY
+      FULL_DISPLAY
     );
 
     expect(secondPassEntries).toEqual([]);
+  });
+
+  test('buffers a later-stage appendix until preceding stages resolve', () => {
+    const parentMsg = {
+      ...parent('parent-1', 'crew-1'),
+      content: JSON.stringify({
+        stages: [{ name: 'first' }, { name: 'second' }],
+      }),
+      result: { status: 'success', output: 'done' },
+    } as MessageType;
+    const first = {
+      stageName: 'first',
+      contextSummary: 'first digest',
+      taskResult: '',
+    };
+    const second = {
+      stageName: 'second',
+      contextSummary: 'second digest',
+      taskResult: '',
+    };
+    const pushed = new Set(['parent-1']);
+    const emitted = new Map<string, Set<string>>();
+
+    expect(
+      selectPendingSubagentSummaryEntries(
+        [parentMsg],
+        new Map([['parent-1', [second]]]),
+        pushed,
+        emitted,
+        FULL_DISPLAY
+      )
+    ).toEqual([]);
+
+    const ready = selectPendingSubagentSummaryEntries(
+      [parentMsg],
+      new Map([['parent-1', [second, first]]]),
+      pushed,
+      emitted,
+      FULL_DISPLAY
+    );
+    expect(ready).toHaveLength(1);
+    expect(ready[0]!.summaries.map((summary) => summary.stageName)).toEqual([
+      'first',
+      'second',
+    ]);
+  });
+
+  test('a settled stage without output does not block later-stage appendices', () => {
+    const parentMsg = {
+      ...parent('parent-1', 'crew-1'),
+      content: JSON.stringify({
+        stages: [{ name: 'first' }, { name: 'second' }],
+      }),
+      result: { status: 'success', output: 'done' },
+    } as MessageType;
+    const second = {
+      stageName: 'second',
+      contextSummary: 'second digest',
+      taskResult: '',
+    };
+    expect(
+      selectReadySubagentSummaries(
+        parentMsg as Extract<MessageType, { role: MessageRole.ToolUse }>,
+        [second],
+        new Set(['first'])
+      )
+    ).toEqual([second]);
+  });
+
+  test('collects settled stage names by pipeline parent', () => {
+    const messages = [parent('parent-1', 'crew-1')];
+    const sessions = new Map([
+      ['first-session', session('first-session', 'first', 'crew-1')],
+      [
+        'busy-session',
+        {
+          ...session('busy-session', 'second', 'crew-1'),
+          status: 'busy' as const,
+        },
+      ],
+    ]);
+    expect(
+      collectSettledSubagentStagesByParent(messages, sessions, 'kiro').get(
+        'parent-1'
+      )
+    ).toEqual(new Set(['first']));
+  });
+});
+
+describe('collectSubagentSummariesByParentCached', () => {
+  // Pins the per-card-rebuild fix: SessionTool cards share one render's store
+  // refs, so identical inputs must reuse the prior build (one scan, not N).
+  test('reuses the prior map for identical inputs and recomputes on change', () => {
+    const messages = [parent('parent-1', 'crew-1')];
+    const sessions = new Map([
+      ['sub-chat', session('sub-chat', 'explore-components', 'crew-1')],
+    ]);
+    const conversations = new Map<string, MessageType[]>([
+      [
+        'sub-chat',
+        [summary('summary-chat', { contextSummary: 'd', taskResult: 'r' })],
+      ],
+    ]);
+
+    const first = collectSubagentSummariesByParentCached(
+      messages,
+      sessions,
+      conversations,
+      'kiro'
+    );
+    const second = collectSubagentSummariesByParentCached(
+      messages,
+      sessions,
+      conversations,
+      'kiro'
+    );
+    // Same input references → same map instance (N-card scan collapses to one).
+    expect(second).toBe(first);
+
+    // A new messages array identity invalidates the cache and recomputes,
+    // yielding an equal-but-distinct map.
+    const third = collectSubagentSummariesByParentCached(
+      [...messages],
+      sessions,
+      conversations,
+      'kiro'
+    );
+    expect(third).not.toBe(first);
+    expect(third).toEqual(first);
   });
 });

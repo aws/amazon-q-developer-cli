@@ -55,9 +55,11 @@ describe('/settings → Theme → Dark', () => {
     // command line itself.
     await testCase.waitForText('Keybindings', 10000);
 
-    // Top-level row order: Display / Theme / Terminal / Keybindings /
-    // History — Theme is row index 1, so a single ↓ from the default
-    // cursor position lands on it.
+    // Top-level row order: Display / Verbosity / Theme / Terminal /
+    // Keybindings / History — Theme is row index 2 (Verbosity, a TUI peer,
+    // sits after Display), so two ↓ from the default cursor land on it.
+    await testCase.sendKeys(DOWN_ARROW);
+    await testCase.sleepMs(150);
     await testCase.sendKeys(DOWN_ARROW);
     await testCase.sleepMs(150);
     await testCase.pressEnter();

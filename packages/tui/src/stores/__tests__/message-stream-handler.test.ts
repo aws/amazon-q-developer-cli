@@ -68,6 +68,49 @@ describe('createMessageStreamHandler', () => {
       expect(msgs[0]!.content).toBe('hello world');
     });
 
+    it('never emits history-only cancellation placeholders', async () => {
+      for (const suffix of ['', '\n', '\r\n']) {
+        const { handler, getMessages } = setup();
+        for (const text of [
+          'Response was ',
+          `interrupted by the user${suffix}`,
+        ]) {
+          handler({
+            type: AgentEventType.Content,
+            id: 'c1',
+            content: { type: ContentType.Text, text },
+          });
+          await new Promise((r) => setTimeout(r, 25));
+          expect(getMessages()).toHaveLength(0);
+        }
+      }
+    });
+
+    it('releases a held placeholder prefix when normal content diverges', async () => {
+      const { handler, getMessages } = setup();
+
+      handler({
+        type: AgentEventType.Content,
+        id: 'c1',
+        content: {
+          type: ContentType.Text,
+          text: 'Response was interrupted by the user',
+        },
+      });
+      await new Promise((r) => setTimeout(r, 25));
+      expect(getMessages()).toHaveLength(0);
+
+      handler({
+        type: AgentEventType.Content,
+        id: 'c1',
+        content: { type: ContentType.Text, text: ', so I restarted it.' },
+      });
+      await new Promise((r) => setTimeout(r, 25));
+      expect(getMessages()[0]?.content).toBe(
+        'Response was interrupted by the user, so I restarted it.'
+      );
+    });
+
     it('updates existing model message instead of appending', async () => {
       const initial: MessageType[] = [
         { id: 'm1', role: MessageRole.Model, content: 'old text' },

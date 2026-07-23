@@ -168,7 +168,9 @@ async function loadRewoundSession(
           true
         );
       }
-      const handler = ctx.createStreamEventHandler();
+      // fromHistory: replayed tool rows have no persisted duration, so skip the
+      // elapsed stamp (a fresh Date.now() would show a bogus ~0ms chip).
+      const handler = ctx.createStreamEventHandler({ fromHistory: true });
       for (const e of events) handler(e);
       (handler as any).flush?.();
     }

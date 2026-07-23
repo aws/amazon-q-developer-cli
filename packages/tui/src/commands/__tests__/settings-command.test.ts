@@ -29,17 +29,19 @@ const themeCmd: SlashCommand = {
 const verbosityCmd: SlashCommand = {
   name: '/verbosity',
   description:
-    'Configure lite-mode rendering: tool args, reasoning, output filters, density, subagent sections.',
+    'Configure rendering: tool args, reasoning, output filters, density, subagent sections.',
   source: 'local',
-  meta: { local: true, liteOnly: true },
+  meta: { local: true },
 };
 
 describe('/settings command', () => {
   let testDir: string;
   let originalHome: string | undefined;
+  let originalRollout: string | undefined;
 
   // Theme handler reads/writes user theme prefs; redirect HOME so tests
-  // don't touch the developer's real config.
+  // don't touch the developer's real config. The TUI /verbosity routing is
+  // gated behind the Lite rollout, so set the flag for these in-cohort cases.
   beforeEach(() => {
     testDir = join(
       tmpdir(),
@@ -48,9 +50,14 @@ describe('/settings command', () => {
     mkdirSync(join(testDir, '.kiro', 'settings'), { recursive: true });
     originalHome = process.env.HOME;
     process.env.HOME = testDir;
+    originalRollout = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
   });
 
   afterEach(() => {
+    if (originalRollout === undefined)
+      delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    else process.env.KIRO_LITE_ROLLOUT_ENABLED = originalRollout;
     process.env.HOME = originalHome;
     try {
       rmSync(testDir, { recursive: true, force: true });
@@ -101,56 +108,53 @@ describe('/settings command', () => {
       }
     });
 
-    it('routes /settings verbosity to the verbosity menu with the canonical chip name (lite mode)', async () => {
-      // 1:1 wiring contract: reaching the verbosity menu via /settings →
-      // verbosity must produce an activeCommand with `command.name ===
-      // '/verbosity'` so CommandMenu's verbosity-specific UI wires up the
-      // same way as direct entry. CommandMenu has three checks against
-      // `command.name === '/verbosity'`:
-      //   - Reset preview state when leaving /verbosity
-      //   - Gate Ctrl+P / p preview-toggle hotkeys
-      //   - Track the highlighted density preset for inline preview
-      // If the chip says `/settings`, all three silently fail and the
-      // user can't open the preview pane or see draft preset previews.
-      // The verbosityConfig handler resolves the canonical /verbosity
-      // SlashCommand internally so the chip name stays right regardless
-      // of entry path; this test locks that behavior in.
-      const ctx = createMockCommandContext({
-        slashCommands: [settingsCmd, verbosityCmd],
-      });
-      (ctx as any).getUiMode = () => 'lite';
-      await dispatch(settingsCmd, 'verbosity', ctx);
+    // /verbosity is a peer command: /settings verbosity routes identically in
+    // lite and TUI (the routing reads ctx.slashCommands, not the UI mode).
+    it.each(['lite', 'tui'] as const)(
+      'routes /settings verbosity to the verbosity menu with the canonical chip name (%s)',
+      async (uiMode) => {
+        // Wiring contract: the activeCommand chip must be the canonical
+        // `/verbosity` (not `/settings`), because CommandMenu's preview pane,
+        // Ctrl+P toggle, and draft-preset tracking are all keyed on
+        // `command.name === '/verbosity'` and silently no-op otherwise.
+        const ctx = createMockCommandContext({
+          slashCommands: [settingsCmd, verbosityCmd],
+        });
+        (ctx as any).getUiMode = () => uiMode;
+        await dispatch(settingsCmd, 'verbosity', ctx);
 
-      expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
-      const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
-      const arg = call[0] as {
-        command: SlashCommand;
-        options: Array<{ value: string; label: string }>;
-        previewKey?: string;
-      };
+        expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
+        const call = ctx._spies.setActiveCommand!.mock.calls[0]!;
+        const arg = call[0] as {
+          command: SlashCommand;
+          options: Array<{ value: string; label: string }>;
+          previewKey?: string;
+        };
 
-      // Chip name is the canonical /verbosity, not /settings.
-      expect(arg.command.name).toBe('/verbosity');
+        // Chip name is the canonical /verbosity, not /settings.
+        expect(arg.command.name).toBe('/verbosity');
 
-      // Opened in the same shape as a direct /verbosity entry: previewKey set
-      // and the rows are a recognizable verbosity menu (density or config).
-      expect(arg.previewKey).toBeTruthy();
-      const labels = arg.options.map((o) => o.label);
-      const isDensityMenu =
-        labels.includes('default') || labels.includes('full');
-      const isConfigMenu = labels.includes('Tool calls');
-      expect(isDensityMenu || isConfigMenu).toBe(true);
-    });
+        // Opened in the same shape as a direct /verbosity entry: previewKey
+        // set and the rows are a recognizable verbosity menu (density/config).
+        expect(arg.previewKey).toBeTruthy();
+        const labels = arg.options.map((o) => o.label);
+        const isDensityMenu =
+          labels.includes('default') || labels.includes('full');
+        const isConfigMenu = labels.includes('Tool calls');
+        expect(isDensityMenu || isConfigMenu).toBe(true);
+      }
+    );
 
-    it('forwards a trailing section into /settings verbosity <section> (lite)', async () => {
+    it('forwards a trailing section into /settings verbosity <section> (TUI)', async () => {
       // Nested typed access: `/settings verbosity truncation` should drill
       // straight into the verbosity truncation menu, mirroring the breadcrumb.
       // The verbosity subcommand forwards the tail to verbosityConfig, which
-      // opens the truncation sub-menu (back-link encodes the section).
+      // opens the truncation sub-menu (back-link encodes the section). Works
+      // in TUI now that /verbosity is a peer command.
       const ctx = createMockCommandContext({
         slashCommands: [settingsCmd, verbosityCmd],
       });
-      (ctx as any).getUiMode = () => 'lite';
+      (ctx as any).getUiMode = () => 'tui';
       await dispatch(settingsCmd, 'verbosity truncation', ctx);
 
       expect(ctx._spies.setActiveCommand!).toHaveBeenCalled();
@@ -181,12 +185,13 @@ describe('/settings command', () => {
     // the subsequent ESC returns to the /settings menu instead of dismissing.
     // This is the hook the overlay close handlers read to decide whether to
     // re-open /settings. See CommandMenu.tsx onEscape / handleCloseKeybindingsPanel.
-    // verbosity needs /verbosity registered + lite mode so the inner handler
-    // reaches its menu-build path; we still assert the wrapper, not the handler.
+    // verbosity needs /verbosity registered so the inner handler reaches its
+    // menu-build path; it is a peer command now, so this exercises the TUI
+    // path (lite: false). We still assert the wrapper, not the handler.
     it.each([
       { sub: 'theme', extra: [themeCmd], lite: false },
       { sub: 'keybindings', extra: [], lite: false },
-      { sub: 'verbosity', extra: [verbosityCmd], lite: true },
+      { sub: 'verbosity', extra: [verbosityCmd], lite: false },
     ])(
       'sets settingsReturnOnEscape=true when routing to $sub',
       async ({ sub, extra, lite }) => {

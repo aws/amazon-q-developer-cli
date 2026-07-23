@@ -887,7 +887,7 @@ describe('Queueing mode behaviors', () => {
       expect(messages.length).toBeGreaterThan(messagesBefore);
       // The drain row is the FIRST new entry — it goes in before the
       // dispatcher does any work, so anything the command itself adds
-      // (e.g. /verbosity's "set density to minimal" announcement) appears
+      // (e.g. /verbosity's "set density to lean" announcement) appears
       // after it. Locking the order here keeps the row functioning as a
       // turn-boundary marker rather than a trailing footnote.
       const drainRow = messages[messagesBefore];
@@ -900,17 +900,17 @@ describe('Queueing mode behaviors', () => {
     });
 
     it('emits the drain row with full args for argv-style slash commands', async () => {
-      // /verbosity density minimal, /chat <id>, /agent <name>: the row
+      // /verbosity density lean, /chat <id>, /agent <name>: the row
       // should record the full invocation so users can scroll back and
       // see exactly what was applied — not just the bare command name.
       const store = createTestStore();
       const messagesBefore = store.getState().messages.length;
-      store.setState({ queuedMessages: ['/verbosity density minimal'] });
+      store.setState({ queuedMessages: ['/verbosity density lean'] });
 
       await store.getState().processQueue();
 
       const drainRow = store.getState().messages[messagesBefore];
-      expect(drainRow?.content).toContain('[queue] /verbosity density minimal');
+      expect(drainRow?.content).toContain('[queue] /verbosity density lean');
     });
 
     it('does NOT emit a drain row for chat messages (User row + agent response cover it)', async () => {

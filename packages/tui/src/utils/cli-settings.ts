@@ -33,14 +33,14 @@ function settingsPath(): string {
  * Throws on parse/read errors to allow callers to distinguish
  * "no settings file" from "corrupt/unreadable file".
  */
-function readCliSettingsStrict(): Record<string, unknown> {
+export function readCliSettingsStrict(): Record<string, unknown> {
   const p = settingsPath();
   if (!existsSync(p)) return {};
   const raw = JSON.parse(readFileSync(p, 'utf-8'));
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     return raw as Record<string, unknown>;
   }
-  return {};
+  throw new TypeError('cli.json must contain a JSON object');
 }
 
 /** Returns the parsed cli.json object, or `{}` on any error. */

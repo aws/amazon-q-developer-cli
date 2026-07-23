@@ -533,8 +533,8 @@ describe('runEffect routing', () => {
 
     runEffect(cmd, null, ctx, '');
 
-    expect(ctx._spies.setUiMode!).toHaveBeenCalledWith('tui');
-    expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+    expect(ctx._spies.setUiMode!).toHaveBeenCalledWith(
+      'tui',
       'Switched to TUI mode'
     );
   });
@@ -576,11 +576,11 @@ describe('runEffect routing', () => {
 
       runEffect(cmd, null, ctx, '');
 
-      expect(ctx._spies.setUiMode!).toHaveBeenCalledWith('lite');
-      expect(ctx._spies.addSystemMessage!).toHaveBeenCalledWith(
-        '[EXPERIMENTAL] Switched to Lite UI',
-        true
+      expect(ctx._spies.setUiMode!).toHaveBeenCalledWith(
+        'lite',
+        '[EXPERIMENTAL] Switched to Lite UI'
       );
+      expect(ctx._spies.addSystemMessage!).not.toHaveBeenCalled();
       expect(ctx._spies.announceSystem!).not.toHaveBeenCalled();
       expect(ctx._spies.showAlert!).not.toHaveBeenCalled();
     } finally {

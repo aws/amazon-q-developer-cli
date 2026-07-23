@@ -1,18 +1,37 @@
 import React, { useMemo } from 'react';
 import { Box } from './../../../renderer.js';
+import { Text } from '../../ui/text/Text.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { ToolOutputHeader, ToolOutputSection } from './ToolOutput.js';
 import { FileList } from './FileList.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
+import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
+import { expandTabs, normalizeLineEndings } from '../../../utils/string.js';
+import { maxVisibleWidth, truncateToWidth } from '../../../utils/text-width.js';
+import {
+  extractResultBodyItems,
+  extractResultBodyText,
+  parseToolArg,
+  splitBodyLines,
+} from '../../../utils/tool-result.js';
 import type { StatusType } from '../../../types/componentTypes.js';
+import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel, formatLineRange } from '../../../types/tool-status.js';
 
 const PREVIEW_FILES = 5;
+const PREVIEW_READ_LINES = 20;
+// Only surface the read body in-cohort; off-cohort keeps the mainline
+// header-only render (path + line range, no content dump).
+const PORT_ACTIVE = () => process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
 interface ReadOp {
   path: string;
+  mode?: string;
   limit?: number;
   offset?: number;
 }
@@ -38,6 +57,9 @@ export interface ReadProps {
    * Expected format: { ops: [{ path, limit?, offset? }] }
    */
   content?: string;
+
+  /** Tool result — carries the file section the read returned (in-cohort body). */
+  result?: ToolResult;
 }
 
 /**
@@ -57,6 +79,7 @@ export const Read = React.memo(function Read({
   isFinished = false,
   isStatic = false,
   content,
+  result,
 }: ReadProps) {
   const params = useMemo(
     // Exclude fields already reflected in the header/line-range or used for
@@ -82,16 +105,17 @@ export const Read = React.memo(function Read({
         return rawOps.flatMap((op: Record<string, unknown>): ReadOp[] => {
           const mode = op.mode as string | undefined;
           if (mode === 'Directory') {
-            return [{ path: (op.path as string) || '' }];
+            return [{ path: (op.path as string) || '', mode }];
           }
           if (mode === 'Image') {
             const paths = (op.image_paths ?? op.paths) as string[] | undefined;
-            return (paths || []).map((p) => ({ path: p }));
+            return (paths || []).map((p) => ({ path: p, mode }));
           }
           // Line mode or legacy ops without mode
           return [
             {
               path: (op.path as string) || '',
+              mode,
               limit: op.limit as number | undefined,
               offset: op.offset as number | undefined,
             },
@@ -122,18 +146,66 @@ export const Read = React.memo(function Read({
     () => ops.map((op) => op.path.split('/').pop() || op.path),
     [ops]
   );
+  const outputVisible = useToolOutputVisible();
+  const expandableOutputVisible = !PORT_ACTIVE() || outputVisible;
 
-  // Use expandable output hook
-  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
-    totalItems: ops.length,
+  const {
+    expanded,
+    expandHint,
+    hiddenCount,
+    effectivePreviewCount,
+    outputMaxChars,
+  } = useExpandableOutput({
+    totalItems: expandableOutputVisible ? ops.length : 0,
     previewCount: PREVIEW_FILES,
+    maxContentWidth: expandableOutputVisible ? maxVisibleWidth(fileNames) : 0,
     isStatic,
     unit: 'files',
+    applyVerbosityOutputCap: true,
   });
 
   const title = getToolLabel('read');
 
   const renderMeta = () => <ToolMeta params={params} />;
+
+  // Code-intelligence and directory reads return plain output, not numbered source.
+  const showBody = PORT_ACTIVE() && outputVisible && isFinished;
+  const bodyItems = useMemo(() => extractResultBodyItems(result), [result]);
+  const mixedRead =
+    ops.some((op) => op.mode === 'Directory') &&
+    ops.some((op) => op.mode !== 'Directory') &&
+    bodyItems.length === ops.length;
+  const plainOutputBody =
+    parseToolArg(content, 'operation') ||
+    (ops.length > 0 && ops.every((op) => op.mode === 'Directory')) ? (
+      <ToolOutputSection
+        lines={splitBodyLines(extractResultBodyText(result))}
+        isStatic={isStatic}
+        previewCount={PREVIEW_READ_LINES}
+        emptyPlaceholder
+      />
+    ) : null;
+  const mixedOutputBody = mixedRead
+    ? ops.map((op, index) =>
+        op.mode === 'Directory' ? (
+          <ToolOutputSection
+            key={`${op.path}-${index}`}
+            lines={splitBodyLines(bodyItems[index] ?? null)}
+            isStatic={isStatic}
+            previewCount={PREVIEW_READ_LINES}
+            emptyPlaceholder
+          />
+        ) : (
+          <ReadBody
+            key={`${op.path}-${index}`}
+            body={bodyItems[index]}
+            path={op.path}
+            startLine={(op.offset ?? 0) + 1}
+            isStatic={isStatic}
+          />
+        )
+      )
+    : null;
 
   // If content was provided and parsed, use ops for display
   if (content && ops.length > 0) {
@@ -148,6 +220,15 @@ export const Read = React.memo(function Read({
             shimmer={!isFinished}
           />
           {renderMeta()}
+          {showBody &&
+            (plainOutputBody ?? (
+              <ReadBody
+                result={result}
+                path={op?.path}
+                startLine={(op?.offset ?? 0) + 1}
+                isStatic={isStatic}
+              />
+            ))}
         </Box>
       );
       if (noStatusBar) return displayContent;
@@ -163,26 +244,130 @@ export const Read = React.memo(function Read({
           shimmer={!isFinished}
         />
         {renderMeta()}
-        <FileList
-          items={fileNames}
-          previewCount={PREVIEW_FILES}
-          expanded={expanded}
-          expandHint={expandHint}
-          hiddenCount={hiddenCount}
-        />
+        {outputVisible && (
+          <FileList
+            items={fileNames}
+            previewCount={effectivePreviewCount}
+            expanded={expanded}
+            expandHint={expandHint}
+            hiddenCount={hiddenCount}
+            maxChars={outputMaxChars}
+          />
+        )}
+        {showBody &&
+          (mixedOutputBody ?? plainOutputBody ?? (
+            <ReadBody result={result} isStatic={isStatic} />
+          ))}
       </Box>
     );
     if (noStatusBar) return displayContent;
     return <StatusBar status={status}>{displayContent}</StatusBar>;
   }
 
-  // Simple mode: use target prop directly
   const displayContent = (
     <Box flexDirection="column">
       <StatusInfo title={title} target={target} shimmer={!isFinished} />
       {renderMeta()}
+      {showBody && plainOutputBody}
     </Box>
   );
   if (noStatusBar) return displayContent;
   return <StatusBar status={status}>{displayContent}</StatusBar>;
+});
+
+const LINE_NUM_WIDTH = 4;
+
+/** Renders the bounded, expandable body of an in-cohort file read. */
+const ReadBody = React.memo(function ReadBody({
+  result,
+  body,
+  path,
+  startLine = 1,
+  isStatic,
+}: {
+  result?: ToolResult;
+  body?: string;
+  path?: string;
+  startLine?: number;
+  isStatic: boolean;
+}) {
+  const { getColor } = useTheme();
+  const highlightCode = useSyntaxHighlight();
+
+  const text = useMemo(
+    () => body ?? extractResultBodyText(result),
+    [body, result]
+  );
+  const lines = useMemo(
+    () =>
+      text
+        ? normalizeLineEndings(text)
+            .replace(/\n+$/, '')
+            .split('\n')
+            .map(expandTabs)
+        : [],
+    [text]
+  );
+
+  const {
+    expanded,
+    expandHint,
+    effectivePreviewCount,
+    outputMaxChars,
+    persistOutput,
+  } = useExpandableOutput({
+    totalItems: lines.length,
+    previewCount: PREVIEW_READ_LINES,
+    maxContentWidth: maxVisibleWidth(lines),
+    isStatic,
+    unit: 'lines',
+    applyVerbosityOutputCap: true,
+  });
+
+  if (isStatic && !persistOutput) return null;
+
+  if (result && result.status === 'success' && lines.length === 0) {
+    return (
+      <>
+        <ToolOutputHeader />
+        <Box marginLeft={4}>
+          <Text>{getColor('muted')('(no output)')}</Text>
+        </Box>
+      </>
+    );
+  }
+  if (lines.length === 0) return null;
+
+  const language = path?.split('.').pop()?.toLowerCase();
+  const shown = expanded ? lines : lines.slice(-effectivePreviewCount);
+  const hidden = lines.length - shown.length;
+  // Clip before highlighting so truncation cannot sever ANSI escapes.
+  const clip = (s: string) =>
+    outputMaxChars != null && outputMaxChars > 0
+      ? truncateToWidth(s, outputMaxChars)
+      : s;
+  const firstNum = startLine + (expanded ? 0 : lines.length - shown.length);
+  const truncMarker =
+    hidden > 0
+      ? isStatic
+        ? `...+${hidden} lines above`
+        : `...+${hidden} lines above (ctrl+o to toggle)`
+      : expandHint || undefined;
+
+  return (
+    <>
+      <ToolOutputHeader />
+      <Box marginLeft={4} flexDirection="column">
+        {truncMarker && <Text>{getColor('secondary')(truncMarker)}</Text>}
+        {shown.map((line, i) => (
+          <Text key={i}>
+            {getColor('secondary')(
+              String(firstNum + i).padStart(LINE_NUM_WIDTH)
+            )}
+            {`  ${highlightCode(clip(line), language)}`}
+          </Text>
+        ))}
+      </Box>
+    </>
+  );
 });

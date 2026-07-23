@@ -55,6 +55,7 @@ import {
   readOptionalStringSetting,
 } from './utils/cli-settings';
 import { UiModeSource } from './types/generated/chat-cli';
+import type { UiMode } from './types/ui-mode.js';
 import { Settings } from './constants/settings';
 import { CommandHistory } from './utils/command-history';
 import { GlyphsProvider } from './hooks/useGlyphs';
@@ -928,7 +929,12 @@ const startInitialization = (resumePickerSessionId?: string) => {
                 'older turns from history replay'
               );
             }
-            const handler = appStore.getState().createStreamEventHandler();
+            // fromHistory: replayed tool rows carry no persisted duration, so
+            // skip the elapsed stamp (a fresh Date.now() would show a bogus
+            // ~0ms chip). Same as the /chat and /rewind resume paths.
+            const handler = appStore
+              .getState()
+              .createStreamEventHandler({ fromHistory: true });
             for (const event of events) {
               handler(event);
             }
@@ -1333,7 +1339,6 @@ const startApp = async () => {
     process.env.KIRO_DISABLE_WRAP === '1' ||
     readBoolSetting(Settings.CHAT_DISABLE_WRAP, false);
 
-  type UiMode = 'tui' | 'lite';
   type UiModeSourceTag = 'envVar' | 'setting' | 'default';
 
   // The Rust launcher exports the stable-internal rollout decision; denied requests fall back to TUI.

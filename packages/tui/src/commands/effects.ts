@@ -1442,8 +1442,11 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // consistent lite styling (You:/<agent>: headers, current verbosity,
     // current theme) across every message rather than a half-and-half
     // mix of TUI-styled history + lite-styled new rows.
-    ctx.setUiMode?.('lite');
-    if (fromMode !== 'lite') {
+    const notice = '[EXPERIMENTAL] Switched to Lite UI';
+    if (fromMode === 'lite') {
+      ctx.addSystemMessage(notice, true);
+    } else {
+      ctx.setUiMode?.('lite', notice);
       ctx.kiro.sendUiModeChanged({
         from: fromMode,
         to: 'lite',
@@ -1451,21 +1454,19 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         sessionId: ctx.kiro.sessionId,
       });
     }
-    ctx.addSystemMessage('[EXPERIMENTAL] Switched to Lite UI', true);
   },
 
   switchToTui: (_result, ctx) => {
     // /tui from lite swaps to TUI; from TUI it falls through to the
     // info panel (origin/main behavior). Symmetric with /lite.
     if (ctx.getUiMode?.() === 'lite') {
-      ctx.setUiMode?.('tui');
+      ctx.setUiMode?.('tui', 'Switched to TUI mode');
       ctx.kiro.sendUiModeChanged({
         from: 'lite',
         to: 'tui',
         source: ModeChangeSource.SlashCommand,
         sessionId: ctx.kiro.sessionId,
       });
-      ctx.announceSystem('Switched to TUI mode');
       return;
     }
     ctx.setShowTuiPanel(true);

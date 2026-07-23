@@ -2,11 +2,8 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import React from 'react';
 import stripAnsi from 'strip-ansi';
 import { render, type Instance, type Terminal } from 'twinki';
-import {
-  UI_VARIANTS,
-  type UiVariant,
-  type VariantSurfaces,
-} from '../ui-variants.js';
+import { UI_VARIANTS, type VariantSurfaces } from '../ui-variants.js';
+import type { UiMode } from '../../../types/ui-mode.js';
 import { AppContainer } from '../AppContainer.js';
 import { InlineLayout } from '../InlineLayout.js';
 import { LiteLayout } from '../lite/LiteLayout.js';
@@ -89,7 +86,7 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
-function createVariantStore(variant: UiVariant) {
+function createVariantStore(variant: UiMode) {
   const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
   store.setState({
     uiMode: variant,
@@ -140,9 +137,9 @@ describe('UI variant layout rendering', () => {
         StatusLine: LiteStatusSurface,
         ActivityTray: LiteTaskTray,
       },
-    } satisfies Record<UiVariant, VariantSurfaces>);
+    } satisfies Record<UiMode, VariantSurfaces>);
 
-    for (const variant of Object.keys(UI_VARIANTS) as UiVariant[]) {
+    for (const variant of Object.keys(UI_VARIANTS) as UiMode[]) {
       const surfaces = UI_VARIANTS[variant] as VariantSurfaces;
       const originalSurfaces = { ...surfaces };
       const injectedSurfaces = createSurfaceStubs(surfaceNames(surfaces));
@@ -175,7 +172,7 @@ describe('UI variant layout rendering', () => {
 
   it('renders every injected surface from each registered layout', async () => {
     for (const [variant, { Layout }] of Object.entries(UI_VARIANTS) as Array<
-      [UiVariant, VariantSurfaces]
+      [UiMode, VariantSurfaces]
     >) {
       const names = surfaceNames(UI_VARIANTS[variant]);
       const rendered = new Set<VariantSurfaceName>();
@@ -205,7 +202,7 @@ describe('UI variant layout rendering', () => {
 
   it('forwards cloud location state through each layout status surface', async () => {
     for (const [variant, { Layout }] of Object.entries(UI_VARIANTS) as Array<
-      [UiVariant, VariantSurfaces]
+      [UiMode, VariantSurfaces]
     >) {
       const injectedSurfaces = createSurfaceStubs(
         surfaceNames(UI_VARIANTS[variant])

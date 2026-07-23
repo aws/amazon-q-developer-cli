@@ -12,6 +12,7 @@ import {
   type AgentStreamEvent,
   type ToolDiff,
 } from '../types/agent-events.js';
+import { isHistoryOnlyAssistantMessagePrefix } from '../utils/history-only-assistant-messages.js';
 import { MessageRole, type MessageType } from './app-store.js';
 
 export function createMessageStreamHandler(
@@ -27,8 +28,11 @@ export function createMessageStreamHandler(
   const flushContent = () => {
     pendingFlush = null;
     if (!bufferedContent && !bufferedThinking) return;
-    const content = bufferedContent;
+    const content = isHistoryOnlyAssistantMessagePrefix(bufferedContent)
+      ? ''
+      : bufferedContent;
     const thinking = bufferedThinking;
+    if (!content && !thinking) return;
     setMessages((msgs) => {
       const last = msgs[msgs.length - 1];
       if (last?.role === MessageRole.Model) {

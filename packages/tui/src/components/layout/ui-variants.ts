@@ -7,6 +7,7 @@ import { LiteApprovalSurface, TuiApprovalSurface } from './approval-surface.js';
 import { TuiStatusSurface } from './tui-status-surface.js';
 import { LiteStatusSurface } from './lite/status-surface.js';
 import type { VariantLayoutProps } from './variant-layout.js';
+import type { UiMode } from '../../types/ui-mode.js';
 
 /**
  * The single source of truth for genuinely forked UI surfaces. A surface
@@ -17,8 +18,6 @@ import type { VariantLayoutProps } from './variant-layout.js';
  * forks, such as React-node versus ANSI tool renderers, belong in the
  * tool-capabilities render registry rather than this table.
  */
-export type UiVariant = 'tui' | 'lite';
-
 export type VariantSurfaces = {
   Layout: ComponentType<VariantLayoutProps>;
 } & VariantLayoutProps;
@@ -36,4 +35,4 @@ export const UI_VARIANTS = {
     StatusLine: LiteStatusSurface,
     ActivityTray: LiteTaskTray,
   },
-} satisfies Record<UiVariant, VariantSurfaces>;
+} satisfies Record<UiMode, VariantSurfaces>;

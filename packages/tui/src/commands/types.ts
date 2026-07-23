@@ -8,6 +8,7 @@ import type { Kiro } from '../kiro.js';
 import type { AgentEngine } from '../agent-engine.js';
 import type { KasCommand } from '../kas-commands.js';
 import type { InterruptMode } from '../constants/interrupt-mode.js';
+import type { UiMode } from '../types/ui-mode.js';
 import type {
   AvailableCommand,
   PromptEntry,
@@ -267,8 +268,12 @@ export interface CommandContext {
     images?: Array<{ base64: string; mimeType: string }>,
     displayContent?: string
   ) => Promise<void>;
-  /** Create a stream event handler for processing agent events into messages. */
-  createStreamEventHandler: () => StreamEventHandler;
+  /** Create a stream event handler for processing agent events into messages.
+   *  History replay skips synthetic tool timing because persisted events do not
+   *  carry their original timestamps. */
+  createStreamEventHandler: (options?: {
+    fromHistory?: boolean;
+  }) => StreamEventHandler;
   /** Update the session ID in the store */
   setSessionId: (id: string | null) => void;
   /** Add a system message to the conversation */
@@ -333,10 +338,10 @@ export interface CommandContext {
   };
   /** Get a preview string showing the auto-detected theme with no user overrides */
   getAutoPreview: () => string;
-  /** Switch between TUI and lite mode */
-  setUiMode?: (mode: 'tui' | 'lite') => void;
+  /** Switch modes, optionally appending a durable notice in the same update. */
+  setUiMode?: (mode: UiMode, notice?: string) => void;
   /** Get current UI mode */
-  getUiMode?: () => 'tui' | 'lite';
+  getUiMode?: () => UiMode;
   /**
    * Set the index into `messages` at which lite's <Static> begins emitting.
    * Called by `switchToLite` (tui→lite) so prior messages already on the

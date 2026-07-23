@@ -20,6 +20,7 @@ import {
   useThinkingMode,
   type ThinkingMode,
 } from '../../hooks/useGlyphs.js';
+import { setVerboseConfig } from '../../lite/verbose.js';
 import { useAppStore } from '../../stores/app-store.js';
 
 interface ToggleItem {
@@ -38,6 +39,17 @@ const THINKING_MODES: ThinkingMode[] = ['collapsed', 'expanded', 'off'];
 function normalizeUiModeForTelemetry(raw: string): 'lite' | 'tui' | 'unset' {
   return raw === 'lite' || raw === 'tui' ? raw : 'unset';
 }
+
+/** In-cohort, thinking display lives in /verbosity; off-cohort /verbosity is
+ *  gated away, so restore the mainline "Show thinking" Display row there. */
+const THINKING_ITEM: ToggleItem = {
+  key: Settings.CHAT_SHOW_THINKING,
+  label: 'Show thinking',
+  description:
+    'collapsed: header only (ctrl+o to view) · expanded: always show · off: hidden',
+  defaultValue: true,
+  cycle: THINKING_MODES,
+};
 
 const ALL_ITEMS: ToggleItem[] = [
   {
@@ -66,14 +78,6 @@ const ALL_ITEMS: ToggleItem[] = [
     defaultValue: true,
   },
   {
-    key: Settings.CHAT_SHOW_THINKING,
-    label: 'Show thinking',
-    description:
-      'collapsed: header only (ctrl+o to view) · expanded: always show · off: hidden',
-    defaultValue: true,
-    cycle: THINKING_MODES,
-  },
-  {
     key: Settings.CHAT_TERMINAL_TITLE,
     label: 'Terminal title',
     description:
@@ -83,18 +87,21 @@ const ALL_ITEMS: ToggleItem[] = [
 ];
 
 /**
- * The Display rows for the current rollout cohort. The "Default UI" (tui/lite)
- * row is dropped outside the cohort (KIRO_LITE_ROLLOUT_ENABLED !== '1'): the
- * same gate resolveUiMode() and switchToLite() read. Outside the cohort
- * resolveUiMode forces 'tui', so the toggle would only persist a dead
- * chat.ui.mode='lite' value and emit uiModeDefaultChanged telemetry — a
- * leaking affordance with no effect. The other rows are legitimately
- * cross-mode, so we gate the row, not the panel.
+ * The Display rows for the current rollout cohort. In-cohort: the full
+ * ALL_ITEMS set (thinking lives in /verbosity). Off-cohort: drop the "Default
+ * UI" (tui/lite) row — resolveUiMode() forces 'tui' there, so the toggle would
+ * only persist a dead chat.ui.mode='lite' and emit telemetry — and restore the
+ * "Show thinking" row (mainline had it here; /verbosity is gated away).
  */
 export function selectDisplayItems(rolloutEnabled: boolean): ToggleItem[] {
-  return rolloutEnabled
-    ? ALL_ITEMS
-    : ALL_ITEMS.filter((item) => item.key !== Settings.CHAT_UI_MODE);
+  if (rolloutEnabled) return ALL_ITEMS;
+  const items = ALL_ITEMS.filter((item) => item.key !== Settings.CHAT_UI_MODE);
+  // Restore the mainline row order: Show thinking sat before Terminal title.
+  const titleIdx = items.findIndex(
+    (i) => i.key === Settings.CHAT_TERMINAL_TITLE
+  );
+  const at = titleIdx === -1 ? items.length : titleIdx;
+  return [...items.slice(0, at), THINKING_ITEM, ...items.slice(at)];
 }
 
 interface DisplaySettingsPanelProps {
@@ -116,7 +123,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const { setAllowAsciiArt } = useAllowAsciiArt();
   const { setAllowAnimations } = useAllowAnimations();
   const { setAllowIcons } = useAllowIcons();
-  const { thinkingMode, setThinkingMode } = useThinkingMode();
+  const { thinkingMode } = useThinkingMode();
 
   // Route separators embedded in item descriptions through glyphs so ASCII
   // mode renders '.' instead of '·' (uniform with the rest of the panel).
@@ -175,13 +182,20 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
               sessionId: kiro.sessionId,
             });
           }
+        } else if (key === Settings.CHAT_SHOW_THINKING) {
+          // Persist through the verbosity store so the version bump re-resolves
+          // useGlyphs' thinkingMode live. This row is off-cohort only, where
+          // resolveUiMode forces TUI.
+          setVerboseConfig(
+            {
+              display: { thinkingDisplay: next as ThinkingMode },
+            },
+            'tui'
+          );
         } else {
           kiro.setSetting(key, next).catch(() => {});
         }
         setValues((prev) => ({ ...prev, [key]: next }));
-        if (key === Settings.CHAT_SHOW_THINKING) {
-          setThinkingMode(next as ThinkingMode);
-        }
         return;
       }
       const newVal = !values[key];
@@ -202,11 +216,11 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
     },
     [
       values,
+      ITEMS,
       kiro,
       setAllowAsciiArt,
       setAllowAnimations,
       setAllowIcons,
-      setThinkingMode,
       setTerminalTitleEnabled,
     ]
   );

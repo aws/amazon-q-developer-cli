@@ -7,8 +7,9 @@ import {
   type Glyphs,
   type Spinners,
 } from '../utils/glyphs.js';
-import { readBoolSetting, readCliSettings } from '../utils/cli-settings.js';
+import { readBoolSetting } from '../utils/cli-settings.js';
 import { Settings } from '../constants/settings.js';
+import { useThinkingDisplay } from './useVerbose.js';
 
 /**
  * Display mode for the model's reasoning ("thinking") block.
@@ -27,8 +28,6 @@ interface GlyphsContextValue {
   setAllowAnimations: (v: boolean) => void;
   allowIcons: boolean;
   setAllowIcons: (v: boolean) => void;
-  thinkingMode: ThinkingMode;
-  setThinkingMode: (v: ThinkingMode) => void;
 }
 
 const resolveAllowAsciiArt = (): boolean => {
@@ -37,23 +36,9 @@ const resolveAllowAsciiArt = (): boolean => {
   return readBoolSetting(Settings.CHAT_ASCII_MODE, true);
 };
 
-/**
- * Resolve `chat.showThinking`, backwards compatible with the legacy boolean:
- * a string mode is used as-is; `false` → `off`; legacy `true` → `collapsed`;
- * missing → `expanded` (the default for new users).
- */
-const resolveThinkingMode = (): ThinkingMode => {
-  const val = readCliSettings()[Settings.CHAT_SHOW_THINKING];
-  if (val === 'collapsed' || val === 'expanded' || val === 'off') return val;
-  if (val === false) return 'off';
-  if (val === true) return 'collapsed';
-  return 'expanded';
-};
-
 const initialAllowAsciiArt = resolveAllowAsciiArt();
 const initialAllowAnimations = readBoolSetting(Settings.CHAT_ANIMATIONS, true);
 const initialAllowIcons = readBoolSetting(Settings.CHAT_ICONS, true);
-const initialThinkingMode = resolveThinkingMode();
 
 const defaultValue: GlyphsContextValue = {
   glyphs: initialAllowAsciiArt ? UNICODE_GLYPHS : ASCII_GLYPHS,
@@ -64,8 +49,6 @@ const defaultValue: GlyphsContextValue = {
   setAllowAnimations: () => {},
   allowIcons: initialAllowIcons,
   setAllowIcons: () => {},
-  thinkingMode: initialThinkingMode,
-  setThinkingMode: () => {},
 };
 
 export const GlyphsContext = createContext<GlyphsContextValue>(defaultValue);
@@ -76,7 +59,6 @@ export const GlyphsProvider = ({ children }: { children: React.ReactNode }) => {
     initialAllowAnimations
   );
   const [allowIcons, setAllowIcons] = useState(initialAllowIcons);
-  const [thinkingMode, setThinkingMode] = useState(initialThinkingMode);
 
   const value = useMemo<GlyphsContextValue>(
     () => ({
@@ -88,10 +70,8 @@ export const GlyphsProvider = ({ children }: { children: React.ReactNode }) => {
       setAllowAnimations,
       allowIcons,
       setAllowIcons,
-      thinkingMode,
-      setThinkingMode,
     }),
-    [allowAsciiArt, allowAnimations, allowIcons, thinkingMode]
+    [allowAsciiArt, allowAnimations, allowIcons]
   );
 
   return React.createElement(GlyphsContext.Provider, { value }, children);
@@ -127,10 +107,6 @@ export const useAllowIcons = () => {
   const ctx = useContext(GlyphsContext);
   return { allowIcons: ctx.allowIcons, setAllowIcons: ctx.setAllowIcons };
 };
-export const useThinkingMode = () => {
-  const ctx = useContext(GlyphsContext);
-  return {
-    thinkingMode: ctx.thinkingMode,
-    setThinkingMode: ctx.setThinkingMode,
-  };
-};
+export const useThinkingMode = (): { thinkingMode: ThinkingMode } => ({
+  thinkingMode: useThinkingDisplay(),
+});

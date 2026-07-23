@@ -11,11 +11,14 @@ import {
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
+import { clipChars } from '../../../lite/render.js';
+import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
-const PREVIEW_LINES = 3;
 
+const PREVIEW_LINES = 3;
 const VERBOSE_OPS = new Set([
   'generate_codebase_overview',
   'search_codebase_map',
@@ -58,6 +61,16 @@ export const Code = React.memo(function Code({
 }: CodeProps) {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
+
+  // Code doesn't use useExpandableOutput, so read verbosity caps directly.
+  const display = useVerboseDisplay();
+  const effectivePreview =
+    display.outputMaxLines ??
+    (process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
+      ? Number.POSITIVE_INFINITY
+      : PREVIEW_LINES);
+  const outputMaxChars = display.outputMaxChars;
+  const outputVisible = useToolOutputVisible();
 
   const operation = useMemo(
     () => parseToolArg(content, 'operation'),
@@ -109,7 +122,7 @@ export const Code = React.memo(function Code({
       return normalizeLineEndings(text)
         .split('\n')
         .filter((l) => l.trim())
-        .slice(0, PREVIEW_LINES);
+        .slice(0, effectivePreview);
     }
 
     // For structured results, extract a brief summary
@@ -118,7 +131,7 @@ export const Code = React.memo(function Code({
     // search_symbols / lookup_symbols — show matched symbol names
     if (Array.isArray(obj.symbols)) {
       return (obj.symbols as any[])
-        .slice(0, PREVIEW_LINES)
+        .slice(0, effectivePreview)
         .map((s) => `${glyphs.arrow} ${s.name || s}`);
     }
 
@@ -130,7 +143,7 @@ export const Code = React.memo(function Code({
     // get_document_symbols
     if (Array.isArray(obj.documentSymbols)) {
       return (obj.documentSymbols as any[])
-        .slice(0, PREVIEW_LINES)
+        .slice(0, effectivePreview)
         .map((s) => `${glyphs.arrow} ${s.name || s}`);
     }
 
@@ -139,11 +152,11 @@ export const Code = React.memo(function Code({
       return normalizeLineEndings(obj.text as string)
         .split('\n')
         .filter((l) => l.trim())
-        .slice(0, PREVIEW_LINES);
+        .slice(0, effectivePreview);
     }
 
     return [];
-  }, [result, glyphs]);
+  }, [result, glyphs, effectivePreview]);
 
   const renderContent = () => {
     if (result?.status === 'error') {
@@ -163,10 +176,13 @@ export const Code = React.memo(function Code({
       );
     }
 
+    // verbosity: !outputVisible gates the success summary body (this branch is
+    // after the error branch, so errors still render).
     if (
       !isFinished ||
       summaryLines.length === 0 ||
       isStatic ||
+      !outputVisible ||
       (operation && VERBOSE_OPS.has(operation))
     ) {
       return (
@@ -193,7 +209,9 @@ export const Code = React.memo(function Code({
         <ToolMeta params={params} />
         {summaryLines.map((line, i) => (
           <Box key={i} marginLeft={2}>
-            <Text>{getColor('secondary')(line)}</Text>
+            <Text>
+              {getColor('secondary')(clipChars(line, outputMaxChars))}
+            </Text>
           </Box>
         ))}
       </Box>

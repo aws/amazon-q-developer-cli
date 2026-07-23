@@ -1,13 +1,23 @@
 import React, { useMemo } from 'react';
+import { useStore } from 'zustand';
 import { Box } from '../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg } from '../../../utils/tool-result.js';
-import type { ToolResult } from '../../../stores/app-store.js';
+import { useAppStore, type ToolResult } from '../../../stores/app-store.js';
+import { sessionConversationsStore } from '../../../stores/session-conversations.js';
+import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
+import { SubagentDetail, type SubagentDetailProps } from './SubagentDetail.js';
+import { collectSubagentSummariesByParentCached } from '../../layout/lite/subagent-summaries.js';
+import type { SubagentStageSummary } from '../../../lite/render.js';
+
+const EMPTY: SubagentStageSummary[] = [];
 
 export interface SessionToolProps {
+  id?: string;
   name?: string;
   isFinished?: boolean;
   isStatic?: boolean;
@@ -31,9 +41,10 @@ const ACTION_LABELS: Record<string, [string, string]> = {
 const CREW_LABELS: [string, string] = ['Orchestrating', 'Orchestrated'];
 
 export const SessionTool = React.memo(function SessionTool({
+  id,
   name,
   isFinished = false,
-  isStatic: _isStatic = false,
+  isStatic = false,
   content,
   result,
 }: SessionToolProps) {
@@ -44,6 +55,18 @@ export const SessionTool = React.memo(function SessionTool({
     name === 'subagent' ||
     name === 'agent_crew' ||
     name === 'orchestrate_subagent';
+
+  const showSubagentDetail =
+    isCrewTool && process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
+  const detailFinished = isFinished && result?.status === 'success';
+  const subagentDetail = showSubagentDetail && (
+    <SessionSubagentDetail
+      id={id}
+      content={content}
+      finished={detailFinished}
+      isStatic={isStatic}
+    />
+  );
 
   const action = useMemo(() => parseToolArg(content, 'action'), [content]);
   const target = useMemo(() => {
@@ -95,6 +118,7 @@ export const SessionTool = React.memo(function SessionTool({
           bold={isCrewTool}
           underline={isCrewTool}
         />
+        {subagentDetail}
         <Box marginLeft={2}>
           <Text>{getColor('error')(result.error)}</Text>
         </Box>
@@ -115,6 +139,69 @@ export const SessionTool = React.memo(function SessionTool({
         bold={isCrewTool}
         underline={isCrewTool}
       />
+      {subagentDetail}
     </Box>
   );
+});
+
+interface SessionSubagentDetailProps {
+  id?: string;
+  content?: string;
+  finished: boolean;
+  isStatic: boolean;
+}
+
+type DigestDetailProps = Omit<SubagentDetailProps, 'summaries'> & {
+  id: string;
+};
+
+const SessionSubagentDetail = React.memo(function SessionSubagentDetail({
+  id,
+  content,
+  finished,
+  isStatic,
+}: SessionSubagentDetailProps) {
+  const display = useVerboseDisplay();
+  const showFullOutput = useToolOutputVisible();
+  const canShowDigests =
+    !!id &&
+    finished &&
+    (!isStatic || display.persistOutput) &&
+    (showFullOutput || display.subagent.responses);
+  const isKas = useAppStore((s) => canShowDigests && s.agentEngine === 'kas');
+  const collect = canShowDigests && (showFullOutput || !isKas);
+  const detail = {
+    content,
+    display,
+    finished,
+    isStatic,
+    showFullOutput,
+    isKas,
+  };
+  if (collect) return <CollectedSubagentDetail id={id} {...detail} />;
+  return <SubagentDetail {...detail} summaries={EMPTY} />;
+});
+
+const CollectedSubagentDetail = React.memo(function CollectedSubagentDetail({
+  id,
+  ...props
+}: DigestDetailProps) {
+  const messages = useAppStore((s) => s.messages);
+  const sessions = useAppStore((s) => s.sessions);
+  const agentName = useAppStore((s) => s.currentAgent?.name ?? null);
+  const conversations = useStore(
+    sessionConversationsStore,
+    (s) => s.conversations
+  );
+  const summaries = useMemo(
+    () =>
+      collectSubagentSummariesByParentCached(
+        messages,
+        sessions,
+        conversations,
+        agentName
+      ).get(id) ?? EMPTY,
+    [id, messages, sessions, conversations, agentName]
+  );
+  return <SubagentDetail {...props} summaries={summaries} />;
 });

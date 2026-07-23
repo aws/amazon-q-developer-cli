@@ -208,7 +208,7 @@ describe('isKnownSlashCommandToken', () => {
     // /verbose foozle: first token "verbose" is known → true (handler will
     // error on the bogus subcommand, that's the dispatcher's job).
     expect(isKnownSlashCommandToken('/verbose foozle', commands)).toBe(true);
-    expect(isKnownSlashCommandToken('/verbose density minimal', commands)).toBe(
+    expect(isKnownSlashCommandToken('/verbose density lean', commands)).toBe(
       true
     );
   });

@@ -1,195 +1,321 @@
-/**
- * Tests for the verbose-mode config module.
- *
- * Strategy: redirect KIRO_HOME to a tmp dir before importing the module
- * under test so config writes don't clobber the developer's real
- * ~/.kiro/settings/lite_verbose.json. Each test resets the cache + clears
- * the temp file between cases so each starts from defaults.
- *
- * Why a real tmp dir instead of `mock.module('fs', ...)`: a process-global
- * fs mock leaks across test files (mock.restore() doesn't undo module
- * mocks), and the in-module mockFile would carry the last-written display
- * config into other test files like verbose-command.test.ts — breaking
- * detectActivePreset's display equality check there.
- */
-
 import {
-  describe,
-  test,
-  expect,
+  afterAll,
   beforeAll,
   beforeEach,
-  afterEach,
-  afterAll,
+  describe,
+  expect,
+  test,
 } from 'bun:test';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'fs';
-import { tmpdir } from 'os';
 import { dirname, join } from 'path';
-
-let tmpHome: string;
-let originalKiroHome: string | undefined;
-let configFile: string;
-
-// Set KIRO_HOME *before* importing the module under test so kiroHomePath()
-// resolves into our throwaway dir for the entire suite.
-beforeAll(() => {
-  originalKiroHome = process.env.KIRO_HOME;
-  tmpHome = mkdtempSync(join(tmpdir(), 'kiro-verbose-test-'));
-  process.env.KIRO_HOME = tmpHome;
-  configFile = join(tmpHome, 'settings', 'lite_verbose.json');
-});
-
-afterAll(() => {
-  if (originalKiroHome === undefined) {
-    delete process.env.KIRO_HOME;
-  } else {
-    process.env.KIRO_HOME = originalKiroHome;
-  }
-  if (tmpHome) {
-    try {
-      rmSync(tmpHome, { recursive: true, force: true });
-    } catch {
-      // best-effort
-    }
-  }
-});
-
-/**
- * Replace `mockFile = X` from the prior fs-mock strategy:
- * - `null` → file does not exist (rm if present)
- * - string → write that exact content (creates parent dir if missing)
- *
- * Also clears the sibling `cli.json` so tests start with a clean slate
- * for the cli.json mirror behavior. setVerboseConfig writes to BOTH
- * files; without this clear, a later test would see stale mirror
- * values from a prior test's setVerboseConfig() call.
- */
-function setConfigFile(content: string | null) {
-  if (content == null) {
-    rmSync(configFile, { force: true });
-  } else {
-    mkdirSync(dirname(configFile), { recursive: true });
-    writeFileSync(configFile, content);
-  }
-  rmSync(join(tmpHome, 'settings', 'cli.json'), { force: true });
-}
-
+import { tmpdir } from 'os';
+import { Settings } from '../../constants/settings.js';
 import {
+  DENSITY_DISPLAY,
+  DENSITY_PRESETS,
+  DEFAULT_DISPLAY,
+  TUI_DEFAULT_DISPLAY,
+  VERBOSE_CATEGORIES,
+  applyDensityPreset,
+  cacheByVerboseVersion,
+  categorize,
+  getDensityPresetDisplay,
+  getDensityPresetFilters,
+  getTuiVerboseDisplay,
+  getTuiVerboseFilters,
   getVerboseConfig,
   getVerboseDisplay,
   getVerboseFilters,
-  setVerboseConfig,
+  getVerboseVersion,
   resetVerboseCache,
+  setVerboseConfig,
   shouldShowToolOutput,
+  subscribeVerbose,
   validateTokens,
-  categorize,
-  VERBOSE_CATEGORIES,
-  DEFAULT_DISPLAY,
-  DENSITY_DISPLAY,
-  applyDensityPreset,
+  type VerboseConfig,
+  type VerbositySurface,
 } from '../verbose.js';
-import { Settings } from '../../constants/settings.js';
+
+let tmpHome: string;
+let originalKiroHome: string | undefined;
+let originalRollout: string | undefined;
 
 const cliJsonFile = () => join(tmpHome, 'settings', 'cli.json');
+const legacyFile = () => join(tmpHome, 'settings', 'lite_verbose.json');
 
-/** Read cli.json from the tmp KIRO_HOME, returning {} if missing. */
+beforeAll(() => {
+  originalKiroHome = process.env.KIRO_HOME;
+  originalRollout = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+  tmpHome = mkdtempSync(join(tmpdir(), 'kiro-verbose-test-'));
+  process.env.KIRO_HOME = tmpHome;
+  process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
+});
+
+afterAll(() => {
+  if (originalKiroHome === undefined) delete process.env.KIRO_HOME;
+  else process.env.KIRO_HOME = originalKiroHome;
+  if (originalRollout === undefined)
+    delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+  else process.env.KIRO_LITE_ROLLOUT_ENABLED = originalRollout;
+  rmSync(tmpHome, { recursive: true, force: true });
+});
+
+beforeEach(() => {
+  rmSync(join(tmpHome, 'settings'), { recursive: true, force: true });
+  delete process.env.KIRO_LITE_VERBOSE;
+  process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
+  resetVerboseCache();
+});
+
 function readCliJson(): Record<string, unknown> {
-  try {
-    return JSON.parse(readFileSync(cliJsonFile(), 'utf-8'));
-  } catch {
-    return {};
-  }
+  if (!existsSync(cliJsonFile())) return {};
+  return JSON.parse(readFileSync(cliJsonFile(), 'utf-8'));
 }
 
-/** Write a cli.json blob into the tmp KIRO_HOME. Used by mirror-read tests
- *  to seed a cli.json value that getVerboseDisplay should pick up. */
-function writeCliJson(obj: Record<string, unknown>) {
+function writeCliJson(settings: Record<string, unknown>): void {
   mkdirSync(dirname(cliJsonFile()), { recursive: true });
-  writeFileSync(cliJsonFile(), JSON.stringify(obj));
+  writeFileSync(cliJsonFile(), JSON.stringify(settings));
 }
 
-describe('verbose config', () => {
-  beforeEach(() => {
-    setConfigFile(null);
+function writeLegacy(config: unknown): void {
+  mkdirSync(dirname(legacyFile()), { recursive: true });
+  writeFileSync(legacyFile(), JSON.stringify(config));
+}
+
+function setConfigFile(content: string | null): void {
+  if (content == null) rmSync(legacyFile(), { force: true });
+  else {
+    mkdirSync(dirname(legacyFile()), { recursive: true });
+    writeFileSync(legacyFile(), content);
+  }
+  rmSync(cliJsonFile(), { force: true });
+}
+
+function surfaceKey(surface: VerbositySurface): string {
+  return surface === 'lite'
+    ? Settings.CHAT_VERBOSITY_LITE
+    : Settings.CHAT_VERBOSITY_TUI;
+}
+
+function savedSurface(surface: VerbositySurface): VerboseConfig {
+  return readCliJson()[surfaceKey(surface)] as VerboseConfig;
+}
+
+describe('surface-specific persistence', () => {
+  test('zero-config defaults remain different', () => {
+    expect(getVerboseFilters()).toEqual(['shell']);
+    expect(getVerboseDisplay()).toMatchObject({
+      persistOutput: true,
+      showToolReasoning: true,
+      subagent: { pipeline: true, responses: true },
+    });
+    expect(getTuiVerboseFilters()).toEqual(['all', '-subagent']);
+    expect(getTuiVerboseDisplay()).toMatchObject({
+      persistOutput: false,
+      showToolReasoning: false,
+      subagent: { pipeline: false, responses: false },
+    });
+    expect(readCliJson()).toEqual({});
+  });
+
+  test('custom edits persist independently across restarts', () => {
+    setVerboseConfig(
+      {
+        filters: ['mcp'],
+        display: { showElapsed: false, outputMaxLines: 8 },
+      },
+      'lite'
+    );
+    setVerboseConfig(
+      {
+        filters: ['read'],
+        display: { showElapsed: true, outputMaxLines: 3 },
+      },
+      'tui'
+    );
+
+    expect(savedSurface('lite')).toMatchObject({
+      filters: ['mcp'],
+      display: { showElapsed: false, outputMaxLines: 8 },
+    });
+    expect(savedSurface('tui')).toMatchObject({
+      filters: ['read'],
+      display: { showElapsed: true, outputMaxLines: 3 },
+    });
+    expect(readCliJson()).not.toHaveProperty(Settings.CHAT_TOOLS_FILTERS);
+    expect(existsSync(legacyFile())).toBe(false);
+
     resetVerboseCache();
-    delete process.env.KIRO_LITE_VERBOSE;
+    expect(getVerboseFilters()).toEqual(['mcp']);
+    expect(getVerboseDisplay().outputMaxLines).toBe(8);
+    expect(getTuiVerboseFilters()).toEqual(['read']);
+    expect(getTuiVerboseDisplay().outputMaxLines).toBe(3);
   });
 
-  afterEach(() => {
-    delete process.env.KIRO_LITE_VERBOSE;
+  test.each(DENSITY_PRESETS.map((preset) => [preset] as const))(
+    '%s preset changes only the selected surface',
+    (preset) => {
+      const untouchedTui = getVerboseConfig('tui');
+      applyDensityPreset(preset, 'lite');
+      expect(getVerboseDisplay()).toEqual(
+        getDensityPresetDisplay(preset, 'lite')
+      );
+      expect(getVerboseFilters()).toEqual([
+        ...getDensityPresetFilters(preset, 'lite'),
+      ]);
+      expect(getVerboseConfig('tui')).toEqual(untouchedTui);
+
+      applyDensityPreset(preset, 'tui');
+      expect(getTuiVerboseDisplay()).toEqual(
+        getDensityPresetDisplay(preset, 'tui')
+      );
+      expect(getTuiVerboseFilters()).toEqual([
+        ...getDensityPresetFilters(preset, 'tui'),
+      ]);
+    }
+  );
+
+  test('a partial patch preserves the rest of its surface record', () => {
+    applyDensityPreset('full', 'tui');
+    const before = getVerboseConfig('tui');
+    const beforeDisplay = before.display;
+    setVerboseConfig({ display: { showElapsed: false } }, 'tui');
+    expect(getVerboseConfig('tui')).toEqual({
+      ...before,
+      display: { ...beforeDisplay, showElapsed: false },
+    });
+    expect(getVerboseDisplay()).toEqual(DEFAULT_DISPLAY);
   });
 
-  test('default config when no file exists', () => {
-    const cfg = getVerboseConfig();
-    // Fresh-install default streams shell stdout in a tail-windowed strip.
-    expect(cfg.filters).toEqual(['shell']);
+  test('a failed cli.json write keeps the in-memory edit active', () => {
+    getVerboseDisplay();
+    const settingsPath = join(tmpHome, 'settings');
+    writeFileSync(settingsPath, 'not a directory');
+    expect(setVerboseConfig({ display: { showTasks: false } }, 'lite')).toBe(
+      false
+    );
+    expect(getVerboseDisplay().showTasks).toBe(false);
+    rmSync(settingsPath, { force: true });
   });
 
-  test('save then load roundtrip', () => {
-    expect(setVerboseConfig({ filters: ['shell', 'mcp'] })).toBe(true);
-    resetVerboseCache();
-    const cfg = getVerboseConfig();
-    expect(cfg.filters).toEqual(['shell', 'mcp']);
+  test('malformed cli.json survives migration and mutation byte-for-byte', () => {
+    const malformed = '{ keep this broken';
+    mkdirSync(dirname(cliJsonFile()), { recursive: true });
+    writeFileSync(cliJsonFile(), malformed);
+    writeLegacy({ filters: ['mcp'] });
+
+    expect(getVerboseFilters()).toEqual(['mcp']);
+    expect(readFileSync(cliJsonFile(), 'utf-8')).toBe(malformed);
+    expect(setVerboseConfig({ filters: ['read'] }, 'lite')).toBe(false);
+    expect(readFileSync(cliJsonFile(), 'utf-8')).toBe(malformed);
+  });
+});
+
+describe('legacy migration', () => {
+  test('moves lite_verbose.json into the Lite cli.json record', () => {
+    writeLegacy({
+      filters: ['mcp'],
+      display: { ...DEFAULT_DISPLAY, showElapsed: false },
+    });
+    expect(getVerboseFilters()).toEqual(['mcp']);
+    expect(getVerboseDisplay().showElapsed).toBe(false);
+    expect(savedSurface('lite')).toMatchObject({
+      filters: ['mcp'],
+      display: { showElapsed: false },
+    });
+    expect(readFileSync(legacyFile(), 'utf-8')).toContain('"mcp"');
+    expect(getTuiVerboseDisplay()).toEqual(TUI_DEFAULT_DISPLAY);
   });
 
-  // Each row applies its filter sets in sequence (last one wins) so the
-  // empty-list case proves a prior non-empty set is cleared, not merged.
-  test.each([
-    ['["all"] collapses mixed lists', [['all', 'shell', 'mcp']], ['all']],
-    ['empty list is preserved as off', [['shell'], []], []],
-    ['dedupes and trims', [['shell', '  shell  ', 'mcp']], ['shell', 'mcp']],
-  ] as const)('filter normalization: %s', (_name, sets, expected) => {
-    for (const filters of sets) setVerboseConfig({ filters: [...filters] });
-    expect(getVerboseConfig().filters).toEqual([...expected]);
+  test('migrates legacy enabled:false as filters off', () => {
+    writeLegacy({ enabled: false, filters: ['all'] });
+    expect(getVerboseFilters()).toEqual([]);
+    expect(savedSurface('lite').filters).toEqual([]);
   });
 
-  test('malformed file falls back to defaults silently', () => {
-    setConfigFile('{ this is not json');
-    const cfg = getVerboseConfig();
-    expect(cfg.filters).toEqual(['shell']);
+  test('old shared cli.json values seed each surface once', () => {
+    writeCliJson({
+      [Settings.CHAT_TOOLS_FILTERS]: ['mcp'],
+      [Settings.CHAT_TOOLS_ARGS_MODE]: 'inline',
+      [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: 7,
+      [Settings.CHAT_SUBAGENT_SHOW_PIPELINE]: true,
+    });
+
+    expect(getVerboseFilters()).toEqual(['mcp']);
+    expect(getVerboseDisplay()).toMatchObject({
+      toolArgsMode: 'inline',
+      outputMaxLines: 7,
+      subagent: { pipeline: true },
+    });
+    expect(getTuiVerboseFilters()).toEqual(['mcp']);
+    expect(getTuiVerboseDisplay()).toMatchObject({
+      toolArgsMode: 'inline',
+      outputMaxLines: 7,
+      subagent: { pipeline: true },
+    });
+    expect(savedSurface('lite')).toBeDefined();
+    expect(savedSurface('tui')).toBeDefined();
   });
 
-  test('migration: legacy enabled:false overrides filters to []', () => {
-    setConfigFile(JSON.stringify({ enabled: false, filters: ['all'] }));
-    const cfg = getVerboseConfig();
-    expect(cfg.filters).toEqual([]);
-    // The shape no longer carries enabled.
-    expect((cfg as unknown as Record<string, unknown>).enabled).toBeUndefined();
+  test('a surface record wins over stale shared keys', () => {
+    writeCliJson({
+      [Settings.CHAT_VERBOSITY_LITE]: {
+        filters: ['read'],
+        display: { ...DEFAULT_DISPLAY, showElapsed: false },
+      },
+      [Settings.CHAT_TOOLS_FILTERS]: ['all'],
+      [Settings.CHAT_TOOLS_SHOW_ELAPSED]: true,
+    });
+    expect(getVerboseFilters()).toEqual(['read']);
+    expect(getVerboseDisplay().showElapsed).toBe(false);
   });
 
-  test('migration: legacy enabled:true keeps saved filter list', () => {
-    setConfigFile(JSON.stringify({ enabled: true, filters: ['shell'] }));
-    const cfg = getVerboseConfig();
-    expect(cfg.filters).toEqual(['shell']);
-  });
-
-  test('migration: enabled field is dropped on next save', () => {
-    setConfigFile(JSON.stringify({ enabled: true, filters: ['shell'] }));
-    // Force a load+migration, then save anything.
-    getVerboseConfig();
-    setVerboseConfig({ filters: ['mcp'] });
-    const written = JSON.parse(readFileSync(configFile, 'utf-8'));
-    expect(written.enabled).toBeUndefined();
-    expect(written.filters).toEqual(['mcp']);
-  });
-
-  test('KIRO_LITE_VERBOSE=1 seeds filters when no file exists', () => {
+  test('KIRO_LITE_VERBOSE only affects an unsaved Lite config', () => {
     process.env.KIRO_LITE_VERBOSE = '1';
-    const cfg = getVerboseConfig();
-    expect(cfg.filters).toEqual(['all']);
+    expect(getVerboseFilters()).toEqual(['all']);
+    expect(getTuiVerboseFilters()).toEqual(['all', '-subagent']);
+    expect(readCliJson()).toEqual({});
+  });
+});
+
+describe('config normalization', () => {
+  test('normalizes filters and display values from cli.json', () => {
+    writeCliJson({
+      [Settings.CHAT_VERBOSITY_LITE]: {
+        filters: ['all', 'shell', 42],
+        display: {
+          ...DEFAULT_DISPLAY,
+          thinkingDisplay: 'off',
+          argsMaxLines: -3,
+          outputMaxLines: 12.7,
+          subagent: { ...DEFAULT_DISPLAY.subagent, prompts: false },
+        },
+      },
+    });
+    expect(getVerboseFilters()).toEqual(['all']);
+    expect(getVerboseDisplay()).toMatchObject({
+      thinkingDisplay: 'off',
+      showThinkingContent: false,
+      argsMaxLines: null,
+      outputMaxLines: 12,
+      subagent: { prompts: false },
+    });
   });
 
-  test('KIRO_LITE_VERBOSE=1 is a no-op when a saved config exists', () => {
-    setConfigFile(JSON.stringify({ filters: ['shell'] }));
-    process.env.KIRO_LITE_VERBOSE = '1';
-    const cfg = getVerboseConfig();
-    expect(cfg.filters).toEqual(['shell']);
+  test('malformed saved records fall back to surface defaults', () => {
+    writeCliJson({
+      [Settings.CHAT_VERBOSITY_LITE]: 'bad',
+      [Settings.CHAT_VERBOSITY_TUI]: [],
+    });
+    expect(getVerboseDisplay()).toEqual(DEFAULT_DISPLAY);
+    expect(getTuiVerboseDisplay()).toEqual(TUI_DEFAULT_DISPLAY);
   });
 });
 
@@ -368,18 +494,25 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
     delete process.env.KIRO_LITE_VERBOSE;
   });
 
-  test('defaults: argsMaxLines unbounded, outputMaxLines capped at 5', () => {
+  test('defaults: args unlimited and output capped to 5 lines', () => {
     expect(DEFAULT_DISPLAY.argsMaxLines).toBeNull();
+    expect(DEFAULT_DISPLAY.argsMaxChars).toBeNull();
     // Tail-window cap on streamed shell output — 5 visible lines + the
     // "+N more lines above" marker. Paired with filters: ['shell'] so a
     // fresh install actually streams something.
     expect(DEFAULT_DISPLAY.outputMaxLines).toBe(5);
+    expect(DEFAULT_DISPLAY.outputMaxChars).toBeNull();
+    expect(TUI_DEFAULT_DISPLAY).toMatchObject({
+      argsMaxLines: null,
+      argsMaxChars: null,
+      outputMaxLines: 5,
+      outputMaxChars: null,
+    });
   });
 
   test.each([
-    ['minimal', 5, undefined],
     ['lean', 10, undefined],
-    ['default', 5, null], // 'default' density leaves argsMaxLines unbounded
+    ['default', 5, null],
   ] as const)(
     'density "%s" caps output at %i lines',
     (preset, cap, argsMaxLines) => {
@@ -390,10 +523,8 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
     }
   );
 
-  // Picking a preset is a clean reset of filters to the preset's shape, not a
-  // partial patch — so a prior custom filter set ('shell','mcp') is replaced.
   test.each([
-    ['minimal', [], 5],
+    ['lean', [], 10],
     ['full', ['all'], DENSITY_DISPLAY.full.outputMaxLines],
     ['default', ['shell'], 5],
   ] as const)(
@@ -402,7 +533,7 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
       setVerboseConfig({ filters: ['shell', 'mcp'] });
       applyDensityPreset(preset);
       expect(getVerboseConfig().filters).toEqual([...expectedFilters]);
-      expect(getVerboseConfig().display!.outputMaxLines).toBe(expectedCap);
+      expect(getVerboseConfig().display.outputMaxLines).toBe(expectedCap);
     }
   );
 
@@ -416,12 +547,11 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
     });
     resetVerboseCache();
     const cfg = getVerboseConfig();
-    expect(cfg.display!.argsMaxLines).toBe(7);
-    expect(cfg.display!.outputMaxLines).toBe(25);
+    expect(cfg.display.argsMaxLines).toBe(7);
+    expect(cfg.display.outputMaxLines).toBe(25);
   });
 
   test('mergeDisplay coerces 0 / negative / non-numeric to null', () => {
-    // Simulate a stale config file with bad cap values.
     setConfigFile(
       JSON.stringify({
         filters: [],
@@ -433,8 +563,8 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
       })
     );
     const cfg = getVerboseConfig();
-    expect(cfg.display!.argsMaxLines).toBeNull();
-    expect(cfg.display!.outputMaxLines).toBeNull();
+    expect(cfg.display.argsMaxLines).toBeNull();
+    expect(cfg.display.outputMaxLines).toBeNull();
   });
 
   test('mergeDisplay floors fractional caps to integers', () => {
@@ -444,13 +574,10 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
         display: { ...DEFAULT_DISPLAY, outputMaxLines: 12.7 },
       })
     );
-    expect(getVerboseConfig().display!.outputMaxLines).toBe(12);
+    expect(getVerboseConfig().display.outputMaxLines).toBe(12);
   });
 
   test('configs lacking the new fields default to null', () => {
-    // Older saved configs (pre-truncation) only carried the legacy display
-    // keys. mergeDisplay must default the new caps to null so we don't
-    // surface "0 lines" or undefined behavior on first run after upgrade.
     setConfigFile(
       JSON.stringify({
         filters: ['shell'],
@@ -469,21 +596,13 @@ describe('truncation cap config (argsMaxLines / outputMaxLines)', () => {
       })
     );
     const cfg = getVerboseConfig();
-    expect(cfg.display!.argsMaxLines).toBeNull();
-    expect(cfg.display!.outputMaxLines).toBeNull();
+    expect(cfg.display.argsMaxLines).toBeNull();
+    expect(cfg.display.outputMaxLines).toBeNull();
   });
 });
 
 describe('VERBOSE_CATEGORIES', () => {
   test('covers the documented buckets', () => {
-    // If we add a new bucket later the test will catch it; keeping the
-    // list explicit also doubles as documentation.
-    //
-    // `write` is intentionally omitted — see verbose.ts for the
-    // rationale. Write tools always render in scrollback; the diff body
-    // is capped by outputMaxLines / outputMaxChars, so a per-category
-    // filter for writes would only gate a redundant `Successfully ...`
-    // chrome line.
     expect(new Set(VERBOSE_CATEGORIES)).toEqual(
       new Set([
         'shell',
@@ -501,302 +620,31 @@ describe('VERBOSE_CATEGORIES', () => {
   });
 });
 
-describe('cli.json mirror — write path', () => {
-  beforeEach(() => {
-    setConfigFile(null);
+describe('rollout and reactivity', () => {
+  test('off-cohort TUI ignores the saved verbosity record', () => {
+    applyDensityPreset('full', 'tui');
+    delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
     resetVerboseCache();
+    expect(getTuiVerboseDisplay()).toEqual(TUI_DEFAULT_DISPLAY);
+    expect(getTuiVerboseFilters()).toEqual(['all']);
   });
 
-  test.each([
-    ['showThinkingContent', false, Settings.CHAT_SHOW_THINKING, false],
-    ['showTasks', false, Settings.CHAT_SHOW_TASKS, false],
-    ['showToolReasoning', false, Settings.CHAT_TOOLS_SHOW_REASONING, false],
-    ['showElapsed', false, Settings.CHAT_TOOLS_SHOW_ELAPSED, false],
-    ['toolArgsMode', 'inline', Settings.CHAT_TOOLS_ARGS_MODE, 'inline'],
-    ['toolArgsMode', 'off', Settings.CHAT_TOOLS_ARGS_MODE, 'off'],
-  ] as const)(
-    'display.%s=%p mirrors to %s',
-    (prop, value, settingKey, expected) => {
-      setVerboseConfig({ display: { [prop]: value } });
-      expect(readCliJson()[settingKey]).toBe(expected);
-    }
-  );
-
-  test('display caps mirror as numbers (positive integers)', () => {
-    setVerboseConfig({
-      display: {
-        argsMaxLines: 7,
-        outputMaxLines: 12,
-        argsMaxChars: 80,
-        outputMaxChars: 200,
-      },
-    });
-    const cli = readCliJson();
-    expect(cli[Settings.CHAT_TOOLS_ARGS_MAX_LINES]).toBe(7);
-    expect(cli[Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]).toBe(12);
-    expect(cli[Settings.CHAT_TOOLS_ARGS_MAX_CHARS]).toBe(80);
-    expect(cli[Settings.CHAT_TOOLS_OUTPUT_MAX_CHARS]).toBe(200);
-  });
-
-  test('display caps mirror null as JSON null (unbounded)', () => {
-    setVerboseConfig({ display: { outputMaxLines: null } });
-    expect(readCliJson()[Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]).toBeNull();
-  });
-
-  test('subagent.* fields mirror to chat.subagent.*', () => {
-    setVerboseConfig({
-      display: {
-        subagent: {
-          pipeline: false,
-          prompts: false,
-          roles: false,
-          deps: false,
-          responses: false,
-        },
-      },
-    });
-    const cli = readCliJson();
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_PIPELINE]).toBe(false);
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_PROMPTS]).toBe(false);
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_ROLES]).toBe(false);
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_DEPS]).toBe(false);
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_RESPONSES]).toBe(false);
-  });
-
-  test('partial subagent patch only mirrors changed fields', () => {
-    // Pre-seed cli.json with all-true so we can detect any unintended writes.
-    writeCliJson({
-      [Settings.CHAT_SUBAGENT_SHOW_PIPELINE]: true,
-      [Settings.CHAT_SUBAGENT_SHOW_PROMPTS]: true,
-      [Settings.CHAT_SUBAGENT_SHOW_ROLES]: true,
-      [Settings.CHAT_SUBAGENT_SHOW_DEPS]: true,
-      [Settings.CHAT_SUBAGENT_SHOW_RESPONSES]: true,
-    });
+  test('writes and resets notify subscribers', () => {
+    let calls = 0;
+    const unsubscribe = subscribeVerbose(() => calls++);
+    const before = getVerboseVersion();
+    setVerboseConfig({ display: { showElapsed: false } }, 'lite');
+    expect(getVerboseVersion()).toBeGreaterThan(before);
     resetVerboseCache();
-    setVerboseConfig({ display: { subagent: { pipeline: false } } });
-    const cli = readCliJson();
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_PIPELINE]).toBe(false);
-    // Other subagent keys must remain untouched at their seeded values.
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_PROMPTS]).toBe(true);
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_ROLES]).toBe(true);
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_DEPS]).toBe(true);
-    expect(cli[Settings.CHAT_SUBAGENT_SHOW_RESPONSES]).toBe(true);
+    expect(calls).toBe(2);
+    unsubscribe();
   });
 
-  test('filters mirror to chat.tools.filters', () => {
-    setVerboseConfig({ filters: ['shell', 'mcp'] });
-    expect(readCliJson()[Settings.CHAT_TOOLS_FILTERS]).toEqual([
-      'shell',
-      'mcp',
-    ]);
-    setVerboseConfig({ filters: [] });
-    expect(readCliJson()[Settings.CHAT_TOOLS_FILTERS]).toEqual([]);
-  });
-
-  test('density preset writes mirror every display field at once', () => {
-    applyDensityPreset('minimal');
-    const cli = readCliJson();
-    expect(cli[Settings.CHAT_TOOLS_SHOW_REASONING]).toBe(false);
-    expect(cli[Settings.CHAT_TOOLS_ARGS_MODE]).toBe('off');
-    expect(cli[Settings.CHAT_TOOLS_SHOW_ELAPSED]).toBe(false);
-    expect(cli[Settings.CHAT_SHOW_THINKING]).toBe(false);
-    expect(cli[Settings.CHAT_SHOW_TASKS]).toBe(false);
-    expect(cli[Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]).toBe(5);
-    expect(cli[Settings.CHAT_TOOLS_ARGS_MAX_CHARS]).toBe(60);
-    expect(cli[Settings.CHAT_TOOLS_FILTERS]).toEqual([]);
-  });
-
-  test('mirror failures do not abort the lite_verbose.json save', () => {
-    // Seed cli.json with junk that won't parse as an object.
-    // readCliSettings recovers to {} on parse error, then we write
-    // a fresh object with the new key — well-formed.
-    writeFileSync(cliJsonFile(), 'this is not json');
-    const ok = setVerboseConfig({ display: { showTasks: false } });
-    expect(ok).toBe(true);
-    const lite = JSON.parse(readFileSync(configFile, 'utf-8'));
-    expect(lite.display.showTasks).toBe(false);
-  });
-});
-
-describe('cli.json mirror — read path (getVerboseDisplay)', () => {
-  beforeEach(() => {
-    setConfigFile(null);
+  test('version-cached snapshots read once per revision', () => {
+    let reads = 0;
+    const snapshot = cacheByVerboseVersion(() => ++reads);
+    expect([snapshot(), snapshot()]).toEqual([1, 1]);
     resetVerboseCache();
-  });
-
-  test('cli.json values override DEFAULT_DISPLAY when no lite_verbose.json exists', () => {
-    writeCliJson({
-      [Settings.CHAT_SHOW_THINKING]: false,
-      [Settings.CHAT_SHOW_TASKS]: false,
-      [Settings.CHAT_TOOLS_SHOW_REASONING]: false,
-      [Settings.CHAT_TOOLS_SHOW_ELAPSED]: false,
-      [Settings.CHAT_TOOLS_ARGS_MODE]: 'inline',
-      [Settings.CHAT_TOOLS_ARGS_MAX_LINES]: 12,
-      [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: 25,
-      [Settings.CHAT_TOOLS_ARGS_MAX_CHARS]: 60,
-      [Settings.CHAT_TOOLS_OUTPUT_MAX_CHARS]: 100,
-      [Settings.CHAT_SUBAGENT_SHOW_PIPELINE]: false,
-      [Settings.CHAT_SUBAGENT_SHOW_PROMPTS]: false,
-      [Settings.CHAT_SUBAGENT_SHOW_ROLES]: false,
-      [Settings.CHAT_SUBAGENT_SHOW_DEPS]: false,
-      [Settings.CHAT_SUBAGENT_SHOW_RESPONSES]: false,
-    });
-    const display = getVerboseDisplay();
-    expect(display.showThinkingContent).toBe(false);
-    expect(display.showTasks).toBe(false);
-    expect(display.showToolReasoning).toBe(false);
-    expect(display.showElapsed).toBe(false);
-    expect(display.toolArgsMode).toBe('inline');
-    expect(display.argsMaxLines).toBe(12);
-    expect(display.outputMaxLines).toBe(25);
-    expect(display.argsMaxChars).toBe(60);
-    expect(display.outputMaxChars).toBe(100);
-    expect(display.subagent).toEqual({
-      pipeline: false,
-      prompts: false,
-      roles: false,
-      deps: false,
-      responses: false,
-    });
-  });
-
-  // Per-field precedence: a valid cli.json value wins; a missing/malformed/
-  // out-of-range one falls through to lite_verbose.json (then DEFAULT). Each
-  // row seeds lite_verbose with one display override, writes one cli.json key,
-  // and asserts the resolved field. (null cap is valid → preserved unbounded.)
-  test.each<{
-    name: string;
-    liteDisplay?: Partial<typeof DEFAULT_DISPLAY>;
-    cli: Record<string, unknown>;
-    field: keyof typeof DEFAULT_DISPLAY;
-    expected: (typeof DEFAULT_DISPLAY)[keyof typeof DEFAULT_DISPLAY];
-  }>([
-    {
-      name: 'valid cli.json value overrides lite_verbose per-field',
-      liteDisplay: { showTasks: true },
-      cli: { [Settings.CHAT_SHOW_TASKS]: false },
-      field: 'showTasks',
-      expected: false,
-    },
-    {
-      name: 'missing cli.json key falls back to lite_verbose value',
-      liteDisplay: { showTasks: false },
-      cli: {},
-      field: 'showTasks',
-      expected: false,
-    },
-    {
-      name: 'missing cli + missing lite key falls back to DEFAULT_DISPLAY',
-      cli: {},
-      field: 'showTasks',
-      expected: DEFAULT_DISPLAY.showTasks,
-    },
-    {
-      name: 'malformed cli.json boolean is ignored',
-      liteDisplay: { showTasks: false },
-      cli: { [Settings.CHAT_SHOW_TASKS]: 'yeah' },
-      field: 'showTasks',
-      expected: false,
-    },
-    {
-      name: 'cap fields: 0 cli value falls through to fallback',
-      liteDisplay: { outputMaxLines: 7 },
-      cli: { [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: 0 },
-      field: 'outputMaxLines',
-      expected: 7,
-    },
-    {
-      name: 'cap fields: negative cli value falls through to fallback',
-      liteDisplay: { outputMaxLines: 7 },
-      cli: { [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: -3 },
-      field: 'outputMaxLines',
-      expected: 7,
-    },
-    {
-      name: 'cap fields: explicit JSON null is preserved as unbounded',
-      liteDisplay: { outputMaxLines: 7 },
-      cli: { [Settings.CHAT_TOOLS_OUTPUT_MAX_LINES]: null },
-      field: 'outputMaxLines',
-      expected: null,
-    },
-    {
-      name: 'toolArgsMode: invalid cli value falls through',
-      liteDisplay: { toolArgsMode: 'block' },
-      cli: { [Settings.CHAT_TOOLS_ARGS_MODE]: 'banana' },
-      field: 'toolArgsMode',
-      expected: 'block',
-    },
-  ])('$name', ({ liteDisplay, cli, field, expected }) => {
-    if (liteDisplay) {
-      setConfigFile(
-        JSON.stringify({
-          filters: [],
-          display: { ...DEFAULT_DISPLAY, ...liteDisplay },
-        })
-      );
-    }
-    writeCliJson(cli);
-    expect(getVerboseDisplay()[field]).toBe(expected);
-  });
-
-  test('object identity is preserved when cli.json matches the cache', () => {
-    // No cli.json overrides → getVerboseDisplay should return the same
-    // object reference on each call (the cache). Critical for upstream
-    // useMemo([display]) deps in the modern TUI to be stable.
-    setConfigFile(
-      JSON.stringify({ filters: [], display: { ...DEFAULT_DISPLAY } })
-    );
-    writeCliJson({});
-    const a = getVerboseDisplay();
-    const b = getVerboseDisplay();
-    expect(a).toBe(b);
-  });
-});
-
-describe('getVerboseFilters — cli.json mirror', () => {
-  beforeEach(() => {
-    setConfigFile(null);
-    resetVerboseCache();
-  });
-
-  test.each<{
-    name: string;
-    liteFilters?: string[];
-    cliValue?: unknown;
-    expected: string[];
-  }>([
-    {
-      name: 'cli.json filters override lite_verbose.json filters',
-      liteFilters: ['shell'],
-      cliValue: ['mcp', 'web'],
-      expected: ['mcp', 'web'],
-    },
-    {
-      name: 'missing cli.json filters falls back to lite_verbose.json',
-      liteFilters: ['shell'],
-      expected: ['shell'],
-    },
-    {
-      name: 'non-array cli.json value falls through to lite_verbose.json',
-      liteFilters: ['shell'],
-      cliValue: 'shell',
-      expected: ['shell'],
-    },
-    {
-      name: '["all"] in cli.json collapses any mixed list',
-      cliValue: ['all', 'shell', 'mcp'],
-      expected: ['all'],
-    },
-    {
-      name: 'non-string array entries are dropped',
-      cliValue: ['shell', 42, null, '', 'mcp'],
-      expected: ['shell', 'mcp'],
-    },
-  ])('$name', ({ liteFilters, cliValue, expected }) => {
-    if (liteFilters) setConfigFile(JSON.stringify({ filters: liteFilters }));
-    writeCliJson(
-      cliValue === undefined ? {} : { [Settings.CHAT_TOOLS_FILTERS]: cliValue }
-    );
-    expect(getVerboseFilters()).toEqual(expected);
+    expect([snapshot(), snapshot()]).toEqual([2, 2]);
   });
 });

@@ -9,15 +9,18 @@ import { parseToolArg, extractResultText } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { FileList } from './FileList.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import {
   parseLsEntries,
   getEntryName,
   resolveLsDisplayPath,
 } from '../../../utils/ls-parse.js';
+import { maxVisibleWidth } from '../../../utils/text-width.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 const PREVIEW_ENTRIES = 5;
+const PORT_ACTIVE = () => process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
 export interface LsProps {
   /** Tool status type */
@@ -77,12 +80,22 @@ export const Ls = React.memo(function Ls({
   const params = useMemo(() => formatToolParams(content, ['path']), [content]);
 
   const entryNames = useMemo(() => entries.map(getEntryName), [entries]);
+  const outputVisible = useToolOutputVisible();
+  const expandableOutputVisible = !PORT_ACTIVE() || outputVisible;
 
-  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
-    totalItems: entries.length,
+  const {
+    expanded,
+    expandHint,
+    hiddenCount,
+    effectivePreviewCount,
+    outputMaxChars,
+  } = useExpandableOutput({
+    totalItems: expandableOutputVisible ? entries.length : 0,
     previewCount: PREVIEW_ENTRIES,
+    maxContentWidth: expandableOutputVisible ? maxVisibleWidth(entryNames) : 0,
     isStatic,
     unit: 'entries',
+    applyVerbosityOutputCap: true,
   });
 
   const target = dirPath || undefined;
@@ -124,6 +137,15 @@ export const Ls = React.memo(function Ls({
       );
     }
 
+    if (!outputVisible) {
+      return (
+        <Box flexDirection="column">
+          <StatusInfo title={title} target={target} />
+          <ToolMeta params={params} />
+        </Box>
+      );
+    }
+
     return (
       <Box flexDirection="column">
         <StatusInfo title={title} target={target} />
@@ -131,10 +153,11 @@ export const Ls = React.memo(function Ls({
         {secondaryInfo && <Text>{getColor('secondary')(secondaryInfo)}</Text>}
         <FileList
           items={entryNames}
-          previewCount={PREVIEW_ENTRIES}
+          previewCount={effectivePreviewCount}
           expanded={expanded}
           expandHint={expandHint}
           hiddenCount={hiddenCount}
+          maxChars={outputMaxChars}
         />
       </Box>
     );

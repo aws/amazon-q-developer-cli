@@ -1,10 +1,17 @@
 import React from 'react';
+import { Box } from '../../../renderer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { Text } from '../text/Text.js';
 import { getStatusColor } from '../../../utils/colorUtils.js';
 import { useStatusBar } from '../../chat/status-bar/StatusBar.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { ShimmerText } from '../shimmer/ShimmerText.js';
+import {
+  useToolArgsExpanded,
+  useVerbosityToolContext,
+} from '../VerbosityToolContext.js';
+import { clipChars, formatElapsed } from '../../../lite/render.js';
+import { normalizeLineEndings } from '../../../utils/string.js';
 
 export interface StatusInfoProps {
   /** The main heading/identifier (e.g., tool name, alert message) */
@@ -66,14 +73,64 @@ export const StatusInfo = React.memo(function StatusInfo({
           : titleColor;
   const targetColor = getColor('highlight');
 
+  const {
+    reasoning,
+    elapsedMs,
+    argsMode,
+    argsMaxLines,
+    argsMaxChars,
+    isStatic,
+  } = useVerbosityToolContext();
+  const fullTarget = target == null ? undefined : normalizeLineEndings(target);
+  const fullTargetLines = fullTarget?.split('\n') ?? [];
+  const targetLines = fullTargetLines.map((line) =>
+    clipChars(line, argsMaxChars ?? null)
+  );
+  const visibleTargetLines =
+    argsMaxLines != null && argsMaxLines > 0
+      ? targetLines.slice(0, argsMaxLines)
+      : targetLines;
+  const hiddenTargetLines = Math.max(
+    0,
+    targetLines.length - visibleTargetLines.length
+  );
+  const charsClipped = targetLines.some(
+    (line, index) => line !== fullTargetLines[index]
+  );
+  const argsExpanded = useToolArgsExpanded(
+    hiddenTargetLines > 0 || charsClipped
+  );
+  const truncationMarker =
+    hiddenTargetLines > 0
+      ? `... (+${hiddenTargetLines} more lines)${isStatic ? '' : ' (ctrl+o to toggle)'}`
+      : charsClipped && !isStatic
+        ? '... (ctrl+o to toggle)'
+        : undefined;
+  const displayTarget = argsExpanded
+    ? fullTarget
+    : [
+        ...visibleTargetLines,
+        ...(truncationMarker ? [truncationMarker] : []),
+      ].join('\n');
+
   return (
-    <Text>
-      {shimmer ? (
-        <ShimmerText text={title} color={titleColor.hex} />
-      ) : (
-        styledTitle(title)
+    <>
+      <Text>
+        {shimmer ? (
+          <ShimmerText text={title} color={titleColor.hex} />
+        ) : (
+          styledTitle(title)
+        )}
+        {displayTarget &&
+          argsMode !== 'off' &&
+          targetColor(` ${displayTarget}`)}
+        {elapsedMs != null && getColor('muted')(` ${formatElapsed(elapsedMs)}`)}
+      </Text>
+      {reasoning && (
+        <Box marginLeft={2}>
+          <Text wrap="wrap">{getColor('brand')(reasoning)}</Text>
+        </Box>
       )}
-      {target && targetColor(` ${target}`)}
-    </Text>
+    </>
   );
 });

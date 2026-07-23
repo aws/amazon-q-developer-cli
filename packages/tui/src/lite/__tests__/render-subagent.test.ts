@@ -19,6 +19,13 @@ useTempKiroHome();
 // Force chalk colors for consistent test output
 chalk.level = 3;
 
+const FULL_SUBAGENT_DISPLAY = DENSITY_DISPLAY.full;
+const CAPPED_SUBAGENT_DISPLAY = {
+  ...DENSITY_DISPLAY.full,
+  subagent: { ...DENSITY_DISPLAY.full.subagent },
+  outputMaxLines: 30,
+};
+
 describe('formatSubagentApprovalLines', () => {
   test('renders task line and per-stage tree with role and depends_on', () => {
     const content = JSON.stringify({
@@ -88,11 +95,7 @@ describe('formatSubagentApprovalLines', () => {
     }
   });
 
-  // prompt_template routes through the markdown pipeline AND preserves the
-  // semantic paragraph break. Markdown styling/marker-strip is covered by the
-  // bold-bleed test below (it walks SGR depth) and render-markdown.test.ts; the
-  // DISTINCT fact here is that the approval path keeps the \n\n paragraph break.
-  test('markdown rendering: prompt_template preserves paragraph breaks', () => {
+  test('prompt input stays literal and preserves paragraph breaks', () => {
     const content = JSON.stringify({
       task: 't',
       stages: [
@@ -105,7 +108,7 @@ describe('formatSubagentApprovalLines', () => {
     const lines = formatSubagentApprovalLines(content, 100);
     expect(lines).not.toBeNull();
     const rows = (lines ?? []).map(stripAnsi);
-    expect(rows.join('\n')).not.toContain('**bold**'); // markers stripped
+    expect(rows.join('\n')).toContain('**bold**');
     const firstIdx = rows.findIndex((l) => l.includes('bold'));
     const secondIdx = rows.findIndex((l) => l.includes('Second paragraph'));
     expect(secondIdx).toBeGreaterThan(firstIdx);
@@ -114,13 +117,22 @@ describe('formatSubagentApprovalLines', () => {
     ).toBe(true);
   });
 
-  test('markdown rendering: bold spanning a wrap boundary does not bleed into the next stage tag', () => {
-    // The prior wrapAtWords pipeline was plain-text only; the new pipeline
-    // emits ANSI bold and re-wraps via wrapAnsiLine, which has the
-    // ANSI-closer-preservation logic that prevents `\x1b[1m` from leaking
-    // past a wrap boundary. This test pins that contract for stage
-    // prompts specifically by forcing a wrap mid-bold and checking the
-    // following stage's [name] tag isn't accidentally bolded.
+  test('pipeline label and prompt use primary text without prose soft-wraps', () => {
+    const content = JSON.stringify({
+      stages: [
+        {
+          name: 's1',
+          prompt_template: 'Review the module\nand report findings.',
+        },
+      ],
+    });
+    const raw = formatSubagentApprovalLines(content, 100)!.join('\n');
+    const prompt = 'Review the module and report findings.';
+    expect(raw).toContain(chalk.white('  pipeline:'));
+    expect(raw).toContain(chalk.white(prompt));
+  });
+
+  test('markdown-looking input remains literal across wraps and stages', () => {
     const longBold =
       '**' + 'this is a long bold span that should wrap across a row' + '**';
     const content = JSON.stringify({
@@ -133,11 +145,10 @@ describe('formatSubagentApprovalLines', () => {
     const lines = formatSubagentApprovalLines(content, 40);
     expect(lines).not.toBeNull();
     const joined = (lines ?? []).join('\n');
+    expect(stripAnsi(joined)).toContain('**this is a long bold');
+    expect(stripAnsi(joined)).toContain('row**');
     const s2TagIdx = joined.indexOf('[s2]');
     expect(s2TagIdx).toBeGreaterThan(0);
-    // Walk the rendered string up to the next-stage tag; track active SGR
-    // open/close to confirm bold has been fully closed before we reach
-    // the next stage's tag. This is the actual-bleed contract.
     // eslint-disable-next-line no-control-regex
     const sgrRe = /\x1b\[(\d+)m/g;
     let boldDepth = 0;
@@ -154,9 +165,8 @@ describe('formatSubagentApprovalLines', () => {
 });
 
 describe('renderSubagentFinalBlock', () => {
-  // These tests assert default-config rendering; re-read the (temp, empty)
-  // disk each time so state leaked from another test file cannot flip the
-  // output gates mid-suite.
+  // Re-read the temp config so state from another test cannot flip output
+  // gates mid-suite.
   beforeEach(() => {
     resetVerboseCache();
   });
@@ -185,14 +195,38 @@ describe('renderSubagentFinalBlock', () => {
     filtersOverride: [] as const,
   };
 
-  test('renders header, task, full pipeline tree with prompts; omits long taskResult body on success', () => {
+  test('Lite default shows detail while its output filter hides raw results', () => {
+    const block = stripAnsi(
+      renderSubagentFinalBlock(
+        baseContent,
+        heavyResult,
+        'done',
+        5200,
+        [
+          {
+            stageName: 'a',
+            contextSummary: 'stage summary',
+            taskResult: 'raw output',
+          },
+        ],
+        { filtersOverride: ['shell'] }
+      )
+    );
+    expect(block).toContain('subagent');
+    expect(block).toContain('5.2s');
+    expect(block).toContain('pipeline:');
+    expect(block).toContain('stage summary');
+    expect(block).not.toContain('raw output');
+  });
+
+  test('full renders the pipeline tree while omitting the parent joiner result', () => {
     const block = renderSubagentFinalBlock(
       baseContent,
       heavyResult,
       'done',
       5200,
       undefined,
-      baselineOptions
+      { display: FULL_SUBAGENT_DISPLAY, filtersOverride: ['all'] }
     );
     const stripped = stripAnsi(block);
     expect(stripped).toContain('subagent');
@@ -210,9 +244,8 @@ describe('renderSubagentFinalBlock', () => {
     expect(stripped).not.toContain('response summary:');
   });
 
-  // Responses section: contextSummary wins, taskResult is the fallback, and a
-  // long fallback caps at 30 lines + footnote. Each row supplies stageSummaries
-  // and the substrings that must / must not appear in the rendered block.
+  // Responses section: contextSummary wins, taskResult is the fallback, and
+  // the configured output line cap controls the footnote.
   const LONG_BODY = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join(
     '\n'
   );
@@ -326,11 +359,149 @@ describe('renderSubagentFinalBlock', () => {
         'done',
         1000,
         stageSummaries,
-        baselineOptions
+        { display: CAPPED_SUBAGENT_DISPLAY, filtersOverride: ['shell'] }
       ),
       { contains, absent }
     );
   });
+
+  test('renders summaries in pipeline declaration order, not arrival order', () => {
+    const block = stripAnsi(
+      renderSubagentFinalBlock(
+        baseContent,
+        heavyResult,
+        'done',
+        1000,
+        [
+          {
+            stageName: 'combine',
+            contextSummary: 'third',
+            taskResult: '',
+          },
+          { stageName: 'b', contextSummary: 'second', taskResult: '' },
+          { stageName: 'a', contextSummary: 'first', taskResult: '' },
+        ],
+        { display: FULL_SUBAGENT_DISPLAY, filtersOverride: ['all'] }
+      )
+    );
+    expect(block.indexOf('▸ a')).toBeLessThan(block.indexOf('▸ b'));
+    expect(block.indexOf('▸ b')).toBeLessThan(block.indexOf('▸ combine'));
+  });
+
+  test('applies configured line and character caps to subagent digests', () => {
+    const block = stripAnsi(
+      renderSubagentFinalBlock(
+        baseContent,
+        heavyResult,
+        'done',
+        1000,
+        [
+          {
+            stageName: 'a',
+            contextSummary: 'abcdefghij\nsecond-long\nthird-line',
+            taskResult: '',
+          },
+        ],
+        {
+          display: {
+            ...FULL_SUBAGENT_DISPLAY,
+            subagent: { ...FULL_SUBAGENT_DISPLAY.subagent },
+            outputMaxLines: 2,
+            outputMaxChars: 5,
+          },
+          filtersOverride: ['all'],
+        }
+      )
+    );
+    expect(block).toContain('abcd…');
+    expect(block).toContain('seco…');
+    expect(block).not.toContain('third-line');
+    expect(block).toContain('(+1 more lines)');
+  });
+
+  test('counts wrapped digest rows toward outputMaxLines', () => {
+    const block = stripAnsi(
+      renderSubagentFinalBlock(
+        baseContent,
+        heavyResult,
+        'done',
+        1000,
+        [
+          {
+            stageName: 'a',
+            contextSummary: Array.from(
+              { length: 30 },
+              (_, index) => `wrapped-${index}`
+            ).join(' '),
+            taskResult: '',
+          },
+        ],
+        {
+          display: {
+            ...FULL_SUBAGENT_DISPLAY,
+            subagent: { ...FULL_SUBAGENT_DISPLAY.subagent },
+            outputMaxLines: 1,
+          },
+          filtersOverride: ['all'],
+        }
+      )
+    );
+    expect(block).toContain('wrapped-0');
+    expect(block).not.toContain('wrapped-29');
+    expect(block).toMatch(/\(\+\d+ more lines\)/);
+  });
+
+  test.each([
+    [
+      'v2 summary',
+      [
+        {
+          stageName: 'a',
+          contextSummary: 'V2_STATIC_BODY',
+          taskResult: '',
+        },
+      ],
+      ['shell'],
+      'V2_STATIC_BODY',
+    ],
+    [
+      'KAS response',
+      [
+        {
+          stageName: 'a',
+          kind: 'response' as const,
+          contextSummary: '',
+          taskResult: 'KAS_STATIC_BODY',
+        },
+      ],
+      ['all'],
+      'KAS_STATIC_BODY',
+    ],
+  ] as const)(
+    'persistOutput off hides static %s while preserving the pipeline',
+    (_name, summaries, filtersOverride, body) => {
+      const block = stripAnsi(
+        renderSubagentFinalBlock(
+          baseContent,
+          heavyResult,
+          'done',
+          1000,
+          summaries,
+          {
+            display: {
+              ...FULL_SUBAGENT_DISPLAY,
+              persistOutput: false,
+              subagent: { ...FULL_SUBAGENT_DISPLAY.subagent },
+            },
+            filtersOverride,
+            isStatic: true,
+          }
+        )
+      );
+      expect(block).toContain('pipeline:');
+      expect(block).not.toContain(body);
+    }
+  );
 
   test('renders error state with FAILED tail and red-coloured body, even with stageSummaries', () => {
     const content = JSON.stringify({ task: 't', stages: [] });
@@ -478,8 +649,11 @@ describe('display.subagent section toggles', () => {
       summaries,
       {
         display: {
-          ...DEFAULT_DISPLAY,
-          subagent: { ...DEFAULT_DISPLAY.subagent, ...subagentToggles },
+          ...FULL_SUBAGENT_DISPLAY,
+          subagent: {
+            ...FULL_SUBAGENT_DISPLAY.subagent,
+            ...subagentToggles,
+          },
           outputMaxLines: null,
           argsMaxChars: 80,
         },
@@ -634,7 +808,10 @@ describe('renderSubagentFinalBlock verbose mode', () => {
       requireRawBeforeResponses,
       rawNoCap,
     }) => {
-      setVerboseConfig({ filters });
+      setVerboseConfig({
+        filters,
+        display: FULL_SUBAGENT_DISPLAY,
+      });
       const stripped = stripAnsi(
         renderSubagentFinalBlock(
           subagentContent,
@@ -695,7 +872,10 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
     summaries: Parameters<typeof renderSubagentFinalBlock>[4]
   ): string =>
     stripAnsi(
-      renderSubagentFinalBlock(baseContent, okResult, 'done', 1000, summaries)
+      renderSubagentFinalBlock(baseContent, okResult, 'done', 1000, summaries, {
+        display: FULL_SUBAGENT_DISPLAY,
+        filtersOverride: ['all'],
+      })
     );
   const renderStageBody = (
     contextSummary: string,
@@ -731,18 +911,12 @@ describe('renderSubagentFinalBlock markdown rendering', () => {
     }
   );
 
-  test('prompt_template renders markdown (markers stripped, body preserved)', () => {
+  test('prompt_template stays literal while digest bodies render markdown', () => {
     const stripped = renderWithSummaries([
       { stageName: 'a', contextSummary: 'body', taskResult: '' },
     ]);
-    // prompt_template IS user-authored prose meant for the
-    // subagent's model. Markdown styling surfaces (parity with how
-    // agent prose, response summaries, and verbose raw output already
-    // render). Markers stripped, body text preserved.
-    expect(stripped).not.toContain('`backticks`');
-    expect(stripped).not.toContain('**bolds**');
-    expect(stripped).toContain('backticks');
-    expect(stripped).toContain('bolds');
+    expect(stripped).toContain('`backticks`');
+    expect(stripped).toContain('**bolds**');
     expect(stripped).toContain('stay literal in prompts.');
   });
 
@@ -792,7 +966,7 @@ describe('renderSubagentFinalBlock — task/cancelled regressions', () => {
         'cancelled',
         undefined,
         undefined,
-        { display: DEFAULT_DISPLAY }
+        { display: FULL_SUBAGENT_DISPLAY }
       )
     ).split('\n')[0]!;
     expect(header).toContain('✗ cancelled');
@@ -801,7 +975,7 @@ describe('renderSubagentFinalBlock — task/cancelled regressions', () => {
 
   // Bug 2: the standalone "task:" key line is always dropped — across the
   // final-block and approval-lines render paths, the placeholder/no-placeholder
-  // /minimal-preset variants — but the task text still appears when a stage
+  // prompts-hidden preset variants — but the task text still appears when a stage
   // prompt embeds {task}. `render` carries the path so both share the assertion.
   const finalBlock = (content: string, display: typeof DEFAULT_DISPLAY) =>
     stripAnsi(
@@ -825,17 +999,17 @@ describe('renderSubagentFinalBlock — task/cancelled regressions', () => {
   }>([
     {
       name: 'final block, prompts on, {task} embedded',
-      render: () => finalBlock(withTaskPlaceholder, DEFAULT_DISPLAY),
+      render: () => finalBlock(withTaskPlaceholder, FULL_SUBAGENT_DISPLAY),
       taskTextShown: true,
     },
     {
       name: 'final block, prompts on, no {task}',
-      render: () => finalBlock(noPlaceholder, DEFAULT_DISPLAY),
+      render: () => finalBlock(noPlaceholder, FULL_SUBAGENT_DISPLAY),
       taskTextShown: false,
     },
     {
-      name: 'final block, minimal preset (prompts hidden)',
-      render: () => finalBlock(withTaskPlaceholder, DENSITY_DISPLAY.minimal),
+      name: 'final block, lean preset (prompts hidden)',
+      render: () => finalBlock(withTaskPlaceholder, DENSITY_DISPLAY.lean),
       taskTextShown: false,
     },
     {

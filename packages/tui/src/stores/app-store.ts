@@ -32,6 +32,10 @@ import type {
 import { selectVisibleSlashCommands } from './visible-slash-commands';
 import { synthesizeToolUseContent } from './tool-use-synthesis';
 import {
+  isHistoryOnlyAssistantMessage,
+  isHistoryOnlyAssistantMessagePrefix,
+} from '../utils/history-only-assistant-messages.js';
+import {
   isKasShellCapability,
   KAS_WHOLE_CAPABILITY_RESOURCE,
 } from '../utils/shell-trust-options.js';
@@ -81,6 +85,7 @@ import type {
 } from '../types/session-client';
 import type { TaskItem, RawTask } from '../types/tasks';
 import type { ContextBreakdownData } from '../types/context';
+import type { UiMode } from '../types/ui-mode.js';
 import {
   createInitialKasSubagentRoutingState,
   createKasSubagentRoutingActions,
@@ -869,7 +874,7 @@ interface AppStoreProps {
   noInteractive?: boolean;
   initialInput?: string;
   trustAllTools?: boolean;
-  uiMode?: 'tui' | 'lite';
+  uiMode?: UiMode;
 }
 
 /**
@@ -900,7 +905,9 @@ interface BaseAppActions {
     images?: Array<{ base64: string; mimeType: string }>,
     displayContent?: string
   ) => Promise<void>;
-  createStreamEventHandler: () => StreamEventHandler;
+  createStreamEventHandler: (options?: {
+    fromHistory?: boolean;
+  }) => StreamEventHandler;
   kasSubagentRouting: KasSubagentRoutingStore;
   processMessageStream: (
     stream: AsyncGenerator<AgentStreamEvent>
@@ -1056,7 +1063,7 @@ interface BaseAppActions {
   setMode: (
     mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
   ) => void;
-  setUiMode: (uiMode: 'tui' | 'lite') => void;
+  setUiMode: (uiMode: UiMode, notice?: string) => void;
   /** Lite-only: see {@link LiteState.staticSkipBefore}. */
   setLiteStaticSkipBefore: (idx: number) => void;
   addSubagentSession: (info: SubagentInfo) => void;
@@ -1894,7 +1901,7 @@ export interface AppState {
   noInteractive: boolean;
 
   // UI mode (lite or tui)
-  uiMode: 'tui' | 'lite';
+  uiMode: UiMode;
 
   /** Lite-specific state; see {@link LiteState}. */
   lite: LiteState;
@@ -2377,7 +2384,8 @@ function buildCommandContext(
     // the coordinated path (tui→lite bookmarks skipBefore; lite→tui
     // bumps the clear token). A direct set({ uiMode }) here would
     // break the asymmetric scrollback contract.
-    setUiMode: (uiMode: 'tui' | 'lite') => get().setUiMode(uiMode),
+    setUiMode: (uiMode: UiMode, notice?: string) =>
+      get().setUiMode(uiMode, notice),
     getUiMode: () => get().uiMode,
     setLiteStaticSkipBefore: (idx: number) =>
       get().setLiteStaticSkipBefore(idx),
@@ -2487,16 +2495,21 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: { local: true },
       },
       {
-        // /verbosity is the most-touched config menu in lite mode (filters,
-        // density, truncation), so it earns a top-level shortcut despite
-        // most other /settings entries lacking one. /settings verbosity is
-        // also wired (settings-subcommands.ts) for users who discover the
-        // menu via /settings; both paths land in the same handler.
+        // /verbosity is the most-touched config menu (filters, density,
+        // truncation), so it earns a top-level shortcut despite most other
+        // /settings entries lacking one. /settings verbosity is also wired
+        // (settings-subcommands.ts) for users who discover the menu via
+        // /settings; both paths land in the same handler. Always a peer in
+        // lite; on the TUI it only surfaces inside the Lite rollout cohort
+        // (liteOnly hides it otherwise — the port doesn't exist off-cohort).
         name: '/verbosity',
         description:
-          'Configure lite-mode rendering: tool args, reasoning, output filters, density, subagent sections.',
+          'Configure rendering: tool args, reasoning, output filters, density, subagent sections.',
         source: 'local' as const,
-        meta: { local: true, liteOnly: true },
+        meta: {
+          local: true,
+          liteOnly: process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1',
+        },
       },
       {
         name: '/changelog',
@@ -3006,7 +3019,11 @@ export const createAppStore = (props: AppStoreProps) => {
      * any buffered content; call `.dispose()` on cancel/error to abandon
      * the handler and drop buffered content. See `StreamEventHandler`.
      */
-    createStreamEventHandler: () => {
+    createStreamEventHandler: (options?: { fromHistory?: boolean }) => {
+      // Replayed history rows must not stamp tool timing: the real durations
+      // aren't persisted, so a fresh Date.now() would show a bogus ~0ms elapsed
+      // chip. Leaving both timestamps unset omits the chip entirely.
+      const fromHistory = options?.fromHistory === true;
       let isBuffering = false;
       let bufferedContent = '';
       // Only the first model refusal in a turn is surfaced; the model can emit
@@ -3078,6 +3095,16 @@ export const createAppStore = (props: AppStoreProps) => {
       // in before it gets stripped on the next chunk.
       const PARTIAL_STEERING_TAG_PATTERN =
         /\[STEERING (steer-[^\s:]+)(?::[^\]]*)?$/s;
+      const visibleAssistantContent = (
+        content: string,
+        holdHistoryOnlyPrefix = false
+      ): string => {
+        const stripped = content.replace(STEERING_TAG_PATTERN, '$2');
+        const hidden = holdHistoryOnlyPrefix
+          ? isHistoryOnlyAssistantMessagePrefix(stripped)
+          : isHistoryOnlyAssistantMessage(stripped);
+        return hidden ? '' : stripped;
+      };
 
       /**
        * Commit the buffer into the live Model row and clear the streaming slot.
@@ -3086,7 +3113,8 @@ export const createAppStore = (props: AppStoreProps) => {
        * `messages` subscribers don't invalidate at 60Hz on long responses.
        */
       const commitBufferedContent = () => {
-        if (!bufferedContent && !bufferedThinking) {
+        const content = visibleAssistantContent(bufferedContent);
+        if (!content && !bufferedThinking) {
           // Nothing to write. Still clear the streaming slots so stale
           // empty strings don't outlive the boundary.
           if (streamingMsgId != null) {
@@ -3131,10 +3159,7 @@ export const createAppStore = (props: AppStoreProps) => {
           const messages = [...state.messages];
           messages[idx] = {
             ...msg,
-            // Strip any STEERING tags so the durable scrollback row never
-            // shows the raw `[STEERING steer-XXX: …]` wrapper the KAS backend
-            // emits when the model acknowledges a mid-turn steer.
-            content: bufferedContent.replace(STEERING_TAG_PATTERN, '$2'),
+            content,
             thinking: bufferedThinking || msg.thinking,
             thinkingMs: thinkingMs ?? msg.thinkingMs,
           };
@@ -3191,7 +3216,7 @@ export const createAppStore = (props: AppStoreProps) => {
         // collapsed to just the acknowledgment text. `bufferedContent`
         // (raw, tag-bearing) is intentionally NOT mutated — only the
         // rendered/persisted projection is stripped.
-        const displayContent = renderable.replace(STEERING_TAG_PATTERN, '$2');
+        const displayContent = visibleAssistantContent(renderable, true);
 
         // Bail only when there's nothing to persist. Thinking-only flushes
         // (think→tool-call path) have empty displayContent but carry
@@ -3544,7 +3569,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     locations: event.locations,
                     agentName,
                     ...(event.sessionId && { isSubagentTool: true }),
-                    startTime: Date.now(),
+                    ...(fromHistory ? {} : { startTime: Date.now() }),
                     ...(isNotReady && {
                       isFinished: true,
                       result: {
@@ -3639,7 +3664,7 @@ export const createAppStore = (props: AppStoreProps) => {
                       ? ToolUseStatus.Rejected
                       : toolMsg.status,
                     result: event.result,
-                    finishTime: Date.now(),
+                    ...(fromHistory ? {} : { finishTime: Date.now() }),
                   };
                 }
               } else {
@@ -5941,7 +5966,7 @@ export const createAppStore = (props: AppStoreProps) => {
           : { mode, artifactGenerating: null }
       );
     },
-    setUiMode: (uiMode: 'tui' | 'lite') => {
+    setUiMode: (uiMode: UiMode, notice?: string) => {
       // Both directions CLEAR scrollback and re-render the full conversation
       // in the destination mode's form. Symmetric: the user sees their entire
       // session styled consistently for whichever mode they're in, with the
@@ -5967,6 +5992,19 @@ export const createAppStore = (props: AppStoreProps) => {
         if (state.uiMode === uiMode) return state;
         return {
           uiMode,
+          ...(notice
+            ? {
+                messages: [
+                  ...state.messages,
+                  {
+                    id: generateMessageId(),
+                    role: MessageRole.System,
+                    content: notice,
+                    success: true,
+                  },
+                ],
+              }
+            : {}),
           lite: {
             ...state.lite,
             staticSkipBefore: 0,

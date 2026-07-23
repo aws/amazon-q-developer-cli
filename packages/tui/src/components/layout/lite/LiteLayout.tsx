@@ -44,7 +44,7 @@ import {
   toolDisplayName,
   type SubagentStageSummary,
 } from '../../../lite/render.js';
-import { getVerboseDisplay } from '../../../lite/verbose.js';
+import { getVerboseDisplay, getVerboseFilters } from '../../../lite/verbose.js';
 import { pickTip, formatTipLine } from '../../../tips/tips.js';
 import { Question } from '../../ui/Question.js';
 import type { VariantLayoutProps } from '../variant-layout.js';
@@ -82,10 +82,12 @@ import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js'
 import { getAgentColor } from '../../../utils/agentColors.js';
 import { isParentSubagentTool } from '../../../types/agent-events.js';
 import {
+  collectSettledSubagentStagesByParent,
   collectSubagentSummariesByParent,
   markSubagentSummariesEmitted,
   renderPendingSubagentSummaryAppendices,
   selectPendingSubagentSummaryEntries,
+  selectReadySubagentSummaries,
   shouldRenderSubagentResponseSummaries,
 } from './subagent-summaries.js';
 import { usePendingSwap } from './usePendingSwap.js';
@@ -805,6 +807,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     // Model rows at eligibility time, else their leading-blank prefix pins
     // phantom rows into <Static> on every Thought-only round (see static-flush).
     const display = getVerboseDisplay();
+    const filtersOverride = getVerboseFilters();
     const hideThinkingContent = display.showThinkingContent === false;
     const eligible = selectStaticEligible(
       visibleMessages,
@@ -822,6 +825,33 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
             agentName
           )
         : new Map();
+    const settledSubagentStagesById = hasAnySubagentTool
+      ? collectSettledSubagentStagesByParent(messages, sessions, agentName)
+      : new Map<string, Set<string>>();
+    const staticSubagentSummariesById = new Map<
+      string,
+      SubagentStageSummary[]
+    >();
+    for (const [parentId, summaries] of subagentSummariesById) {
+      const parent = messages.find(
+        (
+          msg
+        ): msg is Extract<
+          (typeof messages)[number],
+          { role: MessageRole.ToolUse }
+        > => msg.role === MessageRole.ToolUse && msg.id === parentId
+      );
+      staticSubagentSummariesById.set(
+        parentId,
+        parent
+          ? selectReadySubagentSummaries(
+              parent,
+              summaries,
+              settledSubagentStagesById.get(parentId)
+            )
+          : summaries
+      );
+    }
 
     // Guard against `eligible` shrinking below the high-water mark: the delta
     // walk assumes eligible only grows, but a message can flip OUT after being
@@ -846,7 +876,9 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       subagentSummariesById,
       pushedStaticIdsRef.current,
       emittedSubagentSummaryKeysByParentRef.current,
-      display
+      display,
+      filtersOverride,
+      settledSubagentStagesById
     );
     const havePendingSubagentSummaryAppendix =
       pendingSubagentSummaryEntries.length > 0;
@@ -888,7 +920,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         pendingApproval?.toolCall.toolCallId ??
         null,
       termCols: process.stdout.columns ?? 80,
-      subagentSummariesById,
+      subagentSummariesById: staticSubagentSummariesById,
       getStageInputColor: stageColor,
       getStageOutputColor: stageColor,
       // Same per-agent palette the footer uses for its agent chip — keeps
@@ -897,6 +929,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       theme,
       glyphs,
       display,
+      filtersOverride,
+      isStatic: true,
     };
 
     /**
@@ -944,16 +978,17 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       pushedStaticIdsRef.current.add(msg.id);
       if (
         msg.role === MessageRole.ToolUse &&
-        subagentSummariesById.get(msg.id)?.length &&
+        staticSubagentSummariesById.get(msg.id)?.length &&
         shouldRenderSubagentResponseSummaries(
           msg,
           display,
-          subagentSummariesById.get(msg.id) ?? []
+          staticSubagentSummariesById.get(msg.id) ?? [],
+          filtersOverride
         )
       ) {
         markSubagentSummariesEmitted(
           msg.id,
-          subagentSummariesById.get(msg.id) ?? [],
+          staticSubagentSummariesById.get(msg.id) ?? [],
           emittedSubagentSummaryKeysByParentRef.current
         );
       }

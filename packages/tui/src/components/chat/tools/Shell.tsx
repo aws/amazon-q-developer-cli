@@ -7,12 +7,18 @@ import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { unwrapResultOutput } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
+import { ToolOutput } from './ToolOutput.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
+import { maxVisibleWidth } from '../../../utils/text-width.js';
+import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import { useAppStore, type ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 const PREVIEW_LINES = 5;
 const MAX_EXPANDED_LINES = 1000;
+// The `╰ output:` tree + green body is the in-cohort output-differentiation
+// feature; off-cohort keeps mainline's bare primary-colored lines (no header).
+const PORT_ACTIVE = () => process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
 /** Collect the first `n` lines from a chunked output buffer. Walks chunks in
  *  order, stopping as soon as we have enough. O(n) in the output count. */
@@ -77,13 +83,12 @@ export const Shell = React.memo(function Shell({
   result,
   content,
 }: ShellProps) {
-  const { getColor } = useTheme();
-
   // Subscribe to live output directly from the store — only this Shell
   // re-renders when new output arrives, not the entire ConversationView.
   const liveOutput = useAppStore((s) =>
     toolCallId ? s.liveOutputs.get(toolCallId) : undefined
   );
+  const { getColor } = useTheme();
 
   const params = useMemo(
     () => formatToolParams(content, ['command']),
@@ -191,21 +196,33 @@ export const Shell = React.memo(function Shell({
     return { outputChunks: [], exitCode: null };
   }, [result, liveOutput]);
 
-  // Total line count across all chunks — O(num_chunks), cheap regardless of
-  // how many lines total.
-  const totalLines = useMemo(() => {
-    let n = 0;
-    for (const c of outputChunks) n += c.length;
-    return n;
+  const { totalLines, maxOutputWidth } = useMemo(() => {
+    let count = 0;
+    let width = 0;
+    for (const chunk of outputChunks) {
+      count += chunk.length;
+      width = Math.max(width, maxVisibleWidth(chunk));
+    }
+    return { totalLines: count, maxOutputWidth: width };
   }, [outputChunks]);
 
   const hasOutput = totalLines > 0;
+  const outputVisible = useToolOutputVisible();
 
-  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
-    totalItems: totalLines,
+  const {
+    expanded,
+    expandHint,
+    hiddenCount,
+    effectivePreviewCount,
+    outputMaxChars,
+    persistOutput,
+  } = useExpandableOutput({
+    totalItems: !PORT_ACTIVE() || outputVisible ? totalLines : 0,
     previewCount: PREVIEW_LINES,
+    maxContentWidth: !PORT_ACTIVE() || outputVisible ? maxOutputWidth : 0,
     isStatic,
     unit: 'lines',
+    applyVerbosityOutputCap: PORT_ACTIVE(),
   });
 
   useEffect(() => {
@@ -215,6 +232,28 @@ export const Shell = React.memo(function Shell({
       setStatus('error');
     }
   }, [isFinished, exitCode, isTimeoutError, setStatus]);
+
+  if (!PORT_ACTIVE()) {
+    const legacy = renderLegacyShell({
+      name,
+      displayCommand,
+      params,
+      isFinished,
+      isStatic,
+      result,
+      liveOutput,
+      hasOutput,
+      errorMessage,
+      outputChunks,
+      totalLines,
+      expanded,
+      expandHint,
+      hiddenCount,
+      getColor,
+    });
+    if (noStatusBar) return legacy;
+    return <StatusBar status={status}>{legacy}</StatusBar>;
+  }
 
   // Simple mode: no output yet
   if (!result && !liveOutput) {
@@ -232,8 +271,7 @@ export const Shell = React.memo(function Shell({
     return <StatusBar status={status}>{simpleContent}</StatusBar>;
   }
 
-  // Static or empty
-  if (isStatic || (!hasOutput && !errorMessage)) {
+  if ((isStatic && !persistOutput) || (!hasOutput && !errorMessage)) {
     return (
       <Box flexDirection="column">
         <StatusInfo
@@ -256,19 +294,12 @@ export const Shell = React.memo(function Shell({
           shimmer={!isFinished}
         />
         <ToolMeta params={params} />
-        <Box marginLeft={2}>
-          <Text>{getColor('error')(errorMessage)}</Text>
-        </Box>
+        <ToolOutput lines={errorMessage.split('\n')} isError />
       </Box>
     );
   }
 
-  // Expanded view: show output, capped at MAX_EXPANDED_LINES. For very verbose
-  // commands this keeps Ink from trying to lay out tens of thousands of <Text>
-  // nodes on every render.
-  if (expanded) {
-    const expandedLines = firstLines(outputChunks, MAX_EXPANDED_LINES);
-    const truncated = totalLines > MAX_EXPANDED_LINES;
+  if (!outputVisible) {
     return (
       <Box flexDirection="column">
         <StatusInfo
@@ -277,6 +308,108 @@ export const Shell = React.memo(function Shell({
           shimmer={!isFinished}
         />
         <ToolMeta params={params} />
+      </Box>
+    );
+  }
+
+  if (expanded) {
+    return (
+      <Box flexDirection="column">
+        <StatusInfo
+          title={name}
+          target={displayCommand}
+          shimmer={!isFinished}
+        />
+        <ToolMeta params={params} />
+        <ToolOutput
+          lines={firstLines(outputChunks, totalLines)}
+          maxChars={outputMaxChars}
+        />
+      </Box>
+    );
+  }
+
+  const previewLines = isFinished
+    ? firstLines(outputChunks, effectivePreviewCount)
+    : lastLines(outputChunks, effectivePreviewCount);
+
+  const hint = isFinished
+    ? expandHint
+    : hiddenCount > 0
+      ? `...+${hiddenCount} lines above (ctrl+o to toggle)`
+      : expandHint || undefined;
+
+  return (
+    <Box flexDirection="column">
+      <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+      <ToolMeta params={params} />
+      <ToolOutput
+        lines={previewLines}
+        maxChars={outputMaxChars}
+        expandHint={hint}
+      />
+    </Box>
+  );
+});
+
+function renderLegacyShell({
+  name,
+  displayCommand,
+  params,
+  isFinished,
+  isStatic,
+  result,
+  liveOutput,
+  hasOutput,
+  errorMessage,
+  outputChunks,
+  totalLines,
+  expanded,
+  expandHint,
+  hiddenCount,
+  getColor,
+}: {
+  name: string;
+  displayCommand?: string;
+  params: string[] | null;
+  isFinished: boolean;
+  isStatic: boolean;
+  result?: ToolResult;
+  liveOutput?: string[][] | null;
+  hasOutput: boolean;
+  errorMessage: string | null;
+  outputChunks: string[][];
+  totalLines: number;
+  expanded: boolean;
+  expandHint: string;
+  hiddenCount: number;
+  getColor: (name: string) => (s: string) => string;
+}) {
+  const head = (
+    <>
+      <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
+      <ToolMeta params={params} />
+    </>
+  );
+  if ((!result && !liveOutput) || isStatic || (!hasOutput && !errorMessage)) {
+    return <Box flexDirection="column">{head}</Box>;
+  }
+  if (errorMessage) {
+    return (
+      <Box flexDirection="column">
+        {head}
+        <Box marginLeft={2}>
+          <Text>{getColor('error')(errorMessage)}</Text>
+        </Box>
+      </Box>
+    );
+  }
+  if (expanded) {
+    const expandedLines = firstLines(outputChunks, MAX_EXPANDED_LINES);
+    const truncated = totalLines > MAX_EXPANDED_LINES;
+    return (
+      <Box flexDirection="column">
+        {head}
         <Box marginLeft={2} flexDirection="column">
           {expandedLines.map((line, i) => (
             <Text key={i}>{getColor('primary')(line)}</Text>
@@ -292,16 +425,12 @@ export const Shell = React.memo(function Shell({
       </Box>
     );
   }
-
-  // Collapsed: tail during execution, head after completion.
   const previewLines = isFinished
     ? firstLines(outputChunks, PREVIEW_LINES)
     : lastLines(outputChunks, PREVIEW_LINES);
-
   return (
     <Box flexDirection="column">
-      <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
-      <ToolMeta params={params} />
+      {head}
       <Box marginLeft={2} flexDirection="column">
         {!isFinished && hiddenCount > 0 && (
           <Text>
@@ -319,4 +448,4 @@ export const Shell = React.memo(function Shell({
       </Box>
     </Box>
   );
-});
+}

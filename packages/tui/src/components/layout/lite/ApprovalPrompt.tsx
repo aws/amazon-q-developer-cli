@@ -497,6 +497,7 @@ export function ApprovalPrompt({
         process.stdout.columns,
         {
           getStageInputColor,
+          theme: renderTheme,
           glyphs,
         }
       );

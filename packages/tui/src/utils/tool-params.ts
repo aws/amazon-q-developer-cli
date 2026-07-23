@@ -6,7 +6,7 @@
  * fields and fields already shown elsewhere by the tool component.
  */
 
-/** Fields always excluded — internal or large content fields */
+/** Fields always excluded — internal or large content fields (mainline set). */
 const BASE_EXCLUDED = new Set([
   '__tool_use_purpose',
   'content',
@@ -14,6 +14,15 @@ const BASE_EXCLUDED = new Set([
   'oldStr',
   'newStr',
 ]);
+
+// In-cohort also hide the Rust wire's snake_case write payloads so they render
+// as the diff body, never as arg chips. Off-cohort the excluded set stays
+// mainline-exact (a stray `old_str` arg still shows, matching pre-port).
+const PORT_EXCLUDED = ['old_str', 'new_str', 'file_text'];
+function excludedFields(): Set<string> {
+  if (process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1') return BASE_EXCLUDED;
+  return new Set([...BASE_EXCLUDED, ...PORT_EXCLUDED]);
+}
 
 /**
  * Parse tool call content JSON and return an array of formatted param strings.
@@ -35,9 +44,10 @@ export function formatToolParams(
       return null;
     }
 
+    const excluded = excludedFields();
     const parts: string[] = [];
     for (const [key, value] of Object.entries(args)) {
-      if (BASE_EXCLUDED.has(key)) continue;
+      if (excluded.has(key)) continue;
       if (exclude && exclude.includes(key)) continue;
       if (value === null || value === undefined) continue;
 

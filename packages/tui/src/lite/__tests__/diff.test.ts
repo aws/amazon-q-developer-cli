@@ -177,6 +177,7 @@ function makeThemeWith(diffSlots: {
   const noop = (s: string) => s;
   return {
     brand: noop,
+    primary: noop,
     responseChip: noop,
     userTag: noop,
     userBody: noop,

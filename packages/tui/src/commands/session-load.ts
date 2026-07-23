@@ -87,7 +87,8 @@ export function runSessionLoad(
             true
           );
         }
-        const handler = ctx.createStreamEventHandler();
+        // `fromHistory` suppresses bogus replay-time tool elapsed stamps.
+        const handler = ctx.createStreamEventHandler({ fromHistory: true });
         for (const e of events) handler(e);
         // TODO: extend `createStreamEventHandler` return type to expose
         // `flush` rather than escaping through `as any`. KAS's
