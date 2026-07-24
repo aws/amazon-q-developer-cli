@@ -4089,7 +4089,7 @@ export const createAppStore = (props: AppStoreProps) => {
               refusalShownThisTurn = true;
               const message =
                 event.explanation ??
-                'The selected model cannot continue this conversation. Please select a different model, or start a new conversation, or rewind the current conversation to an earlier point and try a different approach.';
+                "The selected model couldn't process this request. Try a different model with /model, rewind with /rewind, or start a new session with /chat new.";
               set((s) => ({
                 messages: [
                   ...s.messages,

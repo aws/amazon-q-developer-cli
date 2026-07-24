@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [refusal, content filter, content policy, model error, blocked, alert, stop reason]
   related: [model, classic-vs-tui]
-  validated: 2026-07-14
-  commit: 32e3f718c
+  validated: 2026-07-24
+  commit: 989ca47a4
   status: validated
   testable_headless: false
 ---
@@ -35,9 +35,8 @@ When a refusal occurs, an error message appears in-line in the conversation scro
 2. **Default guidance** — If no explanation is provided:
 
 ```
-The selected model cannot continue this conversation. Please select a different
-model, or start a new conversation, or rewind the current conversation to an
-earlier point and try a different approach.
+The selected model couldn't process this request. Try a different model with
+/model, rewind with /rewind, or start a new session with /chat new.
 ```
 
 The message stays in the scrollback permanently, so you can scroll back to review it at any time.
@@ -95,9 +94,8 @@ switch to a different model.
 The model stops mid-response due to content filtering. A system message appears with the default guidance:
 
 ```
-⚠ The selected model cannot continue this conversation. Please select a
-different model, or start a new conversation, or rewind the current conversation
-to an earlier point and try a different approach.
+⚠ The selected model couldn't process this request. Try a different model with
+/model, rewind with /rewind, or start a new session with /chat new.
 ```
 
 ### Example 3: Recovery by Switching Models

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Model refusal message now suggests specific commands (`/model`, `/rewind`, `/chat new`) instead of generic guidance"
+}
