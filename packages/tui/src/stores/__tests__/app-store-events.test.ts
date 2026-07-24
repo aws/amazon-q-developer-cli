@@ -154,6 +154,46 @@ describe('Stream event handler — ToolCall', () => {
     }
   );
 
+  it('switches tool timing from replay to live delivery', async () => {
+    const store = makeStore();
+    const handler = store
+      .getState()
+      .createStreamEventHandler({ fromHistory: true });
+
+    for (const id of ['history-tool', 'live-tool']) {
+      handler({
+        type: AgentEventType.ToolCall,
+        id,
+        name: 'fs_read',
+        kind: 'read',
+        args: { path: '/tmp/x.ts' },
+      });
+      handler({
+        type: AgentEventType.ToolCallFinished,
+        id,
+        result: { status: 'success', output: { text: 'ok' } },
+      } as never);
+      if (id === 'history-tool') handler.setHistoryReplay(false);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const history = store
+      .getState()
+      .messages.find((m) => m.id === 'history-tool');
+    const live = store.getState().messages.find((m) => m.id === 'live-tool');
+    expect(history?.role).toBe(MessageRole.ToolUse);
+    expect(live?.role).toBe(MessageRole.ToolUse);
+    if (
+      history?.role === MessageRole.ToolUse &&
+      live?.role === MessageRole.ToolUse
+    ) {
+      expect(history.startTime).toBeUndefined();
+      expect(history.finishTime).toBeUndefined();
+      expect(live.startTime).toBeGreaterThan(0);
+      expect(live.finishTime).toBeGreaterThan(0);
+    }
+  });
+
   it('renders a tool card for a standalone-subagent ToolCall forwarded to main', async () => {
     // A hidden/standalone subagent's tool call is forwarded to the main stream
     // by KasAcpClient with sessionId stripped to undefined. Verify the main
@@ -189,6 +229,11 @@ describe('Stream event handler — ToolCall', () => {
       created: new Date(),
       lastActivity: new Date(),
     };
+    const incomingSession = {
+      ...activeSession,
+      id: 'session-b',
+      group: 'group-b',
+    };
     const staleSession = {
       ...activeSession,
       id: 'stale-session',
@@ -200,10 +245,12 @@ describe('Stream event handler — ToolCall', () => {
       currentAgent: { name: 'main-agent' },
       sessions: new Map([
         [activeSession.id, activeSession],
+        [incomingSession.id, incomingSession],
         [staleSession.id, staleSession],
       ]),
       sessionEventBuffer: {
         [activeSession.id]: [],
+        [incomingSession.id]: [],
         [staleSession.id]: [],
       },
       messages: [
@@ -255,8 +302,10 @@ describe('Stream event handler — ToolCall', () => {
 
     const state = store.getState();
     expect(state.sessions.has(activeSession.id)).toBe(true);
+    expect(state.sessions.has(incomingSession.id)).toBe(true);
     expect(state.sessions.has(staleSession.id)).toBe(false);
     expect(state.sessionEventBuffer[activeSession.id]).toBeDefined();
+    expect(state.sessionEventBuffer[incomingSession.id]).toBeDefined();
     expect(state.sessionEventBuffer[staleSession.id]).toBeUndefined();
     expect(
       state.messages.some((message: any) => message.id === 'child-a')

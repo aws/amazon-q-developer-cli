@@ -399,9 +399,12 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
 
   // Orphan model message (e.g. welcome message) — render as standalone AI response
   const isOrphanModel = turn.userMessage.role === MessageRole.Model;
+  const isPromptAnchor = turn.userMessage.role === MessageRole.User;
 
+  // Only a prompt-anchored turn with no assistant output is cancelled.
   const hasAiContent =
     isOrphanModel ||
+    !isPromptAnchor ||
     turn.aiMessages.some(
       (msg) =>
         msg.role === MessageRole.ToolUse ||
@@ -421,11 +424,18 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
             barColor={agentBarColor}
             status="success"
           />
-        ) : (
+        ) : isPromptAnchor ? (
           <Message
             content={turn.userMessage.content}
             type={MessageType.DEVELOPER}
             barColor={agentBarColor}
+          />
+        ) : (
+          <StaticMessage
+            message={turn.userMessage}
+            agentBarColor={agentBarColor}
+            prevRole={MessageRole.User}
+            mainAgentName={agentName}
           />
         )}
         {turn.aiMessages.map((message, index) => (

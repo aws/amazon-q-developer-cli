@@ -212,6 +212,7 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   // when its own error fields are empty.
   displayError?: { message?: string };
   error?: unknown;
+  stopReason?: string;
   promptTurnSummaries?: KasPromptTurnSummary[];
   tokenUsage?: unknown;
   usage?: unknown;
@@ -1717,6 +1718,20 @@ export abstract class BaseAcpClient implements SessionClient {
         if (meta?.kind === 'steering_cleared') {
           this.kasSteerBuffer.clear();
           this.broadcastStreamEvent({ type: AgentEventType.SteeringCleared });
+          return null;
+        }
+        // Turn boundaries must reach clients that did not submit the turn.
+        if (meta?.kind === 'turn_start') {
+          this.broadcastStreamEvent({ type: AgentEventType.TurnStart });
+          return null;
+        }
+        if (meta?.kind === 'turn_end') {
+          this.broadcastStreamEvent({
+            type: AgentEventType.TurnEnd,
+            ...(typeof meta.stopReason === 'string'
+              ? { stopReason: meta.stopReason }
+              : {}),
+          });
           return null;
         }
         logger.debug(

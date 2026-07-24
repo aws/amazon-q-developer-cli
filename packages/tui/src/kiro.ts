@@ -59,6 +59,11 @@ export interface RepoProviderSource {
   ): Promise<SourceProviderResourcePage | undefined>;
 }
 
+type LiveContentHandler = ((event: AgentStreamEvent) => void) & {
+  resetSession?: () => void;
+  setHistoryReplay?: (value: boolean) => void;
+};
+
 type ClientSubscription = 'sessionEvent' | 'multiSession' | 'subagentList';
 
 /**
@@ -111,6 +116,7 @@ export class Kiro {
   private sessionEventHandler?: (event: SessionLifecycleEvent) => void;
   private multiSessionHandler?: (sessionId: string, event: any) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
+  private liveContentHandler?: LiveContentHandler;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private initNotificationHandler?: (event: AgentStreamEvent) => void;
   private artifactWriteHandler?: (match: SpecArtifactPathMatch) => void;
@@ -134,6 +140,7 @@ export class Kiro {
   private pendingPrompt: Promise<void> | null = null;
   private activePromptToken?: symbol;
   private _promptActive = false;
+  private historyReplaySubscribers = 0;
 
   get sessionId(): string | undefined {
     return this.sessionClient?.sessionId;
@@ -443,6 +450,24 @@ export class Kiro {
     this.historyHandler = handler;
   }
 
+  /** Register the renderer for turns this client did not submit. */
+  onLiveContent(handler: LiveContentHandler): void {
+    this.liveContentHandler = handler;
+  }
+
+  replayHistory(events: AgentStreamEvent[]): boolean {
+    const handler = this.liveContentHandler;
+    if (!handler?.resetSession || !handler.setHistoryReplay) return false;
+    handler.resetSession();
+    handler.setHistoryReplay(true);
+    try {
+      for (const event of events) handler(event);
+    } finally {
+      handler.setHistoryReplay(false);
+    }
+    return true;
+  }
+
   onTurnSummary(handler: (event: AgentStreamEvent) => void): void {
     this.turnSummaryHandler = handler;
   }
@@ -662,16 +687,37 @@ export class Kiro {
             this.turnSummaryHandler(event);
           }
         }
+        const isSteeringLifecycleEvent =
+          event.type === AgentEventType.SteeringQueued ||
+          event.type === AgentEventType.SteeringConsumed ||
+          event.type === AgentEventType.SteeringCleared;
+        // Observer errors and lifecycle events must follow the same route as content.
         if (
           event.type === AgentEventType.UserMessage ||
           event.type === AgentEventType.Content ||
           event.type === AgentEventType.Thought ||
           event.type === AgentEventType.ToolCall ||
           event.type === AgentEventType.ToolCallUpdate ||
-          event.type === AgentEventType.ToolCallFinished
+          event.type === AgentEventType.ToolCallFinished ||
+          event.type === AgentEventType.TurnStart ||
+          event.type === AgentEventType.TurnEnd ||
+          event.type === AgentEventType.ModelRefusal ||
+          event.type === AgentEventType.RetryWarning ||
+          event.type === AgentEventType.AuthError ||
+          event.type === AgentEventType.SessionError ||
+          event.type === AgentEventType.SteeringQueued ||
+          event.type === AgentEventType.SteeringConsumed ||
+          event.type === AgentEventType.SteeringCleared
         ) {
           if (this.historyHandler) {
             this.historyHandler(event);
+          }
+          if (
+            this.liveContentHandler &&
+            this.historyReplaySubscribers === 0 &&
+            (!this._promptActive || isSteeringLifecycleEvent)
+          ) {
+            this.liveContentHandler(event);
           }
         }
         // Spec artifact write detection. KAS-gated at registration: in
@@ -914,6 +960,16 @@ export class Kiro {
         }
         // Questions are delivered by the dedicated global callback above.
         if (event.type === AgentEventType.QuestionRequest) return;
+        // Session-level boundaries and steering state have persistent owners.
+        if (
+          event.type === AgentEventType.TurnStart ||
+          event.type === AgentEventType.TurnEnd ||
+          event.type === AgentEventType.SteeringQueued ||
+          event.type === AgentEventType.SteeringConsumed ||
+          event.type === AgentEventType.SteeringCleared
+        ) {
+          return;
+        }
         try {
           onEvent(event);
         } catch (err) {
@@ -1168,9 +1224,16 @@ export class Kiro {
     const previousSessionId = this.sessionId;
     // Register a direct onUpdate subscriber to capture history events
     // that arrive before the loadSession RPC response.
-    const unsubscribe = onHistoryEvent
-      ? this.sessionClient.onUpdate(onHistoryEvent)
-      : undefined;
+    let unsubscribe: (() => void) | undefined;
+    if (onHistoryEvent) {
+      this.historyReplaySubscribers += 1;
+      try {
+        unsubscribe = this.sessionClient.onUpdate(onHistoryEvent);
+      } catch (error) {
+        this.historyReplaySubscribers -= 1;
+        throw error;
+      }
+    }
     try {
       logger.debug('[kiro] calling loadSession', { sessionId });
       const result = await this.sessionClient.loadSession(sessionId, options);
@@ -1184,9 +1247,13 @@ export class Kiro {
       }
       return result;
     } finally {
-      // Defer unsubscribe so in-flight notifications can still be delivered
       if (unsubscribe) {
-        setTimeout(unsubscribe, 0);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        try {
+          unsubscribe();
+        } finally {
+          this.historyReplaySubscribers -= 1;
+        }
       }
     }
   }

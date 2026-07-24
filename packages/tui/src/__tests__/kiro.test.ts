@@ -974,6 +974,151 @@ describe('Kiro — handler registration and forwarding', () => {
     expect(handler).toHaveBeenCalled();
   });
 
+  it('onLiveContent receives content when no local prompt owns the turn', async () => {
+    // The always-on renderer must get live content for a turn this client did
+    // not start (web-initiated, or resumed mid-turn) — the bug where a resumed
+    // session showed the transcript but no live deltas until the user prompted.
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onLiveContent(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.Content,
+        id: 'msg-1',
+        content: { type: 'text', text: 'live text' },
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalled();
+  });
+
+  it('onLiveContent receives turn boundaries when no local prompt owns the turn', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onLiveContent(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.TurnStart,
+      } as AgentStreamEvent);
+      mockOnUpdateHandler({
+        type: AgentEventType.TurnEnd,
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('routes mid-session replay only to its history subscriber', async () => {
+    const replayedEvent = {
+      type: AgentEventType.Content,
+      id: 'replayed-content',
+      content: { type: 'text', text: 'loaded once' },
+    } as AgentStreamEvent;
+    mockSessionClient.loadSession.mockImplementationOnce(async (sessionId) => {
+      broadcastMockUpdate(replayedEvent);
+      return {
+        sessionId,
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: { name: 'test-agent' },
+      };
+    });
+
+    const kiro = new Kiro();
+    const resetSession = mock(() => {});
+    const setHistoryReplay = mock((_value: boolean) => {});
+    const liveHandler = Object.assign(
+      mock(() => {}),
+      {
+        resetSession,
+        setHistoryReplay,
+      }
+    );
+    const historyHandler = mock(() => {});
+    kiro.onLiveContent(liveHandler);
+    await kiro.initialize('/path/to/agent');
+
+    await kiro.loadSession('loaded-session', historyHandler);
+
+    expect(historyHandler).toHaveBeenCalledTimes(1);
+    expect(liveHandler).not.toHaveBeenCalled();
+    expect(kiro.replayHistory([replayedEvent])).toBe(true);
+    expect(resetSession).toHaveBeenCalledTimes(1);
+    expect(setHistoryReplay.mock.calls).toEqual([[true], [false]]);
+    expect(liveHandler).toHaveBeenCalledTimes(1);
+
+    broadcastMockUpdate({
+      ...replayedEvent,
+      id: 'live-content',
+      content: { type: 'text', text: 'live once' },
+    } as AgentStreamEvent);
+
+    expect(historyHandler).toHaveBeenCalledTimes(1);
+    expect(liveHandler).toHaveBeenCalledTimes(2);
+  });
+
+  it('routes steering lifecycle through the persistent handler during a local prompt', async () => {
+    let resolvePrompt!: () => void;
+    mockSessionClient.prompt.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePrompt = resolve;
+        })
+    );
+    const kiro = new Kiro();
+    const liveHandler = mock(() => {});
+    const promptHandler = mock(() => {});
+    kiro.onLiveContent(liveHandler);
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+
+    const prompt = kiro.streamMessage(
+      'hello',
+      new AbortController().signal,
+      promptHandler
+    );
+    broadcastMockUpdate({
+      type: AgentEventType.SteeringConsumed,
+      content: 'finish with a summary',
+    } as AgentStreamEvent);
+
+    expect(liveHandler).toHaveBeenCalledTimes(1);
+    expect(promptHandler).not.toHaveBeenCalled();
+
+    resolvePrompt();
+    await prompt;
+  });
+
+  it('onLiveContent receives refusal/retry/error events when no local prompt owns the turn', async () => {
+    // An observer turn must end with an explanation, not just a stopped
+    // spinner: refusal, retry, auth, and session errors ride the same route
+    // as content.
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onLiveContent(handler);
+    await kiro.initialize('/path/to/agent');
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ModelRefusal,
+      } as AgentStreamEvent);
+      mockOnUpdateHandler({
+        type: AgentEventType.RetryWarning,
+        attempt: 1,
+        maxAttempts: 3,
+        delaySecs: 1,
+        message: 'retrying',
+      } as AgentStreamEvent);
+      mockOnUpdateHandler({
+        type: AgentEventType.AuthError,
+        message: 'auth failed',
+      } as AgentStreamEvent);
+      mockOnUpdateHandler({
+        type: AgentEventType.SessionError,
+        message: 'session lost',
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledTimes(4);
+  });
+
   it('onTurnSummary receives TurnSummary events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});

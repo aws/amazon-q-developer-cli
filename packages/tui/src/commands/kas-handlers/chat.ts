@@ -311,12 +311,12 @@ export async function loadExistingSession(
       }
       // fromHistory: replayed tool rows have no persisted duration, so skip the
       // elapsed stamp (a fresh Date.now() would show a bogus ~0ms chip).
-      const handler = ctx.createStreamEventHandler({ fromHistory: true });
-      for (const e of events) handler(e);
-      // TODO: extend the createStreamEventHandler return type to expose
-      // `flush` rather than escaping through `as any`. V2 has the same cast
-      // and both should be cleaned up together.
-      (handler as any).flush?.();
+      if (!ctx.kiro.replayHistory?.(events)) {
+        const handler = ctx.createStreamEventHandler({ fromHistory: true });
+        for (const e of events) handler(e);
+        handler.flush();
+        handler.dispose();
+      }
     }
     ctx.setLoadingMessage(null);
     ctx.setSessionId(sessionId);

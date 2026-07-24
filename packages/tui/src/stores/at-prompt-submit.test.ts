@@ -177,7 +177,10 @@ describe('submit-time @prompt interception', () => {
 
   it('normalizes a pending steer @prompt when replayed as a fresh prompt', async () => {
     const { store, mockKiro } = createTestStore();
-    store.setState({ pendingSteerContent: '@agent-sop:pdd steered' });
+    store.setState({
+      pendingSteerContent: '@agent-sop:pdd steered',
+      _steerReplayArmed: true,
+    });
 
     await store.getState().processQueue();
 

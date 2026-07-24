@@ -904,9 +904,18 @@ const startInitialization = (resumePickerSessionId?: string) => {
         titleSyncedForSession = kiro.sessionId;
       }
 
-      // Clear the history handler so future events (from live streaming)
-      // don't get buffered.
-      kiro.onHistoryEvent(() => {});
+      // Keep history buffered until the persistent renderer can take over in order.
+      const liveHandler = appStore.getState().createStreamEventHandler({
+        fromHistory: pendingHistoryEvents.length > 0,
+      });
+      appStore.getState().setLiveStreamHandler(liveHandler);
+      const enableLiveDelivery = () => {
+        kiro.onHistoryEvent(() => {});
+        kiro.onLiveContent(liveHandler);
+      };
+      if (pendingHistoryEvents.length === 0) {
+        enableLiveDelivery();
+      }
 
       if (pendingHistoryEvents.length > 0) {
         // Await the deferred replay so callers that chain on startInitialization()
@@ -934,17 +943,13 @@ const startInitialization = (resumePickerSessionId?: string) => {
                 'older turns from history replay'
               );
             }
-            // fromHistory: replayed tool rows carry no persisted duration, so
-            // skip the elapsed stamp (a fresh Date.now() would show a bogus
-            // ~0ms chip). Same as the /chat and /rewind resume paths.
-            const handler = appStore
-              .getState()
-              .createStreamEventHandler({ fromHistory: true });
+            // Keep an open replayed turn in the same renderer as its live tail.
             for (const event of events) {
-              handler(event);
+              liveHandler(event);
             }
-            handler.flush();
             pendingHistoryEvents = [];
+            liveHandler.setHistoryReplay(false);
+            enableLiveDelivery();
             // Lite-only: clamp painted history to the most recent
             // LITE_HISTORY_RENDER_CAP messages on cold-boot --resume. The
             // store still holds the full session for context-window

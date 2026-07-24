@@ -11,6 +11,10 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  AgentEventType,
+  type AgentStreamEvent,
+} from '../../../types/agent-events';
+import {
   __setListAllSessionsOverrideForTests,
   type ListAllSessionsResult,
 } from '../../../utils/list-all-sessions-cli';
@@ -711,6 +715,29 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect((loadSession as any).mock.calls[0][0]).toBe('sid');
       expect(ctx._spies.clearUIState).toHaveBeenCalled();
       expect(ctx._spies.setSessionId).toHaveBeenCalledWith('sid');
+    });
+
+    it('bare sessionId: replays history through the persistent renderer', async () => {
+      const event = { type: AgentEventType.TurnStart } as AgentStreamEvent;
+      const loadSession = mock(
+        async (
+          _sessionId: string,
+          onHistoryEvent: (e: AgentStreamEvent) => void
+        ) => {
+          onHistoryEvent(event);
+          return { sessionId: 'sid' };
+        }
+      );
+      const replayHistory = mock(() => true);
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, replayHistory } as any,
+      });
+
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+
+      expect(replayHistory).toHaveBeenCalledWith([event]);
+      expect(ctx._spies.createStreamEventHandler).not.toHaveBeenCalled();
     });
 
     it('bare sessionId: alerts on loadSession failure', async () => {

@@ -68,6 +68,8 @@ export enum AgentEventType {
   ModelRefusal = 'model_refusal',
   SessionRosterDelta = 'session_roster_delta',
   WorkflowProgress = 'workflow_progress',
+  TurnStart = 'turn_start',
+  TurnEnd = 'turn_end',
 }
 
 export enum ContentType {
@@ -735,6 +737,15 @@ export interface TurnSummaryEvent {
   turnDurationMs?: number;
 }
 
+export interface TurnStartEvent {
+  type: AgentEventType.TurnStart;
+}
+
+export interface TurnEndEvent {
+  type: AgentEventType.TurnEnd;
+  stopReason?: string;
+}
+
 /**
  * The model stopped due to a content-policy refusal or a content-filtered stop
  * reason. Carries the provider-supplied explanation when available so the TUI
@@ -824,6 +835,8 @@ export type AgentStreamEvent =
   | AgentNotFoundEvent
   | AgentConfigErrorEvent
   | TurnSummaryEvent
+  | TurnStartEvent
+  | TurnEndEvent
   | McpOauthRequestEvent
   | McpServerInitializedEvent
   | McpGovernanceDisabledEvent

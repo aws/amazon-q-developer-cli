@@ -88,13 +88,12 @@ export function runSessionLoad(
           );
         }
         // `fromHistory` suppresses bogus replay-time tool elapsed stamps.
-        const handler = ctx.createStreamEventHandler({ fromHistory: true });
-        for (const e of events) handler(e);
-        // TODO: extend `createStreamEventHandler` return type to expose
-        // `flush` rather than escaping through `as any`. KAS's
-        // `loadExistingSession` has the same cast and both should be
-        // cleaned up together.
-        (handler as any).flush?.();
+        if (!ctx.kiro.replayHistory?.(events)) {
+          const handler = ctx.createStreamEventHandler({ fromHistory: true });
+          for (const e of events) handler(e);
+          handler.flush();
+          handler.dispose();
+        }
       }
       // Lite-only: clamp painted history to the most recent rows. The bookmark
       // is a static lower bound — live turns appended later render normally.

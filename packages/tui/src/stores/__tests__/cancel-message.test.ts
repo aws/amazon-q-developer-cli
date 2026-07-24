@@ -11,6 +11,7 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { createAppStore, MessageRole, ToolUseStatus } from '../app-store';
 import { Kiro } from '../../kiro';
+import { AgentEventType } from '../../types/agent-events';
 
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({
@@ -305,6 +306,33 @@ describe('cancelMessage in steering mode', () => {
     // Backend clears the queue on cancel (emits SteeringCleared), so no
     // explicit clearSteering() call is needed from the TUI.
     expect(mockKiro.clearSteering).not.toHaveBeenCalled();
+  });
+
+  it('does not replay a steer consumed while cancel is in flight', async () => {
+    const store = createAppStore({ kiro: mockKiro });
+    const sendMessage = mock(() => Promise.resolve());
+    (store.getState() as any).sendMessage = sendMessage;
+    const handler = store.getState().createStreamEventHandler();
+    store.getState().setLiveStreamHandler(handler);
+    mockKiro.cancel = mock(async () => {
+      handler({
+        type: AgentEventType.SteeringConsumed,
+        content: 'finish with a summary',
+      } as never);
+    });
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      sessionId: 'session-1',
+      activeInterruptMode: 'steer',
+      pendingSteerContent: 'finish with a summary',
+    });
+
+    await store.getState().cancelMessage();
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(store.getState().pendingSteerContent).toBeNull();
+    expect(store.getState()._steerReplayArmed).toBe(false);
   });
 
   it('suppresses the generic "Cancelled streaming" toast when a redirect runs', async () => {

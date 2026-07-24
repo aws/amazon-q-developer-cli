@@ -69,6 +69,7 @@ describe('processQueue', () => {
       activeInterruptMode: 'queue',
       isProcessing: false,
       pendingSteerContent: 'urgent steer',
+      _steerReplayArmed: true,
       queuedMessages: ['queued first', 'queued second'],
     });
 
@@ -104,6 +105,7 @@ describe('processQueue', () => {
       // Steer lives ONLY here (set by the SteeringQueued echo), never copied
       // into queuedMessages.
       pendingSteerContent: 'steered text',
+      _steerReplayArmed: true,
       queuedMessages: ['a genuine queue entry'],
     });
 

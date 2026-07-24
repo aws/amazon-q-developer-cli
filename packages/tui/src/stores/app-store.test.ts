@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, afterAll } from 'bun:test';
+import { describe, it, expect, mock, jest, afterAll } from 'bun:test';
 import {
   createAppStore,
   MessageRole,
@@ -326,6 +326,627 @@ describe('Stream handler dispose (cancel race hardening)', () => {
     // from the cancelled handler's batched flush.
     const liveOutput = store.getState().liveOutputs.get('t1') ?? [];
     expect(liveOutput).toEqual([]);
+  });
+});
+
+describe('Always-on live renderer (observer turns)', () => {
+  function createStore() {
+    const mockKiro = new Kiro();
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({ isInitialized: true });
+    return store;
+  }
+
+  it('TurnStart sets isProcessing and TurnEnd clears it (observer turn)', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({ type: AgentEventType.TurnStart });
+    expect(store.getState().isProcessing).toBe(true);
+
+    handler({ type: AgentEventType.TurnEnd });
+    expect(store.getState().isProcessing).toBe(false);
+  });
+
+  it('leaves isProcessing true after a replayed turn_start with no turn_end (mid-turn resume)', () => {
+    // KAS replays the in-flight turn's turn_start on load but NOT a turn_end
+    // (the turn is still running). Replaying that through the live handler must
+    // leave isProcessing true so the thinking indicator shows for the resumed
+    // turn — the bug where a mid-turn resume rendered content but no spinner.
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    // Simulate the load replay: prior completed turn (start→end), then the
+    // still-open turn's start with no matching end.
+    handler({ type: AgentEventType.TurnStart });
+    handler({ type: AgentEventType.TurnEnd });
+    handler({ type: AgentEventType.TurnStart });
+
+    expect(store.getState().isProcessing).toBe(true);
+  });
+
+  it('renders live content arriving without a prompt (resume-mid-turn)', async () => {
+    const store = createStore();
+    store.setState({
+      messages: [{ id: 'u1', role: MessageRole.User, content: 'question' }],
+    });
+    const handler = store.getState().createStreamEventHandler();
+
+    // A turn already running when the session was resumed streams content with
+    // no local sendMessage in flight — it must land in a Model row anyway.
+    handler({ type: AgentEventType.TurnStart });
+    handler({
+      type: AgentEventType.Content,
+      id: 'm-live',
+      content: { type: ContentType.Text, text: 'streamed answer' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const state = store.getState();
+    const modelRow = state.messages.find((m) => m.role === MessageRole.Model);
+    expect(modelRow?.content).toBe('streamed answer');
+  });
+
+  it('reset commits partial content and stays live for the next turn', async () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.Content,
+      id: 'm1',
+      content: { type: ContentType.Text, text: 'partial' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    handler.reset();
+
+    // Partial content committed to a Model row (not dropped like dispose).
+    expect(store.getState().messages.some((m) => m.content === 'partial')).toBe(
+      true
+    );
+
+    // Still live: a subsequent turn's content renders into a fresh row.
+    handler({
+      type: AgentEventType.Content,
+      id: 'm2',
+      content: { type: ContentType.Text, text: 'next turn' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      store.getState().messages.some((m) => m.content === 'next turn')
+    ).toBe(true);
+  });
+
+  it('keeps an open replayed turn in one row through its live continuation', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler.resetSession();
+    handler.setHistoryReplay(true);
+    handler({ type: AgentEventType.TurnStart });
+    handler({
+      type: AgentEventType.Content,
+      id: 'history-prefix',
+      content: { type: ContentType.Text, text: 'hel' },
+      meta: { kiro: { messageId: 'persisted-message' } },
+    } as never);
+    handler.setHistoryReplay(false);
+    handler({
+      type: AgentEventType.Content,
+      id: 'live-tail',
+      content: { type: ContentType.Text, text: 'lo' },
+    });
+    handler({ type: AgentEventType.TurnEnd });
+
+    const rows = store
+      .getState()
+      .messages.filter((message) => message.role === MessageRole.Model);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.content).toBe('hello');
+  });
+
+  it('splits local content around a steer consumed by the persistent handler', () => {
+    const store = createStore();
+    const localHandler = store.getState().createStreamEventHandler();
+    const persistentHandler = store.getState().createStreamEventHandler();
+    store.setState({ _activeStreamHandler: localHandler });
+
+    localHandler({
+      type: AgentEventType.Content,
+      id: 'before-steer',
+      content: { type: ContentType.Text, text: 'before' },
+    });
+    persistentHandler({
+      type: AgentEventType.SteeringConsumed,
+      content: 'change direction',
+    } as never);
+    localHandler({
+      type: AgentEventType.Content,
+      id: 'after-steer',
+      content: { type: ContentType.Text, text: 'after' },
+    });
+    localHandler.flush();
+
+    expect(
+      store
+        .getState()
+        .messages.map((message) => [
+          message.role,
+          message.content,
+          message.role === MessageRole.User ? message.steered : undefined,
+        ])
+    ).toEqual([
+      [MessageRole.Model, 'before', undefined],
+      [MessageRole.User, 'change direction', true],
+      [MessageRole.Model, 'after', undefined],
+    ]);
+
+    store.setState({ _activeStreamHandler: null });
+    localHandler.dispose();
+    persistentHandler.dispose();
+  });
+
+  it('TurnEnd drains input queued behind an observer turn', async () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+    const sent: string[] = [];
+    store.setState({
+      queuedMessages: ['next prompt'],
+      sendMessage: (async (content: string) => {
+        sent.push(content);
+      }) as never,
+    });
+
+    handler({ type: AgentEventType.TurnStart });
+    handler({ type: AgentEventType.TurnEnd });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sent).toEqual(['next prompt']);
+  });
+
+  it('watchdog drains input queued behind a stale observer boundary', async () => {
+    jest.useFakeTimers();
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+    const sent: string[] = [];
+    store.setState({
+      queuedMessages: ['next prompt'],
+      sendMessage: (async (content: string) => {
+        sent.push(content);
+      }) as never,
+    });
+
+    try {
+      handler({ type: AgentEventType.TurnStart });
+      jest.advanceTimersByTime(30_000);
+      await Promise.resolve();
+
+      expect(store.getState().isProcessing).toBe(false);
+      expect(sent).toEqual(['next prompt']);
+    } finally {
+      handler.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  it('dispose prevents a replay watchdog from draining queued input', async () => {
+    jest.useFakeTimers();
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler({
+      fromHistory: true,
+    });
+    const sent: string[] = [];
+    store.setState({
+      queuedMessages: ['next prompt'],
+      sendMessage: (async (content: string) => {
+        sent.push(content);
+      }) as never,
+    });
+
+    try {
+      handler({ type: AgentEventType.TurnStart });
+      handler.flush();
+      handler.dispose();
+      jest.advanceTimersByTime(30_000);
+      await Promise.resolve();
+
+      expect(sent).toEqual([]);
+    } finally {
+      handler.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not drain queued input after an observer auth error', async () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+    const sent: string[] = [];
+    store.setState({
+      queuedMessages: ['wait for re-auth'],
+      sendMessage: (async (content: string) => {
+        sent.push(content);
+      }) as never,
+    });
+
+    handler({ type: AgentEventType.TurnStart });
+    handler({
+      type: AgentEventType.AuthError,
+      message: 'sign in again',
+    } as never);
+    handler({ type: AgentEventType.TurnEnd });
+    await store.getState().processQueue();
+
+    expect(store.getState().isProcessing).toBe(false);
+    expect(sent).toEqual([]);
+    expect(store.getState().queuedMessages).toEqual(['wait for re-auth']);
+
+    store.getState().setAgentError(null);
+    await store.getState().processQueue();
+    expect(sent).toEqual(['wait for re-auth']);
+  });
+
+  it('dedupes the backend echo of a locally-submitted user message', () => {
+    const store = createStore();
+    // Simulate sendMessage's optimistic append + recording.
+    store.setState({
+      messages: [
+        { id: 'local-1', role: MessageRole.User, content: 'hi there' },
+      ],
+      _recentLocalUserMessages: [{ content: 'hi there', at: Date.now() }],
+    });
+    const handler = store.getState().createStreamEventHandler();
+
+    // The backend echoes the same text with a different id — must be dropped.
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'echo-1',
+      content: { type: ContentType.Text, text: 'hi there' },
+    });
+
+    const userRows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.User);
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0]?.id).toBe('local-1');
+  });
+
+  it('renders a user message with no local match (web-initiated)', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'web-1',
+      content: { type: ContentType.Text, text: 'from the web' },
+    });
+
+    const userRows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.User);
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0]?.content).toBe('from the web');
+  });
+
+  it('stamps steered on a user message replayed inside an open turn', () => {
+    // A mid-turn steer replays as a plain user_message (the persisted
+    // source:'steer' marker is dropped by the backend projection). Position
+    // is authoritative: real prompts precede turn_start, so a user message
+    // between turn_start and turn_end is a steer and must fold into the
+    // turn instead of anchoring a "Cancelled" card.
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'p1',
+      content: { type: ContentType.Text, text: 'real prompt' },
+    });
+    handler({ type: AgentEventType.TurnStart });
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 's1',
+      content: { type: ContentType.Text, text: 'say hi when you finished' },
+    });
+    handler({ type: AgentEventType.TurnEnd, stopReason: 'cancelled' });
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'p2',
+      content: { type: ContentType.Text, text: 'next prompt' },
+    });
+
+    const userRows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.User) as Array<{
+      id: string;
+      steered?: boolean;
+    }>;
+    expect(userRows.map((m) => [m.id, m.steered ?? false])).toEqual([
+      ['p1', false],
+      ['s1', true],
+      ['p2', false],
+    ]);
+  });
+
+  it('skips empty user messages (steer-cleared artifacts) on replay', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'empty-1',
+      content: { type: ContentType.Text, text: '' },
+    });
+
+    expect(
+      store.getState().messages.filter((m) => m.role === MessageRole.User)
+    ).toHaveLength(0);
+  });
+
+  it('sweeps unfinished tools to cancelled when a replayed turn ends cancelled', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({ type: AgentEventType.TurnStart });
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'stage-1',
+      name: 'Sub-agent: general-task-execution',
+      args: { prompt: 'research' },
+    } as never);
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'done-1',
+      name: 'read_file',
+      args: { path: '/tmp/x' },
+    } as never);
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'done-1',
+      result: { status: 'success', output: 'ok' },
+    } as never);
+    handler({ type: AgentEventType.TurnEnd, stopReason: 'cancelled' });
+
+    const rows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.ToolUse) as Array<{
+      id: string;
+      isFinished?: boolean;
+      result?: { status: string };
+    }>;
+    const stage = rows.find((r) => r.id === 'stage-1');
+    const done = rows.find((r) => r.id === 'done-1');
+    // The still-running stage closes as cancelled; the tool that genuinely
+    // completed before the cancel keeps its success result.
+    expect(stage?.isFinished).toBe(true);
+    expect(stage?.result?.status).toBe('cancelled');
+    expect(done?.result?.status).toBe('success');
+  });
+
+  it('does not sweep tools when a replayed turn ends normally', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({ type: AgentEventType.TurnStart });
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tool-1',
+      name: 'read_file',
+      args: { path: '/tmp/x' },
+    } as never);
+    handler({ type: AgentEventType.TurnEnd, stopReason: 'end_turn' });
+
+    const row = store
+      .getState()
+      .messages.find(
+        (m) => m.role === MessageRole.ToolUse && m.id === 'tool-1'
+      ) as { result?: { status: string } } | undefined;
+    expect(row?.result?.status).not.toBe('cancelled');
+  });
+
+  it('does not replay a backend-held steer as a prompt after natural completion', async () => {
+    // The backend keeps an unconsumed steer and injects it into the next
+    // turn itself; on a relayed session the SteeringConsumed echo also lags
+    // seconds behind the prompt response. Replaying pendingSteerContent as a
+    // fresh prompt after a natural turn end therefore double-delivers it.
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SteeringQueued,
+      message: 'say hi when you done',
+    } as never);
+    expect(store.getState().pendingSteerContent).toBe('say hi when you done');
+
+    const sent: string[] = [];
+    store.setState({
+      sendMessage: (async (content: string) => {
+        sent.push(content);
+      }) as never,
+    });
+    await store.getState().processQueue();
+
+    expect(sent).toEqual([]);
+    // Tray keeps showing the still-queued steer (backend owns it).
+    expect(store.getState().pendingSteerContent).toBe('say hi when you done');
+  });
+
+  it('replays the steer as a prompt only when armed by the cancel re-seed', async () => {
+    const store = createStore();
+    store.setState({
+      pendingSteerContent: 'redirect me',
+      _steerReplayArmed: true,
+    });
+    const sent: string[] = [];
+    store.setState({
+      sendMessage: (async (content: string) => {
+        sent.push(content);
+      }) as never,
+    });
+    await store.getState().processQueue();
+
+    expect(sent).toEqual(['redirect me']);
+    expect(store.getState().pendingSteerContent).toBeNull();
+    expect(store.getState()._steerReplayArmed).toBe(false);
+  });
+
+  it('drops persisted re-deliveries after replay completes (relay re-attach)', async () => {
+    // A broken relay downlink re-attaches by replaying the persisted log
+    // through the live channel. Persisted chunks carry meta.kiro.messageId;
+    // live deltas do not. A chunk whose id was already rendered — and is not
+    // the message currently streaming — is a re-delivery and must not render
+    // again, while the initial replay renders in full no matter how late it
+    // arrives (cloud replay streams in after session/load resolves).
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    // Initial replay (arbitrarily late): two chunks of one persisted message
+    // both render (same id stays current), then a second message.
+    handler({
+      type: AgentEventType.Content,
+      id: 'c1',
+      content: { type: ContentType.Text, text: 'first-a ' },
+      meta: { kiro: { messageId: 'm-1' } },
+    } as never);
+    handler({
+      type: AgentEventType.Content,
+      id: 'c1b',
+      content: { type: ContentType.Text, text: 'first-b ' },
+      meta: { kiro: { messageId: 'm-1' } },
+    } as never);
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'u-2',
+      content: { type: ContentType.Text, text: 'next prompt' },
+    });
+    handler({
+      type: AgentEventType.Content,
+      id: 'c2',
+      content: { type: ContentType.Text, text: 'second' },
+      meta: { kiro: { messageId: 'm-2' } },
+    } as never);
+    handler.reset();
+
+    // Re-attach burst: persisted chunks re-delivered — dropped.
+    handler({
+      type: AgentEventType.Content,
+      id: 'c1-again',
+      content: { type: ContentType.Text, text: 'first-a ' },
+      meta: { kiro: { messageId: 'm-1' } },
+    } as never);
+    handler({
+      type: AgentEventType.Content,
+      id: 'c2-again',
+      content: { type: ContentType.Text, text: 'second' },
+      meta: { kiro: { messageId: 'm-2' } },
+    } as never);
+    // A genuinely live delta (no persisted id) still renders.
+    handler({
+      type: AgentEventType.Content,
+      id: 'c3',
+      content: { type: ContentType.Text, text: 'live tail' },
+    } as never);
+    await new Promise((r) => setTimeout(r, 50));
+    handler.flush();
+
+    const text = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.Model)
+      .map((m) => m.content)
+      .join('|');
+    // Initial replay rendered fully, including the multi-chunk message.
+    expect(text).toContain('first-a first-b');
+    expect(text).toContain('second');
+    expect(text).toContain('live tail');
+    // Re-delivered persisted chunks did not render twice.
+    expect((text.match(/first-a/g) ?? []).length).toBe(1);
+    expect((text.match(/second/g) ?? []).length).toBe(1);
+  });
+
+  it('accepts a persisted message id again after resetting for another session', () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+    const persisted = (id: string, text: string) =>
+      ({
+        type: AgentEventType.Content,
+        id,
+        content: { type: ContentType.Text, text },
+        meta: { kiro: { messageId: 'shared-message-id' } },
+      }) as never;
+
+    handler(persisted('first-session', 'first session'));
+    handler.reset();
+    handler.resetSession();
+    handler(persisted('second-session', 'second session'));
+    handler.reset();
+
+    const text = store
+      .getState()
+      .messages.filter((message) => message.role === MessageRole.Model)
+      .map((message) => message.content)
+      .join('|');
+    expect(text).toContain('first session');
+    expect(text).toContain('second session');
+  });
+  it('drops an echo whose id matches a rendered row (kasMessageId identity)', () => {
+    const store = createStore();
+    store.setState({
+      messages: [
+        {
+          id: 'local-1',
+          role: MessageRole.User,
+          content: 'same words',
+          kasMessageId: 'kas-42',
+        },
+      ],
+    });
+    const handler = store.getState().createStreamEventHandler();
+
+    // Echo carries the persisted id, not the local row id — must be dropped
+    // even without any _recentLocalUserMessages entry.
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'kas-42',
+      content: { type: ContentType.Text, text: 'same words' },
+    });
+    // A remote message with the SAME TEXT but a new id still renders.
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'kas-43',
+      content: { type: ContentType.Text, text: 'same words' },
+    });
+
+    const userRows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.User);
+    expect(userRows).toHaveLength(2);
+    expect(userRows.map((m) => m.id)).toEqual(['local-1', 'kas-43']);
+  });
+
+  it('dedupes an echo of the transmitted (expanded) content', () => {
+    const store = createStore();
+    store.setState({
+      messages: [
+        { id: 'local-1', role: MessageRole.User, content: '@file:notes.md' },
+      ],
+      _recentLocalUserMessages: [
+        {
+          content: '@file:notes.md',
+          sentContent: 'expanded file contents here',
+          at: Date.now(),
+        },
+      ],
+    });
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'echo-1',
+      content: { type: ContentType.Text, text: 'expanded file contents here' },
+    });
+
+    const userRows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.User);
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0]?.id).toBe('local-1');
   });
 });
 

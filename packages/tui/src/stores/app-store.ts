@@ -896,6 +896,12 @@ export interface StreamEventHandler {
   flush: () => void;
   /** Abandon the handler and drop buffered content (cancel/error path). */
   dispose: () => void;
+  /** Switch tool timing between persisted replay and live delivery. */
+  setHistoryReplay: (value: boolean) => void;
+  /** Clear per-turn state without retiring the session-lifetime handler. */
+  reset: () => void;
+  /** Prepare the persistent handler to replay a different session. */
+  resetSession: () => void;
 }
 
 export type AppActions = BaseAppActions & InputBufferActions;
@@ -1875,26 +1881,25 @@ export interface AppState {
   isShellEscape: boolean;
   _shellEscapeWriter: ((data: string) => void) | null;
 
-  /**
-   * Reference to the in-flight stream event handler so cancelMessage can
-   * dispose it synchronously when the user interrupts mid-turn. The dispose
-   * body (defined inside createStreamEventHandler) commits buffered streaming
-   * content into the placeholder Model row before zeroing the closure
-   * buffers — without this the partial response the user already saw stream
-   * past the live region disappears, then leaks into the next turn's live
-   * region via stale streamingContent. Also clears any pending setTimeout
-   * flushes that would otherwise fire after the next sendMessage has started
-   * a new turn and stomp on its state.
-   *
-   * Not part of the public AppActions surface — leading underscore + loose
-   * typing on purpose so external callers don't grow a dependency on it.
-   */
-  _activeStreamHandler:
-    | (((event: AgentStreamEvent) => void) & {
-        flush?: () => void;
-        dispose?: () => void;
-      })
-    | null;
+  /** In-flight local renderer, retired synchronously on cancellation. */
+  _activeStreamHandler: StreamEventHandler | null;
+
+  /** Session-lifetime renderer for turns this client did not submit. */
+  _liveStreamHandler: StreamEventHandler | null;
+  setLiveStreamHandler: (handler: StreamEventHandler) => void;
+
+  /** Recent optimistic rows used to suppress backend echoes. */
+  _recentLocalUserMessages: {
+    content: string;
+    sentContent?: string;
+    at: number;
+  }[];
+
+  /** True while an observer auth/session error blocks automatic queue drains. */
+  _observerQueueBlocked: boolean;
+
+  /** True only when the backend dropped a steer that must replay as a prompt. */
+  _steerReplayArmed: boolean;
 
   // Initialization state — true once the ACP session is ready
   isInitialized: boolean;
@@ -2002,6 +2007,8 @@ export const useAppStoreOptional = <T>(
 };
 
 const CONTEXT_WARNING_THRESHOLD = 60;
+
+const LOCAL_USER_ECHO_TTL_MS = 3000;
 
 /**
  * Sync the OSC 9;4 terminal progress indicator to the current app state.
@@ -2722,6 +2729,15 @@ export const createAppStore = (props: AppStoreProps) => {
     isShellEscape: false,
     _shellEscapeWriter: null,
     _activeStreamHandler: null,
+    _liveStreamHandler: null,
+    setLiveStreamHandler: (handler: StreamEventHandler) => {
+      // Retire pending timers before replacing a session renderer.
+      get()._liveStreamHandler?.dispose();
+      set({ _liveStreamHandler: handler });
+    },
+    _recentLocalUserMessages: [],
+    _observerQueueBlocked: false,
+    _steerReplayArmed: false,
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     // Dual-mode interrupt behavior
@@ -2853,14 +2869,23 @@ export const createAppStore = (props: AppStoreProps) => {
       };
 
       set((state) => {
+        const now = Date.now();
+        const recentLocalUserMessages = [
+          ...state._recentLocalUserMessages.filter(
+            (m) => now - m.at < LOCAL_USER_ECHO_TTL_MS
+          ),
+          { content: shownContent, sentContent: expandedContent, at: now },
+        ];
         return {
           isProcessing: true,
           agentError: null,
           agentErrorGuidance: null,
+          _observerQueueBlocked: false,
           wasCancelled: false,
           lastTurnErrored: false,
           autoApproveCrewTools: false,
           messages: [...state.messages, userMessage],
+          _recentLocalUserMessages: recentLocalUserMessages,
           attachedFiles: [], // Clear attachments after sending
           pendingImages: [], // Clear pending images after sending
           // Reset expandable content flag for new turn (expanded state persists)
@@ -3051,7 +3076,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // Replayed history rows must not stamp tool timing: the real durations
       // aren't persisted, so a fresh Date.now() would show a bogus ~0ms elapsed
       // chip. Leaving both timestamps unset omits the chip entirely.
-      const fromHistory = options?.fromHistory === true;
+      let fromHistory = options?.fromHistory === true;
       let isBuffering = false;
       let bufferedContent = '';
       // Only the first model refusal in a turn is surfaced; the model can emit
@@ -3073,6 +3098,50 @@ export const createAppStore = (props: AppStoreProps) => {
       // synchronous set() calls from the ACP notification handler.
       let pendingContentFlush: ReturnType<typeof setTimeout> | null = null;
       let lastContentEventId: string | null = null;
+
+      // User messages inside an open observer turn are steers.
+      let turnOpen = false;
+      let observerTurnBlocked = false;
+
+      // A seen persisted id is a redelivery only after its contiguous chunk run ends.
+      const seenPersistedIds = new Set<string>();
+      let currentPersistedId: string | null = null;
+      const isPersistedRedelivery = (event: AgentStreamEvent): boolean => {
+        const meta = (event as { meta?: { kiro?: { messageId?: unknown } } })
+          .meta;
+        const id = meta?.kiro?.messageId;
+        // An id-less delta ends the contiguous persisted chunk run.
+        if (typeof id !== 'string') {
+          currentPersistedId = null;
+          return false;
+        }
+        if (seenPersistedIds.has(id) && currentPersistedId !== id) return true;
+        seenPersistedIds.add(id);
+        currentPersistedId = id;
+        return false;
+      };
+      // A lone replayed boundary must not pin the steer queue forever.
+      let observerTurnWatchdog: ReturnType<typeof setTimeout> | null = null;
+      const OBSERVER_TURN_SILENCE_MS = 30_000;
+      const clearObserverTurnWatchdog = () => {
+        if (observerTurnWatchdog) {
+          clearTimeout(observerTurnWatchdog);
+          observerTurnWatchdog = null;
+        }
+      };
+      const armObserverTurnWatchdog = () => {
+        clearObserverTurnWatchdog();
+        observerTurnWatchdog = setTimeout(() => {
+          observerTurnWatchdog = null;
+          if (disposed || !turnOpen) return;
+          logger.warn(
+            '[stream] observer turn silent for 30s — clearing processing state'
+          );
+          turnOpen = false;
+          if (get().isProcessing) set({ isProcessing: false });
+          if (get().isInitialized) void get().processQueue();
+        }, OBSERVER_TURN_SILENCE_MS);
+      };
 
       // Per-tool-call live output buffering. ToolCallUpdate events for
       // verbose commands (e.g. a Gradle build streaming thousands of lines)
@@ -3343,6 +3412,19 @@ export const createAppStore = (props: AppStoreProps) => {
           get().setRetryStatus(null);
         }
 
+        if (
+          (event.type === AgentEventType.Content ||
+            event.type === AgentEventType.Thought) &&
+          isPersistedRedelivery(event)
+        ) {
+          return;
+        }
+
+        // Once an observer turn produces activity, silence can be legitimate.
+        if (turnOpen && event.type !== AgentEventType.TurnStart) {
+          clearObserverTurnWatchdog();
+        }
+
         switch (event.type) {
           case AgentEventType.UserMessage:
             // Historical user message from a resumed session.
@@ -3369,6 +3451,31 @@ export const createAppStore = (props: AppStoreProps) => {
             if (event.content.type === 'text') {
               const text = event.content.text;
               const id = event.id;
+              // Empty persisted steer artifacts carry no displayable row.
+              if (text === '') break;
+              // Persisted identity is authoritative for user-message dedupe.
+              const isRenderedDuplicate = get().messages.some(
+                (m) =>
+                  m.role === MessageRole.User &&
+                  (m.id === id || m.kasMessageId === id)
+              );
+              if (isRenderedDuplicate) break;
+              // Consume text fallback matches so intentional repeats still render.
+              const now = Date.now();
+              const recent = get()._recentLocalUserMessages;
+              const matchIdx = recent.findIndex(
+                (m) =>
+                  (m.content === text || m.sentContent === text) &&
+                  now - m.at < LOCAL_USER_ECHO_TTL_MS
+              );
+              if (matchIdx !== -1) {
+                set({
+                  _recentLocalUserMessages: recent.filter(
+                    (_, i) => i !== matchIdx
+                  ),
+                });
+                break;
+              }
               set((state) => ({
                 messages: [
                   ...state.messages,
@@ -3377,6 +3484,8 @@ export const createAppStore = (props: AppStoreProps) => {
                     role: MessageRole.User,
                     content: text,
                     agentName: state.currentAgent?.name,
+                    // Real prompts precede turn_start; in-turn user rows are steers.
+                    ...(turnOpen ? { steered: true } : {}),
                   },
                 ],
               }));
@@ -3501,6 +3610,11 @@ export const createAppStore = (props: AppStoreProps) => {
               let clearedEventBuffer = state.sessionEventBuffer;
               if (SESSION_TOOL_NAMES.has(event.name)) {
                 const activeParentGroups = new Set<string>();
+                const incomingPipelineGroup =
+                  event.meta?.kiro?.pipeline?.groupId;
+                if (incomingPipelineGroup !== undefined) {
+                  activeParentGroups.add(incomingPipelineGroup);
+                }
                 let hasActiveUngroupedParent = false;
                 for (const message of state.messages) {
                   if (
@@ -3948,10 +4062,15 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.AuthError:
             {
               const guidance = getAuthErrorGuidance(event.errorType);
+              turnOpen = false;
+              observerTurnBlocked = true;
+              clearObserverTurnWatchdog();
+              reset();
               set({
                 agentError: event.message,
                 agentErrorGuidance: guidance.message,
                 isProcessing: false,
+                _observerQueueBlocked: true,
               });
             }
             break;
@@ -3961,11 +4080,16 @@ export const createAppStore = (props: AppStoreProps) => {
                 event.errorType,
                 event.pid
               );
+              turnOpen = false;
+              observerTurnBlocked = true;
+              clearObserverTurnWatchdog();
+              reset();
               set({
                 agentError: event.message,
                 agentErrorGuidance: guidance.message,
                 isProcessing: false,
                 lastTurnErrored: true,
+                _observerQueueBlocked: true,
               });
             }
             break;
@@ -4171,6 +4295,64 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.TurnSummary:
             // Handled by global handleTurnSummaryEvent, not here
             break;
+          case AgentEventType.TurnStart:
+            turnOpen = true;
+            observerTurnBlocked = false;
+            armObserverTurnWatchdog();
+            if (!get().isProcessing) {
+              set({ isProcessing: true });
+            }
+            break;
+          case AgentEventType.TurnEnd: {
+            const drainQueuedInput = !observerTurnBlocked;
+            turnOpen = false;
+            observerTurnBlocked = false;
+            clearObserverTurnWatchdog();
+            if (pendingContentFlush) {
+              clearTimeout(pendingContentFlush);
+              pendingContentFlush = null;
+            }
+            flushContentToStore();
+            reset();
+            // A replayed cancel must close tools that never emitted a result.
+            if (event.stopReason === 'cancelled') {
+              set((state) => {
+                if (
+                  !state.messages.some(
+                    (m) => m.role === MessageRole.ToolUse && !m.isFinished
+                  )
+                ) {
+                  return {};
+                }
+                const newLiveOutputs = new Map(state.liveOutputs);
+                const messages = state.messages.map((msg) => {
+                  if (msg.role !== MessageRole.ToolUse || msg.isFinished)
+                    return msg;
+                  const result = buildCancelledResult(
+                    state.liveOutputs.get(msg.id)
+                  );
+                  newLiveOutputs.delete(msg.id);
+                  return {
+                    ...msg,
+                    isFinished: true,
+                    status:
+                      msg.status === ToolUseStatus.Approved
+                        ? ToolUseStatus.Approved
+                        : ToolUseStatus.Rejected,
+                    result,
+                  };
+                });
+                return { messages, liveOutputs: newLiveOutputs };
+              });
+            }
+            if (get().isProcessing) {
+              set({ isProcessing: false });
+            }
+            if (drainQueuedInput && get().isInitialized) {
+              void get().processQueue();
+            }
+            break;
+          }
           case AgentEventType.McpGovernanceDisabled:
             {
               const updated = [
@@ -4214,42 +4396,32 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             break;
           case AgentEventType.SteeringQueued:
-            set({ pendingSteerContent: event.message });
+            // Backend-held steers must not also replay as prompts.
+            set({
+              pendingSteerContent: event.message,
+              _steerReplayArmed: false,
+            });
             break;
           case AgentEventType.SteeringConsumed:
-            // Flush any pending content from the previous turn BEFORE adding the
-            // user bubble so turn 1's output is finalized as its own Model
-            // message. Then reset the buffer so turn 2's content doesn't get
-            // concatenated with turn 1's text.
+            // The persistent handler owns steering state; the local handler owns content.
+            get()._activeStreamHandler?.reset();
             if (pendingContentFlush) {
               clearTimeout(pendingContentFlush);
               pendingContentFlush = null;
               flushContentToStore();
             }
-            // Commit the prior turn's streaming row and release streamingMsgId
-            // before injecting the steer's user bubble. Without this, the
-            // sticky streamingMsgId still points at turn 1's row, so the next
-            // Content chunk ("Reply to steer") PATCHES that already-finalized
-            // row instead of appending a new Model row under the steer bubble —
-            // the reply never renders. Mirrors the UserMessage and ToolCall
-            // turn-boundary handlers, which both commit/release here.
             if (streamingMsgId != null) {
               commitBufferedContent();
             }
             bufferedContent = '';
             lastContentEventId = null;
-            // Also reset thinking buffers (the sibling boundary handlers do):
-            // else turn 1's thinking re-attaches to turn 2's Model row and the
-            // same thinking block renders twice — once above, once below.
             bufferedThinking = '';
             thinkingStart = null;
             thinkingMs = null;
 
-            // Clear the queued message from the activity tray and render a user
-            // bubble in the conversation at the injection point. Also drop any
-            // steer-row edit chevron — the steer it pointed at is now consumed.
             set((state) => ({
               pendingSteerContent: null,
+              _steerReplayArmed: false,
               editingSteerLineIndex: null,
               messages: [
                 ...state.messages,
@@ -4337,6 +4509,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const dispose = () => {
         if (disposed) return;
         disposed = true;
+        clearObserverTurnWatchdog();
         // Finalize an in-flight reasoning block. When a turn is abandoned
         // (cancel/error) while the model is still reasoning — before any
         // answer text or tool call ended the thinking phase — `thinkingMs`
@@ -4381,7 +4554,54 @@ export const createAppStore = (props: AppStoreProps) => {
         set({ streamingBuffer: { startBuffering: null, stopBuffering: null } });
       };
 
-      return Object.assign(handle, { flush, dispose });
+      // Reset commits the visible partial response without retiring the handler.
+      const reset = () => {
+        if (disposed) return;
+        turnOpen = false;
+        clearObserverTurnWatchdog();
+        if (thinkingStart !== null && thinkingMs === null) {
+          thinkingMs = Date.now() - thinkingStart;
+        }
+        if (pendingContentFlush) {
+          clearTimeout(pendingContentFlush);
+          pendingContentFlush = null;
+        }
+        if (pendingToolOutputFlush) {
+          clearTimeout(pendingToolOutputFlush);
+          pendingToolOutputFlush = null;
+        }
+        // Materialize the row before committing a buffer that beat its timer.
+        if (streamingMsgId == null && (bufferedContent || bufferedThinking)) {
+          flushContentToStore();
+        }
+        commitBufferedContent();
+        currentPersistedId = null;
+        bufferedContent = '';
+        bufferedThinking = '';
+        lastContentEventId = null;
+        thinkingStart = null;
+        thinkingMs = null;
+        refusalShownThisTurn = false;
+        toolOutputBuffers.clear();
+      };
+
+      const resetSession = () => {
+        reset();
+        seenPersistedIds.clear();
+        observerTurnBlocked = false;
+      };
+
+      const setHistoryReplay = (value: boolean) => {
+        fromHistory = value;
+      };
+
+      return Object.assign(handle, {
+        flush,
+        dispose,
+        setHistoryReplay,
+        reset,
+        resetSession,
+      });
     },
 
     /**
@@ -4422,6 +4642,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // it after cancel resolves so processQueue's steer-first replay fires.
       // (`queuedMessages` is a local buffer and survives cancel untouched.)
       const capturedSteer = get().pendingSteerContent;
+      const messageCountBeforeCancel = get().messages.length;
       const hasPendingMessages =
         capturedSteer != null || get().queuedMessages.length > 0;
 
@@ -4440,6 +4661,10 @@ export const createAppStore = (props: AppStoreProps) => {
         if (activeHandler) {
           activeHandler.dispose?.();
           set({ _activeStreamHandler: null });
+        }
+        // Cancelling an observer turn must leave its session renderer reusable.
+        else {
+          get()._liveStreamHandler?.reset();
         }
         // Clear the live streaming slot so LiteLiveRegion doesn't repaint
         // the previous turn's partial text on the next isProcessing flip.
@@ -4568,10 +4793,25 @@ export const createAppStore = (props: AppStoreProps) => {
       // restore if nothing newer arrived in the meantime (a fresh steer typed
       // during the cancel await wins). Without this, the captured steer is
       // lost — the bug this guards against.
-      if (capturedSteer != null && get().pendingSteerContent == null) {
-        set({ pendingSteerContent: capturedSteer });
+      const steerWasConsumed =
+        capturedSteer != null &&
+        get()
+          .messages.slice(messageCountBeforeCancel)
+          .some(
+            (message) =>
+              message.role === MessageRole.User &&
+              message.steered &&
+              message.content === capturedSteer
+          );
+      if (capturedSteer != null && !steerWasConsumed) {
+        // A newer steer typed during cancellation wins over the captured redirect.
+        set({
+          ...(get().pendingSteerContent == null
+            ? { pendingSteerContent: capturedSteer }
+            : {}),
+          _steerReplayArmed: true,
+        });
       }
-
       // Drain pending messages after cancel resolves. processQueue handles
       // steer-first priority internally: steer replays first, then queue drains.
       // Done outside the try/finally so it doesn't race with the
@@ -4581,7 +4821,11 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setProcessing: (isProcessing) => set({ isProcessing }),
     setAgentError: (agentError, guidance) =>
-      set({ agentError, agentErrorGuidance: guidance ?? null }),
+      set({
+        agentError,
+        agentErrorGuidance: guidance ?? null,
+        ...(agentError == null ? { _observerQueueBlocked: false } : {}),
+      }),
     setCurrentModel: (currentModel) => set({ currentModel }),
 
     beginKasSession: (origin) => {
@@ -5449,6 +5693,8 @@ export const createAppStore = (props: AppStoreProps) => {
             state.pendingSteerContent != null
               ? `${state.pendingSteerContent}\n\n${trimmed}`
               : trimmed,
+          // Pre-init input exists only locally and must replay after initialization.
+          _steerReplayArmed: true,
         }));
         return;
       }
@@ -5486,18 +5732,21 @@ export const createAppStore = (props: AppStoreProps) => {
         isProcessing,
         isCompacting,
         loadingMessage,
+        _observerQueueBlocked,
         pendingSteerContent,
         queuedMessages,
       } = get();
 
+      // Observer auth/session failures require recovery before queued work resumes.
+      if (_observerQueueBlocked) return;
+
       // Don't drain while the session is busy (prevents double-send races).
       if (isProcessing || isCompacting || loadingMessage) return;
 
-      // Steer cuts the line: if a pending steer exists (wasn't consumed
-      // mid-turn), replay it as a fresh prompt before draining the queue.
-      if (pendingSteerContent != null) {
+      // Only a backend-dropped cancel redirect may replay as a prompt.
+      if (pendingSteerContent != null && get()._steerReplayArmed) {
         const steer = pendingSteerContent;
-        set({ pendingSteerContent: null });
+        set({ pendingSteerContent: null, _steerReplayArmed: false });
         await get().sendMessage(
           normalizeAtPrompt(steer, selectVisibleSlashCommands(get())),
           undefined,
