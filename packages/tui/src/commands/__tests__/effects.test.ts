@@ -24,7 +24,7 @@ afterAll(() => {
   mock.restore();
 });
 
-import { runEffect } from '../effects.js';
+import { runEffect, CLOUD_CLEAR_REWIPE_DELAYS_MS } from '../effects.js';
 import { MessageRole } from '../../stores/app-store.js';
 import type { SlashCommand } from '../../stores/app-store.js';
 import { createMockCommandContext } from './test-helpers.js';
@@ -1218,6 +1218,116 @@ describe('clearMessages effect', () => {
     const result = { success: true, message: '', data: {} };
     runEffect(clearCmd, result, ctx, '');
     expect(ctx._spies.clearMessages).toHaveBeenCalled();
+  });
+
+  // Cloud: the sandbox-provisioning checklist keeps repainting for seconds
+  // after the initial wipe, so the effect schedules re-wipes to land after the
+  // transition settles. Local sessions must schedule none (dark-ship).
+  it('schedules delayed re-wipes for a cloud session', () => {
+    const scheduled: Array<{ fn: () => void; delay: number | undefined }> = [];
+    const setTimeoutSpy = spyOn(globalThis, 'setTimeout').mockImplementation(((
+      fn: () => void,
+      delay?: number
+    ) => {
+      scheduled.push({ fn, delay });
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+    try {
+      const ctx = createMockCommandContext({
+        kiro: { isCloudSessionActive: () => true } as any,
+      });
+      ctx.cloudSessionActive = true;
+      const result = {
+        success: true,
+        message: '',
+        data: { sessionId: 'new-cloud-sess' },
+      };
+      runEffect(clearCmd, result, ctx, '');
+      expect(scheduled.map((s) => s.delay)).toEqual([
+        ...CLOUD_CLEAR_REWIPE_DELAYS_MS,
+      ]);
+      expect(ctx._spies.bumpLiteScrollbackClear).not.toHaveBeenCalled();
+      scheduled.forEach((s) => s.fn());
+      expect(ctx._spies.bumpLiteScrollbackClear).toHaveBeenCalledTimes(
+        CLOUD_CLEAR_REWIPE_DELAYS_MS.length
+      );
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('a second /clear cancels the previous schedule (only one live at a time)', () => {
+    const scheduled: Array<{ fn: () => void; id: number }> = [];
+    const cancelled: number[] = [];
+    let nextId = 1;
+    const setTimeoutSpy = spyOn(globalThis, 'setTimeout').mockImplementation(((
+      fn: () => void
+    ) => {
+      const id = nextId++;
+      scheduled.push({ fn, id });
+      return id as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+    const clearTimeoutSpy = spyOn(
+      globalThis,
+      'clearTimeout'
+    ).mockImplementation(((id: number) => {
+      cancelled.push(id);
+    }) as unknown as typeof clearTimeout);
+    try {
+      const ctx = createMockCommandContext({
+        kiro: { isCloudSessionActive: () => true } as any,
+      });
+      ctx.cloudSessionActive = true;
+      const result = {
+        success: true,
+        message: '',
+        data: { sessionId: 'cloud-sess-1' },
+      };
+      runEffect(clearCmd, result, ctx, '');
+      const firstBatchIds = scheduled.map((s) => s.id);
+
+      runEffect(
+        clearCmd,
+        { ...result, data: { sessionId: 'cloud-sess-2' } },
+        ctx,
+        ''
+      );
+      // Every timer from the first /clear was cancelled before rescheduling.
+      for (const id of firstBatchIds) {
+        expect(cancelled).toContain(id);
+      }
+      // Firing what remains uncancelled bumps exactly one schedule's worth.
+      scheduled.filter((s) => !cancelled.includes(s.id)).forEach((s) => s.fn());
+      expect(ctx._spies.bumpLiteScrollbackClear).toHaveBeenCalledTimes(
+        CLOUD_CLEAR_REWIPE_DELAYS_MS.length
+      );
+    } finally {
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('schedules no re-wipes for a local session', () => {
+    const scheduled: Array<() => void> = [];
+    const setTimeoutSpy = spyOn(globalThis, 'setTimeout').mockImplementation(((
+      fn: () => void
+    ) => {
+      scheduled.push(fn);
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+    try {
+      const ctx = createMockCommandContext();
+      const result = {
+        success: true,
+        message: '',
+        data: { sessionId: 'new-local-sess' },
+      };
+      runEffect(clearCmd, result, ctx, '');
+      scheduled.forEach((fn) => fn());
+      expect(ctx._spies.bumpLiteScrollbackClear).not.toHaveBeenCalled();
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
   });
 });
 

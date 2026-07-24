@@ -14,6 +14,7 @@ import {
   matchSpecArtifactPath,
   type SpecArtifactPathMatch,
 } from './utils/spec-artifact-path';
+import type { SessionRepositoryEntry } from './utils/session-repositories';
 import type { ProcessHealthSnapshot } from './utils/process-health-collector';
 import type { SessionLifecycleEvent } from './types/multi-session';
 import type {
@@ -608,12 +609,16 @@ export class Kiro {
         // the per-prompt stream handler): a cloud sandbox settles to ready
         // during connect, before any prompt is sent, so a per-prompt-only
         // subscription would drop the delta that first renders the footer.
+        // Repo-set pushes likewise arrive at turn boundaries (the sandbox
+        // reports an attach after the clone turn ends), so they ride the
+        // idle-time lane too.
         if (
           (event.type === AgentEventType.CompactionStatus ||
             event.type === AgentEventType.ContextUsage ||
             event.type === AgentEventType.ContextBreakdownUpdate ||
             event.type === AgentEventType.EffortUpdate ||
             event.type === AgentEventType.SessionRosterDelta ||
+            event.type === AgentEventType.SessionRepositoriesUpdate ||
             event.type === AgentEventType.Content) &&
           this.compactionHandler
         ) {
@@ -1155,6 +1160,22 @@ export class Kiro {
       | { sessionNewWarnings?: string[] }
       | undefined;
     return c?.sessionNewWarnings ?? [];
+  }
+
+  /**
+   * Repositories bound to the session, from the last `session/load` or
+   * `session/new` (KAS `_meta.kiro.repositories`), so a resumed cloud session
+   * lights the footer without the `--repo` launch flags. `null` when nothing
+   * was reported (non-KAS clients, older KAS builds, local sessions); `[]`
+   * when the response explicitly reported zero repos.
+   */
+  getSessionRepositories(): SessionRepositoryEntry[] | null {
+    const c = this.sessionClient as
+      | {
+          sessionRepositories?: SessionRepositoryEntry[] | null;
+        }
+      | undefined;
+    return c?.sessionRepositories ?? null;
   }
 
   /**

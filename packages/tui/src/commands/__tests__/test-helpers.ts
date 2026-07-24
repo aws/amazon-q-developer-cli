@@ -74,6 +74,7 @@ export function createMockCommandContext(
       Promise.resolve({ success: true, message: '', data: undefined })
     ),
     isCloudSessionActive: mock(() => false),
+    getSessionRepositories: mock(() => null),
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
     setSetting: mock(() => Promise.resolve()),
     setConfigOption: mock(() => Promise.resolve()),
@@ -137,6 +138,7 @@ export function createMockCommandContext(
     resetCloudSessionScope: spy('resetCloudSessionScope') as any,
     stashCloudSessionScope: spy('stashCloudSessionScope') as any,
     restoreCloudSessionScope: spy('restoreCloudSessionScope') as any,
+    applyRepoFooter: spy('applyRepoFooter') as any,
     setCloudSessionActive: spy('setCloudSessionActive') as any,
     setShowKeybindingsPanel: spy('setShowKeybindingsPanel') as any,
     setShowDisplaySettingsPanel: spy('setShowDisplaySettingsPanel') as any,

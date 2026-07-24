@@ -1,5 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { logger } from '../utils/logger';
+import { parseSessionRepositories } from '../utils/session-repositories';
 import { isUserCancelledReason } from '../constants/tool-failure-reasons';
 import type { ChildProcess } from 'node:child_process';
 import type {
@@ -1608,6 +1609,22 @@ export abstract class BaseAcpClient implements SessionClient {
         // when its own error fields are empty.
         if (meta?.displayError?.message) {
           this.pendingDisplayError = meta.displayError.message;
+        }
+        // The session's bound-repo set, pushed when the sandbox attaches or
+        // detaches repos mid-session (KAS relay of the sandbox agent's
+        // notification; pending fleet rollout). Checked on the raw meta key
+        // rather than a `kind` so it rides along with whichever variant KAS
+        // stamps it on. Side-effect broadcast, like `context_usage`.
+        if ('repositories' in ((meta ?? {}) as Record<string, unknown>)) {
+          this.broadcastStreamEvent({
+            type: AgentEventType.SessionRepositoriesUpdate,
+            // The key is present, so this is an explicit report: a malformed
+            // value degrades to "zero repos", not "not reported".
+            repositories:
+              parseSessionRepositories(
+                (meta as Record<string, unknown>).repositories
+              ) ?? [],
+          });
         }
         if (meta?.kind === 'turn_completion') {
           const completion = normalizeKasTurnCompletion(meta);

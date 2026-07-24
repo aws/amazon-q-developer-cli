@@ -14,6 +14,7 @@ import {
   deriveActiveSessionStatus,
   type RosterEntry,
 } from '../utils/session-roster';
+import type { SessionRepositoryEntry } from '../utils/session-repositories';
 import { features } from '../features';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import type { SessionPickerRow } from '../components/ui/SessionPickerPanel';
@@ -1107,8 +1108,13 @@ interface BaseAppActions {
   /** Set the bound repo for the cloud footer; null when not a cloud session / New empty sandbox. */
   setCloudRepo: (repo: string | null) => void;
   /** Project an attached-repo set onto the footer (first repo + `(+N others)`)
-   *  and the /repo pre-check list, in one place. */
-  applyRepoFooter: (repos: string[]) => void;
+   *  and the /repo pre-check list, in one place. When `branch` is given it
+   *  lands in the same store update (no stale-branch frame between the two). */
+  applyRepoFooter: (repos: string[], branch?: string | null) => void;
+  /** Apply a sandbox-reported bound-repo set (footer + branch, one update).
+   *  Cloud-gated so a stray report can never paint a repo onto a local
+   *  session's footer. */
+  applySessionRepositories: (repositories: SessionRepositoryEntry[]) => void;
   /** Clear the per-session cloud scope (bound repo, branch, extras, attached
    *  set) when switching to a different session — these describe ONE sandbox
    *  and must not leak into the next session's footer/picker. */
@@ -2298,6 +2304,7 @@ function buildCommandContext(
     resetCloudSessionScope: state.resetCloudSessionScope,
     stashCloudSessionScope: state.stashCloudSessionScope,
     restoreCloudSessionScope: state.restoreCloudSessionScope,
+    applyRepoFooter: state.applyRepoFooter,
     setCloudSessionActive: state.setCloudSessionActive,
     setShowKeybindingsPanel: state.setShowKeybindingsPanel,
     setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
@@ -4001,6 +4008,11 @@ export const createAppStore = (props: AppStoreProps) => {
           case AgentEventType.SessionRosterDelta:
             get().applySessionRosterDelta(event.delta);
             break;
+          case AgentEventType.SessionRepositoriesUpdate:
+            // The sandbox's authoritative bound-repo set (attach/detach
+            // mid-session).
+            get().applySessionRepositories(event.repositories);
+            break;
           case AgentEventType.KasMessageIdAssigned:
             get().setKasMessageId(event.kasMessageId);
             break;
@@ -4844,7 +4856,10 @@ export const createAppStore = (props: AppStoreProps) => {
       const currModel = event.currentModelId
         ? event.models.find((m) => m.id === event.currentModelId)
         : undefined;
-      // Update the models/efforts cache along with the current model.
+      // Update the models/efforts cache along with the current model. An
+      // empty models list is the cloud config-surface reset:
+      // the displayed current model belongs to the previous session, so
+      // blank it until the sandbox reports its own.
       set((s) => ({
         kas: {
           ...s.kas,
@@ -4854,7 +4869,9 @@ export const createAppStore = (props: AppStoreProps) => {
         currentEffort: event.currentLevel,
         ...(currModel
           ? { currentModel: { id: currModel.id, name: currModel.name } }
-          : {}),
+          : event.models.length === 0
+            ? { currentModel: null }
+            : {}),
       }));
 
       // Track the active model so the next update can tell whether it changed.
@@ -4992,6 +5009,12 @@ export const createAppStore = (props: AppStoreProps) => {
       }
       if (event.type === AgentEventType.SessionRosterDelta) {
         get().applySessionRosterDelta(event.delta);
+        return;
+      }
+      if (event.type === AgentEventType.SessionRepositoriesUpdate) {
+        // Sandbox repo attach/detach pushes arrive at turn boundaries (idle
+        // time), so this lane must apply them too.
+        get().applySessionRepositories(event.repositories);
         return;
       }
       if (event.type !== AgentEventType.CompactionStatus) return;
@@ -6626,13 +6649,24 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
     setCloudRepo: (cloudRepo) => set({ cloudRepo }),
-    applyRepoFooter: (repos) =>
+    applyRepoFooter: (repos, branch) =>
       set({
         cloudRepo: repos[0] ?? null,
         cloudExtraRepos: Math.max(0, repos.length - 1),
         attachedRepos: [...repos],
-        ...(repos.length === 0 && { cloudBranch: null }),
+        ...(repos.length === 0
+          ? { cloudBranch: null }
+          : branch !== undefined
+            ? { cloudBranch: branch }
+            : {}),
       }),
+    applySessionRepositories: (repositories) => {
+      if (!get().cloudSessionActive) return;
+      get().applyRepoFooter(
+        repositories.map((r) => r.name),
+        repositories[0]?.branch ?? null
+      );
+    },
     resetCloudSessionScope: () =>
       set({
         cloudRepo: null,

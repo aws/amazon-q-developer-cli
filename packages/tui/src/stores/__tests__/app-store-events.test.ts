@@ -2745,6 +2745,51 @@ describe('Stream event handler — SessionRosterDelta', () => {
   });
 });
 
+describe('Stream event handler — SessionRepositoriesUpdate', () => {
+  it('applies the pushed repo set to the footer when a cloud session is active', async () => {
+    const store = makeStore();
+    store.getState().setCloudSessionActive(true);
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SessionRepositoriesUpdate,
+      repositories: [
+        { name: 'acme/banana-service', branch: 'main' },
+        { name: 'acme/second-repo' },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudRepo).toBe('acme/banana-service');
+    expect(store.getState().cloudBranch).toBe('main');
+    expect(store.getState().cloudExtraRepos).toBe(1);
+  });
+
+  it('an empty pushed set clears the footer (detach-all)', async () => {
+    const store = makeStore();
+    store.getState().setCloudSessionActive(true);
+    store.getState().applyRepoFooter(['acme/banana-service']);
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SessionRepositoriesUpdate,
+      repositories: [],
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudRepo).toBeNull();
+    expect(store.getState().cloudBranch).toBeNull();
+  });
+
+  it('ignores the push when no cloud session is active (local footer untouched)', async () => {
+    const store = makeStore();
+    expect(store.getState().cloudSessionActive).toBe(false);
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SessionRepositoriesUpdate,
+      repositories: [{ name: 'acme/banana-service' }],
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.getState().cloudRepo).toBeNull();
+  });
+});
+
 describe('cloudRepo slice (footer location)', () => {
   it('defaults to null and is updated by setCloudRepo', () => {
     const store = makeStore();

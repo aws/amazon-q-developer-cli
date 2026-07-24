@@ -341,6 +341,13 @@ const wireUpHandlers = () => {
 
   kiro.onKasAgentsUpdate((agents) => {
     appStore.getState().setKasAvailableAgents(agents);
+    // An empty list is the cloud config-surface reset: the
+    // displayed current agent belongs to the previous session, so blank the
+    // chip until the sandbox reports (the load self-heal re-emits both the
+    // list and the current agent).
+    if (agents.length === 0) {
+      appStore.getState().setCurrentAgent(null);
+    }
   });
 
   kiro.onKasModelConfigUpdate((event) => {
@@ -864,6 +871,17 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // Cloud-only commands become visible only for a CONFIRMED cloud placement
       // (--cloud that degraded to local must not surface them).
       appStore.getState().setCloudSessionActive(kiro.isCloudSessionActive());
+      // A RESUMED cloud session has no `--repo` flags to light the footer;
+      // its bound repos come from the load response (`_meta.kiro.repositories`).
+      // Dark-safe: a null report (local sessions, KAS builds that don't
+      // report yet) leaves the footer exactly as before, while an explicit
+      // report — even an empty one — is authoritative.
+      if (resolvedSessionId && kiro.isCloudSessionActive()) {
+        const boundRepos = kiro.getSessionRepositories();
+        if (boundRepos) {
+          appStore.getState().applySessionRepositories(boundRepos);
+        }
+      }
       // KAS validates each `--repo` against the FULL provider catalog at
       // session/new and reports dropped ones via `_meta.kiro.warnings` — the
       // authoritative bind outcome (unlike any capped client-side page scan).

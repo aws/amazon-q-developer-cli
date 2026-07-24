@@ -35,6 +35,13 @@ mock.module('../../../utils/session-archive-cli', () => ({
     mockImportSession(...(args as Parameters<typeof mockImportSession>)),
 }));
 
+// Track calls to cancelCloudClearRewipes so tests can verify session switches
+// cancel pending /clear re-wipe timers without leaking into the next session.
+const mockCancelCloudClearRewipes = mock(() => {});
+mock.module('../../effects', () => ({
+  cancelCloudClearRewipes: () => mockCancelCloudClearRewipes(),
+}));
+
 // Mock listAllSessions so the picker tests don't need a real binary.
 // The merged listing is the contract the handler consumes; the
 // spawn-and-parse contract is exercised by
@@ -815,6 +822,86 @@ describe('handleChat (KAS-mode dispatch)', () => {
           (c: any[]) => c[0] === 'Loaded session sid'
         )
       ).toBe(true);
+    });
+
+    it('new: cancels pending cloud /clear re-wipe timers', async () => {
+      mockCancelCloudClearRewipes.mockClear();
+      const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { newSession } as any,
+      });
+      await handleChat(CHAT_CMD, 'new', ctx);
+      expect(mockCancelCloudClearRewipes).toHaveBeenCalled();
+    });
+
+    it('bare sessionId: cancels pending cloud /clear re-wipe timers', async () => {
+      mockCancelCloudClearRewipes.mockClear();
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, isCloudSessionActive: () => false } as any,
+      });
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(mockCancelCloudClearRewipes).toHaveBeenCalled();
+    });
+
+    it('new: hydrates footer from getSessionRepositories when cloud', async () => {
+      const repos = [
+        { name: 'acme/foo', branch: 'main' },
+        { name: 'acme/bar' },
+      ];
+      const newSession = mock(() => Promise.resolve({ sessionId: 'csid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          newSession,
+          isCloudSessionActive: () => true,
+          getSessionRepositories: () => repos,
+        } as any,
+      });
+      await handleChat(CHAT_CMD, 'new', ctx);
+      expect(ctx._spies.applyRepoFooter).toHaveBeenCalledWith(
+        ['acme/foo', 'acme/bar'],
+        'main'
+      );
+    });
+
+    it('bare sessionId: hydrates footer from boundRepos when cloud', async () => {
+      const repos = [{ name: 'org/repo', branch: 'dev' }];
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          loadSession,
+          isCloudSessionActive: () => true,
+          getSessionRepositories: () => repos,
+        } as any,
+      });
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(ctx._spies.applyRepoFooter).toHaveBeenCalledWith(
+        ['org/repo'],
+        'dev'
+      );
+      // Should NOT fall through to restoreCloudSessionScope
+      expect(ctx._spies.restoreCloudSessionScope).not.toHaveBeenCalledWith(
+        'sid'
+      );
+    });
+
+    it('bare sessionId: falls back to stash when repos not reported', async () => {
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          loadSession,
+          isCloudSessionActive: () => true,
+          getSessionRepositories: () => null,
+        } as any,
+      });
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(ctx._spies.applyRepoFooter).not.toHaveBeenCalled();
+      expect(ctx._spies.restoreCloudSessionScope).toHaveBeenCalledWith('sid');
     });
   });
 

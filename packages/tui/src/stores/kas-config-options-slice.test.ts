@@ -72,6 +72,34 @@ describe('kas config-option caches', () => {
       ]);
     expect(store.getState().kas.availableAgents).toHaveLength(1);
   });
+
+  it('an empty-models update blanks the current model (cloud config-surface reset)', () => {
+    const store = makeStore();
+    store.getState().setCurrentModel({ id: 'local-model', name: 'Local' });
+    store.getState().handleKasModelConfigEvent({
+      type: AgentEventType.KasModelConfigUpdate,
+      models: [],
+      currentModelId: undefined,
+      efforts: [],
+      currentLevel: null,
+      origin: 'loadSession',
+    });
+    expect(store.getState().currentModel).toBeNull();
+  });
+
+  it('a non-empty update without currentModelId preserves the current model', () => {
+    const store = makeStore();
+    store.getState().setCurrentModel({ id: 'a', name: 'A' });
+    store.getState().handleKasModelConfigEvent({
+      type: AgentEventType.KasModelConfigUpdate,
+      models: [{ id: 'a', name: 'A' }],
+      currentModelId: undefined,
+      efforts: [],
+      currentLevel: null,
+      origin: 'serverPush',
+    });
+    expect(store.getState().currentModel).toEqual({ id: 'a', name: 'A' });
+  });
 });
 
 describe('setCurrentAgent welcome banner', () => {

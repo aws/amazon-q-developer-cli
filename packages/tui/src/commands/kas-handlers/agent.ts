@@ -41,6 +41,17 @@ export async function handleAgent(
 
 function showAgentPicker(ctx: CommandContext, cmd: KasCommand): void {
   if (ctx.kasAvailableAgents.length === 0) {
+    // Cloud: the sandbox owns the agent surface and pushes it over the
+    // downlink shortly after attach — an empty list is a not-yet,
+    // not a failure.
+    if (ctx.cloudSessionActive) {
+      ctx.showAlert(
+        'Waiting for the sandbox to report its agents — try again in a moment',
+        'warning',
+        4000
+      );
+      return;
+    }
     ctx.showAlert('No agents available', 'error', 3000);
     return;
   }

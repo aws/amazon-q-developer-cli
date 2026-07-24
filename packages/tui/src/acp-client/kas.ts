@@ -14,6 +14,10 @@ import type {
 } from '@kiro/acp-type-covenant';
 import { logger } from '../utils/logger';
 import {
+  parseSessionRepositories,
+  type SessionRepositoryEntry,
+} from '../utils/session-repositories';
+import {
   getTelemetryIdentity,
   isTelemetryEnabled,
 } from '../utils/telemetry-identity';
@@ -318,6 +322,25 @@ export class KasAcpClient extends BaseAcpClient {
   sessionNewWarnings: string[] = [];
 
   /**
+   * Repositories bound to the session per the last `session/load` or
+   * `session/new` (`_meta.kiro.repositories`), so a resumed cloud session can
+   * light the footer's repo/branch without the `--repo` launch flags. `null`
+   * when the response carried no report (older KAS builds, local sessions);
+   * `[]` when it explicitly reported zero repos. Reset to null at the start
+   * of each load so a later local load never shows the previous sandbox.
+   */
+  sessionRepositories: SessionRepositoryEntry[] | null = null;
+
+  /**
+   * Monotonic guard for in-flight config round-trips. Bumped by every load's
+   * self-heal AND every user config change, so a slow forwarded response
+   * whose epoch no longer matches is discarded instead of clobbering fresher
+   * state (defeats both the A→B→A same-id reload race and the self-heal vs
+   * user /agent-switch interleave).
+   */
+  private configEpoch = 0;
+
+  /**
    * Cloud provisioning telemetry: start time is the latency baseline; the two
    * emitted-flags make each outcome fire at most once. Inert without a cloud
    * session (dark-safe).
@@ -540,7 +563,7 @@ export class KasAcpClient extends BaseAcpClient {
   private emitConfigOptions(
     configOptions: unknown,
     origin: KasConfigOrigin,
-    opts?: { emitCurrentAgent?: boolean }
+    opts?: { emitCurrentAgent?: boolean; suppressWelcome?: boolean }
   ): void {
     const models = parseModelsFromConfigOptions(configOptions);
     if (models) {
@@ -570,12 +593,17 @@ export class KasAcpClient extends BaseAcpClient {
       // resolved from the raw current-mode option so a hidden current agent
       // still surfaces one. Emitted unconditionally — the store fires the
       // welcome banner only on an actual agent change (see `setCurrentAgent`),
-      // so re-asserting the same agent is a no-op there.
+      // so re-asserting the same agent is a no-op there. `suppressWelcome`
+      // omits the welcome text entirely (the store never banners a
+      // welcome-less switch) for callers where the agent may genuinely change
+      // without a user action, e.g. a load's config self-heal.
       if (opts?.emitCurrentAgent && agents.currentAgentId) {
         this.broadcastStreamEvent({
           type: AgentEventType.AgentSwitched,
           agentName: agents.currentAgentId,
-          welcomeMessage: currentModeWelcomeMessage(configOptions),
+          ...(opts.suppressWelcome
+            ? {}
+            : { welcomeMessage: currentModeWelcomeMessage(configOptions) }),
         });
       }
     }
@@ -634,11 +662,15 @@ export class KasAcpClient extends BaseAcpClient {
         // config option (model fallback after rate limits, late model
         // enumeration once auth completes, or mirroring a client-initiated
         // change). Re-emit the normalized model/agent/effort events so the
-        // store self-heals; the client retains no copy.
+        // store self-heals; the client retains no copy. The push is fresher
+        // than any in-flight load self-heal, so advance the epoch to discard
+        // a self-heal response that would otherwise land after it with an
+        // older snapshot.
         if (
           (update as { sessionUpdate?: string }).sessionUpdate ===
           'config_option_update'
         ) {
+          this.configEpoch++;
           this.emitConfigOptions(
             (update as { configOptions?: unknown }).configOptions,
             'serverPush',
@@ -1024,6 +1056,8 @@ export class KasAcpClient extends BaseAcpClient {
 
   async newSession(): Promise<SessionResult> {
     this.assertActive('session creation');
+    // Invalidate any in-flight self-heal from a previous load/create.
+    this.configEpoch++;
     const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
     // Build the `_meta.kiro` payload once, merging mode + execution target so
     // neither overwrites the other (two separate `_meta` spreads would drop one).
@@ -1122,20 +1156,39 @@ export class KasAcpClient extends BaseAcpClient {
       logger.warn('[kas] session/new warnings:', this.sessionNewWarnings);
     }
 
+    // The relayed create response reports the repos the BFF actually bound
+    // (`created.boundRepositories` → `_meta.repositories`/`_meta.kiro.repositories`).
+    // Capture them — and, as important, RESET the field for local creates so a
+    // cloud-load → local-new sequence never leaves the previous sandbox's
+    // repos readable through getSessionRepositories().
+    const createMeta = (
+      r as {
+        _meta?: { repositories?: unknown; kiro?: { repositories?: unknown } };
+      }
+    )._meta;
+    this.sessionRepositories = parseSessionRepositories(
+      createMeta?.kiro?.repositories ?? createMeta?.repositories
+    );
+
     // Register BEFORE any async work to avoid race condition
     this.wireSessionListeners(sid);
 
+    let configOptions = (r as { configOptions?: unknown }).configOptions;
     try {
-      await this.kiroClient.setSessionConfigOption({
+      const autopilotResp = await this.kiroClient.setSessionConfigOption({
         sessionId: sid,
         configId: 'autopilot',
         value: 'on',
       });
+      // A relayed create omits configOptions, but this forwarded
+      // set's RESPONSE carries the sandbox's — capture it so a cloud session
+      // populates its agent/model pickers even with no saved default model.
+      configOptions =
+        (autopilotResp as { configOptions?: unknown }).configOptions ??
+        configOptions;
     } catch (e) {
       logger.debug('Failed to set autopilot config:', e);
     }
-
-    let configOptions = (r as { configOptions?: unknown }).configOptions;
     const savedDefault = readCliSettings()[Settings.CHAT_DEFAULT_MODEL];
     const modelToApply = resolveInitialModel({
       flagModel: this.initialModel ?? null,
@@ -1173,6 +1226,13 @@ export class KasAcpClient extends BaseAcpClient {
     }
 
     this.emitConfigOptions(configOptions, 'newSession');
+    // A relayed create omits configOptions (the sandbox pushes the
+    // authoritative agent surface over the downlink). Clear every previous
+    // session's config surface (agents, models, efforts) so a cloud session
+    // created after a local one never shows the local machine's pickers.
+    if (intendedCloudSandbox && configOptions === undefined) {
+      this.clearStaleConfigSurface('newSession');
+    }
     const selections = deriveCurrentSelections(configOptions);
     return { sessionId: sid, ...selections };
   }
@@ -1184,8 +1244,12 @@ export class KasAcpClient extends BaseAcpClient {
     this.assertActive('session load');
     const previousSessionId = this.sessionId;
     this.sessionId = sessionId;
+    // Invalidate any in-flight self-heal from the previous (or same-id) load.
+    this.configEpoch++;
     // A loaded session has no create-time bind warnings.
     this.sessionNewWarnings = [];
+    // Stale until this load's response reports the session's own bindings.
+    this.sessionRepositories = null;
 
     // Register BEFORE loadSession to capture history replay events
     this.wireSessionListeners(sessionId);
@@ -1228,7 +1292,9 @@ export class KasAcpClient extends BaseAcpClient {
     this.assertActive('session load');
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',
-      sessionId
+      sessionId,
+      'meta:',
+      (r as { _meta?: unknown })._meta ?? null
     );
 
     // A cloud placement is authoritative from `executionTarget` even when the
@@ -1237,6 +1303,7 @@ export class KasAcpClient extends BaseAcpClient {
     type LoadMetaFields = {
       source?: unknown;
       executionTarget?: { kind?: unknown };
+      repositories?: unknown;
     };
     const rawMeta = (
       r as { _meta?: LoadMetaFields & { kiro?: LoadMetaFields } }
@@ -1245,6 +1312,7 @@ export class KasAcpClient extends BaseAcpClient {
     const isCloudSession =
       loadMeta?.executionTarget?.kind === 'cloud-sandbox' ||
       loadMeta?.source === 'remote';
+    this.sessionRepositories = parseSessionRepositories(loadMeta?.repositories);
     if (isCloudSession) {
       // A resumed cloud session lights the cloud footer/commands
       // (isCloudSessionActive), just as a fresh cloud `newSession` does.
@@ -1259,6 +1327,63 @@ export class KasAcpClient extends BaseAcpClient {
 
     const configOptions = (r as { configOptions?: unknown }).configOptions;
     this.emitConfigOptions(configOptions, 'loadSession');
+    // A relayed load OMITS configOptions — the sandbox owns the agent surface.
+    // Until it reports, the store still holds the PREVIOUS session's agents
+    // (possibly the local machine's, from a cloud→local→cloud switch), so
+    // /agent would leak local agents into a cloud session. Clear the list,
+    // then self-heal: fire a boolean no-op probe whose RESPONSE carries the
+    // sandbox's configOptions, populating the agent/model pickers.
+    // Fire-and-forget: the forwarded round-trip takes seconds and must not
+    // delay the resume.
+    if (isCloudSession && configOptions === undefined) {
+      this.clearStaleConfigSurface('loadSession');
+      // Probe with a BOOLEAN-valued set: KAS's setSessionConfigOption
+      // early-returns `{ configOptions }` before any mutation when the value
+      // is a boolean — a pure read of the sandbox's config surface without
+      // side effects. A mode re-assert is unsafe here because reconstructed
+      // remote records hardcode agentMode to 'vibe', which would durably
+      // reset a spec/custom-agent sandbox on every resume.
+      //
+      // Epoch guard: any later load OR user config change advances the epoch,
+      // so a slow self-heal response can neither repopulate a different
+      // session's picker (id check alone fails A→B→A: same id, different
+      // load) nor clobber a config the user changed while the round-trip was
+      // in flight.
+      const epoch = ++this.configEpoch;
+      // Safe to deploy: the boolean early-return is pre-existing KAS behavior
+      // (not gated behind configOptions omission), so every fleet build that
+      // omits configOptions on a relayed load also supports this probe.
+      void this.kiroClient
+        .setSessionConfigOption({
+          sessionId,
+          configId: 'autopilot',
+          type: 'boolean',
+          value: true,
+          // Cast: the client-side param types don't admit `type: 'boolean'`
+          // (it's an undocumented early-return trigger on the wire), not a
+          // mismatch in the wire contract itself.
+        } as Parameters<typeof this.kiroClient.setSessionConfigOption>[0])
+        .then((resp) => {
+          if (this.configEpoch !== epoch || this.sessionId !== sessionId)
+            return;
+          // emitCurrentAgent: the load result carried no currentAgent (no
+          // configOptions), so without this the chip keeps showing the
+          // PREVIOUS session's agent forever — the downlink passthrough
+          // never sends a current_mode_update to correct it. Welcome is
+          // suppressed: this is a resume settling, not a user switch.
+          this.emitConfigOptions(
+            (resp as { configOptions?: unknown }).configOptions,
+            'loadSession',
+            { emitCurrentAgent: true, suppressWelcome: true }
+          );
+        })
+        .catch((e) => {
+          logger.debug(
+            '[acp-client] cloud config self-heal failed (agents stay pending):',
+            e
+          );
+        });
+    }
     const selections = deriveCurrentSelections(configOptions);
     return { sessionId, ...selections };
   }
@@ -2068,17 +2193,44 @@ export class KasAcpClient extends BaseAcpClient {
     value: string
   ): Promise<void> {
     if (!this.sessionId) return;
+    // Advance the epoch so any in-flight self-heal is discarded rather than
+    // silently reverting this change on the sandbox/picker.
+    const epoch = ++this.configEpoch;
+    const sessionId = this.sessionId;
     const wireValue = configId === 'mode' ? toKasModeId(value) : value;
     const response = await this.kiroClient.setSessionConfigOption({
-      sessionId: this.sessionId,
+      sessionId,
       configId,
       value: wireValue,
     });
+    // A /chat switch or server push during the round-trip invalidates this
+    // response — drop it so the newer surface isn't overwritten.
+    if (this.configEpoch !== epoch || this.sessionId !== sessionId) return;
     this.emitConfigOptions(
       (response as { configOptions?: unknown }).configOptions,
       'clientInitiated',
       { emitCurrentAgent: true }
     );
+  }
+
+  /**
+   * Clears every config surface the previous session populated (agents,
+   * models, efforts) when a relayed create/load omits configOptions — the
+   * sandbox owns them all, and leaving any of them would leak the
+   * previous (possibly local) session's pickers into the cloud session.
+   */
+  private clearStaleConfigSurface(origin: 'newSession' | 'loadSession'): void {
+    this.broadcastStreamEvent({
+      type: AgentEventType.KasAgentsUpdate,
+      agents: [],
+    });
+    this.broadcastStreamEvent({
+      type: AgentEventType.KasModelConfigUpdate,
+      models: [],
+      efforts: [],
+      currentLevel: null,
+      origin,
+    });
   }
 
   async listSessions(cwd: string): Promise<ListSessionsResponse> {

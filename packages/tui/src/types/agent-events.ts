@@ -15,6 +15,7 @@ import type {
 import type { KasCommand } from '../kas-commands.js';
 import type { SessionsChangedNotification } from './session-client.js';
 import type { ContextBreakdownData } from './context.js';
+import type { SessionRepositoryEntry } from '../utils/session-repositories.js';
 import type {
   UserInputRequest,
   UserInputResponse,
@@ -70,6 +71,7 @@ export enum AgentEventType {
   WorkflowProgress = 'workflow_progress',
   TurnStart = 'turn_start',
   TurnEnd = 'turn_end',
+  SessionRepositoriesUpdate = 'session_repositories_update',
 }
 
 export enum ContentType {
@@ -673,6 +675,18 @@ export interface SessionRosterDeltaEvent {
   delta: SessionsChangedNotification;
 }
 
+/**
+ * The session's bound-repository set, as KAS reports it over the ACP wire
+ * (`_meta.kiro.repositories` on a `session_info_update`). Pushed when the
+ * sandbox attaches/detaches repos mid-session, so the cloud footer tracks the
+ * sandbox's actual workspace instead of only the create-time bindings.
+ * Cloud-only: local sessions never produce one.
+ */
+export interface SessionRepositoriesUpdateEvent {
+  type: AgentEventType.SessionRepositoriesUpdate;
+  repositories: SessionRepositoryEntry[];
+}
+
 export interface McpServerInitFailureEvent {
   type: AgentEventType.McpServerInitFailure;
   serverName: string;
@@ -856,4 +870,5 @@ export type AgentStreamEvent =
   | GoalStatusEvent
   | ModelRefusalEvent
   | SessionRosterDeltaEvent
-  | WorkflowProgressStreamEvent;
+  | WorkflowProgressStreamEvent
+  | SessionRepositoriesUpdateEvent;

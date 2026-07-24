@@ -21,6 +21,7 @@ import type { SessionPickerRow } from '../../components/ui/SessionPickerPanel';
 import { basename } from 'node:path';
 import { statSync } from 'node:fs';
 import type { AgentStreamEvent } from '../../types/agent-events';
+import { cancelCloudClearRewipes } from '../effects';
 import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
@@ -183,6 +184,9 @@ async function startNewSession(
   ctx: CommandContext,
   prompt: string | null
 ): Promise<void> {
+  // A pending /clear re-wipe belongs to the outgoing session; firing here
+  // would repaint the incoming one mid-stream.
+  cancelCloudClearRewipes();
   ctx.clearUIState();
   // The bound repo/branch describe the PREVIOUS session's sandbox — stash so
   // switching back to it restores its footer, then clear for the new session.
@@ -198,6 +202,17 @@ async function startNewSession(
     const session = await ctx.kiro.newSession();
     ctx.setLoadingMessage(null);
     ctx.setSessionId(session.sessionId);
+    // The create response reports the repos the BFF actually bound
+    // (`_meta.kiro.repositories`); the reset above darkened the footer, so
+    // re-light it from that authoritative outcome. Null (nothing reported)
+    // leaves the footer dark, matching a fresh unbound session.
+    const boundRepos = ctx.kiro.getSessionRepositories();
+    if (ctx.kiro.isCloudSessionActive() && boundRepos) {
+      ctx.applyRepoFooter(
+        boundRepos.map((r) => r.name),
+        boundRepos[0]?.branch ?? null
+      );
+    }
     if (session.currentModel) ctx.setCurrentModel(session.currentModel);
     if (session.currentAgent) ctx.setCurrentAgent(session.currentAgent);
     ctx.showAlert(
@@ -262,6 +277,9 @@ export async function loadExistingSession(
       sessionId = ensured.sessionId;
     }
   }
+  // A pending /clear re-wipe belongs to the outgoing session; firing here
+  // would repaint the incoming one mid-stream.
+  cancelCloudClearRewipes();
   ctx.clearUIState();
   // The bound repo/branch describe the PREVIOUS session's sandbox — snapshot
   // them under that session's id (so switching back restores its footer
@@ -323,9 +341,19 @@ export async function loadExistingSession(
     // Mode follows the session: a local session loaded from a cloud surface
     // (or vice versa) flips the footer + cloud-only command gating globally.
     ctx.setCloudSessionActive(ctx.kiro.isCloudSessionActive());
-    // Re-hydrate this session's footer repo/branch from a prior switch-away;
-    // the load response carries no repositories to re-derive them from.
-    ctx.restoreCloudSessionScope(sessionId);
+    // Hydrate this session's footer repo/branch: prefer the load response's
+    // own bound repos (`_meta.kiro.repositories` — authoritative when
+    // reported, even as an explicit zero-repo set), falling back to a prior
+    // switch-away stash only when KAS reported nothing.
+    const boundRepos = ctx.kiro.getSessionRepositories();
+    if (ctx.kiro.isCloudSessionActive() && boundRepos) {
+      ctx.applyRepoFooter(
+        boundRepos.map((r) => r.name),
+        boundRepos[0]?.branch ?? null
+      );
+    } else {
+      ctx.restoreCloudSessionScope(sessionId);
+    }
     if (session.currentModel) ctx.setCurrentModel(session.currentModel);
     if (session.currentAgent)
       ctx.setCurrentAgent(session.currentAgent, { suppressWelcome: true });

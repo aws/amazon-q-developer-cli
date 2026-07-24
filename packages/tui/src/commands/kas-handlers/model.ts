@@ -29,6 +29,17 @@ export async function handleModel(
 
 function showModelPicker(ctx: CommandContext, cmd: KasCommand): void {
   if (ctx.kasAvailableModels.length === 0) {
+    // Cloud: the sandbox owns the model surface and reports it via the
+    // config self-heal shortly after attach — an empty list is
+    // a not-yet, not a failure.
+    if (ctx.cloudSessionActive) {
+      ctx.showAlert(
+        'Waiting for the sandbox to report its models — try again in a moment',
+        'warning',
+        4000
+      );
+      return;
+    }
     ctx.showAlert('No models available', 'error', 3000);
     return;
   }

@@ -812,6 +812,503 @@ describe('KasAcpClient', () => {
     expect(result.currentAgent?.name).toBe('default');
   });
 
+  // ── #5: /agent must not leak local agents into a cloud session ──
+  // A relayed load/create OMITS configOptions (the sandbox pushes
+  // the authoritative agent surface over the downlink). The client must clear
+  // the previous session's agent list on that omission, or a cloud→local→cloud
+  // switch keeps showing the local machine's agents.
+  it('a cloud load WITHOUT configOptions clears the agent list (switch-leak prevention)', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+        },
+      },
+      // No configOptions — the relayed-load contract.
+    } as any);
+    await client.loadSession('cloud-loaded');
+
+    const agentUpdates = events.filter((e) => e.type === 'agents_update');
+    expect(agentUpdates).toHaveLength(1);
+    expect(agentUpdates[0].agents).toEqual([]);
+  });
+
+  it('a cloud load without configOptions SELF-HEALS via a boolean no-op probe', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+          agentMode: 'vibe',
+        },
+      },
+    } as any);
+    // The forwarded set_config's response carries the SANDBOX's configOptions.
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'kiro_spec',
+          options: [
+            { value: 'vibe', name: 'Vibe' },
+            { value: 'kiro_spec', name: 'Spec' },
+          ],
+        },
+      ],
+    } as any);
+
+    await client.loadSession('cloud-loaded');
+    // The self-heal is fire-and-forget; let its .then() run.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const req = mockKiroSetSessionConfigOption.mock.calls.at(-1)?.[0] as any;
+    // MUST be a boolean-valued probe (KAS early-returns configOptions without
+    // mutating), NEVER a mode re-assert — the load meta's agentMode is a
+    // hardcoded 'vibe' on reconstructed remote records, and setting it would
+    // durably reset a spec/custom-agent sandbox session on every resume.
+    expect(req?.configId).not.toBe('mode');
+    expect(typeof req?.value).toBe('boolean');
+    expect(req?.sessionId).toBe('cloud-loaded');
+
+    const agentUpdates = events.filter((e) => e.type === 'agents_update');
+    // First the clear, then the sandbox-sourced repopulation.
+    expect(agentUpdates.length).toBe(2);
+    expect(agentUpdates[0].agents).toEqual([]);
+    expect(agentUpdates[1].agents.length).toBeGreaterThan(0);
+  });
+
+  it('a LOCAL load without configOptions leaves the agent list untouched', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'local-loaded',
+      // No _meta (local placement), no configOptions: must NOT clear.
+    } as any);
+    await client.loadSession('local-loaded');
+
+    expect(events.filter((e) => e.type === 'agents_update')).toHaveLength(0);
+  });
+
+  it('a cloud load WITH configOptions emits the parsed agents, not a clear', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: { executionTarget: { kind: 'cloud-sandbox' }, source: 'remote' },
+      },
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [{ value: 'vibe', name: 'Vibe' }],
+        },
+      ],
+    } as any);
+    await client.loadSession('cloud-loaded');
+
+    const agentUpdates = events.filter((e) => e.type === 'agents_update');
+    expect(agentUpdates).toHaveLength(1);
+    expect(agentUpdates[0].agents.length).toBeGreaterThan(0);
+  });
+
+  it('a user config change discards an in-flight self-heal response (epoch guard)', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+          agentMode: 'vibe',
+        },
+      },
+    } as any);
+    // Self-heal round-trip is SLOW: park it until we release it manually.
+    let releaseSelfHeal!: (v: unknown) => void;
+    const parked = new Promise((r) => {
+      releaseSelfHeal = r;
+    });
+    mockKiroSetSessionConfigOption.mockImplementationOnce(() => parked as any);
+
+    await client.loadSession('cloud-loaded');
+
+    // User switches agent while the self-heal is still in flight — the
+    // switch's own (fast) set_config resolves with the NEW config.
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'dev',
+          options: [{ value: 'dev', name: 'Dev' }],
+        },
+      ],
+    } as any);
+    await client.setConfigOption('mode', 'dev');
+    const eventsAfterSwitch = events.length;
+
+    // The stale self-heal lands late, carrying the OLD mode — must be dropped.
+    releaseSelfHeal({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [{ value: 'vibe', name: 'Vibe' }],
+        },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(events.length).toBe(eventsAfterSwitch);
+  });
+
+  it('an A→B→A reload discards the FIRST load self-heal response (same-id race)', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    const cloudLoadResponse = {
+      sessionId: 'session-A',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+          agentMode: 'vibe',
+        },
+      },
+    } as any;
+
+    // Load A: park its self-heal.
+    mockKiroLoadSession.mockResolvedValueOnce(cloudLoadResponse);
+    let releaseFirst!: (v: unknown) => void;
+    mockKiroSetSessionConfigOption.mockImplementationOnce(
+      () => new Promise((r) => (releaseFirst = r)) as any
+    );
+    await client.loadSession('session-A');
+
+    // Reload A (the B hop is irrelevant to the guard — same id back-to-back
+    // is the hardest case): its self-heal resolves immediately with fresh config.
+    mockKiroLoadSession.mockResolvedValueOnce(cloudLoadResponse);
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [
+            { value: 'vibe', name: 'Vibe' },
+            { value: 'kiro_spec', name: 'Spec' },
+          ],
+        },
+      ],
+    } as any);
+    await client.loadSession('session-A');
+    await new Promise((r) => setTimeout(r, 0));
+    const eventsAfterSecondHeal = events.length;
+
+    // First load's stale self-heal lands last — same session id, older epoch.
+    releaseFirst({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [{ value: 'vibe', name: 'Stale' }],
+        },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(events.length).toBe(eventsAfterSecondHeal);
+  });
+
+  it('a cloud load without configOptions also clears the MODEL surface (no local-model leak)', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: { executionTarget: { kind: 'cloud-sandbox' }, source: 'remote' },
+      },
+    } as any);
+    await client.loadSession('cloud-loaded');
+
+    const modelUpdates = events.filter((e) => e.type === 'model_config_update');
+    expect(modelUpdates).toHaveLength(1);
+    expect(modelUpdates[0].models).toEqual([]);
+    expect(modelUpdates[0].efforts).toEqual([]);
+  });
+
+  it("the self-heal re-emits the CURRENT agent (welcome-suppressed) so the chip cannot keep the previous session's agent", async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+          agentMode: 'vibe',
+        },
+      },
+    } as any);
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'kiro_spec',
+          options: [
+            { value: 'vibe', name: 'Vibe' },
+            {
+              value: 'kiro_spec',
+              name: 'Spec',
+              _meta: { kiro: { welcomeMessage: 'Welcome to spec!' } },
+            },
+          ],
+        },
+      ],
+    } as any);
+
+    await client.loadSession('cloud-loaded');
+    await new Promise((r) => setTimeout(r, 0));
+
+    const switches = events.filter((e) => e.type === 'agent_switched');
+    expect(switches).toHaveLength(1);
+    expect(switches[0].agentName).toBe('kiro_spec');
+    // A resume settling is not a user switch — no welcome banner payload.
+    expect(switches[0].welcomeMessage).toBeUndefined();
+  });
+
+  it('a config_option_update push supersedes an in-flight self-heal (stale response dropped)', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+          agentMode: 'vibe',
+        },
+      },
+    } as any);
+    // Park the self-heal round-trip.
+    let releaseSelfHeal!: (v: unknown) => void;
+    const parked = new Promise((r) => {
+      releaseSelfHeal = r;
+    });
+    mockKiroSetSessionConfigOption.mockImplementationOnce(() => parked as any);
+    await client.loadSession('cloud-loaded');
+
+    // The sandbox pushes fresh config over the downlink first.
+    await capturedSessionUpdateHandler!({
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            id: 'mode',
+            category: 'mode',
+            currentValue: 'kiro_spec',
+            options: [{ value: 'kiro_spec', name: 'Spec' }],
+          },
+        ],
+      },
+    } as any);
+    const eventsAfterPush = events.length;
+    expect(
+      events.filter((e) => e.type === 'agents_update').length
+    ).toBeGreaterThanOrEqual(2); // clear + push repopulation
+
+    // The stale self-heal lands late with an OLDER snapshot — must be dropped.
+    releaseSelfHeal({
+      configOptions: [
+        {
+          type: 'select',
+          id: 'mode',
+          category: 'mode',
+          currentValue: 'vibe',
+          options: [{ value: 'vibe', name: 'Stale' }],
+        },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(events.length).toBe(eventsAfterPush);
+  });
+
+  it('newSession() captures _meta.kiro.repositories from the create response', async () => {
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'cloud-created',
+      _meta: {
+        kiro: {
+          repositories: [
+            { name: 'acme/banana-service', branch: 'feature/x' },
+            { name: 'acme/second-repo' },
+          ],
+        },
+      },
+    } as any);
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    expect(client.sessionRepositories).toEqual([
+      { name: 'acme/banana-service', branch: 'feature/x' },
+      { name: 'acme/second-repo' },
+    ]);
+  });
+
+  it('newSession() resets repositories to null when the create response reports none', async () => {
+    // First a cloud load that leaves repos captured…
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          repositories: [{ name: 'acme/banana-service' }],
+        },
+      },
+    } as any);
+    const client = new KasAcpClient();
+    await client.loadSession('cloud-loaded');
+    expect(client.sessionRepositories).toHaveLength(1);
+
+    // …then a plain create (no _meta): the previous sandbox's repos must not
+    // remain readable.
+    await client.newSession();
+    expect(client.sessionRepositories).toBeNull();
+  });
+
+  it('a cloud newSession without configOptions clears the config surface (agents + models)', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            executionTargets: ['local', 'cloud-sandbox'],
+            sessionSources: ['local', 'remote'],
+          },
+        },
+      },
+    });
+    // The create response omits configOptions (relayed cloud create contract).
+    mockKiroNewSession.mockResolvedValueOnce({
+      sessionId: 'cloud-created-no-config',
+      _meta: {
+        kiro: { executionTarget: { kind: 'cloud-sandbox' } },
+      },
+    } as any);
+    // The autopilot set also returns no configOptions (cloud relay in flight).
+    mockKiroSetSessionConfigOption.mockResolvedValue({} as any);
+
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+    await client.newSession();
+
+    // Should have cleared agents AND models (empty arrays).
+    const agentUpdates = events.filter((e) => e.type === 'agents_update');
+    expect(agentUpdates).toHaveLength(1);
+    expect(agentUpdates[0].agents).toEqual([]);
+    const modelUpdates = events.filter((e) => e.type === 'model_config_update');
+    expect(modelUpdates).toHaveLength(1);
+    expect(modelUpdates[0].models).toEqual([]);
+    expect(modelUpdates[0].efforts).toEqual([]);
+
+    // Reset mock to default
+    mockKiroSetSessionConfigOption.mockImplementation(() => Promise.resolve());
+  });
+
+  it('loadSession() captures _meta.kiro.repositories for the footer (cloud resume)', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+          repositories: [
+            {
+              providerType: 'GITHUB',
+              name: 'acme/banana-service',
+              branch: 'main',
+            },
+            { providerType: 'GITHUB', name: 'acme/second-repo' },
+            { name: '' }, // no usable name — dropped
+            'not-an-object', // malformed — dropped
+          ],
+        },
+      },
+    } as any);
+
+    const client = new KasAcpClient();
+    await client.loadSession('cloud-loaded');
+
+    expect(client.sessionRepositories).toEqual([
+      { name: 'acme/banana-service', branch: 'main' },
+      { name: 'acme/second-repo' },
+    ]);
+    expect(client.isCloudSessionActive()).toBe(true);
+  });
+
+  it('loadSession() clears stale repositories when the next load reports none (local session)', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-loaded',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          repositories: [{ name: 'acme/banana-service' }],
+        },
+      },
+    } as any);
+    const client = new KasAcpClient();
+    await client.loadSession('cloud-loaded');
+    expect(client.sessionRepositories).toHaveLength(1);
+
+    // Default mock: a plain local load response with no _meta — nothing
+    // reported, so the field reads null (not the previous sandbox's repos).
+    await client.loadSession('local-loaded');
+    expect(client.sessionRepositories).toBeNull();
+  });
+
   it('loads from the remote store (sessionSource:remote) for a cloud-sandbox session when advertised', async () => {
     // session/load takes ONE concrete store (KAS rejects 'all' — list-only):
     // a cloud session reattaches remote; a local session omits the hint.
@@ -1161,6 +1658,66 @@ describe('KasAcpClient', () => {
         _meta: { kiro },
       },
     });
+
+  // ── mid-session repo attach notification ──
+  // KAS relays the sandbox's bound-repo set as `_meta.kiro.repositories` on a
+  // session_info_update once the fleet update lands. The client broadcasts it
+  // as SessionRepositoriesUpdate so the footer tracks the sandbox's actual
+  // workspace, not just create-time bindings.
+  it('session_info_update with repositories broadcasts SessionRepositoriesUpdate', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    await sendKasSessionInfoUpdate({
+      repositories: [
+        { providerType: 'GITHUB', name: 'acme/banana-service', branch: 'main' },
+        { providerType: 'GITHUB', name: 'acme/second-repo' },
+        { name: '' }, // dropped: no usable name
+      ],
+    });
+
+    const repoEvents = events.filter(
+      (e) => e.type === 'session_repositories_update'
+    );
+    expect(repoEvents).toHaveLength(1);
+    expect(repoEvents[0].repositories).toEqual([
+      { name: 'acme/banana-service', branch: 'main' },
+      { name: 'acme/second-repo' },
+    ]);
+  });
+
+  it('session_info_update with an EMPTY repositories array broadcasts an empty set (detach-all)', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    await sendKasSessionInfoUpdate({ repositories: [] });
+
+    const repoEvents = events.filter(
+      (e) => e.type === 'session_repositories_update'
+    );
+    expect(repoEvents).toHaveLength(1);
+    expect(repoEvents[0].repositories).toEqual([]);
+  });
+
+  it('session_info_update WITHOUT repositories broadcasts no SessionRepositoriesUpdate', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+
+    await sendKasSessionInfoUpdate({
+      kind: 'context_usage',
+      usagePercentage: 12,
+    });
+
+    expect(
+      events.filter((e) => e.type === 'session_repositories_update')
+    ).toHaveLength(0);
+  });
 
   // ── steering accumulation ──
   // KAS sends one steering_queued per steer with only that steer's text; the

@@ -205,6 +205,9 @@ export interface CommandContext {
   stashCloudSessionScope: (sessionId: string | null | undefined) => void;
   /** Restore a stashed cloud scope; returns whether one was applied. */
   restoreCloudSessionScope: (sessionId: string | null | undefined) => boolean;
+  /** Project an attached-repo set (plus optional first-repo branch) onto the
+   *  footer and the /repo pre-check list in one store update. */
+  applyRepoFooter: (repos: string[], branch?: string | null) => void;
   /** Sync the surface's cloud/local mode to the active session's placement. */
   setCloudSessionActive: (active: boolean) => void;
   setShowKeybindingsPanel: (show: boolean) => void;

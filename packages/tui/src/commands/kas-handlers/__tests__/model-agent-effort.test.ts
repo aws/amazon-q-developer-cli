@@ -92,6 +92,16 @@ describe('handleModel', () => {
     );
   });
 
+  it('shows a waiting warning (not an error) for an empty list on a cloud session', async () => {
+    const ctx = createMockCommandContext({ kasAvailableModels: [] });
+    ctx.cloudSessionActive = true;
+    await handleModel(MODEL_CMD, '', ctx);
+    expect(ctx._spies.setActiveCommand).not.toHaveBeenCalled();
+    const [message, status] = (ctx._spies.showAlert as any).mock.calls[0];
+    expect(String(message)).toContain('sandbox');
+    expect(status).toBe('warning');
+  });
+
   it('switches via setConfigOption without persisting a default', async () => {
     const setConfigOption = mock(() => Promise.resolve());
     const ctx = createMockCommandContext({

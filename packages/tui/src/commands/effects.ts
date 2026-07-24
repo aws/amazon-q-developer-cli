@@ -124,6 +124,26 @@ type EffectName =
   | 'updateTitle';
 
 /**
+ * Re-wipe schedule for a cloud /clear (see clearMessages). Spread across the
+ * sandbox-provisioning window: the checklist typically settles within a few
+ * seconds, with the last bump as a backstop for a slow provision.
+ */
+export const CLOUD_CLEAR_REWIPE_DELAYS_MS = [1500, 4000, 8000] as const;
+
+/** Pending cloud /clear re-wipe timers, so a later action can cancel them. */
+let cloudClearRewipeTimers: Array<ReturnType<typeof setTimeout>> = [];
+
+/**
+ * Cancels any scheduled cloud /clear re-wipes. The timers belong to the
+ * session that ran /clear: left running across a session switch or a second
+ * /clear they'd repaint whatever session is active mid-stream.
+ */
+export function cancelCloudClearRewipes(): void {
+  for (const t of cloudClearRewipeTimers) clearTimeout(t);
+  cloudClearRewipeTimers = [];
+}
+
+/**
  * Command → Effect mapping.
  */
 const commandEffects: Partial<Record<string, EffectName>> = {
@@ -457,6 +477,23 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       if (ctx.cloudSessionActive) ctx.beginKasSession('new');
       ctx.clearUIState();
       ctx.resetMessages();
+      // Cloud: session/new provisions a sandbox, and the startup checklist
+      // keeps re-rendering for seconds after the wipe above. Those repaints
+      // interleave with the scrollback reset and can leave pre-clear rows
+      // visible in the viewport (local session/new resolves fast enough that
+      // the single wipe always lands last). Re-issue the wipe after the
+      // transition settles so the final repaint holds only the fresh session.
+      // Both consumers of the token treat a bump idempotently, so extra bumps
+      // on an already-clean screen are harmless repaints. Cancel any wipes a
+      // previous /clear still has pending so only one schedule is ever live.
+      cancelCloudClearRewipes();
+      if (ctx.kiro.isCloudSessionActive()) {
+        for (const delayMs of CLOUD_CLEAR_REWIPE_DELAYS_MS) {
+          cloudClearRewipeTimers.push(
+            setTimeout(() => ctx.bumpLiteScrollbackClear(), delayMs)
+          );
+        }
+      }
       ctx.setSessionId(data.sessionId);
       if (data.currentModel) ctx.setCurrentModel(data.currentModel);
       if (previousAgent) {
