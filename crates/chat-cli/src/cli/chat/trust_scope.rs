@@ -198,11 +198,11 @@ pub fn apply_trust_selection(
                     )
                 })
                 .unwrap_or(tool_use.name.clone());
-            conversation.agents.trust_tools(vec![formatted_tool_name]);
+            conversation.agents.trust_tools(vec![formatted_tool_name.clone()]);
 
             if let Some(agent) = conversation.agents.get_active() {
                 agent
-                    .print_overridden_permissions(stderr)
+                    .print_overridden_permission_for_tool(&formatted_tool_name, stderr)
                     .map_err(|_e| ChatError::Custom("Failed to validate agent tool settings".into()))?;
             }
             Ok(true)
@@ -229,4 +229,131 @@ pub(crate) fn resolve_tools_settings_key(
                 .map(|alias| (*alias).to_string())
         })
         .unwrap_or_else(|| tool_name.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::cli::agent::{
+        Agent,
+        Agents,
+    };
+    use crate::cli::chat::tool_manager::ToolManager;
+    use crate::os::Os;
+
+    #[tokio::test]
+    async fn test_trust_tool_warning_scoped_to_newly_trusted_tool() {
+        let mut os = Os::new().await.unwrap();
+
+        let mut agent = Agent::default();
+        agent.allowed_tools.insert("execute_bash".to_string());
+        agent.tools_settings.insert(
+            ToolSettingTarget("execute_bash".to_string()),
+            json!({ "allowedCommands": ["git status"] }),
+        );
+        let mut agents = Agents::default();
+        agents.agents.insert("test-agent".to_string(), agent);
+        agents.active_idx = "test-agent".to_string();
+
+        let mut output = vec![];
+        let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&mut os, &mut output).await.unwrap();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_config,
+            tool_manager,
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        let tool_use = QueuedTool {
+            id: "tool_1".to_string(),
+            name: "jira_get_issue".to_string(),
+            preferred_alias: "jira_get_issue".to_string(),
+            accepted: false,
+            tool: Tool::Introspect(serde_json::from_value(json!({})).unwrap()),
+            tool_input: json!({}),
+            trust_options: vec![],
+        };
+
+        let mut stderr: Vec<u8> = vec![];
+        let executed = apply_trust_selection(
+            TrustScopeSelection::TrustTool,
+            &tool_use,
+            &mut conversation,
+            &mut stderr,
+        )
+        .unwrap();
+        assert!(executed);
+
+        let agent = conversation.agents.get_active().unwrap();
+        assert!(agent.allowed_tools.contains("jira_get_issue"));
+        assert!(agent.allowed_tools.contains("execute_bash"));
+
+        let warning_output = String::from_utf8_lossy(&stderr);
+        assert!(
+            !warning_output.contains("execute_bash"),
+            "trusting one tool must not print warnings about other trusted tools, got: {warning_output}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_trust_tool_warns_when_trusted_tool_has_overridden_settings() {
+        let mut os = Os::new().await.unwrap();
+
+        let mut agent = Agent::default();
+        agent.tools_settings.insert(
+            ToolSettingTarget("execute_bash".to_string()),
+            json!({ "allowedCommands": ["git status"] }),
+        );
+        let mut agents = Agents::default();
+        agents.agents.insert("test-agent".to_string(), agent);
+        agents.active_idx = "test-agent".to_string();
+
+        let mut output = vec![];
+        let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&mut os, &mut output).await.unwrap();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_config,
+            tool_manager,
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        let tool_use = QueuedTool {
+            id: "tool_1".to_string(),
+            name: "execute_bash".to_string(),
+            preferred_alias: "execute_bash".to_string(),
+            accepted: false,
+            tool: Tool::Introspect(serde_json::from_value(json!({})).unwrap()),
+            tool_input: json!({}),
+            trust_options: vec![],
+        };
+
+        let mut stderr: Vec<u8> = vec![];
+        apply_trust_selection(
+            TrustScopeSelection::TrustTool,
+            &tool_use,
+            &mut conversation,
+            &mut stderr,
+        )
+        .unwrap();
+
+        let warning_output = String::from_utf8_lossy(&stderr);
+        assert!(
+            warning_output.contains("execute_bash"),
+            "trusting a tool with overridden settings must warn about it, got: {warning_output}"
+        );
+    }
 }

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Scope the trust prompt's permission-override warning in `--classic` mode to the newly trusted tool instead of all previously trusted tools"
+}
