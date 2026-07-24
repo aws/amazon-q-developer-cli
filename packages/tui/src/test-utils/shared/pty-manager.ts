@@ -33,6 +33,50 @@ export interface CellAttributes {
   fgIsRgb: boolean;
 }
 
+/** Net state of the terminal's Kitty keyboard-mode stack replayed from a raw output stream. */
+export interface KittyStackState {
+  /** Number of `CSI > flags u` push sequences observed. */
+  pushes: number;
+  /** Total entries popped by `CSI < count u` sequences, counted without clamping. */
+  pops: number;
+  /** Net stack depth after replaying every push and pop. */
+  depth: number;
+}
+
+/**
+ * Replays the Kitty keyboard protocol stack from raw terminal output.
+ *
+ * The protocol enable (`CSI > flags u`) PUSHES an entry onto the terminal's
+ * keyboard-mode stack and `CSI < count u` pops `count` entries (default 1),
+ * so the terminal's post-exit state is fully determined by the byte stream:
+ * any net depth > 0 means the enhanced protocol is still active in the
+ * parent shell (Ctrl+C arrives as `CSI 99;5u` instead of 0x03). The set form
+ * (`CSI = flags ; mode u`), the query (`CSI ? u`), and query responses
+ * (`CSI ? flags u`) do not change the stack.
+ *
+ * `pops` is counted without the depth clamp so over-popping — which would
+ * destroy stack entries a host process pushed below ours — is visible as
+ * `pops > pushes` even though `depth` bottoms out at zero.
+ */
+export function replayKittyStack(raw: string): KittyStackState {
+  let pushes = 0;
+  let pops = 0;
+  let depth = 0;
+  // eslint-disable-next-line no-control-regex
+  const re = /\x1b\[([><])(\d*)(?:;\d+)*u/g;
+  for (const m of raw.matchAll(re)) {
+    if (m[1] === '>') {
+      pushes++;
+      depth++;
+    } else {
+      const count = m[2] ? Number.parseInt(m[2], 10) : 1;
+      pops += count;
+      depth = Math.max(0, depth - count);
+    }
+  }
+  return { pushes, pops, depth };
+}
+
 export class PtyManager {
   private pty?: pty.IPty;
   private output: string = '';
@@ -174,6 +218,14 @@ export class PtyManager {
    */
   getOutputCleaned(): string {
     return stripAnsi(this.output);
+  }
+
+  /**
+   * Replays the Kitty keyboard-mode stack from the captured output.
+   * See {@link replayKittyStack}.
+   */
+  getKittyStack(): KittyStackState {
+    return replayKittyStack(this.output);
   }
 
   /**

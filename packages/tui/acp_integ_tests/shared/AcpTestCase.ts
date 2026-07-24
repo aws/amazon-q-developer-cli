@@ -42,6 +42,7 @@ import { join } from 'node:path';
 import type { SerializedAppState } from '../../src/test-utils/shared/ipc-types';
 import type {
   CellAttributes,
+  KittyStackState,
   TerminalSnapshot,
 } from '../../src/test-utils/shared/pty-manager';
 import type { TestPaths } from '../../src/test-utils/shared/test-paths';
@@ -220,6 +221,16 @@ export class AcpTestCase {
   }
   sendSignal(signal: NodeJS.Signals): void {
     this.inner.sendSignal(signal);
+  }
+  resize(cols: number, rows: number): void {
+    this.inner.resize(cols, rows);
+  }
+  /**
+   * Replays the Kitty keyboard-mode stack from the captured PTY output.
+   * See {@link TestCase.getKittyStack}.
+   */
+  getKittyStack(): KittyStackState {
+    return this.inner.getKittyStack();
   }
   expectExit(timeoutMs?: number): Promise<number> {
     return this.inner.expectExit(timeoutMs);

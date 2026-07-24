@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Fix the terminal ignoring Ctrl-C/Ctrl-D after exit (enhanced keyboard protocol leak)"
+}

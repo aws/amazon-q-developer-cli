@@ -113,7 +113,15 @@ export class ProcessTerminal implements Terminal {
 	private wasRaw = false;
 	private inputHandler?: (data: string) => void;
 	private resizeHandler?: () => void;
-	private _kittyProtocolActive = false;
+	/**
+	 * Number of entries this process has pushed onto the terminal's
+	 * keyboard-mode stack. `CSI > flags u` is a stack PUSH, not an idempotent
+	 * mode set: every unbalanced push leaves the protocol enabled in the
+	 * parent shell after exit. All keyboard-protocol writes are gated on this
+	 * counter so pushes and pops always balance, and we never pop entries a
+	 * host process pushed below ours.
+	 */
+	private kittyPushDepth = 0;
 	private _modifyOtherKeysActive = false;
 	private _suspendedKitty = false;
 	private _suspendedModify = false;
@@ -130,7 +138,7 @@ export class ProcessTerminal implements Terminal {
 	 * allowing distinction between keys that would otherwise be ambiguous.
 	 */
 	get kittyProtocolActive(): boolean {
-		return this._kittyProtocolActive;
+		return this.kittyPushDepth > 0;
 	}
 
 	/**
@@ -205,7 +213,7 @@ export class ProcessTerminal implements Terminal {
 		// Forward individual sequences to the input handler
 		this.stdinBuffer.on("data", (sequence) => {
 			// Check for Kitty protocol query response (unknown terminal path)
-			if (!this._kittyProtocolActive) {
+			if (!this.kittyProtocolActive) {
 				const match = sequence.match(kittyResponsePattern);
 				if (match) {
 					this.enableKittyProtocol();
@@ -262,11 +270,43 @@ export class ProcessTerminal implements Terminal {
 	/**
 	 * Enables Kitty keyboard protocol with {@link KITTY_FLAGS}.
 	 * Disables modifyOtherKeys since Kitty protocol supersedes it.
+	 *
+	 * `CSI > flags u` PUSHES an entry onto the terminal's keyboard-mode
+	 * stack, so this is a no-op while our push is already outstanding —
+	 * a second push would leak an entry the single pop at teardown never
+	 * removes.
 	 */
 	private enableKittyProtocol(): void {
-		this._kittyProtocolActive = true;
+		if (this.kittyPushDepth === 0) {
+			this.kittyPushDepth++;
+			process.stdout.write(`\x1b[>${KITTY_FLAGS}u`);
+		}
 		setKittyProtocolActive(true);
-		process.stdout.write(`\x1b[>${KITTY_FLAGS}u`);
+		this.disableModifyOtherKeys();
+	}
+
+	/**
+	 * Pops every keyboard-mode stack entry this process pushed and clears
+	 * the shared parser flag. Pops exactly {@link kittyPushDepth} entries,
+	 * never touching entries a host process pushed below ours. Safe to call
+	 * repeatedly; subsequent calls write nothing.
+	 */
+	private popKittyProtocol(): void {
+		while (this.kittyPushDepth > 0) {
+			process.stdout.write("\x1b[<u");
+			this.kittyPushDepth--;
+		}
+		setKittyProtocolActive(false);
+	}
+
+	/**
+	 * Synchronously restores legacy keyboard reporting: pops our Kitty
+	 * keyboard-mode stack entries and disables modifyOtherKeys. Idempotent
+	 * and safe to call from a `process.on('exit')` handler as a last-resort
+	 * teardown on exit paths that bypass {@link stop}.
+	 */
+	resetKeyboardModes(): void {
+		this.popKittyProtocol();
 		this.disableModifyOtherKeys();
 	}
 
@@ -275,12 +315,17 @@ export class ProcessTerminal implements Terminal {
 	 * detection. A same-geometry reattach (iTerm2 tmux -CC over SSH) resets the
 	 * terminal's DEC private modes; this restores bracketed paste and whichever
 	 * keyboard protocol was negotiated at startup (Kitty XOR modifyOtherKeys).
-	 * Mode-set sequences are idempotent, so it is safe to call on every resize.
+	 *
+	 * The Kitty flags are restored with the SET form (`CSI = flags ; 1 u`),
+	 * which mutates the current stack entry in place. The PUSH form would add
+	 * an entry per resize that teardown's single pop never removes, leaving
+	 * the protocol enabled in the parent shell after exit. Every sequence
+	 * here is idempotent, so it is safe to call on every resize.
 	 */
 	private reassertModeEnables(): void {
 		process.stdout.write("\x1b[?2004h");
-		if (this._kittyProtocolActive) {
-			process.stdout.write(`\x1b[>${KITTY_FLAGS}u`);
+		if (this.kittyProtocolActive) {
+			process.stdout.write(`\x1b[=${KITTY_FLAGS};1u`);
 		} else if (this._modifyOtherKeysActive) {
 			process.stdout.write(MODIFY_OTHER_KEYS_ENABLE);
 		}
@@ -313,14 +358,9 @@ export class ProcessTerminal implements Terminal {
 	 * shared `kittyProtocolActive` parser flag in sync with the terminal.
 	 */
 	suspendKeyboard(): void {
-		this._suspendedKitty = this._kittyProtocolActive;
+		this._suspendedKitty = this.kittyProtocolActive;
 		this._suspendedModify = this._modifyOtherKeysActive;
-		if (this._kittyProtocolActive) {
-			process.stdout.write("\x1b[<u");
-			this._kittyProtocolActive = false;
-			setKittyProtocolActive(false);
-		}
-		this.disableModifyOtherKeys();
+		this.resetKeyboardModes();
 	}
 
 	/**
@@ -350,13 +390,9 @@ export class ProcessTerminal implements Terminal {
 	 * @param idleMs - Exit early if no input arrives within this time (default: 50)
 	 */
 	async drainInput(maxMs = 1000, idleMs = 50): Promise<void> {
-		if (this._kittyProtocolActive) {
-			// Disable Kitty keyboard protocol first
-			process.stdout.write("\x1b[<u");
-			this._kittyProtocolActive = false;
-			setKittyProtocolActive(false);
-		}
-		this.disableModifyOtherKeys();
+		// Restore legacy key reporting before draining so any keys typed
+		// during the drain window arrive as legacy bytes.
+		this.resetKeyboardModes();
 
 		const previousHandler = this.inputHandler;
 		this.inputHandler = undefined;
@@ -397,16 +433,8 @@ export class ProcessTerminal implements Terminal {
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
 
-
-		// Disable Kitty keyboard protocol
-		if (this._kittyProtocolActive) {
-			process.stdout.write("\x1b[<u");
-			this._kittyProtocolActive = false;
-			setKittyProtocolActive(false);
-		}
-
-		// Disable modifyOtherKeys
-		this.disableModifyOtherKeys();
+		// Restore legacy keyboard reporting (Kitty protocol + modifyOtherKeys)
+		this.resetKeyboardModes();
 
 		// Clean up StdinBuffer
 		if (this.stdinBuffer) {

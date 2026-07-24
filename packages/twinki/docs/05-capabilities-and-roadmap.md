@@ -49,11 +49,13 @@ events. This prevents paste content from being interpreted as keyboard shortcuts
 `StdinBuffer`'s `data` event handler checks each emitted sequence against the
 Kitty protocol response pattern (`/^\x1b\[\?(\d+)u$/`). On match:
 
-1. Set `_kittyProtocolActive = true` globally.
-2. Enable the protocol with flags 1+2+4: `\x1b[>7u`
+1. Mark the protocol active (a push-depth counter in `ProcessTerminal`, plus the
+   shared parser flag).
+2. Enable the protocol with flag 1: `\x1b[>1u`
    - Flag 1: disambiguate escape codes (Ctrl+I ≠ Tab, Ctrl+M ≠ Enter)
-   - Flag 2: report event types (press=1, repeat=2, release=3)
-   - Flag 4: report alternate keys (shifted key, base layout key for non-Latin keyboards)
+   - Flags 2 (event types) and 4 (alternate keys) are deliberately not used
+   - `\x1b[>1u` PUSHES an entry onto the terminal's keyboard-mode stack, so it is
+     emitted at most once; resize re-asserts use the in-place set form `\x1b[=1;1u`
 3. Do not forward the response sequence to the TUI.
 
 On `stop()`, the protocol is disabled with `\x1b[<u` (pop flags). On `drainInput()`,

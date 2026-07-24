@@ -985,7 +985,11 @@ describe('public API exports', () => {
 // The fix re-asserts the currently-active enables before the unchanged-dims
 // skip. These tests are RED on unpatched main and GREEN after the patch.
 describe('ProcessTerminal mode re-assert on unchanged-dims resize (P470536061)', () => {
-	const KITTY_ENABLE = '\x1b[>1u';
+	// Re-assert uses the `CSI = flags ; 1 u` SET form, not the `CSI > flags u`
+	// PUSH form: a push adds a new entry onto the terminal's keyboard-mode
+	// stack per resize and would leak entries the single pop at exit never
+	// removes, leaving the protocol enabled in the parent shell.
+	const KITTY_REASSERT = '\x1b[=1;1u';
 	const BRACKETED_PASTE_ENABLE = '\x1b[?2004h';
 	const MODIFY_OTHER_KEYS_ENABLE = '\x1b[>4;1m';
 
@@ -1014,7 +1018,7 @@ describe('ProcessTerminal mode re-assert on unchanged-dims resize (P470536061)',
 		return new ProcessTerminal();
 	}
 
-	it('re-emits bracketed paste + Kitty enable on a same-geometry reattach (iTerm2)', async () => {
+	it('re-emits bracketed paste + Kitty flags on a same-geometry reattach (iTerm2)', async () => {
 		process.env.TERM_PROGRAM = 'iTerm.app'; // known Kitty terminal
 		const term = await newTerminal();
 		term.start(() => {}, () => {});
@@ -1024,7 +1028,7 @@ describe('ProcessTerminal mode re-assert on unchanged-dims resize (P470536061)',
 		process.stdout.emit('resize');
 		const written = writeSpy.mock.calls.map((c) => c[0]).join('');
 		expect(written).toContain(BRACKETED_PASTE_ENABLE);
-		expect(written).toContain(KITTY_ENABLE);
+		expect(written).toContain(KITTY_REASSERT);
 		term.stop();
 	});
 

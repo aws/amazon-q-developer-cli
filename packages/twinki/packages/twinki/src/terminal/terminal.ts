@@ -115,6 +115,15 @@ export interface Terminal {
 	resumeKeyboard?(): void;
 
 	/**
+	 * Synchronously restores legacy keyboard reporting (pops this process's
+	 * Kitty keyboard-mode stack entries, disables modifyOtherKeys). Idempotent,
+	 * so it is safe as a last-resort teardown from a `process.on('exit')`
+	 * handler on exit paths that bypass {@link stop}. Optional: terminals
+	 * without enhanced keyboard support may omit it.
+	 */
+	resetKeyboardModes?(): void;
+
+	/**
 	 * Writes data to the terminal output.
 	 * 
 	 * Sends raw data to the terminal, typically containing text content

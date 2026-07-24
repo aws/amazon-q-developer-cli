@@ -77,6 +77,8 @@ export interface Instance {
 	suspendKeyboard(): void;
 	/** Restores enhanced keyboard reporting after the process resumes (SIGCONT). */
 	resumeKeyboard(): void;
+	/** Synchronously restores legacy keyboard reporting; idempotent, safe from a process 'exit' handler. */
+	resetKeyboardModes(): void;
 	/** Returns a promise that resolves when the application exits */
 	waitUntilExit(): Promise<void>;
 	/** Clears the display and forces a full redraw */
@@ -387,6 +389,9 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		},
 		resumeKeyboard() {
 			tui.terminal.resumeKeyboard?.();
+		},
+		resetKeyboardModes() {
+			tui.terminal.resetKeyboardModes?.();
 		},
 		waitUntilExit() {
 			return exitPromise;

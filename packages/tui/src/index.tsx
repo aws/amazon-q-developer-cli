@@ -126,15 +126,20 @@ const emitDetachNoticeIfCloud = (): void => {
 
 let terminalReset = false;
 
+// Set once the renderer exists; restores legacy keyboard reporting (Kitty
+// keyboard protocol / modifyOtherKeys).
+let resetKeyboardModes: (() => void) | null = null;
+
 // Restore every terminal mode the TUI turns on: focus reporting (1004),
-// bracketed paste (2004), raw mode, progress, and title. Synchronous and
-// run-once, so it is safe to invoke from the 'exit' event.
+// bracketed paste (2004), keyboard protocol, raw mode, progress, and title.
+// Synchronous and run-once, so it is safe to invoke from the 'exit' event.
 const resetTerminal = () => {
   if (terminalReset) return;
   terminalReset = true;
   try {
     disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
+    resetKeyboardModes?.();
     process.stdin.setRawMode?.(false);
     clearTerminalProgress();
     cmuxCleanup();
@@ -1463,6 +1468,11 @@ const startApp = async () => {
       wideLines: rendererWideLinesEnabled(uiMode),
     };
   const instance = render(<App />, renderOptions);
+  // Last-resort keyboard restore for exit paths where renderer teardown is
+  // skipped or throws before reaching the terminal (idempotent with it).
+  // Assigned before any other post-render wiring so no exit inside this
+  // function finds the safety net unset while the protocol is enabled.
+  resetKeyboardModes = () => instance.resetKeyboardModes();
   let lastRendererWideLinesEnabled = rendererWideLinesEnabled(uiMode);
   appStore.subscribe((state) => {
     const enabled = rendererWideLinesEnabled(state.uiMode);

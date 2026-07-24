@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { AgentStreamEvent } from '../types/agent-events';
 import type { SerializedAppState } from './shared/ipc-types';
 import { PtyManager, TerminalSnapshot } from './shared/pty-manager';
-import type { CellAttributes } from './shared/pty-manager';
+import type { CellAttributes, KittyStackState } from './shared/pty-manager';
 import { TuiIpcConnection } from './shared/tui-ipc-connection';
 import { createTestDir, type TestPaths } from './shared/test-paths';
 import { resolveChatCliBin } from './chat-cli-bin';
@@ -446,6 +446,21 @@ export class TestCase {
    */
   sendSignal(signal: NodeJS.Signals): void {
     this.ptyManager.sendSignal(signal);
+  }
+
+  /**
+   * Resizes the PTY, delivering SIGWINCH to the TUI. See {@link PtyManager.resize}.
+   */
+  resize(cols: number, rows: number): void {
+    this.ptyManager.resize(cols, rows);
+  }
+
+  /**
+   * Replays the Kitty keyboard-mode stack from the captured PTY output.
+   * See {@link PtyManager.getKittyStack}.
+   */
+  getKittyStack(): KittyStackState {
+    return this.ptyManager.getKittyStack();
   }
 
   /**
