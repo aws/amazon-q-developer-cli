@@ -334,8 +334,8 @@ mod tests {
         assert!(json.contains("\"voice\""), "voice should be enabled: {json}");
         assert!(!json.contains("\"lite\""), "lite must be stable-only: {json}");
         assert!(
-            !json.contains("\"remote_sandbox\""),
-            "remote_sandbox must stay dark: {json}"
+            json.contains("\"remote_sandbox\""),
+            "remote_sandbox should be enabled for internal nightly: {json}"
         );
         assert!(!json.contains("\"workflows\""), "workflows must stay dark: {json}");
         assert!(
@@ -359,25 +359,27 @@ mod tests {
     }
 
     #[test]
-    fn test_remote_sandbox_is_present_but_dark_in_all_real_builds() {
-        // The rollout entry must exist (so it can be ramped later by editing
-        // the percent + rebuilding)...
+    fn test_remote_sandbox_enabled_only_for_internal_nightly() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(
             features.contains_key(<&str>::from(Feature::RemoteSandbox)),
             "remote_sandbox must be declared in rollout.json"
         );
 
-        // ...but at treatment_percent 0 it is OFF for every real build:
-        // external/stable, external/nightly, internal/stable, and even
-        // internal/nightly. Only `init_for_tests_enable_all` (debug /
-        // KIRO_TEST_MODE / E2E) turns it on. This is the dark-ship guarantee
+        // Ramped to internal nightly only. External users (any channel) and
+        // stable builds (any segment) must stay dark — that is the guarantee
         // that keeps `--cloud`/`--repo` unusable by live customers.
-        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
+        for (is_internal, is_nightly, expected) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, false),
+            (true, true, true),
+        ] {
             let r = Rollout::new_for_test(is_internal, is_nightly);
-            assert!(
-                !r.is_enabled(Feature::RemoteSandbox),
-                "remote_sandbox must be dark for internal={is_internal}, nightly={is_nightly}"
+            assert_eq!(
+                r.is_enabled(Feature::RemoteSandbox),
+                expected,
+                "remote_sandbox enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

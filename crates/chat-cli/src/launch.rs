@@ -38,6 +38,7 @@ use crate::util::consts::env_var::{
     KIRO_CHAT_CLI_BIN,
     KIRO_KAS_NODE_PATH,
     KIRO_KAS_SERVER_PATH,
+    KIRO_REMOTE_SESSIONS_ENDPOINT,
     KIRO_TELEMETRY_CLIENT_ID,
     KIRO_TUI_FORCE_COLOR,
     KIRO_VERSION_OVERRIDE,
@@ -289,6 +290,42 @@ fn tui_child_env(
     env
 }
 
+/// Default BFF endpoint for remote/cloud sandbox sessions, keyed to the auth
+/// stage. KAS treats a set endpoint as the opt-in to run cloud machinery, so
+/// owning the default here (rather than in KAS) keeps that gate a deliberate
+/// client choice while removing per-client duplication. Stage is inferred from
+/// the auth portal URL — the only stage signal the CLI has — so cloud sessions
+/// hit the same stage the user authenticated against.
+fn default_remote_sessions_endpoint(auth_portal_url: Option<&str>) -> &'static str {
+    // Exact match is intentional: an unrecognized portal (variant spelling,
+    // port, private IdC) conservatively maps to prod; preprod testers who need
+    // a nonstandard portal set the endpoint env var explicitly.
+    match auth_portal_url.map(str::trim) {
+        Some("https://gamma.app.kiro.dev") => "https://gamma.app.kiro.dev",
+        Some("https://beta.app.kiro.dev") => "https://beta.app.kiro.dev",
+        _ => "https://app.kiro.dev",
+    }
+}
+
+/// Resolve the endpoint the launcher sets on the KAS child, or `None` to leave
+/// it unset (KAS then keeps cloud sessions dark). An explicit
+/// `KIRO_REMOTE_SESSIONS_ENDPOINT` always wins so preprod testing can override;
+/// otherwise the stage default applies only when the `remote_sandbox` rollout
+/// is enabled for this user.
+fn resolve_remote_sessions_endpoint(
+    parent_override: Option<String>,
+    rollout_enabled: bool,
+    auth_portal_url: Option<&str>,
+) -> Option<String> {
+    if let Some(v) = parent_override.filter(|v| !v.trim().is_empty()) {
+        return Some(v);
+    }
+    if rollout_enabled {
+        return Some(default_remote_sessions_endpoint(auth_portal_url).to_string());
+    }
+    None
+}
+
 /// Launch the interactive TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
 async fn launch_acp_interactive(
     os: &Os,
@@ -489,6 +526,19 @@ async fn launch_acp_interactive(
                     "Using KAS agent engine, node: {}, server resolved from @kiro/agent package",
                     node.display()
                 );
+            }
+
+            // Own the remote-sessions endpoint here so it isn't duplicated per
+            // client. Setting it is KAS's opt-in for cloud machinery, so gate
+            // the default on the rollout; an explicit env value still wins for
+            // preprod. Leaving it unset keeps KAS's cloud path dark.
+            if let Some(endpoint) = resolve_remote_sessions_endpoint(
+                std::env::var(KIRO_REMOTE_SESSIONS_ENDPOINT).ok(),
+                crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
+                std::env::var("KIRO_AUTH_PORTAL_URL").ok().as_deref(),
+            ) {
+                info!("Remote sessions endpoint: {endpoint}");
+                cmd.env(KIRO_REMOTE_SESSIONS_ENDPOINT, endpoint);
             }
         },
         AgentEngine::V2 => {
@@ -842,6 +892,74 @@ async fn launch_acp_non_interactive(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_endpoint_default_follows_auth_stage() {
+        assert_eq!(default_remote_sessions_endpoint(None), "https://app.kiro.dev");
+        assert_eq!(
+            default_remote_sessions_endpoint(Some("https://app.kiro.dev")),
+            "https://app.kiro.dev"
+        );
+        assert_eq!(
+            default_remote_sessions_endpoint(Some("https://gamma.app.kiro.dev")),
+            "https://gamma.app.kiro.dev"
+        );
+        assert_eq!(
+            default_remote_sessions_endpoint(Some("  https://beta.app.kiro.dev  ")),
+            "https://beta.app.kiro.dev"
+        );
+        // An unrecognized portal (e.g. a private IdC start URL) falls back to prod.
+        assert_eq!(
+            default_remote_sessions_endpoint(Some("https://example.com")),
+            "https://app.kiro.dev"
+        );
+    }
+
+    #[test]
+    fn remote_endpoint_unset_when_rollout_off_and_no_override() {
+        assert_eq!(resolve_remote_sessions_endpoint(None, false, None), None);
+        // A blank env value is treated as unset, not as an override.
+        assert_eq!(
+            resolve_remote_sessions_endpoint(Some("   ".to_string()), false, None),
+            None
+        );
+    }
+
+    #[test]
+    fn remote_endpoint_uses_stage_default_when_rollout_on() {
+        assert_eq!(
+            resolve_remote_sessions_endpoint(None, true, None),
+            Some("https://app.kiro.dev".to_string())
+        );
+        assert_eq!(
+            resolve_remote_sessions_endpoint(None, true, Some("https://gamma.app.kiro.dev")),
+            Some("https://gamma.app.kiro.dev".to_string())
+        );
+        // A blank override must fall through to the stage default, not set a
+        // blank endpoint.
+        assert_eq!(
+            resolve_remote_sessions_endpoint(Some("   ".to_string()), true, None),
+            Some("https://app.kiro.dev".to_string())
+        );
+    }
+
+    #[test]
+    fn remote_endpoint_explicit_override_wins_regardless_of_rollout() {
+        // Override is honored even when the rollout is off (preprod testing).
+        assert_eq!(
+            resolve_remote_sessions_endpoint(Some("http://127.0.0.1:8787".to_string()), false, None),
+            Some("http://127.0.0.1:8787".to_string())
+        );
+        // And it beats the stage default when the rollout is on.
+        assert_eq!(
+            resolve_remote_sessions_endpoint(
+                Some("http://127.0.0.1:8787".to_string()),
+                true,
+                Some("https://gamma.app.kiro.dev")
+            ),
+            Some("http://127.0.0.1:8787".to_string())
+        );
+    }
 
     #[test]
     fn test_tui_child_env_forwards_real_version() {

@@ -222,6 +222,16 @@ pub mod env_var {
         /// `chat_cli`'s `resolve_kas_paths` for KAS-side subcommands.
         KIRO_KAS_SERVER_PATH = "KIRO_KAS_SERVER_PATH",
 
+        /// BFF endpoint KAS talks to for remote/cloud sandbox sessions.
+        /// The launcher sets this on the KAS child (which inherits it via the
+        /// TUI's `process.env`) ONLY when the `remote_sandbox` rollout is
+        /// enabled, defaulting to the endpoint for the user's auth stage
+        /// (`resolve_remote_sessions_endpoint`). A user/parent-provided value
+        /// wins, so preprod testing can point KAS at gamma/beta. When the
+        /// rollout is off the launcher leaves it unset, so KAS's own gate keeps
+        /// the cloud-session machinery dark. Read by the KAS server.
+        KIRO_REMOTE_SESSIONS_ENDPOINT = "KIRO_REMOTE_SESSIONS_ENDPOINT",
+
         /// Path to the KAS bundle archive (`.tar.gz` of `node_modules`).
         /// At build time this is consumed by `build.rs` to embed the bundle.
         /// At runtime it is a fallback source for the KAS bundle bytes and

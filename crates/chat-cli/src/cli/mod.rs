@@ -683,6 +683,14 @@ async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::Ag
     // Render headless when the session is non-interactive: explicit `--no-interactive`,
     // or stdin that isn't interactive. Avoids rendering the TUI on a pipe.
     let non_interactive = args.no_interactive || !crate::util::stdin_is_interactive();
+    // The non-interactive path never sends an execution target or the
+    // remote-sessions endpoint, so `--cloud` there would silently run a local
+    // session. Reject it until that path supports cloud.
+    if non_interactive && (args.cloud || args.repo.is_some()) {
+        bail!(
+            "--cloud/--repo are not supported in non-interactive mode yet; run without --no-interactive and with an interactive stdin"
+        );
+    }
     let options = if non_interactive {
         let input = args.resolve_non_interactive_input()?;
         crate::launch::LaunchOptions::non_interactive(

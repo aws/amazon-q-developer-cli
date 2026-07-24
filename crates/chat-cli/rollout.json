@@ -10,8 +10,8 @@
     "segment": "all"
   },
   "remote_sandbox": {
-    "description": "Remote/cloud sandbox sessions (hidden --remote/--repo flags). Dark-shipped at 0% so it is OFF in every released build; only debug/KIRO_TEST_MODE/E2E enable it. Ramp via treatment_percent (internal nightly first) once E2E-ready.",
-    "treatment_percent": 0,
+    "description": "Remote/cloud sandbox sessions (--cloud/--repo flags). Ramped to 100% for internal nightly; external and stable builds stay dark. Widen segment/channel here for the next ramp stage.",
+    "treatment_percent": 100,
     "segment": "internal",
     "channel": "nightly"
   },
