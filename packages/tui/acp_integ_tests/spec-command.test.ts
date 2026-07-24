@@ -114,11 +114,13 @@ describe('/spec command (_kiro/spec/*)', () => {
     expect(p.featureName).toBe('my-feature');
   });
 
-  it('/spec new switches to spec mode and sends prompt', async () => {
+  it('/spec new switches to spec mode and sends the kickoff after a description', async () => {
     /**
      * GIVEN  TUI ready
      * WHEN   /spec new my-feature
-     * THEN   set_config_option(mode:'spec') sent + prompt contains feature name
+     * THEN   set_config_option(mode:'spec') sent, and no prompt until the
+     *        user submits a description; the kickoff then embeds both the
+     *        feature name and the description as ground truth
      */
     // Sandbox settings so an ambient chat.defaultAgent doesn't send its own
     // mode config option ahead of 'spec' and shift modeReqs[0].
@@ -156,7 +158,7 @@ describe('/spec command (_kiro/spec/*)', () => {
     await tc.sendKeys('/spec new my-feature');
     await tc.sleepMs(200);
     await tc.pressEnter();
-    await tc.sleepMs(1500);
+    await tc.sleepMs(800);
 
     const configReqs = tc.mock.receivedRequests('session/set_config_option');
     const modeReqs = configReqs.filter(
@@ -165,9 +167,21 @@ describe('/spec command (_kiro/spec/*)', () => {
     expect(modeReqs.length).toBeGreaterThanOrEqual(1);
     expect((modeReqs[0]!.params as any).value).toBe('spec');
 
+    // The description-collection step is armed: the intro asks what the
+    // spec should cover, and nothing has been sent to the agent yet.
+    await tc.waitForVisibleText('What should this spec cover?', 5000);
+    expect(tc.mock.receivedRequests('session/prompt').length).toBe(0);
+
+    await tc.sendKeys('A clock that counts down');
+    await tc.sleepMs(200);
+    await tc.pressEnter();
+    await tc.sleepMs(1500);
+
     const promptReqs = tc.mock.receivedRequests('session/prompt');
     expect(promptReqs.length).toBeGreaterThanOrEqual(1);
     const content = JSON.stringify(promptReqs[0]!.params);
     expect(content).toContain('my-feature');
+    expect(content).toContain('A clock that counts down');
+    expect(content).toContain('ground truth');
   });
 });

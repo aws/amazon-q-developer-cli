@@ -10,6 +10,7 @@ import { Kiro } from '../../../kiro.js';
 import { Question } from '../Question.js';
 import { ToolUseMessage } from '../ToolUseMessage.js';
 import type { UserInputOption } from '@kiro/acp-type-covenant';
+import { stripAnsiQuick } from '../../../lite/render.js';
 
 const DOWN = '\x1b[B';
 const ENTER = '\r';
@@ -83,7 +84,7 @@ describe('Question keyboard behavior', () => {
 
     terminal.sendInput('3');
     await flush();
-    expect(terminal.output).toContain('❯ 3. Third');
+    expect(stripAnsiQuick(terminal.output)).toContain('❯ 3. Third');
     expect(onAnswer).not.toHaveBeenCalled();
 
     terminal.sendInput(ENTER);

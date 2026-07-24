@@ -162,6 +162,7 @@ export function createMockCommandContext(
     createStreamEventHandler: spy('createStreamEventHandler') as any,
     setSessionId: spy('setSessionId') as any,
     addSystemMessage: spy('addSystemMessage') as any,
+    setPendingSpecDescription: spy('setPendingSpecDescription') as any,
     addSession: spy('addSession') as any,
     setActiveSession: spy('setActiveSession') as any,
     sessions: new Map(),

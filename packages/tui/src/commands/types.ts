@@ -28,6 +28,7 @@ import type {
   HookInfo,
   KnowledgeEntry,
   McpServerInfo,
+  PendingSpecDescription,
   ToolInfo,
   CodePanelData,
   RequestStat,
@@ -281,6 +282,9 @@ export interface CommandContext {
   setSessionId: (id: string | null) => void;
   /** Add a system message to the conversation */
   addSystemMessage: (content: string, success: boolean) => void;
+  /** Arm the `/spec new` description-collection step: the next submitted
+   *  line becomes the feature description for the spec kickoff prompt. */
+  setPendingSpecDescription: (pending: PendingSpecDescription | null) => void;
   /** Add session to store */
   addSession: (session: any) => void;
   /** Set active session */

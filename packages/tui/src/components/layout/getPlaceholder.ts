@@ -12,6 +12,8 @@ export function getPlaceholder(opts: {
   activeInterruptMode: InterruptMode;
   toggleHintLabel: string;
   agentName: string | undefined;
+  /** Feature name of the pending /spec new description-collection step. */
+  specDescriptionFeature?: string | null;
   goalStatus?: {
     state: string;
     iteration: number;
@@ -42,6 +44,9 @@ export function getPlaceholder(opts: {
       return `Kiro is working ${dot} Type to steer ${dot} ${opts.toggleHintLabel} to queue`;
     }
     return `Kiro is working ${dot} Type to queue ${dot} ${opts.toggleHintLabel} to steer`;
+  }
+  if (opts.specDescriptionFeature) {
+    return `describe what "${opts.specDescriptionFeature}" should do ${dot} esc to cancel`;
   }
   if (opts.isShellEscape) {
     return `running shell command ${dot} ctrl+c to cancel`;

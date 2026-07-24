@@ -1,7 +1,13 @@
 import React, { useLayoutEffect, useReducer, useRef, useState } from 'react';
-import { Box, Input, useTwinkiContext } from './../../renderer.js';
+import {
+  Box,
+  CURSOR_MARKER,
+  Input,
+  useTwinkiContext,
+} from './../../renderer.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { useTextStyle } from '../../hooks/useTextStyle.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
@@ -78,6 +84,7 @@ export const Question: React.FC<QuestionProps> = ({
   const { tui } = useTwinkiContext();
   const primary = getColor('primary');
   const secondary = getColor('secondary');
+  const selectedLabel = useTextStyle('selectedLabel');
 
   const freeTextIndex = options.length;
   const initialFocus = Math.max(
@@ -311,7 +318,7 @@ export const Question: React.FC<QuestionProps> = ({
     activeIndex = editing ? freeTextIndex : focused
   ) =>
     index === activeIndex
-      ? primary(`${glyphs.chevron} ${label}`)
+      ? `${CURSOR_MARKER}${primary(glyphs.chevron)} ${selectedLabel(label)}`
       : `  ${label}`;
   const activeOption = subOptionPage
     ? options[subOptionPage.optionIndex]
@@ -324,6 +331,7 @@ export const Question: React.FC<QuestionProps> = ({
       onClose={handleClose}
       showTabHint={false}
       hideTitleDivider={true}
+      footerIndent={2}
       footerLeft={
         <Text>
           {primary(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
@@ -335,12 +343,10 @@ export const Question: React.FC<QuestionProps> = ({
             </>
           )}
           {secondary(` ${glyphs.smallDot} `)}
-          {primary(glyphs.enter)} {secondary('to answer')}
+          {primary(glyphs.enter)} {secondary('to submit')}
         </Text>
       }
-      closeHintLabel={
-        editing || subOptionPage ? 'to pick a choice' : 'to cancel'
-      }
+      closeHintLabel={subOptionPage ? 'to pick a choice' : 'to cancel'}
     >
       <Box flexDirection="column">
         {question && (
@@ -363,7 +369,9 @@ export const Question: React.FC<QuestionProps> = ({
                   )}
                 </Text>
                 {subOption.description && (
-                  <Text>{secondary(`   ${subOption.description}`)}</Text>
+                  <Box paddingLeft={6}>
+                    <Text>{secondary(subOption.description)}</Text>
+                  </Box>
                 )}
               </React.Fragment>
             ))}
@@ -383,7 +391,9 @@ export const Question: React.FC<QuestionProps> = ({
                 {option.recommended ? secondary(' (recommended)') : ''}
               </Text>
               {option.description && (
-                <Text>{secondary(`   ${option.description}`)}</Text>
+                <Box paddingLeft={5}>
+                  <Text>{secondary(option.description)}</Text>
+                </Box>
               )}
             </React.Fragment>
           ))

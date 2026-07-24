@@ -118,3 +118,22 @@ export function describeSpecDocuments(summary: SpecFeatureSummary): string {
   if (summary.documents.length === 0) return 'empty';
   return summary.documents.map((d) => d.replace(/\.md$/, '')).join(', ');
 }
+
+/**
+ * Compose the kickoff prompt that starts a new spec once the user has
+ * described the feature. The description is framed as ground truth so the
+ * agent drafts requirements from the user's intent instead of inventing
+ * them from the feature name alone.
+ */
+export function composeSpecKickoffPrompt(
+  featureName: string,
+  description: string
+): string {
+  return (
+    `Start a new spec called "${featureName}". Create the ` +
+    `.kiro/specs/${featureName}/ directory and draft the initial ` +
+    `requirements document.\n\n` +
+    `The user described what this spec should cover — treat this as the ` +
+    `ground truth for the requirements:\n${description}`
+  );
+}

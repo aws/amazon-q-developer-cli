@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`/spec new` asks what the spec should cover and drafts requirements from your answer"
+}

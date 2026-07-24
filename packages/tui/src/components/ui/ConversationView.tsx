@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Box, Static, Text as InkText } from './../../renderer.js';
 import {
   MessageRole,
+  ToolUseStatus,
   type MessageType as StoreMessageType,
 } from '../../stores/app-store';
 import { useAppStore } from '../../stores/app-store';
@@ -187,6 +188,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   onReadyToFlush,
   prevFlushedRole,
   turnId,
+  questionPanelVisible,
 }: {
   tailMessages: StoreMessageType[];
   agentBarColor: string | undefined;
@@ -194,6 +196,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   onReadyToFlush?: () => void;
   prevFlushedRole?: MessageRole;
   turnId: string;
+  questionPanelVisible?: boolean;
 }) {
   const { isProcessing } = useConversationState();
   const { height: termHeight } = useTerminalSize();
@@ -265,6 +268,17 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         if (message.role === MessageRole.ToolUse) {
           // Skip subagent tool calls — rendered via SubagentToolPanel
           if (isSubagentToolCall(message)) return null;
+          // Suppress the transcript copy only while the interactive Question
+          // panel is actually on screen (its mount can trail `Pending` by an
+          // interaction-ready hold; the row covers that window). Answering
+          // flips the status, making the row the permanent record.
+          if (
+            questionPanelVisible &&
+            message.isQuestion &&
+            message.status === ToolUseStatus.Pending
+          ) {
+            return null;
+          }
           const isSessionTool = SESSION_TOOL_NAMES.has(message.name);
           return (
             <React.Fragment key={message.id}>
@@ -595,7 +609,13 @@ function appendMessagesToStatic(
   });
 }
 
-export const ConversationView = React.memo(function ConversationView() {
+export const ConversationView = React.memo(function ConversationView({
+  questionPanelVisible = false,
+}: {
+  /** The interactive Question panel is mounted; only then is the pending
+   *  question's transcript row a duplicate worth suppressing. */
+  questionPanelVisible?: boolean;
+}) {
   const { messages, isProcessing, settings } = useConversationState();
   const { getColor } = useTheme();
   const { adjustStaticCursor } = useTwinkiContext();
@@ -1152,6 +1172,7 @@ export const ConversationView = React.memo(function ConversationView() {
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
                 turnId={activeTurn.userMessage.id}
+                questionPanelVisible={questionPanelVisible}
               />
             </Box>
           </CardContext.Provider>
@@ -1165,6 +1186,7 @@ export const ConversationView = React.memo(function ConversationView() {
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
                 turnId={activeTurn.userMessage.id}
+                questionPanelVisible={questionPanelVisible}
               />
             </Card>
           </Box>

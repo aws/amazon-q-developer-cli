@@ -828,10 +828,8 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       return openSpecView(ctx, cmd, workspaceRoot, '');
     }
 
-    // /spec new <name> — switch to spec mode, then nudge the agent to
-    // kick off the spec workflow via a normal prompt. The agent's spec
-    // mode knows how to create the feature directory and the initial
-    // requirements document when asked to start a new spec.
+    // /spec new <name> — switch to spec mode, then arm a description step so
+    // nothing reaches the agent until the user says what the spec covers.
     if (/^new(\s|$)/.test(trimmed)) {
       const name = trimmed.slice(3).trim();
       if (!name) {
@@ -849,9 +847,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         return true;
       }
       ctx.setCurrentAgent({ name: 'spec' });
-      await ctx.sendMessage(
-        `Start a new spec called "${name}". Create the .kiro/specs/${name}/ directory and draft the initial requirements document.`
-      );
+      ctx.setPendingSpecDescription({ featureName: name });
       return true;
     }
 

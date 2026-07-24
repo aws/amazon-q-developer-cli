@@ -47,6 +47,7 @@ import {
 import { getVerboseDisplay, getVerboseFilters } from '../../../lite/verbose.js';
 import { pickTip, formatTipLine } from '../../../tips/tips.js';
 import { Question } from '../../ui/Question.js';
+import { SpecDescriptionIntro } from '../../ui/SpecDescriptionIntro.js';
 import type { VariantLayoutProps } from '../variant-layout.js';
 import {
   formatSubagentRow,
@@ -148,6 +149,9 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const pendingApproval = useAppStore((s) => s.pendingApproval);
   const respondToApproval = useAppStore((s) => s.respondToApproval);
   const pendingQuestion = useAppStore((s) => s.pendingQuestion);
+  const specDescriptionFeature = useAppStore(
+    (s) => s.pendingSpecDescription?.featureName ?? null
+  );
   const respondToQuestion = useAppStore((s) => s.respondToQuestion);
   const mainSessionId = useAppStore((s) => s.sessionId);
   const currentModel = useAppStore((s) => s.currentModel);
@@ -1792,6 +1796,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         )
       )}
 
+      {specDescriptionFeature && (
+        <SpecDescriptionIntro featureName={specDescriptionFeature} />
+      )}
+
       {showQuestion && (
         <Question
           key={`${showQuestion.sessionId}:${showQuestion.toolCallId}`}
@@ -1880,6 +1888,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
                     activeInterruptMode,
                     toggleHintLabel: keybindings.label('toggleInterruptMode'),
                     agentName: currentAgent?.name,
+                    specDescriptionFeature,
                     goalStatus,
                     cancelLabel: keybindings.label('cancelStream'),
                   })}

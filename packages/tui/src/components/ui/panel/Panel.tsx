@@ -29,6 +29,11 @@ export interface PanelProps {
    * — the underlying keypress handler is unchanged; this only labels intent.
    */
   closeHintLabel?: string;
+  /**
+   * Spaces prepended to the footer hints so they line up with indented
+   * content (e.g. a menu's chevron gutter). Default 0: flush left.
+   */
+  footerIndent?: number;
 }
 
 export const Panel: React.FC<PanelProps> = ({
@@ -48,6 +53,7 @@ export const Panel: React.FC<PanelProps> = ({
   onScrollUp,
   onScrollDown,
   closeHintLabel = 'to close',
+  footerIndent = 0,
 }) => {
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
@@ -135,6 +141,7 @@ export const Panel: React.FC<PanelProps> = ({
       <Box justifyContent="space-between" paddingX={1}>
         <Box>
           <Text>
+            {footerIndent > 0 ? ' '.repeat(footerIndent) : ''}
             {primary(keybindings.label('closeMenu'))}{' '}
             {dim(searchable && search ? 'to clear search' : closeHintLabel)}
             {canScrollUp || canScrollDown

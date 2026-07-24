@@ -100,6 +100,11 @@ export type { KasSubagentRoutingStore } from './kas-subagent-routing';
 
 /** A selectable turn in the `/rewind` Explorer. Shape is defined by the
  *  backend `/rewind` execute handler in `CommandResult.data.turns`. */
+/** The armed `/spec new` description-collection step. */
+export interface PendingSpecDescription {
+  featureName: string;
+}
+
 export interface RewindTurn {
   logIndex: number;
   label: string;
@@ -341,6 +346,7 @@ import {
   detectErrorCategory,
 } from '../utils/error-guidance.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+import { composeSpecKickoffPrompt } from '../utils/spec-workspace.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
 import { isUserDeniedReason } from '../constants/tool-failure-reasons.js';
@@ -936,6 +942,14 @@ interface BaseAppActions {
     answerForAgent?: string
   ) => boolean;
   cancelQuestion: () => void;
+  /** Arm (or clear) the `/spec new` description-collection step. */
+  setPendingSpecDescription: (pending: PendingSpecDescription | null) => void;
+  /**
+   * Cancel the description-collection step: drop the pending state (the
+   * live intro block disappears with it). Mode is untouched — the user
+   * stays in spec and leaves it explicitly, like any other mode.
+   */
+  cancelPendingSpecDescription: () => void;
   setApprovalMode: (mode: 'dropdown' | 'drill-in') => void;
   setAutoApproveCrewTools: (value: boolean) => void;
   setCurrentModel: (model: { id: string; name: string } | null) => void;
@@ -1564,6 +1578,13 @@ export interface AppState {
   approvalQueue: ApprovalRequestInfo[];
   pendingQuestion: QuestionRequestInfo | null;
   questionQueue: QuestionRequestInfo[];
+  /**
+   * Armed by `/spec new <name>`: the next submitted line is the feature
+   * description for the spec kickoff prompt, not a chat message. The intro
+   * block renders from this state in the live region (never the transcript)
+   * so cancelling leaves no trace.
+   */
+  pendingSpecDescription: PendingSpecDescription | null;
   approvalMode: 'dropdown' | 'drill-in';
   autoApproveCrewTools: boolean;
   focusedCrewIndex: number;
@@ -2335,6 +2356,7 @@ function buildCommandContext(
       set({ sessionId: id, initErrors: [] });
     },
     addSystemMessage,
+    setPendingSpecDescription: state.setPendingSpecDescription,
     addSession: state.addSession,
     setActiveSession: state.setActiveSession,
     sessions: state.sessions,
@@ -2361,6 +2383,7 @@ function buildCommandContext(
         showKnowledgePanel: false,
         contextBreakdown: null,
         usageData: null,
+        pendingSpecDescription: null,
         ...extraClearState,
       }),
     getMessages: () => get().messages,
@@ -2582,6 +2605,7 @@ export const createAppStore = (props: AppStoreProps) => {
     approvalQueue: [],
     pendingQuestion: null,
     questionQueue: [],
+    pendingSpecDescription: null,
     approvalMode: 'dropdown',
     autoApproveCrewTools: false,
     focusedCrewIndex: 0,
@@ -4942,12 +4966,27 @@ export const createAppStore = (props: AppStoreProps) => {
       // and an entry to clear, so no-op rerenders are avoided.
       const isAgentChanging = prevAgent?.name !== agent?.name;
       const hasGenerating = get().artifactGenerating !== null;
+      // Same staleness rule for the /spec new description step: every path
+      // that changes the agent funnels through here (commands, pickers,
+      // shift+tab, backend switches), so leaving spec voids the step.
+      const dropsSpecStep =
+        isAgentChanging &&
+        agent?.name !== 'spec' &&
+        get().pendingSpecDescription !== null;
       set({
         currentAgent: agent ? { name: agent.name } : null,
         ...(isAgentChanging && hasGenerating
           ? { artifactGenerating: null }
           : {}),
+        ...(dropsSpecStep ? { pendingSpecDescription: null } : {}),
       });
+      if (dropsSpecStep) {
+        get().showTransientAlert({
+          message: 'Spec setup cancelled',
+          status: 'info',
+          autoHideMs: 3000,
+        });
+      }
 
       // Trigger plan quality survey when switching away from planner
       // (the handoff moment — plan was presented and user approved it).
@@ -5437,6 +5476,19 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setApprovalMode: (mode) => set({ approvalMode: mode }),
+
+    setPendingSpecDescription: (pending) =>
+      set({ pendingSpecDescription: pending }),
+
+    cancelPendingSpecDescription: () => {
+      if (!get().pendingSpecDescription) return;
+      set({ pendingSpecDescription: null });
+      get().showTransientAlert({
+        message: 'Spec setup cancelled',
+        status: 'info',
+        autoHideMs: 3000,
+      });
+    },
 
     setAutoApproveCrewTools: (value) => set({ autoApproveCrewTools: value }),
     setFocusedCrewIndex: (index) => set({ focusedCrewIndex: index }),
@@ -7815,6 +7867,27 @@ export const createAppStore = (props: AppStoreProps) => {
         return;
       }
 
+      // /spec new description-collection: the next submitted line is the
+      // feature description, not a chat message. Real commands still run —
+      // only leaving spec mode (or esc) voids the step, so informational
+      // commands don't cost the user their setup.
+      const pendingSpec = state.pendingSpecDescription;
+      const isCommandInput = isKnownSlashCommandToken(
+        trimmed,
+        liteGateCommands(state)
+      );
+      const isSpecDescription = !!pendingSpec && !isCommandInput;
+      if (isSpecDescription && !trimmed) {
+        // Images-only submit: a spec can't start from an empty description.
+        // No buffer clear needed — the input row clears itself pre-submit.
+        state.showTransientAlert({
+          message: 'Describe the spec in words first — images stay attached',
+          status: 'warning',
+          autoHideMs: 4000,
+        });
+        return;
+      }
+
       // Clear all UI state before processing any input
       const hadSurveyPrompt = !!state.surveyPrompt;
       const dismissedSurveyId = state.surveyPrompt?.survey.id ?? null;
@@ -7866,6 +7939,19 @@ export const createAppStore = (props: AppStoreProps) => {
       // Clear announcement on first user interaction
       if (state.announcement) {
         set({ announcement: null, announcementExpanded: false });
+      }
+
+      // Spec description: send the kickoff. Placed after the shared cleanup
+      // (so surveys/panels behave as on any submit) and before the slash and
+      // shell branches (a description may start with '/' or '!').
+      if (pendingSpec && isSpecDescription) {
+        set({ pendingSpecDescription: null });
+        await state.sendMessage(
+          composeSpecKickoffPrompt(pendingSpec.featureName, trimmed),
+          undefined,
+          trimmed
+        );
+        return;
       }
 
       // A typed `@name` that exactly matches a known prompt is routed as its

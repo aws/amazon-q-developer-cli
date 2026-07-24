@@ -4,12 +4,28 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
+  composeSpecKickoffPrompt,
   describeSpecDocuments,
   findSpecFeature,
   listSpecFeatures,
   specsRoot,
   type SpecFeatureSummary,
 } from '../spec-workspace';
+
+describe('composeSpecKickoffPrompt', () => {
+  it('includes the feature name, directory, and description as ground truth', () => {
+    const prompt = composeSpecKickoffPrompt(
+      'slack bot',
+      'Tracks design requests and helps prioritize them'
+    );
+    expect(prompt).toContain('Start a new spec called "slack bot"');
+    expect(prompt).toContain('.kiro/specs/slack bot/');
+    expect(prompt).toContain('ground truth');
+    expect(prompt).toContain(
+      'Tracks design requests and helps prioritize them'
+    );
+  });
+});
 
 describe('spec-workspace', () => {
   let workspaceRoot: string;

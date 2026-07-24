@@ -233,6 +233,19 @@ export class MockSessionClient implements SessionClient {
         } as ApprovalRequestInfo,
       };
       this.broadcastEvent(eventWithResolve);
+    } else if (event.type === AgentEventType.QuestionRequest) {
+      // Same treatment for questions: the resolve callback can't cross the
+      // IPC boundary, so reconstitute it here.
+      const eventWithResolve = {
+        ...event,
+        value: {
+          ...event.value,
+          resolve: (response: unknown) => {
+            console.log('Mock question resolved:', response);
+          },
+        },
+      };
+      this.broadcastEvent(eventWithResolve);
     } else {
       this.broadcastEvent(event);
     }

@@ -25,6 +25,7 @@ import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
 import { Question } from '../ui/Question.js';
+import { SpecDescriptionIntro } from '../ui/SpecDescriptionIntro.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
 import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
@@ -147,6 +148,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   } = useProcessingState();
   const { respondToApproval, approvalMode } = useApprovalState();
   const respondToQuestion = useAppStore((state) => state.respondToQuestion);
+  const specDescriptionFeature = useAppStore(
+    (state) => state.pendingSpecDescription?.featureName ?? null
+  );
   const globalPaused = useAnimationPaused();
   const keybindings = useKeybindings();
   const trustAllToolsAccepted = useAppStore(
@@ -648,7 +652,15 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
 
         {/* ConversationView - always rendered. It renders the Kiro welcome
             banner at its top when no message has been sent. */}
-        <ConversationView />
+        <ConversationView
+          questionPanelVisible={!!showQuestion && mode === 'inline'}
+        />
+
+        {/* /spec new description-collection intro — live-region only, so it
+            vanishes when the user submits a description or cancels. */}
+        {specDescriptionFeature && (
+          <SpecDescriptionIntro featureName={specDescriptionFeature} />
+        )}
 
         {/* Cloud connect screen: milestone checklist while a cloud session is
             booting and no message has been sent yet. Rendered AFTER
@@ -802,6 +814,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               activeInterruptMode,
               toggleHintLabel,
               agentName: currentAgent?.name,
+              specDescriptionFeature,
               goalStatus,
               cancelLabel: keybindings.label('cancelStream'),
             })}

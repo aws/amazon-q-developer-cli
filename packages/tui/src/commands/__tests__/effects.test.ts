@@ -1667,6 +1667,60 @@ describe('loadSession effect (legacy /chat dispatch - removed)', () => {
   it.skip('removed - see v2-handlers/chat tests', () => {});
 });
 
+describe('/spec new effect', () => {
+  const specCmd: SlashCommand = {
+    name: '/spec',
+    description: 'Spec commands',
+    source: 'local' as const,
+    meta: {
+      local: true,
+      subcommands: ['new', 'run', 'view', 'analyze_requirements'],
+    },
+  };
+
+  it('shows usage error when no feature name is given', async () => {
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+    await runEffect(specCmd, null, ctx, 'new');
+    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain(
+      'Usage: /spec new'
+    );
+    expect(ctx._spies.setPendingSpecDescription).not.toHaveBeenCalled();
+  });
+
+  it('switches to spec mode and arms the description-collection step instead of sending a prompt', async () => {
+    const setConfigOption = mock(() => Promise.resolve());
+    const ctx = createMockCommandContext({
+      slashCommands: [specCmd],
+      kiro: { setConfigOption } as any,
+      currentAgent: { name: 'default' },
+    });
+    await runEffect(specCmd, null, ctx, 'new slack bot');
+
+    expect(setConfigOption).toHaveBeenCalledWith('mode', 'spec');
+    expect(ctx._spies.setCurrentAgent).toHaveBeenCalledWith({ name: 'spec' });
+    // No transcript write: the intro block renders from live state so a
+    // cancelled setup leaves no trace.
+    expect(ctx._spies.addSystemMessage).not.toHaveBeenCalled();
+    // The kickoff prompt is NOT sent yet — it waits for the description.
+    expect(ctx._spies.sendMessage).not.toHaveBeenCalled();
+    expect(ctx._spies.setPendingSpecDescription).toHaveBeenCalledWith({
+      featureName: 'slack bot',
+    });
+  });
+
+  it('does not arm the step when the mode switch fails', async () => {
+    const setConfigOption = mock(() => Promise.reject(new Error('nope')));
+    const ctx = createMockCommandContext({
+      slashCommands: [specCmd],
+      kiro: { setConfigOption } as any,
+    });
+    await runEffect(specCmd, null, ctx, 'new my-feature');
+    expect(ctx._spies.showAlert!.mock.calls[0]![1]).toBe('error');
+    expect(ctx._spies.setPendingSpecDescription).not.toHaveBeenCalled();
+    expect(ctx._spies.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe('/spec analyze_requirements effect', () => {
   const specCmd: SlashCommand = {
     name: '/spec',

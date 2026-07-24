@@ -210,6 +210,12 @@ export const PromptInput = React.memo(function PromptInput({
   const inputPanelOpen = useAppStore(
     (s) => s.showRepoPicker || s.showSessionPicker || s.showSourceProviderGate
   );
+  const specDescriptionPending = useAppStore(
+    (s) => s.pendingSpecDescription !== null
+  );
+  const cancelSpecDescription = useAppStore(
+    (s) => s.cancelPendingSpecDescription
+  );
   const keybindings = useKeybindings();
   const glyphs = useGlyphs();
   const { allowAsciiArt } = useAllowAsciiArt();
@@ -1036,6 +1042,24 @@ export const PromptInput = React.memo(function PromptInput({
         commandInputValue,
         activeTrigger
       );
+      // A visible trigger menu (slash, file, prompts) owns the next keypress
+      // the same way it owns Enter/Tab below.
+      const triggerMenuVisible =
+        slashMenuVisible || filePickerVisible || atMenuPromptsVisible;
+
+      // Esc during `/spec new` description collection: abandon the step. Lives
+      // here because the placeholder advertising it belongs to this input —
+      // when an overlay hides the input (or a menu is up), Esc is theirs; only
+      // a bare Esc cancels.
+      if (
+        key.escape &&
+        specDescriptionPending &&
+        !isProcessing &&
+        !triggerMenuVisible
+      ) {
+        cancelSpecDescription();
+        return;
+      }
 
       if (key.return) {
         if (key.meta || key.shift) {
