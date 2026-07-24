@@ -49,12 +49,16 @@ export function buildKasSettings(): KasSettings | undefined {
   // These default to enabled unless explicitly disabled by the user.
   // subagentOrchestration is a wire-protocol negotiation: the TUI implements
   // pipeline rendering, so it advertises support to KAS unconditionally.
-  // It is intentionally not a user-facing setting.
+  // It is intentionally not a user-facing setting. The test-only env
+  // override makes a LOCAL KAS register invoke_sub_agent instead (the
+  // IDE/cloud default), to manually exercise the invoke-subagent
+  // pipeline rendering port without a cloud session.
   const cliDefaults: Record<string, boolean> = {
     codeIntelligence: true,
     knowledge: true,
     thinking: true,
-    subagentOrchestration: true,
+    subagentOrchestration:
+      process.env.KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION !== '1',
   };
 
   // ─── Boolean feature flags → { enabled: bool } ─────────────────────

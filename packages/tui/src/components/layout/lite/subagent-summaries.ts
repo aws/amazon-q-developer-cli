@@ -1,4 +1,5 @@
 import { isParentSubagentTool } from '../../../types/agent-events.js';
+import { extractInvokeSubagentResults } from '../../../utils/invoke-subagent-pipeline.js';
 import type { MessageType, ToolResult } from '../../../stores/app-store.js';
 import { MessageRole, ToolUseStatus } from '../../../stores/app-store.js';
 import type { AgentSession } from '../../../types/multi-session.js';
@@ -139,6 +140,61 @@ export function collectSubagentSummariesByParent(
     }
   }
 
+  // Invoke parents retain final answers when no child response exists.
+  for (const msg of messages) {
+    if (msg.role !== MessageRole.ToolUse) continue;
+    if (!isParentSubagentTool(msg.name) || !msg.isFinished) continue;
+    const result = msg.result;
+    if (!result || result.output === undefined) continue;
+    const existingResponses = new Set(
+      (out.get(msg.id) ?? [])
+        .filter((summary) => summary.kind === 'response')
+        .map((summary) => summary.stageName)
+    );
+    const aggregate = extractInvokeSubagentResults(result.output);
+    if (aggregate) {
+      for (const stage of aggregate) {
+        if (
+          existingResponses.has(stage.name) ||
+          typeof stage.output !== 'string'
+        )
+          continue;
+        const output = stage.output.trim();
+        if (!output) continue;
+        pushSummary(out, seen, msg.id, {
+          stageName: stage.name,
+          kind: 'response',
+          contextSummary: '',
+          taskResult: output,
+        });
+      }
+      continue;
+    }
+    if (!msg.pipelineGroupId?.startsWith('invoke-')) continue;
+    if (result.status !== 'success' || typeof result.output !== 'string')
+      continue;
+    const output = result.output.trim();
+    if (!output) continue;
+    let stageName: string | undefined;
+    try {
+      const args = JSON.parse(msg.content) as {
+        stages?: Array<{ name?: string }>;
+      };
+      if (Array.isArray(args.stages) && args.stages.length === 1) {
+        stageName = args.stages[0]?.name;
+      }
+    } catch {
+      // Not pipeline-shaped args — leave stageName unset and skip.
+    }
+    if (!stageName || existingResponses.has(stageName)) continue;
+    pushSummary(out, seen, msg.id, {
+      stageName,
+      kind: 'response',
+      contextSummary: '',
+      taskResult: output,
+    });
+  }
+
   for (const [parentId, summaries] of out) {
     out.set(
       parentId,
@@ -252,6 +308,7 @@ export function shouldRenderSubagentResponseSummaries(
   if (!display.subagent.responses && !hasPlainResponses) return false;
   if (!msg.isFinished) return false;
   const result = msg.result as ToolResult | undefined;
+  if (hasPlainResponses) return msg.status !== ToolUseStatus.Rejected;
   if (result?.status !== 'success') return false;
   return msg.status !== ToolUseStatus.Rejected;
 }

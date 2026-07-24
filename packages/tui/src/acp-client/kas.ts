@@ -54,6 +54,7 @@ import {
   type KiroMeta,
   type McpServerSnapshotEvent,
 } from '../types/agent-events';
+import { InvokeSubagentPipelineAdapter } from '../utils/invoke-subagent-pipeline';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -245,6 +246,9 @@ export interface KasAcpClientOptions {
 export class KasAcpClient extends BaseAcpClient {
   private kiroClient: KiroClient;
   private readonly kasSubagentRoutingStore: KasSubagentRoutingStore;
+  /** Ports invoke_sub_agent parent cards onto the orchestrate pipeline
+   *  contract so they reuse the crew rendering (see module docs). */
+  private readonly invokeSubagentAdapter = new InvokeSubagentPipelineAdapter();
   private readonly kasSubagentRoutingEmitter: KasSubagentRoutingEmitter = {
     emitMain: (event) => this.broadcastStreamEvent(event),
     emitMultiSession: (sessionId, event) =>
@@ -625,6 +629,7 @@ export class KasAcpClient extends BaseAcpClient {
     // that no longer exists. loadSession replays history AFTER this runs, so
     // any still-active stages get re-registered before their events arrive.
     this.kasSubagentRoutingStore.resetKasSubagentRouting();
+    this.invokeSubagentAdapter.reset();
     this.kasSteerBuffer.clear();
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
@@ -689,9 +694,14 @@ export class KasAcpClient extends BaseAcpClient {
         // for signature consistency and to correctly stamp if a genuine
         // subagent-session listener is ever wired.
         const event = this.convertAcpUpdateToEvent(update, sessionId);
-        const meta = event ? extractKiroMetaFromEvent(event) : undefined;
-
         if (!event) return;
+        // Port standalone invoke_sub_agent parents onto the pipeline
+        // contract BEFORE snapshotting/interception/routing, so the
+        // crew rendering path below treats them as one-stage pipelines.
+        const meta = this.invokeSubagentAdapter.normalize(
+          event,
+          extractKiroMetaFromEvent(event)
+        );
 
         // A content-policy refusal arrives as a message chunk tagged with
         // _meta.kiro.refusal; surface it as ModelRefusal and drop the inline text.
@@ -801,8 +811,13 @@ export class KasAcpClient extends BaseAcpClient {
   protected override broadcastSynthesizedFailedToolCall(
     event: AgentStreamEvent
   ): void {
+    // Same porting as the live-update path: a synthesized invoke parent
+    // (e.g. rejected before execution) must also render as a pipeline.
+    const meta = this.invokeSubagentAdapter.normalize(
+      event,
+      extractKiroMetaFromEvent(event)
+    );
     this.kasSubagentRoutingStore.rememberKasToolCall(event);
-    const meta = extractKiroMetaFromEvent(event);
     const routedToSubtask = this.kasSubagentRoutingStore.routeKasSubtaskEvent(
       event,
       meta,
@@ -1132,6 +1147,13 @@ export class KasAcpClient extends BaseAcpClient {
       });
     this.assertActive('session creation');
     this.startedCloudSession = intendedCloudSandbox;
+    // The invoke-subagent rendering port is cloud-only: local sessions
+    // keep byte-identical rendering (see adapter docs). The test
+    // override exists so the port can be exercised against a local KAS.
+    this.invokeSubagentAdapter.setEnabled(
+      intendedCloudSandbox ||
+        process.env.KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION === '1'
+    );
     if (intendedCloudSandbox) {
       this.cloudSessionStartMs = Date.now();
       this.cloudReadyEmitted = false;
@@ -1324,6 +1346,13 @@ export class KasAcpClient extends BaseAcpClient {
       // the previous session was remote. Mode follows the session.
       this.startedCloudSession = false;
     }
+    // Cloud-only invoke-subagent rendering follows the session, like the
+    // footer: enabled on a resumed cloud session (replay reconstructs
+    // invoke parent cards), disabled when the loaded session is local.
+    this.invokeSubagentAdapter.setEnabled(
+      this.startedCloudSession ||
+        process.env.KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION === '1'
+    );
 
     const configOptions = (r as { configOptions?: unknown }).configOptions;
     this.emitConfigOptions(configOptions, 'loadSession');
@@ -1394,6 +1423,7 @@ export class KasAcpClient extends BaseAcpClient {
 
     this.emitChatSessionStartedOnce(this.sessionId);
 
+    this.invokeSubagentAdapter.beginTurn();
     // Race prompt against process exit to detect KAS crashes
     const { promise: crashed, unsubscribe } = this.processExitPromise();
     // Defensive: the exit listener is detached in finally, but there is a
@@ -1409,11 +1439,13 @@ export class KasAcpClient extends BaseAcpClient {
       ]);
     } finally {
       unsubscribe();
+      this.invokeSubagentAdapter.endTurn();
     }
   }
 
   async cancel(): Promise<void> {
     if (!this.sessionId) return;
+    this.invokeSubagentAdapter.endTurn();
     try {
       this.kiroClient.cancel(this.sessionId);
     } catch (e) {

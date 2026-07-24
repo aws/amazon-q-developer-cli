@@ -283,6 +283,83 @@ describe('collectSubagentSummariesByParent', () => {
     expect(occurrences).toBe(1);
   });
 
+  test('retains each aggregate invoke response when a sibling stage fails', () => {
+    const parentMsg = {
+      ...parent('parent-aggregate', 'invoke-parent-aggregate'),
+      content: JSON.stringify({
+        task: 'parallel review',
+        stages: [
+          { name: 'first', role: 'reviewer' },
+          { name: 'second', role: 'reviewer' },
+        ],
+      }),
+      result: {
+        status: 'error',
+        error: 'second: failed',
+        output: {
+          type: 'invoke_sub_agent_pipeline_results',
+          stages: [
+            { name: 'first', status: 'success', output: 'aggregate first' },
+            { name: 'second', status: 'success', output: 'aggregate second' },
+          ],
+        },
+      },
+    } as MessageType;
+    const sessions = new Map([
+      ['sub-first', session('sub-first', 'first', 'invoke-parent-aggregate')],
+    ]);
+    const conversations = new Map<string, MessageType[]>([
+      ['sub-first', [kasResponse('response-first', 'child first', 'first')]],
+    ]);
+
+    const summaries = collectSubagentSummariesByParent(
+      [parentMsg],
+      sessions,
+      conversations,
+      'kiro'
+    );
+    expect(summaries.get('parent-aggregate')).toEqual([
+      {
+        stageName: 'first',
+        kind: 'response',
+        contextSummary: '',
+        taskResult: 'child first',
+      },
+      {
+        stageName: 'second',
+        kind: 'response',
+        contextSummary: '',
+        taskResult: 'aggregate second',
+      },
+    ]);
+
+    const parentTool = parentMsg as Extract<
+      MessageType,
+      { role: MessageRole.ToolUse }
+    >;
+    expect(
+      shouldRenderSubagentResponseSummaries(
+        parentTool,
+        DEFAULT_DISPLAY,
+        summaries.get('parent-aggregate') ?? [],
+        ['subagent']
+      )
+    ).toBe(true);
+    const final = stripAnsi(
+      renderSubagentFinalBlock(
+        parentTool.content,
+        parentTool.result,
+        'error',
+        undefined,
+        summaries.get('parent-aggregate'),
+        { display: DEFAULT_DISPLAY, filtersOverride: ['subagent'] }
+      )
+    );
+    expect(final).toContain('child first');
+    expect(final).toContain('aggregate second');
+    expect(final).toContain('second: failed');
+  });
+
   test('renders a user-visible late summary appendix for an already-flushed parent', () => {
     const parentMsg = {
       ...parent('parent-1', 'crew-1'),

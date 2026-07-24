@@ -454,8 +454,8 @@ export enum ToolUseStatus {
 
 export type ToolResult =
   | { status: 'success'; output: unknown }
-  | { status: 'error'; error: string }
-  | { status: 'cancelled' };
+  | { status: 'error'; error: string; output?: unknown }
+  | { status: 'cancelled'; output?: unknown };
 
 export type MessageType =
   | {

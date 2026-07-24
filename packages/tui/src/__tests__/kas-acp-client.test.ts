@@ -5824,17 +5824,32 @@ describe('MCP OAuth flow', () => {
   });
 
   describe('independent subagent routing lifecycle', () => {
-    it('creates before delivery, terminates only on the lifecycle wrapper, and does not publish routing-only store updates', async () => {
+    // A standalone invoke_sub_agent parent is ported onto the orchestrate
+    // pipeline contract (see utils/invoke-subagent-pipeline.ts): the roster
+    // session arrives via broadcastSubagentList — the same path orchestrate
+    // stages use — instead of a synthesized session_created, and the parent
+    // card surfaces in main as a one-stage pipeline parent.
+    //
+    // The porting adapter is cloud-session-gated; these tests run local
+    // sessions, so enable it via the test override the kit uses.
+    beforeEach(() => {
+      process.env.KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION = '1';
+    });
+    afterEach(() => {
+      delete process.env.KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION;
+    });
+
+    it('publishes the roster via the subagent list, keeps the parent card in main, and does not publish routing-only store updates', async () => {
       const client = new KasAcpClient();
       const order: string[] = [];
-      const sessionEvents: any[] = [];
+      const listUpdates: any[][] = [];
       let storeNotifications = 0;
       const unsubscribeStore = kasRoutingStore.subscribe(() => {
         storeNotifications += 1;
       });
-      client.onSessionEvent((event: any) => {
-        sessionEvents.push(event);
-        order.push(`session:${event.type}`);
+      client.onSubagentListUpdate((subagents: any[]) => {
+        listUpdates.push(subagents);
+        order.push(`list:${subagents.map((s) => s.status.type).join(',')}`);
       });
       client.onMultiSessionUpdate((_sessionId: string, event: any) => {
         order.push(`multi:${event.type}:${event.id}`);
@@ -5871,20 +5886,20 @@ describe('MCP OAuth flow', () => {
       });
 
       expect(order).toEqual([
-        'session:session_created',
-        `multi:${AgentEventType.ToolCall}:subagent-wrapper`,
+        'list:working',
         `main:${AgentEventType.ToolCall}:subagent-wrapper`,
       ]);
-      expect(sessionEvents[0].session).toMatchObject({
-        id: 'independent-subtask',
-        name: 'reviewer',
-        agentName: 'reviewer',
-        parentSession: 'kas-session-1',
-        status: 'busy',
-        type: 'ephemeral',
-      });
-      expect(sessionEvents[0].session.created).toBeInstanceOf(Date);
-      expect(sessionEvents[0].session.lastActivity).toBeInstanceOf(Date);
+      expect(listUpdates[0]).toEqual([
+        {
+          sessionId: 'independent-subtask',
+          sessionName: 'reviewer',
+          agentName: 'reviewer',
+          status: { type: 'working' },
+          group: 'invoke-subagent-wrapper',
+          role: 'reviewer',
+          dependsOn: [],
+        },
+      ]);
 
       order.length = 0;
       await capturedSessionUpdateHandler({
@@ -5914,7 +5929,7 @@ describe('MCP OAuth flow', () => {
         `multi:${AgentEventType.ToolCall}:independent-child`,
         `multi:${AgentEventType.ToolCallFinished}:independent-child`,
       ]);
-      expect(sessionEvents).toHaveLength(1);
+      expect(listUpdates).toHaveLength(1);
 
       order.length = 0;
       await capturedSessionUpdateHandler({
@@ -5928,13 +5943,12 @@ describe('MCP OAuth flow', () => {
         },
       });
       expect(order).toEqual([
-        `multi:${AgentEventType.ToolCallFinished}:subagent-wrapper`,
+        'list:terminated',
         `main:${AgentEventType.ToolCallFinished}:subagent-wrapper`,
-        'session:session_terminated',
       ]);
-      expect(sessionEvents[1]).toEqual({
-        type: 'session_terminated',
+      expect(listUpdates[1]?.[0]).toMatchObject({
         sessionId: 'independent-subtask',
+        status: { type: 'terminated' },
       });
       expect(storeNotifications).toBe(0);
       unsubscribeStore();

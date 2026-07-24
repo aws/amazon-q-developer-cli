@@ -487,6 +487,33 @@ describe('TuiToolCallObserver', () => {
     expect(c.attrs?.['builtin_tool_name']).toBe('fs_read');
   });
 
+  it('keeps the original identity when the same call is started twice', () => {
+    const obs = new TuiToolCallObserver(deps);
+    obs.start('anchor', {
+      name: 'orchestrate_subagent',
+      toolOrigin: 'subagent_delegate',
+    });
+    obs.start('anchor', {
+      name: 'replacement',
+      toolOrigin: 'builtin',
+      builtinToolName: 'replacement',
+    });
+    obs.finish('anchor', {
+      outcome: 'success',
+      model: 'claude-sonnet-4',
+    });
+
+    expect(
+      counterCalls.find((call) => call.name === 'kiro_cli_tool_call_total')
+        ?.attrs?.['tool_origin']
+    ).toBe('subagent_delegate');
+    expect(
+      counterCalls.find(
+        (call) => call.name === 'kiro_cli_subagent_delegations_total'
+      )
+    ).toBeDefined();
+  });
+
   it('emits the delegation counter when the origin is subagent_delegate', () => {
     const obs = new TuiToolCallObserver(deps);
     obs.start('call-2', {

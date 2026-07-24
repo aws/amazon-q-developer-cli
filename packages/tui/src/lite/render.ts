@@ -2778,8 +2778,12 @@ export function renderSubagentFinalBlock(
   }
 
   const finished = status === 'done' && result?.status !== 'error';
+  const terminal =
+    status === 'done' || status === 'error' || status === 'cancelled';
   const showFinishedDigests =
     finished && (!colors?.isStatic || display.persistOutput);
+  const showTerminalDigests =
+    terminal && (!colors?.isStatic || display.persistOutput);
   const hasPlainResponses = orderedStageSummaries.some(
     (summary) => summary.kind === 'response'
   );
@@ -2788,10 +2792,8 @@ export function renderSubagentFinalBlock(
     colors?.filtersOverride
   );
 
-  // KAS plain responses (the subagent's actual final output): render them with
-  // the `full output:` digest style and gate them on the same explicit output
-  // filter. They are excluded from the raw/summary sections to avoid doubling.
-  if (hasPlainResponses && showFinishedDigests && showSubagentOutput) {
+  // Preserve valid stage responses when a sibling makes the aggregate fail.
+  if (hasPlainResponses && showTerminalDigests && showSubagentOutput) {
     const responseStages = orderedStageSummaries
       .filter(
         (s) => s.kind === 'response' && (s.taskResult ?? '').trim().length > 0

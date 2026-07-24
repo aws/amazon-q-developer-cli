@@ -322,8 +322,8 @@ export type ContentChunk =
 
 export type ToolCallResult =
   | { status: 'success'; output: any }
-  | { status: 'error'; error: string }
-  | { status: 'cancelled' };
+  | { status: 'error'; error: string; output?: any }
+  | { status: 'cancelled'; output?: any };
 
 export enum ApprovalOptionId {
   AllowOnce = 'allow_once',

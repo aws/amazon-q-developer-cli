@@ -670,6 +670,7 @@ export class TuiToolCallObserver {
   }
 
   start(toolCallId: string, info: TuiToolCallStart): void {
+    if (this.inFlight.has(toolCallId)) return;
     this.inFlight.set(toolCallId, { ...info, startMs: performance.now() });
   }
 
