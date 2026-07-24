@@ -804,7 +804,9 @@ export class Kiro {
     content: string,
     signal: AbortSignal,
     onEvent: (event: AgentStreamEvent) => void,
-    images?: Array<{ base64: string; mimeType: string }>
+    images?: Array<{ base64: string; mimeType: string }>,
+    resources?: Array<{ uri: string; text: string; mimeType: string }>,
+    blobs?: Array<{ uri: string; blob: string; mimeType: string }>
   ): Promise<void> {
     const sessionClient = this.sessionClient;
     if (!sessionClient) {
@@ -979,6 +981,12 @@ export class Kiro {
       const contentBlocks: Array<
         | { type: 'text'; text: string }
         | { type: 'image'; data: string; mimeType: string }
+        | {
+            type: 'resource';
+            resource:
+              | { uri: string; text: string; mimeType?: string }
+              | { uri: string; blob: string; mimeType?: string };
+          }
       > = [];
       if (images?.length) {
         for (const img of images) {
@@ -986,6 +994,27 @@ export class Kiro {
             type: 'image',
             data: img.base64,
             mimeType: img.mimeType,
+          });
+        }
+      }
+      // Cloud files use resource blocks because the remote sandbox cannot read local paths.
+      if (resources?.length) {
+        for (const res of resources) {
+          contentBlocks.push({
+            type: 'resource',
+            resource: {
+              uri: res.uri,
+              text: res.text,
+              mimeType: res.mimeType,
+            },
+          });
+        }
+      }
+      if (blobs?.length) {
+        for (const b of blobs) {
+          contentBlocks.push({
+            type: 'resource',
+            resource: { uri: b.uri, blob: b.blob, mimeType: b.mimeType },
           });
         }
       }

@@ -323,6 +323,7 @@ export type { SpecConfig } from '../utils/spec-config.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { spliceSteerLine, removeSteerLine } from '../utils/queue-navigation.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
+import { collectCloudAttachments } from '../utils/cloud-attach.js';
 import { logger } from '../utils/logger.js';
 import {
   setTerminalProgressWarning,
@@ -2822,6 +2823,14 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       }
 
+      const shouldCollectCloudAttachments =
+        kiro.isCloudSessionActive?.() ?? false;
+      // Scan only user-authored text; expanded @file bodies may contain unrelated paths.
+      const cloudAttachmentText =
+        displayContent && displayContent !== content
+          ? `${content}\n${displayContent}`
+          : content;
+
       const abortController = new AbortController();
       set({ currentAbortController: abortController });
 
@@ -2868,6 +2877,20 @@ export const createAppStore = (props: AppStoreProps) => {
       // for cancel + replay correctness (see app-store.test.ts).
       let eventHandler: StreamEventHandler | null = null;
       try {
+        const cloudAttachments = shouldCollectCloudAttachments
+          ? await collectCloudAttachments(
+              cloudAttachmentText,
+              abortController.signal
+            )
+          : { images: [], resources: [], blobs: [] };
+        const allImagesWithCloud = [
+          ...allImages,
+          ...cloudAttachments.images.map(({ base64, mimeType }) => ({
+            base64,
+            mimeType,
+          })),
+        ];
+
         eventHandler = get().createStreamEventHandler();
         // Track the active handler so cancelMessage can dispose it FIRST
         // (commit partial content + cancel pending flush timers) before the
@@ -2877,7 +2900,11 @@ export const createAppStore = (props: AppStoreProps) => {
           expandedContent,
           abortController.signal,
           eventHandler,
-          allImages.length > 0 ? allImages : undefined
+          allImagesWithCloud.length > 0 ? allImagesWithCloud : undefined,
+          cloudAttachments.resources.length > 0
+            ? cloudAttachments.resources
+            : undefined,
+          cloudAttachments.blobs.length > 0 ? cloudAttachments.blobs : undefined
         );
         eventHandler.flush();
         set({ _activeStreamHandler: null });

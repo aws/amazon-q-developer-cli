@@ -1162,14 +1162,56 @@ describe('Kiro — streamMessage', () => {
     expect(onEvent).toHaveBeenCalled();
   });
 
-  it('sends images as content blocks', async () => {
+  it('sends images and embedded resources as ACP content blocks', async () => {
     const kiro = new Kiro();
     await kiro.initialize('/path/to/agent');
     await kiro.createSession();
     const controller = new AbortController();
     const images = [{ base64: 'abc', mimeType: 'image/png' }];
-    await kiro.streamMessage('describe', controller.signal, () => {}, images);
-    expect(mockSessionClient.prompt).toHaveBeenCalled();
+    const resources = [
+      {
+        uri: 'file:///tmp/notes.txt',
+        text: 'notes',
+        mimeType: 'text/plain',
+      },
+    ];
+    const blobs = [
+      {
+        uri: 'file:///tmp/report.pdf',
+        blob: 'cGRm',
+        mimeType: 'application/pdf',
+      },
+    ];
+
+    await kiro.streamMessage(
+      'describe',
+      controller.signal,
+      () => {},
+      images,
+      resources,
+      blobs
+    );
+
+    expect(mockSessionClient.prompt).toHaveBeenLastCalledWith([
+      { type: 'image', data: 'abc', mimeType: 'image/png' },
+      {
+        type: 'resource',
+        resource: {
+          uri: 'file:///tmp/notes.txt',
+          text: 'notes',
+          mimeType: 'text/plain',
+        },
+      },
+      {
+        type: 'resource',
+        resource: {
+          uri: 'file:///tmp/report.pdf',
+          blob: 'cGRm',
+          mimeType: 'application/pdf',
+        },
+      },
+      { type: 'text', text: 'describe' },
+    ]);
   });
 
   it('filters out UserMessage events during streaming', async () => {
