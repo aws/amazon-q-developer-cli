@@ -66,11 +66,12 @@ export const WelcomeScreen = React.memo(function WelcomeScreen({
         {primary.bold("What's new:")}
         {primary(' Specs, expanded hooks, and an improved trust model.')}
       </Text>
-      <Text>
-        {primary(
-          'Migration tooling to bring your V2 configurations to V3 is coming soon.'
-        )}
-      </Text>
+      {isKas && (
+        <Text>
+          {primary('Upgrade your V2 agent configurations to V3 with ')}
+          {primary.bold('/upgrade-agent')}
+        </Text>
+      )}
       <Text>{brand('https://kiro.dev/docs/cli/v3/')}</Text>
     </>
   );
