@@ -483,6 +483,13 @@ export interface ToolCallEvent {
   locations?: ToolCallLocation[];
   /** Session ID of the subagent that made this tool call (if from a subagent) */
   sessionId?: string;
+  /**
+   * True when this event is a client-synthesized replay of a call already
+   * known to the store (e.g. a rejected-before-exec tool whose only wire
+   * representation was a failed update). Consumers must treat it as a
+   * re-emission of the existing call, never as a new call reusing the id.
+   */
+  synthesized?: boolean;
   meta?: { kiro?: KiroMeta };
 }
 

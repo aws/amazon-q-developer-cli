@@ -1340,6 +1340,7 @@ export abstract class BaseAcpClient implements SessionClient {
               name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
               kind: update.kind ?? undefined,
               args: rawInput,
+              synthesized: true,
               ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
             };
             if (notifSessionId && notifSessionId !== this.sessionId) {
@@ -1384,6 +1385,7 @@ export abstract class BaseAcpClient implements SessionClient {
               kind: update.kind ?? undefined,
               args: (update.rawInput as Record<string, unknown>) ?? {},
               ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
+              synthesized: true,
             };
             // Stamp the originating subagent session so the store resolves the
             // stage's agentName instead of falling back to the MAIN agent.

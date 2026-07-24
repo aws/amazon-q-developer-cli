@@ -778,6 +778,67 @@ function buildCancelledResult(chunks: string[][] | undefined): {
   };
 }
 
+// ── Tool-call id disambiguation ──
+//
+// Some serving paths emit tool-call ids that are only unique within a single
+// model request (e.g. GPT's call_0, call_1, … resetting every turn), so a
+// multi-turn session reuses ids. Tool rows are keyed by id, so without
+// disambiguation a reused id silently rewrites the previous turn's finished
+// row (already flushed to static scrollback) instead of creating a new one —
+// the new tool renders nowhere and its approval prompt shows stale data.
+// Both are derived statelessly from the current message list, so there is no
+// registry to reset on turn or session boundaries.
+
+/** Newest tool row whose id is `wireId` or a `wireId#N` generation of it. */
+function latestToolRowFor(
+  messages: ReadonlyArray<MessageType>,
+  wireId: string
+): (MessageType & { role: MessageRole.ToolUse }) | undefined {
+  const prefix = `${wireId}#`;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (
+      m?.role === MessageRole.ToolUse &&
+      (m.id === wireId || m.id.startsWith(prefix))
+    ) {
+      return m;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Internal id for an event that may open a tool row. A wire id whose newest
+ * matching row is still active belongs to that call (streaming chunk → full
+ * tool_call, or a question on a running tool) and merges into it; a wire id
+ * whose newest matching row already finished is a NEW call reusing the id and
+ * gets the next `wireId#N` generation. Unused ids pass through, so serving
+ * paths with globally-unique ids are unaffected.
+ */
+export function allocateToolCallId(
+  messages: ReadonlyArray<MessageType>,
+  wireId: string
+): string {
+  const latest = latestToolRowFor(messages, wireId);
+  if (!latest) return wireId;
+  if (!latest.isFinished) return latest.id;
+  const gen =
+    latest.id === wireId ? 0 : Number(latest.id.slice(wireId.length + 1)) || 0;
+  return `${wireId}#${gen + 1}`;
+}
+
+/**
+ * Internal id for a follow-up event (output update, finish, approval
+ * request): the newest row for the wire id, or the wire id itself when no
+ * row exists yet (synthesized/out-of-order flows).
+ */
+export function resolveToolCallId(
+  messages: ReadonlyArray<MessageType>,
+  wireId: string
+): string {
+  return latestToolRowFor(messages, wireId)?.id ?? wireId;
+}
+
 /** Compute a summary message from accumulated init errors. */
 export function summarizeInitErrors(errors: InitError[]): string | null {
   if (errors.length === 0) return null;
@@ -3454,6 +3515,53 @@ export const createAppStore = (props: AppStoreProps) => {
         // Once an observer turn produces activity, silence can be legitimate.
         if (turnOpen && event.type !== AgentEventType.TurnStart) {
           clearObserverTurnWatchdog();
+        }
+
+        // Disambiguate reused tool-call ids before any case reads them. The
+        // event is cloned, never mutated — raw events are also buffered
+        // elsewhere (e.g. pushSessionEvent) and must keep their wire ids.
+        // A client-synthesized ToolCall replays a call the store may already
+        // have finished (e.g. rejected-before-exec), so it resolves to the
+        // existing row instead of allocating a new generation.
+        if (event.type === AgentEventType.ToolCall) {
+          const internalId = event.synthesized
+            ? resolveToolCallId(get().messages, event.id)
+            : allocateToolCallId(get().messages, event.id);
+          if (internalId !== event.id) event = { ...event, id: internalId };
+        } else if (
+          event.type === AgentEventType.ToolCallUpdate ||
+          event.type === AgentEventType.ToolCallFinished
+        ) {
+          const internalId = resolveToolCallId(get().messages, event.id);
+          if (internalId !== event.id) event = { ...event, id: internalId };
+        } else if (event.type === AgentEventType.ApprovalRequest) {
+          const wireId = event.value?.toolCall?.toolCallId;
+          if (wireId) {
+            const internalId = resolveToolCallId(get().messages, wireId);
+            if (internalId !== wireId) {
+              event = {
+                ...event,
+                value: {
+                  ...event.value,
+                  toolCall: { ...event.value.toolCall, toolCallId: internalId },
+                },
+              };
+            }
+          }
+        } else if (event.type === AgentEventType.QuestionRequest) {
+          // A question either attaches to its still-active tool row or opens a
+          // new one, so it allocates rather than resolves: attaching it to a
+          // finished row would rewrite settled scrollback as pending.
+          const wireId = event.value?.toolCallId;
+          if (wireId) {
+            const internalId = allocateToolCallId(get().messages, wireId);
+            if (internalId !== wireId) {
+              event = {
+                ...event,
+                value: { ...event.value, toolCallId: internalId },
+              };
+            }
+          }
         }
 
         switch (event.type) {
