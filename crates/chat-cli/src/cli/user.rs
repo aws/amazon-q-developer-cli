@@ -116,7 +116,6 @@ impl LoginArgs {
             match start_unified_auth(&mut os.database).await? {
                 PortalResult::Social(provider) => {
                     pre_portal_spinner.stop_with_message(format!("Logged in with {provider}"));
-                    return Ok(ExitCode::SUCCESS);
                 },
                 PortalResult::BuilderId { issuer_url, idc_region } => {
                     pre_portal_spinner.stop_with_message("".into());
@@ -214,7 +213,8 @@ impl LoginArgs {
             }
         }
 
-        os.telemetry.send_user_logged_in().ok();
+        os.refresh_telemetry_identity().await.ok();
+        os.telemetry.send_user_logged_in(&os.database).await.ok();
 
         Ok(ExitCode::SUCCESS)
     }
@@ -259,9 +259,6 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
         select_profile_interactive(os, true, Some(&idc_region)).await?;
     }
 
-    // delay telemetry until we have refreshed the telemetry thread
-    os.telemetry.send_user_logged_in().ok();
-
     Ok(())
 }
 
@@ -294,14 +291,15 @@ async fn complete_external_idp_auth(
     // Select profile
     select_profile_interactive(os, true, None).await?;
 
-    os.telemetry.send_user_logged_in().ok();
     Ok(())
 }
 
 pub async fn logout(os: &mut Os) -> Result<ExitCode> {
+    let telemetry_region = os.telemetry_region();
     let _ = crate::auth::logout(&mut os.database).await;
     let _ = crate::auth::social::logout_social(&os.database).await;
     let _ = crate::auth::external_idp::logout_external_idp(&os.database).await;
+    let _ = os.reset_telemetry_after_logout(telemetry_region.as_deref()).await;
 
     eprintln!("You are now logged out");
     eprintln!(
@@ -550,7 +548,6 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                os.telemetry.send_user_logged_in().ok();
                 spinner.stop_with_message("Logged in".into());
                 break;
             },

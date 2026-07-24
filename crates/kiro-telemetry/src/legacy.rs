@@ -31,6 +31,10 @@ pub(crate) fn emits_legacy_user_turn_counter(event_type: LegacyEventType) -> boo
     matches_counter_target(event_type, "kiro_cli_user_turns")
 }
 
+pub(crate) fn emits_legacy_chat_message_counter(event_type: LegacyEventType) -> bool {
+    matches_counter_target(event_type, "kiro_cli_chat_messages_total")
+}
+
 pub(crate) fn emits_legacy_tool_call_total(event_type: LegacyEventType) -> bool {
     matches_counter_target(event_type, "kiro_cli_tool_call_total")
 }

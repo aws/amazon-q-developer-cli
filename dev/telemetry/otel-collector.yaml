@@ -5,6 +5,13 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  deltatocumulative: {}
+  transform/resource_labels:
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(attributes["service_version"], resource.attributes["service.version"])
+          - set(attributes["os_type"], resource.attributes["os.type"]) where attributes["os_type"] == nil
   batch: {}
 
 exporters:
@@ -17,5 +24,5 @@ service:
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [batch]
+      processors: [deltatocumulative, transform/resource_labels, batch]
       exporters: [prometheus, debug]

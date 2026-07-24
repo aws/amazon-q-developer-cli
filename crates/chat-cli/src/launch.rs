@@ -5,7 +5,6 @@ use std::path::{
 };
 use std::process::ExitCode;
 use std::time::{
-    Duration,
     SystemTime,
     UNIX_EPOCH,
 };
@@ -24,6 +23,7 @@ use eyre::{
 use kiro_telemetry::metric::{
     AgentKind,
     ClientApplication,
+    Engine,
     ExitReason,
 };
 use tracing::{
@@ -32,8 +32,10 @@ use tracing::{
 };
 use uuid::Uuid;
 
+use crate::database::Database;
 use crate::embedded_tui::extract_tui_assets_if_needed;
 use crate::os::Os;
+use crate::telemetry::TelemetryThread;
 use crate::util::consts::env_var::{
     KIRO_CHAT_CLI_BIN,
     KIRO_KAS_NODE_PATH,
@@ -45,8 +47,11 @@ use crate::util::consts::env_var::{
 };
 use crate::util::launch_spinner::start_launch_spinner;
 
+mod v1;
+pub use v1::launch as launch_v1;
+
 /// Launch the session according to the configured options.
-pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
+pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> Result<ExitCode> {
     let LaunchOptions {
         agent_engine,
         mode,
@@ -57,7 +62,14 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
         trust_tools,
     } = options;
 
-    emit_cli_session_started(os, agent_engine).await;
+    emit_cli_invocation_telemetry(
+        &os.telemetry,
+        &os.database,
+        Some(telemetry_name),
+        Engine::from_agent_kind(agent_kind_for_agent_engine(agent_engine)),
+    )
+    .await;
+    emit_cli_session_started(&os.telemetry, &os.database, agent_engine).await;
 
     let non_interactive = matches!(&interactivity, Interactivity::NonInteractive { .. });
     run_kas_gc_on_startup(os, agent_engine, !non_interactive).await;
@@ -81,7 +93,7 @@ pub async fn launch(options: LaunchOptions, os: &Os) -> Result<ExitCode> {
     };
 
     if should_emit_launch_error_completion(&result, cli_session_completion_emitted) {
-        emit_cli_session_completed(os, agent_engine, ExitReason::Crash).await;
+        emit_cli_session_completed(&os.telemetry, &os.database, agent_engine, ExitReason::Crash).await;
     }
 
     result
@@ -135,28 +147,43 @@ async fn run_kas_gc_on_startup(os: &Os, agent_engine: AgentEngine, background: b
     }
 }
 
-async fn emit_cli_session_started(os: &Os, agent_engine: AgentEngine) {
-    if matches!(agent_engine, AgentEngine::V1) {
-        return;
-    }
-
-    if let Err(err) = os
-        .telemetry
-        .send_cli_session_started(&os.database, client_application_for_agent_engine(agent_engine))
+async fn emit_cli_session_started(telemetry: &TelemetryThread, database: &Database, agent_engine: AgentEngine) {
+    if let Err(err) = telemetry
+        .send_cli_session_started(database, client_application_for_agent_engine(agent_engine))
         .await
     {
         debug!(%err, ?agent_engine, "failed to emit CLI session-start telemetry");
     }
 }
 
-async fn emit_cli_session_completed(os: &Os, agent_engine: AgentEngine, exit_reason: ExitReason) {
-    if matches!(agent_engine, AgentEngine::V1) {
-        return;
+pub(crate) async fn emit_cli_invocation_telemetry(
+    telemetry: &TelemetryThread,
+    database: &Database,
+    telemetry_name: Option<String>,
+    engine: Engine,
+) {
+    if database.record_heartbeat_if_needed()
+        && let Err(err) = telemetry.send_daily_heartbeat(database, engine).await
+    {
+        debug!(%err, ?engine, "failed to emit daily-heartbeat telemetry");
     }
+    if let Some(telemetry_name) = telemetry_name
+        && let Err(err) = telemetry
+            .send_cli_subcommand_executed(database, telemetry_name, engine)
+            .await
+    {
+        debug!(%err, ?engine, "failed to emit CLI subcommand telemetry");
+    }
+}
 
-    if let Err(err) = os
-        .telemetry
-        .send_cli_session_completed(&os.database, exit_reason, agent_kind_for_agent_engine(agent_engine))
+async fn emit_cli_session_completed(
+    telemetry: &TelemetryThread,
+    database: &Database,
+    agent_engine: AgentEngine,
+    exit_reason: ExitReason,
+) {
+    if let Err(err) = telemetry
+        .send_cli_session_completed(database, exit_reason, agent_kind_for_agent_engine(agent_engine))
         .await
     {
         debug!(%err, ?agent_engine, ?exit_reason, "failed to emit CLI session-completion telemetry");
@@ -486,19 +513,7 @@ async fn launch_acp_interactive(
         );
     }
 
-    // User identity for telemetry (TUI env + backend DB cache). Cached from
-    // the first successful fetch; cold cache (first-ever authenticated
-    // session) falls back to a bounded network fetch and self-heals here on
-    // the next launch. Logged-out sessions emit without user_id.
-    let mut user_id = os.database.get_telemetry_user_id().ok().flatten();
-    if user_id.is_none()
-        && let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), os.client.get_usage_limits()).await
-        && let Some(info) = output.user_info()
-    {
-        let _ = os.database.set_telemetry_user_id(info.user_id());
-        user_id = Some(info.user_id().to_string());
-    }
-    if let Some(ref user_id) = user_id {
+    if let Some(user_id) = os.database.get_telemetry_user_id().ok().flatten() {
         cmd.env("KIRO_USER_ID", user_id);
     }
 
@@ -608,7 +623,7 @@ async fn launch_acp_interactive(
         .and_then(|s| s.code())
         .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
 
-    emit_cli_session_completed(os, agent_engine, exit_reason).await;
+    emit_cli_session_completed(&os.telemetry, &os.database, agent_engine, exit_reason).await;
     *cli_session_completion_emitted = true;
 
     Ok(exit_code)
@@ -884,7 +899,7 @@ async fn launch_acp_non_interactive(
         Ok(exit_code) => exit_reason_for_exit_code(*exit_code),
         Err(_) => ExitReason::Crash,
     };
-    emit_cli_session_completed(os, agent_engine, exit_reason).await;
+    emit_cli_session_completed(&os.telemetry, &os.database, agent_engine, exit_reason).await;
     *cli_session_completion_emitted = true;
     result
 }

@@ -16,7 +16,7 @@ attributes:
   - name: install_method
     allowed_values: [brew, download, internal, cargo, unknown, _other_]
   - name: client_application
-    allowed_values: [chat_cli, chat_cli_v2, chat_cli_v3, acp_external, kiro_ide, _other_]
+    allowed_values: [chat_cli, chat_cli_v2, chat_cli_v3, acp_external, _other_]
   - name: credential_kind
     allowed_values: [builder_id, idc, iam, unknown]
   - name: is_internal_amazon
@@ -46,6 +46,8 @@ attributes:
   - name: ui_mode_default_to
     allowed_values: [tui, lite, unset, _other_]
   - name: command
+    max_distinct: 64
+  - name: subcommand
     max_distinct: 64
   - name: feature
     max_distinct: 64
@@ -86,15 +88,57 @@ attributes:
   - name: exit_reason
     allowed_values: [clean, user_interrupt, crash, oom, hang_timeout, auth_failure, upstream_outage, _other_]
   - name: agent_kind
-    allowed_values: [v1, v2, subagent, kas, _other_]
+    allowed_values: [v1, v2, kas, _other_]
   - name: engine
-    allowed_values: [v2, v3]
+    allowed_values: [v1, v2, v3, _other_]
   - name: cloud_event
     allowed_values: [started, start_failed, reattached, ready, provision_failed, detached, turned_off, fell_back_local, _other_]
   - name: repo_attach_event
     allowed_values: [opened, submitted, _other_]
   - name: repo_count_bucket
     allowed_values: [none, "1", "2", "3_5", "6_plus", _other_]
+  - name: session_start_kind
+    allowed_values: [new, resumed, _other_]
+  - name: auth_flow
+    allowed_values: [device, pkce, _other_]
+  - name: profile_source
+    allowed_values: [user, auth, update, reload]
+  - name: profile_region
+    allowed_values: [commercial, govcloud, china, _other_]
+  - name: sso_region
+    allowed_values: [commercial, govcloud, china, _other_]
+  - name: contribution_source
+    allowed_values: [agent, user]
+  - name: contribution_change
+    allowed_values: [added, removed]
+  - name: count_kind
+    allowed_values: [available, loaded, builtin, mcp, agents_loaded, agents_failed, migrated]
+  - name: content_role
+    allowed_values: [context, assistant, input, output]
+  - name: message_tag
+    allowed_values: [compact, generate_agent, tangent_mode]
+  - name: message_kind
+    allowed_values: [not_tool_use, tool_use, _other_]
+  - name: is_accepted
+    allowed_values: ["true", "false"]
+  - name: is_trusted
+    allowed_values: ["true", "false"]
+  - name: is_valid
+    allowed_values: ["true", "false"]
+  - name: is_custom_tool
+    allowed_values: ["true", "false"]
+  - name: voice_backend
+    allowed_values: [local_whisper, remote_server, _other_]
+  - name: voice_input_method
+    allowed_values: [slash_command, ptt, continuous_voice, standalone, _other_]
+  - name: voice_model_size
+    allowed_values: [tiny, base, small, medium, large, _other_]
+  - name: duration_stage
+    allowed_values: [tool_call, tool_turn, recording, transcription]
+  - name: auto_submit
+    allowed_values: ["true", "false"]
+  - name: migration_executed
+    allowed_values: ["true", "false"]
   - name: process_role
     allowed_values: [host, tui, kas_subprocess]
   - name: render_kind
@@ -105,8 +149,6 @@ attributes:
     max_distinct: 64
   - name: crash_kind
     allowed_values: [panic, segfault, abort, unhandled_signal, _other_]
-  - name: failure_stage
-    allowed_values: [config, db_migrate, runtime, panic, _other_]
   - name: error_kind
     allowed_values: [throttling, validation, model_error, server_error, timeout, connection, access_denied, other, _other_]
   - name: status_class

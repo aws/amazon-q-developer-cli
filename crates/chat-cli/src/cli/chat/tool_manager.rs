@@ -32,7 +32,6 @@ use crossterm::{
     style,
     terminal,
 };
-use eyre::Report;
 use futures::future;
 use regex::Regex;
 use rmcp::ServiceError;
@@ -184,6 +183,162 @@ impl LoadingRecord {
     }
 }
 
+fn spawn_mcp_cleanup(
+    clients: HashMap<String, InitializedMcpClient>,
+    loading_display_task: Option<DisplayTaskJoinHandle>,
+) -> JoinHandle<()> {
+    if let Some(handle) = loading_display_task.as_ref() {
+        handle.abort();
+    }
+    tokio::spawn(async move {
+        if let Some(handle) = loading_display_task {
+            let _ = handle.await;
+        }
+        ToolManager::shutdown_clients(clients).await;
+    })
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct McpCleanupTracker {
+    handles: Arc<std::sync::Mutex<Vec<JoinHandle<()>>>>,
+}
+
+impl McpCleanupTracker {
+    fn track(
+        &self,
+        clients: HashMap<String, InitializedMcpClient>,
+        loading_display_task: Option<DisplayTaskJoinHandle>,
+    ) {
+        self.handles
+            .lock()
+            .unwrap()
+            .push(spawn_mcp_cleanup(clients, loading_display_task));
+    }
+
+    pub(crate) async fn wait(&self) {
+        loop {
+            let (completed, has_pending) = {
+                let mut handles = self.handles.lock().unwrap();
+                let mut completed = Vec::new();
+                let mut index = 0;
+                while index < handles.len() {
+                    if handles[index].is_finished() {
+                        completed.push(handles.swap_remove(index));
+                    } else {
+                        index += 1;
+                    }
+                }
+                (completed, !handles.is_empty())
+            };
+            if completed.is_empty() && !has_pending {
+                return;
+            }
+            futures::future::join_all(completed).await;
+            if has_pending {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+    }
+
+    pub(crate) async fn wait_bounded(&self, timeout: Duration) {
+        if tokio::time::timeout(timeout, self.wait()).await.is_ok() {
+            return;
+        }
+
+        let handles = std::mem::take(&mut *self.handles.lock().unwrap());
+        for handle in &handles {
+            handle.abort();
+        }
+        let _ = tokio::time::timeout(Duration::from_millis(100), futures::future::join_all(handles)).await;
+    }
+}
+
+struct PendingClientGuard(JoinHandle<Result<crate::mcp_client::RunningService, crate::mcp_client::McpClientError>>);
+
+impl PendingClientGuard {
+    async fn abort_and_wait(mut self) {
+        self.0.abort();
+        let _ = (&mut self.0).await;
+    }
+}
+
+impl Drop for PendingClientGuard {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ManagedMcpClients {
+    clients: HashMap<String, InitializedMcpClient>,
+    loading_display_task: Option<DisplayTaskJoinHandle>,
+    cleanup_tracker: Option<McpCleanupTracker>,
+}
+
+impl std::ops::Deref for ManagedMcpClients {
+    type Target = HashMap<String, InitializedMcpClient>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.clients
+    }
+}
+
+impl ManagedMcpClients {
+    fn take_cleanup(
+        &mut self,
+    ) -> (
+        HashMap<String, InitializedMcpClient>,
+        Option<DisplayTaskJoinHandle>,
+        Option<McpCleanupTracker>,
+    ) {
+        (
+            std::mem::take(&mut self.clients),
+            self.loading_display_task.take(),
+            self.cleanup_tracker.clone(),
+        )
+    }
+
+    fn take_loading_display_task(&mut self) -> Option<DisplayTaskJoinHandle> {
+        self.loading_display_task.take()
+    }
+
+    fn get_mut(&mut self, server_name: &str) -> Option<&mut InitializedMcpClient> {
+        self.clients.get_mut(server_name)
+    }
+
+    fn remove(&mut self, server_name: &str) -> Option<InitializedMcpClient> {
+        self.clients.remove(server_name)
+    }
+
+    #[cfg(test)]
+    fn insert(&mut self, server_name: String, client: InitializedMcpClient) -> Option<InitializedMcpClient> {
+        self.clients.insert(server_name, client)
+    }
+}
+
+impl Drop for ManagedMcpClients {
+    fn drop(&mut self) {
+        if self.clients.is_empty() && self.loading_display_task.is_none() {
+            return;
+        }
+
+        let (clients, loading_display_task, cleanup_tracker) = self.take_cleanup();
+        if let Some(cleanup_tracker) = cleanup_tracker {
+            cleanup_tracker.track(clients, loading_display_task);
+            return;
+        }
+
+        if let Some(handle) = loading_display_task {
+            handle.abort();
+        }
+        for client in clients.into_values() {
+            if let InitializedMcpClient::Pending(handle) = client {
+                handle.abort();
+            }
+        }
+    }
+}
+
 pub struct ToolManagerBuilder {
     prompt_query_result_sender: Option<tokio::sync::broadcast::Sender<PromptQueryResult>>,
     prompt_query_receiver: Option<tokio::sync::broadcast::Receiver<PromptQuery>>,
@@ -198,6 +353,7 @@ pub struct ToolManagerBuilder {
     is_first_launch: bool,
     agent: Option<Arc<Mutex<Agent>>>,
     registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
+    cleanup_tracker: Option<McpCleanupTracker>,
 }
 
 impl Default for ToolManagerBuilder {
@@ -216,6 +372,7 @@ impl Default for ToolManagerBuilder {
             is_first_launch: true,
             agent: Default::default(),
             registry_data: Default::default(),
+            cleanup_tracker: Default::default(),
         }
     }
 }
@@ -236,6 +393,7 @@ impl From<&mut ToolManager> for ToolManagerBuilder {
             mcp_load_record: value.mcp_load_record.clone(),
             new_tool_specs: value.new_tool_specs.clone(),
             pending_clients: Some(value.pending_clients.clone()),
+            cleanup_tracker: value.clients.cleanup_tracker.clone(),
             // if we are getting a builder from an instantiated tool manager this field would be
             // false
             is_first_launch: false,
@@ -281,6 +439,11 @@ impl ToolManagerBuilder {
 
     pub fn registry_data(mut self, registry: crate::mcp_registry::McpRegistryResponse) -> Self {
         self.registry_data.replace(registry);
+        self
+    }
+
+    pub(crate) fn cleanup_tracker(mut self, cleanup_tracker: McpCleanupTracker) -> Self {
+        self.cleanup_tracker = Some(cleanup_tracker);
         self
     }
 
@@ -480,11 +643,14 @@ impl ToolManagerBuilder {
 
         Ok(ToolManager {
             conversation_id,
-            clients,
+            clients: ManagedMcpClients {
+                clients,
+                loading_display_task,
+                cleanup_tracker: self.cleanup_tracker,
+            },
             pending_clients: pending,
             notify: Some(notify),
             loading_status_sender,
-            loading_display_task,
             new_tool_specs,
             has_new_stuff,
             is_interactive: interactive,
@@ -605,7 +771,7 @@ pub struct ToolManager {
 
     /// Map of server names to their corresponding client instances.
     /// These clients are used to communicate with MCP servers.
-    pub clients: HashMap<String, InitializedMcpClient>,
+    pub clients: ManagedMcpClients,
 
     /// A list of client names that are still in the process of being initialized
     pub pending_clients: Arc<RwLock<HashSet<String>>>,
@@ -631,10 +797,6 @@ pub struct ToolManager {
     /// Channel sender for communicating with the loading display thread.
     /// Used to send status updates about tool initialization progress.
     loading_status_sender: Option<tokio::sync::mpsc::Sender<LoadingMsg>>,
-
-    /// This is here so we can await it to avoid output buffer from the display task interleaving
-    /// with other buffer displayed by chat.
-    loading_display_task: Option<JoinHandle<Result<(), Report>>>,
 
     /// Mapping from sanitized tool names to original tool names.
     /// This is used to handle tool name transformations that may occur during initialization
@@ -709,42 +871,11 @@ impl ToolManager {
         agent: &Agent,
         registry_data: Option<&crate::mcp_registry::McpRegistryResponse>,
     ) -> eyre::Result<()> {
-        let to_evict = self.clients.drain().collect::<Vec<_>>();
-        tokio::spawn(async move {
-            for (server_name, initialized_client) in to_evict {
-                info!("Evicting {server_name} due to agent swap");
-                match initialized_client {
-                    InitializedMcpClient::Pending(handle) => {
-                        let server_name_clone = server_name.clone();
-                        tokio::spawn(async move {
-                            match handle.await {
-                                Ok(Ok(client)) => {
-                                    let InnerService::Original(client) = client.inner_service else {
-                                        unreachable!();
-                                    };
-                                    match client.cancel().await {
-                                        Ok(_) => info!("Server {server_name_clone} evicted due to agent swap"),
-                                        Err(e) => error!("Server {server_name_clone} has failed to cancel: {e}"),
-                                    }
-                                },
-                                Ok(Err(_)) | Err(_) => {
-                                    error!("Server {server_name_clone} has failed to cancel");
-                                },
-                            }
-                        });
-                    },
-                    InitializedMcpClient::Ready(running_service) => {
-                        let InnerService::Original(client) = running_service.inner_service else {
-                            unreachable!();
-                        };
-                        match client.cancel().await {
-                            Ok(_) => info!("Server {server_name} evicted due to agent swap"),
-                            Err(e) => error!("Server {server_name} has failed to cancel: {e}"),
-                        }
-                    },
-                }
-            }
-        });
+        let (clients, loading_display_task, cleanup_tracker) = self.clients.take_cleanup();
+        for server_name in clients.keys() {
+            info!("Evicting {server_name} due to agent swap");
+        }
+        Self::schedule_cleanup(clients, loading_display_task, cleanup_tracker);
 
         let mut agent_lock = self.agent.lock().await;
         *agent_lock = agent.clone();
@@ -965,14 +1096,13 @@ impl ToolManager {
         } else {
             Box::pin(future::ready(()))
         };
-        let loading_display_task = self.loading_display_task.take();
         tokio::select! {
             _ = timeout_fut => {
 
                 if let Some(tx) = tx {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
-                    if let Some(task) = loading_display_task {
+                    if let Some(task) = self.clients.take_loading_display_task() {
                         let _ = tokio::time::timeout(
                             std::time::Duration::from_millis(80),
                             task
@@ -1422,18 +1552,69 @@ impl ToolManager {
     /// processes and waits for them to exit (with a timeout before force-killing). This ensures
     /// MCP server processes don't leak when the CLI session ends.
     pub async fn shutdown_all_clients(&mut self) {
+        let (clients, loading_display_task, cleanup_tracker) = self.clients.take_cleanup();
+        if let Some(cleanup_tracker) = cleanup_tracker {
+            cleanup_tracker.track(clients, loading_display_task);
+            cleanup_tracker.wait().await;
+            return;
+        }
+
+        if let Some(handle) = loading_display_task {
+            handle.abort();
+            let _ = handle.await;
+        }
+        Self::shutdown_clients(clients).await;
+    }
+
+    pub(crate) fn shutdown_client_in_background(&mut self, server_name: &str) -> bool {
+        let Some(client) = self.clients.remove(server_name) else {
+            return false;
+        };
+        let cleanup_tracker = self.clients.cleanup_tracker.clone();
+        Self::schedule_cleanup(
+            HashMap::from([(server_name.to_string(), client)]),
+            None,
+            cleanup_tracker,
+        );
+        true
+    }
+
+    fn schedule_cleanup(
+        clients: HashMap<String, InitializedMcpClient>,
+        loading_display_task: Option<DisplayTaskJoinHandle>,
+        cleanup_tracker: Option<McpCleanupTracker>,
+    ) {
+        if clients.is_empty() && loading_display_task.is_none() {
+            return;
+        }
+        if let Some(cleanup_tracker) = cleanup_tracker {
+            cleanup_tracker.track(clients, loading_display_task);
+        } else {
+            drop(spawn_mcp_cleanup(clients, loading_display_task));
+        }
+    }
+
+    async fn shutdown_clients(clients: HashMap<String, InitializedMcpClient>) {
         const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-        let clients = self.clients.drain().collect::<Vec<_>>();
         let futures: Vec<_> = clients
             .into_iter()
             .map(|(server_name, client)| async move {
                 let running_service = match client {
-                    InitializedMcpClient::Pending(mut handle) => {
-                        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle).await {
+                    InitializedMcpClient::Pending(handle) => {
+                        let mut handle = PendingClientGuard(handle);
+                        match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut handle.0).await {
                             Ok(Ok(Ok(service))) => service,
-                            _ => {
-                                handle.abort();
+                            Err(_) => {
+                                handle.abort_and_wait().await;
                                 tracing::warn!("MCP server {server_name} did not initialize, aborting");
+                                return;
+                            },
+                            Ok(Ok(Err(error))) => {
+                                tracing::warn!("MCP server {server_name} failed to initialize: {error}");
+                                return;
+                            },
+                            Ok(Err(error)) => {
+                                tracing::warn!("MCP server {server_name} initialization task failed: {error}");
                                 return;
                             },
                         }
@@ -2476,6 +2657,126 @@ fn queue_prompts_load_error_message(name: &str, msg: &eyre::Report, output: &mut
 mod tests {
     use super::*;
     use crate::cli::chat::tools::InputSchema;
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
+    fn pending_client(
+        dropped: Arc<AtomicBool>,
+    ) -> (
+        JoinHandle<Result<crate::mcp_client::RunningService, crate::mcp_client::McpClientError>>,
+        tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            let _drop_signal = DropSignal(dropped);
+            let _ = started_tx.send(());
+            std::future::pending().await
+        });
+        (handle, started_rx)
+    }
+
+    #[tokio::test]
+    async fn shutdown_handles_completed_client_and_join_errors_without_repolling() {
+        let failed: JoinHandle<Result<crate::mcp_client::RunningService, crate::mcp_client::McpClientError>> =
+            tokio::spawn(async { Err(crate::mcp_client::McpClientError::NotReady) });
+        let cancelled: JoinHandle<Result<crate::mcp_client::RunningService, crate::mcp_client::McpClientError>> =
+            tokio::spawn(std::future::pending());
+        cancelled.abort();
+        tokio::task::yield_now().await;
+
+        let mut manager = ToolManager::default();
+        manager
+            .clients
+            .insert("failed".to_string(), InitializedMcpClient::Pending(failed));
+        manager
+            .clients
+            .insert("cancelled".to_string(), InitializedMcpClient::Pending(cancelled));
+
+        manager.shutdown_all_clients().await;
+    }
+
+    #[tokio::test]
+    async fn dropped_manager_tracks_pending_client_cleanup_to_completion() {
+        let tracker = McpCleanupTracker::default();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let (pending, started_rx) = pending_client(dropped.clone());
+        started_rx.await.unwrap();
+
+        let mut manager = ToolManager {
+            clients: ManagedMcpClients {
+                clients: HashMap::new(),
+                loading_display_task: None,
+                cleanup_tracker: Some(tracker.clone()),
+            },
+            ..Default::default()
+        };
+        manager
+            .clients
+            .insert("pending".to_string(), InitializedMcpClient::Pending(pending));
+        drop(manager);
+        tracker.wait().await;
+
+        assert!(dropped.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn removed_client_uses_the_shared_cleanup_tracker() {
+        let tracker = McpCleanupTracker::default();
+        let failed = tokio::spawn(async { Err(crate::mcp_client::McpClientError::NotReady) });
+        let mut manager = ToolManager {
+            clients: ManagedMcpClients {
+                clients: HashMap::from([("server".to_string(), InitializedMcpClient::Pending(failed))]),
+                loading_display_task: None,
+                cleanup_tracker: Some(tracker.clone()),
+            },
+            ..Default::default()
+        };
+
+        assert!(manager.shutdown_client_in_background("server"));
+        assert_eq!(tracker.handles.lock().unwrap().len(), 1);
+        tracker.wait().await;
+        assert!(manager.clients.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancelled_shutdown_keeps_client_cleanup_tracked() {
+        let tracker = McpCleanupTracker::default();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let (pending, started_rx) = pending_client(dropped.clone());
+        started_rx.await.unwrap();
+
+        let mut manager = ToolManager {
+            clients: ManagedMcpClients {
+                clients: HashMap::new(),
+                loading_display_task: None,
+                cleanup_tracker: Some(tracker.clone()),
+            },
+            ..Default::default()
+        };
+        manager
+            .clients
+            .insert("pending".to_string(), InitializedMcpClient::Pending(pending));
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), manager.shutdown_all_clients())
+                .await
+                .is_err()
+        );
+        tracker.wait_bounded(Duration::from_millis(10)).await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !dropped.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("aborted nested client task should be dropped");
+    }
 
     #[test]
     fn test_sanitize_server_name() {

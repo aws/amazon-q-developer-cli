@@ -1,8 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{
-    HashMap,
-    HashSet,
-};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
@@ -180,10 +177,7 @@ use crate::cli::chat::legacy::model::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::telemetry::core::{
-    Event,
-    RecordUserTurnCompletionArgs,
-};
+use crate::telemetry::core::Event;
 use crate::telemetry::{
     AcpClientInfo,
     EventType,
@@ -4401,7 +4395,7 @@ pub async fn execute(
                 let telemetry_thread = Some(os.telemetry.clone());
                 async move |notif: super::schema::ModeChangedNotification, _cx: ConnectionTo<sacp::Client>| {
                     if let Some(ref telemetry) = telemetry_thread {
-                        emit_kas_mode_changed_telemetry(telemetry, notif);
+                        emit_v2_mode_changed_telemetry(telemetry, notif);
                     }
                     Ok(())
                 }
@@ -4575,25 +4569,11 @@ pub async fn execute(
                                 match serde_json::from_value::<ProcessHealthPayload>(notif.params().clone()) {
                                     Ok(p) => {
                                         if let Some(ref telemetry) = telemetry_thread {
-                                            emit_kas_process_health_telemetry(telemetry, p);
+                                            emit_process_health_telemetry(telemetry, p);
                                         }
                                     },
                                     Err(e) => {
                                         debug!("Failed to deserialize processHealth payload: {e}");
-                                    },
-                                }
-                                return Ok(sacp::Handled::Yes);
-                            },
-                            "_kiro.dev/telemetry/turnCompletion" => {
-                                use super::schema::TurnCompletionTelemetryPayload;
-                                match serde_json::from_value::<TurnCompletionTelemetryPayload>(notif.params().clone()) {
-                                    Ok(payload) => {
-                                        if let Some(ref telemetry) = telemetry_thread {
-                                            emit_kas_turn_completion_telemetry(telemetry, &database, payload).await;
-                                        }
-                                    },
-                                    Err(e) => {
-                                        debug!("Failed to deserialize turnCompletion payload: {e}");
                                     },
                                 }
                                 return Ok(sacp::Handled::Yes);
@@ -4604,7 +4584,7 @@ pub async fn execute(
                                 {
                                     Ok(payload) => {
                                         if let Some(ref telemetry) = telemetry_thread {
-                                            emit_kas_chat_slash_command_telemetry(telemetry, &database, payload).await;
+                                            emit_v2_chat_slash_command_telemetry(telemetry, &database, payload).await;
                                         }
                                     },
                                     Err(e) => {
@@ -4881,326 +4861,110 @@ fn to_session_model_state(current: String, models: Vec<ModelInfo>) -> SessionMod
     SessionModelState::new(current, acp_models)
 }
 
-pub async fn emit_kas_turn_completion_telemetry(
-    telemetry: &crate::telemetry::TelemetryThread,
-    database: &crate::database::Database,
-    payload: super::schema::TurnCompletionTelemetryPayload,
-) {
-    for mut event in kas_turn_completion_events(payload) {
-        crate::telemetry::set_event_metadata(database, &mut event).await;
-        if let Err(err) = telemetry.send_event(event) {
-            debug!("Failed to send KAS turn completion telemetry: {err}");
-        }
-    }
-}
-
-pub fn emit_kas_mode_changed_telemetry(
+pub fn emit_v2_mode_changed_telemetry(
     telemetry: &crate::telemetry::TelemetryThread,
     payload: super::schema::ModeChangedNotification,
 ) {
-    if let Err(err) = telemetry.send_event(kas_mode_changed_event(payload)) {
-        debug!("Failed to send KAS mode change telemetry: {err}");
+    if let Err(err) = telemetry.send_event(v2_mode_changed_event(payload)) {
+        debug!("Failed to send V2 mode change telemetry: {err}");
     }
 }
 
-pub async fn emit_kas_chat_slash_command_telemetry(
+pub async fn emit_v2_chat_slash_command_telemetry(
     telemetry: &crate::telemetry::TelemetryThread,
     database: &crate::database::Database,
     payload: super::schema::ChatSlashCommandTelemetryPayload,
 ) {
-    let mut event = kas_chat_slash_command_event(payload);
+    let mut event = v2_chat_slash_command_event(payload);
     crate::telemetry::set_event_metadata(database, &mut event).await;
     if let Err(err) = telemetry.send_event(event) {
-        debug!("Failed to send KAS slash command telemetry: {err}");
+        debug!("Failed to send V2 slash command telemetry: {err}");
     }
 }
 
-pub async fn emit_kas_chat_session_started_telemetry(
-    telemetry: &crate::telemetry::TelemetryThread,
-    database: &crate::database::Database,
-    payload: super::schema::ChatSessionStartedTelemetryPayload,
-) {
-    let mut event = kas_chat_session_started_event(payload);
-    crate::telemetry::set_event_metadata(database, &mut event).await;
-    if let Err(err) = telemetry.send_event(event) {
-        debug!("Failed to send KAS chat session telemetry: {err}");
-    }
-}
-
-pub fn emit_kas_process_health_telemetry(
+pub fn emit_process_health_telemetry(
     telemetry: &crate::telemetry::TelemetryThread,
     payload: super::schema::ProcessHealthPayload,
 ) {
-    if let Err(err) = telemetry.send_event(kas_process_health_event(payload)) {
-        debug!("Failed to send KAS process health telemetry: {err}");
+    if let Err(err) = telemetry.send_event(process_health_event(payload)) {
+        debug!("Failed to send process health telemetry: {err}");
     }
 }
 
-pub fn kas_mode_changed_event(payload: super::schema::ModeChangedNotification) -> Event {
-    kas_telemetry_event(EventType::ModeChanged {
-        from_mode: payload.from_mode,
-        to_mode: payload.to_mode,
-        source: payload.source,
-        session_id: payload.session_id,
-    })
-}
-
-pub fn kas_chat_slash_command_event(payload: super::schema::ChatSlashCommandTelemetryPayload) -> Event {
-    kas_telemetry_event(EventType::ChatSlashCommandExecuted {
-        conversation_id: payload.session_id.unwrap_or_default(),
-        command: payload.command,
-        subcommand: payload.subcommand,
-        result: if payload.success {
-            TelemetryResult::Succeeded
-        } else {
-            TelemetryResult::Failed
+pub fn v2_mode_changed_event(payload: super::schema::ModeChangedNotification) -> Event {
+    telemetry_event(
+        EventType::ModeChanged {
+            from_mode: payload.from_mode,
+            to_mode: payload.to_mode,
+            source: payload.source,
+            session_id: payload.session_id,
         },
-        reason: payload.reason,
-    })
+        kiro_telemetry::metric::Engine::V2,
+    )
 }
 
-pub fn kas_chat_session_started_event(payload: super::schema::ChatSessionStartedTelemetryPayload) -> Event {
-    kas_telemetry_event(EventType::ChatSessionStarted {
-        mode: kiro_telemetry::metric::Mode::from_chat_session(None, payload.mode.as_deref()),
-    })
-}
-
-pub fn kas_process_health_event(payload: super::schema::ProcessHealthPayload) -> Event {
-    kas_telemetry_event(EventType::ProcessHealthMetric {
-        agent_kind: payload.agent_kind.as_deref().map_or(
-            kiro_telemetry::metric::AgentKind::Kas,
-            kiro_telemetry::metric::AgentKind::from_name,
-        ),
-        rss_mb: payload.rss_mb.unwrap_or(0.0),
-        heap_used_mb: payload.heap_used_mb.unwrap_or(0.0),
-        peak_rss_mb: payload.peak_rss_mb.unwrap_or(0.0),
-        cpu_user_pct: payload.cpu_user_pct.unwrap_or(0.0),
-        cpu_system_pct: payload.cpu_system_pct.unwrap_or(0.0),
-        last_render_ms: payload.last_render_ms.unwrap_or(0.0),
-        max_render_ms: payload.max_render_ms.unwrap_or(0.0),
-        renders_per_min: payload.renders_per_min.unwrap_or(0),
-        full_redraws_per_min: payload.full_redraws_per_min.unwrap_or(0),
-        yoga_node_count: payload.yoga_node_count.unwrap_or(0),
-        event_loop_p99_ms: payload.event_loop_p99_ms,
-        input_latency_p95_ms: payload.input_latency_p95_ms,
-        session_duration_sec: payload.session_duration_sec.unwrap_or(0),
-        cpu_cores: payload.cpu_cores.unwrap_or(0),
-        total_memory_mb: payload.total_memory_mb.unwrap_or(0),
-        terminal: payload.terminal.unwrap_or_default(),
-        session_id: payload.session_id,
-        version: payload.version,
-        platform: payload.platform,
-    })
-}
-
-pub fn kas_turn_completion_events(payload: super::schema::TurnCompletionTelemetryPayload) -> Vec<Event> {
-    let model = payload.model_id.clone();
-    let conversation_id = payload.session_id.clone().unwrap_or_default();
-    let has_token_usage = kas_has_token_usage(&payload);
-    let has_model_invocation = !payload.metering_usage.is_empty()
-        || payload.turn_duration_ms.is_some()
-        || payload.status.is_some()
-        || has_token_usage;
-    let mut events = Vec::new();
-
-    for usage in payload.metering_usage.iter().filter(|usage| usage.value.is_finite()) {
-        events.push(kas_telemetry_event(EventType::MeteringEvent {
-            request_id: None,
-            model: model.clone(),
-            usage: usage.value,
-            unit: usage.unit.clone(),
-            unit_plural: usage.unit_plural.clone(),
-        }));
-    }
-
-    if let Some(percentage) = payload.context_usage_percentage
-        && percentage.is_finite()
-        && percentage >= 0.0
-    {
-        events.push(kas_telemetry_event(EventType::ContextUsagePercentage {
-            model: model.clone(),
-            percentage,
-        }));
-    }
-
-    events.extend(kas_tool_invocation_events(
-        &conversation_id,
-        &model,
-        &payload.used_tools,
-    ));
-
-    let should_emit_turn_completion = !payload.metering_usage.is_empty()
-        || payload.turn_duration_ms.is_some()
-        || payload.status.is_some()
-        || has_token_usage;
-    if should_emit_turn_completion {
-        let result = kas_turn_result(payload.status);
-        let (reason, reason_desc) = kas_turn_failure_reason(payload.status);
-        events.push(kas_telemetry_event(EventType::RecordUserTurnCompletion {
-            conversation_id,
-            result,
-            args: RecordUserTurnCompletionArgs {
-                model: model.clone(),
-                reason,
-                reason_desc,
-                total_tokens: kas_total_tokens(&payload),
-                uncached_input_tokens: positive_token_count(payload.uncached_input_tokens),
-                output_tokens: positive_token_count(payload.output_tokens),
-                cache_read_input_tokens: positive_token_count(payload.cache_read_input_tokens),
-                cache_write_input_tokens: positive_token_count(payload.cache_write_input_tokens),
-                user_turn_duration_seconds: kas_turn_duration_seconds(payload.turn_duration_ms),
-                emit_user_turn_counter: true,
-                ..Default::default()
+pub fn v2_chat_slash_command_event(payload: super::schema::ChatSlashCommandTelemetryPayload) -> Event {
+    telemetry_event(
+        EventType::ChatSlashCommandExecuted {
+            conversation_id: payload.session_id.unwrap_or_default(),
+            command: payload.command,
+            subcommand: payload.subcommand,
+            result: if payload.success {
+                TelemetryResult::Succeeded
+            } else {
+                TelemetryResult::Failed
             },
-        }));
-    }
-
-    if has_model_invocation {
-        events.push(kas_telemetry_event(EventType::ModelInvocation { model }));
-    }
-
-    events
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct KasToolTelemetry {
-    tool_name: String,
-    mcp_server_name: Option<String>,
-    is_custom_tool: bool,
-}
-
-fn kas_tool_invocation_events(conversation_id: &str, model: &Option<String>, used_tools: &[String]) -> Vec<Event> {
-    let mut seen = HashSet::new();
-    let mut events = Vec::new();
-
-    for raw_tool_name in used_tools {
-        let Some(tool) = kas_tool_telemetry(raw_tool_name) else {
-            continue;
-        };
-        let dedupe_key = format!(
-            "{}\0{}",
-            tool.mcp_server_name.as_deref().unwrap_or_default(),
-            tool.tool_name
-        );
-        if !seen.insert(dedupe_key) {
-            continue;
-        }
-
-        events.push(kas_telemetry_event(EventType::ToolUseSuggested {
-            conversation_id: conversation_id.to_string(),
-            utterance_id: None,
-            user_input_id: None,
-            tool_use_id: None,
-            tool_name: Some(tool.tool_name),
-            mcp_server_name: tool.mcp_server_name,
-            is_accepted: true,
-            is_trusted: true,
-            is_success: Some(true),
-            reason_desc: None,
-            is_valid: Some(true),
-            is_custom_tool: tool.is_custom_tool,
-            input_token_size: None,
-            output_token_size: None,
-            custom_tool_call_latency: None,
-            model: model.clone(),
-            execution_duration: None,
-            turn_duration: None,
-            aws_service_name: None,
-            aws_operation_name: None,
-        }));
-    }
-
-    events
-}
-
-fn kas_tool_telemetry(raw_tool_name: &str) -> Option<KasToolTelemetry> {
-    let tool_name = raw_tool_name.trim();
-    if tool_name.is_empty() {
-        return None;
-    }
-
-    if let Some(rest) = tool_name.strip_prefix('@')
-        && let Some((server_name, mcp_tool_name)) = rest.split_once('/')
-    {
-        let server_name = server_name.trim();
-        let mcp_tool_name = mcp_tool_name.trim();
-        if !server_name.is_empty() && !mcp_tool_name.is_empty() {
-            return Some(KasToolTelemetry {
-                tool_name: mcp_tool_name.to_string(),
-                mcp_server_name: Some(server_name.to_string()),
-                is_custom_tool: true,
-            });
-        }
-    }
-
-    Some(KasToolTelemetry {
-        tool_name: tool_name.to_string(),
-        mcp_server_name: None,
-        is_custom_tool: BuiltInToolName::from_str(tool_name).is_err(),
-    })
-}
-
-fn kas_telemetry_event(ty: EventType) -> Event {
-    let mut event = Event::new(ty);
-    event.set_client_application_kind(kiro_telemetry::metric::ClientApplication::ChatCliV3);
-    event.app_type = Some("KAS".to_string());
-    event
-}
-
-fn kas_turn_result(status: Option<super::schema::TurnCompletionStatus>) -> TelemetryResult {
-    match status {
-        Some(super::schema::TurnCompletionStatus::Failed | super::schema::TurnCompletionStatus::Other) => {
-            TelemetryResult::Failed
+            reason: payload.reason,
         },
-        Some(super::schema::TurnCompletionStatus::Cancelled) => TelemetryResult::Cancelled,
-        Some(super::schema::TurnCompletionStatus::Success) | None => TelemetryResult::Succeeded,
-    }
+        kiro_telemetry::metric::Engine::V2,
+    )
 }
 
-fn kas_turn_failure_reason(status: Option<super::schema::TurnCompletionStatus>) -> (Option<String>, Option<String>) {
-    match status {
-        Some(super::schema::TurnCompletionStatus::Failed) => (
-            Some("KasTurnFailed".to_string()),
-            Some("KAS reported turn failure".to_string()),
-        ),
-        Some(super::schema::TurnCompletionStatus::Other) => (
-            Some("KasTurnUnknownStatus".to_string()),
-            Some("KAS reported an unknown turn status".to_string()),
-        ),
-        _ => (None, None),
-    }
+pub fn process_health_event(payload: super::schema::ProcessHealthPayload) -> Event {
+    let agent_kind = payload.agent_kind.as_deref().map_or(
+        kiro_telemetry::metric::AgentKind::V2,
+        kiro_telemetry::metric::AgentKind::from_name,
+    );
+    let engine = kiro_telemetry::metric::Engine::from_agent_kind(agent_kind);
+    telemetry_event(
+        EventType::ProcessHealthMetric {
+            agent_kind,
+            rss_mb: payload.rss_mb.unwrap_or(0.0),
+            heap_used_mb: payload.heap_used_mb.unwrap_or(0.0),
+            peak_rss_mb: payload.peak_rss_mb.unwrap_or(0.0),
+            cpu_user_pct: payload.cpu_user_pct.unwrap_or(0.0),
+            cpu_system_pct: payload.cpu_system_pct.unwrap_or(0.0),
+            last_render_ms: payload.last_render_ms.unwrap_or(0.0),
+            max_render_ms: payload.max_render_ms.unwrap_or(0.0),
+            renders_per_min: payload.renders_per_min.unwrap_or(0),
+            full_redraws_per_min: payload.full_redraws_per_min.unwrap_or(0),
+            yoga_node_count: payload.yoga_node_count.unwrap_or(0),
+            event_loop_p99_ms: payload.event_loop_p99_ms,
+            input_latency_p95_ms: payload.input_latency_p95_ms,
+            session_duration_sec: payload.session_duration_sec.unwrap_or(0),
+            cpu_cores: payload.cpu_cores.unwrap_or(0),
+            total_memory_mb: payload.total_memory_mb.unwrap_or(0),
+            terminal: payload.terminal.unwrap_or_default(),
+            session_id: payload.session_id,
+            version: payload.version,
+            platform: payload.platform,
+        },
+        engine,
+    )
 }
 
-fn kas_turn_duration_seconds(turn_duration_ms: Option<f64>) -> i64 {
-    let Some(milliseconds) = turn_duration_ms else {
-        return 0;
+fn telemetry_event(ty: EventType, engine: kiro_telemetry::metric::Engine) -> Event {
+    let mut event = Event::new(ty);
+    let (client_application, app_type) = match engine {
+        kiro_telemetry::metric::Engine::V1 => (kiro_telemetry::metric::ClientApplication::ChatCli, "V1"),
+        kiro_telemetry::metric::Engine::V2 => (kiro_telemetry::metric::ClientApplication::ChatCliV2, "V2"),
+        kiro_telemetry::metric::Engine::V3 => (kiro_telemetry::metric::ClientApplication::ChatCliV3, "KAS"),
+        kiro_telemetry::metric::Engine::Other => (kiro_telemetry::metric::ClientApplication::Unknown, "ACP"),
     };
-    if !milliseconds.is_finite() || milliseconds <= 0.0 {
-        return 0;
-    }
-    let seconds = (milliseconds / 1000.0).floor().min(i64::MAX as f64) as i64;
-    if seconds == 0 { 1 } else { seconds }
-}
-
-fn kas_has_token_usage(payload: &super::schema::TurnCompletionTelemetryPayload) -> bool {
-    kas_total_tokens(payload).is_some()
-        || positive_token_count(payload.uncached_input_tokens).is_some()
-        || positive_token_count(payload.output_tokens).is_some()
-        || positive_token_count(payload.cache_read_input_tokens).is_some()
-        || positive_token_count(payload.cache_write_input_tokens).is_some()
-}
-
-fn kas_total_tokens(payload: &super::schema::TurnCompletionTelemetryPayload) -> Option<i64> {
-    positive_token_count(payload.total_tokens).or_else(|| {
-        let total = positive_token_count(payload.uncached_input_tokens).unwrap_or_default()
-            + positive_token_count(payload.output_tokens).unwrap_or_default()
-            + positive_token_count(payload.cache_read_input_tokens).unwrap_or_default();
-        (total > 0).then_some(total)
-    })
-}
-
-fn positive_token_count(value: Option<i64>) -> Option<i64> {
-    value.filter(|value| *value > 0)
+    event.set_client_application_kind(client_application);
+    event.set_engine(engine);
+    event.app_type = Some(app_type.to_string());
+    event
 }
 
 fn mime_to_image_format(mime: &str) -> Option<ImageFormat> {
@@ -5214,64 +4978,91 @@ fn mime_to_image_format(mime: &str) -> Option<ImageFormat> {
 }
 
 #[cfg(test)]
-mod kas_turn_completion_telemetry_tests {
-    use kiro_telemetry::testing::{
-        expect_log,
-        expect_metric,
-        log_attr,
-    };
-    use kiro_telemetry::{
-        log as telemetry_log,
-        metric,
-    };
-    use kiro_telemetry_legacy::{
-        event_to_otel_log_record,
-        event_to_otel_metric_record,
-        event_to_otel_metric_records,
-    };
+mod telemetry_event_tests {
+    use kiro_telemetry::metric;
+    use kiro_telemetry::testing::expect_metric;
+    use kiro_telemetry_legacy::event_to_otel_metric_records;
 
-    use super::kas_turn_completion_events;
     use crate::agent::acp::schema::{
-        ChatSessionStartedTelemetryPayload,
         ChatSlashCommandTelemetryPayload,
         ModeChangeSource,
         ModeChangedNotification,
         ProcessHealthPayload,
-        TurnCompletionMeteringUsage,
-        TurnCompletionStatus,
-        TurnCompletionTelemetryPayload,
     };
+    use crate::telemetry::EventType;
     use crate::telemetry::core::Event;
-    use crate::telemetry::{
-        EventType,
-        TelemetryResult,
-    };
 
     fn assert_kas_attribution(event: &Event) {
         assert_eq!(event.client_application.as_deref(), Some("chat_cli_v3"));
         assert_eq!(event.app_type.as_deref(), Some("KAS"));
+        assert_eq!(event.engine, Some(kiro_telemetry::metric::Engine::V3));
+    }
+
+    fn assert_v2_attribution(event: &Event) {
+        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
+        assert_eq!(event.app_type.as_deref(), Some("V2"));
+        assert_eq!(event.engine, Some(kiro_telemetry::metric::Engine::V2));
+    }
+
+    fn expected_kas_metric(record: kiro_telemetry::MetricRecord) -> kiro_telemetry::MetricRecord {
+        metric::with_engine(record, metric::Engine::V3)
     }
 
     #[test]
-    fn kas_bridge_events_use_v3_attribution() {
-        let mode = super::kas_mode_changed_event(ModeChangedNotification {
+    fn tui_extension_events_use_v2_attribution() {
+        let mode = super::v2_mode_changed_event(ModeChangedNotification {
             from_mode: "kiro".to_string(),
             to_mode: "kiro_planner".to_string(),
             source: ModeChangeSource::ShiftTab,
-            session_id: Some("kas-session-1".to_string()),
+            session_id: Some("v2-session-1".to_string()),
         });
-        let slash = super::kas_chat_slash_command_event(ChatSlashCommandTelemetryPayload {
-            session_id: Some("kas-session-1".to_string()),
+        let slash = super::v2_chat_slash_command_event(ChatSlashCommandTelemetryPayload {
+            session_id: Some("v2-session-1".to_string()),
             command: "/chat".to_string(),
             subcommand: Some("save".to_string()),
             success: true,
             reason: None,
         });
-        let session = super::kas_chat_session_started_event(ChatSessionStartedTelemetryPayload {
-            session_id: Some("kas-session-1".to_string()),
-            mode: Some("kiro_planner".to_string()),
+        let process = super::process_health_event(ProcessHealthPayload {
+            agent_kind: Some("v2".to_string()),
+            rss_mb: Some(128.0),
+            heap_used_mb: None,
+            peak_rss_mb: None,
+            cpu_user_pct: Some(12.5),
+            cpu_system_pct: Some(7.5),
+            last_render_ms: None,
+            max_render_ms: None,
+            renders_per_min: None,
+            full_redraws_per_min: None,
+            yoga_node_count: None,
+            event_loop_p99_ms: None,
+            input_latency_p95_ms: None,
+            session_duration_sec: None,
+            cpu_cores: None,
+            total_memory_mb: None,
+            terminal: None,
+            session_id: Some("v2-session-1".to_string()),
+            version: "2.4.0".to_string(),
+            platform: "darwin".to_string(),
         });
-        let process = super::kas_process_health_event(ProcessHealthPayload {
+
+        for event in [&mode, &slash, &process] {
+            assert_v2_attribution(event);
+        }
+
+        let process_records = event_to_otel_metric_records(&process);
+        expect_metric(
+            &process_records,
+            metric::with_engine(
+                metric::process_memory_rss(128.0 * 1024.0 * 1024.0, "2.4.0", metric::AgentKind::V2),
+                metric::Engine::V2,
+            ),
+        );
+    }
+
+    #[test]
+    fn process_health_derives_engine_from_agent_kind() {
+        let process = super::process_health_event(ProcessHealthPayload {
             agent_kind: Some("kas".to_string()),
             rss_mb: Some(128.0),
             heap_used_mb: None,
@@ -5293,27 +5084,22 @@ mod kas_turn_completion_telemetry_tests {
             version: "2.4.0".to_string(),
             platform: "darwin".to_string(),
         });
-
-        for event in [&mode, &slash, &session, &process] {
-            assert_kas_attribution(event);
-        }
-
-        let session_start = event_to_otel_metric_record(&session).expect("chat session start metric");
-        expect_metric(
-            std::slice::from_ref(&session_start),
-            metric::chat_session_started(metric::Mode::Plan, metric::ClientApplication::ChatCliV3),
-        );
+        assert_kas_attribution(&process);
 
         let process_records = event_to_otel_metric_records(&process);
         expect_metric(
             &process_records,
-            metric::process_memory_rss(128.0 * 1024.0 * 1024.0, "2.4.0", metric::AgentKind::Kas),
+            expected_kas_metric(metric::process_memory_rss(
+                128.0 * 1024.0 * 1024.0,
+                "2.4.0",
+                metric::AgentKind::Kas,
+            )),
         );
     }
 
     #[test]
-    fn kas_process_health_defaults_missing_agent_kind_to_kas() {
-        let process = super::kas_process_health_event(ProcessHealthPayload {
+    fn process_health_defaults_missing_agent_kind_to_v2() {
+        let process = super::process_health_event(ProcessHealthPayload {
             agent_kind: None,
             rss_mb: Some(128.0),
             heap_used_mb: None,
@@ -5336,280 +5122,13 @@ mod kas_turn_completion_telemetry_tests {
             platform: "darwin".to_string(),
         });
 
-        match process.ty {
+        match &process.ty {
             EventType::ProcessHealthMetric { agent_kind, .. } => {
-                assert_eq!(agent_kind, metric::AgentKind::Kas);
+                assert_eq!(*agent_kind, metric::AgentKind::V2);
             },
             _ => panic!("expected process health event"),
         }
-    }
-
-    #[test]
-    fn kas_turn_completion_emits_metering_context_and_turn_events() {
-        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
-            session_id: Some("kas-session-1".to_string()),
-            model_id: Some("claude-4-sonnet".to_string()),
-            metering_usage: vec![TurnCompletionMeteringUsage {
-                value: 1.5,
-                unit: "credit".to_string(),
-                unit_plural: "Credits".to_string(),
-            }],
-            turn_duration_ms: Some(1234.0),
-            context_usage_percentage: Some(42.0),
-            total_tokens: None,
-            uncached_input_tokens: Some(10),
-            output_tokens: Some(5),
-            cache_read_input_tokens: Some(2),
-            cache_write_input_tokens: Some(3),
-            status: Some(TurnCompletionStatus::Success),
-            used_tools: Vec::new(),
-        });
-
-        assert_eq!(events.len(), 4);
-        assert!(
-            events
-                .iter()
-                .all(|event| event.client_application.as_deref() == Some("chat_cli_v3"))
-        );
-        assert!(events.iter().all(|event| event.app_type.as_deref() == Some("KAS")));
-
-        let metering = event_to_otel_log_record(&events[0]).expect("metering log");
-        expect_log(
-            std::slice::from_ref(&metering),
-            telemetry_log::metering_event_record(telemetry_log::MeteringEventLog::from_names(
-                None,
-                Some("claude-4-sonnet"),
-                Some("chat_cli_v3"),
-                1.5,
-                "credit",
-                "Credits",
-            )),
-        );
-
-        let context_usage = event_to_otel_metric_record(&events[1]).expect("context usage metric");
-        expect_metric(
-            std::slice::from_ref(&context_usage),
-            metric::context_usage_percentage(
-                42.0,
-                Some("claude-4-sonnet"),
-                metric::ClientApplication::ChatCliV3,
-                false,
-            ),
-        );
-
-        match &events[2].ty {
-            EventType::RecordUserTurnCompletion {
-                conversation_id,
-                result,
-                args,
-            } => {
-                assert_eq!(conversation_id, "kas-session-1");
-                assert_eq!(*result, TelemetryResult::Succeeded);
-                assert_eq!(args.model.as_deref(), Some("claude-4-sonnet"));
-                assert_eq!(args.total_tokens, Some(17));
-                assert_eq!(args.uncached_input_tokens, Some(10));
-                assert_eq!(args.output_tokens, Some(5));
-                assert_eq!(args.cache_read_input_tokens, Some(2));
-                assert_eq!(args.cache_write_input_tokens, Some(3));
-                assert_eq!(args.user_turn_duration_seconds, 1);
-                assert!(args.emit_user_turn_counter);
-            },
-            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
-        }
-        let turn_log = event_to_otel_log_record(&events[2]).expect("turn completion log");
-        assert_eq!(log_attr(&turn_log, "total_tokens"), Some("17"));
-        assert_eq!(log_attr(&turn_log, "uncached_input_tokens"), Some("10"));
-        assert_eq!(log_attr(&turn_log, "output_tokens"), Some("5"));
-        assert_eq!(log_attr(&turn_log, "cache_read_input_tokens"), Some("2"));
-        assert_eq!(log_attr(&turn_log, "cache_write_input_tokens"), Some("3"));
-        let turn_records = event_to_otel_metric_records(&events[2]);
-        let invocation =
-            metric::InvocationContext::new(Some("claude-4-sonnet"), metric::ClientApplication::ChatCliV3, false);
-        expect_metric(
-            &turn_records,
-            metric::user_turns_for_invocation(invocation, metric::ResultKind::Success, metric::Mode::Interactive),
-        );
-        expect_metric(
-            &turn_records,
-            metric::user_turn_duration_seconds_for_invocation(
-                1.0,
-                invocation,
-                metric::ChatConversationKind::Interactive,
-                metric::Mode::Interactive,
-            ),
-        );
-        expect_metric(
-            &turn_records,
-            metric::tokens_consumed(
-                10,
-                Some("claude-4-sonnet"),
-                metric::TokenType::InputUncached,
-                metric::ClientApplication::ChatCliV3,
-                false,
-            ),
-        );
-
-        let invocation = event_to_otel_metric_record(&events[3]).expect("model invocation metric");
-        expect_metric(
-            std::slice::from_ref(&invocation),
-            metric::model_invocation(Some("claude-4-sonnet")),
-        );
-    }
-
-    #[test]
-    fn kas_context_only_payload_does_not_emit_empty_turn_completion() {
-        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
-            session_id: Some("kas-session-1".to_string()),
-            model_id: Some("claude-4-sonnet".to_string()),
-            metering_usage: Vec::new(),
-            turn_duration_ms: None,
-            context_usage_percentage: Some(66.0),
-            total_tokens: None,
-            uncached_input_tokens: None,
-            output_tokens: None,
-            cache_read_input_tokens: None,
-            cache_write_input_tokens: None,
-            status: None,
-            used_tools: Vec::new(),
-        });
-
-        assert_eq!(events.len(), 1);
-        assert!(matches!(events[0].ty, EventType::ContextUsagePercentage { .. }));
-    }
-
-    #[test]
-    fn kas_unknown_turn_status_maps_to_failed_fact_row() {
-        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
-            session_id: Some("kas-session-1".to_string()),
-            model_id: Some("claude-4-sonnet".to_string()),
-            metering_usage: Vec::new(),
-            turn_duration_ms: Some(50.0),
-            context_usage_percentage: None,
-            total_tokens: None,
-            uncached_input_tokens: None,
-            output_tokens: None,
-            cache_read_input_tokens: None,
-            cache_write_input_tokens: None,
-            status: Some(TurnCompletionStatus::Other),
-            used_tools: Vec::new(),
-        });
-
-        assert_eq!(events.len(), 2);
-        match &events[0].ty {
-            EventType::RecordUserTurnCompletion { result, args, .. } => {
-                assert_eq!(*result, TelemetryResult::Failed);
-                assert_eq!(args.reason.as_deref(), Some("KasTurnUnknownStatus"));
-                assert_eq!(args.reason_desc.as_deref(), Some("KAS reported an unknown turn status"));
-                assert_eq!(args.user_turn_duration_seconds, 1);
-            },
-            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
-        }
-        assert!(matches!(events[1].ty, EventType::ModelInvocation { .. }));
-    }
-
-    #[test]
-    fn kas_turn_completion_emits_tool_usage_metrics_and_facts() {
-        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
-            session_id: Some("kas-session-1".to_string()),
-            model_id: Some("claude-4-sonnet".to_string()),
-            metering_usage: Vec::new(),
-            turn_duration_ms: None,
-            context_usage_percentage: None,
-            total_tokens: None,
-            uncached_input_tokens: None,
-            output_tokens: None,
-            cache_read_input_tokens: None,
-            cache_write_input_tokens: None,
-            status: None,
-            used_tools: vec![
-                "fs_read".to_string(),
-                "@local/echo".to_string(),
-                "custom_tool".to_string(),
-                "fs_read".to_string(),
-                " ".to_string(),
-            ],
-        });
-
-        assert_eq!(events.len(), 3);
-        assert!(
-            events
-                .iter()
-                .all(|event| event.client_application.as_deref() == Some("chat_cli_v3"))
-        );
-
-        let builtin_records = event_to_otel_metric_records(&events[0]);
-        let builtin_invocation = metric::ToolInvocation::new(
-            Some("fs_read"),
-            metric::ToolOrigin::Builtin,
-            true,
-            Some(true),
-            Some(true),
-        );
-        expect_metric(
-            &builtin_records,
-            metric::tool_call_total_for_invocation(builtin_invocation, Some(metric::Engine::V3)),
-        );
-        expect_metric(
-            &builtin_records,
-            metric::tool_invocations_for_invocation(builtin_invocation, Some(metric::Engine::V3)),
-        );
-        let builtin_log = event_to_otel_log_record(&events[0]).expect("builtin tool log");
-        assert_eq!(log_attr(&builtin_log, "tool_name"), Some("fs_read"));
-        assert_eq!(log_attr(&builtin_log, "model"), Some("claude-4-sonnet"));
-
-        let mcp_records = event_to_otel_metric_records(&events[1]);
-        let mcp_invocation = metric::ToolInvocation::mcp(Some("echo"), Some("local"), true, Some(true), Some(true));
-        expect_metric(
-            &mcp_records,
-            metric::tool_call_total_for_invocation(mcp_invocation, Some(metric::Engine::V3)),
-        );
-        let mcp_log = event_to_otel_log_record(&events[1]).expect("mcp tool log");
-        assert_eq!(log_attr(&mcp_log, "tool_name"), Some("echo"));
-        assert_eq!(log_attr(&mcp_log, "mcp_server_name"), Some("local"));
-
-        let custom_log = event_to_otel_log_record(&events[2]).expect("custom tool log");
-        assert_eq!(log_attr(&custom_log, "tool_name"), Some("custom_tool"));
-        assert_eq!(log_attr(&custom_log, "mcp_server_name"), None);
-    }
-
-    #[test]
-    fn kas_token_only_payload_emits_turn_fact_and_metrics() {
-        let events = kas_turn_completion_events(TurnCompletionTelemetryPayload {
-            session_id: Some("kas-session-1".to_string()),
-            model_id: Some("claude-4-sonnet".to_string()),
-            metering_usage: Vec::new(),
-            turn_duration_ms: None,
-            context_usage_percentage: None,
-            total_tokens: None,
-            uncached_input_tokens: Some(10),
-            output_tokens: Some(5),
-            cache_read_input_tokens: Some(2),
-            cache_write_input_tokens: Some(3),
-            status: None,
-            used_tools: Vec::new(),
-        });
-
-        assert_eq!(events.len(), 2);
-        match &events[0].ty {
-            EventType::RecordUserTurnCompletion { result, args, .. } => {
-                assert_eq!(*result, TelemetryResult::Succeeded);
-                assert_eq!(args.total_tokens, Some(17));
-            },
-            other => panic!("expected RecordUserTurnCompletion, got {other:?}"),
-        }
-
-        let records = event_to_otel_metric_records(&events[0]);
-        expect_metric(
-            &records,
-            metric::tokens_consumed(
-                5,
-                Some("claude-4-sonnet"),
-                metric::TokenType::Output,
-                metric::ClientApplication::ChatCliV3,
-                false,
-            ),
-        );
-        assert!(matches!(events[1].ty, EventType::ModelInvocation { .. }));
+        assert_v2_attribution(&process);
     }
 }
 

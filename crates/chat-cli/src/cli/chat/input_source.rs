@@ -23,6 +23,13 @@ use super::prompt::{
 use super::skim_integration::SkimCommandSelector;
 use crate::os::Os;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ReadLineOutcome {
+    Line(String),
+    Interrupted,
+    Eof,
+}
+
 #[derive(Debug)]
 pub struct InputSource {
     inner: inner::Inner,
@@ -40,6 +47,7 @@ mod inner {
     use rustyline::history::FileHistory;
 
     use super::super::prompt::ChatHelper;
+    use super::ReadLineOutcome;
 
     #[allow(clippy::large_enum_variant)]
     #[derive(Debug)]
@@ -48,7 +56,7 @@ mod inner {
         #[allow(dead_code)]
         Mock {
             index: usize,
-            lines: Vec<String>,
+            outcomes: Vec<ReadLineOutcome>,
         },
     }
 }
@@ -167,8 +175,12 @@ impl InputSource {
 
     #[allow(dead_code)]
     pub fn new_mock(lines: Vec<String>) -> Self {
+        Self::new_mock_outcomes(lines.into_iter().map(ReadLineOutcome::Line).collect())
+    }
+
+    pub(super) fn new_mock_outcomes(outcomes: Vec<ReadLineOutcome>) -> Self {
         Self {
-            inner: inner::Inner::Mock { index: 0, lines },
+            inner: inner::Inner::Mock { index: 0, outcomes },
             paste_state: PasteState::new(),
             swap_state: AgentSwapState::new(),
             #[cfg(feature = "voice")]
@@ -178,7 +190,7 @@ impl InputSource {
         }
     }
 
-    pub fn read_line(&mut self, prompt: Option<&str>) -> Result<Option<String>, ReadlineError> {
+    pub(super) fn read_line(&mut self, prompt: Option<&str>) -> Result<ReadLineOutcome, ReadlineError> {
         let result = match &mut self.inner {
             inner::Inner::Readline(rl) => {
                 let prompt = prompt.unwrap_or_default();
@@ -190,20 +202,21 @@ impl InputSource {
                         if Self::should_append_history(&line) {
                             let _ = rl.add_history_entry(line.as_str());
                         }
-                        Ok(Some(line))
+                        Ok(ReadLineOutcome::Line(line))
                     },
-                    Err(ReadlineError::Interrupted | ReadlineError::Eof) => Ok(None),
+                    Err(ReadlineError::Interrupted) => Ok(ReadLineOutcome::Interrupted),
+                    Err(ReadlineError::Eof) => Ok(ReadLineOutcome::Eof),
                     Err(err) => Err(err),
                 }
             },
-            inner::Inner::Mock { index, lines } => {
+            inner::Inner::Mock { index, outcomes } => {
                 *index += 1;
-                Ok(lines.get(*index - 1).cloned())
+                Ok(outcomes.get(*index - 1).cloned().unwrap_or(ReadLineOutcome::Eof))
             },
         };
 
         // Persist history after each input to prevent loss on crash/reboot
-        if matches!(&result, Ok(Some(_))) {
+        if matches!(&result, Ok(ReadLineOutcome::Line(_))) {
             let _ = self.save_history();
         }
 
@@ -232,9 +245,12 @@ impl InputSource {
                     Err(err) => Err(err),
                 }
             },
-            inner::Inner::Mock { index, lines } => {
+            inner::Inner::Mock { index, outcomes } => {
                 *index += 1;
-                Ok(lines.get(*index - 1).cloned())
+                Ok(match outcomes.get(*index - 1) {
+                    Some(ReadLineOutcome::Line(line)) => Some(line.clone()),
+                    Some(ReadLineOutcome::Interrupted | ReadLineOutcome::Eof) | None => None,
+                })
             },
         };
 
@@ -291,10 +307,10 @@ mod tests {
         let l3 = "World!".to_string();
         let mut input = InputSource::new_mock(vec![l1.clone(), l2.clone(), l3.clone()]);
 
-        assert_eq!(input.read_line(None).unwrap().unwrap(), l1);
-        assert_eq!(input.read_line(None).unwrap().unwrap(), l2);
-        assert_eq!(input.read_line(None).unwrap().unwrap(), l3);
-        assert!(input.read_line(None).unwrap().is_none());
+        assert_eq!(input.read_line(None).unwrap(), ReadLineOutcome::Line(l1));
+        assert_eq!(input.read_line(None).unwrap(), ReadLineOutcome::Line(l2));
+        assert_eq!(input.read_line(None).unwrap(), ReadLineOutcome::Line(l3));
+        assert_eq!(input.read_line(None).unwrap(), ReadLineOutcome::Eof);
     }
 
     #[test]

@@ -676,6 +676,7 @@ impl TelemetryObserver {
                 message_meta_tags: turn.message_meta_tags,
                 is_subagent: self.context.is_subagent,
                 emit_user_turn_counter: false,
+                emit_turn_numeric_metrics: None,
                 parent_tool_use_id: None,
                 request_attempts: turn.last_request_attempts,
             },

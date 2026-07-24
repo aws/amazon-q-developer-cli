@@ -52,11 +52,11 @@ which fails if any non-derived catalog metric lacks a typed constructor.
 
 This stack is also exercised end-to-end by CI: the `tui-telemetry-e2e` job in
 `.github/workflows/tui.yml` brings the stack up with `docker compose` and runs
-`validate-metrics-e2e.sh`, which drives the Rust catalog emitter + the TUI
-emitter fixture (`emit-tui-metrics.fixture.ts`) through the real code paths and
-asserts each metric lands in Prometheus. It runs whenever telemetry-relevant
-paths change (`dev/telemetry/**`, `crates/kiro-telemetry*/**`, or the TUI metric
-emitters), so these scripts are part of the test suite, not dev-only cruft.
+`validate-metrics-e2e.sh`, which runs the real V1 binary in dual-write mode,
+records both its OTLP and legacy Toolkit requests, then drives the Rust catalog
+emitter and TUI fixture (`emit-tui-metrics.fixture.ts`) through their real code
+paths. It runs whenever telemetry-relevant paths change, so these scripts are
+part of the test suite, not dev-only cruft.
 
 ## Run Kiro against the local collector
 

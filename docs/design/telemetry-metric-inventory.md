@@ -79,7 +79,6 @@ sink is deleted** — the "Survives" column is the whole point of this table.
 | # | Legacy metric | EventType | V1/V2 | Survives deletion | OTEL successor (future) |
 |---|---|---|---|---|
 | 1 | `userLoggedIn` | UserLoggedIn | both | **metric** ✓ | `kiro_cli_user_logged_in_total` — wired `event_translation.rs:807` (PR #3191 closed this; was the one hard-dark gap) |
-| 2 | `refreshCredentials` | RefreshCredentials | both | fidelity-loss | `kiro_cli_auth_credential_failure_total` bare counter via `_=>` fallthrough; requestId/result/reason/oauthFlow dropped |
 | 3 | `authFailed` | AuthFailed | both | **metric** ✓ | `kiro_cli_auth_credential_failure_total` — rich arm wired `event_translation.rs:815` (`auth_failed_login_from_names`); keeps auth_method+error_code |
 | 4 | `cliSubcommandExecuted` | CliSubcommandExecuted | both | **metric** (partial) | `kiro_cli_feature_used_total` (feature=subcommand); clientApplication/inCloudshell dropped |
 | 5 | `chatSlashCommandExecuted` | ChatSlashCommandExecuted | both | **metric** (partial) | `kiro_cli_slash_command_invoked_total`; subcommand/result/reason dropped |
@@ -155,7 +154,7 @@ Log events (6): `kiro_cli_metering_event`, `kiro_cli_user_turn_completed`, `kiro
 
 | Group | Metrics | Future intent |
 |---|---|---|
-| **Process/perf (host or TUI)** | `kiro_cli.process.fds.open` (`metric.rs:3948`), `kiro_cli.process.threads` (`:3955`), `kiro_cli.process.memory.growth_rate` (`:3937`), `kiro_cli.startup.duration` (`:4217`), `kiro_cli.startup.failures` (`:4206`), `kiro_cli.crash.total`, `kiro_cli.agent.loop.iteration_duration`, `kiro_cli.agent.loop.stuck`, `kiro_cli.upstream.dependency.up` | **WIRE these** — they back the §E perf expansion at near-zero cost (constructors ready) |
+| **Process/perf (host or TUI)** | `kiro_cli.process.fds.open` (`metric.rs:3948`), `kiro_cli.process.threads` (`:3955`), `kiro_cli.process.memory.growth_rate` (`:3937`), `kiro_cli.startup.duration` (`:4217`), `kiro_cli.crash.total`, `kiro_cli.agent.loop.iteration_duration`, `kiro_cli.agent.loop.stuck`, `kiro_cli.upstream.dependency.up` | **WIRE these** — they back the §E perf expansion at near-zero cost (constructors ready) |
 | **Product** | `kiro_cli_upgrade_completed_total`, `kiro_cli_user_feedback_total`, `kiro_cli_message_regenerated_total`, `kiro_cli_client_identity` (log; the DAU distinct-count source — Phase 4), `kiro_cli_feature_first_use` (log) | Wire as product signals mature; `client_identity` ties to the flock→distinct-count DAU plan |
 | **Telemetry self-obs** | `kiro_cli.telemetry.exporter.send.attempts`/`.duration`/`.dropped`, `kiro_cli.telemetry.queue.depth`, `kiro_cli.telemetry.batch.size`, `kiro_cli.telemetry.emit.failures`, `kiro_cli.telemetry.sdk.up`, `kiro_cli.telemetry.flush_on_exit.dropped_total`, `kiro_cli.meta_meter.up` | Wire when SDK health monitoring lands. (`kiro_cli_kuts_export_oversize_total` is the **only** `kiro_cli.telemetry.*`/self-metric wired today) |
 | **Security** | `kiro_cli_telemetry_opt_out_respected_total`, `kiro_cli_telemetry_opt_out_violation_total`, `kiro_cli_auth_unexpected_identity_total`, `kiro_cli_tls_validation_failure_total`, `kiro_cli_tool_egress_destinations_total`, `kiro_cli_pii_redaction_errors_total` (error variant never built by `RedactionOutcome::metric_records`) | Wire as the security/consent surface is exercised |
@@ -231,9 +230,9 @@ schema allowed-attribute set for the two metrics that reject `client_application
 **Why not `client_application` at the TUI.** The TUI hardcodes `client_application = chat_cli_v3`
 (`tui-telemetry-observer.ts:37`) on every record — and `ClientApplication::from_name` maps `v3`/`kas` →
 `chat_cli_v3` (`metric.rs:149`), so on the TUI path `client_application` *is* `engine` with a `chat_cli_`
-prefix: 1:1, zero added information. The values that make `client_application` interesting — `kiro_ide`,
-`acp_external` — are an **embedder/surface** axis that is only ever set on the Rust/host path
-(`get_cli_client_application` env var; observer `AppType::Acp → AcpExternal`). The TUI is structurally always
+prefix: 1:1, zero added information. The `acp_external` value is an **embedder/surface** signal that is
+only set on the Rust/host path (`get_cli_client_application` env var; observer
+`AppType::Acp → ExternalAcpClient`). The TUI is structurally always
 the CLI, so a surface dimension there would be a constant. Drop `client_application` from the TUI contract;
 leave it (or a future dedicated `surface` attribute) as a host-only concern. See §D.
 
@@ -267,27 +266,27 @@ gap was resolved by replacing the bucket with raw `version_full`, 2026-07.)
    split V2/V3 by it for the duration histogram or tool counters (they are scope-only — no usable label at
    all). This is why scope is **not** the discriminator; `engine` is. (The TUI scope is now uniformly
    `kiro.tui` — see §H.3 — so it does not encode the engine at all.)
-2. **`client_application`** (`chat_cli | chat_cli_v2 | chat_cli_v3 | kiro_ide | acp_external | _other_`) —
-   conflates **engine** (`_v2`/`_v3`) with **surface/embedder** (`kiro_ide`/`acp_external`). On the TUI it's
+2. **`client_application`** (`chat_cli | chat_cli_v2 | chat_cli_v3 | acp_external | _other_`) —
+   conflates **engine** (`chat_cli*`) with **surface/embedder** (`acp_external`). On the TUI it's
    a hardcoded constant (`chat_cli_v3`), so it duplicates engine; the surface values only ever appear on the
    host path.
-3. **`agent_kind`** (`v1 | v2 | subagent | kas`) on the `kiro_cli.process.*` metrics — a finer host-side
+3. **`agent_kind`** (`v1 | v2 | kas | _other_`) on the `kiro_cli.process.*` metrics — a finer host-side
    runtime detail that also encodes the engine (`kas` = v3).
 
-**Future — one canonical axis.** Add a first-class `engine = v2 | v3` to `types.yaml` (no `engine` attr
-exists today; only `agent_kind` at `types.yaml:90`) and put it on **every** perf/product metric, including
+**Target — one canonical axis.** Use the first-class `engine = v1 | v2 | v3` attribute on **every**
+perf/product metric, including
 the two that reject `client_application`. Source it directly:
 - **TUI:** thread `engine` through every record fn in `tui-telemetry-observer.ts` (defaulting to `v3` for
   the KAS path); the v2 RustAcpClient path passes `engine: 'v2'` explicitly.
-- **Host:** derive from `agent_kind` (`kas → v3`; `v1 | v2 | subagent → v2`). `agent_kind` stays as the
-  finer host-side detail; `engine` is the coarse 2-value rollup layered on top.
+- **Host:** derive from `agent_kind` (`v1 → v1`; `v2 → v2`; `kas → v3`). `agent_kind` stays as the
+  finer host-side detail; `engine` is the coarse architecture rollup layered on top.
 
 It rides as a **per-metric attribute** (not resource-level — `service.name` is identically `kiro-tui` across
 engines). Scope stays as a back-compat secondary signal.
 
 **On the other two axes:** drop `client_application` from the TUI contract entirely (§C3 — it's a constant
-there). It remains meaningful only on the **host**, and only for its `kiro_ide` / `acp_external`
-**surface/embedder** values — ideally split into a dedicated `surface` attribute later so `engine` and
+there). It remains meaningful only on the **host** for the `acp_external`
+**surface/embedder** value — ideally split into a dedicated `surface` attribute later so `engine` and
 `surface` stop overlapping. `agent_kind` is fine to keep where it is. Net target model:
 **`engine` (everywhere) · `agent_kind` (host runtime detail) · `client_application`→`surface` (host
 embedder only).**

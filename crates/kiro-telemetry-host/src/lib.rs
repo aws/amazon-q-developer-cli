@@ -27,6 +27,7 @@ pub use event::{
     ChatConversationType,
     EmptyResponseRetryOutcome,
     Event,
+    EventMetricContext,
     EventType,
     MessageMetaTag,
     ModeChangeSource,

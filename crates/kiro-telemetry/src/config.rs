@@ -48,6 +48,7 @@ pub struct TelemetryConfig {
     pub otlp_logs_enabled: bool,
     pub machine_id: String,
     pub user_id: Option<String>,
+    pub service_version: String,
     pub deployment_environment: String,
     pub state_dir: PathBuf,
 }
@@ -63,6 +64,7 @@ impl TelemetryConfig {
             otlp_logs_enabled: false,
             machine_id: DEFAULT_MACHINE_ID.to_string(),
             user_id: None,
+            service_version: env!("CARGO_PKG_VERSION").to_string(),
             deployment_environment,
             state_dir,
         }
@@ -82,7 +84,17 @@ impl TelemetryConfig {
     }
 
     pub fn with_user_id(mut self, user_id: impl Into<Option<String>>) -> Self {
-        self.user_id = user_id.into().filter(|value| !value.trim().is_empty());
+        self.user_id = user_id.into().filter(|value| {
+            !value.trim().is_empty() && value.len() <= 256 && value.chars().all(|character| !character.is_control())
+        });
+        self
+    }
+
+    pub fn with_service_version(mut self, version: impl Into<String>) -> Self {
+        let version = version.into();
+        if !version.trim().is_empty() {
+            self.service_version = version;
+        }
         self
     }
 
@@ -274,6 +286,19 @@ mod tests {
 
         assert_eq!(config.machine_id, "ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e");
         assert_eq!(config.deployment_environment, "beta");
+    }
+
+    #[test]
+    fn validates_user_id_before_resource_injection() {
+        let base = TelemetryConfig::from_pairs(std::iter::empty::<(&str, &str)>());
+        assert_eq!(
+            base.clone()
+                .with_user_id(Some("authenticated-user".to_string()))
+                .user_id,
+            Some("authenticated-user".to_string())
+        );
+        assert_eq!(base.clone().with_user_id(Some(" \n".to_string())).user_id, None);
+        assert_eq!(base.with_user_id(Some("x".repeat(257))).user_id, None);
     }
 
     #[test]

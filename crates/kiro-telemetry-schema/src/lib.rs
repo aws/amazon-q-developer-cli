@@ -307,7 +307,6 @@ impl ParityTolerance {
 pub enum LegacyEventType {
     UserLoggedIn,
     AuthFailed,
-    RefreshCredentials,
     CliSubcommandExecuted,
     ChatSlashCommandExecuted,
     ChatStart,
@@ -334,7 +333,6 @@ impl LegacyEventType {
     pub const ALL: &'static [Self] = &[
         Self::UserLoggedIn,
         Self::AuthFailed,
-        Self::RefreshCredentials,
         Self::CliSubcommandExecuted,
         Self::ChatSlashCommandExecuted,
         Self::ChatStart,
@@ -361,7 +359,6 @@ impl LegacyEventType {
         match self {
             Self::UserLoggedIn => "UserLoggedIn",
             Self::AuthFailed => "AuthFailed",
-            Self::RefreshCredentials => "RefreshCredentials",
             Self::CliSubcommandExecuted => "CliSubcommandExecuted",
             Self::ChatSlashCommandExecuted => "ChatSlashCommandExecuted",
             Self::ChatStart => "ChatStart",
@@ -488,8 +485,20 @@ mod tests {
             Some(ParityTolerance::HighVolume)
         );
         assert_eq!(
+            mappings.parity_tolerance_for_event(LegacyEventType::UserLoggedIn),
+            Some(ParityTolerance::DailyAggregate)
+        );
+        assert_eq!(
+            mappings.parity_tolerance_for_event(LegacyEventType::DailyHeartbeat),
+            Some(ParityTolerance::DailyAggregate)
+        );
+        assert_eq!(
             mappings.parity_tolerance_for_event(LegacyEventType::ModeChanged),
             Some(ParityTolerance::DailyAggregate)
+        );
+        assert_eq!(
+            mappings.metric_for_event(LegacyEventType::ModeChanged),
+            Some("kiro_cli_mode_active_total")
         );
         assert_eq!(
             mappings

@@ -371,12 +371,24 @@ impl AgentLoop {
         let mut builtin_tool_uses = 0_u32;
         let mut input_token_count = 0_u32;
         let mut output_token_count = 0_u32;
+        let mut cache_read_input_token_count = 0_u32;
+        let mut cache_write_input_token_count = 0_u32;
+        let mut model = None;
+        let mut assistant_response_length = 0_usize;
+        let mut request_attempts = None::<u32>;
         let mut context_usage_percentage = None;
         let mut metering_usage = Vec::new();
 
         for s in &self.stream_states {
             message_ids.push(s.user_message.id.clone());
             message_ids.push(s.message_id.clone());
+            if s.model_id.is_some() {
+                model.clone_from(&s.model_id);
+            }
+            assistant_response_length = assistant_response_length.saturating_add(s.assistant_text.len());
+            if let Some(attempts) = s.request_attempts {
+                request_attempts = Some(request_attempts.unwrap_or(0).saturating_add(attempts));
+            }
 
             if s.has_tool_uses() {
                 number_of_cycles = number_of_cycles.saturating_add(1);
@@ -391,6 +403,12 @@ impl AgentLoop {
                 }
                 if let Some(token_count) = md_usage.output_tokens.as_ref() {
                     output_token_count = output_token_count.saturating_add(*token_count);
+                }
+                if let Some(token_count) = md_usage.cache_read_input_tokens.as_ref() {
+                    cache_read_input_token_count = cache_read_input_token_count.saturating_add(*token_count);
+                }
+                if let Some(token_count) = md_usage.cache_write_input_tokens.as_ref() {
+                    cache_write_input_token_count = cache_write_input_token_count.saturating_add(*token_count);
                 }
                 if let Some(percent) = md_usage.context_usage_percentage {
                     context_usage_percentage = Some(percent);
@@ -428,6 +446,11 @@ impl AgentLoop {
             end_timestamp: Utc::now(),
             input_token_count,
             output_token_count,
+            cache_read_input_token_count,
+            cache_write_input_token_count,
+            model,
+            assistant_response_length,
+            request_attempts,
             context_usage_percentage,
             metering_usage,
             user_prompt_length,

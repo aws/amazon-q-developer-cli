@@ -268,6 +268,21 @@ pub struct UserTurnMetadata {
     pub input_token_count: u32,
     /// Output token count associated with the turn
     pub output_token_count: u32,
+    /// Cache-read input token count associated with the turn
+    #[serde(default)]
+    pub cache_read_input_token_count: u32,
+    /// Cache-write input token count associated with the turn
+    #[serde(default)]
+    pub cache_write_input_token_count: u32,
+    /// Model used for the turn
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Total assistant response length in bytes
+    #[serde(default)]
+    pub assistant_response_length: usize,
+    /// Total HTTP attempts across requests in the turn
+    #[serde(default)]
+    pub request_attempts: Option<u32>,
     /// Context usage percentage (0-100)
     pub context_usage_percentage: Option<f32>,
     /// Metering usage (credits) accumulated across all requests in this turn

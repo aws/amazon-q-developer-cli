@@ -1,3 +1,4 @@
+mod v1;
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -7,6 +8,7 @@ use kiro_telemetry_schema::{
     MetricKind,
     registry,
 };
+pub use v1::*;
 
 use crate::{
     MetricRecord,
@@ -129,14 +131,16 @@ macro_rules! impl_metric_string_serde {
     };
 }
 
+/// Application driving the telemetry session.
+///
+/// External ACP client names are grouped to keep metric cardinality bounded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClientApplication {
     ChatCli,
     ChatCliV2,
     ChatCliV3,
-    AcpExternal,
-    KiroIde,
-    Other,
+    ExternalAcpClient,
+    Unknown,
 }
 
 impl ClientApplication {
@@ -145,9 +149,8 @@ impl ClientApplication {
             Some("chat_cli") => Self::ChatCli,
             Some("chat_cli_v2") => Self::ChatCliV2,
             Some("chat_cli_v3" | "v3" | "kas") => Self::ChatCliV3,
-            Some("acp_external") => Self::AcpExternal,
-            Some("kiro_ide") => Self::KiroIde,
-            _ => Self::Other,
+            Some("acp_external") => Self::ExternalAcpClient,
+            _ => Self::Unknown,
         }
     }
 
@@ -156,9 +159,8 @@ impl ClientApplication {
             Self::ChatCli => "chat_cli",
             Self::ChatCliV2 => "chat_cli_v2",
             Self::ChatCliV3 => "chat_cli_v3",
-            Self::AcpExternal => "acp_external",
-            Self::KiroIde => "kiro_ide",
-            Self::Other => "_other_",
+            Self::ExternalAcpClient => "acp_external",
+            Self::Unknown => "_other_",
         }
     }
 }
@@ -433,14 +435,14 @@ impl ExitReason {
 
 impl_metric_string_serde!(ExitReason, ExitReason::from_name);
 
+/// Top-level agent runtime responsible for a CLI session or process sample.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AgentKind {
     V1,
     V2,
-    Subagent,
     Kas,
     #[default]
-    Other,
+    Unknown,
 }
 
 impl AgentKind {
@@ -448,9 +450,8 @@ impl AgentKind {
         match value {
             "v1" => Self::V1,
             "v2" => Self::V2,
-            "subagent" => Self::Subagent,
             "kas" | "v3" | "chat_cli_v3" => Self::Kas,
-            _ => Self::Other,
+            _ => Self::Unknown,
         }
     }
 
@@ -458,54 +459,95 @@ impl AgentKind {
         match self {
             Self::V1 => "v1",
             Self::V2 => "v2",
-            Self::Subagent => "subagent",
             Self::Kas => "kas",
-            Self::Other => "_other_",
+            Self::Unknown => "_other_",
         }
     }
 }
 
 impl_metric_string_serde!(AgentKind, AgentKind::from_name);
 
-/// Coarse engine discriminator (`v2 | v3`) carried as a per-metric attribute on
-/// every perf/product metric so a dashboard can split V2-vs-V3 without relying
-/// on the OTLP scope (which Prometheus does not preserve as a queryable label).
-/// On the host it is derived from `agent_kind` (`kas → v3`; everything else →
-/// `v2`); on the TUI it is set directly. See telemetry-metric-inventory.md §D.
+/// Coarse architecture discriminator carried on metrics that span CLI engines.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Engine {
-    #[default]
+    V1,
     V2,
     V3,
+    #[default]
+    Other,
 }
 
 impl Engine {
     pub fn from_name(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
+            "v1" | "chat_cli" => Self::V1,
+            "v2" | "chat_cli_v2" => Self::V2,
             "v3" | "kas" | "chat_cli_v3" => Self::V3,
-            _ => Self::V2,
+            _ => Self::Other,
         }
     }
 
-    /// Coarse 2-value rollup layered on top of the finer `agent_kind`.
     pub const fn from_agent_kind(agent_kind: AgentKind) -> Self {
         match agent_kind {
+            AgentKind::V1 => Self::V1,
             AgentKind::Kas => Self::V3,
-            _ => Self::V2,
+            AgentKind::V2 => Self::V2,
+            AgentKind::Unknown => Self::Other,
+        }
+    }
+
+    pub const fn from_client_application(client_application: ClientApplication) -> Self {
+        match client_application {
+            ClientApplication::ChatCli => Self::V1,
+            ClientApplication::ChatCliV2 => Self::V2,
+            ClientApplication::ChatCliV3 => Self::V3,
+            ClientApplication::ExternalAcpClient | ClientApplication::Unknown => Self::Other,
         }
     }
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::V1 => "v1",
             Self::V2 => "v2",
             Self::V3 => "v3",
+            Self::Other => "_other_",
         }
     }
 }
 
 impl_metric_string_serde!(Engine, Engine::from_name);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+fn parse_bounded_metric_enum<T>(value: &str) -> T
+where
+    T: Default + std::str::FromStr,
+{
+    T::from_str(value.trim()).unwrap_or_default()
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+pub enum SessionStartKind {
+    New,
+    Resumed,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl SessionStartKind {
+    pub fn from_name(value: &str) -> Self {
+        parse_bounded_metric_enum(value)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+impl_metric_string_serde!(SessionStartKind, SessionStartKind::from_name);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
 pub enum CloudSessionEvent {
     Started,
     StartFailed,
@@ -515,40 +557,268 @@ pub enum CloudSessionEvent {
     Detached,
     TurnedOff,
     FellBackLocal,
+    #[default]
+    #[strum(serialize = "_other_")]
     Other,
 }
 
 impl CloudSessionEvent {
     pub fn from_name(value: &str) -> Self {
-        match value {
-            "started" => Self::Started,
-            "start_failed" => Self::StartFailed,
-            "reattached" => Self::Reattached,
-            "ready" => Self::Ready,
-            "provision_failed" => Self::ProvisionFailed,
-            "detached" => Self::Detached,
-            "turned_off" => Self::TurnedOff,
-            "fell_back_local" => Self::FellBackLocal,
-            _ => Self::Other,
-        }
+        parse_bounded_metric_enum(value)
     }
 
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Started => "started",
-            Self::StartFailed => "start_failed",
-            Self::Reattached => "reattached",
-            Self::Ready => "ready",
-            Self::ProvisionFailed => "provision_failed",
-            Self::Detached => "detached",
-            Self::TurnedOff => "turned_off",
-            Self::FellBackLocal => "fell_back_local",
-            Self::Other => "_other_",
-        }
+    pub fn as_str(self) -> &'static str {
+        self.into()
     }
 }
 
 impl_metric_string_serde!(CloudSessionEvent, CloudSessionEvent::from_name);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum AuthFlow {
+    Device,
+    Pkce,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl AuthFlow {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+
+    pub fn from_legacy_name(value: &str) -> Self {
+        match normalized_legacy_name(value).as_str() {
+            "device" | "devicecode" => Self::Device,
+            "pkce" => Self::Pkce,
+            _ => Self::Other,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum ProfileSource {
+    User,
+    Auth,
+    Update,
+    Reload,
+}
+
+impl ProfileSource {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum RegionClass {
+    Commercial,
+    Govcloud,
+    China,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl RegionClass {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+
+    pub fn from_region(value: Option<&str>) -> Self {
+        match value.unwrap_or_default() {
+            value if value.starts_with("us-gov-") => Self::Govcloud,
+            value if value.starts_with("cn-") => Self::China,
+            value if !value.is_empty() => Self::Commercial,
+            _ => Self::Other,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum ContributionSource {
+    Agent,
+    User,
+}
+
+impl ContributionSource {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum CountKind {
+    Available,
+    Loaded,
+    Builtin,
+    Mcp,
+    AgentsLoaded,
+    AgentsFailed,
+    Migrated,
+}
+
+impl CountKind {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum ContentRole {
+    Context,
+    Assistant,
+    Input,
+    Output,
+}
+
+impl ContentRole {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum ContributionChange {
+    Added,
+    Removed,
+}
+
+impl ContributionChange {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum MessageTag {
+    Compact,
+    GenerateAgent,
+    TangentMode,
+}
+
+impl MessageTag {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum MessageKind {
+    NotToolUse,
+    ToolUse,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl MessageKind {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum VoiceBackend {
+    LocalWhisper,
+    RemoteServer,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl VoiceBackend {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+
+    pub fn from_legacy_name(value: &str) -> Self {
+        match normalized_legacy_name(value).as_str() {
+            "localwhisper" => Self::LocalWhisper,
+            "remoteserver" => Self::RemoteServer,
+            _ => Self::Other,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum VoiceInputMethod {
+    SlashCommand,
+    Ptt,
+    ContinuousVoice,
+    Standalone,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl VoiceInputMethod {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+
+    pub fn from_legacy_name(value: &str) -> Self {
+        match normalized_legacy_name(value).as_str() {
+            "slashcommand" => Self::SlashCommand,
+            "ptt" => Self::Ptt,
+            "continuousvoice" => Self::ContinuousVoice,
+            "standalone" => Self::Standalone,
+            _ => Self::Other,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+pub enum VoiceModelSize {
+    Tiny,
+    Base,
+    Small,
+    Medium,
+    Large,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl VoiceModelSize {
+    pub fn from_name(value: &str) -> Self {
+        parse_bounded_metric_enum(value)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+impl_metric_string_serde!(VoiceModelSize, VoiceModelSize::from_name);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum DurationStage {
+    ToolCall,
+    ToolTurn,
+    Recording,
+    Transcription,
+}
+
+impl DurationStage {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
 
 /// Which process in the engine's pid tree sampled a perf metric. The host
 /// samples the native tree (`host` + `kas_subprocess`); the bun TUI samples
@@ -1495,37 +1765,6 @@ impl CrashKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FailureStage {
-    Config,
-    DbMigrate,
-    Runtime,
-    Panic,
-    Other,
-}
-
-impl FailureStage {
-    pub fn from_name(value: &str) -> Self {
-        match value {
-            "config" => Self::Config,
-            "db_migrate" => Self::DbMigrate,
-            "runtime" => Self::Runtime,
-            "panic" => Self::Panic,
-            _ => Self::Other,
-        }
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Config => "config",
-            Self::DbMigrate => "db_migrate",
-            Self::Runtime => "runtime",
-            Self::Panic => "panic",
-            Self::Other => "_other_",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoopPhase {
     ModelCall,
     ToolExec,
@@ -2143,6 +2382,32 @@ impl AuthProvider {
             Self::Other => "_other_",
         }
     }
+
+    pub fn from_credential_start_url(start_url: Option<&str>) -> Self {
+        match CredentialKind::from_start_url(start_url) {
+            CredentialKind::BuilderId => Self::BuilderId,
+            CredentialKind::Idc => Self::Sso,
+            CredentialKind::Iam | CredentialKind::Unknown => Self::Other,
+        }
+    }
+
+    pub fn from_legacy_name(value: &str) -> Self {
+        match normalized_legacy_name(value).as_str() {
+            "builderid" => Self::BuilderId,
+            "identitycenter" | "iamidentitycenter" | "idc" | "sso" => Self::Sso,
+            "cognito" => Self::Cognito,
+            _ => Self::Other,
+        }
+    }
+}
+
+fn normalized_legacy_name(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .filter(|character| !matches!(character, '_' | '-'))
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// Discriminates the kind of credential used for an interactive login without
@@ -2716,8 +2981,11 @@ impl<'a> BedrockStreamMetrics<'a> {
 #[derive(Clone, Debug)]
 pub struct ModelResponseMetrics<'a> {
     pub emit_user_turn_counter: bool,
+    pub emit_chat_message_counter: bool,
+    pub emit_message_detail_metrics: bool,
     pub context: InvocationContext<'a>,
     pub result: ResultKind,
+    pub message_kind: MessageKind,
     pub mode: Mode,
     pub conversation_type: ChatConversationKind,
     pub context_file_length: Option<usize>,
@@ -2725,6 +2993,8 @@ pub struct ModelResponseMetrics<'a> {
     pub time_to_first_chunk_ms: Option<f64>,
     pub time_between_chunks_ms: Option<&'a [f64]>,
     pub request_duration_seconds: Option<f64>,
+    pub assistant_response_length: Option<i32>,
+    pub message_tags: &'a [MessageTag],
     pub completion_reason: crate::log::CompletionReason,
     pub request_outcome: Outcome,
     pub token_usage: TokenUsage,
@@ -2741,8 +3011,11 @@ impl<'a> ModelResponseMetrics<'a> {
     ) -> Self {
         Self {
             emit_user_turn_counter: false,
+            emit_chat_message_counter: false,
+            emit_message_detail_metrics: false,
             context,
             result,
+            message_kind: MessageKind::Other,
             mode,
             conversation_type,
             context_file_length: None,
@@ -2750,6 +3023,8 @@ impl<'a> ModelResponseMetrics<'a> {
             time_to_first_chunk_ms: None,
             time_between_chunks_ms: None,
             request_duration_seconds: None,
+            assistant_response_length: None,
+            message_tags: &[],
             completion_reason,
             request_outcome,
             token_usage: TokenUsage::default(),
@@ -2771,11 +3046,27 @@ impl<'a> ModelResponseMetrics<'a> {
 
     pub fn legacy_event(mut self, event_type: Option<LegacyEventType>) -> Self {
         self.emit_user_turn_counter = event_type.is_some_and(crate::legacy::emits_legacy_user_turn_counter);
+        self.emit_chat_message_counter = event_type.is_some_and(crate::legacy::emits_legacy_chat_message_counter);
         self
     }
 
     pub const fn emit_user_turn_counter(mut self, emit_user_turn_counter: bool) -> Self {
         self.emit_user_turn_counter = emit_user_turn_counter;
+        self
+    }
+
+    pub const fn emit_chat_message_counter(mut self, emit_chat_message_counter: bool) -> Self {
+        self.emit_chat_message_counter = emit_chat_message_counter;
+        self
+    }
+
+    pub const fn emit_message_detail_metrics(mut self, emit_message_detail_metrics: bool) -> Self {
+        self.emit_message_detail_metrics = emit_message_detail_metrics;
+        self
+    }
+
+    pub const fn message_kind(mut self, message_kind: MessageKind) -> Self {
+        self.message_kind = message_kind;
         self
     }
 
@@ -2799,6 +3090,16 @@ impl<'a> ModelResponseMetrics<'a> {
         self
     }
 
+    pub const fn assistant_response_length(mut self, assistant_response_length: Option<i32>) -> Self {
+        self.assistant_response_length = assistant_response_length;
+        self
+    }
+
+    pub const fn message_tags(mut self, message_tags: &'a [MessageTag]) -> Self {
+        self.message_tags = message_tags;
+        self
+    }
+
     pub const fn token_usage(mut self, token_usage: TokenUsage) -> Self {
         self.token_usage = token_usage;
         self
@@ -2808,12 +3109,22 @@ impl<'a> ModelResponseMetrics<'a> {
 #[derive(Clone, Debug)]
 pub struct UserTurnCompletionMetrics<'a> {
     pub emit_user_turn_counter: bool,
+    pub emit_token_usage: bool,
+    pub emit_turn_detail_metrics: bool,
+    pub emit_turn_numeric_metrics: bool,
     pub context: InvocationContext<'a>,
     pub result: ResultKind,
     pub mode: Mode,
     pub conversation_type: ChatConversationKind,
+    pub message_kind: MessageKind,
     pub token_usage: TokenUsage,
     pub duration_seconds: Option<f64>,
+    pub prompt_length: i64,
+    pub response_length: i64,
+    pub follow_up_count: i64,
+    pub request_attempts: usize,
+    pub time_to_first_chunks_ms: &'a [Option<f64>],
+    pub failure_reason: Option<&'a str>,
 }
 
 impl<'a> UserTurnCompletionMetrics<'a> {
@@ -2825,12 +3136,22 @@ impl<'a> UserTurnCompletionMetrics<'a> {
     ) -> Self {
         Self {
             emit_user_turn_counter: false,
+            emit_token_usage: false,
+            emit_turn_detail_metrics: false,
+            emit_turn_numeric_metrics: false,
             context,
             result,
             mode,
             conversation_type,
+            message_kind: MessageKind::Other,
             token_usage: TokenUsage::default(),
             duration_seconds: None,
+            prompt_length: 0,
+            response_length: 0,
+            follow_up_count: 0,
+            request_attempts: 0,
+            time_to_first_chunks_ms: &[],
+            failure_reason: None,
         }
     }
 
@@ -2853,6 +3174,31 @@ impl<'a> UserTurnCompletionMetrics<'a> {
         self
     }
 
+    pub const fn emit_token_usage(mut self, emit_token_usage: bool) -> Self {
+        self.emit_token_usage = emit_token_usage;
+        self
+    }
+
+    pub const fn emit_turn_detail_metrics(mut self, emit_turn_detail_metrics: bool) -> Self {
+        self.emit_turn_detail_metrics = emit_turn_detail_metrics;
+        self
+    }
+
+    pub const fn emit_turn_numeric_metrics(mut self, emit_turn_numeric_metrics: bool) -> Self {
+        self.emit_turn_numeric_metrics = emit_turn_numeric_metrics;
+        self
+    }
+
+    pub fn mode(mut self, mode: Mode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    pub const fn message_kind(mut self, message_kind: MessageKind) -> Self {
+        self.message_kind = message_kind;
+        self
+    }
+
     pub const fn token_usage(mut self, token_usage: TokenUsage) -> Self {
         self.token_usage = token_usage;
         self
@@ -2860,6 +3206,24 @@ impl<'a> UserTurnCompletionMetrics<'a> {
 
     pub const fn duration_seconds(mut self, duration_seconds: Option<f64>) -> Self {
         self.duration_seconds = duration_seconds;
+        self
+    }
+
+    pub const fn turn_details(
+        mut self,
+        prompt_length: i64,
+        response_length: i64,
+        follow_up_count: i64,
+        request_attempts: usize,
+        time_to_first_chunks_ms: &'a [Option<f64>],
+        failure_reason: Option<&'a str>,
+    ) -> Self {
+        self.prompt_length = prompt_length;
+        self.response_length = response_length;
+        self.follow_up_count = follow_up_count;
+        self.request_attempts = request_attempts;
+        self.time_to_first_chunks_ms = time_to_first_chunks_ms;
+        self.failure_reason = failure_reason;
         self
     }
 }
@@ -3687,16 +4051,19 @@ pub fn bedrock_request_duration(
 
 pub fn bedrock_stream_timing_records(input: BedrockStreamMetrics<'_>) -> Vec<MetricRecord> {
     let model = input.model_id;
-    bedrock_stream_timing_records_for_model(input, model)
+    bedrock_stream_timing_records_for_model(input, model, false)
 }
 
-fn bedrock_stream_timing_records_for_model(input: BedrockStreamMetrics<'_>, model: Option<&str>) -> Vec<MetricRecord> {
+fn bedrock_stream_timing_records_for_model(
+    input: BedrockStreamMetrics<'_>,
+    model: Option<&str>,
+    include_zero: bool,
+) -> Vec<MetricRecord> {
     let mut records = Vec::new();
 
-    if let Some(milliseconds) = input
-        .time_to_first_chunk_ms
-        .filter(|milliseconds| milliseconds.is_finite() && *milliseconds > 0.0)
-    {
+    if let Some(milliseconds) = input.time_to_first_chunk_ms.filter(|milliseconds| {
+        milliseconds.is_finite() && (*milliseconds > 0.0 || include_zero && *milliseconds == 0.0)
+    }) {
         records.push(bedrock_stream_ttft(
             milliseconds / 1000.0,
             model,
@@ -3710,13 +4077,15 @@ fn bedrock_stream_timing_records_for_model(input: BedrockStreamMetrics<'_>, mode
             .time_between_chunks_ms
             .unwrap_or_default()
             .iter()
-            .filter(|milliseconds| milliseconds.is_finite() && **milliseconds > 0.0)
+            .filter(|milliseconds| {
+                milliseconds.is_finite() && (**milliseconds > 0.0 || include_zero && **milliseconds == 0.0)
+            })
             .map(|milliseconds| bedrock_stream_inter_token_latency(milliseconds / 1000.0, model)),
     );
 
     if let Some(seconds) = input
         .request_duration_seconds
-        .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
+        .filter(|seconds| seconds.is_finite() && (*seconds > 0.0 || include_zero && *seconds == 0.0))
     {
         records.push(bedrock_stream_duration(seconds, model, input.completion_reason));
         records.push(bedrock_request_duration(
@@ -3732,9 +4101,18 @@ fn bedrock_stream_timing_records_for_model(input: BedrockStreamMetrics<'_>, mode
 
 pub fn model_response_records(input: ModelResponseMetrics<'_>) -> Vec<MetricRecord> {
     let mut records = Vec::new();
+    let engine = Engine::from_client_application(input.context.client_application);
 
     if input.emit_user_turn_counter {
         records.push(user_turns_for_invocation(input.context, input.result, input.mode));
+    }
+    if input.emit_chat_message_counter {
+        records.push(chat_messages_total(
+            input.context.model,
+            input.result,
+            input.message_kind,
+            Engine::from_client_application(input.context.client_application),
+        ));
     }
 
     records.push(model_invocation(input.context.model));
@@ -3758,6 +4136,7 @@ pub fn model_response_records(input: ModelResponseMetrics<'_>) -> Vec<MetricReco
             request_outcome: input.request_outcome,
         },
         input.context.model,
+        engine == Engine::V1,
     ));
 
     records.extend(token_records(input.context, input.token_usage));
@@ -3766,31 +4145,92 @@ pub fn model_response_records(input: ModelResponseMetrics<'_>) -> Vec<MetricReco
         records.push(record);
     }
 
+    if input.emit_message_detail_metrics {
+        if let Some(length) = input.context_file_length {
+            records.push(chat_content_length(
+                length as f64,
+                ContentRole::Context,
+                input.context.model,
+                engine,
+            ));
+        }
+        if let Some(length) = input.assistant_response_length.filter(|length| *length >= 0) {
+            records.push(chat_content_length(
+                length as f64,
+                ContentRole::Assistant,
+                input.context.model,
+                engine,
+            ));
+        }
+        records.extend(
+            input
+                .message_tags
+                .iter()
+                .copied()
+                .map(|tag| chat_message_tag(tag, engine)),
+        );
+    }
+
     records
 }
 
 pub fn user_turn_completion_records(input: UserTurnCompletionMetrics<'_>) -> Vec<MetricRecord> {
     let mut records = Vec::new();
+    let engine = Engine::from_client_application(input.context.client_application);
 
     if input.emit_user_turn_counter {
-        records.push(user_turns_for_invocation(
-            input.context,
-            input.result,
-            input.mode.clone(),
-        ));
+        let mut record = user_turns_for_invocation(input.context, input.result, input.mode.clone());
+        if input.emit_turn_detail_metrics {
+            record = record.with_attribute("message_kind", input.message_kind.as_str());
+        }
+        records.push(record);
+    }
+    if input.emit_token_usage {
         records.extend(token_records(input.context, input.token_usage));
     }
 
     if let Some(seconds) = input
         .duration_seconds
-        .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
+        .filter(|seconds| seconds.is_finite() && (*seconds > 0.0 || engine == Engine::V1 && *seconds == 0.0))
     {
         records.push(user_turn_duration_seconds_for_invocation(
             seconds,
             input.context,
             input.conversation_type,
-            input.mode,
+            input.mode.clone(),
         ));
+    }
+
+    if input.emit_turn_numeric_metrics {
+        records.push(user_turn_prompt_length(
+            input.prompt_length.max(0) as f64,
+            input.context.model,
+            engine,
+        ));
+        records.push(user_turn_response_length(
+            input.response_length.max(0) as f64,
+            input.context.model,
+            engine,
+        ));
+        records.push(user_turn_follow_up_count(input.follow_up_count.max(0) as f64, engine));
+        records.push(user_turn_request_attempts(input.request_attempts as f64, engine));
+        records.extend(
+            input
+                .time_to_first_chunks_ms
+                .iter()
+                .flatten()
+                .copied()
+                .filter(|milliseconds| milliseconds.is_finite() && *milliseconds >= 0.0)
+                .map(|milliseconds| user_turn_time_to_first_chunk_ms(milliseconds, input.context.model, engine)),
+        );
+    }
+    if input.emit_turn_detail_metrics && input.result != ResultKind::Success {
+        let reason = if input.result == ResultKind::Cancelled {
+            TurnOutcomeReason::Interrupted
+        } else {
+            TurnOutcomeReason::from_name(input.failure_reason.unwrap_or_default())
+        };
+        records.push(turn_outcome_total(reason, input.context.model, input.mode, engine));
     }
 
     records
@@ -4449,17 +4889,6 @@ pub fn crash_total_from_names(crash_kind: &str, os_type: &str, host_arch: &str) 
     )
 }
 
-pub fn startup_failure(failure_stage: FailureStage, os_type: OsType) -> MetricRecord {
-    counter("kiro_cli.startup.failures", 1)
-        .attribute("failure_stage", failure_stage.as_str())
-        .attribute("os_type", os_type.as_str())
-        .expect_valid()
-}
-
-pub fn startup_failure_from_names(failure_stage: &str, os_type: &str) -> MetricRecord {
-    startup_failure(FailureStage::from_name(failure_stage), OsType::from_name(os_type))
-}
-
 pub fn startup_duration(seconds: f64, version: &str, cold_start: bool, os_type: OsType) -> MetricRecord {
     histogram("kiro_cli.startup.duration", seconds)
         .attribute("version_full", version_full_value(version))
@@ -4521,6 +4950,23 @@ fn version_full_value(version: &str) -> String {
 
 fn builtin_tool_name_value(value: Option<&str>) -> String {
     value.filter(|value| !value.is_empty()).unwrap_or("_other_").to_string()
+}
+
+pub fn with_engine(mut record: MetricRecord, engine: Engine) -> MetricRecord {
+    let supports_engine = registry()
+        .metric(&record.name)
+        .is_some_and(|spec| spec.attributes.iter().any(|attribute| attribute == "engine"));
+    if !supports_engine {
+        return record;
+    }
+
+    if let Some(attribute) = record.attributes.iter_mut().find(|attribute| attribute.key == "engine") {
+        attribute.value = engine.as_str().to_string();
+    } else {
+        record = record.with_attribute("engine", engine.as_str());
+    }
+    validate_metric_record(&record).expect("telemetry metric mapping must match the canonical schema");
+    record
 }
 
 pub fn validate_metric_record(record: &MetricRecord) -> Result<(), MetricBuildError> {
@@ -4604,6 +5050,31 @@ mod tests {
                 .resource_attributes
                 .iter()
                 .any(|attr| { attr.key == "replayed" && attr.value == "true" })
+        );
+    }
+
+    #[test]
+    fn engine_decorator_adds_architecture_without_fabricating_version() {
+        let record = with_engine(
+            cli_session_started(
+                OsType::Macos,
+                InstallSource::Internal,
+                ClientApplication::ExternalAcpClient,
+            ),
+            Engine::V2,
+        );
+
+        expect_metric_attrs(&record, &[
+            ("os_type", "macos"),
+            ("install_source", "internal"),
+            ("client_application", "acp_external"),
+            ("engine", "v2"),
+        ]);
+        assert!(
+            record
+                .attributes
+                .iter()
+                .all(|attribute| attribute.key != "version_minor_bucket")
         );
     }
 
@@ -4949,7 +5420,6 @@ mod tests {
         assert!(stream_records.iter().any(|record| {
             record.name == "kiro_cli.bedrock.request.duration" && record.value == MetricValue::Histogram(0.8)
         }));
-
         let response = ModelResponseMetrics::new(
             InvocationContext::new(Some("claude-sonnet-4"), ClientApplication::ChatCliV2, false),
             ResultKind::Success,
@@ -4959,6 +5429,7 @@ mod tests {
             Outcome::Success,
         )
         .legacy_event(Some(LegacyEventType::ChatAddedMessage))
+        .message_kind(MessageKind::ToolUse)
         .context_file_length(Some(4_000))
         .time_to_first_chunk_ms(Some(125.0))
         .time_between_chunks_ms(Some(&[40.0]))
@@ -4971,12 +5442,16 @@ mod tests {
         });
         let response_records = model_response_records(response);
         assert!(response_records.iter().any(|record| {
-            record.name == "kiro_cli_user_turns"
+            record.name == "kiro_cli_chat_messages_total"
                 && record.value == MetricValue::Counter(1)
                 && record
                     .attributes
                     .iter()
-                    .any(|attribute| attribute.key == "client_application" && attribute.value == "chat_cli_v2")
+                    .any(|attribute| attribute.key == "message_kind" && attribute.value == "tool_use")
+                && record
+                    .attributes
+                    .iter()
+                    .any(|attribute| attribute.key == "engine" && attribute.value == "v2")
         }));
         assert!(
             response_records
@@ -5166,26 +5641,17 @@ mod tests {
         assert!(records.iter().any(|record| {
             record.name == "kiro_cli_time_to_first_chunk_ms" && record.value == MetricValue::Histogram(0.0)
         }));
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli.bedrock.stream.ttft")
-        );
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli.bedrock.stream.inter_token_latency")
-        );
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli.bedrock.stream.duration")
-        );
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli.bedrock.request.duration")
-        );
+        for name in [
+            "kiro_cli.bedrock.stream.ttft",
+            "kiro_cli.bedrock.stream.inter_token_latency",
+            "kiro_cli.bedrock.stream.duration",
+            "kiro_cli.bedrock.request.duration",
+        ] {
+            assert!(
+                records.iter().all(|record| record.name != name),
+                "unexpected zero-valued timing for {name}",
+            );
+        }
     }
 
     #[test]
@@ -5330,6 +5796,7 @@ mod tests {
             ChatConversationKind::Subagent,
         )
         .emit_user_turn_counter(true)
+        .emit_token_usage(true)
         .token_usage(TokenUsage {
             uncached_input_tokens: 10,
             output_tokens: 5,
@@ -5404,6 +5871,16 @@ mod tests {
         assert_eq!(ClientApplication::from_name(Some("raw")).as_str(), "_other_");
         assert_eq!(ClientApplication::from_name(Some("kas")).as_str(), "chat_cli_v3");
         assert_eq!(ClientApplication::from_name(Some("v3")).as_str(), "chat_cli_v3");
+        assert_eq!(AuthProvider::from_legacy_name("BuilderId"), AuthProvider::BuilderId);
+        assert_eq!(AuthFlow::from_legacy_name("DeviceCode"), AuthFlow::Device);
+        assert_eq!(
+            VoiceBackend::from_legacy_name("LocalWhisper"),
+            VoiceBackend::LocalWhisper
+        );
+        assert_eq!(
+            VoiceInputMethod::from_legacy_name("ContinuousVoice"),
+            VoiceInputMethod::ContinuousVoice
+        );
         assert_eq!(TelemetryChannel::from_name("legacy_toolkit").as_str(), "legacy_toolkit");
         assert_eq!(TelemetryChannel::from_name("raw").as_str(), "_other_");
         assert_eq!(Partition::from_name("aws-us-gov").as_str(), "aws-us-gov");
@@ -5453,6 +5930,34 @@ mod tests {
             SessionOutcome::from_goal_terminal_state("reinjection_failed").as_str(),
             "error"
         );
+    }
+
+    #[test]
+    fn parsed_dimensions_round_trip_and_bucket_unknown_values() {
+        macro_rules! assert_round_trip {
+            ($ty:ident, $variant:expr, $value:literal) => {{
+                let quoted = format!("\"{}\"", $value);
+                assert_eq!($variant, $value.parse::<$ty>().unwrap());
+                assert_eq!($value, $variant.as_str());
+                assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
+                assert_eq!($variant, serde_json::from_str::<$ty>(&quoted).unwrap());
+                assert_eq!(
+                    $variant,
+                    $ty::from_name(&format!(" {} ", $value.to_ascii_uppercase()))
+                );
+                assert_eq!("_other_", $ty::from_name("new_schema_value").as_str());
+                assert_eq!(
+                    "_other_",
+                    serde_json::from_str::<$ty>("\"new_schema_value\"")
+                        .unwrap()
+                        .as_str()
+                );
+            }};
+        }
+
+        assert_round_trip!(SessionStartKind, SessionStartKind::Resumed, "resumed");
+        assert_round_trip!(CloudSessionEvent, CloudSessionEvent::StartFailed, "start_failed");
+        assert_round_trip!(VoiceModelSize, VoiceModelSize::Medium, "medium");
     }
 
     #[test]
@@ -5613,13 +6118,6 @@ mod tests {
         );
 
         assert_metric_shape(
-            startup_failure(FailureStage::DbMigrate, OsType::Linux),
-            "kiro_cli.startup.failures",
-            MetricValue::Counter(1),
-            &[("failure_stage", "db_migrate"), ("os_type", "linux")],
-        );
-
-        assert_metric_shape(
             startup_duration(0.5, "2.4.0", true, OsType::Macos),
             "kiro_cli.startup.duration",
             MetricValue::Histogram(0.5),
@@ -5658,7 +6156,6 @@ mod tests {
     fn unknown_reliability_dimension_names_bucket_to_other() {
         assert_eq!(CrashKind::from_name("meltdown").as_str(), "_other_");
         assert_eq!(HostArch::from_name("riscv").as_str(), "_other_");
-        assert_eq!(FailureStage::from_name("warp").as_str(), "_other_");
         assert_eq!(LoopPhase::from_name("dream").as_str(), "_other_");
         assert_eq!(StuckPhase::from_name("nap").as_str(), "_other_");
         assert_eq!(StuckDetection::from_name("vibes").as_str(), "_other_");

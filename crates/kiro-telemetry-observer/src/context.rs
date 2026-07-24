@@ -147,12 +147,16 @@ impl TelemetryContext {
         match self.app_type {
             AppType::V1 => metric::ClientApplication::ChatCli,
             AppType::V2 => metric::ClientApplication::ChatCliV2,
-            AppType::Acp => metric::ClientApplication::AcpExternal,
+            AppType::Acp => metric::ClientApplication::ExternalAcpClient,
         }
     }
 
     pub(crate) fn apply_to(&self, event: &mut Event) {
         event.app_type = Some(self.app_type.as_str().to_string());
+        event.set_engine(match self.app_type {
+            AppType::V1 => metric::Engine::V1,
+            AppType::V2 | AppType::Acp => metric::Engine::V2,
+        });
         if event.client_application.is_none() {
             event.set_client_application_kind(self.client_application());
         }

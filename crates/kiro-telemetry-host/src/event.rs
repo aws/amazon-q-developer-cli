@@ -3,8 +3,7 @@
 //! These types describe the *shape* of telemetry events that the various
 //! kiro-cli surfaces (V2, V3, kiro-bot, ACP) emit. The translation of an
 //! [`Event`] into legacy CloudWatch/Toolkit datums or OTel records lives in
-//! the consumer crates (e.g. `chat_cli_v2`) — this crate intentionally does
-//! not pull in the legacy clients.
+//! consumer crates, so this crate does not pull in legacy clients.
 
 use std::time::{
     Duration,
@@ -38,12 +37,24 @@ pub struct Event {
     pub sso_region: Option<String>,
     pub client_application: Option<String>,
     pub app_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<metric::Engine>,
     pub acp_client_name: Option<String>,
     pub acp_client_version: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_subagent: bool,
+    #[serde(skip)]
+    pub metric_context: EventMetricContext,
     #[serde(flatten)]
     pub ty: EventType,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct EventMetricContext {
+    pub mode: Option<metric::Mode>,
+    pub session_start_kind: Option<metric::SessionStartKind>,
+    pub install_method: Option<metric::InstallSource>,
+    pub canonical_tool_name: Option<String>,
 }
 
 impl Event {
@@ -55,9 +66,11 @@ impl Event {
             sso_region: None,
             client_application: None,
             app_type: None,
+            engine: None,
             acp_client_name: None,
             acp_client_version: None,
             is_subagent: false,
+            metric_context: EventMetricContext::default(),
         }
     }
 
@@ -75,6 +88,10 @@ impl Event {
 
     pub fn set_client_application_kind(&mut self, client_application: metric::ClientApplication) {
         self.client_application = Some(client_application.as_str().to_string());
+    }
+
+    pub fn set_engine(&mut self, engine: metric::Engine) {
+        self.engine = Some(engine);
     }
 }
 
@@ -233,6 +250,8 @@ pub struct RecordUserTurnCompletionArgs {
     pub is_subagent: bool,
     #[serde(default)]
     pub emit_user_turn_counter: bool,
+    #[serde(skip)]
+    pub emit_turn_numeric_metrics: Option<bool>,
     pub parent_tool_use_id: Option<String>,
     /// Number of HTTP-level attempts for the last request in the turn. `None` if not reported
     /// by the transport (mock clients) or if the turn didn't make any transport-level requests.
@@ -268,12 +287,6 @@ pub enum EventType {
         oauth_flow: String,
         error_type: String,
         error_code: Option<String>,
-    },
-    RefreshCredentials {
-        request_id: String,
-        result: TelemetryResult,
-        reason: Option<String>,
-        oauth_flow: String,
     },
     CliSubcommandExecuted {
         subcommand: String,
@@ -432,6 +445,11 @@ pub enum EventType {
         version: String,
         platform: String,
     },
+    ProcessHealth {
+        rss_bytes: f64,
+        peak_rss_bytes: f64,
+        cpu_utilization: f64,
+    },
     /// Emitted when the active agent (= ACP session mode) changes. Caller is responsible
     /// for skipping no-op changes (`from_mode == to_mode`). `session_id` carries the ACP
     /// session id that becomes `amazonqConversationId` on the metric.
@@ -557,7 +575,6 @@ impl EventType {
             Self::CliSessionStarted { .. } => None,
             Self::CliSessionCompleted { .. } => None,
             Self::AuthFailed { .. } => Some(LegacyEventType::AuthFailed),
-            Self::RefreshCredentials { .. } => Some(LegacyEventType::RefreshCredentials),
             Self::CliSubcommandExecuted { .. } => Some(LegacyEventType::CliSubcommandExecuted),
             Self::ChatSlashCommandExecuted { .. } => Some(LegacyEventType::ChatSlashCommandExecuted),
             Self::ChatStart { .. } => Some(LegacyEventType::ChatStart),
@@ -576,6 +593,7 @@ impl EventType {
             Self::SubagentInvocation { .. } => Some(LegacyEventType::SubagentInvocation),
             Self::VoiceInput { .. } => Some(LegacyEventType::VoiceInput),
             Self::ProcessHealthMetric { .. } => Some(LegacyEventType::ProcessHealthMetric),
+            Self::ProcessHealth { .. } => None,
             Self::ModeChanged { .. } => Some(LegacyEventType::ModeChanged),
             Self::UiModeSessionStart { .. } => None,
             Self::UiModeChanged { .. } => None,

@@ -10,7 +10,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
-use kiro_telemetry::metric::ClientApplication;
+use kiro_telemetry::metric::{
+    ClientApplication,
+    Engine,
+};
 use kiro_telemetry::{
     MetricRecord,
     TelemetryConfig,
@@ -75,6 +78,8 @@ pub struct HostConfig {
     pub metadata_enricher: Option<EventEnricher>,
     /// Forwarded into per-event enrichment by the caller-side observer (PR E).
     pub client_application: Option<ClientApplication>,
+    /// Canonical architecture applied to events that do not already carry one.
+    pub engine: Option<Engine>,
     /// Reserved for PR L; defaults to `UserCli`.
     pub host_role: HostRole,
     /// `Some("aws-us-gov")` disables the legacy-sink branch.
@@ -97,6 +102,7 @@ impl std::fmt::Debug for HostConfig {
                 &self.metadata_enricher.as_ref().map(|_| "<closure>"),
             )
             .field("client_application", &self.client_application)
+            .field("engine", &self.engine)
             .field("host_role", &self.host_role)
             .field("govcloud_partition", &self.govcloud_partition)
             .field("consent_settings_path", &self.consent_settings_path)
@@ -114,6 +120,7 @@ impl Default for HostConfig {
             otel_translator: None,
             metadata_enricher: None,
             client_application: None,
+            engine: None,
             host_role: HostRole::UserCli,
             govcloud_partition: None,
             consent_settings_path: None,

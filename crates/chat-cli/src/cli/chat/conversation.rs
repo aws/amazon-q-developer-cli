@@ -538,7 +538,7 @@ impl ConversationState {
     pub async fn terminate_mcp_server(&mut self, server_name: &str) -> bool {
         let server_name_owned = server_name.to_string();
 
-        if let Some(initialized_client) = self.tool_manager.clients.remove(server_name) {
+        if self.tool_manager.shutdown_client_in_background(server_name) {
             tracing::info!("Terminating MCP server '{}' and removing its tools", server_name_owned);
 
             // Remove tools associated with this server from the tool manager
@@ -560,44 +560,6 @@ impl ConversationState {
                 schemas_removed,
                 server_name_owned
             );
-
-            tokio::spawn(async move {
-                match initialized_client {
-                    crate::mcp_client::InitializedMcpClient::Pending(handle) => match handle.await {
-                        Ok(Ok(running_service)) => {
-                            let crate::mcp_client::InnerService::Original(client) = running_service.inner_service
-                            else {
-                                tracing::error!("Server {} has unexpected peer service", server_name_owned);
-                                return;
-                            };
-                            match client.cancel().await {
-                                Ok(_) => tracing::info!("Server {} terminated successfully", server_name_owned),
-                                Err(e) => tracing::error!("Server {} failed to terminate: {}", server_name_owned, e),
-                            }
-                        },
-                        Ok(Err(e)) => {
-                            tracing::error!(
-                                "Server {} failed to initialize before termination: {}",
-                                server_name_owned,
-                                e
-                            );
-                        },
-                        Err(e) => {
-                            tracing::error!("Server {} task panicked: {}", server_name_owned, e);
-                        },
-                    },
-                    crate::mcp_client::InitializedMcpClient::Ready(running_service) => {
-                        let crate::mcp_client::InnerService::Original(client) = running_service.inner_service else {
-                            tracing::error!("Server {} has unexpected peer service", server_name_owned);
-                            return;
-                        };
-                        match client.cancel().await {
-                            Ok(_) => tracing::info!("Server {} terminated successfully", server_name_owned),
-                            Err(e) => tracing::error!("Server {} failed to terminate: {}", server_name_owned, e),
-                        }
-                    },
-                }
-            });
 
             true
         } else {

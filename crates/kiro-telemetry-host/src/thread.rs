@@ -209,6 +209,8 @@ impl TelemetryThread {
             otel_translator,
             govcloud_partition,
             consent_settings_path,
+            engine,
+            client_application,
             ..
         } = config;
 
@@ -222,7 +224,8 @@ impl TelemetryThread {
 
         let handle = if let Some(partition) = govcloud_partition {
             tokio::spawn(async move {
-                while let Some(event) = rx.recv().await {
+                while let Some(mut event) = rx.recv().await {
+                    apply_event_defaults(&mut event, engine, client_application);
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
                     otel.emit_govcloud_channel_disabled("legacy_toolkit", partition);
                     otel.emit_metric_records(&event);
@@ -235,7 +238,8 @@ impl TelemetryThread {
             })
         } else {
             tokio::spawn(async move {
-                while let Some(event) = rx.recv().await {
+                while let Some(mut event) = rx.recv().await {
+                    apply_event_defaults(&mut event, engine, client_application);
                     trace!("TelemetryThread received new telemetry event: {:?}", event);
                     otel.emit_metric_records(&event);
                     otel.emit_log_record(&event);
@@ -728,6 +732,21 @@ impl TelemetryThread {
     }
 }
 
+fn apply_event_defaults(
+    event: &mut Event,
+    engine: Option<metric::Engine>,
+    client_application: Option<metric::ClientApplication>,
+) {
+    if event.engine.is_none() {
+        event.engine = engine;
+    }
+    if event.client_application.is_none()
+        && let Some(client_application) = client_application
+    {
+        event.set_client_application_kind(client_application);
+    }
+}
+
 /// Run the optional [`EventEnricher`] closure on an event, if provided.
 async fn enrich(enricher: Option<&EventEnricher>, event: &mut Event) {
     if let Some(enricher) = enricher {
@@ -753,6 +772,20 @@ mod tests {
         let clone = thread.clone();
         clone.finish().await.unwrap();
         thread.finish().await.unwrap();
+    }
+
+    #[test]
+    fn v2_host_defaults_attribute_login_events() {
+        let mut event = Event::new(EventType::UserLoggedIn {});
+
+        apply_event_defaults(
+            &mut event,
+            Some(metric::Engine::V2),
+            Some(metric::ClientApplication::ChatCliV2),
+        );
+
+        assert_eq!(event.engine, Some(metric::Engine::V2));
+        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
     }
 
     #[test]

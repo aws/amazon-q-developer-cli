@@ -18,7 +18,7 @@ use kiro_telemetry::testing::{
     expect_metric,
     expect_metric_attrs,
 };
-use kiro_telemetry_legacy::event_to_otel_metric_record;
+use kiro_telemetry_legacy::event_to_otel_metric_records;
 use ntest::timeout;
 use serial_test::serial;
 use tokio::time::sleep;
@@ -3614,9 +3614,20 @@ async fn command_execute_emits_chat_slash_command_telemetry() {
         })
         .expect("expected /effort telemetry event");
 
-    let record = event_to_otel_metric_record(&event).expect("slash command metric");
-    expect_metric(std::slice::from_ref(&record), metric::slash_command_invoked("/effort"));
-    expect_metric_attrs(&record, &[("command", "/effort")]);
+    let record = event_to_otel_metric_records(event)
+        .into_iter()
+        .next()
+        .expect("slash command metric");
+    expect_metric(
+        std::slice::from_ref(&record),
+        metric::slash_command_invoked_for_engine("/effort", None, metric::ResultKind::Success, metric::Engine::V2),
+    );
+    expect_metric_attrs(&record, &[
+        ("command", "/effort"),
+        ("subcommand", "none"),
+        ("result", "success"),
+        ("engine", "v2"),
+    ]);
 }
 
 #[tokio::test]
@@ -3677,14 +3688,21 @@ async fn prompt_emits_chat_session_started_telemetry_once() {
         .collect::<Vec<_>>();
     assert_eq!(start_events.len(), 1);
 
-    let record = event_to_otel_metric_record(start_events[0]).expect("chat session started metric");
+    let record = event_to_otel_metric_records(start_events[0])
+        .into_iter()
+        .next()
+        .expect("chat session started metric");
     expect_metric(
         std::slice::from_ref(&record),
-        metric::chat_session_started(metric::Mode::AcpExternal, metric::ClientApplication::AcpExternal),
+        metric::with_engine(
+            metric::chat_session_started(metric::Mode::AcpExternal, metric::ClientApplication::ExternalAcpClient),
+            metric::Engine::V2,
+        ),
     );
     expect_metric_attrs(&record, &[
         ("mode", "acp_external"),
         ("client_application", "acp_external"),
+        ("engine", "v2"),
     ]);
 }
 

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::time::Duration;
+
 pub mod diagnostics;
 mod env;
 mod fs;
@@ -20,7 +22,7 @@ use crate::database::{
 use crate::rollout::Rollout;
 use crate::telemetry::{
     TelemetryThread,
-    build_v1_host_config,
+    telemetry_enabled,
 };
 
 const WINDOWS_USER_HOME: &str = "C:\\Users\\testuser";
@@ -71,10 +73,18 @@ impl Os {
         let token = BuilderIdToken::load(&database, None)
             .await
             .log_on_err("Os::new: BuilderIdToken::load failed")?;
-        let host_config = build_v1_host_config(&env, &mut database, Some(&region))
-            .await
-            .log_on_err("Os::new: build_v1_host_config failed")?;
-        let telemetry = TelemetryThread::new(&env, &fs, &mut database, Some(&region), host_config)
+        let telemetry_enabled = telemetry_enabled(&database);
+        let authenticated = token.is_some()
+            || crate::auth::social::is_social_logged_in(&database).await
+            || crate::auth::external_idp::is_external_idp_logged_in(&database).await
+            || crate::util::env_var::get_api_key().is_some()
+            || (env.get("KIRO_TEST_MODE").is_ok() && database.get_telemetry_user_id().ok().flatten().is_some());
+        if authenticated {
+            refresh_telemetry_user_id(&client, &database, telemetry_enabled).await;
+        } else {
+            let _ = database.clear_telemetry_user_id();
+        }
+        let telemetry = TelemetryThread::new(&env, &fs, &mut database, Some(&region), telemetry_enabled)
             .await
             .log_on_err("Os::new: TelemetryThread::new failed")?;
         Rollout::init(
@@ -105,24 +115,74 @@ impl Os {
     /// Ideally these resources should be refactored out of the Os struct
     pub async fn set_auth_profile(&mut self, profile: &AuthProfile) -> Result<()> {
         self.database.set_auth_profile(profile)?;
+        self.rebuild_after_auth_transition(None, true).await
+    }
 
-        // reconstruct api client
+    pub(crate) async fn refresh_telemetry_identity(&mut self) -> Result<()> {
+        self.rebuild_after_auth_transition(None, true).await
+    }
+
+    pub(crate) async fn reset_telemetry_after_logout(&mut self, region: Option<&str>) -> Result<()> {
+        let clear_result = self.database.clear_telemetry_user_id();
+        let rebuild_result = self.rebuild_after_auth_transition(region, false).await;
+        clear_result?;
+        rebuild_result
+    }
+
+    pub(crate) fn telemetry_region(&self) -> Option<String> {
+        Some(self.client.region().to_string())
+    }
+
+    async fn rebuild_after_auth_transition(
+        &mut self,
+        region_override: Option<&str>,
+        refresh_identity: bool,
+    ) -> Result<()> {
+        if refresh_identity {
+            self.database.clear_telemetry_user_id()?;
+        }
+        let client_result = self.rebuild_api_client().await;
+        let region = region_override.map_or_else(|| self.client.region().to_string(), str::to_owned);
+        let telemetry_enabled = telemetry_enabled(&self.database);
+        if refresh_identity && client_result.is_ok() {
+            refresh_telemetry_user_id(&self.client, &self.database, telemetry_enabled).await;
+        }
+        let telemetry_result = self.rebuild_telemetry(Some(&region), telemetry_enabled).await;
+        client_result?;
+        telemetry_result
+    }
+
+    async fn rebuild_api_client(&mut self) -> Result<()> {
         self.client
             .refresh_auth_profile(&self.env, &self.fs, &mut self.database)
             .await?;
+        Ok(())
+    }
 
-        let region = self.client.region().to_string();
-
-        // reconstruct telemetry thread and clients
-        let host_config = build_v1_host_config(&self.env, &mut self.database, Some(&region)).await?;
-        let old_telemetry = std::mem::replace(
-            &mut self.telemetry,
-            TelemetryThread::new(&self.env, &self.fs, &mut self.database, Some(&region), host_config).await?,
-        );
-
+    async fn rebuild_telemetry(&mut self, region: Option<&str>, telemetry_enabled: bool) -> Result<()> {
+        let telemetry =
+            TelemetryThread::new(&self.env, &self.fs, &mut self.database, region, telemetry_enabled).await?;
+        let old_telemetry = std::mem::replace(&mut self.telemetry, telemetry);
         old_telemetry.finish().await?;
         Ok(())
     }
+}
+
+async fn refresh_telemetry_user_id(client: &ApiClient, database: &Database, telemetry_enabled: bool) {
+    let cached_user_id = database.get_telemetry_user_id().ok().flatten();
+    if !should_refresh_telemetry_user_id(telemetry_enabled, cached_user_id.as_deref()) {
+        return;
+    }
+
+    if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), client.get_usage_limits()).await
+        && let Some(info) = output.user_info()
+    {
+        let _ = database.set_telemetry_user_id(info.user_id());
+    }
+}
+
+fn should_refresh_telemetry_user_id(telemetry_enabled: bool, cached_user_id: Option<&str>) -> bool {
+    telemetry_enabled && cached_user_id.is_none_or(|user_id| user_id.trim().is_empty())
 }
 
 #[cfg(test)]
@@ -164,5 +224,49 @@ mod tests {
         assert_eq!(os.database.get_auth_profile().unwrap().unwrap(), profile);
         assert_eq!(os.client.get_profile().unwrap(), profile);
         assert_eq!(os.client.region(), "us-gov-east-1");
+    }
+
+    #[test]
+    fn telemetry_identity_refresh_requires_enabled_cold_cache() {
+        assert!(should_refresh_telemetry_user_id(true, None));
+        assert!(!should_refresh_telemetry_user_id(false, None));
+        assert!(!should_refresh_telemetry_user_id(true, Some("cached")));
+        assert!(should_refresh_telemetry_user_id(true, Some("  ")));
+    }
+
+    async fn enable_test_telemetry(os: &mut Os) {
+        unsafe {
+            os.env.set_var("KIRO_TELEMETRY_OTEL", "0");
+        }
+        let telemetry = TelemetryThread::new(&os.env, &os.fs, &mut os.database, None, true)
+            .await
+            .unwrap();
+        let old_telemetry = std::mem::replace(&mut os.telemetry, telemetry);
+        old_telemetry.finish().await.unwrap();
+        assert!(os.telemetry.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn auth_transition_drops_stale_identity_when_refresh_is_unavailable() {
+        let mut os = Os::new().await.unwrap();
+        os.database.set_telemetry_user_id("stale-user-id").unwrap();
+        enable_test_telemetry(&mut os).await;
+
+        os.refresh_telemetry_identity().await.unwrap();
+
+        assert_eq!(os.database.get_telemetry_user_id().unwrap(), None);
+        assert!(!os.telemetry.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn logout_reset_clears_identity_and_rebuilds_telemetry() {
+        let mut os = Os::new().await.unwrap();
+        os.database.set_telemetry_user_id("user-id").unwrap();
+        enable_test_telemetry(&mut os).await;
+
+        os.reset_telemetry_after_logout(None).await.unwrap();
+
+        assert_eq!(os.database.get_telemetry_user_id().unwrap(), None);
+        assert!(!os.telemetry.is_enabled());
     }
 }

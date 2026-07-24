@@ -264,8 +264,7 @@ impl ChatSubcommand {
                 };
 
                 let new_state: ConversationState = tri!(serde_json::from_str(&contents), "import from", &path);
-                let chat_state = restore_conversation_state(session, new_state);
-                session.conversation.update_state(true).await;
+                let chat_state = restore_active_conversation(os, session, new_state).await;
 
                 execute!(
                     session.stderr,
@@ -279,8 +278,7 @@ impl ChatSubcommand {
             Self::ScriptLoad { script } => {
                 match script_load(&script) {
                     Ok(new_state) => {
-                        let chat_state = restore_conversation_state(session, new_state);
-                        session.conversation.update_state(true).await;
+                        let chat_state = restore_active_conversation(os, session, new_state).await;
                         execute!(
                             session.stderr,
                             StyledText::success_fg(),
@@ -346,6 +344,15 @@ fn restore_conversation_state(session: &mut ChatSession, mut new_state: Conversa
     ChatState::HandleInput {
         input: "In a few words, summarize our conversation so far.".to_owned(),
     }
+}
+
+async fn restore_active_conversation(os: &Os, session: &mut ChatSession, new_state: ConversationState) -> ChatState {
+    let chat_state = restore_conversation_state(session, new_state);
+    session.conversation.update_state(true).await;
+    session
+        .transition_chat_telemetry(os, kiro_telemetry::metric::SessionStartKind::Resumed)
+        .await;
+    chat_state
 }
 
 fn format_timestamp(timestamp_ms: i64) -> String {
@@ -922,6 +929,7 @@ async fn handle_delete_session(
 }
 
 /// List V1+V2 chat sessions for the current directory to a writer.
+#[cfg(test)]
 pub fn list_conversations(os: &Os, writer: &mut impl std::io::Write) -> Result<(), ChatError> {
     let cwd = match std::env::current_dir() {
         Ok(path) => path,
@@ -1075,7 +1083,7 @@ pub fn select_chat_session(entries: &[ChatSessionDisplayEntry], prompt_str: &str
 }
 
 async fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-    let result = (|| -> Option<ChatState> {
+    let result = (|| -> Option<ConversationState> {
         let cwd = std::env::current_dir()
             .inspect_err(|_| {
                 execute!(
@@ -1143,8 +1151,6 @@ async fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatS
                 None
             })?;
 
-        let chat_state = restore_conversation_state(session, new_state);
-
         execute!(
             session.stderr,
             StyledText::success_fg(),
@@ -1153,16 +1159,16 @@ async fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatS
         )
         .ok()?;
 
-        Some(chat_state)
+        Some(new_state)
     })();
 
-    if result.is_some() {
-        session.conversation.update_state(true).await;
+    if let Some(new_state) = result {
+        return Ok(restore_active_conversation(os, session, new_state).await);
     }
 
-    Ok(result.unwrap_or(ChatState::PromptUser {
+    Ok(ChatState::PromptUser {
         skip_printing_tools: true,
-    }))
+    })
 }
 
 #[cfg(test)]

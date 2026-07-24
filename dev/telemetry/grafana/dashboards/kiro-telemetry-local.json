@@ -478,6 +478,208 @@
       ],
       "title": "All Kiro Metric Samples",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Distinct authenticated V1 user IDs currently retained by local Prometheus, split by installed service version.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 24
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count by (service_version) (count by (service_version, user_id) (kiro_cli_session_started_total{job=\"otel-collector\", engine=\"v1\", user_id!=\"\", instance=~\"$instance\"}))",
+          "legendFormat": "{{service_version}}",
+          "refId": "A"
+        }
+      ],
+      "title": "V1 Authenticated Users Seen",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Cumulative new V1 chat sessions observed by the local collector, excluding resumed conversations.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 24
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (service_version) (kiro_cli_chat_session_started_total{job=\"otel-collector\", engine=\"v1\", session_start_kind=\"new\", instance=~\"$instance\"})",
+          "legendFormat": "{{service_version}}",
+          "refId": "A"
+        }
+      ],
+      "title": "V1 New Chat Sessions",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Current and peak V1 host RSS by installed version and OS.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 24
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (service_version, os_type) (kiro_cli_process_memory_rss{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"})",
+          "legendFormat": "{{service_version}} {{os_type}} rss",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (service_version, os_type) (kiro_cli_process_memory_peak_rss{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"})",
+          "legendFormat": "{{service_version}} {{os_type}} peak",
+          "refId": "B"
+        }
+      ],
+      "title": "V1 Host RSS",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Mean V1 process CPU-time to wall-time ratio across samples retained by the local collector.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 24
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (service_version, os_type) (kiro_cli_process_cpu_utilization_sum{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"}) / sum by (service_version, os_type) (kiro_cli_process_cpu_utilization_count{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"})",
+          "legendFormat": "{{service_version}} {{os_type}} mean",
+          "refId": "A"
+        }
+      ],
+      "title": "V1 Host CPU Mean",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

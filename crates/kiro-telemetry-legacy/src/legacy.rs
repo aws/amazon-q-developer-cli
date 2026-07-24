@@ -42,6 +42,11 @@ fn emits_legacy_user_turn_counter(event_type: LegacyEventType) -> bool {
 }
 
 #[cfg(test)]
+fn emits_legacy_chat_message_counter(event_type: LegacyEventType) -> bool {
+    matches_counter_target(event_type, "kiro_cli_chat_messages_total")
+}
+
+#[cfg(test)]
 fn emits_legacy_tool_call_total(event_type: LegacyEventType) -> bool {
     matches_counter_target(event_type, "kiro_cli_tool_call_total")
 }
@@ -79,9 +84,9 @@ mod tests {
         assert_eq!(counter.metric_name, "kiro_cli_tool_call_total");
         assert_eq!(counter.metric_kind, MetricKind::Counter);
 
-        let log = legacy_otel_target(LegacyEventType::RecordUserTurnCompletion).expect("turn completion target");
-        assert_eq!(log.metric_name, "kiro_cli_user_turn_completed");
-        assert_eq!(log.metric_kind, MetricKind::LogEvent);
+        let turn = legacy_otel_target(LegacyEventType::RecordUserTurnCompletion).expect("turn completion target");
+        assert_eq!(turn.metric_name, "kiro_cli_user_turns");
+        assert_eq!(turn.metric_kind, MetricKind::Counter);
     }
 
     #[test]
@@ -91,22 +96,23 @@ mod tests {
         assert_eq!(counter.value, MetricValue::Counter(1));
         assert!(emits_legacy_tool_call_total(LegacyEventType::ToolUseSuggested));
         assert!(!emits_legacy_tool_call_total(LegacyEventType::ChatAddedMessage));
-        assert!(emits_legacy_user_turn_counter(LegacyEventType::ChatAddedMessage));
+        assert!(emits_legacy_chat_message_counter(LegacyEventType::ChatAddedMessage));
+        assert!(!emits_legacy_user_turn_counter(LegacyEventType::ChatAddedMessage));
+        assert!(emits_legacy_user_turn_counter(
+            LegacyEventType::RecordUserTurnCompletion
+        ));
         assert!(!emits_legacy_user_turn_counter(LegacyEventType::ToolUseSuggested));
 
-        let gauge = legacy_metric_record(LegacyEventType::ModeChanged).expect("gauge target");
-        assert_eq!(gauge.name, "mode_active_users_weekly");
-        assert_eq!(gauge.value, MetricValue::Gauge(1.0));
+        let mode = legacy_metric_record(LegacyEventType::ModeChanged).expect("counter target");
+        assert_eq!(mode.name, "kiro_cli_mode_active_total");
+        assert_eq!(mode.value, MetricValue::Counter(1));
     }
 
     #[test]
-    fn creates_log_records_for_log_event_targets() {
-        assert!(legacy_metric_record(LegacyEventType::RecordUserTurnCompletion).is_none());
-
-        let log = legacy_log_record(LegacyEventType::RecordUserTurnCompletion).expect("log target");
-        assert_eq!(log.name, "kiro_cli_user_turn_completed");
-
-        let conversation = legacy_log_record(LegacyEventType::ChatEnd).expect("log target");
-        assert_eq!(conversation.name, "kiro_cli_conversation_completed");
+    fn semantic_counter_mappings_do_not_create_generic_fact_logs() {
+        assert!(legacy_metric_record(LegacyEventType::RecordUserTurnCompletion).is_some());
+        assert!(legacy_metric_record(LegacyEventType::ChatEnd).is_some());
+        assert!(legacy_log_record(LegacyEventType::RecordUserTurnCompletion).is_none());
+        assert!(legacy_log_record(LegacyEventType::ChatEnd).is_none());
     }
 }

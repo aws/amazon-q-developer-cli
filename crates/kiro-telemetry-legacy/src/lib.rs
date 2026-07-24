@@ -1,12 +1,8 @@
-//! kiro-telemetry-legacy: legacy CloudWatch/Toolkit telemetry translation
-//! for kiro-cli (V2 only).
+//! Legacy CloudWatch/Toolkit telemetry translation for kiro-cli.
 //!
-//! This crate owns the V2-specific translation of [`kiro_telemetry_host::Event`]
-//! into Toolkit `MetricDatum` values and OTel metric/log records, plus the
-//! schema-driven legacy mappings used to dual-write events. It is consumed
-//! only by V2 (chat-cli-v2) and a single V1 chat-cli test; kiro-bot does not
-//! depend on it, so the entire CloudWatch/Toolkit graph stays out of lite
-//! builds.
+//! This crate owns the schema-driven legacy mappings and shared dual-write
+//! adapter. Portable emitters that do not need Toolkit compatibility can avoid
+//! pulling in the legacy client graph.
 
 pub mod definitions;
 pub mod event_translation;
@@ -15,7 +11,6 @@ pub mod legacy;
 pub use event_translation::{
     event_to_metric_datum,
     event_to_otel_log_record,
-    event_to_otel_metric_record,
     event_to_otel_metric_records,
 };
 pub use legacy::{

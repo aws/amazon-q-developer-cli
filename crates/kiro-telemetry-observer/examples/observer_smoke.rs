@@ -47,6 +47,7 @@ use agent::protocol::{
     InternalEvent,
 };
 use agent::types::AgentId;
+use kiro_telemetry::metric::Engine;
 use kiro_telemetry::{
     MetricRecord,
     OtelMode,
@@ -166,6 +167,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         otel_translator: Some(Arc::new(ExampleOtelTranslator)),
         metadata_enricher: None,
         client_application: None,
+        engine: Some(Engine::V2),
         host_role: HostRole::UserCli,
         govcloud_partition: None,
         consent_settings_path: None,

@@ -27,6 +27,7 @@ regex.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }
 serde.workspace = true
 serde_json.workspace = true
+strum.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
@@ -36,6 +37,10 @@ futures.workspace = true
 opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"] }
 prost = "0.14.3"
 tempfile.workspace = true
+
+[[test]]
+name = "catalog_coverage"
+required-features = ["test-support"]
 
 [[example]]
 name = "catalog_smoke"

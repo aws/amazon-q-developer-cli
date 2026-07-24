@@ -322,78 +322,12 @@ pub struct ProcessHealthPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TurnCompletionMeteringUsage {
-    pub value: f64,
-    pub unit: String,
-    pub unit_plural: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum TurnCompletionStatus {
-    Success,
-    Failed,
-    Cancelled,
-    #[serde(rename = "_other_")]
-    Other,
-}
-
-impl TurnCompletionStatus {
-    pub fn from_wire_status(value: &str) -> Self {
-        match value {
-            "success" => Self::Success,
-            "failed" => Self::Failed,
-            "cancelled" | "canceled" => Self::Cancelled,
-            "_other_" => Self::Other,
-            _ => Self::Other,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for TurnCompletionStatus {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        Ok(Self::from_wire_status(&value))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TurnCompletionTelemetryPayload {
-    pub session_id: Option<String>,
-    pub model_id: Option<String>,
-    #[serde(default)]
-    pub metering_usage: Vec<TurnCompletionMeteringUsage>,
-    pub turn_duration_ms: Option<f64>,
-    pub context_usage_percentage: Option<f64>,
-    pub total_tokens: Option<i64>,
-    pub uncached_input_tokens: Option<i64>,
-    pub output_tokens: Option<i64>,
-    pub cache_read_input_tokens: Option<i64>,
-    pub cache_write_input_tokens: Option<i64>,
-    pub status: Option<TurnCompletionStatus>,
-    #[serde(default)]
-    pub used_tools: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ChatSlashCommandTelemetryPayload {
     pub session_id: Option<String>,
     pub command: String,
     pub subcommand: Option<String>,
     pub success: bool,
     pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatSessionStartedTelemetryPayload {
-    pub session_id: Option<String>,
-    pub mode: Option<String>,
 }
 
 /// How a mode change was initiated. Add a new variant when adding a new entry point —
@@ -510,26 +444,6 @@ mod tests {
     fn test_mode_change_source_ser_deser() {
         test_ser_deser!(ModeChangeSource, ModeChangeSource::ShiftTab, "shiftTab");
         test_ser_deser!(ModeChangeSource, ModeChangeSource::SlashCommand, "slashCommand");
-    }
-
-    #[test]
-    fn turn_completion_status_buckets_unknown_values() {
-        assert_eq!(
-            TurnCompletionStatus::Success,
-            serde_json::from_str("\"success\"").unwrap()
-        );
-        assert_eq!(
-            TurnCompletionStatus::Cancelled,
-            serde_json::from_str("\"canceled\"").unwrap()
-        );
-        assert_eq!(
-            TurnCompletionStatus::Other,
-            serde_json::from_str("\"backend:arbitrary-new-status\"").unwrap()
-        );
-        assert_eq!(
-            "\"_other_\"",
-            serde_json::to_string(&TurnCompletionStatus::Other).unwrap()
-        );
     }
 
     #[test]

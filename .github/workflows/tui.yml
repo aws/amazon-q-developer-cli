@@ -33,8 +33,16 @@ jobs:
               - 'packages/twinki/**'
               - '.github/workflows/tui.yml'
             telemetry:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
               - 'dev/telemetry/**'
+              - 'crates/agent/src/agent/agent_loop/**'
+              - 'crates/chat-cli/**'
+              - 'crates/chat-cli-v2/src/agent/acp/**'
+              - 'crates/chat-cli-v2/src/telemetry/**'
               - 'crates/kiro-telemetry*/**'
+              - 'packages/tui/src/acp-client/**'
+              - 'packages/tui/src/index.tsx'
               - 'packages/tui/src/utils/meter.ts'
               - 'packages/tui/src/utils/tui-telemetry-observer.ts'
               - 'packages/tui/src/utils/otlp-emit.ts'
@@ -298,28 +306,31 @@ jobs:
     needs: check-paths
     if: needs.check-paths.outputs.telemetry-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
 
-      # The validation script runs `cargo run -p kiro-telemetry --example
-      # catalog_smoke`, which needs a Rust toolchain + protobuf-compiler
-      # (kiro-telemetry depends on prost/opentelemetry-proto under the
-      # `test-support` feature). `jq` + `curl` are used to query Prometheus.
-      - name: Install build deps (protobuf, jq)
-        run: sudo apt-get update && sudo apt-get install -y -qq protobuf-compiler jq curl
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+
+      - name: Install telemetry E2E build deps
+        run: sudo apt-get update && sudo apt-get install -y -qq protobuf-compiler jq curl sqlite3
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
+      - name: Cache cargo registry
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
-          key: cargo-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-telemetry-e2e-registry-v1-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-e2e-${{ runner.os }}-
+            cargo-telemetry-e2e-registry-v1-${{ runner.os }}-
 
       - name: Read pinned Bun version
         id: bun-ver
@@ -339,10 +350,11 @@ jobs:
 
       - name: Run telemetry E2E validation
         # Brings up the local OTel stack (collector + Prometheus + Grafana) via
-        # `docker compose`, emits Rust catalog metrics and all TUI metrics
-        # through the REAL code paths, and asserts each metric name lands in
-        # Prometheus. The script defaults to FRESH=1 (down -v then up) and tears
-        # the stack down on EXIT — no KEEP_STACK.
+        # `docker compose`, runs a real non-interactive V1 dual-write chat,
+        # records and compares OTLP + legacy Toolkit delivery, then exercises
+        # Rust/TUI metric constructors and exporters before verifying
+        # Prometheus plus the provisioned Grafana dashboard. The script starts
+        # from empty volumes and tears the stack down on EXIT.
         run: COMPOSE_CMD="docker compose" bash dev/telemetry/validate-metrics-e2e.sh
 
       - name: Upload collector logs on failure

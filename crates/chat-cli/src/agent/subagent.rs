@@ -83,7 +83,10 @@ use tracing::{
 use super::rts;
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
-use crate::telemetry::core::RecordUserTurnCompletionArgs;
+use crate::telemetry::core::{
+    ChatConversationType,
+    RecordUserTurnCompletionArgs,
+};
 use crate::telemetry::{
     TelemetryResult,
     TelemetryThread,
@@ -176,14 +179,98 @@ impl<'a> TelemetrySink<'a> {
     }
 
     fn update_stop_reason(&mut self, stop_reason: String) {
+        self.telemetry_result = Some(TelemetryResult::Failed);
         let args = self
             .record_user_turn_completion_args
             .get_or_insert(RecordUserTurnCompletionArgs {
                 is_subagent: true,
                 parent_tool_use_id: Some(self.parent_tool_use_id.to_string()),
+                emit_user_turn_counter: true,
+                emit_turn_numeric_metrics: Some(false),
                 ..Default::default()
             });
         args.reason.replace(stop_reason);
+    }
+}
+
+fn accumulate_subagent_turn(
+    args: &mut RecordUserTurnCompletionArgs,
+    metadata: &UserTurnMetadata,
+    parent_tool_use_id: &str,
+) {
+    args.is_subagent = true;
+    args.parent_tool_use_id = Some(parent_tool_use_id.to_string());
+    args.emit_user_turn_counter = true;
+    args.emit_turn_numeric_metrics = Some(true);
+    if metadata.model.is_some() {
+        args.model.clone_from(&metadata.model);
+    }
+    args.message_ids
+        .extend(metadata.message_ids.iter().filter_map(Clone::clone));
+    args.chat_conversation_type = Some(
+        if metadata.number_of_cycles > 0 || matches!(args.chat_conversation_type, Some(ChatConversationType::ToolUse)) {
+            ChatConversationType::ToolUse
+        } else {
+            ChatConversationType::NotToolUse
+        },
+    );
+    args.user_prompt_length = args
+        .user_prompt_length
+        .saturating_add(metadata.user_prompt_length.min(i64::MAX as usize) as i64);
+    args.assistant_response_length = args
+        .assistant_response_length
+        .saturating_add(metadata.assistant_response_length.min(i64::MAX as usize) as i64);
+    args.follow_up_count = args
+        .follow_up_count
+        .saturating_add(i64::from(metadata.total_request_count.saturating_sub(1)));
+    args.user_turn_duration_seconds = args.user_turn_duration_seconds.saturating_add(
+        metadata
+            .turn_duration
+            .map_or(0, |duration| duration.as_secs().min(i64::MAX as u64) as i64),
+    );
+    add_token_count(&mut args.uncached_input_tokens, metadata.input_token_count);
+    add_token_count(&mut args.output_tokens, metadata.output_token_count);
+    add_token_count(&mut args.cache_read_input_tokens, metadata.cache_read_input_token_count);
+    add_token_count(
+        &mut args.cache_write_input_tokens,
+        metadata.cache_write_input_token_count,
+    );
+    let total_tokens = metadata
+        .input_token_count
+        .saturating_add(metadata.output_token_count)
+        .saturating_add(metadata.cache_read_input_token_count);
+    add_token_count(&mut args.total_tokens, total_tokens);
+    if let Some(attempts) = metadata.request_attempts {
+        args.request_attempts = Some(args.request_attempts.unwrap_or(0).saturating_add(attempts));
+    }
+    if !matches!(metadata.end_reason, LoopEndReason::UserTurnEnd) {
+        args.reason = Some(metadata.end_reason.to_string());
+    }
+}
+
+fn add_token_count(total: &mut Option<i64>, value: u32) {
+    if value > 0 {
+        *total = Some(total.unwrap_or(0).saturating_add(i64::from(value)));
+    }
+}
+
+fn telemetry_result(metadata: &[UserTurnMetadata], existing: Option<TelemetryResult>) -> Option<TelemetryResult> {
+    if matches!(existing, Some(TelemetryResult::Failed)) {
+        existing
+    } else if metadata
+        .iter()
+        .any(|metadata| matches!(metadata.end_reason, LoopEndReason::DidNotRun | LoopEndReason::Error))
+    {
+        Some(TelemetryResult::Failed)
+    } else if metadata
+        .iter()
+        .any(|metadata| matches!(metadata.end_reason, LoopEndReason::Cancelled))
+    {
+        Some(TelemetryResult::Cancelled)
+    } else if metadata.is_empty() {
+        existing
+    } else {
+        Some(TelemetryResult::Succeeded)
     }
 }
 
@@ -776,24 +863,10 @@ impl<'a> Subagent<'a> {
                 *duration = duration.saturating_add(*turn_duration);
             }
 
-            let args = telemetry_sink
-                .record_user_turn_completion_args
-                .get_or_insert(RecordUserTurnCompletionArgs {
-                    is_subagent: true,
-                    parent_tool_use_id: Some(telemetry_sink.parent_tool_use_id.to_string()),
-                    ..Default::default()
-                });
-
-            md.message_ids.iter().for_each(|id| {
-                if let Some(id) = id {
-                    args.message_ids.push(id.clone());
-                }
-            });
-
-            if !matches!(md.end_reason, LoopEndReason::UserTurnEnd) {
-                args.reason = Some(md.end_reason.to_string());
-            }
+            let args = telemetry_sink.record_user_turn_completion_args.get_or_insert_default();
+            accumulate_subagent_turn(args, md, telemetry_sink.parent_tool_use_id);
         }
+        telemetry_sink.telemetry_result = telemetry_result(&user_turn_metadata, telemetry_sink.telemetry_result.take());
 
         // TODO: do we want to set a special variant for this so we don't have to marshall and
         // unmarshall?
@@ -893,6 +966,7 @@ mod tests {
     use std::collections::HashSet;
 
     use agent::agent_config::definitions::ToolsSettings;
+    use agent::agent_loop::AgentLoopId;
     use agent::permissions::{
         RuntimePermissions,
         evaluate_tool_permission,
@@ -907,7 +981,10 @@ mod tests {
         BuiltInTool,
         ToolKind,
     };
+    use agent::types::AgentId;
     use agent::util::providers::CwdProvider;
+    use chrono::Utc;
+    use kiro_telemetry::metric;
 
     use super::*;
 
@@ -940,6 +1017,71 @@ mod tests {
         assert!(
             matches!(result, PermissionEvalResult::Allow),
             "fs_read in CWD should be auto-allowed for subagents, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn subagent_turn_metadata_populates_token_metrics() {
+        let metadata = UserTurnMetadata {
+            loop_id: AgentLoopId::new(AgentId::new("subagent".to_string())),
+            result: None,
+            message_ids: vec![Some("user".to_string()), Some("assistant".to_string())],
+            total_request_count: 2,
+            number_of_cycles: 1,
+            builtin_tool_uses: 1,
+            turn_duration: Some(std::time::Duration::from_secs(3)),
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: Utc::now(),
+            input_token_count: 100,
+            output_token_count: 50,
+            cache_read_input_token_count: 25,
+            cache_write_input_token_count: 10,
+            model: Some("claude-sonnet-4".to_string()),
+            assistant_response_length: 200,
+            request_attempts: Some(3),
+            context_usage_percentage: None,
+            metering_usage: Vec::new(),
+            user_prompt_length: 80,
+        };
+        let mut args = RecordUserTurnCompletionArgs::default();
+
+        assert_eq!(
+            telemetry_result(std::slice::from_ref(&metadata), Some(TelemetryResult::Failed)),
+            Some(TelemetryResult::Failed)
+        );
+        accumulate_subagent_turn(&mut args, &metadata, "parent-tool-use");
+        assert_eq!(args.emit_turn_numeric_metrics, Some(true));
+
+        let mut event = crate::telemetry::core::Event::new(crate::telemetry::EventType::RecordUserTurnCompletion {
+            conversation_id: "conversation".to_string(),
+            result: TelemetryResult::Succeeded,
+            args,
+        });
+        event.set_engine(metric::Engine::V1);
+        event.set_client_application_kind(metric::ClientApplication::ChatCli);
+        event.app_type = Some("V1".to_string());
+        event.is_subagent = true;
+        event.metric_context.mode = Some(metric::Mode::Interactive);
+        let records = kiro_telemetry_legacy::event_to_otel_metric_records(&event);
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.name == "kiro_cli_tokens_consumed")
+                .count(),
+            4
+        );
+        let attempts = records
+            .iter()
+            .find(|record| record.name == "kiro_cli_user_turn_request_attempts")
+            .unwrap();
+        assert_eq!(attempts.value, kiro_telemetry::MetricValue::Histogram(3.0));
+    }
+
+    #[test]
+    fn empty_subagent_metadata_preserves_a_stop_error() {
+        assert_eq!(
+            telemetry_result(&[], Some(TelemetryResult::Failed)),
+            Some(TelemetryResult::Failed)
         );
     }
 

@@ -87,6 +87,9 @@ const SECONDS_LATENCY_BOUNDARIES: &[f64] = &[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0
 /// ratio and CPU utilisation. Default ms buckets run to 10000, so a ratio of
 /// `0.4` lands in the same bucket as everything `>= 0.0`.
 const RATIO_BOUNDARIES: &[f64] = &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+const CPU_RATIO_BOUNDARIES: &[f64] = &[
+    0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0,
+];
 
 /// Explicit boundaries for a memory growth rate in **bytes per second**.
 /// Covers 1 KiB/s up to 100 MiB/s, where the action of interest (a leak) lives.
@@ -117,12 +120,16 @@ fn histogram_boundaries(name: &str) -> Option<&'static [f64]> {
         | "kiro_cli.bedrock.stream.inter_token_latency"
         | "kiro_cli.bedrock.stream.duration"
         | "kiro_cli.bedrock.request.duration"
+        | "kiro_cli_tangent_duration_seconds"
+        | "kiro_cli_tool_duration"
         | "kiro_cli_user_turn_duration_seconds"
         | "kiro_cli.telemetry.exporter.send.duration"
         | "kiro_cli.startup.duration"
         | "kiro_cli.agent.loop.iteration_duration" => Some(SECONDS_LATENCY_BOUNDARIES),
         // Unit-interval ratios (0..=1).
-        "kiro_cli_cache_hit_ratio" | "kiro_cli.process.cpu.utilization" => Some(RATIO_BOUNDARIES),
+        "kiro_cli_cache_hit_ratio" => Some(RATIO_BOUNDARIES),
+        // Process CPU time divided by wall time; multi-threaded work can exceed 1.
+        "kiro_cli.process.cpu.utilization" => Some(CPU_RATIO_BOUNDARIES),
         // Memory growth rate, bytes/second.
         "kiro_cli.process.memory.growth_rate" => Some(MEMORY_GROWTH_RATE_BOUNDARIES),
         // Export batch sizes (record counts).
@@ -411,7 +418,7 @@ fn build_otlp_http_providers(
 fn telemetry_resource(config: &TelemetryConfig) -> Resource {
     Resource::builder()
         .with_service_name("kiro-cli")
-        .with_attribute(KeyValue::new("service.version", env!("CARGO_PKG_VERSION")))
+        .with_attribute(KeyValue::new("service.version", config.service_version.clone()))
         .with_attribute(KeyValue::new(
             "deployment.environment",
             config.deployment_environment.clone(),
@@ -654,11 +661,19 @@ mod tests {
             histogram_boundaries("kiro_cli_user_turn_duration_seconds"),
             Some(SECONDS_LATENCY_BOUNDARIES)
         );
+        assert_eq!(
+            histogram_boundaries("kiro_cli_tangent_duration_seconds"),
+            Some(SECONDS_LATENCY_BOUNDARIES)
+        );
+        assert_eq!(
+            histogram_boundaries("kiro_cli_tool_duration"),
+            Some(SECONDS_LATENCY_BOUNDARIES)
+        );
         // Unit-interval ratios.
         assert_eq!(histogram_boundaries("kiro_cli_cache_hit_ratio"), Some(RATIO_BOUNDARIES));
         assert_eq!(
             histogram_boundaries("kiro_cli.process.cpu.utilization"),
-            Some(RATIO_BOUNDARIES)
+            Some(CPU_RATIO_BOUNDARIES)
         );
         // Bytes/second growth rate and record-count batch sizes.
         assert_eq!(

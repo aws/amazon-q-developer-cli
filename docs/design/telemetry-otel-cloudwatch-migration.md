@@ -28,12 +28,11 @@ Detailed inventory in `docs/oncall/metrics_and_telemetry.md` and the V1/V2 schem
 - **Channel B — `SendTelemetryEvent`** (CodeWhisperer `ApiClient`, Bearer from `auth.builder_id`). Per `mod.rs:680-775`, **only** `ChatAddedMessage` and `AgentContribution` match; the other 18+ variants fall through to a no-op arm at `mod.rs:772`.
 - GovCloud (`US_GOV_EAST` / `US_GOV_WEST`) hard-skips Channel A at `mod.rs:213-234` — partition-aware, but unproven by metric.
 
-**Schema, three copies, drifting.**
+**Legacy schema adapter, consolidated.**
 
 | File | Lines | Notes |
 |---|---|---|
-| `crates/chat-cli/telemetry_definitions.json` | 666 | V1; 20 EventType variants enumerated at `crates/chat-cli/src/telemetry/core.rs:705-838` (`UserLoggedIn`, `AuthFailed`, `RefreshCredentials`, `CliSubcommandExecuted`, `ChatSlashCommandExecuted`, `ChatStart`, `ChatEnd`, `ChatAddedMessage`, `RecordUserTurnCompletion`, `TangentModeSession`, `ToolUseSuggested`, `AgentContribution`, `McpServerInit`, `AgentConfigInit`, `DidSelectProfile`, `ProfileState`, `MessageResponseError`, `DailyHeartbeat`, `SubagentInvocation`, `VoiceInput`). |
-| `crates/chat-cli-v2/telemetry_definitions.json` | 908 | V2; 23 variants (V1 + `ProcessHealthMetric`, `ModeChanged`, `GoalCompleted`); V2 `Event` struct adds `app_type`, `acp_client_name`, `acp_client_version` at `core.rs:60-87`. |
+| `crates/kiro-telemetry-legacy/telemetry_definitions.json` | 983 | Shared Toolkit datum catalog and codegen adapter for V1 and V2. |
 | `crates/aws-toolkit-telemetry-definitions/def.json` | 543 | Build-time codegen via `build.rs:42-279` using `quote!`+`syn`; consumed by `amzn-toolkit-telemetry-client` and unidentified external consumers. |
 
 **CloudWatch consumers.** Account `421629052180`, namespace `Toolkit`, dimension `product=CodewhispererTerminal` (NOT `CodewhispererForTerminal` — verified at `mod.rs:789`). 5 critical alarms in `docs/oncall/cloudwatch_alarms_and_dashboard.md:10-26`: `QCLI-FirstTokenLatency` (p90 > 15s), `QCLI-SuccessRateDown` (< 99%), `QCLIRTSCallSuccessRate` (≤ 80%), `QCLIFaultCount` (≥ 50 5xx), `QCLIErrorCount` (≥ 50 4xx). All static, none multi-burn-rate, none monitor pipeline health.
@@ -262,7 +261,6 @@ Each entry below has: name, kind (counter / gauge / histogram / log_event), unit
 |---|---|---|---|---|---|---|
 | `kiro_cli.session.completed` | counter | 1 | `exit_reason` ∈ {clean, user_interrupt, crash, oom, hang_timeout, auth_failure, upstream_outage}, `agent_kind` (closed enum) | Pairs with started; success ratio numerator | clean/started <0.85 over 15m on any version_minor | P0 |
 | `kiro_cli.crash.total` | counter | 1 | `crash_kind` ∈ {panic, segfault, abort, unhandled_signal}, `os_type`, `host_arch` | `panic_location` is **NOT** a metric dim — it goes to a separate `kiro_cli_panic` log with a 16-bit `panic_signature_hash` exemplar | New panic rate >0.1% of sessions on a version | P0 |
-| `kiro_cli.startup.failures` | counter | 1 | `failure_stage` ∈ {config, db_migrate, runtime, panic}, `os_type` | Pre-steady-state failures | startup_failures/started >0.5% over 5m | P0 |
 | `kiro_cli.bedrock.request.errors` | counter | 1 | `model_class`, `operation`, `error_kind` ∈ {throttling, validation, model_error, server_error, timeout, connection, access_denied}, `status_class` ∈ {2xx,4xx,5xx} | `error_code` is closed enum allowlist; raw codes → log | 5xx-rate >5% over 5m | P0 |
 | `kiro_cli.bedrock.empty_response.retries` | counter | 1 | `model_class`, `outcome` ∈ {recovered, still_empty} | Tracks the `a953a204b` empty-response retry; `still_empty` rising = Bedrock brownout | still_empty >0.5% of turns | P0 |
 | `kiro_cli.retry.attempts` | counter | 1 | `upstream` ∈ {bedrock, rts, kas, krs, cognito}, `retry_reason` (closed enum), `attempt_number_bucket` ∈ {1,2,3+} | SDK retry classifier | retry/requests >15% over 5m | P0 |

@@ -59,6 +59,7 @@ color-eyre.workspace = true
 color-print.workspace = true
 convert_case.workspace = true
 cookie.workspace = true
+cpu-time.workspace = true
 crossterm.workspace = true
 ctrlc.workspace = true
 dialoguer.workspace = true
@@ -178,12 +179,4 @@ mockito.workspace = true
 paste.workspace = true
 predicates.workspace = true
 tracing-test.workspace = true
-
-[build-dependencies]
-convert_case.workspace = true
-prettyplease.workspace = true
-quote.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-syn.workspace = true
-schemars.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

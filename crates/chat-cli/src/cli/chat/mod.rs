@@ -23,6 +23,7 @@ mod input_source;
 mod internal;
 mod message;
 mod parse;
+mod telemetry_lifecycle;
 #[cfg(test)]
 mod test_utils;
 mod trust_scope;
@@ -125,7 +126,11 @@ use eyre::{
     bail,
     eyre,
 };
-use input_source::InputSource;
+use input_source::{
+    InputSource,
+    ReadLineOutcome,
+};
+use kiro_telemetry::metric;
 use message::{
     AssistantMessage,
     AssistantToolUse,
@@ -153,6 +158,7 @@ use tokio::sync::{
     broadcast,
 };
 use tool_manager::{
+    McpCleanupTracker,
     PromptQuery,
     PromptQueryResult,
     ToolManager,
@@ -356,6 +362,40 @@ pub struct ChatArgs {
     /// for tests and TUI IPC. Not user-facing.
     #[command(subcommand)]
     pub command: Option<internal::ChatCommand>,
+}
+
+pub(crate) struct V1ExecutionOutcome {
+    pub(crate) action: V1PostExecutionAction,
+    pub(crate) exit_reason: metric::ExitReason,
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum V1PostExecutionAction {
+    Exit(ExitCode),
+    ResumeInTuiLite { engine: AgentEngine, resume_id: String },
+}
+
+async fn run_in_background<F, T>(operation: F) -> std::io::Result<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(operation());
+    });
+    rx.await.map_err(std::io::Error::other)
+}
+
+pub(crate) async fn read_to_string_in_background<R>(mut reader: R) -> std::io::Result<String>
+where
+    R: Read + Send + 'static,
+{
+    run_in_background(move || {
+        let mut buffer = String::new();
+        reader.read_to_string(&mut buffer).map(|_| buffer)
+    })
+    .await?
 }
 
 impl ChatArgs {
@@ -585,43 +625,19 @@ impl ChatArgs {
         }
     }
 
-    pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
-        // Handle --list-sessions flag
-        if self.list_sessions {
-            cli::persist::list_conversations(os, &mut std::io::stderr())?;
-            return Ok(ExitCode::SUCCESS);
-        }
-
-        // Handle --delete-session flag
-        if let Some(session_id) = &self.delete_session {
-            match os.database.delete_conversation_by_id(session_id) {
-                Ok(true) => {
-                    eprintln!("✔ Deleted chat session {session_id}");
-                    return Ok(ExitCode::SUCCESS);
-                },
-                Ok(false) => {
-                    eprintln!("Error: Session {session_id} not found");
-                    return Ok(ExitCode::FAILURE);
-                },
-                Err(err) => {
-                    eprintln!("Error: Failed to delete chat session {session_id}: {err}");
-                    return Ok(ExitCode::FAILURE);
-                },
-            }
-        }
-
-        // Handle --list-models flag
-        if self.list_models {
-            return Ok(cli::model::print_model_list(os, self.format).await?);
-        }
-
+    pub(crate) async fn execute(
+        mut self,
+        os: &mut Os,
+        session_ready: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+        cleanup_tracker: McpCleanupTracker,
+    ) -> Result<V1ExecutionOutcome> {
         let mut input = self.input;
 
         if self.no_interactive && input.is_none() {
             if !std::io::stdin().is_terminal() {
-                let mut buffer = String::new();
-                match std::io::stdin().read_to_string(&mut buffer) {
-                    Ok(_) => {
+                match read_to_string_in_background(std::io::stdin()).await {
+                    Ok(buffer) => {
                         if !buffer.trim().is_empty() {
                             input = Some(buffer.trim().to_string());
                         }
@@ -946,7 +962,8 @@ impl ChatArgs {
             .prompt_query_sender(prompt_request_sender.clone())
             .prompt_query_result_receiver(prompt_response_receiver.resubscribe())
             .conversation_id(&conversation_id)
-            .agent(agents.get_active().cloned().unwrap_or_default());
+            .agent(agents.get_active().cloned().unwrap_or_default())
+            .cleanup_tracker(cleanup_tracker);
 
         // Add registry data if available
         if let Some(registry) = &registry_data {
@@ -972,7 +989,10 @@ impl ChatArgs {
 
             if has_failures {
                 eprintln!("Error: One or more MCP servers failed to start (--require-mcp-startup enabled)");
-                return Ok(ExitCode::from(3));
+                return Ok(V1ExecutionOutcome {
+                    action: V1PostExecutionAction::Exit(ExitCode::from(3)),
+                    exit_reason: metric::ExitReason::Crash,
+                });
             }
         }
 
@@ -986,11 +1006,13 @@ impl ChatArgs {
                     match os.database.list_conversations_by_path(&cwd) {
                         Ok(conversations) if !conversations.is_empty() => {
                             let entries = cli::persist::build_session_entries(conversations);
-
-                            let prompt = "Select a chat session to resume:";
-
-                            cli::persist::select_chat_session(&entries, prompt)
-                                .map(|index| entries[index].session_id.clone())
+                            run_in_background(move || {
+                                cli::persist::select_chat_session(&entries, "Select a chat session to resume:")
+                                    .map(|index| entries[index].session_id.clone())
+                            })
+                            .await
+                            .ok()
+                            .flatten()
                         },
                         _ => None, // No sessions or error, start new session
                     }
@@ -1049,8 +1071,10 @@ impl ChatArgs {
             registry_data,
         )
         .await?;
-        session.spawn(os).await?;
-        // Persist before import so Lite resumes the current classic conversation.
+        session_ready.store(true, std::sync::atomic::Ordering::Release);
+        let result = session.spawn_with_shutdown(os, shutdown_rx).await;
+        let exit_reason = session.exit_reason;
+        result?;
         let relaunch = session
             .relaunch_in_lite
             .then(|| session.conversation.conversation_id().to_string());
@@ -1059,12 +1083,16 @@ impl ChatArgs {
         {
             os.database.set_conversation_by_path(&cwd, &session.conversation).ok();
         }
-        // Drop before exec so terminal reset and history save run.
         drop(session);
-        if let Some(resume_id) = relaunch {
-            relaunch_in_lite(&resume_id)?;
-        }
-        Ok(ExitCode::SUCCESS)
+        Ok(V1ExecutionOutcome {
+            action: relaunch.map_or(V1PostExecutionAction::Exit(ExitCode::SUCCESS), |resume_id| {
+                V1PostExecutionAction::ResumeInTuiLite {
+                    engine: default_tui_engine(crate::rollout::rollout().is_enabled(crate::rollout::Feature::Kas)),
+                    resume_id,
+                }
+            }),
+            exit_reason,
+        })
     }
 }
 
@@ -1316,6 +1344,8 @@ pub struct ChatSession {
     pending_prompts: VecDeque<PromptMessage>,
     interactive: bool,
     relaunch_in_lite: bool,
+    exit_reason: metric::ExitReason,
+    chat_telemetry: telemetry_lifecycle::ChatTelemetryLifecycle,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
@@ -1583,6 +1613,8 @@ impl ChatSession {
             pending_prompts: VecDeque::new(),
             interactive,
             relaunch_in_lite: false,
+            exit_reason: metric::ExitReason::Clean,
+            chat_telemetry: telemetry_lifecycle::ChatTelemetryLifecycle::default(),
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
@@ -1602,6 +1634,13 @@ impl ChatSession {
         if existing_conversation {
             session.ensure_fresh_mcp_data(os).await.ok();
         }
+
+        let session_start_kind = if existing_conversation {
+            metric::SessionStartKind::Resumed
+        } else {
+            metric::SessionStartKind::New
+        };
+        session.start_chat_telemetry(os, session_start_kind).await;
 
         Ok(session)
     }
@@ -1670,6 +1709,8 @@ impl ChatSession {
         self.pending_prompts.clear();
         self.pending_additional_context = None;
         self.existing_conversation = false;
+
+        self.transition_chat_telemetry(os, metric::SessionStartKind::New).await;
     }
 
     pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
@@ -1787,8 +1828,10 @@ impl ChatSession {
         // We encountered an error. Handle it.
         error!(?err, "An error occurred processing the current state");
         let (reason, reason_desc) = get_error_reason(&err);
-        self.send_error_telemetry(os, reason, Some(reason_desc), err.status_code())
-            .await;
+        if !matches!(&err, ChatError::Interrupted { .. }) {
+            self.send_error_telemetry(os, reason, Some(reason_desc), err.status_code())
+                .await;
+        }
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
@@ -1801,6 +1844,7 @@ impl ChatSession {
 
         let (context, report, display_err_message) = match err {
             ChatError::Auth(AuthError::NoToken) => {
+                self.exit_reason = metric::ExitReason::AuthFailure;
                 execute!(
                     self.stderr,
                     style::SetAttribute(Attribute::Bold),
@@ -1821,6 +1865,9 @@ impl ChatSession {
                 return Ok(());
             },
             ChatError::Interrupted { tool_uses: ref inter } => {
+                if !self.interactive {
+                    self.exit_reason = metric::ExitReason::UserInterrupt;
+                }
                 execute!(self.stderr, style::Print("\n\n"))?;
 
                 // If there was an interrupt during tool execution, then we add fake
@@ -2607,7 +2654,40 @@ impl ChatSession {
         }
     }
 
+    #[cfg(test)]
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
+        let result = self.run(os).await;
+        self.finish_chat_telemetry(os).await;
+        self.shutdown().await;
+        result
+    }
+
+    async fn spawn_with_shutdown(
+        &mut self,
+        os: &mut Os,
+        mut shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<()> {
+        let (result, interrupted) = tokio::select! {
+            result = self.run(os) => (result, false),
+            _ = &mut shutdown_rx => (Ok(()), true),
+        };
+        if interrupted {
+            self.exit_reason = metric::ExitReason::UserInterrupt;
+        }
+
+        self.finish_chat_telemetry(os).await;
+        self.shutdown().await;
+        result
+    }
+
+    async fn shutdown(&mut self) {
+        crate::util::knowledge_store::KnowledgeStore::cancel_all_operations_static().await;
+        tracing::debug!("Shutting down MCP servers...");
+        self.conversation.tool_manager.shutdown_all_clients().await;
+        tracing::debug!("MCP server shutdown complete");
+    }
+
+    async fn run(&mut self, os: &mut Os) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
 
         if self.interactive {
@@ -2809,14 +2889,6 @@ impl ChatSession {
         while !matches!(self.inner, Some(ChatState::Exit)) {
             self.next(os).await?;
         }
-
-        // Cancel any active knowledge indexing operations on exit
-        crate::util::knowledge_store::KnowledgeStore::cancel_all_operations_static().await;
-
-        // Gracefully shut down all MCP server processes to prevent leaked child processes
-        tracing::debug!("Shutting down MCP servers...");
-        self.conversation.tool_manager.shutdown_all_clients().await;
-        tracing::debug!("MCP server shutdown complete");
 
         Ok(())
     }
@@ -3592,25 +3664,25 @@ impl ChatSession {
                             }
                             "/voice".to_string()
                         } else {
-                            match self.read_user_input(&prompt, false) {
+                            match self.read_user_input(&prompt, false)? {
                                 Some(input) => input,
                                 None => return Ok(ChatState::Exit),
                             }
                         }
                         #[cfg(not(feature = "voice"))]
-                        match self.read_user_input(&prompt, false) {
+                        match self.read_user_input(&prompt, false)? {
                             Some(input) => input,
                             None => return Ok(ChatState::Exit),
                         }
                     },
-                    // Empty input or error -- fall through to normal readline
-                    Ok(Some(_)) | Err(_) => match self.read_user_input(&prompt, false) {
+                    Ok(Some(_)) => match self.read_user_input(&prompt, false)? {
                         Some(input) => input,
                         None => return Ok(ChatState::Exit),
                     },
+                    Err(err) => return Err(err.into()),
                 }
             },
-            None => match self.read_user_input(&prompt, false) {
+            None => match self.read_user_input(&prompt, false)? {
                 Some(input) => input,
                 None => return Ok(ChatState::Exit),
             },
@@ -5232,6 +5304,9 @@ impl ChatSession {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);
+                    if let Tool::Custom(custom_tool) = &tool {
+                        tool_telemetry.mcp_server_name = Some(custom_tool.server_name.clone());
+                    }
 
                     match tool.validate(os).await {
                         Ok(()) => {
@@ -5505,8 +5580,12 @@ impl ChatSession {
     }
 
     /// Helper function to read user input with a prompt and Ctrl+C handling
-    fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
-        let mut ctrl_c = false;
+    fn read_user_input(
+        &mut self,
+        prompt: &str,
+        exit_on_single_ctrl_c: bool,
+    ) -> Result<Option<String>, rustyline::error::ReadlineError> {
+        let mut exit_requested = false;
         loop {
             // Check for pending agent swap (from keyboard shortcuts)
             // Display notification and return the swap command
@@ -5524,12 +5603,12 @@ impl ChatSession {
                     StyledText::reset(),
                     style::Print("\n"),
                 );
-                return Some(format!("/agent swap {agent_name}"));
+                return Ok(Some(format!("/agent swap {agent_name}")));
             }
 
             // Check for pending prompt (from /plan command)
             if let Some(pending_prompt) = self.input_source.agent_swap_state().take_pending_prompt() {
-                return Some(pending_prompt);
+                return Ok(Some(pending_prompt));
             }
 
             // Save cursor so PTT recording can restore this exact position and
@@ -5539,22 +5618,22 @@ impl ChatSession {
                 eprint!("\x1B[s");
             }
 
-            match (self.input_source.read_line(Some(prompt)), ctrl_c) {
-                (Ok(Some(line)), _) => {
+            match (self.input_source.read_line(Some(prompt)), exit_requested) {
+                (Ok(ReadLineOutcome::Line(line)), _) => {
                     if line.trim().is_empty() {
                         continue; // Reprompt if the input is empty
                     }
-                    return Some(line);
+                    return Ok(Some(line));
                 },
-                (Ok(None), false) => {
+                (Ok(_outcome @ (ReadLineOutcome::Interrupted | ReadLineOutcome::Eof)), false) => {
                     // Check if a PTT (push-to-talk) trigger fired -- space hold or Shift+V
                     #[cfg(feature = "voice")]
-                    if self.input_source.take_ptt_triggered() {
+                    if _outcome == ReadLineOutcome::Interrupted && self.input_source.take_ptt_triggered() {
                         self.ptt_voice_mode = true;
-                        return Some("/voice".to_string());
+                        return Ok(Some("/voice".to_string()));
                     }
                     if exit_on_single_ctrl_c {
-                        return None;
+                        return Ok(None);
                     }
                     execute!(
                         self.stderr,
@@ -5564,10 +5643,13 @@ impl ChatSession {
                         ))
                     )
                     .unwrap_or_default();
-                    ctrl_c = true;
+                    exit_requested = true;
                 },
-                (Ok(None), true) => return None, // Exit if Ctrl+C was pressed twice
-                (Err(_), _) => return None,
+                (Ok(ReadLineOutcome::Interrupted | ReadLineOutcome::Eof), true) => {
+                    self.exit_reason = metric::ExitReason::UserInterrupt;
+                    return Ok(None);
+                },
+                (Err(err), _) => return Err(err),
             }
         }
     }
@@ -5773,34 +5855,43 @@ impl ChatSession {
             };
 
             os.telemetry
-                .send_record_user_turn_completion(&os.database, conversation_id, result, RecordUserTurnCompletionArgs {
-                    message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
-                    request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
-                    reason,
-                    reason_desc,
-                    status_code,
-                    time_to_first_chunks_ms: mds
-                        .iter()
-                        .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
-                        .collect::<_>(),
-                    chat_conversation_type: md.as_ref().and_then(|md| md.chat_conversation_type),
-                    model: md.as_ref().and_then(|md| md.model_id.clone()),
-                    assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
-                    total_tokens: positive_token_sum(|md| md.total_tokens),
-                    uncached_input_tokens: positive_token_sum(|md| md.uncached_input_tokens),
-                    output_tokens: positive_token_sum(|md| md.output_tokens),
-                    cache_read_input_tokens: positive_token_sum(|md| md.cache_read_input_tokens),
-                    cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
-                    message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
-                    user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
-                    user_turn_duration_seconds,
-                    follow_up_count: mds
-                        .iter()
-                        .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
-                        .count() as i64,
-                    is_subagent: false,
-                    parent_tool_use_id: None,
-                })
+                .send_record_user_turn_completion(
+                    &os.database,
+                    conversation_id,
+                    result,
+                    self.telemetry_mode(),
+                    RecordUserTurnCompletionArgs {
+                        message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
+                        request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
+                        reason,
+                        reason_desc,
+                        status_code,
+                        time_to_first_chunks_ms: mds
+                            .iter()
+                            .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
+                            .collect::<_>(),
+                        chat_conversation_type: md.as_ref().and_then(|md| md.chat_conversation_type),
+                        model: md.as_ref().and_then(|md| md.model_id.clone()),
+                        assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
+                        total_tokens: positive_token_sum(|md| md.total_tokens),
+                        uncached_input_tokens: positive_token_sum(|md| md.uncached_input_tokens),
+                        output_tokens: positive_token_sum(|md| md.output_tokens),
+                        cache_read_input_tokens: positive_token_sum(|md| md.cache_read_input_tokens),
+                        cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
+                        request_attempts: None,
+                        emit_user_turn_counter: true,
+                        emit_turn_numeric_metrics: None,
+                        message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
+                        user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
+                        user_turn_duration_seconds,
+                        follow_up_count: mds
+                            .iter()
+                            .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
+                            .count() as i64,
+                        is_subagent: false,
+                        parent_tool_use_id: None,
+                    },
+                )
                 .await
                 .ok();
         }
@@ -6114,36 +6205,13 @@ pub fn lite_enabled() -> bool {
     }
 }
 
-/// Re-exec this binary into Lite. `KIRO_UI_MODE=lite` has precedence over
-/// persisted UI settings. Use `--agent-engine` instead of `--tui` so a
-/// persisted `chat.agentEngine=v1` can't reject the flag as conflicting, and
-/// `--resume-id` so the TUI imports the classic conversation.
-fn relaunch_in_lite(resume_id: &str) -> Result<()> {
-    let engine = default_tui_engine(crate::rollout::rollout().is_enabled(crate::rollout::Feature::Kas));
-    let exe = std::env::current_exe()?;
-    let mut cmd = std::process::Command::new(&exe);
-    cmd.args(["chat", "--agent-engine", engine.user_label(), "--resume-id", resume_id])
-        .env("KIRO_UI_MODE", "lite");
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // exec replaces the process on success and never returns.
-        Err(cmd.exec().into())
-    }
-    #[cfg(not(unix))]
-    {
-        let status = cmd.status()?;
-        std::process::exit(status.code().unwrap_or(1));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use super::*;
     use crate::cli::agent::Agent;
+    use crate::cli::chat::test_utils::create_test_session as create_mock_session;
 
     #[test]
     fn default_tui_engine_is_kas_when_rollout_active() {
@@ -6153,6 +6221,31 @@ mod tests {
     #[test]
     fn default_tui_engine_is_v2_when_rollout_inactive() {
         assert_eq!(default_tui_engine(false), AgentEngine::V2);
+    }
+
+    #[tokio::test]
+    async fn prompt_exit_requires_confirmation_for_interrupt_and_eof() {
+        let mut os = Os::new().await.unwrap();
+        let (_, mut session) = create_mock_session(&mut os, vec![], vec![], None).await;
+
+        session.input_source = InputSource::new_mock_outcomes(vec![
+            ReadLineOutcome::Interrupted,
+            ReadLineOutcome::Line("/quit".to_string()),
+        ]);
+        assert_eq!(session.read_user_input("", false).unwrap().as_deref(), Some("/quit"));
+
+        session.input_source =
+            InputSource::new_mock_outcomes(vec![ReadLineOutcome::Eof, ReadLineOutcome::Line("/quit".to_string())]);
+        assert_eq!(session.read_user_input("", false).unwrap().as_deref(), Some("/quit"));
+
+        session.input_source =
+            InputSource::new_mock_outcomes(vec![ReadLineOutcome::Interrupted, ReadLineOutcome::Interrupted]);
+        assert!(session.read_user_input("", false).unwrap().is_none());
+        assert_eq!(session.exit_reason, metric::ExitReason::UserInterrupt);
+
+        session.input_source = InputSource::new_mock_outcomes(vec![ReadLineOutcome::Eof, ReadLineOutcome::Eof]);
+        assert!(session.read_user_input("", false).unwrap().is_none());
+        assert_eq!(session.exit_reason, metric::ExitReason::UserInterrupt);
     }
 
     #[test]

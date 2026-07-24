@@ -42,6 +42,7 @@ use eyre::{
     bail,
 };
 use feed::Feed;
+use kiro_telemetry::metric::Engine;
 use serde::Serialize;
 use tracing::{
     Level,
@@ -242,17 +243,10 @@ impl RootSubcommand {
             }
         }
 
-        // Daily heartbeat check
-        if os.database.record_heartbeat_if_needed() {
-            os.telemetry.send_daily_heartbeat().ok();
-        }
-
-        // Send executed telemetry.
-        if self.valid_for_telemetry() {
-            os.telemetry
-                .send_cli_subcommand_executed(&os.database, &self)
-                .await
-                .ok();
+        if !matches!(self, Self::Chat(_) | Self::Acp { .. }) {
+            let telemetry_name = self.valid_for_telemetry().then(|| self.telemetry_name());
+            crate::launch::emit_cli_invocation_telemetry(&os.telemetry, &os.database, telemetry_name, Engine::Other)
+                .await;
         }
 
         // Auto-update: start background check (non-blocking, doesn't delay startup).
@@ -311,63 +305,7 @@ impl RootSubcommand {
                 Self::Settings(settings_args) => settings_args.execute(os).await,
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog).await,
-                Self::Chat(mut args) => {
-                    // Dark-ship gate: reject gated-off `--cloud` / `--repo` as
-                    // unknown args BEFORE any other handling or side effects, so
-                    // they stay indistinguishable from a typo on every path --
-                    // including the `command` / `--list-models` / session-flag
-                    // early-returns and `cleanup_old_data` below
-                    // (see ChatArgs::remote_sandbox_gate_error).
-                    if let Some(err) = args.remote_sandbox_gate_error(
-                        crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
-                    ) {
-                        err.exit();
-                    }
-
-                    // Hidden internal subcommands (`chat _ export-session`,
-                    // `chat _ import-session`). Bypass auth/login, telemetry,
-                    // and TUI launch; emit a single JSON line and exit.
-                    if let Some(command) = args.command.take() {
-                        return command.execute().await;
-                    }
-
-                    // Handle --list-models before TUI launch
-                    if args.list_models {
-                        return crate::cli::chat::cli::model::print_model_list(os, args.format)
-                            .await
-                            .map_err(|e| e.into());
-                    }
-
-                    // Handle headless session commands before TUI launch
-                    if let Some(result) = handle_session_flags(&args, os).await {
-                        return result;
-                    }
-
-                    // Run cleanup before chat starts; show a message if it takes >3 seconds
-                    let msg_handle = tokio::spawn(async {
-                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                        eprintln!("Cleaning up old conversations...");
-                    });
-                    if let Err(e) = crate::cleanup::cleanup_old_data(&os.env, &os.fs, &os.database).await {
-                        tracing::error!("Cleanup failed: {}", e);
-                    }
-                    msg_handle.abort();
-
-                    let tui_available =
-                        crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                    let engine = args.resolve_agent_engine(os)?;
-                    match engine {
-                        chat::AgentEngine::V1 => args.execute(os).await,
-                        chat::AgentEngine::V2 | chat::AgentEngine::Kas => {
-                            if !args.no_interactive && !tui_available {
-                                tracing::error!("TUI assets not available, falling back to legacy UI");
-                                args.execute(os).await
-                            } else {
-                                launch_acp_session(os, &mut args, engine).await
-                            }
-                        },
-                    }
-                },
+                Self::Chat(args) => execute_chat(args, os).await,
                 Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
                 Self::Update(args) => args.execute(os).await,
                 Self::Acp {
@@ -496,74 +434,7 @@ impl RootSubcommand {
             Self::Settings(settings_args) => settings_args.execute(os).await,
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog).await,
-            Self::Chat(mut args) => {
-                // Dark-ship gate: reject gated-off `--cloud` / `--repo` as
-                // unknown args BEFORE any other handling or side effects, so
-                // they stay indistinguishable from a typo on every path --
-                // including the `command` / `--list-models` / session-flag
-                // early-returns and `cleanup_old_data` below
-                // (see ChatArgs::remote_sandbox_gate_error).
-                if let Some(err) = args.remote_sandbox_gate_error(
-                    crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
-                ) {
-                    err.exit();
-                }
-
-                // Hidden internal subcommands (`chat _ export-session`,
-                // `chat _ import-session`). Bypass auth/login, telemetry,
-                // and TUI launch; emit a single JSON line and exit.
-                if let Some(command) = args.command.take() {
-                    return command.execute().await;
-                }
-
-                // Handle --list-models before TUI launch
-                if args.list_models {
-                    return crate::cli::chat::cli::model::print_model_list(os, args.format)
-                        .await
-                        .map_err(|e| e.into());
-                }
-
-                // Handle headless session commands before TUI launch
-                if let Some(result) = handle_session_flags(&args, os).await {
-                    return result;
-                }
-
-                if let Err(e) = os.client.resolve_profile_if_missing(&mut os.database).await {
-                    tracing::warn!("Failed to resolve profile: {e}");
-                }
-
-                // Run cleanup before chat starts; show a message if it takes >3 seconds
-                let msg_handle = tokio::spawn(async {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    eprintln!("Cleaning up old conversations...");
-                });
-                if let Err(e) = crate::cleanup::cleanup_old_data(&os.env, &os.fs, &os.database).await {
-                    tracing::error!("Cleanup failed: {}", e);
-                }
-                msg_handle.abort();
-
-                let tui_available =
-                    crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
-                let engine = args.resolve_agent_engine(os)?;
-                let is_tui_supported = crate::util::system_info::is_tui_supported();
-                tracing::debug!(?engine, is_tui_supported, tui_available, "launch decision");
-                match engine {
-                    chat::AgentEngine::V1 => args.execute(os).await,
-                    chat::AgentEngine::V2 | chat::AgentEngine::Kas => {
-                        if !args.no_interactive && (!is_tui_supported || !tui_available) {
-                            if !tui_available {
-                                tracing::error!("TUI assets not available, falling back to legacy UI");
-                            }
-                            if !is_tui_supported {
-                                eprintln!("The TUI is currently not supported for the current platform");
-                            }
-                            args.execute(os).await
-                        } else {
-                            launch_acp_session(os, &mut args, engine).await
-                        }
-                    },
-                }
-            },
+            Self::Chat(args) => execute_chat(args, os).await,
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
             Self::Update(args) => args.execute(os).await,
             Self::Acp {
@@ -674,11 +545,107 @@ impl RootSubcommand {
     }
 }
 
+fn chat_telemetry_name() -> String {
+    if std::env::args().any(|arg| arg == "--list") {
+        "chat:list".to_string()
+    } else {
+        "chat".to_string()
+    }
+}
+
+async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
+    if let Some(err) =
+        args.remote_sandbox_gate_error(crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox))
+    {
+        err.exit();
+    }
+
+    if let Some(command) = args.command.take() {
+        return command.execute().await;
+    }
+
+    let telemetry_name = chat_telemetry_name();
+    if args.list_models {
+        crate::launch::emit_cli_invocation_telemetry(&os.telemetry, &os.database, Some(telemetry_name), Engine::Other)
+            .await;
+        return crate::cli::chat::cli::model::print_model_list(os, args.format)
+            .await
+            .map_err(Into::into);
+    }
+
+    if let Some(result) = handle_session_flags(&args, os).await {
+        let engine = match args.session_source {
+            Some(chat::SessionSourceArg::V1) => Engine::V1,
+            Some(chat::SessionSourceArg::V2) => Engine::V2,
+            Some(chat::SessionSourceArg::V3) => Engine::V3,
+            None => Engine::Other,
+        };
+        crate::launch::emit_cli_invocation_telemetry(&os.telemetry, &os.database, Some(telemetry_name), engine).await;
+        return result;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    if let Err(err) = os.client.resolve_profile_if_missing(&mut os.database).await {
+        tracing::warn!("Failed to resolve profile: {err}");
+    }
+
+    let cleanup_notice = tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        eprintln!("Cleaning up old conversations...");
+    });
+    if let Err(err) = crate::cleanup::cleanup_old_data(&os.env, &os.fs, &os.database).await {
+        tracing::error!("Cleanup failed: {err}");
+    }
+    cleanup_notice.abort();
+
+    let tui_available = crate::embedded_tui::are_assets_embedded(os) || std::env::var(KIRO_TEST_TUI_JS_PATH).is_ok();
+    let engine = match args.resolve_agent_engine(os) {
+        Ok(engine) => engine,
+        Err(err) => {
+            crate::launch::emit_cli_invocation_telemetry(
+                &os.telemetry,
+                &os.database,
+                Some(telemetry_name),
+                Engine::Other,
+            )
+            .await;
+            return Err(err);
+        },
+    };
+    #[cfg(target_os = "windows")]
+    let is_tui_supported = true;
+    #[cfg(not(target_os = "windows"))]
+    let is_tui_supported = crate::util::system_info::is_tui_supported();
+
+    tracing::debug!(?engine, is_tui_supported, tui_available, "launch decision");
+    let fallback_to_v1 = !args.no_interactive && (!is_tui_supported || !tui_available);
+    match engine {
+        chat::AgentEngine::V1 => crate::launch::launch_v1(args, os, telemetry_name).await,
+        chat::AgentEngine::V2 | chat::AgentEngine::Kas if fallback_to_v1 => {
+            if !tui_available {
+                tracing::error!("TUI assets not available, falling back to legacy UI");
+            }
+            if !is_tui_supported {
+                eprintln!("The TUI is currently not supported for the current platform");
+            }
+            crate::launch::launch_v1(args, os, telemetry_name).await
+        },
+        chat::AgentEngine::V2 | chat::AgentEngine::Kas => {
+            launch_acp_session(os, &mut args, engine, telemetry_name).await
+        },
+    }
+}
+
 /// Build [`LaunchOptions`] and launch the ACP session.
 /// When `--no-interactive` is set, resolves the prompt input from CLI args or
 /// stdin and selects the non-interactive variant; otherwise runs the
 /// interactive TUI.
-async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::AgentEngine) -> Result<ExitCode> {
+async fn launch_acp_session(
+    os: &Os,
+    args: &mut ChatArgs,
+    agent_engine: chat::AgentEngine,
+    telemetry_name: String,
+) -> Result<ExitCode> {
     let mode = args.mode;
     // Render headless when the session is non-interactive: explicit `--no-interactive`,
     // or stdin that isn't interactive. Avoids rendering the TUI on a pipe.
@@ -705,7 +672,7 @@ async fn launch_acp_session(os: &Os, args: &mut ChatArgs, agent_engine: chat::Ag
     } else {
         crate::launch::LaunchOptions::interactive(agent_engine, mode)
     };
-    crate::launch::launch(options, os).await
+    crate::launch::launch(options, os, telemetry_name).await
 }
 
 /// Names of `acp` flags that are inert on the v3 engine, in declaration order.
@@ -1021,8 +988,8 @@ impl RootSubcommand {
     /// `--resume-picker`) is recorded as `chat:list` so we can track adoption
     /// of the alias separately from `--resume-picker`.
     pub fn telemetry_name(&self) -> String {
-        if matches!(self, Self::Chat(_)) && std::env::args().any(|a| a == "--list") {
-            return "chat:list".to_string();
+        if matches!(self, Self::Chat(_)) {
+            return chat_telemetry_name();
         }
         self.to_string()
     }

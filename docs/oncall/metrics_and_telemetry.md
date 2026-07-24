@@ -28,7 +28,9 @@ See the [Client Telemetry runbook](https://w.amazon.com/bin/view/CodeWhisperer/O
 
 ## Telemetry Definitions
 
-All telemetry events have their schema defined in: [telemetry_definitions.json](https://github.com/aws/amazon-q-developer-cli/blob/main/crates/chat-cli/telemetry_definitions.json)
+Legacy Toolkit telemetry events are defined in the shared
+[telemetry_definitions.json](../../crates/kiro-telemetry-legacy/telemetry_definitions.json) catalog.
+OTel metrics and logs are defined in `crates/kiro-telemetry-schema/schema/`.
 
 ### Main Telemetry Events
 

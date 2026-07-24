@@ -182,10 +182,6 @@ impl ProfileResolver {
         self.resolved.lock().unwrap().is_some()
     }
 
-    fn set(&self, profile: AuthProfile) {
-        *self.resolved.lock().unwrap() = Some(profile);
-    }
-
     /// Returns the profile ARN, calling `list_profiles` lazily if not yet resolved.
     /// The result is cached so `list_profiles` is called at most once per session.
     async fn require_arn<F, Fut>(&self, list_profiles: F) -> Result<String, ApiClientError>
@@ -337,7 +333,7 @@ impl ApiClient {
                 telemetry_client,
                 streaming_client: None,
                 mock_client: None,
-                resolve_profile: ProfileResolver::new(None),
+                resolve_profile: ProfileResolver::new(database.get_auth_profile().ok().flatten()),
                 model_cache: Arc::new(RwLock::new(None)),
                 auth_mode: auth_mode.clone(),
                 endpoint: endpoint.clone(),
@@ -785,30 +781,19 @@ impl ApiClient {
         self.mock_client.as_ref().map(|c| c.lock().len())
     }
 
-    /// Method to be used to reconstruct the client in the Os struct after auth changes.
-    /// In the case that a user logs in with a non-commercial account the client associated
-    /// with the Os struct will need to be reconstructed (as it is default initialized when
-    /// there are no valid credentials in the secret store) to allow for subsequent calls from said
-    /// client to succeed.
     pub async fn refresh_auth_profile(
         &mut self,
         env: &Env,
         fs: &Fs,
         database: &mut Database,
     ) -> Result<(), ApiClientError> {
-        match database.get_auth_profile() {
-            Ok(Some(profile)) => {
-                tracing::debug!("Refreshed auth profile: {:?}", profile);
-                let endpoint = Endpoint::configured_value(database);
-                let new_client = Self::new(env, fs, database, Some(endpoint)).await?;
-                new_client.resolve_profile.set(profile);
-                *self = new_client;
-            },
-            Ok(None) => {},
-            Err(err) => {
-                error!("Failed to refresh auth profile: {err}");
-            },
+        let mock_client = self.mock_client.clone();
+        let endpoint = Endpoint::configured_value(database);
+        let mut rebuilt = Self::new(env, fs, database, Some(endpoint)).await?;
+        if mock_client.is_some() {
+            rebuilt.mock_client = mock_client;
         }
+        *self = rebuilt;
         Ok(())
     }
 
@@ -1224,6 +1209,34 @@ mod tests {
         assert_eq!(client.endpoint.url(), "https://custom.example.com");
         assert_eq!(client.region(), "eu-central-1");
         assert_eq!(client.get_profile(), Some(profile));
+    }
+
+    #[tokio::test]
+    async fn refresh_auth_profile_rebuilds_auth_mode_and_preserves_mock_responses() {
+        let env = Env::new();
+        let fs = Fs::new();
+        let mut database = crate::database::Database::new_default().await.unwrap();
+        let mut client = ApiClient::new(&env, &fs, &mut database, None).await.unwrap();
+        client.mock_client = Some(Arc::new(Mutex::new(vec![Vec::new()].into_iter())));
+        assert!(matches!(client.auth_mode, AuthMode::Normal));
+
+        ExternalIdpToken {
+            access_token: crate::database::Secret("access-token".to_string()),
+            expires_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            refresh_token: None,
+            issuer_url: "https://issuer.example.com".to_string(),
+            token_endpoint: "https://issuer.example.com/token".to_string(),
+            client_id: "client-id".to_string(),
+            scopes: "openid".to_string(),
+        }
+        .save(&database)
+        .await
+        .unwrap();
+
+        client.refresh_auth_profile(&env, &fs, &mut database).await.unwrap();
+
+        assert!(matches!(client.auth_mode, AuthMode::ExternalIdp));
+        assert_eq!(client.remaining_mock_responses(), Some(1));
     }
 
     #[tokio::test]

@@ -4,19 +4,19 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, os_type, install_source, client_application]
+    attributes: [version_full, os_type, install_source, client_application, engine]
   - name: kiro_cli_user_logged_in_total
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [client_application, credential_kind, version_full]
+    attributes: [client_application, credential_kind, version_full, install_method, engine]
   - name: kiro_cli_chat_session_started_total
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, mode, client_application, engine]
+    attributes: [version_full, mode, client_application, session_start_kind, model, engine]
   - name: kiro_cli_cloud_session_total
     kind: counter
     unit: "1"
@@ -115,19 +115,31 @@ metrics:
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [client_application, install_method]
+    attributes: [client_application, install_method, credential_kind, engine]
   - name: kiro_cli_slash_command_invoked_total
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [command, version_full]
+    attributes: [command, version_full, subcommand, result, engine]
   - name: kiro_cli_feature_used_total
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [feature, version_full]
+    attributes: [feature, version_full, subcommand, result, engine]
+  - name: kiro_cli_tangent_duration_seconds
+    kind: histogram
+    unit: s
+    priority: P1
+    temporality: delta
+    attributes: [result, engine]
+  - name: kiro_cli_tangent_entries_removed
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [result, engine]
   - name: feature_unique_users_weekly
     kind: observable_gauge
     unit: users
@@ -139,7 +151,7 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [tool_origin, builtin_tool_name, mcp_server_name, outcome, engine]
+    attributes: [tool_origin, builtin_tool_name, mcp_server_name, outcome, model, is_accepted, is_trusted, is_valid, is_success, engine]
   - name: tool_using_sessions_pct
     kind: observable_gauge
     unit: percent
@@ -150,7 +162,7 @@ metrics:
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [mcp_server_class]
+    attributes: [mcp_server_class, engine]
   - name: kiro_cli_model_invocations_total
     kind: counter
     unit: "1"
@@ -173,25 +185,25 @@ metrics:
     unit: s
     priority: P0
     temporality: delta
-    attributes: [model, prompt_size_bucket, tools_enabled]
+    attributes: [model, prompt_size_bucket, tools_enabled, engine]
   - name: kiro_cli.bedrock.stream.duration
     kind: histogram
     unit: s
     priority: P0
     temporality: delta
-    attributes: [model, completion_reason]
+    attributes: [model, completion_reason, engine]
   - name: kiro_cli.bedrock.request.duration
     kind: histogram
     unit: s
     priority: P0
     temporality: delta
-    attributes: [model, operation, outcome]
+    attributes: [model, operation, outcome, engine]
   - name: kiro_cli.bedrock.stream.inter_token_latency
     kind: histogram
     unit: s
     priority: P1
     temporality: delta
-    attributes: [model]
+    attributes: [model, engine]
   - name: kiro_cli.startup.duration
     kind: histogram
     unit: s
@@ -215,37 +227,91 @@ metrics:
     unit: ms
     priority: P1
     temporality: delta
-    attributes: [model, client_application, is_subagent]
+    attributes: [model, client_application, is_subagent, engine]
   - name: kiro_cli.session.completed
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [exit_reason, agent_kind]
+    attributes: [exit_reason, agent_kind, engine]
   - name: kiro_cli.crash.total
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
     attributes: [crash_kind, os_type, host_arch]
-  - name: kiro_cli.startup.failures
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [failure_stage, os_type]
   - name: kiro_cli.bedrock.request.errors
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [model, operation, error_kind, status_class, failure_reason_code]
+    attributes: [model, operation, error_kind, status_class, failure_reason_code, engine]
   - name: kiro_cli.bedrock.empty_response.retries
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [model, outcome]
+    attributes: [model, outcome, engine]
+  - name: kiro_cli_conversation_completed_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [model, engine]
+  - name: kiro_cli_chat_messages_total
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [model, result, message_kind, engine]
+  - name: kiro_cli_chat_content_length
+    kind: histogram
+    unit: By
+    priority: P1
+    temporality: delta
+    attributes: [content_role, model, engine]
+  - name: kiro_cli_chat_message_tags_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [message_tag, engine]
+  - name: kiro_cli_user_turn_prompt_length
+    kind: histogram
+    unit: By
+    priority: P1
+    temporality: delta
+    attributes: [model, engine]
+  - name: kiro_cli_user_turn_response_length
+    kind: histogram
+    unit: By
+    priority: P1
+    temporality: delta
+    attributes: [model, engine]
+  - name: kiro_cli_user_turn_follow_up_count
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [engine]
+  - name: kiro_cli_user_turn_request_attempts
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [engine]
+  - name: kiro_cli_user_turn_time_to_first_chunk_ms
+    kind: histogram
+    unit: ms
+    priority: P1
+    temporality: delta
+    attributes: [model, engine]
+  - name: kiro_cli_request_error_context_length
+    kind: histogram
+    unit: By
+    priority: P1
+    temporality: delta
+    attributes: [model, error_kind, engine]
   - name: kiro_cli.retry.attempts
     kind: counter
     unit: "1"
@@ -321,7 +387,7 @@ metrics:
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [model, chat_conversation_type, client_application]
+    attributes: [model, chat_conversation_type, client_application, engine]
   - name: kiro_cli_context_usage_percentage
     kind: observable_gauge
     unit: percent
@@ -355,6 +421,18 @@ metrics:
     priority: P1
     temporality: delta
     attributes: [tool_origin, mcp_server_name, is_success, engine]
+  - name: kiro_cli_tool_token_size
+    kind: histogram
+    unit: tokens
+    priority: P1
+    temporality: delta
+    attributes: [content_role, tool_origin, engine]
+  - name: kiro_cli_tool_duration
+    kind: histogram
+    unit: s
+    priority: P1
+    temporality: delta
+    attributes: [duration_stage, tool_origin, engine]
   - name: kiro_cli_mcp_server_init
     kind: log_event
     unit: event
@@ -365,18 +443,30 @@ metrics:
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [mcp_server_class, outcome]
+    attributes: [mcp_server_class, outcome, engine]
+  - name: kiro_cli_mcp_tool_count
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [mcp_server_class, count_kind, engine]
   - name: kiro_cli_subagent_invoked
     kind: log_event
     unit: event
     priority: P1
     attributes: [subagent_name, depth_bucket, model]
+  - name: kiro_cli_subagent_tool_uses_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [count_kind, engine]
   - name: kiro_cli_user_turns
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [model, client_application, result, is_subagent, mode, engine]
+    attributes: [model, client_application, result, is_subagent, mode, message_kind, engine]
   - name: kiro_cli_session_outcome_total
     kind: counter
     unit: "1"
@@ -400,6 +490,66 @@ metrics:
     unit: event
     priority: P0
     attributes: [conversation_id, session_id, completion_reason]
+  - name: kiro_cli_agent_contribution_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [engine]
+  - name: kiro_cli_agent_contribution_lines_total
+    kind: counter
+    unit: lines
+    priority: P1
+    temporality: delta
+    attributes: [contribution_source, contribution_change, engine]
+  - name: kiro_cli_agent_config_init_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [result, migration_executed, engine]
+  - name: kiro_cli_agent_config_count
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [count_kind, engine]
+  - name: kiro_cli_profile_selection_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [profile_source, profile_region, sso_region, result, engine]
+  - name: kiro_cli_profile_state_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [profile_source, profile_region, sso_region, result, engine]
+  - name: kiro_cli_profile_count
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [profile_source, engine]
+  - name: kiro_cli_voice_input_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [voice_backend, voice_input_method, voice_model_size, auto_submit, result, engine]
+  - name: kiro_cli_voice_duration
+    kind: histogram
+    unit: ms
+    priority: P1
+    temporality: delta
+    attributes: [duration_stage, voice_backend, engine]
+  - name: kiro_cli_voice_text_length
+    kind: histogram
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [voice_backend, engine]
   - name: kiro_cli_telemetry_opt_out_respected_total
     kind: counter
     unit: "1"
@@ -463,7 +613,7 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [auth_provider, error_code, operation, partition]
+    attributes: [auth_provider, auth_flow, error_code, operation, partition, result, engine]
   - name: kiro_cli_auth_unexpected_identity_total
     kind: counter
     unit: "1"
@@ -561,7 +711,7 @@ metrics:
     unit: By
     priority: P1
     temporality: cumulative
-    attributes: [version_full, engine, process_role]
+    attributes: [version_full, agent_kind, engine, process_role]
   - name: kiro_cli.process.memory.heap_used
     kind: observable_gauge
     unit: By

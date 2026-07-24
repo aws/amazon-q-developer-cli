@@ -113,6 +113,8 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     records.push(tool_using_sessions_pct(72.0));
     records.push(mcp_server_connected_total(McpServerClass::BuiltinFs));
     records.push(model_invocation(Some("claude-sonnet-4")));
+    records.push(tangent_duration_seconds(2.0, ResultKind::Success, Engine::V1));
+    records.push(tangent_entries_removed(3.0, ResultKind::Success, Engine::V1));
 
     // §5.3 Performance
     records.push(bedrock_stream_ttft(
@@ -152,7 +154,6 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     // §5.4 Reliability
     records.push(cli_session_completed(ExitReason::Clean, AgentKind::Kas));
     records.push(crash_total(CrashKind::Panic, OsType::Macos, HostArch::Aarch64));
-    records.push(startup_failure(FailureStage::Config, OsType::Macos));
     records.push(bedrock_request_error(
         Some("claude-sonnet-4"),
         Operation::Stream,
@@ -210,6 +211,24 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
             .expect("positive duration"),
     );
     records.push(mcp_server_init_total(McpServerClass::BuiltinFs, Outcome::Success));
+    records.push(tool_token_size(
+        64.0,
+        ContentRole::Input,
+        ToolOrigin::Builtin,
+        Engine::V1,
+    ));
+    records.push(tool_duration(
+        42.0,
+        DurationStage::ToolCall,
+        ToolOrigin::Builtin,
+        Engine::V1,
+    ));
+    records.push(mcp_tool_count(
+        3.0,
+        McpServerClass::BuiltinFs,
+        CountKind::Loaded,
+        Engine::V1,
+    ));
 
     // §5.8 Quality / outcomes
     records.push(user_turns(
@@ -240,6 +259,75 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         RepoCountBucket::Two,
         Engine::V3,
     ));
+    records.push(conversation_completed_total(Some("claude-sonnet-4"), Engine::V1));
+    records.push(chat_messages_total(
+        Some("claude-sonnet-4"),
+        ResultKind::Success,
+        MessageKind::NotToolUse,
+        Engine::V1,
+    ));
+    records.push(chat_content_length(
+        512.0,
+        ContentRole::Assistant,
+        Some("claude-sonnet-4"),
+        Engine::V1,
+    ));
+    records.push(chat_message_tag(MessageTag::Compact, Engine::V1));
+    records.push(user_turn_prompt_length(128.0, Some("claude-sonnet-4"), Engine::V1));
+    records.push(user_turn_response_length(512.0, Some("claude-sonnet-4"), Engine::V1));
+    records.push(user_turn_follow_up_count(1.0, Engine::V1));
+    records.push(user_turn_request_attempts(2.0, Engine::V1));
+    records.push(user_turn_time_to_first_chunk_ms(
+        250.0,
+        Some("claude-sonnet-4"),
+        Engine::V1,
+    ));
+    records.push(request_error_context_length(
+        4_096.0,
+        Some("claude-sonnet-4"),
+        ErrorKind::ServerError,
+        Engine::V1,
+    ));
+    records.push(subagent_tool_uses_total(2, CountKind::Builtin, Engine::V1));
+    records.push(agent_contribution_total(Engine::V1));
+    records.push(agent_contribution_lines_total(
+        12,
+        ContributionSource::Agent,
+        ContributionChange::Added,
+        Engine::V1,
+    ));
+    records.push(agent_config_init_total(ResultKind::Success, true, Engine::V1));
+    records.push(agent_config_count(2.0, CountKind::AgentsLoaded, Engine::V1));
+    records.push(profile_selection_total(
+        ProfileSource::User,
+        RegionClass::Commercial,
+        RegionClass::Commercial,
+        ResultKind::Success,
+        Engine::V1,
+    ));
+    records.push(profile_state_total(
+        ProfileSource::User,
+        RegionClass::Commercial,
+        RegionClass::Commercial,
+        ResultKind::Success,
+        Engine::V1,
+    ));
+    records.push(profile_count(2.0, ProfileSource::User, Engine::V1));
+    records.push(voice_input_total(
+        VoiceBackend::LocalWhisper,
+        VoiceInputMethod::SlashCommand,
+        VoiceModelSize::Base,
+        Some(false),
+        ResultKind::Success,
+        Engine::V1,
+    ));
+    records.push(voice_duration(
+        1000.0,
+        DurationStage::Recording,
+        VoiceBackend::LocalWhisper,
+        Engine::V1,
+    ));
+    records.push(voice_text_length(80.0, VoiceBackend::LocalWhisper, Engine::V1));
 
     // §5.5b Health (process/perf — TUI-promoted)
     records.push(process_memory_peak_rss(
@@ -492,6 +580,24 @@ pub fn expect_otlp_metric(requests: &[CapturedOtlpRequest], expected: &MetricRec
         expected.attributes,
         otlp_metric_names(requests)
     );
+}
+
+#[track_caller]
+pub fn expect_otlp_metric_attribute(requests: &[CapturedOtlpRequest], metric_name: &str, key: &str, expected: &str) {
+    for request in requests.iter().filter(|request| request.is_metrics()) {
+        let metrics = decode_metrics_request(request);
+        if metrics
+            .resource_metrics
+            .iter()
+            .flat_map(|resource_metrics| &resource_metrics.scope_metrics)
+            .flat_map(|scope_metrics| &scope_metrics.metrics)
+            .any(|metric| metric.name == metric_name && metric_data_has_attribute(metric.data.as_ref(), key, expected))
+        {
+            return;
+        }
+    }
+
+    panic!("missing OTLP metric attribute {metric_name}{{{key}={expected}}}");
 }
 
 #[track_caller]
@@ -895,6 +1001,30 @@ fn decode_logs_request(
 
 fn metric_matches(metric: &opentelemetry_proto::tonic::metrics::v1::Metric, expected: &MetricRecord) -> bool {
     metric.name == expected.name && metric_data_matches(metric.data.as_ref(), expected)
+}
+
+fn metric_data_has_attribute(
+    data: Option<&opentelemetry_proto::tonic::metrics::v1::metric::Data>,
+    key: &str,
+    expected: &str,
+) -> bool {
+    use opentelemetry_proto::tonic::metrics::v1::metric::Data;
+
+    match data {
+        Some(Data::Sum(sum)) => sum
+            .data_points
+            .iter()
+            .any(|point| proto_attribute_value(&point.attributes, key) == Some(expected)),
+        Some(Data::Gauge(gauge)) => gauge
+            .data_points
+            .iter()
+            .any(|point| proto_attribute_value(&point.attributes, key) == Some(expected)),
+        Some(Data::Histogram(histogram)) => histogram
+            .data_points
+            .iter()
+            .any(|point| proto_attribute_value(&point.attributes, key) == Some(expected)),
+        _ => false,
+    }
 }
 
 fn metric_data_matches(

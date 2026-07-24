@@ -558,12 +558,11 @@
             <li>GovCloud (<code>US_GOV_EAST</code> / <code>US_GOV_WEST</code>) hard-skips Channel A at <span class="fileref">mod.rs:213-234</span> — partition-aware, but unproven by metric.</li>
           </ul>
 
-          <h3>Schema, three copies, drifting</h3>
+          <h3>Legacy schema adapter, consolidated</h3>
           <table>
             <thead><tr><th>File</th><th>Lines</th><th>Notes</th></tr></thead>
             <tbody>
-              <tr><td><code>chat-cli/telemetry_definitions.json</code></td><td>666</td><td>V1; 20 EventType variants</td></tr>
-              <tr><td><code>chat-cli-v2/telemetry_definitions.json</code></td><td>908</td><td>V2; 23 variants (+ <code>ProcessHealthMetric</code>, <code>ModeChanged</code>, <code>GoalCompleted</code>)</td></tr>
+              <tr><td><code>kiro-telemetry-legacy/telemetry_definitions.json</code></td><td>983</td><td>Shared Toolkit datum catalog and codegen adapter for V1 and V2</td></tr>
               <tr><td><code>aws-toolkit-telemetry-definitions/def.json</code></td><td>543</td><td>build-time codegen; consumed by SDK + unidentified externals</td></tr>
             </tbody>
           </table>
@@ -1220,7 +1219,6 @@ const METRICS = [
   // 5.4 Reliability
   {n:"chat_cli.session.completed", k:"counter", u:"1", c:"reliability", p:"P0", d:["exit_reason","agent_kind"], r:"Pairs with started; success ratio", a:"clean/started <0.85 over 15m on any version_minor"},
   {n:"chat_cli.crash.total", k:"counter", u:"1", c:"reliability", p:"P0", d:["crash_kind","os_type","host_arch"], r:"panic_location is NOT a metric dim — separate log", a:"New panic rate >0.1% sessions on a version"},
-  {n:"chat_cli.startup.failures", k:"counter", u:"1", c:"reliability", p:"P0", d:["failure_stage","os_type"], r:"Pre-steady-state failures", a:"startup_failures/started >0.5% over 5m"},
   {n:"chat_cli.bedrock.request.errors", k:"counter", u:"1", c:"reliability", p:"P0", d:["model_class","operation","error_kind","status_class"], r:"Closed-enum error_kind; raw codes → log", a:"5xx-rate >5% over 5m"},
   {n:"chat_cli.bedrock.empty_response.retries", k:"counter", u:"1", c:"reliability", p:"P0", d:["model_class","outcome"], r:"Tracks the empty-response retry; recovered vs still_empty", a:"still_empty >0.5% of turns"},
   {n:"chat_cli.retry.attempts", k:"counter", u:"1", c:"reliability", p:"P0", d:["upstream","retry_reason","attempt_number_bucket"], r:"SDK retry classifier", a:"retry/requests >15% over 5m"},

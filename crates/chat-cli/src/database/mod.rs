@@ -384,6 +384,11 @@ impl Database {
         self.set_json_entry(Table::State, TELEMETRY_USER_ID_KEY, user_id)
     }
 
+    /// Clear the cached user ID attached to telemetry records.
+    pub fn clear_telemetry_user_id(&self) -> Result<(), DatabaseError> {
+        self.delete_entry(Table::State, TELEMETRY_USER_ID_KEY)
+    }
+
     /// Get the start URL used for IdC login.
     pub fn get_start_url(&self) -> Result<Option<String>, DatabaseError> {
         self.get_json_entry::<String>(Table::State, START_URL_KEY)
@@ -1064,6 +1069,17 @@ mod tests {
         }
         // Exactly one should succeed
         assert_eq!(true_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_clear_telemetry_user_id_removes_cached_identity() {
+        let db = Database::new_default().await.unwrap();
+
+        db.set_telemetry_user_id("user-id").unwrap();
+        assert_eq!(db.get_telemetry_user_id().unwrap().as_deref(), Some("user-id"));
+
+        db.clear_telemetry_user_id().unwrap();
+        assert_eq!(db.get_telemetry_user_id().unwrap(), None);
     }
 
     #[tokio::test]
