@@ -19,6 +19,7 @@ export const Settings = {
   CHAT_ANIMATIONS: 'chat.allowAnimations',
   CHAT_ICONS: 'chat.allowIcons',
   CHAT_SHOW_THINKING: 'chat.showThinking',
+  CHAT_SHOW_THINKING_TIPS: 'chat.showThinkingTips',
   CHAT_HISTORY_MODE: 'chat.historyMode',
   // Independent verbosity records stored in the existing global cli.json.
   CHAT_VERBOSITY_LITE: 'chat.verbosity.lite',

@@ -78,6 +78,13 @@ const ALL_ITEMS: ToggleItem[] = [
     defaultValue: true,
   },
   {
+    key: Settings.CHAT_SHOW_THINKING_TIPS,
+    label: 'Thinking tips',
+    description:
+      'Show a feature tip below the thinking indicator while waiting',
+    defaultValue: true,
+  },
+  {
     key: Settings.CHAT_TERMINAL_TITLE,
     label: 'Terminal title',
     description:

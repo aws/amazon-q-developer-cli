@@ -11,6 +11,8 @@ import { useAppStore } from '../../../stores/app-store.js';
 import { useThinkingMode, useGlyphs } from '../../../hooks/useGlyphs.js';
 import { getComfortMessage } from './comfort-messages.js';
 import { useThinkingTip } from './useThinkingTip.js';
+import { Settings } from '../../../constants/settings.js';
+import { readBoolSetting } from '../../../utils/cli-settings.js';
 
 interface ThinkingMessageProps {
   barColor?: string;
@@ -51,14 +53,20 @@ export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
   const mountedAt = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
 
-  // Tip only activates when showTip is true. When false, no timer is scheduled.
+  // Tip only activates when showTip is true AND the user hasn't turned off the
+  // wait-time tip in /settings display (chat.showThinkingTips, default on).
+  // Read once at mount; a fresh ThinkingMessage mounts each thinking phase, so
+  // a toggle takes effect on the next turn. When disabled, no timer scheduled.
+  const [showThinkingTipsSetting] = useState(() =>
+    readBoolSetting(Settings.CHAT_SHOW_THINKING_TIPS, true)
+  );
   const tipText = useThinkingTip(
     {
       surface: 'tui',
       engine: agentEngine,
       recommendLiteUi: false, // Never show launch-only tips during thinking.
     },
-    showTip
+    showTip && showThinkingTipsSetting
   );
 
   useEffect(() => {

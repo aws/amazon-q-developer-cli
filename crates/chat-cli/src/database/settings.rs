@@ -204,6 +204,8 @@ pub enum Setting {
     ChatHasSeenLogo,
     #[strum(message = "Show thinking/reasoning blocks in chat output (boolean, default: false; startup-only)")]
     ChatShowThinking,
+    #[strum(message = "Show a feature tip below the thinking indicator while waiting (boolean, default: true)")]
+    ChatShowThinkingTips,
     #[strum(message = "Show dynamic title in terminal tab (boolean, default: false)")]
     ChatTerminalTitle,
     #[strum(message = "Default follow-up delivery mode for new chat sessions: 'steer' or 'queue' (string)")]
@@ -372,6 +374,7 @@ impl AsRef<str> for Setting {
             Self::ChatAllowIcons => "chat.allowIcons",
             Self::ChatHasSeenLogo => "chat.hasSeenLogo",
             Self::ChatShowThinking => "chat.showThinking",
+            Self::ChatShowThinkingTips => "chat.showThinkingTips",
             Self::ChatTerminalTitle => "chat.terminalTitle",
             Self::ChatDefaultInterruptBehavior => "chat.defaultInterruptBehavior",
             Self::ChatKeybindingsToggleInterruptBehavior => "chat.keybindings.toggleInterruptBehavior",
@@ -480,6 +483,7 @@ impl TryFrom<&str> for Setting {
             "chat.allowIcons" => Ok(Self::ChatAllowIcons),
             "chat.hasSeenLogo" => Ok(Self::ChatHasSeenLogo),
             "chat.showThinking" => Ok(Self::ChatShowThinking),
+            "chat.showThinkingTips" => Ok(Self::ChatShowThinkingTips),
             "chat.terminalTitle" => Ok(Self::ChatTerminalTitle),
             "chat.defaultInterruptBehavior" => Ok(Self::ChatDefaultInterruptBehavior),
             "chat.keybindings.toggleInterruptBehavior" => Ok(Self::ChatKeybindingsToggleInterruptBehavior),
