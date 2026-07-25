@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Workspace-scope policy rules persist correctly across different path formats"
+}

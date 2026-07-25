@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] GPT models no longer produce `invalid_union` errors when using `todo_list` array parameters"
+}

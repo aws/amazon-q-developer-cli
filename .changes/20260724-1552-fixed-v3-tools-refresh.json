@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] `/tools` listing now refreshes after tool discovery completes so discovered tools no longer stay hidden"
+}
