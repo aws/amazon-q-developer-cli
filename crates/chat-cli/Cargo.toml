@@ -144,6 +144,7 @@ chat-cli-ui.workspace = true
 kiro-telemetry.workspace = true
 kiro-telemetry-host.workspace = true
 kiro-telemetry-legacy.workspace = true
+managed-config.workspace = true
 voice = { workspace = true, optional = true }
 serde_yaml.workspace = true
 urlencoding = "2.1.3"

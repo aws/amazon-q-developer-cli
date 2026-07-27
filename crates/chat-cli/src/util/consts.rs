@@ -274,9 +274,11 @@ pub mod env_var {
         /// Disable automatic update check on startup
         KIRO_NO_AUTO_UPDATE = "KIRO_NO_AUTO_UPDATE",
 
-        /// Override the update release URL at runtime
+        /// Override the update base URL at runtime
         KIRO_DESKTOP_RELEASE_URL = "KIRO_DESKTOP_RELEASE_URL",
 
+        /// Alias for KIRO_DESKTOP_RELEASE_URL (lower precedence)
+        Q_DESKTOP_RELEASE_URL = "Q_DESKTOP_RELEASE_URL",
         /// Override the URL used to fetch the remote changelog feed
         /// (feed.json). Must be https (or http on localhost, for tests).
         /// Redirects the fetch but does not bypass the nightly channel gate;
@@ -310,10 +312,9 @@ pub mod env_var {
         KIRO_SESSION_ID = "KIRO_SESSION_ID"
     }
 
-    /// Default update manifest URL. Set this to the production URL when ready.
-    // TODO: Update this to the production manifest URL once the update infrastructure is deployed.
-    pub const DEFAULT_UPDATE_MANIFEST_URL: &str =
-        "https://desktop-release.q.us-east-1.amazonaws.com/latest/manifest.json";
+    /// Default update base URL: the release server root. The manifest lives at
+    /// `<base>/latest/manifest.json`; artifact `download` paths are relative to `<base>`.
+    pub const DEFAULT_UPDATE_BASE_URL: &str = "https://desktop-release.q.us-east-1.amazonaws.com";
 }
 
 #[cfg(test)]

@@ -143,6 +143,18 @@ mod tests {
                     "sha256": "def456",
                     "size": 95000000,
                     "channel": "nightly"
+                },
+                {
+                    "kind": "dmg",
+                    "targetTriple": "universal-apple-darwin",
+                    "os": "macos",
+                    "fileType": "dmg",
+                    "architecture": "universal",
+                    "variant": "full",
+                    "download": "nightly/1.27.1/Kiro CLI.dmg",
+                    "sha256": "ghi789",
+                    "size": 120000000,
+                    "channel": "nightly"
                 }
             ]
         }"#
@@ -152,11 +164,13 @@ mod tests {
     fn test_parse_valid_manifest() {
         let manifest: VersionManifest = serde_json::from_str(sample_manifest_json()).unwrap();
         assert_eq!(manifest.version, "1.27.1");
-        assert_eq!(manifest.packages.len(), 2);
+        assert_eq!(manifest.packages.len(), 3);
         assert_eq!(manifest.packages[0].os, "linux");
         assert_eq!(manifest.packages[0].architecture, "x86_64");
         assert_eq!(manifest.packages[1].os, "windows");
         assert_eq!(manifest.packages[1].kind, "msi");
+        assert_eq!(manifest.packages[2].os, "macos");
+        assert_eq!(manifest.packages[2].architecture, "universal");
     }
 
     #[test]
@@ -173,6 +187,14 @@ mod tests {
         let artifact = manifest.find_artifact("windows", "x86_64");
         assert!(artifact.is_some());
         assert_eq!(artifact.unwrap().kind, "msi");
+    }
+
+    #[test]
+    fn test_find_artifact_macos_universal() {
+        let manifest: VersionManifest = serde_json::from_str(sample_manifest_json()).unwrap();
+        let artifact = manifest.find_artifact("macos", "universal");
+        assert!(artifact.is_some());
+        assert_eq!(artifact.unwrap().kind, "dmg");
     }
 
     #[test]

@@ -50,9 +50,14 @@ impl Platform {
         self.manifest_key()
     }
 
-    /// Get the CPU architecture string for the current platform.
+    /// Get the CPU architecture string as used in the artifact manifest.
+    /// macOS ships universal binaries, published under a single `universal` entry.
     pub fn architecture() -> &'static str {
-        std::env::consts::ARCH
+        if cfg!(target_os = "macos") {
+            "universal"
+        } else {
+            std::env::consts::ARCH
+        }
     }
 }
 
@@ -74,6 +79,15 @@ mod tests {
     #[test]
     fn test_manifest_key_windows() {
         assert_eq!(Platform::Windows.manifest_key(), "windows");
+    }
+
+    #[test]
+    fn test_architecture_matches_manifest_convention() {
+        if cfg!(target_os = "macos") {
+            assert_eq!(Platform::architecture(), "universal");
+        } else {
+            assert_eq!(Platform::architecture(), std::env::consts::ARCH);
+        }
     }
 
     // Unit tests for platform detection from OS strings

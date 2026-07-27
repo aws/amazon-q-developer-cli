@@ -33,10 +33,11 @@ pub use version::VersionComparator;
 
 use crate::os::Os;
 
-/// Default manifest URL for production releases.
-/// Can be overridden at runtime via Q_DESKTOP_RELEASE_URL env var or install.releaseUrl setting.
-// Default manifest URL points to the production CDN release endpoint.
-const DEFAULT_MANIFEST_URL: &str = crate::util::consts::env_var::DEFAULT_UPDATE_MANIFEST_URL;
+/// Base URL of the production release server.
+const DEFAULT_BASE_URL: &str = crate::util::consts::env_var::DEFAULT_UPDATE_BASE_URL;
+
+/// Manifest location, relative to the base URL.
+const MANIFEST_PATH: &str = "latest/manifest.json";
 
 /// CLI arguments for the update command
 #[derive(Debug, Clone, Default, PartialEq, Eq, Args)]
@@ -116,20 +117,9 @@ impl UpdateArgs {
             .find_artifact(os_name, arch)
             .ok_or_else(|| eyre::eyre!("No artifact found for {}/{}", os_name, arch))?;
 
-        // Download installer — use the manifest base URL (ends at latest/) with just the filename.
-        // The artifact's `download` field contains a versioned path (e.g., "1.28.2/file.msi")
-        // but artifacts are also available at the `latest/` path, matching how the bash install
-        // script downloads Mac/Linux artifacts.
+        // Download installer from the immutable versioned path named by the manifest.
         println!("Downloading installer...");
-        let manifest_url = get_manifest_url();
-        let base_url = manifest_url
-            .rsplit_once('/')
-            .map_or(manifest_url.as_str(), |(base, _)| base);
-        let filename = artifact
-            .download
-            .rsplit_once('/')
-            .map_or(artifact.download.as_str(), |(_, name)| name);
-        let download_url = format!("{}/{}", base_url, filename);
+        let download_url = artifact_url_from_base(&resolve_base_url(), &artifact.download);
 
         let downloader = InstallerDownloader::new().map_err(|e| eyre::eyre!("{}", e))?;
         let temp_installer = downloader
@@ -201,26 +191,71 @@ impl UpdateArgs {
     }
 }
 
-/// Get the release URL, resolved in priority order:
-/// 1. Runtime env var: `KIRO_DESKTOP_RELEASE_URL`
-/// 2. User setting: `install.releaseUrl`
-/// 3. Hardcoded default from `crate::util::consts::DEFAULT_UPDATE_MANIFEST_URL`
-pub fn get_manifest_url() -> String {
-    use crate::util::consts::env_var::KIRO_DESKTOP_RELEASE_URL;
+/// Resolve the update base URL.
+///
+/// Precedence when a managed value is enforced: MDM > env > default.
+/// Otherwise: env > MDM > default.
+///
+/// Env accepts `KIRO_DESKTOP_RELEASE_URL` and `Q_DESKTOP_RELEASE_URL` (KIRO_ wins).
+/// A value that fails URL validation falls back to the default.
+pub fn resolve_base_url() -> String {
+    use crate::util::consts::env_var::{
+        KIRO_DESKTOP_RELEASE_URL,
+        Q_DESKTOP_RELEASE_URL,
+    };
 
-    // 1. Runtime env var override
-    if let Ok(url) = std::env::var(KIRO_DESKTOP_RELEASE_URL)
-        && !url.is_empty()
-    {
-        return url;
+    let env_url = std::env::var(KIRO_DESKTOP_RELEASE_URL)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var(Q_DESKTOP_RELEASE_URL).ok().filter(|s| !s.is_empty()));
+    let mdm_url = managed_config::managed_base_url();
+    let enforced = managed_config::enforcement_active(mdm_url.is_some());
+
+    validate_base_url(
+        resolve_base_url_inner(enforced, env_url, mdm_url, DEFAULT_BASE_URL),
+        DEFAULT_BASE_URL,
+    )
+}
+
+/// Pure precedence logic, separated for testability.
+fn resolve_base_url_inner(
+    enforced: bool,
+    env_url: Option<String>,
+    mdm_url: Option<String>,
+    default_url: &str,
+) -> String {
+    if enforced {
+        mdm_url.or(env_url)
+    } else {
+        env_url.or(mdm_url)
     }
+    .unwrap_or_else(|| default_url.to_string())
+}
 
-    // 2. User setting (install.releaseUrl)
-    // Note: This requires a database handle. For now, fall through to default.
-    // TODO: Pass Os/database reference to read install.releaseUrl setting here.
+/// Fall back to the default when the resolved value is not a valid URL.
+fn validate_base_url(resolved: String, default_url: &str) -> String {
+    match url::Url::parse(&resolved) {
+        Ok(_) => resolved,
+        Err(err) => {
+            tracing::error!(%err, url = %resolved, "invalid update base URL, using default");
+            default_url.to_string()
+        },
+    }
+}
 
-    // 3. Hardcoded default
-    DEFAULT_MANIFEST_URL.to_string()
+/// `<base>/latest/manifest.json`
+fn manifest_url_from_base(base: &str) -> String {
+    format!("{}/{}", base.trim_end_matches('/'), MANIFEST_PATH)
+}
+
+/// `<base>/<download>`, preserving the manifest's relative artifact path.
+fn artifact_url_from_base(base: &str, download: &str) -> String {
+    format!("{}/{}", base.trim_end_matches('/'), download.trim_start_matches('/'))
+}
+
+/// Manifest URL derived from the resolved base URL.
+pub fn get_manifest_url() -> String {
+    manifest_url_from_base(&resolve_base_url())
 }
 
 /// Parse and validate a URL scheme.
@@ -389,15 +424,7 @@ async fn background_update_check_inner() -> Option<StagedUpdate> {
         },
     };
 
-    let manifest_url = get_manifest_url();
-    let base_url = manifest_url
-        .rsplit_once('/')
-        .map_or(manifest_url.as_str(), |(base, _)| base);
-    let filename = artifact
-        .download
-        .rsplit_once('/')
-        .map_or(artifact.download.as_str(), |(_, name)| name);
-    let download_url = format!("{}/{}", base_url, filename);
+    let download_url = artifact_url_from_base(&resolve_base_url(), &artifact.download);
 
     let temp_installer = match downloader
         .download::<fn(u64, u64)>(&download_url, &artifact.sha256, None)
@@ -487,10 +514,85 @@ mod tests {
     // Unit Tests for URL Configuration
     // =========================================================================
 
+    const TEST_DEFAULT: &str = "https://default.example.com";
+
     #[test]
     fn test_default_manifest_url() {
-        let url = get_manifest_url();
-        assert!(url.starts_with("https://"));
+        let url = manifest_url_from_base(DEFAULT_BASE_URL);
+        assert_eq!(
+            url,
+            "https://desktop-release.q.us-east-1.amazonaws.com/latest/manifest.json"
+        );
+    }
+
+    #[test]
+    fn test_resolve_base_url_inner_default() {
+        assert_eq!(resolve_base_url_inner(false, None, None, TEST_DEFAULT), TEST_DEFAULT);
+        assert_eq!(resolve_base_url_inner(true, None, None, TEST_DEFAULT), TEST_DEFAULT);
+    }
+
+    #[test]
+    fn test_resolve_base_url_inner_env_wins_unenforced() {
+        let result = resolve_base_url_inner(
+            false,
+            Some("https://env.example.com".into()),
+            Some("https://mdm.example.com".into()),
+            TEST_DEFAULT,
+        );
+        assert_eq!(result, "https://env.example.com");
+    }
+
+    #[test]
+    fn test_resolve_base_url_inner_mdm_wins_enforced() {
+        let result = resolve_base_url_inner(
+            true,
+            Some("https://env.example.com".into()),
+            Some("https://mdm.example.com".into()),
+            TEST_DEFAULT,
+        );
+        assert_eq!(result, "https://mdm.example.com");
+    }
+
+    #[test]
+    fn test_resolve_base_url_inner_falls_through_missing_values() {
+        let result = resolve_base_url_inner(true, Some("https://env.example.com".into()), None, TEST_DEFAULT);
+        assert_eq!(result, "https://env.example.com");
+
+        let result = resolve_base_url_inner(false, None, Some("https://mdm.example.com".into()), TEST_DEFAULT);
+        assert_eq!(result, "https://mdm.example.com");
+    }
+
+    #[test]
+    fn test_validate_base_url_rejects_invalid() {
+        assert_eq!(validate_base_url("not a url".into(), TEST_DEFAULT), TEST_DEFAULT);
+        assert_eq!(
+            validate_base_url("https://ok.example.com".into(), TEST_DEFAULT),
+            "https://ok.example.com"
+        );
+    }
+
+    #[test]
+    fn test_manifest_url_from_base() {
+        assert_eq!(
+            manifest_url_from_base("https://mirror.corp/kiro/"),
+            "https://mirror.corp/kiro/latest/manifest.json"
+        );
+        assert_eq!(
+            manifest_url_from_base("https://mirror.corp/kiro"),
+            "https://mirror.corp/kiro/latest/manifest.json"
+        );
+    }
+
+    #[test]
+    fn test_artifact_url_from_base_preserves_relative_path() {
+        assert_eq!(
+            artifact_url_from_base("https://mirror.corp/kiro/", "2.13.0/kirocli-x86_64-linux.tar.xz"),
+            "https://mirror.corp/kiro/2.13.0/kirocli-x86_64-linux.tar.xz"
+        );
+        assert_eq!(
+            artifact_url_from_base("https://mirror.corp/kiro", "/2.13.0/kiro-cli.msi"),
+            "https://mirror.corp/kiro/2.13.0/kiro-cli.msi"
+        );
     }
 
     #[test]

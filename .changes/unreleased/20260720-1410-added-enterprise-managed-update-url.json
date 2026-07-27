@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "IT admins can redirect updates to their own server via a managed update.baseUrl policy (macOS MDM profile or Windows Group Policy)"
+}

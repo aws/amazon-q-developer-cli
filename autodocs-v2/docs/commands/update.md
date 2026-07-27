@@ -145,7 +145,42 @@ On Windows, the update command is fully functional. On macOS and Linux, updates 
 | Variable | Description |
 |----------|-------------|
 | `KIRO_NO_AUTO_UPDATE` | Set to any value to disable background auto-update |
-| `KIRO_DESKTOP_RELEASE_URL` | Override the update manifest URL |
+| `KIRO_DESKTOP_RELEASE_URL` | Override the update base URL |
+| `Q_DESKTOP_RELEASE_URL` | Alias for `KIRO_DESKTOP_RELEASE_URL` (lower precedence) |
+
+## Enterprise Managed Updates
+
+IT administrators can redirect updates to their own server by setting a managed `update.baseUrl` policy value. On managed machines (release builds), the policy value takes precedence over environment variables; otherwise environment variables win, which lets developers and tests override locally.
+
+### Policy Locations
+
+| Platform | Location |
+|----------|----------|
+| macOS | Managed preference key `update.baseUrl` in domain `dev.kiro.cli`, deployed as a forced value via an MDM configuration profile. Non-forced (user-level) values are ignored. |
+| Windows | Registry string value `update.baseUrl` under `HKLM\SOFTWARE\Policies\Kiro\CLI` (typically deployed via Group Policy) |
+| Linux | Not supported |
+
+### URL Resolution
+
+The base URL is the release server root. All update URLs derive from it:
+
+| URL | Pattern |
+|-----|---------|
+| Version manifest | `<base>/latest/manifest.json` |
+| Artifact download | `<base>/<download>` where `download` is the artifact's relative path from the manifest (e.g. `2.13.0/kiro-cli.msi`) |
+
+A base URL may include a path prefix (e.g. `https://artifacts.example.com/mirrors/kiro-cli`). Trailing slashes are normalized. Values that fail URL validation are ignored in favor of the default release server.
+
+### Mirror Server Layout
+
+A mirror must serve:
+
+```
+<base>/latest/manifest.json      # names the current version and its artifacts
+<base>/<version>/<artifact>      # artifact files at the paths the manifest declares
+```
+
+The manifest's `download` fields are resolved relative to `<base>`, so a mirror controls its own artifact layout by writing matching paths in the manifest it hosts.
 
 ## Related
 
@@ -159,4 +194,4 @@ On Windows, the update command is fully functional. On macOS and Linux, updates 
 
 **Windows Install Process**: On Windows, a batch script waits for the CLI process to exit, then runs `msiexec` silently to install the MSI.
 
-**Manifest URL**: The update manifest URL can be overridden via `KIRO_DESKTOP_RELEASE_URL` environment variable for testing or enterprise deployments.
+**Base URL Resolution**: Resolved per update check, in precedence order: managed policy value (`update.baseUrl`) when enforced, then `KIRO_DESKTOP_RELEASE_URL`/`Q_DESKTOP_RELEASE_URL` environment variables, then the default release server.
