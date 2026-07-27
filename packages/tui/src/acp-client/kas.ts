@@ -79,6 +79,7 @@ import {
   recordTuiModeActive,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
+  recordTuiAutonomousMode,
   recordTuiModelInvocation,
   recordTuiSessionStarted,
   recordTuiTokensConsumed,
@@ -2347,6 +2348,7 @@ export class KasAcpClient extends BaseAcpClient {
     const revertedAutonomousOn = setModeId === autonomousWire;
     const revertedAutonomousOff = pushedWireModeId === autonomousWire;
     if (revertedAutonomousOn) {
+      recordTuiAutonomousMode({ event: 'reverted' });
       this.broadcastStreamEvent({
         type: AgentEventType.SystemNotice,
         message:
@@ -2354,6 +2356,7 @@ export class KasAcpClient extends BaseAcpClient {
         success: false,
       });
     } else if (revertedAutonomousOff) {
+      recordTuiAutonomousMode({ event: 'reverted' });
       this.broadcastStreamEvent({
         type: AgentEventType.SystemNotice,
         message:

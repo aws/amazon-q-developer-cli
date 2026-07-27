@@ -32,6 +32,7 @@ const {
   recordTuiSubagentDelegation,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
+  recordTuiAutonomousMode,
   recordTuiCloudRepoAttach,
   repoCountBucket,
   recordTuiProcessHealth,
@@ -757,6 +758,29 @@ describe('recordTuiCloudSessionReady', () => {
     recordTuiCloudSessionReady({ durationSeconds: 0 }, deps);
     expect(counterCalls).toHaveLength(1);
     expect(histogramCalls).toHaveLength(0);
+  });
+});
+
+describe('recordTuiAutonomousMode', () => {
+  it('emits kiro_cli_autonomous_mode_total with the event + engine=v3', () => {
+    recordTuiAutonomousMode({ event: 'enabled' }, deps);
+    expect(counterCalls).toHaveLength(1);
+    const c = counterCalls[0]!;
+    expect(c.name).toBe('kiro_cli_autonomous_mode_total');
+    expect(c.value).toBe(1);
+    expectEngineV3(c);
+    expect(c.attrs?.['autonomous_event']).toBe('enabled');
+  });
+
+  it('carries each lifecycle event through autonomous_event', () => {
+    recordTuiAutonomousMode({ event: 'disabled' }, deps);
+    recordTuiAutonomousMode({ event: 'switch_failed' }, deps);
+    recordTuiAutonomousMode({ event: 'reverted' }, deps);
+    expect(counterCalls.map((c) => c.attrs?.['autonomous_event'])).toEqual([
+      'disabled',
+      'switch_failed',
+      'reverted',
+    ]);
   });
 });
 

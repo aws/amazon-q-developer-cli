@@ -29,6 +29,12 @@ metrics:
     priority: P1
     temporality: delta
     attributes: [engine]
+  - name: kiro_cli_autonomous_mode_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [autonomous_event, engine]
   - name: kiro_cli_cloud_repo_attach_total
     kind: counter
     unit: "1"

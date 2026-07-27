@@ -227,6 +227,7 @@ mock.module('../utils/logger', () => ({
 const mockRecordTuiSessionStarted = mock((_a: unknown) => {});
 const mockRecordTuiCloudSession = mock((_a: unknown) => {});
 const mockRecordTuiCloudSessionReady = mock((_a: unknown) => {});
+const mockRecordTuiAutonomousMode = mock((_a: unknown) => {});
 const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
 const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 mock.module('../utils/tui-telemetry-observer', () => ({
@@ -235,6 +236,7 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiSessionStarted: mockRecordTuiSessionStarted,
   recordTuiCloudSession: mockRecordTuiCloudSession,
   recordTuiCloudSessionReady: mockRecordTuiCloudSessionReady,
+  recordTuiAutonomousMode: mockRecordTuiAutonomousMode,
   recordTuiCloudRepoAttach: mock(() => {}),
   recordTuiModeActive: mock(() => {}),
   recordTuiUserTurn: mock(() => {}),
@@ -347,6 +349,7 @@ function freshMocks() {
   mockKiroListSessions.mockClear();
   mockRecordTuiSessionStarted.mockClear();
   mockRecordTuiCloudSession.mockClear();
+  mockRecordTuiAutonomousMode.mockClear();
   mockRecordTuiCloudSessionReady.mockClear();
   toolStartCalls.length = 0;
   toolFinishCalls.length = 0;
@@ -1761,6 +1764,10 @@ describe('KasAcpClient', () => {
       (e) => e.type === AgentEventType.AgentSwitched
     );
     expect(switched.at(-1)?.agentName).toBe('default');
+    // A revert is recorded as autonomous-mode telemetry.
+    expect(mockRecordTuiAutonomousMode).toHaveBeenCalledWith({
+      event: 'reverted',
+    });
   });
 
   it('fires the revert notice only once (marker cleared after firing)', async () => {

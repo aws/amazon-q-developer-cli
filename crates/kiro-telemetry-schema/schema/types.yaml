@@ -93,6 +93,8 @@ attributes:
     allowed_values: [v1, v2, v3, _other_]
   - name: cloud_event
     allowed_values: [started, start_failed, reattached, ready, provision_failed, detached, turned_off, fell_back_local, _other_]
+  - name: autonomous_event
+    allowed_values: [enabled, disabled, switch_failed, reverted, _other_]
   - name: repo_attach_event
     allowed_values: [opened, submitted, _other_]
   - name: repo_count_bucket

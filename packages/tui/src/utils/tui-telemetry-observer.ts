@@ -301,6 +301,42 @@ export function recordTuiCloudSessionReady(
   }
 }
 
+/**
+ * Allowed `autonomous_event` enum (mirrors the schema catalog type): `enabled`
+ * (a `/autonomous on` was verified and applied), `disabled` (a `/autonomous
+ * off` was verified and applied), `switch_failed` (the `session/set_mode` RPC
+ * or its read-back rejected, so no state changed), or `reverted` (a server
+ * `config_option_update` reverted a mode the client had just set — the
+ * cloud-session case where the sandbox never durably applied the switch).
+ */
+export type AutonomousEvent =
+  | 'enabled'
+  | 'disabled'
+  | 'switch_failed'
+  | 'reverted'
+  | '_other_';
+
+/**
+ * An autonomous-mode lifecycle event (`kiro_cli_autonomous_mode_total`). ORR
+ * observability for the dark-shipped, cloud-only `/autonomous` command,
+ * mirroring the cloud-session counter: reads zero on released builds (the
+ * command is feature-gated + cloud-only and never fires), and lights up only
+ * when the cloud-sandbox path ramps on internal/nightly. Always v3 (autonomous
+ * is KAS/cloud-only) but carries `engine` for a uniform label split.
+ */
+export function recordTuiAutonomousMode(
+  args: { event: AutonomousEvent; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_autonomous_mode_total',
+    1,
+    { autonomous_event: args.event, engine: args.engine ?? DEFAULT_ENGINE },
+    TUI_SCOPE
+  );
+}
+
 /** Allowed `repo_attach_event` funnel enum (mirrors the schema catalog type). */
 export type RepoAttachEvent = 'opened' | 'submitted' | '_other_';
 
