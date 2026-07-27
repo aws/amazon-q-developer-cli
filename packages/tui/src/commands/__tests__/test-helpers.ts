@@ -78,6 +78,7 @@ export function createMockCommandContext(
     getCommandOptions: mock(() => Promise.resolve({ options: [] })),
     setSetting: mock(() => Promise.resolve()),
     setConfigOption: mock(() => Promise.resolve()),
+    setSessionMode: mock(() => Promise.resolve()),
     sendModeChanged: mock(() => undefined),
     sendChatSlashCommandTelemetry: mock(() => undefined),
     sendUiModeSessionStart: mock(() => undefined),

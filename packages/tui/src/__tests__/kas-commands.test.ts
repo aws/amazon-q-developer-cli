@@ -14,13 +14,17 @@ describe('kas-commands', () => {
       const { features } = await import('../features');
       const withGated = [...KAS_COMMANDS, gated('/mem', Feature.Memory)];
 
+      // KAS_COMMANDS itself carries gated entries (e.g. /autonomous behind
+      // remote_sandbox), so the all-off baseline is the ungated subset.
+      const ungated = KAS_COMMANDS.filter((c) => !c.feature);
+
       const originalEnv = process.env.KIRO_ENABLED_FEATURES;
       try {
         process.env.KIRO_ENABLED_FEATURES = '[]';
         features._resetForTests();
-        expect(filterByEnabledFeatures(withGated)).toEqual(KAS_COMMANDS);
+        expect(filterByEnabledFeatures(withGated)).toEqual(ungated);
 
-        process.env.KIRO_ENABLED_FEATURES = '["memory"]';
+        process.env.KIRO_ENABLED_FEATURES = '["memory", "remote_sandbox"]';
         features._resetForTests();
         expect(filterByEnabledFeatures(withGated)).toEqual(withGated);
       } finally {
@@ -86,6 +90,45 @@ describe('kas-commands', () => {
       expect(kasHandlers[KasCommandName.Sessions]).toBe(
         kasHandlers[KasCommandName.Chat]
       );
+    });
+  });
+
+  describe('/autonomous dark-ship gating', () => {
+    it('is feature-gated behind remote_sandbox AND cloudOnly', async () => {
+      const { KAS_COMMANDS } = await import('../kas-commands');
+      const autonomousCmd = KAS_COMMANDS.find(
+        (cmd: KasCommand) => cmd.name === '/autonomous'
+      );
+      expect(autonomousCmd).toBeDefined();
+      expect(autonomousCmd!.feature).toBe(Feature.RemoteSandbox);
+      expect(autonomousCmd!.meta).toEqual({
+        cloudOnly: true,
+        subcommands: ['on', 'off'],
+      });
+    });
+
+    it('is dropped by getKasCommands unless remote_sandbox is enabled', async () => {
+      const { getKasCommands } = await import('../kas-commands');
+      const { features } = await import('../features');
+
+      const originalEnv = process.env.KIRO_ENABLED_FEATURES;
+      try {
+        process.env.KIRO_ENABLED_FEATURES = '[]';
+        features._resetForTests();
+        expect(
+          getKasCommands().find((c) => c.name === '/autonomous')
+        ).toBeUndefined();
+
+        process.env.KIRO_ENABLED_FEATURES = '["remote_sandbox"]';
+        features._resetForTests();
+        expect(
+          getKasCommands().find((c) => c.name === '/autonomous')
+        ).toBeDefined();
+      } finally {
+        if (originalEnv === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+        else process.env.KIRO_ENABLED_FEATURES = originalEnv;
+        features._resetForTests();
+      }
     });
   });
 

@@ -77,6 +77,10 @@ export function toKasModeId(tuiModeId: string): string {
 export function fromKasModeId(kasModeId: string): string {
   if (kasModeId === 'plan') return 'kiro_planner';
   if (kasModeId === 'vibe') return 'default';
+  // `autonomous` intentionally passes through unchanged: the TUI keeps the
+  // wire id as the current-agent id and the display layer surfaces it as the
+  // Default agent plus the Autonomous footer chip (see `agentColors` and the
+  // status surfaces).
   return kasModeId;
 }
 

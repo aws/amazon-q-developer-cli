@@ -21,6 +21,7 @@ import { goalElapsed, type StatusSurfaceProps } from '../status-surface.js';
 
 export const LiteStatusSurface: React.FC<StatusSurfaceProps> = ({
   agentName,
+  autonomousModeActive = false,
   modelName,
   effort,
   contextUsagePercent,
@@ -50,6 +51,7 @@ export const LiteStatusSurface: React.FC<StatusSurfaceProps> = ({
     : colorAgentName(agentName, getColor);
   const segments = [
     agentSegment,
+    autonomousModeActive ? getColor('warning')('Autonomous') : '',
     modelName ? getColor('primary')(modelName) : '',
     effort ? secondary(formatEffort(effort)) : '',
     `${gradientCtxColor(ctxPct)(`${ctxPct}%`)} ${chalk.dim('ctx')}`,

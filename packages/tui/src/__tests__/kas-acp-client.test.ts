@@ -152,6 +152,7 @@ const mockKiroLoadSession = mock((_req: any) =>
 const mockKiroPrompt = mock((_req: any) => Promise.resolve());
 const mockKiroCancel = mock((_sessionId: string) => {});
 const mockKiroSetSessionConfigOption = mock((_req: any) => Promise.resolve());
+const mockKiroSetSessionMode = mock((_req: any) => Promise.resolve({}));
 const mockKiroSendExtMethod = mock((_method: string, _params: any) =>
   Promise.resolve({})
 );
@@ -175,6 +176,7 @@ const MockKiroClient = class {
   prompt = mockKiroPrompt;
   cancel = mockKiroCancel;
   setSessionConfigOption = mockKiroSetSessionConfigOption;
+  setSessionMode = mockKiroSetSessionMode;
   sendExtMethod = mockKiroSendExtMethod;
   sendExtNotification = mockKiroSendExtNotification;
   listSessions = mockKiroListSessions;
@@ -339,6 +341,7 @@ function freshMocks() {
   mockKiroPrompt.mockClear();
   mockKiroCancel.mockClear();
   mockKiroSetSessionConfigOption.mockClear();
+  mockKiroSetSessionMode.mockClear();
   mockKiroSendExtMethod.mockClear();
   mockKiroSendExtNotification.mockClear();
   mockKiroListSessions.mockClear();
@@ -1592,6 +1595,288 @@ describe('KasAcpClient', () => {
     );
     expect(modeCalls.length).toBe(1);
     expect(modeCalls[0][0].value).toBe('vibe');
+  });
+
+  // configOptions payload for the setSessionMode read-back: a `mode` select
+  // whose currentValue reflects what the server actually holds.
+  const modeConfigOptions = (currentValue: string) => ({
+    configOptions: [
+      {
+        id: 'mode',
+        category: 'mode',
+        type: 'select',
+        currentValue,
+        options: [
+          {
+            value: 'vibe',
+            name: 'Default',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+          {
+            value: 'autonomous',
+            name: 'Autonomous',
+            _meta: { kiro: { source: 'bundled' } },
+          },
+        ],
+      },
+    ],
+  });
+
+  it('setSessionMode sends session/set_mode, verifies via read-back, and broadcasts AgentSwitched', async () => {
+    // SetSessionModeResponse is empty and KAS emits no current_mode_update
+    // after it, so the client reads the mode back via set_config_option and
+    // broadcasts AgentSwitched itself once the switch is confirmed.
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce(
+      modeConfigOptions('autonomous')
+    );
+    await client.setSessionMode('autonomous');
+    expect(mockKiroSetSessionMode).toHaveBeenCalledWith({
+      sessionId: 'kas-session-1',
+      modeId: 'autonomous',
+    });
+    expect(mockKiroSetSessionConfigOption).toHaveBeenCalledWith({
+      sessionId: 'kas-session-1',
+      configId: 'mode',
+      value: 'autonomous',
+    });
+    const switched = events.filter(
+      (e) => e.type === AgentEventType.AgentSwitched
+    );
+    expect(switched).toHaveLength(1);
+    expect(switched[0].agentName).toBe('autonomous');
+  });
+
+  it('setSessionMode("default") translates to the KAS wire id "vibe" and reports "default"', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce(
+      modeConfigOptions('vibe')
+    );
+    await client.setSessionMode('default');
+    expect(mockKiroSetSessionMode).toHaveBeenCalledWith({
+      sessionId: 'kas-session-1',
+      modeId: 'vibe',
+    });
+    const switched = events.filter(
+      (e) => e.type === AgentEventType.AgentSwitched
+    );
+    expect(switched).toHaveLength(1);
+    expect(switched[0].agentName).toBe(KAS_DEFAULT_AGENT_ID);
+  });
+
+  it('setSessionMode rejects when the read-back shows the mode unchanged (relayed no-op)', async () => {
+    // KAS silently no-ops session/set_mode for relayed sessions: both RPCs
+    // "succeed" but the mode select still holds the old value. The client
+    // must reject and broadcast nothing — no false success, no chip.
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce(
+      modeConfigOptions('vibe')
+    );
+    await expect(client.setSessionMode('autonomous')).rejects.toThrow(
+      'Switching modes is not supported on this session yet'
+    );
+    expect(events).toHaveLength(0);
+  });
+
+  it('setSessionMode propagates an RPC rejection without broadcasting AgentSwitched', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    mockKiroSetSessionMode.mockRejectedValueOnce(new Error('mode rejected'));
+    await expect(client.setSessionMode('autonomous')).rejects.toThrow(
+      'mode rejected'
+    );
+    expect(
+      events.filter((e) => e.type === AgentEventType.AgentSwitched)
+    ).toHaveLength(0);
+  });
+
+  // Establish a cloud session, then confirm a client set to `autonomous` so
+  // `lastClientSetModeId` is armed; returns the client + captured events.
+  async function cloudClientWithAutonomousSet() {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-mode',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+        },
+      },
+    } as any);
+    const client = new KasAcpClient();
+    await client.loadSession('cloud-mode');
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce(
+      modeConfigOptions('autonomous')
+    );
+    await client.setSessionMode('autonomous');
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+    return { client, events };
+  }
+
+  const pushModeUpdate = (currentValue: string) =>
+    capturedSessionUpdateHandler!({
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: modeConfigOptions(currentValue).configOptions,
+      },
+    } as any);
+
+  it('surfaces a one-time revert notice when a cloud push reverts a client-set mode', async () => {
+    const { client, events } = await cloudClientWithAutonomousSet();
+    void client;
+    await pushModeUpdate('vibe');
+    const notices = events.filter(
+      (e) => e.type === AgentEventType.SystemNotice
+    );
+    expect(notices).toHaveLength(1);
+    expect(notices[0].message).toBe(
+      "Autonomous mode was turned off — this cloud session doesn't support changing modes yet."
+    );
+    expect(notices[0].success).toBe(false);
+    // The chip still reflects the sandbox's truth (default), not suppressed.
+    const switched = events.filter(
+      (e) => e.type === AgentEventType.AgentSwitched
+    );
+    expect(switched.at(-1)?.agentName).toBe('default');
+  });
+
+  it('fires the revert notice only once (marker cleared after firing)', async () => {
+    const { events } = await cloudClientWithAutonomousSet();
+    await pushModeUpdate('vibe');
+    await pushModeUpdate('vibe');
+    expect(
+      events.filter((e) => e.type === AgentEventType.SystemNotice)
+    ).toHaveLength(1);
+  });
+
+  it('fires at most once across repeated stale pushes in one turn', async () => {
+    // A single turn emits several config_option_updates (turn-start pin,
+    // reattach replay, turn-end); only the first reverting push may notify.
+    const { events } = await cloudClientWithAutonomousSet();
+    await pushModeUpdate('vibe');
+    await pushModeUpdate('vibe');
+    await pushModeUpdate('vibe');
+    expect(
+      events.filter((e) => e.type === AgentEventType.SystemNotice)
+    ).toHaveLength(1);
+  });
+
+  it('fires once for the real echo-then-revert sequence (autonomous echo, then vibe)', async () => {
+    // KAS's first config_option_update optimistically echoes the mode we set
+    // (autonomous); the reverting push (the space-kind mode, vibe) arrives
+    // later in the same turn. The echo must NOT disarm us — otherwise the
+    // revert is swallowed — and the revert must fire exactly once.
+    const { events } = await cloudClientWithAutonomousSet();
+    await pushModeUpdate('autonomous'); // optimistic echo → stay armed
+    await pushModeUpdate('vibe'); // real revert → fire once
+    await pushModeUpdate('vibe'); // already disarmed → silent
+    expect(
+      events.filter((e) => e.type === AgentEventType.SystemNotice)
+    ).toHaveLength(1);
+  });
+
+  it('forward-compat: a cloud push carrying the client-set mode fires NO notice and keeps the chip', async () => {
+    // Once KAS/BFF makes the relayed switch stick, the push currentValue
+    // EQUALS lastClientSetModeId (autonomous) — no revert, no message, chip
+    // stays lit. Zero further CLI change.
+    const { events } = await cloudClientWithAutonomousSet();
+    await pushModeUpdate('autonomous');
+    expect(
+      events.filter((e) => e.type === AgentEventType.SystemNotice)
+    ).toHaveLength(0);
+    const switched = events.filter(
+      (e) => e.type === AgentEventType.AgentSwitched
+    );
+    expect(switched.at(-1)?.agentName).toBe('autonomous');
+  });
+
+  it('reports the correct direction when an off-switch is reverted (autonomous re-asserted)', async () => {
+    // The client turned autonomous OFF (set 'default'); the sandbox reverts by
+    // re-asserting 'autonomous'. The notice must name THAT direction, never the
+    // stale "turned off" wording.
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-mode',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+        },
+      },
+    } as any);
+    const client = new KasAcpClient();
+    await client.loadSession('cloud-mode');
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce(
+      modeConfigOptions('vibe')
+    );
+    await client.setSessionMode('default');
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+    await pushModeUpdate('autonomous');
+    const notices = events.filter(
+      (e) => e.type === AgentEventType.SystemNotice
+    );
+    expect(notices).toHaveLength(1);
+    expect(notices[0].message).toBe(
+      "Autonomous mode was turned back on — this cloud session doesn't support changing modes yet."
+    );
+  });
+
+  it('never fires the revert notice on a local session', async () => {
+    const client = new KasAcpClient();
+    await client.newSession(); // default mock: local session
+    mockKiroSetSessionConfigOption.mockResolvedValueOnce(
+      modeConfigOptions('autonomous')
+    );
+    await client.setSessionMode('autonomous');
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+    await pushModeUpdate('vibe');
+    expect(
+      events.filter((e) => e.type === AgentEventType.SystemNotice)
+    ).toHaveLength(0);
+  });
+
+  it('never fires the revert notice for a server-initiated change with no prior client set', async () => {
+    mockKiroLoadSession.mockResolvedValueOnce({
+      sessionId: 'cloud-mode',
+      _meta: {
+        kiro: {
+          executionTarget: { kind: 'cloud-sandbox' },
+          source: 'remote',
+        },
+      },
+    } as any);
+    const client = new KasAcpClient();
+    await client.loadSession('cloud-mode');
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+    await pushModeUpdate('spec');
+    expect(
+      events.filter((e) => e.type === AgentEventType.SystemNotice)
+    ).toHaveLength(0);
   });
 
   it('executeCommand("clear") creates a new session via session/new primitive', async () => {

@@ -1320,6 +1320,61 @@ describe('Stream event handler — AgentSwitched', () => {
       name: 'claude-sonnet',
     });
   });
+
+  it('tracks a server-pushed switch into and out of autonomous mode', () => {
+    // A `current_mode_update` / `config_option_update` push arrives here as
+    // AgentSwitched; the autonomous chip derives from currentAgent, so this
+    // pins both directions of the sync.
+    const store = makeStore();
+    store.setState({ currentAgent: { name: KAS_DEFAULT_AGENT_ID } });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.AgentSwitched,
+      agentName: 'autonomous',
+    });
+    expect(store.getState().currentAgent?.name).toBe('autonomous');
+    handler({
+      type: AgentEventType.AgentSwitched,
+      agentName: 'spec',
+    });
+    expect(store.getState().currentAgent?.name).toBe('spec');
+  });
+});
+
+describe('Stream event handler — SystemNotice', () => {
+  it('shows a transient error banner and does NOT persist a chat message', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SystemNotice,
+      message:
+        "Autonomous mode was turned off — this cloud session doesn't support changing modes yet.",
+      success: false,
+    });
+    // Transient banner (like the cloud-only command refusals), not chat history.
+    expect(store.getState().transientAlert).toEqual({
+      message:
+        "Autonomous mode was turned off — this cloud session doesn't support changing modes yet.",
+      status: 'error',
+      autoHideMs: 5000,
+    });
+    expect(
+      store
+        .getState()
+        .messages.filter((m: any) => m.role === MessageRole.System)
+    ).toHaveLength(0);
+  });
+
+  it('maps a success notice to a success-status banner', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.SystemNotice,
+      message: 'x',
+      success: true,
+    });
+    expect(store.getState().transientAlert?.status).toBe('success');
+  });
 });
 
 describe('Stream event handler — AgentNotFound', () => {

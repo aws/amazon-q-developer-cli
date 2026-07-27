@@ -1180,6 +1180,13 @@ describe('Kiro — session methods', () => {
     expect(mockSessionClient.terminateSession).not.toHaveBeenCalled();
   });
 
+  it('setSessionMode throws when not initialized', async () => {
+    const kiro = new Kiro();
+    await expect(kiro.setSessionMode('autonomous')).rejects.toThrow(
+      'Kiro not initialized'
+    );
+  });
+
   it('setConfigOption forwards to sessionClient', async () => {
     const kiro = new Kiro();
     await kiro.initialize('/path/to/agent');

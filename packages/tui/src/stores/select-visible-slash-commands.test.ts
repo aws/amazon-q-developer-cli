@@ -3,6 +3,7 @@ import { createAppStore } from './app-store';
 import { selectVisibleSlashCommands } from './selectors';
 import { Kiro } from '../kiro';
 import { KAS_COMMANDS } from '../kas-commands';
+import { features } from '../features';
 
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
@@ -227,6 +228,48 @@ describe('/repo cloud-only visibility gate (dark-ship)', () => {
     store.getState().setCloudSessionActive(true);
     const visible = selectVisibleSlashCommands(store.getState());
     expect(visible.find((c) => c.name === '/repo')).toBeUndefined();
+  });
+});
+
+describe('/autonomous feature + cloud visibility gates (dark-ship)', () => {
+  const withFeatures = (value: string | undefined, fn: () => void) => {
+    const prev = process.env.KIRO_ENABLED_FEATURES;
+    if (value === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+    else process.env.KIRO_ENABLED_FEATURES = value;
+    features._resetForTests();
+    try {
+      fn();
+    } finally {
+      if (prev === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+      else process.env.KIRO_ENABLED_FEATURES = prev;
+      features._resetForTests();
+    }
+  };
+
+  it('is absent without the remote_sandbox feature, even in a cloud session', () => {
+    withFeatures('[]', () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      store.getState().setCloudSessionActive(true);
+      const visible = selectVisibleSlashCommands(store.getState());
+      expect(visible.find((c) => c.name === '/autonomous')).toBeUndefined();
+    });
+  });
+
+  it('is absent outside cloud sessions even with the feature enabled', () => {
+    withFeatures('["remote_sandbox"]', () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      const visible = selectVisibleSlashCommands(store.getState());
+      expect(visible.find((c) => c.name === '/autonomous')).toBeUndefined();
+    });
+  });
+
+  it('is visible with the feature enabled inside a cloud session', () => {
+    withFeatures('["remote_sandbox"]', () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      store.getState().setCloudSessionActive(true);
+      const visible = selectVisibleSlashCommands(store.getState());
+      expect(visible.find((c) => c.name === '/autonomous')).toBeDefined();
+    });
   });
 });
 

@@ -22,6 +22,11 @@ describe('mode id mapping', () => {
     expect(fromKasModeId('vibe')).toBe('default');
     expect(fromKasModeId('spec')).toBe('spec');
   });
+
+  it('passes the autonomous mode id through unchanged in both directions', () => {
+    expect(fromKasModeId('autonomous')).toBe('autonomous');
+    expect(toKasModeId('autonomous')).toBe('autonomous');
+  });
 });
 
 describe('parseModelsFromConfigOptions', () => {

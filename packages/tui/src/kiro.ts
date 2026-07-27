@@ -1116,6 +1116,18 @@ export class Kiro {
     await this.sessionClient.setConfigOption(configId, value);
   }
 
+  async setSessionMode(modeId: string): Promise<void> {
+    if (!this.sessionClient) {
+      throw new Error('Kiro not initialized');
+    }
+    if (!this.sessionClient.setSessionMode) {
+      throw new Error(
+        'session/set_mode is not supported by the current agent engine'
+      );
+    }
+    await this.sessionClient.setSessionMode(modeId);
+  }
+
   async resetMcpServer(serverName: string, startOAuth: boolean): Promise<void> {
     if (!this.sessionClient?.resetMcpServer) return;
     await this.sessionClient.resetMcpServer(serverName, startOAuth);

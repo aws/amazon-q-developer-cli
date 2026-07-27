@@ -603,6 +603,7 @@ export const CommandMenu: React.FC = () => {
     const isSelection = activeCommand.command.meta?.inputType === 'selection';
     const subs = activeCommand.command.meta?.subcommands;
     const isSubcommandMenu =
+      !activeCommand.executeOnSelect &&
       subs &&
       subs.length > 0 &&
       activeCommand.options.length === subs.length &&
@@ -735,7 +736,9 @@ export const CommandMenu: React.FC = () => {
                 : undefined
           }
           searchPlaceholder={isSearchable ? 'type to search' : undefined}
-          showFooterHints={isSelection || isSubcommandMenu}
+          showFooterHints={
+            isSelection || isSubcommandMenu || !!activeCommand.executeOnSelect
+          }
           preserveLabelColors={
             activeCommand.command.meta?.preserveLabelColors === true
           }

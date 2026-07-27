@@ -29,6 +29,7 @@ const RenderMetricsChip: React.FC<{
 // Region confines the dev-only metrics tick to this status-bar subtree.
 export const TuiStatusSurface: React.FC<StatusSurfaceProps> = ({
   agentName,
+  autonomousModeActive = false,
   modelName,
   effort,
   contextUsagePercent,
@@ -52,6 +53,7 @@ export const TuiStatusSurface: React.FC<StatusSurfaceProps> = ({
       agentName !== null && (
         <Chip value={getAgentDisplayName(agentName)} color={mutedColor} />
       ),
+      autonomousModeActive && <Chip value="Autonomous" color={mutedColor} />,
       modelName !== null && <Chip value={modelName} color={mutedColor} />,
       effort && <Chip value={formatEffort(effort)} color={mutedColor} />,
       contextUsagePercent != null && (
@@ -100,6 +102,9 @@ export const TuiStatusSurface: React.FC<StatusSurfaceProps> = ({
         value={getAgentDisplayName(agentName)}
         color={getAgentColor(agentName, getColor)}
       />
+    ),
+    autonomousModeActive && (
+      <Chip value="Autonomous" color={ChipColor.WARNING} />
     ),
     modelName !== null && <Chip value={modelName} color={ChipColor.PRIMARY} />,
     effort && <Chip value={formatEffort(effort)} color={ChipColor.SECONDARY} />,

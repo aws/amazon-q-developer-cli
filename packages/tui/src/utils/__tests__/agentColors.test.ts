@@ -20,6 +20,11 @@ describe('agentColors', () => {
       expect(result('test')).toBe('brand:test');
     });
 
+    it('returns brand color for the autonomous built-in (presents as Default)', () => {
+      const result = getAgentColor('autonomous', mockGetColor);
+      expect(result.hex).toBe('#8700FF');
+    });
+
     it('returns a color with .hex for custom name', () => {
       const result = getAgentColor('my-agent', mockGetColor);
       expect(typeof result.hex).toBe('string');
@@ -76,6 +81,13 @@ describe('agentColors', () => {
 
     it('returns "Spec" for the spec built-in', () => {
       expect(getAgentDisplayName('spec', 'Spec')).toBe('Spec');
+    });
+
+    it('surfaces the autonomous built-in as "Default"', () => {
+      expect(getAgentDisplayName('autonomous')).toBe(KAS_DEFAULT_AGENT_NAME);
+      expect(getAgentDisplayName('autonomous', 'Autonomous')).toBe(
+        KAS_DEFAULT_AGENT_NAME
+      );
     });
 
     it('passes user-defined agent names through verbatim', () => {

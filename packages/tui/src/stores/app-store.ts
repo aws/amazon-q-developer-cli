@@ -709,6 +709,14 @@ export interface ActiveCommand {
    * `truncation:output:edit`, which swap the menu for the numeric editor.
    */
   previewKey?: string;
+  /**
+   * When true, selecting an option always executes it via
+   * `executeCommandWithArg` — even when the options happen to mirror the
+   * command's `meta.subcommands` and would otherwise take the Tab-subcommand
+   * prefill path. Used by handlers whose picker rows ARE the final argument
+   * (e.g. /autonomous on|off).
+   */
+  executeOnSelect?: boolean;
 }
 
 export interface TransientAlert {
@@ -4401,6 +4409,17 @@ export const createAppStore = (props: AppStoreProps) => {
                 ],
               }));
             }
+            break;
+          case AgentEventType.SystemNotice:
+            // A transient status remark (e.g. a cloud mode revert), shown as an
+            // auto-dismissing banner — the same pattern as the cloud-only
+            // command refusals ("… is not available for a cloud session yet.").
+            // It is not persisted to chat history.
+            get().showTransientAlert({
+              message: event.message,
+              status: event.success ? 'success' : 'error',
+              autoHideMs: 5000,
+            });
             break;
           case AgentEventType.RetryWarning:
             {

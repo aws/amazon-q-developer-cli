@@ -72,6 +72,7 @@ export enum AgentEventType {
   TurnStart = 'turn_start',
   TurnEnd = 'turn_end',
   SessionRepositoriesUpdate = 'session_repositories_update',
+  SystemNotice = 'system_notice',
 }
 
 export enum ContentType {
@@ -786,6 +787,17 @@ export interface McpOauthRequestEvent {
   oauthUrl: string;
 }
 
+/**
+ * A client-originated notice to surface as a system line in the transcript
+ * (e.g. a cloud session silently reverting a mode the client just set).
+ * `success` mirrors the `addSystemMessage` convention (false = warning tone).
+ */
+export interface SystemNoticeEvent {
+  type: AgentEventType.SystemNotice;
+  message: string;
+  success: boolean;
+}
+
 export interface McpServerInitializedEvent {
   type: AgentEventType.McpServerInitialized;
   serverName: string;
@@ -878,4 +890,5 @@ export type AgentStreamEvent =
   | ModelRefusalEvent
   | SessionRosterDeltaEvent
   | WorkflowProgressStreamEvent
-  | SessionRepositoriesUpdateEvent;
+  | SessionRepositoriesUpdateEvent
+  | SystemNoticeEvent;

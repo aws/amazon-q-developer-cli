@@ -70,6 +70,7 @@ import { extractRpcErrorMessage } from '../utils/error-handling';
 import { openUrlInBrowser } from '../utils/browser';
 import { getCliVersion } from '../utils/version';
 import { getKasCommands } from '../kas-commands';
+import { KAS_AUTONOMOUS_AGENT_ID } from '../constants/agents';
 import { features } from '../features';
 import { readClipboardImage } from '../utils/clipboard-image';
 import {
@@ -272,6 +273,19 @@ export class KasAcpClient extends BaseAcpClient {
    */
   private telemetryCurrentModelId?: string;
   private telemetryCurrentModeId?: string;
+
+  /**
+   * Wire id of the mode the CLIENT last explicitly set and had CONFIRMED
+   * (via `setSessionMode`'s read-back). Used only to detect a cloud/relayed
+   * session silently reverting that switch: a later `config_option_update`
+   * whose mode differs from this means the sandbox dropped the client's
+   * change (cloud mode is bound to the space kind minted at createSession and
+   * mid-session set_mode does not durably apply yet). Fires the one-time
+   * "doesn't support changing modes yet" notice, then clears. Reset per
+   * session in `wireSessionListeners`. Undefined once consumed or never set,
+   * so server-initiated changes with no prior client set never misfire.
+   */
+  private lastClientSetModeId?: string;
 
   /**
    * Initial agent name (KAS "mode") to apply on the next `newSession`.
@@ -631,6 +645,9 @@ export class KasAcpClient extends BaseAcpClient {
     this.kasSubagentRoutingStore.resetKasSubagentRouting();
     this.invokeSubagentAdapter.reset();
     this.kasSteerBuffer.clear();
+    // Drop the client-set-mode marker so a revert notice can't leak across
+    // sessions (a new/loaded session's mode is its own truth).
+    this.lastClientSetModeId = undefined;
     this.sessionDisposables = [
       this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
         const update = notification.update;
@@ -676,11 +693,12 @@ export class KasAcpClient extends BaseAcpClient {
           'config_option_update'
         ) {
           this.configEpoch++;
-          this.emitConfigOptions(
-            (update as { configOptions?: unknown }).configOptions,
-            'serverPush',
-            { emitCurrentAgent: true }
-          );
+          const pushedConfigOptions = (update as { configOptions?: unknown })
+            .configOptions;
+          this.detectClientModeRevert(pushedConfigOptions);
+          this.emitConfigOptions(pushedConfigOptions, 'serverPush', {
+            emitCurrentAgent: true,
+          });
         }
         this.forwardKasTurnCompletionTelemetry(sessionId, update);
         // NOTE: `sessionId` here is the per-listener KAS session, which equals
@@ -2243,6 +2261,106 @@ export class KasAcpClient extends BaseAcpClient {
       'clientInitiated',
       { emitCurrentAgent: true }
     );
+  }
+
+  /**
+   * Switch the session mode via ACP `session/set_mode`, then VERIFY it took
+   * effect. `SetSessionModeResponse` is empty, KAS emits no
+   * `current_mode_update` afterwards, and — critically — KAS silently no-ops
+   * the verb for relayed (cloud) sessions: the RPC "succeeds" without
+   * changing anything. So RPC success alone is never evidence. The read-back
+   * goes through `session/set_config_option` with the same mode: its
+   * response always carries the session's current configOptions (unchanged
+   * when KAS refuses a relayed session), and on a non-relayed session the
+   * same-value write is idempotent. Only when the returned current mode
+   * matches does this method update telemetry state and re-emit the
+   * normalized config events (which broadcast AgentSwitched); otherwise it
+   * throws and nothing is emitted — no false success.
+   */
+  async setSessionMode(modeId: string): Promise<void> {
+    if (!this.sessionId) return;
+    const wireModeId = toKasModeId(modeId);
+    await this.kiroClient.setSessionMode({
+      sessionId: this.sessionId,
+      modeId: wireModeId,
+    });
+    const response = await this.kiroClient.setSessionConfigOption({
+      sessionId: this.sessionId,
+      configId: 'mode',
+      value: wireModeId,
+    });
+    const configOptions = (response as { configOptions?: unknown })
+      .configOptions;
+    const agents = parseAgentsFromConfigOptions(configOptions);
+    if (agents?.currentAgentId !== fromKasModeId(wireModeId)) {
+      throw new Error(
+        'Switching modes is not supported on this session yet — it requires an updated Kiro agent server'
+      );
+    }
+    this.telemetryCurrentModeId = wireModeId;
+    // Arm the revert detector: on a cloud session a later config_option_update
+    // may carry the sandbox's stale mode and silently flip currentAgent back;
+    // we then explain it once (see the config_option_update branch).
+    this.lastClientSetModeId = wireModeId;
+    this.emitConfigOptions(configOptions, 'clientInitiated', {
+      emitCurrentAgent: true,
+    });
+  }
+
+  /**
+   * On a cloud/relayed session, detect a server push reverting a mode the
+   * client just set and surface a one-time notice. KAS pushes a
+   * `config_option_update` on first-turn model pinning whose mode select
+   * carries the sandbox's stale mode; because a relayed mid-session set_mode
+   * doesn't durably apply yet, that push silently flips `currentAgent` back.
+   * We do NOT suppress the flip (the chip must reflect the sandbox's truth) —
+   * we explain it once. Gated on `startedCloudSession` (local sessions apply
+   * set_mode, so no revert) and on `lastClientSetModeId` being armed (a
+   * server-initiated change with no prior client set never misfires). Cleared
+   * after firing so it shows once; when KAS/BFF later makes the switch stick,
+   * the pushed mode EQUALS `lastClientSetModeId`, the diff is false, nothing
+   * fires, and the chip stays — zero further client change.
+   *
+   * The message names the ACTUAL direction of the revert (derived from the
+   * mode the client set, not assumed), so an on-revert reads "turned off" and
+   * an off-revert reads "turned back on" — it can never claim the wrong one.
+   */
+  private detectClientModeRevert(configOptions: unknown): void {
+    if (!this.startedCloudSession || !this.lastClientSetModeId) return;
+    const agents = parseAgentsFromConfigOptions(configOptions);
+    if (!agents?.currentAgentId) return;
+    const pushedWireModeId = toKasModeId(agents.currentAgentId);
+    const setModeId = this.lastClientSetModeId;
+    // A push that still carries the mode we set is either KAS's optimistic echo
+    // of our switch or (once the sandbox applies it) the switch holding — not a
+    // revert. Stay armed and wait: the real revert push (the space-kind mode)
+    // arrives later in the same turn. Disarming here would swallow it and the
+    // notice would never fire.
+    if (pushedWireModeId === setModeId) return;
+    // First push that DIFFERS from what we set: the switch didn't hold. Fire
+    // once and disarm, so the remaining stale pushes in this turn stay silent.
+    this.lastClientSetModeId = undefined;
+    // Fire only when the reverted switch involved autonomous (the only mode
+    // this feature toggles): either turning it ON was undone, or turning it
+    // OFF (back to Default) was undone by the sandbox re-asserting autonomous.
+    const autonomousWire = toKasModeId(KAS_AUTONOMOUS_AGENT_ID);
+    const revertedAutonomousOn = setModeId === autonomousWire;
+    const revertedAutonomousOff = pushedWireModeId === autonomousWire;
+    if (revertedAutonomousOn) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.SystemNotice,
+        message:
+          "Autonomous mode was turned off — this cloud session doesn't support changing modes yet.",
+        success: false,
+      });
+    } else if (revertedAutonomousOff) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.SystemNotice,
+        message:
+          "Autonomous mode was turned back on — this cloud session doesn't support changing modes yet.",
+        success: false,
+      });
+    }
   }
 
   /**

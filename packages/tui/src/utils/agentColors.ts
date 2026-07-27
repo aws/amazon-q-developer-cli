@@ -1,5 +1,6 @@
 import { getTerminalChalkColor } from './colorUtils.js';
 import {
+  KAS_AUTONOMOUS_AGENT_ID,
   KAS_DEFAULT_AGENT_ID,
   KAS_DEFAULT_AGENT_NAME,
 } from '../constants/agents.js';
@@ -11,11 +12,20 @@ const DEFAULT_AGENT_NAMES: ReadonlySet<string> = new Set([
   // wire id 'default'); without it the default agent tag falls through to a
   // hashed palette color instead of the brand color.
   'kiro_default',
+  // The bundled autonomous mode presents as the Default agent (the footer
+  // signals it separately via the Autonomous chip), so it shares the brand
+  // color and display name.
+  KAS_AUTONOMOUS_AGENT_ID,
 ]);
 
 /** Whether the given agent name is the default built-in agent. */
 export function isDefaultAgent(name: string): boolean {
   return DEFAULT_AGENT_NAMES.has(name);
+}
+
+/** Whether the given agent name is the bundled autonomous mode. */
+export function isAutonomousAgent(name: string | null): boolean {
+  return name === KAS_AUTONOMOUS_AGENT_ID;
 }
 
 /**
@@ -27,6 +37,7 @@ export function isDefaultAgent(name: string): boolean {
  */
 const BUILTIN_DISPLAY_NAMES: Record<string, string> = {
   [KAS_DEFAULT_AGENT_ID]: KAS_DEFAULT_AGENT_NAME,
+  [KAS_AUTONOMOUS_AGENT_ID]: KAS_DEFAULT_AGENT_NAME,
   kiro_planner: 'Plan',
   plan: 'Plan',
   spec: 'Spec',

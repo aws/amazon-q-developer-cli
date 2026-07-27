@@ -80,7 +80,10 @@ import {
   useAllowAsciiArt,
 } from '../../../hooks/useGlyphs.js';
 import { useAnimationPaused } from '../../../contexts/AnimationPausedContext.js';
-import { getAgentColor } from '../../../utils/agentColors.js';
+import {
+  getAgentColor,
+  isAutonomousAgent,
+} from '../../../utils/agentColors.js';
 import { isParentSubagentTool } from '../../../types/agent-events.js';
 import {
   collectSettledSubagentStagesByParent,
@@ -1740,6 +1743,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       {isInitialized && !isShellEscape && (
         <StatusLine
           agentName={agentName}
+          autonomousModeActive={isAutonomousAgent(agentName)}
           modelName={modelName}
           effort={currentEffort}
           contextUsagePercent={ctxPct}

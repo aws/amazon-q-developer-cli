@@ -14,6 +14,7 @@ import { handleTools } from './tools';
 import { handleUpgradeAgent } from './upgrade-agent';
 import { handleModel } from './model';
 import { handleAgent } from './agent';
+import { handleAutonomous } from './autonomous';
 import { handleEffort } from './effort';
 import { handleRepo } from './repo';
 import { handleMcp } from './mcp';
@@ -49,6 +50,7 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.UpgradeAgent]: handleUpgradeAgent,
   [KasCommandName.Model]: handleModel,
   [KasCommandName.Agent]: handleAgent,
+  [KasCommandName.Autonomous]: handleAutonomous,
   [KasCommandName.Effort]: handleEffort,
   [KasCommandName.Repo]: handleRepo,
 };

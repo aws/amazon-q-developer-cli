@@ -306,6 +306,65 @@ describe('UI variant layout rendering', () => {
     expect(dimmedOutput).not.toContain('local-only-branch');
   });
 
+  it('renders a yellow Autonomous chip between agent and model when active', async () => {
+    const props: StatusSurfaceProps = {
+      agentName: 'autonomous',
+      autonomousModeActive: true,
+      modelName: 'model',
+      effort: null,
+      contextUsagePercent: 10,
+      workspacePath: '/local-workspace',
+      gitBranch: null,
+      goalStatus: null,
+    };
+
+    for (const StatusLine of [TuiStatusSurface, LiteStatusSurface]) {
+      const terminal = new MockTerminal();
+      activeInstance = render(React.createElement(StatusLine, props), {
+        terminal,
+        exitOnCtrlC: false,
+      });
+      await flush();
+
+      const output = stripAnsi(terminal.output);
+      // The wire `autonomous` mode surfaces as the Default agent chip,
+      // with the Autonomous chip between agent and model.
+      expect(output).toMatch(/Default.*Autonomous.*model/s);
+
+      activeInstance.unmount();
+      activeInstance = null;
+    }
+  });
+
+  it('omits the Autonomous chip when autonomous mode is off', async () => {
+    const props: StatusSurfaceProps = {
+      agentName: 'default',
+      autonomousModeActive: false,
+      modelName: 'model',
+      effort: null,
+      contextUsagePercent: 10,
+      workspacePath: '/local-workspace',
+      gitBranch: null,
+      goalStatus: null,
+    };
+
+    for (const StatusLine of [TuiStatusSurface, LiteStatusSurface]) {
+      const terminal = new MockTerminal();
+      activeInstance = render(React.createElement(StatusLine, props), {
+        terminal,
+        exitOnCtrlC: false,
+      });
+      await flush();
+
+      const output = stripAnsi(terminal.output);
+      expect(output).toContain('Default');
+      expect(output).not.toContain('Autonomous');
+
+      activeInstance.unmount();
+      activeInstance = null;
+    }
+  });
+
   it('preserves local location in both variants outside cloud sessions', async () => {
     const props: StatusSurfaceProps = {
       agentName: 'kiro',

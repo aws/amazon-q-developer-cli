@@ -29,6 +29,7 @@ export enum KasCommandName {
   Mcp = '/mcp',
   Tools = '/tools',
   Plan = '/plan',
+  Autonomous = '/autonomous',
   Feedback = '/feedback',
   Rewind = '/rewind',
   UpgradeAgent = '/upgrade-agent',
@@ -210,6 +211,18 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     name: KasCommandName.Plan,
     description:
       'Switch to plan mode to break ideas into an implementation plan',
+  },
+  {
+    // Dark-shipped: feature-gated behind the cloud-sandbox rollout AND
+    // cloud-only, so no released user sees it and, even in the cohort, it is
+    // offered only inside cloud sessions.
+    name: KasCommandName.Autonomous,
+    description: 'Turn autonomous mode on or off',
+    feature: Feature.RemoteSandbox,
+    meta: {
+      cloudOnly: true,
+      subcommands: ['on', 'off'],
+    },
   },
   {
     name: KasCommandName.Feedback,

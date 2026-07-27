@@ -200,6 +200,18 @@ export interface SessionClient {
   ): Promise<void>;
 
   /**
+   * Switch the session mode via ACP `session/set_mode` (as opposed to the
+   * `session/set_config_option` route used by {@link setConfigOption}).
+   * The response is empty and KAS emits no `current_mode_update` afterwards,
+   * so implementations must self-report the switch (KAS broadcasts the
+   * AgentSwitched event on success). Implemented only by engines that route
+   * mode changes through `session/set_mode` directly (currently KAS).
+   *
+   * @param modeId - TUI-facing mode id (mapped to the wire id internally)
+   */
+  setSessionMode?(modeId: string): Promise<void>;
+
+  /**
    * Fetches the global user settings from the backend.
    * Returns a flat map using the same dotted key names as the settings file
    *

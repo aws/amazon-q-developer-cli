@@ -1,7 +1,7 @@
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore } from './app-store';
 import { Kiro } from '../kiro';
-import { KAS_COMMANDS } from '../kas-commands';
+import { KAS_COMMANDS, getKasCommands } from '../kas-commands';
 
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
@@ -56,12 +56,14 @@ describe('AppState.agentEngine', () => {
 });
 
 describe('AppState.kasCommands', () => {
-  it("initializes to KAS_COMMANDS when engine is 'kas'", () => {
+  it("initializes to the feature-resolved KAS command set when engine is 'kas'", () => {
     const store = createAppStore({
       kiro: new Kiro(),
       agentEngine: 'kas',
     });
-    expect(store.getState().kasCommands).toEqual([...KAS_COMMANDS]);
+    // The store seeds from getKasCommands(), which drops feature-gated
+    // entries (e.g. /autonomous behind remote_sandbox) not in the cohort.
+    expect(store.getState().kasCommands).toEqual([...getKasCommands()]);
   });
 
   it("initializes to [] when engine is 'v2'", () => {

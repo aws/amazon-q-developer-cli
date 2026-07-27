@@ -3,6 +3,8 @@ import type { AppState } from '../../stores/app-store.js';
 
 export interface StatusSurfaceProps {
   agentName: string | null;
+  /** Whether the session runs the bundled autonomous mode (Autonomous chip). */
+  autonomousModeActive?: boolean;
   modelName: string | null;
   effort: string | null;
   contextUsagePercent: number | null;

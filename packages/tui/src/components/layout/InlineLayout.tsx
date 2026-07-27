@@ -61,7 +61,7 @@ import {
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getPlaceholder } from './getPlaceholder.js';
 import { getGitBranch } from '../../utils/git';
-import { getAgentColor } from '../../utils/agentColors.js';
+import { getAgentColor, isAutonomousAgent } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import {
   useGlyphs,
@@ -384,6 +384,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     return (
       <StatusLine
         agentName={currentAgent?.name ?? null}
+        autonomousModeActive={isAutonomousAgent(currentAgent?.name ?? null)}
         modelName={currentModel?.name ?? null}
         effort={currentEffort}
         contextUsagePercent={contextUsagePercent}
@@ -423,6 +424,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     return (
       <StatusLine
         agentName={currentAgent?.name ?? null}
+        autonomousModeActive={isAutonomousAgent(currentAgent?.name ?? null)}
         modelName={currentModel?.name ?? null}
         effort={currentEffort}
         contextUsagePercent={contextUsagePercent}
