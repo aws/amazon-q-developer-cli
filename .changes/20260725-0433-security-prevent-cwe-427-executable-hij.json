@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "Prevent CWE-427 executable hijacking on Windows by removing the working directory from the command search path"
+}

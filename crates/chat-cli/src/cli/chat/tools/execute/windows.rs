@@ -18,6 +18,18 @@ use super::{
 };
 use crate::os::Os;
 
+/// Environment variable that removes the current working directory from Windows'
+/// executable search path. Without it, `cmd.exe`/`CreateProcess` resolve a bare
+/// command name (e.g. `git`) from the working directory before PATH, so a binary
+/// planted in the working directory runs instead of the intended program (CWE-427).
+const NO_CWD_IN_EXE_PATH_ENV: &str = "NoDefaultCurrentDirectoryInExePath";
+
+/// Harden the spawn environment so bare command names resolve only from PATH,
+/// never from the working directory the command runs in.
+fn harden_windows_search_path(env_vars: &mut std::collections::HashMap<String, String>) {
+    env_vars.insert(NO_CWD_IN_EXE_PATH_ENV.to_string(), "1".to_string());
+}
+
 /// Run a command on Windows using the detected shell (PowerShell or cmd.exe).
 /// # Arguments
 /// * `command` - The command to run
@@ -32,7 +44,8 @@ pub async fn run_command<W: Write>(
     mut updates: Option<W>,
 ) -> Result<CommandResult> {
     // Set up environment variables with user agent metadata for CloudTrail tracking
-    let env_vars = env_vars_with_user_agent(os);
+    let mut env_vars = env_vars_with_user_agent(os);
+    harden_windows_search_path(&mut env_vars);
 
     // We need to maintain a handle on stderr and stdout, but pipe it to the terminal as well
     let (shell, flag) = agent::util::shell::shell_command();
@@ -132,6 +145,17 @@ mod tests {
     use crate::cli::chat::tools::OutputKind;
     use crate::cli::chat::tools::execute::ExecuteCommand;
     use crate::os::Os;
+
+    #[test]
+    fn harden_windows_search_path_removes_cwd_from_exe_search() {
+        let mut env = std::collections::HashMap::new();
+        super::harden_windows_search_path(&mut env);
+        assert_eq!(
+            env.get(super::NO_CWD_IN_EXE_PATH_ENV).map(String::as_str),
+            Some("1"),
+            "spawned commands must resolve executables from PATH only, not the working directory"
+        );
+    }
 
     #[tokio::test]
     async fn test_execute_cmd_tool() {

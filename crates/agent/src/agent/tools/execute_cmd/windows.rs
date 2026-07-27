@@ -283,7 +283,8 @@ impl ExecuteCmd {
                     .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
             });
 
-        let env_vars = env_vars_with_user_agent();
+        let mut env_vars = env_vars_with_user_agent();
+        harden_windows_search_path(&mut env_vars);
         let (shell, flag) = crate::agent::util::shell::shell_command();
 
         Command::new(shell)
@@ -374,9 +375,32 @@ fn env_vars_with_user_agent() -> HashMap<String, String> {
     env_vars
 }
 
+/// Environment variable that removes the current working directory from Windows'
+/// executable search path. Without it, `cmd.exe`/`CreateProcess` resolve a bare
+/// command name (e.g. `git`) from the working directory before PATH, so a binary
+/// planted in the working directory runs instead of the intended program (CWE-427).
+const NO_CWD_IN_EXE_PATH_ENV: &str = "NoDefaultCurrentDirectoryInExePath";
+
+/// Harden the spawn environment so bare command names resolve only from PATH,
+/// never from the working directory the command runs in.
+fn harden_windows_search_path(env_vars: &mut HashMap<String, String>) {
+    env_vars.insert(NO_CWD_IN_EXE_PATH_ENV.to_string(), "1".to_string());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn harden_windows_search_path_removes_cwd_from_exe_search() {
+        let mut env = HashMap::new();
+        harden_windows_search_path(&mut env);
+        assert_eq!(
+            env.get(NO_CWD_IN_EXE_PATH_ENV).map(String::as_str),
+            Some("1"),
+            "spawned commands must resolve executables from PATH only, not the working directory"
+        );
+    }
 
     #[test]
     fn is_hidden_recognises_all_ranges() {
