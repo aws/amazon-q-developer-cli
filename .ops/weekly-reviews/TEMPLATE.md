@@ -34,9 +34,11 @@ During the meeting, go over open action items here https://tiny.amazon.com/1auvb
 
 ## 6. Page Log
 
-| # | Ticket | Announcement / Synopsis |
-|---|---|---|
-| 1 | [{id}]({page_or_ticket_url}) | {synopsis} |
+_One row per page event; the synopsis columns repeat for a ticket that paged multiple times._
+
+| # | Ticket | Page / Announcement | Impact Summary | Root Cause | Mitigation | Action Items | Risk of Recurrence | Related Tickets |
+|---|---|---|---|---|---|---|---|---|
+| 1 | [{id}]({page_or_ticket_url}) | {page_announcement} | {impact_summary} | {root_cause} | {mitigation} | {action_items} | {risk_of_recurrence} | {related_tickets} |
 
 ## 7. Open Sev2s
 

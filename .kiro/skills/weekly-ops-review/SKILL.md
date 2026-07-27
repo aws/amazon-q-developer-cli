@@ -65,7 +65,7 @@ Initialize scratch files at the start:
 > /tmp/kcli_oncall_resolved.jsonl   # resolved tickets (Section 1 Resolved + Section 2)
 > /tmp/kcli_oncall_open_sev2.jsonl  # currently-open Sev2s (Section 7)
 > /tmp/kcli_oncall_partner.jsonl    # tickets cut to other teams (Section 9)
-> /tmp/kcli_oncall_pages.jsonl      # page log — one row per page EVENT (Section 6)
+> /tmp/kcli_oncall_pages.jsonl      # page log — one row per page EVENT incl. synopsis fields (Section 6)
 > /tmp/kcli_oncall_metrics.json     # Section 1 numbers
 > /tmp/kcli_oncall_report.md        # final report
 ```
@@ -176,7 +176,7 @@ Reconstruct pages from ticket history:
 1. Union of Sev2 tickets touched during the week = the Step 3 result set (search by
    `createDate` **and** by `lastUpdatedDate`) plus any ticket found via the Section 6
    scan below whose update did not land in Step 3. Fetch each with `get-ticket` including
-   `threads: ["CORRESPONDENCE","WORKLOG","ANNOUNCEMENTS"]`.
+   `threads: ["CORRESPONDENCE","WORKLOG","ANNOUNCEMENTS","SYNOPSIS"]`.
 2. For each ticket, walk every correspondence/worklog/announcement entry and emit ONE
    page event when the entry represents a page delivered to
    `page-amazon-q-cli-primary@amazon.com`. Recognizable signals (case-insensitive):
@@ -236,6 +236,13 @@ authors: Medic, SmartTTBots, SnowEngine, asbx-medic-prod, AutoSIM, OSSA, ossa-ge
 TRI BOT, SIMCrux, flx-cloudwatch, PitMinerArsenic, ShoehornProofNotifier,
 TicketyCategorizationMaxisRole), `mcms`, and any `paging` events/links.
 
+When you fetch the ticket, also request the `SYNOPSIS` thread
+(`threads: [...,"SYNOPSIS"]`) and capture its six fields when present — `impact_summary`,
+`root_cause`, `mitigation`, `action_items`, `risk_of_recurrence`, `related_tickets` — into
+the same JSON line. These feed the Section 6 per-ticket synopsis (Step 5). Most alarm and
+customer-support tickets have no synopsis; leave the fields absent here and derive them in
+Step 5 per the "Root cause & descriptions" fallback rule.
+
 ## Step 4 — Open Sev2s + partner-team tickets
 
 **Open Sev2s (Section 7):**
@@ -287,6 +294,33 @@ Reconstruct from ticket correspondence/worklog using the rules in Step 2's "Page
 
 Append every event to `/tmp/kcli_oncall_pages.jsonl`. `metrics.pages` MUST equal the
 number of rows written (this is the invariant that ties Section 1 `Pages` to Section 6).
+
+**Per-ticket synopsis (same table).** Each page-event row ALSO carries the paged ticket's
+synopsis in the SAME Section 6 table (six extra columns). Derive the synopsis ONCE per
+**distinct** paged ticket (dedupe by `display_id`) and repeat it on every event row for
+that ticket — a ticket that paged 3× shows the same synopsis in all three rows. Append
+each event to `/tmp/kcli_oncall_pages.jsonl` as `{display_id, page_title, page_url,
+paged_at, impact_summary, root_cause, mitigation, action_items, risk_of_recurrence,
+related_tickets}`. `metrics.pages` MUST equal the number of rows written (this is the
+invariant that ties Section 1 `Pages` to Section 6).
+
+Populate the six synopsis fields in this order of preference:
+
+1. The ticket's `SYNOPSIS` thread (fetched in Step 2/3) — use its fields verbatim where
+   present.
+2. The ticket's structured fields + human comments already captured in
+   `/tmp/kcli_oncall_sev2.jsonl` — `resolution`, `rootCause`/`rootCauseDetails`,
+   `closureCode`, worklog, and linked CR/MCM/Taskei/Sauron items.
+3. Derive per the "Root cause & descriptions" fallback rule below (alarm name, region,
+   linked artifacts).
+
+Field guidance (keep each to ONE concise line — these are table cells, so NO pipes `|` and
+NO line breaks): **Impact Summary** = who/what was affected and how; **Root Cause** = the
+confirmed cause, else best current hypothesis; **Mitigation** = what stopped the bleeding /
+the fix shipped; **Action Items** = concrete follow-ups (CR/MCM/Taskei/Sauron IDs) or
+`None recorded`; **Risk of Recurrence** = `Low`/`Medium`/`High` + a short reason, else
+`TBD`; **Related Tickets** = linked ticket display-ID links (backend/KAS/SOC/COE) or
+`None`. Never leave a cell blank — use `TBD`, `None`, or `None recorded`.
 
 ## Step 6 — Root-cause breakdown, LSEs, grouping
 
@@ -358,7 +392,10 @@ means the display ID. Never leave auto-populated fields blank — use real data,
 `Unknown`.
 
 Sections 3, 5, 8, 10 keep their standing placeholders/links (filled live during the
-meeting). Grouped tickets must list ALL their IDs.
+meeting). Grouped tickets must list ALL their IDs. Section 6 is a SINGLE wide table: one
+row per page event, with the six synopsis columns (Impact Summary, Root Cause, Mitigation,
+Action Items, Risk of Recurrence, Related Tickets) filled on every row from
+`/tmp/kcli_oncall_pages.jsonl` (repeated across a ticket's multiple page rows).
 
 ## Step 8 — Validate
 
@@ -390,6 +427,20 @@ sys.exit(0 if not missing else print('MISSING FROM SECTION 2:', *missing) or 1)
 # Section 7 must include the Next Step column.
 grep -q "^| # | Ticket | Description | Next Step | ETA To Resolve |" "$REPORT" \
   || echo "SECTION 7 MISSING 'Next Step' COLUMN"
+
+# Section 6 page-log table must include the six synopsis columns.
+grep -q "^| # | Ticket | Page / Announcement | Impact Summary | Root Cause | Mitigation | Action Items | Risk of Recurrence | Related Tickets |" "$REPORT" \
+  || echo "SECTION 6 MISSING SYNOPSIS COLUMNS"
+# Every paged ticket must appear in Section 6 and no synopsis cell may be blank.
+python3 -c "
+import json
+report = open('$REPORT').read()
+for line in open('/tmp/kcli_oncall_pages.jsonl'):
+    r = json.loads(line)
+    if r['display_id'] not in report: print('SECTION 6 MISSING PAGED TICKET:', r['display_id'])
+    for f in ['impact_summary','root_cause','mitigation','action_items','risk_of_recurrence','related_tickets']:
+        if not str(r.get(f,'')).strip(): print('SECTION 6 BLANK CELL:', r['display_id'], f)
+"
 ```
 
 Fix anything reported. Confirm Section 2 `Total` == Section 1 Resolved == count of
