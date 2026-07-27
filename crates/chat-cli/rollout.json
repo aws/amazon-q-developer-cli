@@ -26,10 +26,9 @@
     "segment": "internal"
   },
   "lite": {
-    "description": "Lite TUI mode - stable channel, Amazon employees only",
+    "description": "Lite TUI mode - all channels, Amazon employees only",
     "treatment_percent": 100,
-    "segment": "internal",
-    "channel": "stable"
+    "segment": "internal"
   },
   "test": {
     "description": "Test experiment for unit tests",

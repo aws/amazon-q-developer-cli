@@ -174,12 +174,12 @@ mod tests {
     }
 
     #[test]
-    fn lite_requires_internal_stable() {
+    fn lite_requires_internal_any_channel() {
         for (is_internal, is_nightly, expected) in [
             (false, false, false),
             (false, true, false),
             (true, false, true),
-            (true, true, false),
+            (true, true, true),
         ] {
             let rollout = rollout(is_internal, is_nightly);
             assert_eq!(

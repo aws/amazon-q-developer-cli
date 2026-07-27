@@ -332,7 +332,10 @@ mod tests {
         };
         let json = serde_json::to_string(&r.enabled_features()).unwrap();
         assert!(json.contains("\"voice\""), "voice should be enabled: {json}");
-        assert!(!json.contains("\"lite\""), "lite must be stable-only: {json}");
+        assert!(
+            json.contains("\"lite\""),
+            "lite should be enabled for internal (any channel): {json}"
+        );
         assert!(
             json.contains("\"remote_sandbox\""),
             "remote_sandbox should be enabled for internal nightly: {json}"
@@ -505,12 +508,12 @@ mod tests {
     }
 
     #[test]
-    fn test_lite_requires_internal_stable() {
+    fn test_lite_requires_internal_any_channel() {
         for (is_internal, is_nightly, expected) in [
             (false, false, false),
             (false, true, false),
             (true, false, true),
-            (true, true, false),
+            (true, true, true),
         ] {
             let rollout = Rollout::new_for_test(is_internal, is_nightly);
             assert_eq!(
