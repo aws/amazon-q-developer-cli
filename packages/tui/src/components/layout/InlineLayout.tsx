@@ -210,6 +210,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   );
   const cloudProvider = useAppStore((state) => state.cloudProvider);
   const cloudRepoCount = useAppStore((state) => state.cloudRepoCount);
+  const cloudNewSessionChecklist = useAppStore(
+    (state) => state.cloudNewSessionChecklist
+  );
   // Resume vs create wording for the session checklist row: the boot path
   // records the origin (via beginKasSession) before the session RPC runs.
   const cloudSessionResumed = useAppStore(
@@ -229,6 +232,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const replaceQueuedMessage = useAppStore((s) => s.replaceQueuedMessage);
   const cancelEditingQueue = useAppStore((s) => s.cancelEditingQueue);
   const isInitialized = useAppStore((s) => s.isInitialized);
+  const hasEnteredConversation = useAppStore((s) => s.hasEnteredConversation);
   const settings = useAppStore((s) => s.settings);
   const mode = useAppStore((state) => state.mode);
   const backendPanelHandlers = useBackendPanelHandlers();
@@ -505,11 +509,11 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     setAgentError(null);
   }, [setAgentError]);
 
-  // Cloud connect screen: show the milestone checklist while a cloud session
-  // boots and no message has been sent. A small ticker animates the in-progress
-  // spinner; it runs only while the screen is up and animations are enabled.
+  // Cold-boot only: the latch (not isInitialized, which flips mid-boot and
+  // hid the checklist) keeps /chat new from replaying a stale connect screen.
   const showCloudConnectScreen =
     cloudSessionActive &&
+    !hasEnteredConversation &&
     bootProgress.has('agent_connect') &&
     messages.length === 0;
   const [cloudBootFrame, setCloudBootFrame] = useState(0);
@@ -676,6 +680,33 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 sessionCreated:
                   bootProgress.get('session_create')?.status === 'ready',
                 resumed: cloudSessionResumed,
+                provider: cloudProvider ?? undefined,
+                repoCount: cloudRepoCount ?? undefined,
+              },
+              {
+                check: glyphs.checkmark,
+                cross: glyphs.cross,
+                ellipsis: glyphs.ellipsis,
+                spinner:
+                  inlineSpinners.brailleRotate[
+                    cloudBootFrame % inlineSpinners.brailleRotate.length
+                  ]!,
+              }
+            ).map((line, i) => (
+              <Text key={i}>{line}</Text>
+            ))}
+          </Box>
+        )}
+
+        {/* Banner-less confirmation for a session created mid-conversation;
+            armed only after the create resolves, dismissed by the first message. */}
+        {cloudNewSessionChecklist && !showCloudConnectScreen && (
+          <Box flexDirection="column">
+            {formatCloudStartupChecklist(
+              {
+                connected: true,
+                sessionCreated: true,
+                resumed: false,
                 provider: cloudProvider ?? undefined,
                 repoCount: cloudRepoCount ?? undefined,
               },

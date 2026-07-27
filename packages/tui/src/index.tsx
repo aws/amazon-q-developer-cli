@@ -925,6 +925,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
       // Keep history buffered until the persistent renderer can take over in order.
       const liveHandler = appStore.getState().createStreamEventHandler({
         fromHistory: pendingHistoryEvents.length > 0,
+        cloudReplay: kiro.isCloudSessionActive(),
       });
       appStore.getState().setLiveStreamHandler(liveHandler);
       const enableLiveDelivery = () => {

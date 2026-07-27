@@ -21,7 +21,7 @@ import type { SessionPickerRow } from '../../components/ui/SessionPickerPanel';
 import { basename } from 'node:path';
 import { statSync } from 'node:fs';
 import type { AgentStreamEvent } from '../../types/agent-events';
-import { cancelCloudClearRewipes } from '../effects';
+import { cancelCloudClearRewipes, scheduleCloudClearRewipes } from '../effects';
 import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
@@ -196,6 +196,11 @@ async function startNewSession(
   ctx.stashCloudSessionScope(previousSessionId);
   ctx.resetCloudSessionScope();
   ctx.resetMessages();
+  // Armed before the (potentially slow) create so the previous session's rows
+  // wipe immediately; re-wipes on each cloud repaint until startup quiets.
+  scheduleCloudClearRewipes(ctx);
+  // The loader shows alone during the create; the checklist arms on success.
+  ctx.setCloudNewSessionChecklist(false);
   ctx.setLoadingMessage('Starting new conversation...');
   const restoreKasSession = ctx.beginKasSession('new');
   try {
@@ -213,6 +218,10 @@ async function startNewSession(
         boundRepos[0]?.branch ?? null
       );
     }
+    // Cloud-only creation feedback, dismissed by the first message.
+    if (ctx.kiro.isCloudSessionActive()) {
+      ctx.setCloudNewSessionChecklist(true);
+    }
     if (session.currentModel) ctx.setCurrentModel(session.currentModel);
     if (session.currentAgent) ctx.setCurrentAgent(session.currentAgent);
     ctx.showAlert(
@@ -223,6 +232,8 @@ async function startNewSession(
     if (prompt) ctx.sendMessage(prompt);
   } catch (err) {
     restoreKasSession();
+    // A reconcile left armed would keep re-wiping the restored session.
+    cancelCloudClearRewipes();
     // The previous session is still the active one — bring its footer
     // repo/branch back from the stash cleared above.
     ctx.restoreCloudSessionScope(previousSessionId);
@@ -277,10 +288,13 @@ export async function loadExistingSession(
       sessionId = ensured.sessionId;
     }
   }
-  // A pending /clear re-wipe belongs to the outgoing session; firing here
-  // would repaint the incoming one mid-stream.
+  // Pending re-wipes and the post-create checklist describe the outgoing
+  // session; neither may fire under the incoming one.
   cancelCloudClearRewipes();
+  ctx.setCloudNewSessionChecklist(false);
   ctx.clearUIState();
+  // Deliberately no resetMessages: switches APPEND each load's replay,
+  // matching local-session behavior.
   // The bound repo/branch describe the PREVIOUS session's sandbox — snapshot
   // them under that session's id (so switching back restores its footer
   // without a re-fetch), then clear so nothing leaks into the loaded session.
@@ -327,10 +341,13 @@ export async function loadExistingSession(
           true
         );
       }
-      // fromHistory: replayed tool rows have no persisted duration, so skip the
-      // elapsed stamp (a fresh Date.now() would show a bogus ~0ms chip).
+      // cloudReplay from the client's live placement — the store's flag still
+      // describes the outgoing session here.
       if (!ctx.kiro.replayHistory?.(events)) {
-        const handler = ctx.createStreamEventHandler({ fromHistory: true });
+        const handler = ctx.createStreamEventHandler({
+          fromHistory: true,
+          cloudReplay: ctx.kiro.isCloudSessionActive(),
+        });
         for (const e of events) handler(e);
         handler.flush();
         handler.dispose();

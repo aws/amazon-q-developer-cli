@@ -209,6 +209,8 @@ export interface CommandContext {
   /** Project an attached-repo set (plus optional first-repo branch) onto the
    *  footer and the /repo pre-check list in one store update. */
   applyRepoFooter: (repos: string[], branch?: string | null) => void;
+  /** Arm/disarm the post-create cloud checklist. */
+  setCloudNewSessionChecklist: (armed: boolean) => void;
   /** Sync the surface's cloud/local mode to the active session's placement. */
   setCloudSessionActive: (active: boolean) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
@@ -277,6 +279,7 @@ export interface CommandContext {
    *  carry their original timestamps. */
   createStreamEventHandler: (options?: {
     fromHistory?: boolean;
+    cloudReplay?: boolean;
   }) => StreamEventHandler;
   /** Update the session ID in the store */
   setSessionId: (id: string | null) => void;

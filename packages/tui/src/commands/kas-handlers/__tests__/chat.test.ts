@@ -7,6 +7,11 @@ import {
   afterEach,
   afterAll,
 } from 'bun:test';
+import {
+  noteCloudScrollbackRepaint,
+  cancelCloudScrollbackReconcile,
+  isCloudScrollbackReconcileArmed,
+} from '../../cloud-scrollback-reconcile';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -689,6 +694,92 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(ctx._spies.setSessionId).toHaveBeenCalledWith('newSID');
     });
 
+    it('new (cloud): arms the event-driven scrollback reconcile so slow sandbox startup cannot leave pre-new rows', async () => {
+      try {
+        const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
+        const ctx = createMockCommandContext({
+          kasCommands: [CHAT_CMD],
+          kiro: {
+            newSession,
+            isCloudSessionActive: () => true,
+            getSessionRepositories: () => null,
+          } as any,
+        });
+        await handleChat(CHAT_CMD, 'new', ctx);
+        // Armed → wiped once now, and re-wipes on each later cloud repaint (a
+        // slow sandbox can't outlast a fixed timer because there is none).
+        expect(isCloudScrollbackReconcileArmed()).toBe(true);
+        const before = (ctx._spies.bumpLiteScrollbackClear as any).mock.calls
+          .length;
+        noteCloudScrollbackRepaint();
+        expect(
+          (ctx._spies.bumpLiteScrollbackClear as any).mock.calls.length
+        ).toBe(before + 1);
+      } finally {
+        cancelCloudScrollbackReconcile();
+      }
+    });
+
+    it('new (local): arms no reconcile — the single reset wipe lands last', async () => {
+      try {
+        const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
+        const ctx = createMockCommandContext({
+          kasCommands: [CHAT_CMD],
+          kiro: {
+            newSession,
+            isCloudSessionActive: () => false,
+            getSessionRepositories: () => null,
+          } as any,
+        });
+        await handleChat(CHAT_CMD, 'new', ctx);
+        expect(isCloudScrollbackReconcileArmed()).toBe(false);
+      } finally {
+        cancelCloudScrollbackReconcile();
+      }
+    });
+
+    it('new (cloud): clears the post-create checklist during create, then arms it on success', async () => {
+      try {
+        const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
+        const ctx = createMockCommandContext({
+          kasCommands: [CHAT_CMD],
+          kiro: {
+            newSession,
+            isCloudSessionActive: () => true,
+            getSessionRepositories: () => null,
+          } as any,
+        });
+        await handleChat(CHAT_CMD, 'new', ctx);
+        const calls = (ctx._spies.setCloudNewSessionChecklist as any).mock
+          .calls;
+        // First cleared (loader shows alone during create), then armed on success.
+        expect(calls.map((c: unknown[]) => c[0])).toEqual([false, true]);
+      } finally {
+        cancelCloudScrollbackReconcile();
+      }
+    });
+
+    it('new (local): never arms the post-create cloud checklist', async () => {
+      try {
+        const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
+        const ctx = createMockCommandContext({
+          kasCommands: [CHAT_CMD],
+          kiro: {
+            newSession,
+            isCloudSessionActive: () => false,
+            getSessionRepositories: () => null,
+          } as any,
+        });
+        await handleChat(CHAT_CMD, 'new', ctx);
+        const calls = (ctx._spies.setCloudNewSessionChecklist as any).mock
+          .calls;
+        // Cleared up front, but never armed (no `true`) off cloud.
+        expect(calls.some((c: unknown[]) => c[0] === true)).toBe(false);
+      } finally {
+        cancelCloudScrollbackReconcile();
+      }
+    });
+
     it('new <prompt>: forwards the prompt via sendMessage', async () => {
       const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
       const ctx = createMockCommandContext({
@@ -721,6 +812,16 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect((loadSession as any).mock.calls.length).toBe(1);
       expect((loadSession as any).mock.calls[0][0]).toBe('sid');
       expect(ctx._spies.clearUIState).toHaveBeenCalled();
+      // The post-/chat new checklist describes the outgoing session; a resume
+      // must clear it so it can't linger under the loaded transcript.
+      expect(ctx._spies.setCloudNewSessionChecklist).toHaveBeenCalledWith(
+        false
+      );
+      // Session switches APPEND each load's replay to the transcript (matching
+      // local-session behavior in released builds) — the previous history must
+      // NOT be reset. Replayed user rows with already-rendered persisted ids
+      // are handled by the cloud-replay dedupe-skip in the stream handler.
+      expect(ctx._spies.resetMessages).not.toHaveBeenCalled();
       expect(ctx._spies.setSessionId).toHaveBeenCalledWith('sid');
     });
 

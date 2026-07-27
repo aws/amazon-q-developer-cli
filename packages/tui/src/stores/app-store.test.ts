@@ -920,6 +920,85 @@ describe('Always-on live renderer (observer turns)', () => {
     expect(userRows.map((m) => m.id)).toEqual(['local-1', 'kas-43']);
   });
 
+  it('renders a replayed user row whose persisted id was already rendered (cloud A→B→A appends)', () => {
+    // Cloud session switches APPEND each load's replay (A→B→A stacks three
+    // transcripts), so the re-loaded copy of A legitimately repeats A's
+    // persisted user ids. The rendered-duplicate check must only apply to LIVE
+    // echoes — deduping during a cloud replay dropped the user rows while
+    // assistant chunks (fresh ids each replay) survived, rendering responses
+    // without their prompts.
+    const store = createStore();
+    store.setState({
+      messages: [
+        {
+          id: 'persisted-7',
+          role: MessageRole.User,
+          content: 'hi kiro friday',
+        },
+      ],
+    });
+    // cloudReplay comes from the CLIENT's live placement at the call site —
+    // NOT the store's cloudSessionActive, which still describes the outgoing
+    // session while a switch's replay streams.
+    const handler = store
+      .getState()
+      .createStreamEventHandler({ cloudReplay: true });
+    handler.setHistoryReplay(true);
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'persisted-7',
+      content: { type: ContentType.Text, text: 'hi kiro friday' },
+    });
+    handler.setHistoryReplay(false);
+
+    // Same persisted id arriving LIVE (an echo) is still dropped.
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'persisted-7',
+      content: { type: ContentType.Text, text: 'hi kiro friday' },
+    });
+
+    const userRows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.User);
+    expect(userRows).toHaveLength(2);
+    // The replayed copy gets a FRESH row id (the static renderer dedupes
+    // emitted rows by id, so reusing the persisted id would paint only the
+    // first copy) and carries the persisted identity on kasMessageId.
+    expect(userRows[0]!.id).toBe('persisted-7');
+    expect(userRows[1]!.id).not.toBe('persisted-7');
+    expect(userRows[1]!.kasMessageId).toBe('persisted-7');
+  });
+
+  it('keeps the released dedupe for a LOCAL history replay (dark-ship gate)', () => {
+    // Off cloud, a replayed user row whose persisted id is already rendered is
+    // still dropped — released local behavior is unchanged by the cloud fix.
+    const store = createStore();
+    store.setState({
+      messages: [
+        {
+          id: 'persisted-7',
+          role: MessageRole.User,
+          content: 'hi kiro friday',
+        },
+      ],
+    });
+    const handler = store.getState().createStreamEventHandler();
+    handler.setHistoryReplay(true);
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'persisted-7',
+      content: { type: ContentType.Text, text: 'hi kiro friday' },
+    });
+    handler.setHistoryReplay(false);
+
+    const userRows = store
+      .getState()
+      .messages.filter((m) => m.role === MessageRole.User);
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0]!.id).toBe('persisted-7');
+  });
+
   it('dedupes an echo of the transmitted (expanded) content', () => {
     const store = createStore();
     store.setState({

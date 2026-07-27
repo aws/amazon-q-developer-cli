@@ -8,6 +8,7 @@ import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
 import { getKasCommands, type KasCommand } from '../kas-commands';
 import { loadExistingSession } from '../commands/kas-handlers/chat';
+import { noteCloudScrollbackRepaint } from '../commands/cloud-scrollback-reconcile';
 import { emitCloudDetachNoticeOnce } from '../utils/cloud-detach-notice';
 import {
   mergeRosterDelta,
@@ -983,6 +984,7 @@ interface BaseAppActions {
   ) => Promise<void>;
   createStreamEventHandler: (options?: {
     fromHistory?: boolean;
+    cloudReplay?: boolean;
   }) => StreamEventHandler;
   kasSubagentRouting: KasSubagentRoutingStore;
   processMessageStream: (
@@ -1206,6 +1208,8 @@ interface BaseAppActions {
   setCloudProvider: (provider: string | null) => void;
   /** Set the repository count for the startup checklist. */
   setCloudRepoCount: (count: number | null) => void;
+  /** Arm/disarm the post-`/chat new` cloud checklist (see cloudNewSessionChecklist). */
+  setCloudNewSessionChecklist: (armed: boolean) => void;
   /** Set the count of extra bound repos for the footer's `(+N others)` suffix. */
   setCloudExtraRepos: (count: number) => void;
   setKasMessageId: (kasMessageId: string) => void;
@@ -1738,6 +1742,11 @@ export interface AppState {
   cloudProvider: string | null;
   /** Number of repositories the connected provider exposes, for the startup checklist; null until known. */
   cloudRepoCount: number | null;
+  /** Post-`/chat new` creation checklist, shown until the first message. */
+  cloudNewSessionChecklist: boolean;
+  /** One-way latch: true once the conversation has ever been non-empty.
+   *  Store-held so it survives layout remounts (mode switches, lite↔tui). */
+  hasEnteredConversation: boolean;
   /** Count of bound repos beyond the one shown in the footer (the `(+N others)` suffix). 0 = single/none. */
   cloudExtraRepos: number;
   /** Per-session snapshots of the cloud scope (repo/branch/extras/attached),
@@ -2387,6 +2396,7 @@ function buildCommandContext(
     stashCloudSessionScope: state.stashCloudSessionScope,
     restoreCloudSessionScope: state.restoreCloudSessionScope,
     applyRepoFooter: state.applyRepoFooter,
+    setCloudNewSessionChecklist: state.setCloudNewSessionChecklist,
     setCloudSessionActive: state.setCloudSessionActive,
     setShowKeybindingsPanel: state.setShowKeybindingsPanel,
     setShowDisplaySettingsPanel: state.setShowDisplaySettingsPanel,
@@ -2725,6 +2735,8 @@ export const createAppStore = (props: AppStoreProps) => {
     cloudBranch: null,
     cloudProvider: null,
     cloudRepoCount: null,
+    cloudNewSessionChecklist: false,
+    hasEnteredConversation: false,
     cloudExtraRepos: 0,
     cloudScopeBySession: new Map(),
     lastTurnTokens: null,
@@ -2976,6 +2988,8 @@ export const createAppStore = (props: AppStoreProps) => {
           wasCancelled: false,
           lastTurnErrored: false,
           autoApproveCrewTools: false,
+          // The first prompt dismisses the post-create checklist.
+          cloudNewSessionChecklist: false,
           messages: [...state.messages, userMessage],
           _recentLocalUserMessages: recentLocalUserMessages,
           attachedFiles: [], // Clear attachments after sending
@@ -3164,11 +3178,17 @@ export const createAppStore = (props: AppStoreProps) => {
      * any buffered content; call `.dispose()` on cancel/error to abandon
      * the handler and drop buffered content. See `StreamEventHandler`.
      */
-    createStreamEventHandler: (options?: { fromHistory?: boolean }) => {
+    createStreamEventHandler: (options?: {
+      fromHistory?: boolean;
+      cloudReplay?: boolean;
+    }) => {
       // Replayed history rows must not stamp tool timing: the real durations
       // aren't persisted, so a fresh Date.now() would show a bogus ~0ms elapsed
       // chip. Leaving both timestamps unset omits the chip entirely.
       let fromHistory = options?.fromHistory === true;
+      // From the client's live placement — the store's cloudSessionActive
+      // still describes the outgoing session while a switch's replay streams.
+      const cloudReplay = options?.cloudReplay === true;
       let isBuffering = false;
       let bufferedContent = '';
       // Only the first model refusal in a turn is surfaced; the model can emit
@@ -3592,12 +3612,17 @@ export const createAppStore = (props: AppStoreProps) => {
               const id = event.id;
               // Empty persisted steer artifacts carry no displayable row.
               if (text === '') break;
-              // Persisted identity is authoritative for user-message dedupe.
-              const isRenderedDuplicate = get().messages.some(
-                (m) =>
-                  m.role === MessageRole.User &&
-                  (m.id === id || m.kasMessageId === id)
-              );
+              // Cloud switches APPEND each load's replay, so the re-loaded
+              // copy legitimately repeats persisted user ids — dedupe only
+              // live echoes, or the replay renders responses without prompts.
+              const isCloudReplay = fromHistory && cloudReplay;
+              const isRenderedDuplicate =
+                !isCloudReplay &&
+                get().messages.some(
+                  (m) =>
+                    m.role === MessageRole.User &&
+                    (m.id === id || m.kasMessageId === id)
+                );
               if (isRenderedDuplicate) break;
               // Consume text fallback matches so intentional repeats still render.
               const now = Date.now();
@@ -3619,7 +3644,12 @@ export const createAppStore = (props: AppStoreProps) => {
                 messages: [
                   ...state.messages,
                   {
-                    id,
+                    // The static renderer dedupes rows by id, so a repeated
+                    // persisted id needs a fresh row id; live-echo dedupe and
+                    // rewind still match via kasMessageId.
+                    ...(isCloudReplay
+                      ? { id: generateMessageId(), kasMessageId: id }
+                      : { id }),
                     role: MessageRole.User,
                     content: text,
                     agentName: state.currentAgent?.name,
@@ -5156,12 +5186,17 @@ export const createAppStore = (props: AppStoreProps) => {
       }
       if (event.type === AgentEventType.SessionRosterDelta) {
         get().applySessionRosterDelta(event.delta);
+        // A fresh cloud session's startup checklist repaints on these deltas; if
+        // a /clear or /chat new armed the scrollback reconcile, re-wipe now so
+        // the wipe lands after this repaint rather than a guessed instant.
+        noteCloudScrollbackRepaint();
         return;
       }
       if (event.type === AgentEventType.SessionRepositoriesUpdate) {
         // Sandbox repo attach/detach pushes arrive at turn boundaries (idle
         // time), so this lane must apply them too.
         get().applySessionRepositories(event.repositories);
+        noteCloudScrollbackRepaint();
         return;
       }
       if (event.type !== AgentEventType.CompactionStatus) return;
@@ -6872,6 +6907,8 @@ export const createAppStore = (props: AppStoreProps) => {
     setCloudBranch: (cloudBranch) => set({ cloudBranch }),
     setCloudProvider: (cloudProvider) => set({ cloudProvider }),
     setCloudRepoCount: (cloudRepoCount) => set({ cloudRepoCount }),
+    setCloudNewSessionChecklist: (cloudNewSessionChecklist) =>
+      set({ cloudNewSessionChecklist }),
     setCloudExtraRepos: (cloudExtraRepos) => set({ cloudExtraRepos }),
     setContextUsage: (percent) => {
       set((state) => {
@@ -8365,6 +8402,14 @@ export const createAppStore = (props: AppStoreProps) => {
     }
     if (!hadQuestion && state.pendingQuestion) {
       playNotification(method, 'Input required');
+    }
+  });
+
+  // Never resets: an in-session /chat new re-empties `messages`, and the
+  // cold-boot connect screen must not re-open for it.
+  store.subscribe((state) => {
+    if (!state.hasEnteredConversation && state.messages.length > 0) {
+      store.setState({ hasEnteredConversation: true });
     }
   });
 

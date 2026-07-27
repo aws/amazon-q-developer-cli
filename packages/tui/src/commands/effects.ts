@@ -9,6 +9,10 @@
  */
 
 import type { CommandContext } from './types.js';
+import {
+  armCloudScrollbackReconcile,
+  cancelCloudScrollbackReconcile,
+} from './cloud-scrollback-reconcile.js';
 import type { CommandResult, TuiCommand } from '../types/commands.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
 import { KAS_DEFAULT_AGENT_NAME } from '../constants/agents.js';
@@ -124,23 +128,29 @@ type EffectName =
   | 'updateTitle';
 
 /**
- * Re-wipe schedule for a cloud /clear (see clearMessages). Spread across the
- * sandbox-provisioning window: the checklist typically settles within a few
- * seconds, with the last bump as a backstop for a slow provision.
- */
-export const CLOUD_CLEAR_REWIPE_DELAYS_MS = [1500, 4000, 8000] as const;
-
-/** Pending cloud /clear re-wipe timers, so a later action can cancel them. */
-let cloudClearRewipeTimers: Array<ReturnType<typeof setTimeout>> = [];
-
-/**
- * Cancels any scheduled cloud /clear re-wipes. The timers belong to the
- * session that ran /clear: left running across a session switch or a second
- * /clear they'd repaint whatever session is active mid-stream.
+ * Cancel any active cloud scrollback reconcile window (a new transition or
+ * session switch supersedes it). Thin re-export so callers keep importing the
+ * cloud-clear helpers from effects; the controller lives in
+ * cloud-scrollback-reconcile (standalone, no store import).
  */
 export function cancelCloudClearRewipes(): void {
-  for (const t of cloudClearRewipeTimers) clearTimeout(t);
-  cloudClearRewipeTimers = [];
+  cancelCloudScrollbackReconcile();
+}
+
+/**
+ * Arm the event-driven scrollback reconcile after a cloud viewport clear
+ * (/clear, /chat new, /sessions new). Wipes once, then re-wipes on every
+ * cloud repaint event until the startup checklist falls quiet — so a slow
+ * sandbox can't outlast a fixed timer and leave pre-clear rows behind. No-op
+ * off cloud: local session/new resolves before the single reset wipe, so its
+ * behavior is unchanged.
+ */
+export function scheduleCloudClearRewipes(
+  ctx: Pick<CommandContext, 'kiro' | 'bumpLiteScrollbackClear'>
+): void {
+  cancelCloudScrollbackReconcile();
+  if (!ctx.kiro.isCloudSessionActive()) return;
+  armCloudScrollbackReconcile(() => ctx.bumpLiteScrollbackClear());
 }
 
 /**
@@ -486,14 +496,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // Both consumers of the token treat a bump idempotently, so extra bumps
       // on an already-clean screen are harmless repaints. Cancel any wipes a
       // previous /clear still has pending so only one schedule is ever live.
-      cancelCloudClearRewipes();
-      if (ctx.kiro.isCloudSessionActive()) {
-        for (const delayMs of CLOUD_CLEAR_REWIPE_DELAYS_MS) {
-          cloudClearRewipeTimers.push(
-            setTimeout(() => ctx.bumpLiteScrollbackClear(), delayMs)
-          );
-        }
-      }
+      scheduleCloudClearRewipes(ctx);
       ctx.setSessionId(data.sessionId);
       if (data.currentModel) ctx.setCurrentModel(data.currentModel);
       if (previousAgent) {
