@@ -69,6 +69,12 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Clear partial toolchain state
+        shell: bash
+        run: |
+          TC=$(grep -m1 '^channel' rust-toolchain.toml | sed -E 's/.*"(.*)".*/\1/')
+          rustup toolchain uninstall "$TC" 2>/dev/null || true
+
       - name: Ensure target is installed
         shell: bash
         run: rustup target add ${{ matrix.target }}

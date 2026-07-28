@@ -108,6 +108,12 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Clear partial toolchain state
+        shell: bash
+        run: |
+          TC=$(grep -m1 '^channel' rust-toolchain.toml | sed -E 's/.*"(.*)".*/\1/')
+          rustup toolchain uninstall "$TC" 2>/dev/null || true
+
       - name: Read pinned Bun version
         id: bun-version
         run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"

@@ -166,6 +166,12 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      - name: Clear partial toolchain state
+        shell: bash
+        run: |
+          TC=$(grep -m1 '^channel' rust-toolchain.toml | sed -E 's/.*"(.*)".*/\1/')
+          rustup toolchain uninstall "$TC" 2>/dev/null || true
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
