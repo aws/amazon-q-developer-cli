@@ -89,6 +89,12 @@ export interface ExplorerProps {
   searchable?: boolean;
   searchPlaceholder?: string;
   /**
+   * Row index to highlight when the Explorer first opens. Clamped to the row
+   * range. Defaults to 0 (first row). Use to start the selection on a
+   * meaningful row, e.g. the current tangent in `/tangent ls`.
+   */
+  initialSelectedIndex?: number;
+  /**
    * Verb shown next to the close shortcut in the footer (default: 'to close').
    * Forwarded to {@link Panel}. Use to disambiguate when ESC means "go back"
    * rather than "close" — e.g. multi-step flows like /settings → theme
@@ -109,6 +115,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   keyHints,
   searchable = true,
   searchPlaceholder = 'type to filter',
+  initialSelectedIndex = 0,
   closeHintLabel,
   onSelect,
   onClose,
@@ -136,7 +143,9 @@ export const Explorer: React.FC<ExplorerProps> = ({
     (colors as { accent?: { truecolor?: string } }).accent?.truecolor ??
     '#ff00ff';
 
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(() =>
+    Math.max(0, Math.min(initialSelectedIndex, Math.max(0, rows.length - 1)))
+  );
   const [search, setSearch] = useState('');
 
   // Filter rows by search: simple case-insensitive substring on any cell value.

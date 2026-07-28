@@ -61,6 +61,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     usageData,
     showRewindExplorer,
     rewindRows,
+    showTangentExplorer,
+    tangentRows,
     showMcpPanel,
     mcpServers,
     mcpRegistryServers,
@@ -196,6 +198,36 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
           ]}
           onSelect={(row) => handlers.handleRewindSelect(row.id)}
           onClose={handlers.handleCloseRewindExplorer}
+        />
+      )}
+      {showTangentExplorer && (
+        <Explorer
+          title="/tangent ls"
+          description="Switch to a tangent"
+          columns={[
+            { key: 'label', label: 'Tangent', align: 'left' },
+            { key: 'lastActive', label: 'Last active', align: 'right' },
+          ]}
+          rows={tangentRows.map((row) => ({
+            id: row.id,
+            values: { label: row.label, lastActive: row.lastActive ?? '' },
+            tag: row.isCurrent ? '[current]' : undefined,
+          }))}
+          initialSelectedIndex={Math.max(
+            0,
+            tangentRows.findIndex((row) => row.isCurrent)
+          )}
+          keyHints={[
+            { key: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'navigate' },
+            { key: 'Enter', label: 'to switch' },
+          ]}
+          onSelect={(row) => {
+            // Every row carries its sessionId as `id`; switch to that exact
+            // session (the handler no-ops if it's the current one).
+            const tangentRow = tangentRows.find((r) => r.id === row.id);
+            handlers.handleTangentSelect(row.id, tangentRow?.title ?? row.id);
+          }}
+          onClose={handlers.handleCloseTangentExplorer}
         />
       )}
       {showHelpPanel && (

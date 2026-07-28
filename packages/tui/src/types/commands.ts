@@ -28,6 +28,13 @@ export interface CommandMeta {
   searchable?: boolean;
   subcommands?: string[];
   subcommandHints?: Record<string, string>;
+  /**
+   * When true, the command is valid with no subcommand (e.g. bare `/tangent`),
+   * so tab-completing the command name fills `<cmd> ` and lets the user submit
+   * directly. A second Tab still opens the subcommand menu. When false/absent,
+   * tab-completing the command name forces the subcommand dropdown.
+   */
+  subcommandsOptional?: boolean;
   hint?: string;
   local?: boolean;
   /** When true, the command is hidden unless the session is a cloud session. */

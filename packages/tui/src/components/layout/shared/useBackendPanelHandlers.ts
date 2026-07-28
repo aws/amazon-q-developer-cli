@@ -16,6 +16,7 @@ import {
   useAppStore,
   type CodePanelData,
 } from '../../../stores/app-store.js';
+import { resolveTangentSelection } from '../../../utils/tangent-nav.js';
 
 export function useBackendPanelHandlers() {
   const {
@@ -35,6 +36,7 @@ export function useBackendPanelHandlers() {
     setShowCodePanel,
     setShowChangelogPanel,
     setShowRewindExplorer,
+    setShowTangentExplorer,
     setShowKeybindingsPanel,
     setShowDisplaySettingsPanel,
     setShowThemePanel,
@@ -44,7 +46,7 @@ export function useBackendPanelHandlers() {
   } = useUIActions();
   const { setActiveCommand, clearCommandInput, resumeSession } =
     useCommandActions();
-  const { handleUserInput } = useInputActions();
+  const { handleUserInput, dispatchSlashCommand } = useInputActions();
   const { kiro } = useKiroClient();
   const store = useContext(AppStoreContext);
   if (!store) throw new Error('Missing StoreContext.Provider in the tree');
@@ -93,6 +95,7 @@ export function useBackendPanelHandlers() {
     handleCloseCodePanel: makeClose(setShowCodePanel),
     handleCloseChangelogPanel: makeClose(setShowChangelogPanel),
     handleCloseRewindExplorer: makeClose(setShowRewindExplorer),
+    handleCloseTangentExplorer: makeClose(setShowTangentExplorer),
     handleCloseKeybindingsPanel: makeClose(setShowKeybindingsPanel, {
       returnToSettings: true,
     }),
@@ -226,6 +229,30 @@ export function useBackendPanelHandlers() {
     process.exit(0);
   }, [kiro]);
 
+  const handleTangentSelect = useCallback(
+    (sessionId: string, title: string) => {
+      setShowTangentExplorer(false);
+      setActiveCommand(null);
+      clearCommandInput();
+      // A picker selects a session, so switch to that exact session id (root,
+      // sibling, or descendant) — never round-trip through a title/bare command.
+      // Selecting the row you're already on is a no-op.
+      const decision = resolveTangentSelection(sessionId, kiro.sessionId);
+      if (decision.action === 'noop') return;
+      void dispatchSlashCommand(
+        `/tangent ${decision.sessionId}`,
+        `/tangent ${title}`
+      );
+    },
+    [
+      setShowTangentExplorer,
+      setActiveCommand,
+      clearCommandInput,
+      dispatchSlashCommand,
+      kiro,
+    ]
+  );
+
   return {
     ...closeHandlers,
     handleCloseSettingsPanel,
@@ -236,6 +263,7 @@ export function useBackendPanelHandlers() {
     handleSessionSelect,
     handleSourceProviderRetry,
     handleSourceProviderQuit,
+    handleTangentSelect,
   };
 }
 

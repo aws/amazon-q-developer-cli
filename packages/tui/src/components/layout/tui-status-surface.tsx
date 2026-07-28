@@ -6,6 +6,7 @@ import { useTheme } from '../../hooks/useThemeContext.js';
 import { formatCloudFooter } from '../../utils/cloud-status.js';
 import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
 import { formatEffort, shortenPath } from '../../utils/string.js';
+import { chalk } from '../../utils/color.js';
 import type { Glyphs } from '../../utils/glyphs.js';
 import type { AppState } from '../../stores/app-store.js';
 import { ContextBar } from '../chat/prompt-bar/ContextBar.js';
@@ -36,6 +37,7 @@ export const TuiStatusSurface: React.FC<StatusSurfaceProps> = ({
   workspacePath,
   gitBranch,
   goalStatus,
+  tangentName = null,
   cloudSessionActive = false,
   cloudRepo = null,
   cloudBranch = null,
@@ -63,6 +65,7 @@ export const TuiStatusSurface: React.FC<StatusSurfaceProps> = ({
           colorOverride={mutedColor}
         />
       ),
+      tangentName && <Text>{mutedColor(`↯ ${tangentName}`)}</Text>,
       codeIntelligenceActive && allowIcons && (
         <Text>{mutedColor(glyphs.codeIntelligence)}</Text>
       ),
@@ -111,6 +114,7 @@ export const TuiStatusSurface: React.FC<StatusSurfaceProps> = ({
     contextUsagePercent != null && (
       <ProgressChip value={contextUsagePercent} warningThreshold={60} />
     ),
+    tangentName && <Text>{chalk.yellow(`↯ ${tangentName}`)}</Text>,
     codeIntelligenceActive && allowIcons && (
       <Text>{getColor('primary')(glyphs.codeIntelligence)}</Text>
     ),

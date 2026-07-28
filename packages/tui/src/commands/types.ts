@@ -137,6 +137,18 @@ export interface CommandContext {
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowRewindExplorer: (show: boolean, rows?: any[]) => void;
+  setShowTangentExplorer: (
+    show: boolean,
+    rows?: Array<{
+      id: string;
+      label: string;
+      title: string;
+      isCurrent: boolean;
+      isTangent: boolean;
+      lastActive?: string;
+    }>
+  ) => void;
+  setTangentName: (name: string | null) => void;
   setUpgradeDiagnostics: (
     rows: UpgradeAnalysisRow[],
     description: string

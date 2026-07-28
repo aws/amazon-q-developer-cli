@@ -12,6 +12,7 @@ export function getPlaceholder(opts: {
   activeInterruptMode: InterruptMode;
   toggleHintLabel: string;
   agentName: string | undefined;
+  tangentName?: string | null;
   /** Feature name of the pending /spec new description-collection step. */
   specDescriptionFeature?: string | null;
   goalStatus?: {
@@ -53,6 +54,9 @@ export function getPlaceholder(opts: {
   }
   if (opts.agentName === 'kiro_planner') {
     return `ask a question or describe a task ${opts.glyphs.enter}  ${dot}  exit plan mode: shift+tab`;
+  }
+  if (opts.tangentName) {
+    return `ask a question or describe a task ${dot} /tangent to go back ${dot} /tangent ls to view`;
   }
   return `ask a question or describe a task ${opts.glyphs.enter}`;
 }

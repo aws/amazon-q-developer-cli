@@ -28,6 +28,7 @@ export const LiteStatusSurface: React.FC<StatusSurfaceProps> = ({
   workspacePath,
   gitBranch,
   goalStatus,
+  tangentName = null,
   cloudSessionActive = false,
   cloudRepo = null,
   cloudBranch = null,
@@ -55,6 +56,7 @@ export const LiteStatusSurface: React.FC<StatusSurfaceProps> = ({
     modelName ? getColor('primary')(modelName) : '',
     effort ? secondary(formatEffort(effort)) : '',
     `${gradientCtxColor(ctxPct)(`${ctxPct}%`)} ${chalk.dim('ctx')}`,
+    tangentName ? chalk.yellow(`↯ ${tangentName}`) : '',
     getColor('brand')(
       cloudSessionActive
         ? formatCloudFooter(

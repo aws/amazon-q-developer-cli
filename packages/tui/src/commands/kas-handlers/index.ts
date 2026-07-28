@@ -10,6 +10,7 @@ import { handleHelp } from './help';
 import { handleHooks } from './hooks';
 import { handlePrompts } from './prompts';
 import { handleRewind } from './rewind';
+import { handleTangent } from './tangent';
 import { handleTools } from './tools';
 import { handleUpgradeAgent } from './upgrade-agent';
 import { handleModel } from './model';
@@ -46,6 +47,7 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Mcp]: handleMcp,
   [KasCommandName.Prompts]: handlePrompts,
   [KasCommandName.Rewind]: handleRewind,
+  [KasCommandName.Tangent]: handleTangent,
   [KasCommandName.Tools]: handleTools,
   [KasCommandName.UpgradeAgent]: handleUpgradeAgent,
   [KasCommandName.Model]: handleModel,

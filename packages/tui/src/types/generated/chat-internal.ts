@@ -93,6 +93,12 @@ export enum Feature {
 	 * `chat.enableC2s` + shows the Explore agent only when enabled.
 	 */
 	C2s = "c2s",
+	/**
+	 * `/tangent` named side-conversations. Internal nightly only via
+	 * `rollout.json` (`segment: internal`, `channel: nightly`); registered as a
+	 * TUI command only when enabled.
+	 */
+	Tangent = "tangent",
 }
 
 /**

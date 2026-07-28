@@ -1240,6 +1240,18 @@ interface BaseAppActions {
   ) => void;
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowRewindExplorer: (show: boolean, rows?: RewindTurn[]) => void;
+  setShowTangentExplorer: (
+    show: boolean,
+    rows?: Array<{
+      id: string;
+      label: string;
+      title: string;
+      isCurrent: boolean;
+      isTangent: boolean;
+      lastActive?: string;
+    }>
+  ) => void;
+  setTangentName: (name: string | null) => void;
   setUpgradeDiagnostics: (
     rows: UpgradeAnalysisRow[],
     description: string
@@ -1432,6 +1444,9 @@ interface BaseAppActions {
   // Announcement actions
   setAnnouncement: (msg: { id: string; maxLines: number } | null) => void;
   toggleAnnouncementExpanded: () => void;
+
+  // Dispatch a slash command with an optional human-readable form for recall history
+  dispatchSlashCommand: (execCmd: string, recordAs?: string) => Promise<void>;
 
   // Main orchestrator
   handleUserInput: (input: string) => Promise<void>;
@@ -1778,6 +1793,18 @@ export interface AppState {
   // Rewind explorer state
   showRewindExplorer: boolean;
   rewindRows: RewindTurn[];
+  // Tangent explorer state
+  showTangentExplorer: boolean;
+  tangentRows: Array<{
+    id: string;
+    label: string;
+    title: string;
+    isCurrent: boolean;
+    isTangent: boolean;
+    lastActive?: string;
+  }>;
+  /** Name of the current tangent (null if on root session). */
+  tangentName: string | null;
 
   // /upgrade-agent diagnostics data (rendered by UpgradeDiagnosticsMenu)
   upgradeAnalysisRows: UpgradeAnalysisRow[];
@@ -2317,7 +2344,7 @@ function liteGateCommands(state: AppState): readonly AvailableCommand[] {
 }
 
 /** Build a CommandContext from the current AppState + setter. */
-function buildCommandContext(
+export function buildCommandContext(
   state: AppState & AppActions,
   set: StoreApi<AppState & AppActions>['setState'],
   get: StoreApi<AppState & AppActions>['getState'],
@@ -2386,6 +2413,8 @@ function buildCommandContext(
     setShowChangelogPanel: state.setShowChangelogPanel,
     setShowUsagePanel: state.setShowUsagePanel,
     setShowRewindExplorer: state.setShowRewindExplorer,
+    setShowTangentExplorer: state.setShowTangentExplorer,
+    setTangentName: state.setTangentName,
     setUpgradeDiagnostics: state.setUpgradeDiagnostics,
     setUpgradeRunPreview: state.setUpgradeRunPreview,
     setShowMcpPanel: state.setShowMcpPanel,
@@ -2447,6 +2476,7 @@ function buildCommandContext(
         showHelpPanel: false,
         showUsagePanel: false,
         showRewindExplorer: false,
+        showTangentExplorer: false,
         showMcpPanel: false,
         showToolsPanel: false,
         showStatsPanel: false,
@@ -2462,6 +2492,9 @@ function buildCommandContext(
         showKnowledgePanel: false,
         contextBreakdown: null,
         usageData: null,
+        // Any session change clears the tangent chip; a real tangent switch
+        // re-sets it immediately after via switchToKasSession/resolveTangentName.
+        tangentName: null,
         pendingSpecDescription: null,
         ...extraClearState,
       }),
@@ -2760,6 +2793,9 @@ export const createAppStore = (props: AppStoreProps) => {
     usageData: null,
     showRewindExplorer: false,
     rewindRows: [],
+    showTangentExplorer: false,
+    tangentRows: [],
+    tangentName: null,
     upgradeAnalysisRows: [],
     upgradeAnalysisDescription: '',
     upgradeRunPreview: {},
@@ -6994,6 +7030,12 @@ export const createAppStore = (props: AppStoreProps) => {
     setShowRewindExplorer: (show, rows) => {
       set({ showRewindExplorer: show, rewindRows: rows ?? [] });
     },
+    setShowTangentExplorer: (show, rows) => {
+      set({ showTangentExplorer: show, tangentRows: rows ?? [] });
+    },
+    setTangentName: (name) => {
+      set({ tangentName: name });
+    },
 
     setUpgradeDiagnostics: (rows, description) => {
       set({
@@ -7883,6 +7925,12 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
 
+    dispatchSlashCommand: async (execCmd: string, recordAs?: string) => {
+      CommandHistory.getInstance().add(recordAs ?? execCmd);
+      const ctx: CommandContext = buildCommandContext(get(), set, get);
+      await executeCommand(execCmd, ctx);
+    },
+
     // Main orchestrator
     handleUserInput: async (input: string) => {
       const trimmed = input.trim();
@@ -8061,6 +8109,7 @@ export const createAppStore = (props: AppStoreProps) => {
         showHelpPanel: false,
         showUsagePanel: false,
         showRewindExplorer: false,
+        showTangentExplorer: false,
         commandInputValue: '',
         activeTrigger: null,
         promptHint: null,

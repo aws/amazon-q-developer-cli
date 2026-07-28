@@ -23,6 +23,7 @@ import type {
   KasContextShowResponse,
   KasContextMutationResponse,
   ChatSlashCommandTelemetryPayload,
+  CreatedReason,
 } from './types/session-client';
 import type {
   ModeChangedNotification,
@@ -1108,6 +1109,21 @@ export class Kiro {
     return this.sessionClient.executeCommand(command);
   }
 
+  /**
+   * Fork the current session (KAS/V3 only). Delegates to the session client's
+   * `fork` when supported; other engines report it as unsupported.
+   */
+  async fork(opts: {
+    messageId?: string;
+    createdReason: CreatedReason;
+    title?: string;
+  }): Promise<CommandResult> {
+    if (this.sessionClient?.fork) {
+      return this.sessionClient.fork(opts);
+    }
+    return { success: false, message: 'Fork is not supported by this engine' };
+  }
+
   async setConfigOption(
     configId: 'mode' | 'model' | 'effortLevel',
     value: string
@@ -1250,6 +1266,9 @@ export class Kiro {
     sessionId: string;
     currentModel?: { id: string; name: string };
     currentAgent?: { name: string; welcomeMessage?: string };
+    parentSessionId?: string;
+    createdReason?: CreatedReason;
+    title?: string;
   }> {
     if (!this.sessionClient) {
       throw new Error('Kiro not initialized');

@@ -195,7 +195,11 @@ export const CommandMenu: React.FC = () => {
       const cmd = slashCommands.find((c) => c.name === fullCommand);
       const isPrompt = cmd?.meta?.type === 'prompt';
 
-      if (cmd && showSubcommandMenu(cmd)) {
+      // If the command has sub-commands, show them in a dropdown.
+      // Commands with `subcommandsOptional` (e.g. /tangent) are valid bare, so
+      // we skip the forced menu and just fill `<cmd> ` — a second Tab still
+      // opens the subcommand menu via PromptInput's handler.
+      if (cmd && !cmd.meta?.subcommandsOptional && showSubcommandMenu(cmd)) {
         return;
       }
 

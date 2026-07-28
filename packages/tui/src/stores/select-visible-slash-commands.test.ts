@@ -27,6 +27,13 @@ describe('selectVisibleSlashCommands', () => {
         expect(visible.find((c) => c.name === cmd.name)).toBeUndefined();
         continue;
       }
+      // feature-gated commands (e.g. /tangent) are hidden unless the
+      // launcher-provided KIRO_ENABLED_FEATURES lists them; tests run with
+      // no features enabled.
+      if (cmd.feature && !features.isEnabled(cmd.feature)) {
+        expect(visible.find((c) => c.name === cmd.name)).toBeUndefined();
+        continue;
+      }
       expect(visible.find((c) => c.name === cmd.name)).toBeDefined();
     }
     for (const cmd of store.getState().slashCommands) {

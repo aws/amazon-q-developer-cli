@@ -46,6 +46,11 @@ pub enum Feature {
     /// launcher exports `KIRO_C2S_ROLLOUT_ENABLED` and the TUI honors
     /// `chat.enableC2s` + shows the Explore agent only when enabled.
     C2s,
+    /// `/tangent` named side-conversations. Internal nightly only via
+    /// `rollout.json` (`segment: internal`, `channel: nightly`); the launcher
+    /// includes `tangent` in `KIRO_ENABLED_FEATURES` and the TUI registers the
+    /// `/tangent` command only when enabled.
+    Tangent,
     #[cfg(test)]
     #[typeshare(skip)]
     Test,

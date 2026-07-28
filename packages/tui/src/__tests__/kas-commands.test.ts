@@ -15,7 +15,8 @@ describe('kas-commands', () => {
       const withGated = [...KAS_COMMANDS, gated('/mem', Feature.Memory)];
 
       // KAS_COMMANDS itself carries gated entries (e.g. /autonomous behind
-      // remote_sandbox), so the all-off baseline is the ungated subset.
+      // remote_sandbox, /tangent behind tangent), so the all-off baseline is
+      // the ungated subset.
       const ungated = KAS_COMMANDS.filter((c) => !c.feature);
 
       const originalEnv = process.env.KIRO_ENABLED_FEATURES;
@@ -24,9 +25,44 @@ describe('kas-commands', () => {
         features._resetForTests();
         expect(filterByEnabledFeatures(withGated)).toEqual(ungated);
 
-        process.env.KIRO_ENABLED_FEATURES = '["memory", "remote_sandbox"]';
+        process.env.KIRO_ENABLED_FEATURES =
+          '["memory", "remote_sandbox", "tangent"]';
         features._resetForTests();
         expect(filterByEnabledFeatures(withGated)).toEqual(withGated);
+      } finally {
+        if (originalEnv === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+        else process.env.KIRO_ENABLED_FEATURES = originalEnv;
+        features._resetForTests();
+      }
+    });
+
+    it('gates /tangent behind the tangent feature (nightly)', async () => {
+      const { KAS_COMMANDS, filterByEnabledFeatures } =
+        await import('../kas-commands');
+      const { features } = await import('../features');
+
+      const tangent = KAS_COMMANDS.find(
+        (c: KasCommand) => c.name === '/tangent'
+      );
+      expect(tangent?.feature).toBe(Feature.Tangent);
+
+      const originalEnv = process.env.KIRO_ENABLED_FEATURES;
+      try {
+        process.env.KIRO_ENABLED_FEATURES = '[]';
+        features._resetForTests();
+        expect(
+          filterByEnabledFeatures(KAS_COMMANDS).some(
+            (c) => c.name === '/tangent'
+          )
+        ).toBe(false);
+
+        process.env.KIRO_ENABLED_FEATURES = '["tangent"]';
+        features._resetForTests();
+        expect(
+          filterByEnabledFeatures(KAS_COMMANDS).some(
+            (c) => c.name === '/tangent'
+          )
+        ).toBe(true);
       } finally {
         if (originalEnv === undefined) delete process.env.KIRO_ENABLED_FEATURES;
         else process.env.KIRO_ENABLED_FEATURES = originalEnv;

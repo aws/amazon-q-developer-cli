@@ -224,6 +224,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     showCodePanel,
     showChangelogPanel,
     showRewindExplorer,
+    showTangentExplorer,
+    tangentName,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
     showThemePanel,
@@ -273,6 +275,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     showCodePanel ||
     showChangelogPanel ||
     showRewindExplorer ||
+    showTangentExplorer ||
     showKeybindingsPanel ||
     showDisplaySettingsPanel ||
     showThemePanel ||
@@ -1750,6 +1753,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
           workspacePath={process.cwd()}
           gitBranch={gitBranch}
           goalStatus={goalStatus}
+          tangentName={tangentName}
           cloudSessionActive={cloudSessionActive}
           cloudRepo={cloudRepo}
           cloudBranch={cloudBranch}
@@ -1894,6 +1898,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
                     agentName: currentAgent?.name,
                     specDescriptionFeature,
                     goalStatus,
+                    tangentName,
                     cancelLabel: keybindings.label('cancelStream'),
                   })}
                   suppressArrows={subagentOpenIndex != null}

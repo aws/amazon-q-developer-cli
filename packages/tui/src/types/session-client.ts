@@ -173,6 +173,16 @@ export interface SessionClient {
   executeCommand(command: TuiCommand): Promise<CommandResult>;
 
   /**
+   * Forks the current session into a new branch (a `session/fork` request).
+   * Optional — only KAS/V3 clients implement it; other engines omit it.
+   */
+  fork?(opts: {
+    messageId?: string;
+    createdReason: CreatedReason;
+    title?: string;
+  }): Promise<CommandResult>;
+
+  /**
    * Closes the session client connection and cleans up resources.
    *
    * For a real implementation, this would terminate the ACP process.
@@ -464,7 +474,16 @@ export interface KiroAgentCapabilities {
 export interface ListSessionsResponse {
   sessions: SessionInfoEntry[];
   nextCursor?: string;
+  /**
+   * Set by `KasAcpClient.listSessions` when the underlying list RPC failed
+   * (as opposed to a genuinely empty result). Lets callers distinguish a read
+   * failure from "no sessions" and abort instead of mutating state.
+   */
+  failed?: boolean;
 }
+
+/** Reason a session was forked. A closed set produced by the TUI. */
+export type CreatedReason = 'tangent' | 'rewind';
 
 /**
  * TODO - duplicated type until we modify this flow to use a session/list compatible sacp implementation.
@@ -484,4 +503,6 @@ export interface SessionInfoEntry {
   source?: SessionDiscoverySource;
   /** Liveness snapshot at list time; live updates via `_kiro/sessions/changed`. */
   status?: SessionActivityStatus;
+  /** Parent session id when this session was forked (tangent/rewind/subagent). */
+  parentSessionId?: string;
 }

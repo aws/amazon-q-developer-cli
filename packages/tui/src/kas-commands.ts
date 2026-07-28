@@ -34,6 +34,7 @@ export enum KasCommandName {
   Rewind = '/rewind',
   UpgradeAgent = '/upgrade-agent',
   Repo = '/repo',
+  Tangent = '/tangent',
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -261,6 +262,17 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     name: KasCommandName.Disconnect,
     description: 'Disconnect from the cloud session (it keeps running)',
     meta: { local: true, cloudOnly: true },
+  },
+  {
+    name: KasCommandName.Tangent,
+    description: 'Go back, switch to, or create a conversation tangent',
+    feature: Feature.Tangent,
+    meta: {
+      inputType: 'panel',
+      hint: '<name> | ls',
+      subcommands: ['ls'],
+      subcommandsOptional: true,
+    },
   },
 ];
 

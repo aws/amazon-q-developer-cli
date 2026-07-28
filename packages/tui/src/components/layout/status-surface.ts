@@ -11,6 +11,7 @@ export interface StatusSurfaceProps {
   workspacePath: string;
   gitBranch: string | null;
   goalStatus: AppState['goalStatus'];
+  tangentName?: string | null;
   cloudSessionActive?: boolean;
   cloudRepo?: string | null;
   cloudBranch?: string | null;

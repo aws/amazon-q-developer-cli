@@ -39,6 +39,7 @@ import type {
   SessionsChangedNotification,
   KasContextShowResponse,
   KasContextMutationResponse,
+  CreatedReason,
 } from '../types/session-client';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type {
@@ -1433,7 +1434,23 @@ export class KasAcpClient extends BaseAcpClient {
         });
     }
     const selections = deriveCurrentSelections(configOptions);
-    return { sessionId, ...selections };
+    // Tangent/fork metadata rides flat on the load-response `_meta` (like
+    // `_meta.source` above). Present only on forked sessions and only when the
+    // agent is new enough to populate them (KAS >= 0.19.4).
+    const forkMeta = r._meta as
+      | {
+          parentSessionId?: string;
+          createdReason?: CreatedReason;
+          title?: string;
+        }
+      | undefined;
+    return {
+      sessionId,
+      ...selections,
+      parentSessionId: forkMeta?.parentSessionId,
+      createdReason: forkMeta?.createdReason,
+      title: forkMeta?.title,
+    };
   }
 
   async prompt(messages: acp.ContentBlock[]): Promise<void> {
@@ -1646,6 +1663,47 @@ export class KasAcpClient extends BaseAcpClient {
           success: false,
           message: `/${name} is not yet supported in KAS mode`,
         };
+    }
+  }
+
+  /**
+   * Fork the current session via KAS `session/fork`.
+   *
+   * Shared fork primitive, parameterized only by the `_meta.kiro` payload:
+   * /tangent forks from HEAD (createdReason 'tangent'); /rewind forks at a
+   * messageId (createdReason 'rewind'). Called via the Kiro facade's `fork`.
+   * Today only /tangent uses it; the `case 'rewind'` block above still inlines
+   * the identical call.
+   *
+   * TODO(follow-up PR): migrate /rewind to reuse this — route the 'rewind'
+   * case through fork({ messageId, createdReason: 'rewind' }). Deliberately
+   * left out of this PR to keep the tangent change isolated from /rewind; that
+   * migration will be made and tested together with the rewind path.
+   */
+  async fork(meta: {
+    messageId?: string;
+    createdReason: CreatedReason;
+    title?: string;
+  }): Promise<CommandResult> {
+    try {
+      const response = await this.kiroClient.sendExtMethod('session/fork', {
+        sessionId: this.sessionId,
+        cwd: process.cwd(),
+        _meta: { kiro: { ...meta } },
+      });
+      return {
+        success: true,
+        message: '',
+        data: {
+          sessionId: (response as { sessionId?: string }).sessionId,
+          switchSession: true,
+        },
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : 'Fork failed',
+      };
     }
   }
 
@@ -2435,6 +2493,7 @@ export class KasAcpClient extends BaseAcpClient {
               s.updatedAt ??
               (s._meta as { createdAt?: string } | undefined)?.createdAt ??
               k.createdAt,
+            parentSessionId: k.parentSessionId,
             executionTarget: k.executionTarget,
             source: k.source,
             status: k.status,
@@ -2443,7 +2502,7 @@ export class KasAcpClient extends BaseAcpClient {
       };
     } catch (e) {
       logger.debug('[kas] listSessions failed:', e);
-      return { sessions: [] };
+      return { sessions: [], failed: true };
     }
   }
 

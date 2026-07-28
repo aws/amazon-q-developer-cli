@@ -167,6 +167,8 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     showHelpPanel,
     showUsagePanel,
     showRewindExplorer,
+    showTangentExplorer,
+    tangentName,
     showMcpPanel,
     showToolsPanel,
     showGoalPanel,
@@ -391,6 +393,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
         workspacePath={process.cwd()}
         gitBranch={gitBranch}
         goalStatus={goalStatus}
+        tangentName={tangentName}
         cloudSessionActive={cloudSessionActive}
         cloudRepo={cloudRepo}
         cloudBranch={cloudBranch}
@@ -411,6 +414,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     currentModel,
     currentEffort,
     goalStatus,
+    tangentName,
     cloudSessionActive,
     cloudRepo,
     cloudBranch,
@@ -431,6 +435,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
         workspacePath={process.cwd()}
         gitBranch={gitBranch}
         goalStatus={null}
+        tangentName={tangentName}
         cloudSessionActive={cloudSessionActive}
         cloudRepo={cloudRepo}
         cloudBranch={cloudBranch}
@@ -442,6 +447,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   }, [
     StatusLine,
     toolOutputsExpanded,
+    tangentName,
     currentAgent,
     currentModel,
     currentEffort,
@@ -801,6 +807,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               showChangelogPanel ||
               showUsagePanel ||
               showRewindExplorer ||
+              showTangentExplorer ||
               showMcpPanel ||
               showToolsPanel ||
               showGoalPanel ||
@@ -847,6 +854,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               activeInterruptMode,
               toggleHintLabel,
               agentName: currentAgent?.name,
+              tangentName,
               specDescriptionFeature,
               goalStatus,
               cancelLabel: keybindings.label('cancelStream'),
@@ -873,6 +881,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   showChangelogPanel ||
                   showUsagePanel ||
                   showRewindExplorer ||
+                  showTangentExplorer ||
                   showMcpPanel ||
                   showToolsPanel ||
                   showStatsPanel ||
@@ -947,6 +956,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 !showChangelogPanel &&
                 !showUsagePanel &&
                 !showRewindExplorer &&
+                !showTangentExplorer &&
                 !showMcpPanel &&
                 !showToolsPanel &&
                 !showHooksPanel &&

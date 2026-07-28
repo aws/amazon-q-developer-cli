@@ -164,6 +164,9 @@ export const useUIState = () =>
       usageData: state.usageData,
       showRewindExplorer: state.showRewindExplorer,
       rewindRows: state.rewindRows,
+      showTangentExplorer: state.showTangentExplorer,
+      tangentRows: state.tangentRows,
+      tangentName: state.tangentName,
       showMcpPanel: state.showMcpPanel,
       mcpServers: state.mcpServers,
       mcpRegistryServers: state.mcpRegistryServers,
@@ -218,6 +221,8 @@ export const useUIActions = () =>
       setShowChangelogPanel: state.setShowChangelogPanel,
       setShowUsagePanel: state.setShowUsagePanel,
       setShowRewindExplorer: state.setShowRewindExplorer,
+      setShowTangentExplorer: state.setShowTangentExplorer,
+      setTangentName: state.setTangentName,
       setShowMcpPanel: state.setShowMcpPanel,
       setShowToolsPanel: state.setShowToolsPanel,
       setShowGoalPanel: state.setShowGoalPanel,
@@ -294,6 +299,7 @@ export const useInputActions = () =>
   useAppStore(
     useShallow((state) => ({
       handleUserInput: state.handleUserInput,
+      dispatchSlashCommand: state.dispatchSlashCommand,
       clearInput: state.clearInput,
       insert: state.insert,
       newline: state.newline,

@@ -39,4 +39,21 @@ describe('getPlaceholder', () => {
     const result = getPlaceholder(baseOpts());
     expect(result).toContain('ask a question or describe a task');
   });
+
+  it('shows the tangent go-back hint when tangentName is set', () => {
+    const out = getPlaceholder({
+      ...baseOpts(),
+      tangentName: 'experiment',
+    } as any);
+
+    expect(out).toContain('/tangent to go back');
+    expect(out).toContain('/tangent ls to view');
+  });
+
+  it('shows the default hint (no tangent text) when tangentName is null', () => {
+    const out = getPlaceholder({ ...baseOpts(), tangentName: null } as any);
+
+    expect(out).not.toContain('/tangent to go back');
+    expect(out).toContain('ask a question or describe a task');
+  });
 });

@@ -692,6 +692,49 @@ describe('Kiro', () => {
       }
     });
   });
+
+  describe('fork()', () => {
+    it('reports "not supported" when not initialized (no session client)', async () => {
+      const kiro = new Kiro();
+      const result = await kiro.fork({ createdReason: 'tangent', title: 'x' });
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Fork is not supported by this engine');
+    });
+
+    it('reports "not supported" when the session client lacks fork', async () => {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      // The mock AcpClient exposes no `fork` (simulates a non-KAS engine).
+      const result = await kiro.fork({ createdReason: 'tangent', title: 'x' });
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Fork is not supported by this engine');
+    });
+
+    it('delegates to sessionClient.fork when supported', async () => {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      const sc = (kiro as any).sessionClient;
+      const fork = mock((_opts: { createdReason: string; title?: string }) =>
+        Promise.resolve({
+          success: true,
+          message: '',
+          data: { sessionId: 'forked-1' },
+        })
+      );
+      sc.fork = fork;
+      try {
+        const result = await kiro.fork({
+          createdReason: 'tangent',
+          title: 't',
+        });
+        expect(fork).toHaveBeenCalledTimes(1);
+        expect(fork.mock.calls[0]![0]!.createdReason).toBe('tangent');
+        expect(result.data).toEqual({ sessionId: 'forked-1' });
+      } finally {
+        delete sc.fork;
+      }
+    });
+  });
 });
 
 describe('Kiro — handler registration and forwarding', () => {

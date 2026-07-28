@@ -178,6 +178,12 @@ export type SessionResult = {
   sessionId: string;
   currentModel?: { id: string; name: string };
   currentAgent?: { name: string; welcomeMessage?: string };
+  /** Present when the loaded session was forked from another. */
+  parentSessionId?: string;
+  /** Why the session was forked (e.g. 'tangent', 'rewind', 'subagent'). */
+  createdReason?: string;
+  /** Session title (tangent name for tangent forks). */
+  title?: string;
 };
 
 type KasPromptTurnSummary = {
