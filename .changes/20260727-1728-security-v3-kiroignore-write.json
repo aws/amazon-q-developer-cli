@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "[V3] Agent writes to `.kiroignore` are hard-denied so the agent cannot expand its own read boundary"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "[V3] Harden the agent shell against Windows `git.exe` binary-planting from the workspace root"
+}
