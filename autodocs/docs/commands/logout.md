@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-07-17
+  commit: 97607ddf
   status: validated
   testable_headless: false
   category: command
   title: kiro-cli logout
   description: Sign out of Kiro CLI service and clear authentication credentials
-  keywords: [logout, signout, clear, credentials]
+  keywords: [logout, signout, clear, credentials, api-key]
   related: [login, whoami]
 ---
 
@@ -46,6 +46,26 @@ You are now logged out
 Run kiro-cli login to log back in to Kiro CLI
 ```
 
+### Example 2: Logout with API Key Still Set
+
+```bash
+kiro-cli logout
+```
+
+**Output** (when `KIRO_API_KEY` environment variable is set):
+```
+You are now logged out
+
+⚠️  KIRO_API_KEY is still set. To logout unset KIRO_API_KEY
+Run kiro-cli login to log back in to Kiro CLI
+```
+
+The warning reminds you that while stored credentials are cleared, the API key environment variable still provides authentication. To fully logout, unset the variable:
+
+```bash
+unset KIRO_API_KEY
+```
+
 ## What Gets Cleared
 
 - Authentication tokens
@@ -58,6 +78,16 @@ Run kiro-cli login to log back in to Kiro CLI
 - Saved conversations
 - Settings
 - MCP server configurations
+- `KIRO_API_KEY` environment variable (if set)
+
+## API Key Authentication
+
+If you're authenticated via the `KIRO_API_KEY` environment variable, the `logout` command clears stored credentials but cannot unset environment variables. After logout, you'll see a warning if the API key is still set. To fully logout:
+
+```bash
+kiro-cli logout
+unset KIRO_API_KEY
+```
 
 ## Related Features
 

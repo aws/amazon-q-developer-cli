@@ -96,11 +96,18 @@ pub struct LoginArgs {
 
 impl LoginArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        if is_logged_in(&mut os.database).await {
-            eyre::bail!(
-                "Already logged in, please logout with {} first",
-                StyledText::command(&format!("{CLI_BINARY_NAME} logout"))
-            );
+        if let Some(source) = crate::auth::active_auth_source(&mut os.database).await {
+            match source {
+                crate::auth::AuthSource::ApiKey => {
+                    eyre::bail!("Already authenticated via KIRO_API_KEY. To logout unset KIRO_API_KEY");
+                },
+                _ => {
+                    eyre::bail!(
+                        "Already logged in, please logout with {} first",
+                        StyledText::command(&format!("{CLI_BINARY_NAME} logout"))
+                    );
+                },
+            }
         }
 
         let is_remote_env = is_remote() || self.use_device_flow;
@@ -302,6 +309,11 @@ pub async fn logout(os: &mut Os) -> Result<ExitCode> {
     let _ = os.reset_telemetry_after_logout(telemetry_region.as_deref()).await;
 
     eprintln!("You are now logged out");
+
+    if crate::util::env_var::get_api_key().is_some() {
+        eprintln!("\n⚠️  KIRO_API_KEY is still set. To logout unset KIRO_API_KEY");
+    }
+
     eprintln!(
         "Run {} to log back in to {PRODUCT_NAME}",
         StyledText::command(&format!("{CLI_BINARY_NAME} login"))
@@ -311,16 +323,7 @@ pub async fn logout(os: &mut Os) -> Result<ExitCode> {
 }
 
 pub async fn is_logged_in(db: &mut Database) -> bool {
-    if crate::auth::is_builder_id_logged_in(db).await {
-        return true;
-    }
-    if crate::auth::social::is_social_logged_in(&*db).await {
-        return true;
-    }
-    if is_external_idp_logged_in(&*db).await {
-        return true;
-    }
-    crate::util::env_var::get_api_key().is_some()
+    crate::auth::active_auth_source(db).await.is_some()
 }
 
 #[derive(Args, Debug, PartialEq, Eq, Clone, Default)]

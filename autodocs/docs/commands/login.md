@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-16
-  commit: 7404fa72c
+  validated: 2026-07-17
+  commit: 97607ddf
   status: validated
   testable_headless: false
   category: command
   title: kiro-cli login
   description: Authenticate with Kiro CLI service using Builder ID, Social (Google/GitHub), or Identity Center
-  keywords: [login, auth, authentication, builder-id, identity-center, govcloud, social, google, github, device-flow, remote, headless]
+  keywords: [login, auth, authentication, builder-id, identity-center, govcloud, social, google, github, device-flow, remote, headless, api-key]
   related: [logout, whoami]
 ---
 
@@ -129,6 +129,12 @@ Useful for SSH sessions or when browser redirect doesn't work.
 **Symptom**: "Already logged in" error  
 **Cause**: Active session exists  
 **Solution**: Logout first: `kiro-cli logout`
+
+### Issue: Already Authenticated via API Key
+
+**Symptom**: "Already authenticated via KIRO_API_KEY" error  
+**Cause**: The `KIRO_API_KEY` environment variable is set  
+**Solution**: Unset the environment variable: `unset KIRO_API_KEY`
 
 ### Issue: Browser Doesn't Open
 

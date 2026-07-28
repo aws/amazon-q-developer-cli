@@ -101,6 +101,36 @@ impl From<SdkError<StartDeviceAuthorizationError>> for AuthError {
         Self::SdkStartDeviceAuthorization(Box::new(value))
     }
 }
+
+/// The source of the current authentication credentials.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthSource {
+    BuilderId,
+    Social,
+    ExternalIdp,
+    ApiKey,
+}
+
+/// Returns the active authentication source, if any.
+///
+/// Checks stored credentials first (BuilderId, Social, ExternalIdp),
+/// then falls back to the KIRO_API_KEY environment variable.
+pub async fn active_auth_source(db: &mut Database) -> Option<AuthSource> {
+    if is_builder_id_logged_in(db).await {
+        return Some(AuthSource::BuilderId);
+    }
+    if social::is_social_logged_in(&*db).await {
+        return Some(AuthSource::Social);
+    }
+    if external_idp::is_external_idp_logged_in(&*db).await {
+        return Some(AuthSource::ExternalIdp);
+    }
+    if crate::util::env_var::get_api_key().is_some() {
+        return Some(AuthSource::ApiKey);
+    }
+    None
+}
+
 /// Unified bearer token resolver that tries external IdP, social, and builder ID tokens
 #[derive(Debug, Clone)]
 pub struct UnifiedBearerResolver;
