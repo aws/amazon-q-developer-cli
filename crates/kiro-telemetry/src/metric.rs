@@ -3564,6 +3564,37 @@ pub fn cloud_session_total(event: CloudSessionEvent, engine: Engine) -> MetricRe
         .expect_valid()
 }
 
+/// Autonomous-mode lifecycle event. SCREAMING is avoided; snake_case on the
+/// wire to match the `autonomous_event` attribute allowlist.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+pub enum AutonomousEvent {
+    Enabled,
+    Disabled,
+    SwitchFailed,
+    Reverted,
+    #[default]
+    #[strum(serialize = "_other_")]
+    Other,
+}
+
+impl AutonomousEvent {
+    pub fn from_name(value: &str) -> Self {
+        parse_bounded_metric_enum(value)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+pub fn autonomous_mode_total(event: AutonomousEvent, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_autonomous_mode_total", 1)
+        .attribute("autonomous_event", event.as_str())
+        .attribute("engine", engine.as_str())
+        .expect_valid()
+}
+
 pub fn chat_session_started_from_context(
     app_type: Option<&str>,
     mode: Option<&str>,
