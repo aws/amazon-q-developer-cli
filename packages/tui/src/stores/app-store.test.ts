@@ -1240,11 +1240,13 @@ describe('Simple state setters', () => {
     expect(store.getState().mcpRegistryServers).toEqual(registry);
   });
 
-  it('setContextUsage sets contextUsagePercent', () => {
+  it('setContextUsage sets and clears contextUsagePercent', () => {
     const store = makeStore();
     expect(store.getState().contextUsagePercent).toBeNull();
     store.getState().setContextUsage(75);
     expect(store.getState().contextUsagePercent).toBe(75);
+    store.getState().setContextUsage(null);
+    expect(store.getState().contextUsagePercent).toBeNull();
   });
 
   it('clearInput resets input buffer to initial state', () => {

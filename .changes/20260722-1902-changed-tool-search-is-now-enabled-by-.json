@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Tool search is now enabled by default with 3% / 10,000-token activation thresholds; existing `toolSearch.enabled=true` configurations without explicit thresholds now use these defaults instead of always activating"
+}

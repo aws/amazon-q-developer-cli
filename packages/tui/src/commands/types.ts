@@ -115,7 +115,7 @@ export interface CommandContext {
    *  that need to know the previous agent before swapping (e.g. modeChanged telemetry). */
   currentAgent: { name: string } | null;
   /** Update context usage percentage */
-  setContextUsage: (percent: number) => void;
+  setContextUsage: (percent: number | null) => void;
   /** Show/hide context breakdown panel */
   setShowContextBreakdown: (show: boolean, breakdown?: any) => void;
   /** Read the latest raw context breakdown pushed by the active agent. */

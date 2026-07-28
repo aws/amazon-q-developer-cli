@@ -6,6 +6,7 @@ import { Divider } from './divider/Divider.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
+import type { ContextBreakdownData } from '../../types/context.js';
 
 interface ContextBreakdownProps {
   percent: number | null;
@@ -17,21 +18,7 @@ interface ContextBreakdownProps {
   onTabSwitch?: () => void;
 }
 
-interface ContextFileItem {
-  name: string;
-  tokens: number;
-  matched: boolean;
-  percent: number;
-  autoIncluded?: boolean;
-}
-
-interface CategoryBreakdown {
-  contextFiles: { percent: number; tokens: number; items?: ContextFileItem[] };
-  tools: { percent: number; tokens: number };
-  kiroResponses: { percent: number; tokens: number };
-  yourPrompts: { percent: number; tokens: number };
-  sessionFiles?: { percent: number; tokens: number; items?: ContextFileItem[] };
-}
+type CategoryBreakdown = ContextBreakdownData;
 
 // Colors matching the design
 const COLORS = {
@@ -124,6 +111,7 @@ export function ContextBreakdown({
 }: ContextBreakdownProps) {
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
+  const glyphs = useGlyphs();
   const primary = getColor('primary');
   const brand = getColor('brand');
   const dim = getColor('secondary');
@@ -234,6 +222,37 @@ export function ContextBreakdown({
                 {!item.matched && dim(' (no matches)')}
               </Text>
             ))
+          ) : (
+            <Text> {dim(' <none>')}</Text>
+          )}
+
+          <Box marginTop={1} marginBottom={0}>
+            <Text>{primary('Tools')}</Text>
+          </Box>
+          {breakdown?.tools.groups && breakdown.tools.groups.length > 0 ? (
+            breakdown.tools.groups.map((group) => (
+              <Box key={group.source} flexDirection="column">
+                <Text>
+                  {'  '}
+                  {primary(group.name)}
+                  {dim(
+                    ` ${group.percent.toFixed(1)}% ${glyphs.smallDot} ${group.items.length} ${
+                      group.items.length === 1 ? 'tool' : 'tools'
+                    }`
+                  )}
+                </Text>
+                {group.items.map((item) => (
+                  <Text key={`${group.source}-${item.name}`}>
+                    {'    '}
+                    {dim(`${glyphs.smallDot} `)}
+                    {primary(item.name)}
+                    {dim(` ${item.percent.toFixed(1)}%`)}
+                  </Text>
+                ))}
+              </Box>
+            ))
+          ) : breakdown && breakdown.tools.tokens > 0 ? (
+            <Text> {dim(' Tool details unavailable')}</Text>
           ) : (
             <Text> {dim(' <none>')}</Text>
           )}

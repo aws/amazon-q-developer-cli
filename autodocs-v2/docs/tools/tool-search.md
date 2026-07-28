@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-24
-  commit: 22dc5f71
+  validated: 2026-07-27
+  commit: 482981ad0
   status: validated
   testable_headless: true
   category: tool
   title: tool_search
   description: Find and load MCP tools on demand to reduce context window usage
   keywords: [tool, search, mcp, discovery, load, context, bm25]
-  related: [mcp, tool-search-settings]
+  related: [mcp, context]
 ---
 
 # tool_search
@@ -68,20 +68,27 @@ The tool_search tool enables on-demand MCP tool discovery. When Tool Search is e
 
 ## Configuration
 
-Enable Tool Search via settings:
+Tool Search is enabled by default. It activates automatically when MCP tool specs exceed configured thresholds (3% of context window or 10,000 tokens, whichever comes first).
+
+To disable Tool Search:
 
 ```bash
-kiro-cli settings toolSearch.enabled true
+kiro-cli settings toolSearch.enabled false
 ```
 
-Tool Search activates automatically when MCP tool specs exceed configured thresholds. To force activation whenever any MCP tools are present:
+To adjust activation thresholds:
+
+```bash
+kiro-cli settings toolSearch.minPct 5      # Activate at 5% of context window
+kiro-cli settings toolSearch.minTokens 50000  # Activate at 50k tokens
+```
+
+To force activation whenever any MCP tools are present:
 
 ```bash
 kiro-cli settings toolSearch.minPct 0
 kiro-cli settings toolSearch.minTokens 0
 ```
-
-See [Tool Search Settings](../settings/tool-search-settings.md) for all configuration options.
 
 ## Parameters
 
@@ -204,12 +211,12 @@ Limits the number of tools returned by keyword search.
 ### Issue: Tool Search Not Available
 
 **Symptom**: tool_search not in available tools  
-**Cause**: Tool Search feature is disabled or thresholds not met  
-**Solution**: Enable with `kiro-cli settings toolSearch.enabled true` and optionally lower thresholds.
+**Cause**: Tool Search is disabled or MCP tool specs are below activation thresholds  
+**Solution**: Verify it's enabled with `kiro-cli settings toolSearch.enabled` (default: true). If enabled but not activating, lower the thresholds or add more MCP tools.
 
 ## Related Features
 
-- [Tool Search Settings](../settings/tool-search-settings.md) - Configuration options
+- [/context](../slash-commands/context.md) - View context usage including tool token breakdown
 - [MCP](../commands/mcp.md) - MCP server management
 - [/tools](../slash-commands/tools.md) - View available tools
 

@@ -465,6 +465,14 @@ mod tests {
     }
 
     #[test]
+    fn default_thresholds_bound_schema_usage_for_272k_model() {
+        let settings = crate::agent::types::AgentSettings::default();
+        assert!(!should_activate_tool_search(&settings, 8_000, Some(272_000)));
+        assert!(should_activate_tool_search(&settings, 9_000, Some(272_000)));
+        assert!(should_activate_tool_search(&settings, 11_000, None));
+    }
+
+    #[test]
     fn should_activate_disabled_returns_false() {
         let s = make_settings(false, None, None);
         assert!(!should_activate_tool_search(&s, 100_000, Some(200_000)));

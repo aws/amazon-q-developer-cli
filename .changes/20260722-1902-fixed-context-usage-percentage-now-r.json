@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Context usage percentage now recalculates when switching models via `/model`"
+}
