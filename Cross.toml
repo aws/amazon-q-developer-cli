@@ -9,7 +9,7 @@
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main@sha256:73811f43949215c88456a311970037a34f3f89f6486cfbcf61d8fe5379a9517e"
 
 [build]
-pre-build = ["apt-get update && apt-get --assume-yes install unzip zsh libclang-dev libssl-dev pkg-config"]
+pre-build = ["apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 --assume-yes install unzip zsh libclang-dev libssl-dev pkg-config"]
 
 [build.env]
 passthrough = [

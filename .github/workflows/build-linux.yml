@@ -206,9 +206,21 @@ jobs:
           INCLUDE_KAS_BUNDLE: "true"
           KIRO_VERSION: ${{ inputs.version }}
         run: |
-          python3 ./scripts/main.py build \
-            --skip-lints --skip-tests --skip-autodocs-embeddings \
-            --stage-name "${{ env.STAGE_NAME }}"
+          # The cross image pre-build fetches apt packages; a mirror outage lasting
+          # longer than apt's own retries needs a fresh attempt with a delay.
+          for attempt in 1 2 3; do
+            if python3 ./scripts/main.py build \
+                --skip-lints --skip-tests --skip-autodocs-embeddings \
+                --stage-name "${{ env.STAGE_NAME }}"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Build attempt $attempt failed, retrying in $((attempt * 30)) seconds"
+              sleep $((attempt * 30))
+            fi
+          done
+          echo "::error::Build failed after 3 attempts"
+          exit 1
 
       - name: Upload artifacts to S3
         run: |
