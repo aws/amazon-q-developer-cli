@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] New cloud sessions no longer inherit stale config from a previous sync"
+}

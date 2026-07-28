@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Policy engine blocks agent writes to `.kiroignore` at any depth"
+}

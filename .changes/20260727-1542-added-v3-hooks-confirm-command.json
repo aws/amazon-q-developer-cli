@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "[V3] Hooks support `confirmCommand` for dynamic confirmation options"
+}

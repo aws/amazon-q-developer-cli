@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "[V3] Harden shell against Windows `git.exe` binary-planting (CWE-427)"
+}
