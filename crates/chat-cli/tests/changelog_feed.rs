@@ -14,6 +14,102 @@ use chat_cli::util::consts::env_var::{
 use predicates::prelude::*;
 use predicates::str::contains;
 
+/// `chat _ refresh-feed` does a blocking fetch and snapshots the processed
+/// feed to the file the TUI reads; non-nightly channels report updated=false
+/// and write nothing.
+#[test]
+fn refresh_feed_subcommand_snapshots_fresh_feed() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let url = format!("{}/feed.json", server.url());
+    let feed_file = data_dir.path().join("feed.json");
+
+    let refresh_cmd = |version: &str| {
+        let mut cmd = Command::cargo_bin("chat_cli").unwrap();
+        cmd.args(["chat", "_", "refresh-feed"])
+            .env(KIRO_VERSION_OVERRIDE, version)
+            .env(KIRO_FEED_URL, &url)
+            .env("KIRO_DATA_DIR", data_dir.path())
+            .env("KIRO_TEST_DB_PATH", data_dir.path().join("test.sqlite3"))
+            .env("HOME", data_dir.path())
+            .timeout(std::time::Duration::from_secs(30));
+        cmd
+    };
+
+    // Stable channel: no fetch, updated=false, no snapshot written.
+    let never = server.mock("GET", "/feed.json").expect(0).create();
+    refresh_cmd("9.9.9")
+        .assert()
+        .success()
+        .stdout(contains(r#""updated":false"#));
+    never.assert();
+    assert!(!feed_file.exists());
+
+    // Nightly: fetch succeeds, snapshot written with the fixture content.
+    let ok = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .create();
+    refresh_cmd("9.9.9-nightly.1")
+        .assert()
+        .success()
+        .stdout(contains(r#""updated":true"#));
+    ok.assert();
+    let snapshot = std::fs::read_to_string(&feed_file).unwrap();
+    assert!(snapshot.contains("Remote fixture entry"));
+
+    // Unchanged content on a re-fetch reports updated=false (no re-render).
+    let ok = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .create();
+    refresh_cmd("9.9.9-nightly.1")
+        .assert()
+        .success()
+        .stdout(contains(r#""updated":false"#));
+    ok.assert();
+
+    // Embedded floor applies to the snapshot: with a bundled fixture newer
+    // than the fetched feed, the snapshot carries the bundled content, never
+    // the raw fetch body.
+    let bundled = data_dir.path().join("bundled.json");
+    std::fs::write(
+        &bundled,
+        r#"{ "entries": [ { "type": "release", "date": "2026-06-01", "version": "5.0.0",
+            "changes": [{ "type": "added", "description": "Bundled floor entry" }] } ] }"#,
+    )
+    .unwrap();
+    let ok = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .create();
+    refresh_cmd("9.9.9-nightly.1")
+        .env(KIRO_BUNDLED_FEED_FILE, &bundled)
+        .assert()
+        .success()
+        .stdout(contains(r#""updated":true"#));
+    ok.assert();
+    let snapshot = std::fs::read_to_string(&feed_file).unwrap();
+    assert!(snapshot.contains("Bundled floor entry"));
+    assert!(!snapshot.contains("Remote fixture entry"));
+
+    // Nightly with the server failing: updated=false, snapshot untouched.
+    let err = server.mock("GET", "/feed.json").with_status(500).create();
+    refresh_cmd("9.9.9-nightly.1")
+        .assert()
+        .success()
+        .stdout(contains(r#""updated":false"#));
+    err.assert();
+    assert!(
+        std::fs::read_to_string(&feed_file)
+            .unwrap()
+            .contains("Bundled floor entry")
+    );
+}
+
 const FIXTURE_FEED: &str = r#"{
     "entries": [
         {

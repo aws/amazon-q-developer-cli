@@ -161,6 +161,8 @@ pub enum CliInternalOutput {
     /// `test-seed-v1`.
     #[serde(rename_all = "camelCase")]
     TestSeedV1 { conversation_id: String },
+    /// `refresh-feed`.
+    RefreshFeed { updated: bool },
     /// Any subcommand's failure path.
     Error {
         message: String,
@@ -272,6 +274,10 @@ pub enum InternalChatSubcommand {
     /// Scan or run the agent-config universal-format migration. Wire
     /// surface for the `/upgrade-agent` TUI panels.
     UpgradeAgent(UpgradeAgentArgs),
+    /// Fetch the remote changelog feed (bounded blocking fetch) and
+    /// snapshot it to the feed file the TUI reads. Wire surface for the
+    /// `/changelog` panel's fresh-on-request refresh.
+    RefreshFeed(RefreshFeedArgs),
 }
 
 impl ChatCommand {
@@ -284,7 +290,49 @@ impl ChatCommand {
             Self::Internal(InternalChatSubcommand::DeriveMessages(args)) => Ok(args.execute()),
             Self::Internal(InternalChatSubcommand::TestSeedV1(args)) => Ok(args.execute().await),
             Self::Internal(InternalChatSubcommand::UpgradeAgent(args)) => Ok(args.execute()),
+            Self::Internal(InternalChatSubcommand::RefreshFeed(args)) => Ok(args.execute().await),
         }
+    }
+}
+
+// ─── refresh-feed ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+pub struct RefreshFeedArgs {}
+
+impl RefreshFeedArgs {
+    /// Bounded blocking fetch of the remote changelog feed. On success the
+    /// refreshed feed is snapshotted to the feed file the launcher points
+    /// the TUI at (feed.json in the data dir), so the caller can re-read it
+    /// for fresh content. The snapshot goes through the same cache read as
+    /// launch (version cap + embedded floor), never the raw fetch body.
+    /// `updated: false` means the fetch failed, this channel does not fetch
+    /// remotely, the content is unchanged, or the write failed; the
+    /// existing snapshot is left untouched in all of those cases.
+    async fn execute(self) -> ExitCode {
+        // The fetch itself validates and writes the on-disk cache.
+        let updated = if crate::cli::feed::Feed::fetch_remote_json().await.is_some() {
+            match crate::util::paths::feed_json_path() {
+                Ok(path) => {
+                    let snapshot = crate::cli::feed::Feed::load_cached_json();
+                    if std::fs::read_to_string(&path).is_ok_and(|current| current == snapshot) {
+                        false
+                    } else {
+                        match crate::cli::feed::atomic_write(&path, &snapshot) {
+                            Ok(()) => true,
+                            Err(err) => {
+                                tracing::warn!(%err, "failed to write refreshed feed snapshot");
+                                false
+                            },
+                        }
+                    }
+                },
+                Err(_) => false,
+            }
+        } else {
+            false
+        };
+        emit(&CliInternalOutput::RefreshFeed { updated })
     }
 }
 

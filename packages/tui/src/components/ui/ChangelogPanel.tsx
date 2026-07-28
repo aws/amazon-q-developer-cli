@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box } from './../../renderer.js';
 import { Panel } from './panel/Panel.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
@@ -11,6 +11,7 @@ import {
   UNICODE_ICONS,
   ASCII_ICONS,
 } from '../../constants/feed.js';
+import { refreshChangelogFeed } from '../../utils/refresh-feed-cli.js';
 
 interface ChangelogPanelProps {
   onClose: () => void;
@@ -25,10 +26,29 @@ export const ChangelogPanel: React.FC<ChangelogPanelProps> = ({ onClose }) => {
   const { allowAsciiArt } = useAllowAsciiArt();
   const glyphs = useGlyphs();
 
+  // Stale-while-revalidate: render the launch-time snapshot immediately,
+  // ask the CLI for a fresh fetch, and re-read the feed file if it was
+  // updated. The user explicitly asked for the changelog, so freshness
+  // is worth the background round-trip.
+  const [feedGeneration, setFeedGeneration] = useState(0);
+  useEffect(() => {
+    // Cancel the spawned refresh if the panel closes before it finishes,
+    // so a rapidly opened/closed panel doesn't leave child processes running.
+    const controller = new AbortController();
+    refreshChangelogFeed(undefined, controller.signal).then((updated) => {
+      if (!controller.signal.aborted && updated)
+        setFeedGeneration((n) => n + 1);
+    });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
   const icons = allowAsciiArt ? UNICODE_ICONS : ASCII_ICONS;
   const releases = useMemo(
     () => getRecentReleases(CHANGELOG_RELEASE_LIMIT, { icons }),
-    [icons]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- feedGeneration invalidates the file re-read
+    [icons, feedGeneration]
   );
 
   // Markdown: `## ✨ What's new in X.Y.Z (date)` per release, joined by `---`.

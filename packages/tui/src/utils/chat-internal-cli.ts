@@ -184,7 +184,8 @@ function verifyExitCode(
 export async function runChatInternalAsync(
   args: string[],
   spawner: AsyncSpawner = DEFAULT_ASYNC_SPAWNER,
-  timeoutMs: number = 30_000
+  timeoutMs: number = 30_000,
+  signal?: AbortSignal
 ): Promise<RunResult> {
   let bin: string;
   try {
@@ -192,8 +193,16 @@ export async function runChatInternalAsync(
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
+  // Already-aborted caller: don't spawn at all.
+  if (signal?.aborted) {
+    return { ok: false, message: 'kiro-cli invocation aborted before spawn' };
+  }
   const start = performance.now();
   const controller = new AbortController();
+  // Propagate an external abort (e.g. the caller unmounted) to the spawn so
+  // the child process is killed rather than left running to completion.
+  const onExternalAbort = () => controller.abort();
+  signal?.addEventListener('abort', onExternalAbort, { once: true });
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let result: Awaited<ReturnType<AsyncSpawner>>;
   try {
@@ -217,6 +226,7 @@ export async function runChatInternalAsync(
     };
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', onExternalAbort);
   }
   if (result.error) {
     return {
