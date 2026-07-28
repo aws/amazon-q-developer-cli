@@ -61,6 +61,12 @@ export function buildKasSettings(): KasSettings | undefined {
       process.env.KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION !== '1',
   };
 
+  // ICECAP monitor mode defaults ON for internal users (rollout-gated).
+  // Users can still opt out via `chat.enableInfraSafetyMonitor: false`.
+  if (process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED === '1') {
+    cliDefaults.infraSafetyMonitor = true;
+  }
+
   // ─── Boolean feature flags → { enabled: bool } ─────────────────────
   const boolMappings: Array<[string, string]> = [
     ['chat.enableThinking', 'thinking'],
@@ -74,12 +80,9 @@ export function buildKasSettings(): KasSettings | undefined {
     ['chat.enableDelegate', '_delegate'],
   ];
 
-  // ICECAP infra-safety gate. Both modes are opt-in, default off — the user
-  // enables them in cli.json (monitor evaluates + warns; enforce also blocks).
-  // Gated to the internal cohort: the Rust launcher exports
-  // KIRO_INFRA_SAFETY_ROLLOUT_ENABLED from the Feature::InfraSafety rollout
-  // decision, so we only honor these settings for users in the cohort. Outside
-  // it, the settings are ignored (and acp-client.ts withholds the capability).
+  // ICECAP infra-safety gate. Monitor defaults ON for internal users (via
+  // cliDefaults above); enforce remains opt-in. Users override either in
+  // cli.json. Gated to the internal cohort via KIRO_INFRA_SAFETY_ROLLOUT_ENABLED.
   if (process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED === '1') {
     boolMappings.push(
       ['chat.enableInfraSafetyMonitor', 'infraSafetyMonitor'],

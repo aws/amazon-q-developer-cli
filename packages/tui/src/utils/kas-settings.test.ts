@@ -195,10 +195,10 @@ describe('buildKasSettings', () => {
     expect(result?.infraSafetyEnforce).toBeUndefined();
   });
 
-  test('infraSafetyMonitor absent by default even when rollout ON (opt-in)', async () => {
+  test('infraSafetyMonitor defaults to enabled when rollout ON (insider)', async () => {
     process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED = '1';
     const buildKasSettings = await getBuildKasSettings();
-    expect(buildKasSettings()?.infraSafetyMonitor).toBeUndefined();
+    expect(buildKasSettings()?.infraSafetyMonitor).toEqual({ enabled: true });
   });
 
   test('infraSafetyEnforce absent by default even when rollout ON (opt-in)', async () => {
