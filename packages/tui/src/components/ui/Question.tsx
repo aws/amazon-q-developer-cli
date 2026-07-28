@@ -22,6 +22,9 @@ export interface QuestionProps {
   onAnswer: (answer: string, answerForAgent?: string) => boolean;
   onCancel: () => void;
   titlePrefix?: string;
+  /** Label the typed-reply row as feedback (a spec phase check-in) rather than
+   *  an alternative answer. */
+  freeTextIsFeedback?: boolean;
 }
 
 type SubOptionPage = {
@@ -36,6 +39,8 @@ type NumberShortcut = {
 };
 
 const FREE_TEXT_LABEL = 'Type a different answer…';
+/** Free-text label for a question whose typed reply is feedback, not a choice. */
+const FEEDBACK_LABEL = 'or type feedback to request changes';
 
 function normalizePaste(value: string): string {
   return stripNonPrintable(value).replace(/\r\n|\r|\n/g, ' ');
@@ -78,6 +83,7 @@ export const Question: React.FC<QuestionProps> = ({
   onAnswer,
   onCancel,
   titlePrefix = '',
+  freeTextIsFeedback = false,
 }) => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
@@ -404,7 +410,12 @@ export const Question: React.FC<QuestionProps> = ({
             {inputRef.current && <QuestionTextInput input={inputRef.current} />}
           </Box>
         ) : !subOptionPage ? (
-          <Text>{row(FREE_TEXT_LABEL, freeTextIndex)}</Text>
+          <Text>
+            {row(
+              freeTextIsFeedback ? FEEDBACK_LABEL : FREE_TEXT_LABEL,
+              freeTextIndex
+            )}
+          </Text>
         ) : null}
       </Box>
     </Panel>

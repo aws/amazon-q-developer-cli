@@ -5406,6 +5406,78 @@ describe('MCP OAuth flow', () => {
       ).toBeUndefined();
     });
 
+    it('phaseCheckpoint handler broadcasts a valid payload', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/spec/phaseCheckpoint']({
+        sessionId: (client as any).sessionId,
+        featureName: 'web-clock',
+        phase: 'design',
+        artifactPath: '/w/.kiro/specs/web-clock/design.md',
+      });
+      const event = events.find((e) => e.type === 'spec_phase_checkpoint');
+      expect(event).toBeDefined();
+      expect(event.phase).toBe('design');
+      expect(event.featureName).toBe('web-clock');
+      expect(event.artifactPath).toBe('/w/.kiro/specs/web-clock/design.md');
+    });
+
+    it('phaseCheckpoint handler drops a phase it does not know', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/spec/phaseCheckpoint']({
+        sessionId: (client as any).sessionId,
+        featureName: 'web-clock',
+        phase: 'bugfix',
+        artifactPath: '/w/.kiro/specs/web-clock/bugfix.md',
+      });
+      expect(
+        events.find((e) => e.type === 'spec_phase_checkpoint')
+      ).toBeUndefined();
+    });
+
+    it('phaseCheckpoint handler drops a malformed payload', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/spec/phaseCheckpoint']({
+        sessionId: (client as any).sessionId,
+        phase: 'requirements',
+      });
+      expect(
+        events.find((e) => e.type === 'spec_phase_checkpoint')
+      ).toBeUndefined();
+    });
+
+    it("phaseCheckpoint handler drops another session's phase", async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/spec/phaseCheckpoint']({
+        sessionId: 'some-other-session',
+        featureName: 'web-clock',
+        phase: 'requirements',
+        artifactPath: '/w/.kiro/specs/web-clock/requirements.md',
+      });
+      expect(
+        events.find((e) => e.type === 'spec_phase_checkpoint')
+      ).toBeUndefined();
+    });
+
     it('registers handlers for _kiro/error/rate_limit', async () => {
       const client = new KasAcpClient();
       await client.initialize();

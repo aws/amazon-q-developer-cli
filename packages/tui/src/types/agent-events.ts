@@ -68,6 +68,7 @@ export enum AgentEventType {
   KasMessageIdAssigned = 'kas_message_id_assigned',
   ModelRefusal = 'model_refusal',
   SessionRosterDelta = 'session_roster_delta',
+  SpecPhaseCheckpoint = 'spec_phase_checkpoint',
   WorkflowProgress = 'workflow_progress',
   TurnStart = 'turn_start',
   TurnEnd = 'turn_end',
@@ -684,6 +685,28 @@ export interface SessionRosterDeltaEvent {
 }
 
 /**
+ * A spec phase whose document a checkpoint can conclude.
+ *
+ * Mirrors the `_kiro/spec/phaseCheckpoint` payload the agent sends. Declared
+ * here because the pinned covenant predates that notification; these must stay
+ * in step with it, and should be imported from the covenant once its version
+ * carries them.
+ */
+export type SpecCheckpointPhase = 'requirements' | 'design' | 'tasks';
+
+/**
+ * A spec phase's document is written and the agent is about to ask whether to
+ * proceed. What comes next isn't carried here — the agent names it in the
+ * question it asks.
+ */
+export interface SpecPhaseCheckpointEvent {
+  type: AgentEventType.SpecPhaseCheckpoint;
+  featureName: string;
+  phase: SpecCheckpointPhase;
+  artifactPath: string;
+}
+
+/**
  * The session's bound-repository set, as KAS reports it over the ACP wire
  * (`_meta.kiro.repositories` on a `session_info_update`). Pushed when the
  * sandbox attaches/detaches repos mid-session, so the cloud footer tracks the
@@ -889,6 +912,7 @@ export type AgentStreamEvent =
   | GoalStatusEvent
   | ModelRefusalEvent
   | SessionRosterDeltaEvent
+  | SpecPhaseCheckpointEvent
   | WorkflowProgressStreamEvent
   | SessionRepositoriesUpdateEvent
   | SystemNoticeEvent;

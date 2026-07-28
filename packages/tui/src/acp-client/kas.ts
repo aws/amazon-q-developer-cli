@@ -55,6 +55,7 @@ import {
   type HooksUpdateEvent,
   type KiroMeta,
   type McpServerSnapshotEvent,
+  type SpecCheckpointPhase,
 } from '../types/agent-events';
 import { InvokeSubagentPipelineAdapter } from '../utils/invoke-subagent-pipeline';
 import type {
@@ -577,6 +578,9 @@ export class KasAcpClient extends BaseAcpClient {
         knowledge: true,
         hooks: { enabled: true, v2: true },
         requirementsAnalysis: true,
+        // The CLI shows the agent's per-phase check-in question, so the spec
+        // workflow should pause and ask instead of advancing on its own.
+        specPhaseCheckpoints: true,
         // ICECAP infra-safety capability. Gated to the internal cohort by the
         // Rust launcher, which exports KIRO_INFRA_SAFETY_ROLLOUT_ENABLED from the
         // Feature::InfraSafety rollout decision. Advertised only when enabled, in
@@ -1095,6 +1099,39 @@ export class KasAcpClient extends BaseAcpClient {
     this.kiroClient.onExtNotification('_kiro/error/rate_limit', (params) => {
       this.handleRateLimitError(params);
     });
+    // A spec phase's document is done and the agent's check-in question
+    // follows; the store holds it so the phase can be marked complete.
+    this.kiroClient.onExtNotification(
+      '_kiro/spec/phaseCheckpoint',
+      (params) => {
+        const p = params as {
+          sessionId?: unknown;
+          featureName?: unknown;
+          phase?: unknown;
+          artifactPath?: unknown;
+        };
+        // A crew or cloud run has several sessions on one connection; another
+        // session's phase is not this one's to report.
+        if (p.sessionId !== this.sessionId) {
+          return;
+        }
+        const isPhase = (v: unknown): v is SpecCheckpointPhase =>
+          v === 'requirements' || v === 'design' || v === 'tasks';
+        if (
+          typeof p.featureName !== 'string' ||
+          !isPhase(p.phase) ||
+          typeof p.artifactPath !== 'string'
+        ) {
+          return;
+        }
+        this.broadcastStreamEvent({
+          type: AgentEventType.SpecPhaseCheckpoint,
+          featureName: p.featureName,
+          phase: p.phase,
+          artifactPath: p.artifactPath,
+        });
+      }
+    );
     this.kiroClient.onExtNotification(
       '_kiro/mcp/governance_disabled',
       (params) => {

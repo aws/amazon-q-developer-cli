@@ -30,6 +30,7 @@ import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
 import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
 import { BackendPanels } from './shared/BackendPanels.js';
+import { SpecCheckpointChip } from '../ui/SpecCheckpointChip.js';
 import { useBackendPanelHandlers } from './shared/useBackendPanelHandlers.js';
 import type { VariantLayoutProps } from './variant-layout.js';
 
@@ -150,6 +151,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const respondToQuestion = useAppStore((state) => state.respondToQuestion);
   const specDescriptionFeature = useAppStore(
     (state) => state.pendingSpecDescription?.featureName ?? null
+  );
+  const specCheckpointActive = useAppStore(
+    (state) => state.specPhaseCheckpoint !== null
   );
   const globalPaused = useAnimationPaused();
   const keybindings = useKeybindings();
@@ -674,6 +678,12 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
           <SpecDescriptionIntro featureName={specDescriptionFeature} />
         )}
 
+        {/* Titles the check-in question below it; spaced off the agent's
+            closing message so it doesn't read as the last line of it. */}
+        <SpecCheckpointChip
+          questionVisible={!!showQuestion && mode === 'inline'}
+        />
+
         {/* Cloud connect screen: milestone checklist while a cloud session is
             booting and no message has been sent yet. Rendered AFTER
             ConversationView so it appears below the welcome banner,
@@ -912,6 +922,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 titlePrefix={
                   questionStageName ? `${questionStageName} > ` : undefined
                 }
+                freeTextIsFeedback={specCheckpointActive}
               />
             )}
             {showApproval &&

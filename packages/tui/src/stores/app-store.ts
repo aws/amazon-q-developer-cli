@@ -52,6 +52,7 @@ import {
   type AgentStreamEvent,
   type ApprovalRequestInfo,
   type QuestionRequestInfo,
+  type SpecCheckpointPhase,
   type ToolDiff,
   type ToolKind,
   type KasModelConfigUpdateEvent,
@@ -410,6 +411,17 @@ function countArtifactItems(summary: ArtifactSummary): number {
 }
 
 /** Produce a human-readable message for a `LoadError`. */
+/**
+ * A checkpoint promises a check-in question later in the same turn. If the turn
+ * ends with none pending, the promise expired: keeping it would decorate an
+ * unrelated question in a later turn with a stale phase.
+ */
+function expiredCheckpoint<
+  T extends { specPhaseCheckpoint: unknown; pendingQuestion: unknown },
+>(state: T): T['specPhaseCheckpoint'] {
+  return state.pendingQuestion ? state.specPhaseCheckpoint : null;
+}
+
 function describeLoadError(err: LoadError): string {
   switch (err.kind) {
     case 'FeatureNotFound':
@@ -1680,6 +1692,16 @@ export interface AppState {
   pendingQuestion: QuestionRequestInfo | null;
   questionQueue: QuestionRequestInfo[];
   /**
+   * The most recent spec phase checkpoint reported by the agent: the phase
+   * whose document just completed. Cleared when the question it accompanies
+   * resolves.
+   */
+  specPhaseCheckpoint: {
+    featureName: string;
+    phase: SpecCheckpointPhase;
+    artifactPath: string;
+  } | null;
+  /**
    * Armed by `/spec new <name>`: the next submitted line is the feature
    * description for the spec kickoff prompt, not a chat message. The intro
    * block renders from this state in the live region (never the transcript)
@@ -2730,6 +2752,7 @@ export const createAppStore = (props: AppStoreProps) => {
     approvalQueue: [],
     pendingQuestion: null,
     questionQueue: [],
+    specPhaseCheckpoint: null,
     pendingSpecDescription: null,
     approvalMode: 'dropdown',
     autoApproveCrewTools: false,
@@ -3118,6 +3141,7 @@ export const createAppStore = (props: AppStoreProps) => {
               currentAbortController: null,
               agentError: null,
               agentErrorGuidance: null,
+              specPhaseCheckpoint: expiredCheckpoint(state),
             };
           }
 
@@ -3126,6 +3150,7 @@ export const createAppStore = (props: AppStoreProps) => {
             currentAbortController: null,
             agentError: null,
             agentErrorGuidance: null,
+            specPhaseCheckpoint: expiredCheckpoint(state),
           };
         });
 
@@ -4227,6 +4252,15 @@ export const createAppStore = (props: AppStoreProps) => {
             break;
           case AgentEventType.SessionRosterDelta:
             get().applySessionRosterDelta(event.delta);
+            break;
+          case AgentEventType.SpecPhaseCheckpoint:
+            set({
+              specPhaseCheckpoint: {
+                featureName: event.featureName,
+                phase: event.phase,
+                artifactPath: event.artifactPath,
+              },
+            });
             break;
           case AgentEventType.SessionRepositoriesUpdate:
             // The sandbox's authoritative bound-repo set (attach/detach
@@ -5651,6 +5685,8 @@ export const createAppStore = (props: AppStoreProps) => {
           messages,
           questionQueue: remainingQueue,
           pendingQuestion: remainingQueue[0] ?? null,
+          // The checkpoint marks one question only.
+          specPhaseCheckpoint: null,
         };
       });
       pendingQuestion.resolve({
@@ -5672,6 +5708,7 @@ export const createAppStore = (props: AppStoreProps) => {
       set((state) => ({
         pendingQuestion: null,
         questionQueue: [],
+        specPhaseCheckpoint: null,
         messages: state.messages.map((message) =>
           message.role === MessageRole.ToolUse &&
           questionIds.has(message.id) &&
@@ -6774,6 +6811,12 @@ export const createAppStore = (props: AppStoreProps) => {
           pendingQuestion?.sessionId === sessionId
             ? (remainingQuestions[0] ?? null)
             : state.pendingQuestion,
+        // The check-in question this checkpoint was waiting for died with the
+        // session, so nothing will claim it.
+        specPhaseCheckpoint:
+          pendingQuestion?.sessionId === sessionId && !remainingQuestions[0]
+            ? null
+            : state.specPhaseCheckpoint,
         messages: agentName
           ? state.messages.map((msg) =>
               msg.role === MessageRole.ToolUse &&
