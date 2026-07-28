@@ -17,6 +17,7 @@ import type {
 } from '../types/commands.js';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import type { SessionPickerRow } from '../components/ui/SessionPickerPanel.js';
+import type { WorkflowRunSummary } from '../types/workflow-history.js';
 import type {
   AgentEntry,
   EffortEntry,
@@ -149,6 +150,8 @@ export interface CommandContext {
     }>
   ) => void;
   setTangentName: (name: string | null) => void;
+  /** Open the session-scoped workflow history surface when it is installed. */
+  setShowWorkflowHistory?: (show: boolean, runs?: WorkflowRunSummary[]) => void;
   setUpgradeDiagnostics: (
     rows: UpgradeAnalysisRow[],
     description: string

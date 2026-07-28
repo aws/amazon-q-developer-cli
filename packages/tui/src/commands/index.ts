@@ -4,6 +4,10 @@
 
 import { parseCommand } from '../types/commands.js';
 import type { AvailableCommand } from '../types/commands.js';
+import {
+  getKasWorkflowAliasSubcommand,
+  KasCommandName,
+} from '../kas-commands.js';
 import { dispatch } from './dispatcher.js';
 import type { CommandContext } from './types.js';
 
@@ -22,7 +26,10 @@ function findCommand<T extends AvailableCommand>(
 
   // Prefix match - sort alphabetically so /clear < /compact < /context
   const sorted = [...commands].sort((a, b) => a.name.localeCompare(b.name));
-  return sorted.find((c) => c.name.toLowerCase().startsWith(`/${lower}`));
+  return sorted.find(
+    (c) =>
+      c.meta?.hidden !== true && c.name.toLowerCase().startsWith(`/${lower}`)
+  );
 }
 
 /**
@@ -69,14 +76,30 @@ export async function executeCommand(
     return false;
   }
 
-  // /goal with a description (set case) must flow through sendMessage so the
-  // TUI enters streaming mode. The server's slash router handles it like /skills.
-  // Only /goal (bare) and /goal clear go through the command system.
+  if (ctx.agentEngine === 'kas') {
+    const aliasSubcommand = getKasWorkflowAliasSubcommand(cmd.name);
+    if (aliasSubcommand !== undefined) {
+      const workflowCmd = ctx.kasCommands.find(
+        (candidate) => candidate.name === KasCommandName.Workflow
+      );
+      if (!workflowCmd) return false;
+
+      const trimmedArgs = args.trim();
+      const canonicalArgs = aliasSubcommand
+        ? `${aliasSubcommand}${trimmedArgs ? ` ${trimmedArgs}` : ''}`
+        : trimmedArgs;
+      await dispatch(workflowCmd, canonicalArgs, ctx);
+      return true;
+    }
+  }
+
   if (cmd.name.toLowerCase() === '/goal') {
     const trimmedArgs = args?.trim() ?? '';
-    const isSubcommand = !trimmedArgs || trimmedArgs === 'clear';
-    if (!isSubcommand) {
-      // Send as a regular prompt — server slash router intercepts /goal text
+    const shouldSendAsPrompt =
+      ctx.agentEngine === 'kas'
+        ? trimmedArgs.length > 0
+        : trimmedArgs.length > 0 && trimmedArgs !== 'clear';
+    if (shouldSendAsPrompt) {
       await ctx.sendMessage(input);
       return true;
     }

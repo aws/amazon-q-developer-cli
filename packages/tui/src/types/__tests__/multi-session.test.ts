@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { isRemoteSession } from '../multi-session';
+import {
+  isRemoteSession,
+  isWorkflowSession,
+  SessionLifecycleOwner,
+} from '../multi-session';
 
 describe('isRemoteSession', () => {
   it('is false for undefined / null', () => {
@@ -25,6 +29,22 @@ describe('isRemoteSession', () => {
   it('is true for remote-control', () => {
     expect(
       isRemoteSession({ executionTarget: { kind: 'remote-control' } })
+    ).toBe(true);
+  });
+});
+
+describe('isWorkflowSession', () => {
+  it('requires explicit workflow lifecycle ownership', () => {
+    expect(isWorkflowSession(undefined)).toBe(false);
+    expect(isWorkflowSession(null)).toBe(false);
+    expect(isWorkflowSession({})).toBe(false);
+  });
+
+  it('recognizes sessions owned by the workflow extension', () => {
+    expect(
+      isWorkflowSession({
+        lifecycleOwner: SessionLifecycleOwner.WorkflowExtension,
+      })
     ).toBe(true);
   });
 });

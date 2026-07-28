@@ -26,6 +26,8 @@ export type KasSettings = Record<string, unknown>;
  */
 const GATED_FEATURES: ReadonlyArray<[Feature, string]> = [
   [Feature.Memory, 'memoryEnable'],
+  [Feature.Workflows, 'workflows'],
+  [Feature.Workflows, 'goal'],
 ];
 
 /** Apply feature-gated settings to the settings object. */

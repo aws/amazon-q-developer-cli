@@ -30,6 +30,21 @@ describe('sessionConversationsStore', () => {
     expect(typeof handler).toBe('function');
   });
 
+  it('appends a local user message through the typed writer contract', () => {
+    sessionConversationsStore
+      .getState()
+      .appendLocalUserMessage('session-1', 'follow up');
+
+    const messages = sessionConversationsStore
+      .getState()
+      .conversations.get('session-1');
+    expect(messages).toHaveLength(1);
+    expect(messages?.[0]).toMatchObject({
+      role: MessageRole.User,
+      content: 'follow up',
+    });
+  });
+
   it('feeding Content events through handler adds messages to conversation', async () => {
     const handler = sessionConversationsStore
       .getState()

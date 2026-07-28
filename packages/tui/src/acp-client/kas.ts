@@ -51,6 +51,7 @@ import type {
 import {
   AgentEventType,
   type AgentStreamEvent,
+  type ApprovalRequestEvent,
   type HooksUpdateEvent,
   type KiroMeta,
   type McpServerSnapshotEvent,
@@ -61,6 +62,8 @@ import type {
   CommandResult,
   TuiCommand,
 } from '../types/commands';
+import type { WorkflowConversationApi } from '../types/workflow';
+import type { WorkflowControlApi } from '../types/workflow-history';
 import type {
   KasPermissionRequest,
   KasSubagentRoutingEmitter,
@@ -70,9 +73,9 @@ import { parseToolsDidChange } from '../utils/kas-tools';
 import { extractRpcErrorMessage } from '../utils/error-handling';
 import { openUrlInBrowser } from '../utils/browser';
 import { getCliVersion } from '../utils/version';
-import { getKasCommands } from '../kas-commands';
+import { getKasCommands, isKasWorkflowCommandName } from '../kas-commands';
 import { KAS_AUTONOMOUS_AGENT_ID } from '../constants/agents';
-import { features } from '../features';
+import { Feature, features } from '../features';
 import { readClipboardImage } from '../utils/clipboard-image';
 import {
   modeFromId,
@@ -105,7 +108,6 @@ import {
   BaseAcpClient,
   buildStdioStreams,
   extractKasSessionInfoMeta,
-  extractKiroMetaFromUpdate,
   normalizeKasTurnCompletion,
   stripMcpTitlePrefix,
   toolTelemetryStartFromEvent,
@@ -114,6 +116,18 @@ import {
   type AgentProcess,
   type SessionResult,
 } from './base';
+import { KasWorkflowExtension } from './kas-extensions/workflow/controller';
+import type { WorkflowExtensionHost } from './kas-extensions/workflow/ports';
+import { parsePersistedWorkflowProgress } from './kas-extensions/workflow/contracts';
+import { createWorkflowEffectSink } from './kas-extensions/workflow/effect-adapter';
+import {
+  KiroClientExtensionRuntime,
+  type KasExtensionRuntime,
+} from './kas-extensions/runtime';
+import {
+  decodeExtSessionUpdate,
+  type ExtSessionUpdateEnvelope,
+} from './kas-extensions/session-update-contract';
 
 // User-agent tokens attached to the KAS ACP clientInfo._meta. KAS appends these
 // to the user agent it sends to the backend. `app/AmazonQ-For-CLI` is required
@@ -193,6 +207,17 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function isWorkflowAvailableCommand(command: acp.AvailableCommand): boolean {
+  const kiroMeta = command._meta?.kiro;
+  return (
+    isKasWorkflowCommandName(command.name) ||
+    (typeof kiroMeta === 'object' &&
+      kiroMeta !== null &&
+      'type' in kiroMeta &&
+      kiroMeta.type === 'workflow')
+  );
+}
+
 function kasPermissionMeta(params: any): KiroMeta | undefined {
   return params?._meta?.kiro ?? params?.toolCall?._meta?.kiro;
 }
@@ -264,6 +289,12 @@ export class KasAcpClient extends BaseAcpClient {
   private chatSessionStartedSessions = new Set<string>();
   /** Correlates V3 ToolCall → ToolCallFinished into tool telemetry (KAS-only). */
   private readonly v3ToolCalls = new TuiToolCallObserver();
+  private readonly workflowsEnabled = features.isEnabled(Feature.Workflows);
+  private extensionRuntimeInstance?: KasExtensionRuntime;
+  private workflowExtensionInstance?: KasWorkflowExtension;
+  private workflowEffectSinkInstance?: ReturnType<
+    typeof createWorkflowEffectSink
+  >;
 
   /**
    * Snapshots of the current model id and agent (KAS "mode") id, kept solely
@@ -558,6 +589,98 @@ export class KasAcpClient extends BaseAcpClient {
     });
   }
 
+  private get workflowExtension(): KasWorkflowExtension | undefined {
+    if (!this.workflowsEnabled) return undefined;
+    this.workflowExtensionInstance ??= this.createWorkflowExtension();
+    return this.workflowExtensionInstance;
+  }
+
+  private get workflowEffectSink(): ReturnType<
+    typeof createWorkflowEffectSink
+  > {
+    this.workflowEffectSinkInstance ??= createWorkflowEffectSink({
+      emitMain: (event) => this.broadcastStreamEvent(event),
+      emitSession: (event) => this.broadcastSessionEvent(event),
+      emitChild: (sessionId, event) => {
+        this.kasSubagentRoutingStore.rememberKasToolCall(event);
+        this.broadcastMultiSession(sessionId, event);
+        this.kasSubagentRoutingStore.forgetFinishedKasToolCallSnapshot(event);
+      },
+      emitApproval: (event) => this.broadcastStreamEvent(event),
+      createId: () => crypto.randomUUID(),
+      now: () => new Date(),
+    });
+    return this.workflowEffectSinkInstance;
+  }
+
+  get workflowConversation(): WorkflowConversationApi | undefined {
+    return this.workflowExtension;
+  }
+
+  get workflowControl(): WorkflowControlApi | undefined {
+    return this.workflowExtension;
+  }
+
+  private get extensionRuntime(): KasExtensionRuntime {
+    this.extensionRuntimeInstance ??= new KiroClientExtensionRuntime(
+      this.kiroClient,
+      (method) => {
+        logger.warn('[acp-client] Ignored malformed KAS extension event', {
+          method,
+        });
+      }
+    );
+    return this.extensionRuntimeInstance;
+  }
+
+  private createWorkflowExtension(): KasWorkflowExtension {
+    const host: WorkflowExtensionHost = {
+      convertUpdate: (update, sessionId, sideEffectSink) =>
+        this.convertAcpUpdateToEvent(update, sessionId, sideEffectSink),
+      routePermissionRequest: (request, sessionId, approvalSink) =>
+        this.handleKasPermissionRequest(request, sessionId, approvalSink),
+      steerSession: (sessionId, content) =>
+        this.steerMessage(sessionId, content),
+      emitEffect: this.workflowEffectSink,
+      clearSessionState: (sessionId) =>
+        this.clearSessionConversionState(sessionId),
+    };
+    return new KasWorkflowExtension(this.extensionRuntime, host);
+  }
+
+  protected override convertAcpUpdateToEvent(
+    update: AcpSessionUpdate,
+    notifSessionId?: string,
+    sideEffectSink?: (event: AgentStreamEvent) => void
+  ): AgentStreamEvent | null {
+    if (this.workflowsEnabled) {
+      const workflowProgress = parsePersistedWorkflowProgress(update);
+      if (workflowProgress.kind === 'workflow-progress') {
+        return {
+          type: AgentEventType.WorkflowProgress,
+          id: workflowProgress.progress.messageId ?? crypto.randomUUID(),
+          event: workflowProgress.progress.event,
+        };
+      }
+      if (workflowProgress.kind === 'invalid-workflow') return null;
+    }
+    const visibleUpdate =
+      !this.workflowsEnabled &&
+      update.sessionUpdate === 'available_commands_update'
+        ? {
+            ...update,
+            availableCommands: update.availableCommands.filter(
+              (command) => !isWorkflowAvailableCommand(command)
+            ),
+          }
+        : update;
+    return super.convertAcpUpdateToEvent(
+      visibleUpdate,
+      notifSessionId,
+      sideEffectSink
+    );
+  }
+
   private sessionDisposables: Array<{ dispose: () => void }> = [];
   private retired = false;
 
@@ -635,6 +758,7 @@ export class KasAcpClient extends BaseAcpClient {
   private toolsNotificationDisposable: { dispose: () => void } | null = null;
 
   private wireSessionListeners(sessionId: string): void {
+    this.workflowExtension?.setParentSession(sessionId);
     this.sessionDisposables.forEach((d) => d.dispose());
     // New/loaded session: drop any per-turn tool-call state from the previous
     // session so a stale start time can't match a same-id finish, and so
@@ -646,136 +770,107 @@ export class KasAcpClient extends BaseAcpClient {
     // any still-active stages get re-registered before their events arrive.
     this.kasSubagentRoutingStore.resetKasSubagentRouting();
     this.invokeSubagentAdapter.reset();
-    this.kasSteerBuffer.clear();
+    this.clearSessionConversionState();
     // Drop the client-set-mode marker so a revert notice can't leak across
     // sessions (a new/loaded session's mode is its own truth).
     this.lastClientSetModeId = undefined;
     this.sessionDisposables = [
-      this.kiroClient.onSessionUpdate(sessionId, async (notification) => {
-        const update = notification.update;
-        // Keep the cached current mode in sync for /agent and agent-display
-        // purposes.  ACP doesn't (yet) ship an available_modes_update, so
-        // availableModes is refreshed only on session/new and session/load.
-        //
-        // We also broadcast an AgentSwitched stream event so the app store
-        // updates its currentAgent / previousAgentName / welcomeMessage.
-        // Without this broadcast, agent-initiated mode changes (e.g. a
-        // spec-mode workflow handoff) silently update the cache but leave
-        // the header chip and welcome banner stale.
-        // KAS re-asserts the current mode via `current_mode_update`
-        // (carrying only the id). Convert it to an `AgentSwitched` stream
-        // event so the store updates currentAgent + welcome banner. The
-        // welcome text is resolved store-side from `kasAvailableAgents`, so
-        // the event carries only the id. Emitted unconditionally; the store
-        // fires the welcome banner only on an actual agent change (see
-        // `setCurrentAgent`), so KAS re-asserting the same mode (notably at
-        // session start, where the session result already set the agent) is a
-        // no-op there.
-        if (update.sessionUpdate === 'current_mode_update') {
-          const rawModeId = (update as { currentModeId: string }).currentModeId;
-          this.telemetryCurrentModeId = rawModeId;
-          const newModeId = fromKasModeId(rawModeId);
-          if (newModeId) {
-            this.broadcastStreamEvent({
-              type: AgentEventType.AgentSwitched,
-              agentName: newModeId,
-            });
-          }
-        }
-        // KAS pushes `config_option_update` when it autonomously changes a
-        // config option (model fallback after rate limits, late model
-        // enumeration once auth completes, or mirroring a client-initiated
-        // change). Re-emit the normalized model/agent/effort events so the
-        // store self-heals; the client retains no copy. The push is fresher
-        // than any in-flight load self-heal, so advance the epoch to discard
-        // a self-heal response that would otherwise land after it with an
-        // older snapshot.
-        if (
-          (update as { sessionUpdate?: string }).sessionUpdate ===
-          'config_option_update'
-        ) {
-          this.configEpoch++;
-          const pushedConfigOptions = (update as { configOptions?: unknown })
-            .configOptions;
-          this.detectClientModeRevert(pushedConfigOptions);
-          this.emitConfigOptions(pushedConfigOptions, 'serverPush', {
-            emitCurrentAgent: true,
-          });
-        }
-        this.forwardKasTurnCompletionTelemetry(sessionId, update);
-        // NOTE: `sessionId` here is the per-listener KAS session, which equals
-        // this.sessionId for the main agent — so the converter's stamp guard
-        // (notifSessionId !== this.sessionId) is a no-op on the KAS main path.
-        // KAS discriminates subagent stages via meta.agentSubtaskId, extracted
-        // from the RETURNED event below — NOT via a per-stage notification
-        // sessionId. So a Failed-tool synthesized broadcast for a denied KAS
-        // *stage* tool is not stamped by this thread-through; that is a separate,
-        // narrower defect tracked apart from the Rust-engine fix. Threaded here
-        // for signature consistency and to correctly stamp if a genuine
-        // subagent-session listener is ever wired.
-        const event = this.convertAcpUpdateToEvent(update, sessionId);
-        if (!event) return;
-        // Port standalone invoke_sub_agent parents onto the pipeline
-        // contract BEFORE snapshotting/interception/routing, so the
-        // crew rendering path below treats them as one-stage pipelines.
-        const meta = this.invokeSubagentAdapter.normalize(
-          event,
-          extractKiroMetaFromEvent(event)
-        );
-
-        // A content-policy refusal arrives as a message chunk tagged with
-        // _meta.kiro.refusal; surface it as ModelRefusal and drop the inline text.
-        if (meta?.refusal) {
-          this.broadcastStreamEvent({
-            type: AgentEventType.ModelRefusal,
-            stopReason: 'CONTENT_FILTERED',
-            category: meta.refusal.category,
-            explanation: meta.refusal.explanation,
-            recommendedModel: meta.refusal.recommendedModel,
-          });
-          return;
-        }
-        this.kasSubagentRoutingStore.rememberKasToolCall(event);
-
-        // Intercept pipeline metadata → emit subagent list update
-        if (meta?.pipeline) {
-          const pipelineToolCallId =
-            event.type === AgentEventType.ToolCall ||
-            event.type === AgentEventType.ToolCallFinished
-              ? event.id
-              : undefined;
-          this.kasSubagentRoutingStore.handlePipelineStateUpdate(
-            meta.pipeline,
-            pipelineToolCallId,
-            this.kasSubagentRoutingEmitter
-          );
-        }
-
-        const routedToSubtask =
-          this.kasSubagentRoutingStore.routeKasSubtaskEvent(
-            event,
-            meta,
-            this.kasSubagentRoutingEmitter,
-            this.sessionId
-          );
-        this.kasSubagentRoutingStore.forgetFinishedKasToolCallSnapshot(event);
-        if (routedToSubtask) {
-          return;
-        }
-
-        // V3 tool telemetry — only for main-session tool calls. This sits
-        // AFTER the agentSubtaskId early-return above so sub-agent tool calls
-        // (which are KAS-internal) never inflate kiro_cli_tool_call_total, which has no
-        // is_subagent dimension to filter them. Mirrors how
-        // forwardKasTurnCompletionTelemetry treats sub-agent turns.
-        this.observeV3ToolCall(event);
-
-        this.broadcastStreamEvent(event);
-      }),
+      this.kiroClient.onSessionUpdate(sessionId, (notification) =>
+        this.handlePrimarySessionUpdate(sessionId, notification)
+      ),
       this.kiroClient.onPermissionRequest(sessionId, async (request) => {
         return this.handleKasPermissionRequest(request, sessionId);
       }),
     ];
+  }
+
+  private async handlePrimarySessionUpdate(
+    sessionId: string,
+    notification: acp.SessionNotification,
+    source: 'live' | 'replay' = 'live'
+  ): Promise<void> {
+    const update = notification.update;
+    // Keep the cached current mode in sync for /agent and agent-display
+    // purposes. ACP doesn't yet ship an available_modes_update, so the
+    // available list is refreshed only on session/new and session/load.
+    if (update.sessionUpdate === 'current_mode_update') {
+      const rawModeId = (update as { currentModeId: string }).currentModeId;
+      this.telemetryCurrentModeId = rawModeId;
+      const newModeId = fromKasModeId(rawModeId);
+      if (newModeId) {
+        this.broadcastStreamEvent({
+          type: AgentEventType.AgentSwitched,
+          agentName: newModeId,
+        });
+      }
+    }
+    if (
+      (update as { sessionUpdate?: string }).sessionUpdate ===
+      'config_option_update'
+    ) {
+      this.configEpoch++;
+      const pushedConfigOptions = (update as { configOptions?: unknown })
+        .configOptions;
+      this.detectClientModeRevert(pushedConfigOptions);
+      this.emitConfigOptions(pushedConfigOptions, 'serverPush', {
+        emitCurrentAgent: true,
+      });
+    }
+    if (source === 'live') {
+      this.forwardKasTurnCompletionTelemetry(sessionId, update);
+    }
+
+    const converted = this.convertAcpUpdateToEvent(update, sessionId);
+    if (!converted) return;
+    const meta = this.invokeSubagentAdapter.normalize(
+      converted,
+      extractKiroMetaFromEvent(converted)
+    );
+    const workflowExtension = this.workflowExtension;
+    const event = workflowExtension
+      ? workflowExtension.interceptParentEvent(converted, meta, sessionId)
+      : converted;
+    if (!event) {
+      this.kasSubagentRoutingStore.forgetFinishedKasToolCallSnapshot(converted);
+      return;
+    }
+
+    if (meta?.refusal) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.ModelRefusal,
+        stopReason: 'CONTENT_FILTERED',
+        category: meta.refusal.category,
+        explanation: meta.refusal.explanation,
+        recommendedModel: meta.refusal.recommendedModel,
+      });
+      return;
+    }
+    this.kasSubagentRoutingStore.rememberKasToolCall(event);
+
+    if (meta?.pipeline) {
+      const pipelineToolCallId =
+        event.type === AgentEventType.ToolCall ||
+        event.type === AgentEventType.ToolCallFinished
+          ? event.id
+          : undefined;
+      this.kasSubagentRoutingStore.handlePipelineStateUpdate(
+        meta.pipeline,
+        pipelineToolCallId,
+        this.kasSubagentRoutingEmitter
+      );
+    }
+
+    const routedToSubtask = this.kasSubagentRoutingStore.routeKasSubtaskEvent(
+      event,
+      meta,
+      this.kasSubagentRoutingEmitter,
+      this.sessionId
+    );
+    this.kasSubagentRoutingStore.forgetFinishedKasToolCallSnapshot(event);
+    if (routedToSubtask) return;
+
+    this.observeV3ToolCall(event);
+    this.broadcastStreamEvent(event);
   }
 
   /**
@@ -798,24 +893,36 @@ export class KasAcpClient extends BaseAcpClient {
   protected override handleExtSessionUpdate(
     params: Record<string, unknown>
   ): void {
-    const update = params.update as Record<string, unknown> | undefined;
-    if (update?.sessionUpdate === 'tool_call_chunk') {
-      const kiroMeta = extractKiroMetaFromUpdate(update as AcpSessionUpdate);
+    const decoded = decodeExtSessionUpdate(params);
+    if (decoded) this.handleDecodedExtSessionUpdate(decoded);
+  }
+
+  protected override handleDecodedExtSessionUpdate(
+    envelope: ExtSessionUpdateEnvelope
+  ): void {
+    const { sessionId: originSessionId, update } = envelope;
+    if (update.sessionUpdate === 'tool_call_chunk') {
+      const kiroMeta = update.kiroMeta;
+      const event: AgentStreamEvent = {
+        type: AgentEventType.ToolCall,
+        id: update.toolCallId,
+        name: stripMcpTitlePrefix(update.title) || update.title,
+        kind: update.kind,
+        args: {},
+        ...(originSessionId ? { sessionId: originSessionId } : {}),
+        ...(kiroMeta ? { meta: { kiro: kiroMeta } } : {}),
+      };
+      if (
+        this.workflowExtension?.routeToolCallChunk(
+          originSessionId,
+          event,
+          kiroMeta
+        )
+      ) {
+        return;
+      }
       if (kiroMeta?.agentSubtaskId) {
-        const chunk = update as {
-          toolCallId: string;
-          title: string;
-          kind: string;
-        };
-        const event: AgentStreamEvent = {
-          type: AgentEventType.ToolCall,
-          id: chunk.toolCallId,
-          name: stripMcpTitlePrefix(chunk.title) || chunk.title,
-          kind: chunk.kind,
-          args: {},
-          sessionId: kiroMeta.agentSubtaskId,
-          meta: { kiro: kiroMeta },
-        };
+        event.sessionId = kiroMeta.agentSubtaskId;
         this.kasSubagentRoutingStore.rememberKasToolCall(event);
         this.kasSubagentRoutingStore.recordKasChunkToolCall(
           event.id,
@@ -825,7 +932,7 @@ export class KasAcpClient extends BaseAcpClient {
         return;
       }
     }
-    super.handleExtSessionUpdate(params);
+    super.handleDecodedExtSessionUpdate(envelope);
   }
 
   protected override broadcastSynthesizedFailedToolCall(
@@ -837,6 +944,7 @@ export class KasAcpClient extends BaseAcpClient {
       event,
       extractKiroMetaFromEvent(event)
     );
+    if (this.workflowExtension?.shouldSuppressParentRelay(event, meta)) return;
     this.kasSubagentRoutingStore.rememberKasToolCall(event);
     const routedToSubtask = this.kasSubagentRoutingStore.routeKasSubtaskEvent(
       event,
@@ -851,7 +959,8 @@ export class KasAcpClient extends BaseAcpClient {
 
   private handleKasPermissionRequest(
     request: KasPermissionRequest,
-    originSessionId?: string
+    originSessionId?: string,
+    eventSink?: (event: ApprovalRequestEvent) => void
   ): Promise<acp.RequestPermissionResponse> {
     // KAS sends toolCallId at top level; normalize to ACP format and enrich with stage correlation
     const toolCallId = request.toolCallId || request.toolCall?.toolCallId || '';
@@ -870,7 +979,7 @@ export class KasAcpClient extends BaseAcpClient {
       fallbackRawInput: shellPermission.rawInput,
       originSessionId,
     });
-    return this.handlePermissionRequest(enriched);
+    return this.handlePermissionRequest(enriched, eventSink);
   }
 
   /**
@@ -1004,6 +1113,8 @@ export class KasAcpClient extends BaseAcpClient {
       }
     });
 
+    this.workflowExtension?.start();
+
     // Forward roster deltas as stream events; the app store owns the roster
     // state and the derived cloud status. Dark-safe: today's KAS pushes none.
     this.kiroClient.onExtNotification('_kiro/sessions/changed', (params) => {
@@ -1074,6 +1185,10 @@ export class KasAcpClient extends BaseAcpClient {
     this.hooksNotificationDisposable = null;
     this.toolsNotificationDisposable?.dispose();
     this.toolsNotificationDisposable = null;
+    this.workflowExtensionInstance?.dispose();
+    this.workflowExtensionInstance = undefined;
+    this.extensionRuntimeInstance?.dispose();
+    this.extensionRuntimeInstance = undefined;
     this.sessionDisposables.forEach((d) => d.dispose());
     this.sessionDisposables = [];
     this.v3ToolCalls.reset();
@@ -1285,7 +1400,6 @@ export class KasAcpClient extends BaseAcpClient {
   ): Promise<SessionResult> {
     this.assertActive('session load');
     const previousSessionId = this.sessionId;
-    this.sessionId = sessionId;
     // Invalidate any in-flight self-heal from the previous (or same-id) load.
     this.configEpoch++;
     // A loaded session has no create-time bind warnings.
@@ -1293,8 +1407,19 @@ export class KasAcpClient extends BaseAcpClient {
     // Stale until this load's response reports the session's own bindings.
     this.sessionRepositories = null;
 
-    // Register BEFORE loadSession to capture history replay events
-    this.wireSessionListeners(sessionId);
+    // Capture replay without disturbing the active parent. Ownership and the
+    // permanent listeners switch only after session/load succeeds.
+    const replayedNotifications: acp.SessionNotification[] = [];
+    const replayUpdateSubscription = this.kiroClient.onSessionUpdate(
+      sessionId,
+      async (notification) => {
+        replayedNotifications.push(notification);
+      }
+    );
+    const replayPermissionSubscription = this.kiroClient.onPermissionRequest(
+      sessionId,
+      async () => ({ outcome: { outcome: 'cancelled' } })
+    );
 
     // session/load acts on ONE store (KAS rejects 'all' here). An explicit
     // source wins; else a cloud placement starts remote; else local first
@@ -1314,8 +1439,9 @@ export class KasAcpClient extends BaseAcpClient {
       (explicit === 'remote' ||
         (!explicit && this.executionTarget?.kind === 'cloud-sandbox'));
     const retryRemoteOnMiss = remoteCapable && !explicit && !startRemote;
-    const r = await loadFrom(startRemote ? 'remote' : undefined)
-      .catch((err) => {
+    let r: acp.LoadSessionResponse;
+    try {
+      r = await loadFrom(startRemote ? 'remote' : undefined).catch((err) => {
         // Retry against the remote store only for a not-found: any other
         // failure (auth, transport) must surface as-is, not as a confusing
         // remote miss.
@@ -1326,11 +1452,35 @@ export class KasAcpClient extends BaseAcpClient {
           err
         );
         return loadFrom('remote');
-      })
-      .catch((err) => {
-        this.sessionId = previousSessionId;
-        throw err;
       });
+    } catch (error) {
+      replayUpdateSubscription.dispose();
+      replayPermissionSubscription.dispose();
+      // Loading the currently active id temporarily replaced its SDK handler.
+      if (previousSessionId === sessionId) {
+        this.wireSessionListeners(sessionId);
+      }
+      throw error;
+    }
+
+    replayUpdateSubscription.dispose();
+    replayPermissionSubscription.dispose();
+    this.sessionId = sessionId;
+    this.wireSessionListeners(sessionId);
+    for (const notification of replayedNotifications) {
+      try {
+        await this.handlePrimarySessionUpdate(
+          sessionId,
+          notification,
+          'replay'
+        );
+      } catch (error) {
+        logger.warn('[acp-client] Failed to replay a loaded session update', {
+          sessionId,
+          error,
+        });
+      }
+    }
     this.assertActive('session load');
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',

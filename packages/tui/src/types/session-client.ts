@@ -9,7 +9,6 @@ import type {
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type { ContextBreakdownData } from './context';
 import type { AgentStreamEvent } from './agent-events';
-import type { SessionLifecycleEvent } from './multi-session';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -21,6 +20,9 @@ import type {
   UiModeDefaultChangedNotification,
   UiModeSessionStartNotification,
 } from './generated/chat-cli';
+import type { SessionEvent } from './multi-session';
+import type { WorkflowConversationApi } from './workflow';
+import type { WorkflowControlApi } from './workflow-history';
 
 // ── KAS /context wire shapes ──────────────────────────────────────────
 // TODO: Replace these inline definitions with the typed `ContextParams`
@@ -285,6 +287,12 @@ export interface SessionClient {
    */
   clearSteering(sessionId: string): Promise<void>;
 
+  /** Optional engine capability for workflow-owned child conversations. */
+  readonly workflowConversation?: WorkflowConversationApi;
+
+  /** Optional engine capability for workflow history and run controls. */
+  readonly workflowControl?: WorkflowControlApi;
+
   /**
    * Registers a callback for crew roster snapshots.
    *
@@ -301,19 +309,8 @@ export interface SessionClient {
     handler: (subagents: any[], pendingStages?: any[]) => void
   ): () => void;
 
-  /**
-   * Registers a callback for individual subagent lifecycle events. Unlike
-   * `onSubagentListUpdate` snapshots, these are incremental single-session
-   * mutations: created adds a roster row, terminated flips its status.
-   *
-   * Only the v3 engine broadcasts these; the V2 engine conveys lifecycle
-   * implicitly through roster snapshots, so under V2 the handler never
-   * fires.
-   *
-   * @param handler - Receives one lifecycle event per created/terminated subagent
-   * @returns Unsubscribe function
-   */
-  onSessionEvent?(handler: (event: SessionLifecycleEvent) => void): () => void;
+  /** Registers incremental session lifecycle and workflow-control events. */
+  onSessionEvent?(handler: (event: SessionEvent) => void): () => void;
 
   /**
    * Registers a callback for the per-subagent turn stream: content,

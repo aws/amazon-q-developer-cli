@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { Feature, features } from '../features';
 
 /** Default settings that buildKasSettings always includes (tools that were always-on for CLI). */
 const CLI_DEFAULTS = {
@@ -15,6 +16,7 @@ describe('buildKasSettings', () => {
   let tmpDir: string;
   let originalKiroHome: string | undefined;
   let originalInfraSafetyRollout: string | undefined;
+  let originalEnabledFeatures: string | undefined;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'kas-settings-test-'));
@@ -24,6 +26,9 @@ describe('buildKasSettings', () => {
     // Infra-safety tests opt in by setting this to '1'.
     originalInfraSafetyRollout = process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED;
     delete process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED;
+    originalEnabledFeatures = process.env.KIRO_ENABLED_FEATURES;
+    process.env.KIRO_ENABLED_FEATURES = '[]';
+    features._resetForTests();
   });
 
   afterEach(() => {
@@ -38,6 +43,12 @@ describe('buildKasSettings', () => {
       process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED =
         originalInfraSafetyRollout;
     }
+    if (originalEnabledFeatures === undefined) {
+      delete process.env.KIRO_ENABLED_FEATURES;
+    } else {
+      process.env.KIRO_ENABLED_FEATURES = originalEnabledFeatures;
+    }
+    features._resetForTests();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -63,6 +74,24 @@ describe('buildKasSettings', () => {
     writeSettings({});
     const buildKasSettings = await getBuildKasSettings();
     expect(buildKasSettings()).toEqual(CLI_DEFAULTS);
+  });
+
+  test('omits workflow settings when the rollout is disabled', async () => {
+    const buildKasSettings = await getBuildKasSettings();
+    const settings = buildKasSettings();
+
+    expect(settings?.workflows).toBeUndefined();
+    expect(settings?.goal).toBeUndefined();
+  });
+
+  test('enables workflow settings when the rollout is enabled', async () => {
+    process.env.KIRO_ENABLED_FEATURES = JSON.stringify([Feature.Workflows]);
+    features._resetForTests();
+    const buildKasSettings = await getBuildKasSettings();
+    const settings = buildKasSettings();
+
+    expect(settings?.workflows).toEqual({ enabled: true });
+    expect(settings?.goal).toEqual({ enabled: true });
   });
 
   test('maps boolean flag to { enabled: true }', async () => {

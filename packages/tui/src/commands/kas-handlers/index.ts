@@ -19,6 +19,7 @@ import { handleAutonomous } from './autonomous';
 import { handleEffort } from './effort';
 import { handleRepo } from './repo';
 import { handleMcp } from './mcp';
+import { handleWorkflow } from './workflow';
 
 export type KasHandler = (
   cmd: KasCommand,
@@ -55,4 +56,5 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Autonomous]: handleAutonomous,
   [KasCommandName.Effort]: handleEffort,
   [KasCommandName.Repo]: handleRepo,
+  [KasCommandName.Workflow]: handleWorkflow,
 };

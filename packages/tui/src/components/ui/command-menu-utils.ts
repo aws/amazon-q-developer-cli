@@ -7,15 +7,17 @@ export interface AtMenuItem {
 }
 
 /**
- * Whether a slash command should surface for the current UI mode. Shared by
- * CommandMenu (filters its list) and PromptInput (backs off Enter/Tab in sync);
- * liteOnly commands bind lite-only rendering hooks, so they're hidden in TUI.
+ * Whether a slash command should surface for the current UI mode. Hidden
+ * compatibility commands never surface; liteOnly commands stay out of TUI.
  */
 export function isCommandVisibleInUiMode(
   cmd: AvailableCommand,
   uiMode: 'lite' | 'tui' | undefined
 ): boolean {
-  return uiMode === 'lite' || cmd.meta?.liteOnly !== true;
+  return (
+    cmd.meta?.hidden !== true &&
+    (uiMode === 'lite' || cmd.meta?.liteOnly !== true)
+  );
 }
 
 export function filterPromptsByQuery(

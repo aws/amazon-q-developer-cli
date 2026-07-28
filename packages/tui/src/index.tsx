@@ -48,6 +48,7 @@ import { drainConnectedProviderRepos } from './utils/cloud-repo-drain';
 import { formatMissingSourceProviderGuidance } from './utils/cloud-urls';
 import { Feature, features } from './features';
 import type { AgentStreamEvent } from './types/agent-events';
+import { isWorkflowSession, type SessionEvent } from './types/multi-session';
 import { truncateToRecentTurns } from './utils/truncate-history';
 import {
   readBoolSetting,
@@ -479,6 +480,9 @@ const startInitialization = (resumePickerSessionId?: string) => {
   kiro.onSubagentListUpdate((subagents: any[], pendingStages: any[] = []) => {
     const state = appStore.getState();
     subagents.forEach((sub: any) => {
+      const existing = state.sessions.get(sub.sessionId);
+      if (isWorkflowSession(existing)) return;
+
       const session = {
         id: sub.sessionId,
         name: sub.sessionName || sub.agentName,
@@ -496,7 +500,6 @@ const startInitialization = (resumePickerSessionId?: string) => {
         parentSession: sub.parentSessionId,
         role: sub.role,
       };
-      const existing = state.sessions.get(sub.sessionId);
       if (existing) {
         state.updateSession(sub.sessionId, {
           name: sub.sessionName || sub.agentName,
@@ -547,6 +550,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
     // Remove pending placeholders that are no longer pending (they got spawned as real sessions)
     const pendingNames = new Set(pendingStages.map((ps: any) => ps.name));
     state.sessions.forEach((s, id) => {
+      if (isWorkflowSession(s)) return;
       if (s.status === 'pending' && !pendingNames.has(s.name)) {
         state.removeSession(id);
       }
@@ -561,7 +565,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
     });
     // Clean up handlers for superseded sessions (same name+group but different ID)
     state.sessions.forEach((s, id) => {
-      if (s.status === 'pending') return;
+      if (isWorkflowSession(s) || s.status === 'pending') return;
       if (!activeIds.has(id) && s.status === 'busy') {
         state.updateSession(id, {
           status: 'terminated' as const,
@@ -579,13 +583,31 @@ const startInitialization = (resumePickerSessionId?: string) => {
   });
 
   // Wire session events
-  kiro.onSessionEvent((event) => {
+  kiro.onSessionEvent((event: SessionEvent) => {
     const state = appStore.getState();
     if (event.type === 'session_terminated') {
+      state.cleanupTerminatedSession(event.sessionId);
       state.updateSession(event.sessionId, {
         status: 'terminated',
         lastActivity: new Date(),
       });
+    } else if (event.type === 'session_removed') {
+      state.cleanupTerminatedSession(event.sessionId);
+      state.removeSession(event.sessionId);
+      sessionConversationsStore.getState().clearSession(event.sessionId);
+      sessionHandlers.delete(event.sessionId);
+    } else if (event.type === 'session_status_changed') {
+      state.updateSession(event.sessionId, {
+        status: event.status,
+        lastActivity: new Date(),
+      });
+    } else if (event.type === 'session_conversation_reset') {
+      sessionConversationsStore.getState().clearSession(event.sessionId);
+      sessionHandlers.delete(event.sessionId);
+    } else if (event.type === 'session_turn_started') {
+      sessionHandlers.delete(event.sessionId);
+    } else if (event.type === 'session_approvals_cancelled') {
+      state.cancelSessionApprovals(event.sessionId);
     } else if (event.type === 'session_created') {
       // Only clear conversation data for terminated sessions that share the same
       // name+group as the new session (i.e., superseded by a loop iteration).
@@ -609,7 +631,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
   });
 
   // Wire multi-session event buffer + conversation rendering
-  const sessionHandlers = new Map<string, (event: any) => void>();
+  const sessionHandlers = new Map<string, (event: AgentStreamEvent) => void>();
   const getOrCreateHandler = (sessionId: string) => {
     if (!sessionHandlers.has(sessionId)) {
       sessionHandlers.set(
@@ -619,7 +641,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
     }
     return sessionHandlers.get(sessionId)!;
   };
-  kiro.onMultiSessionUpdate((sessionId: string, event: any) => {
+  kiro.onMultiSessionUpdate((sessionId: string, event: AgentStreamEvent) => {
     appStore.getState().pushSessionEvent(sessionId, event);
     getOrCreateHandler(sessionId)(event);
   });

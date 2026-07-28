@@ -4,7 +4,7 @@ import { logger } from '../logger';
 import {
   parsePersistedWorkflowProgress,
   parseWorkflowNotification,
-} from '../workflow-protocol';
+} from '../../acp-client/kas-extensions/workflow/contracts';
 
 function createNodeTree(depth: number): WorkflowNodeDescriptor {
   if (depth === 0) {
@@ -75,6 +75,8 @@ describe('parsePersistedWorkflowProgress', () => {
         type: 'text',
         text: JSON.stringify({
           nodeId: 'node-1',
+          nodePath: ['workflow', 'node-1'],
+          parentSessionId: 'parent-1',
           status: 'completed',
         }),
       },
@@ -97,6 +99,8 @@ describe('parsePersistedWorkflowProgress', () => {
         event: {
           workflowId: 'wf-123',
           nodeId: 'node-1',
+          nodePath: ['workflow', 'node-1'],
+          parentSessionId: 'parent-1',
           status: 'completed',
           type: 'node_complete',
         },

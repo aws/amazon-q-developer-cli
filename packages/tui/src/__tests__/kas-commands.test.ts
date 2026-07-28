@@ -1,39 +1,47 @@
 import { describe, it, expect } from 'bun:test';
 import type { Kiro } from '../kiro';
-import type { KasCommand } from '../kas-commands';
+import { KasCommandName, type KasCommand } from '../kas-commands';
 import { Feature } from '../features';
+
+async function withEnabledFeatures<T>(
+  enabled: readonly Feature[],
+  callback: () => T | Promise<T>
+): Promise<T> {
+  const { features } = await import('../features');
+  const originalEnv = process.env.KIRO_ENABLED_FEATURES;
+  try {
+    process.env.KIRO_ENABLED_FEATURES = JSON.stringify(enabled);
+    features._resetForTests();
+    return await callback();
+  } finally {
+    if (originalEnv === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+    else process.env.KIRO_ENABLED_FEATURES = originalEnv;
+    features._resetForTests();
+  }
+}
 
 describe('kas-commands', () => {
   describe('filterByEnabledFeatures', () => {
-    const gated = (name: string, feature: Feature): KasCommand =>
-      ({ name, description: 'gated', feature }) as unknown as KasCommand;
+    const gated = (name: KasCommandName, feature: Feature): KasCommand => ({
+      name,
+      description: 'gated',
+      feature,
+    });
 
     it('passes ungated commands through and resolves gates from the env', async () => {
-      const { KAS_COMMANDS, filterByEnabledFeatures } =
-        await import('../kas-commands');
-      const { features } = await import('../features');
-      const withGated = [...KAS_COMMANDS, gated('/mem', Feature.Memory)];
+      const { filterByEnabledFeatures } = await import('../kas-commands');
+      const ungated: KasCommand = {
+        name: KasCommandName.Help,
+        description: 'ungated',
+      };
+      const commands = [ungated, gated(KasCommandName.Goal, Feature.Memory)];
 
-      // KAS_COMMANDS itself carries gated entries (e.g. /autonomous behind
-      // remote_sandbox, /tangent behind tangent), so the all-off baseline is
-      // the ungated subset.
-      const ungated = KAS_COMMANDS.filter((c) => !c.feature);
-
-      const originalEnv = process.env.KIRO_ENABLED_FEATURES;
-      try {
-        process.env.KIRO_ENABLED_FEATURES = '[]';
-        features._resetForTests();
-        expect(filterByEnabledFeatures(withGated)).toEqual(ungated);
-
-        process.env.KIRO_ENABLED_FEATURES =
-          '["memory", "remote_sandbox", "tangent"]';
-        features._resetForTests();
-        expect(filterByEnabledFeatures(withGated)).toEqual(withGated);
-      } finally {
-        if (originalEnv === undefined) delete process.env.KIRO_ENABLED_FEATURES;
-        else process.env.KIRO_ENABLED_FEATURES = originalEnv;
-        features._resetForTests();
-      }
+      await withEnabledFeatures([], () => {
+        expect(filterByEnabledFeatures(commands)).toEqual([ungated]);
+      });
+      await withEnabledFeatures([Feature.Memory], () => {
+        expect(filterByEnabledFeatures(commands)).toEqual(commands);
+      });
     });
 
     it('gates /tangent behind the tangent feature (nightly)', async () => {
@@ -110,6 +118,60 @@ describe('kas-commands', () => {
       );
       expect(modelCmd!.meta?.subcommands).toEqual(['set-current-as-default']);
       expect(effortCmd!.meta?.subcommands).toEqual(['set-current-as-default']);
+    });
+
+    it('advertises canonical goal and workflow commands at startup', async () => {
+      await withEnabledFeatures([Feature.Workflows], async () => {
+        const { getKasCommands, KasCommandName } =
+          await import('../kas-commands');
+        const commands = getKasCommands();
+
+        expect(
+          commands.find((command) => command.name === KasCommandName.Goal)?.meta
+        ).toEqual({
+          inputType: 'panel',
+          local: true,
+          hint: '<description> [--max N]',
+        });
+        expect(
+          commands.find((command) => command.name === KasCommandName.Workflow)
+            ?.meta?.hidden
+        ).not.toBe(true);
+      });
+    });
+
+    it('hides every workflow command when the rollout is disabled', async () => {
+      await withEnabledFeatures([], async () => {
+        const { KAS_COMMANDS, getKasCommands } =
+          await import('../kas-commands');
+        const workflowCommandNames = KAS_COMMANDS.filter(
+          (command) => command.feature === Feature.Workflows
+        ).map((command) => command.name);
+
+        expect(workflowCommandNames).toHaveLength(7);
+        expect(
+          getKasCommands().filter((command) =>
+            workflowCommandNames.includes(command.name)
+          )
+        ).toEqual([]);
+      });
+    });
+
+    it('keeps exactly the workflow compatibility aliases hidden', async () => {
+      const { KAS_COMMANDS, KasCommandName } = await import('../kas-commands');
+      const hiddenWorkflowCommands = KAS_COMMANDS.filter((command) =>
+        command.name.startsWith('/workflow')
+      )
+        .filter((command) => command.meta?.hidden)
+        .map((command) => command.name);
+
+      expect(hiddenWorkflowCommands).toEqual([
+        KasCommandName.Workflows,
+        KasCommandName.WorkflowRun,
+        KasCommandName.WorkflowResume,
+        KasCommandName.WorkflowStatus,
+        KasCommandName.WorkflowCancel,
+      ]);
     });
 
     it('/sessions is a cloud-gated alias of /chat: same handler, same meta plus cloudOnly', async () => {

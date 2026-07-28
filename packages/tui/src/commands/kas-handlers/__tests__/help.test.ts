@@ -1,6 +1,7 @@
 import { describe, it, expect, mock } from 'bun:test';
 import { handleHelp } from '../help';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
+import { KAS_COMMANDS, KasCommandName } from '../../../kas-commands';
 
 mock.module('../../../kiro', () => ({
   Kiro: mock(() => ({ initialize: mock() })),
@@ -136,5 +137,30 @@ describe('/help KAS handler — client-side command list', () => {
       cloudCtx._spies.setShowHelpPanel!.mock.calls[0]![1] as any[]
     ).map((c: any) => c.name);
     expect(cloudNames).toContain('/repo');
+  });
+
+  it('shows canonical workflow commands and hides compatibility aliases', async () => {
+    const helpCommand = KAS_COMMANDS.find(
+      (command) => command.name === KasCommandName.Help
+    );
+    if (!helpCommand) throw new Error('KAS /help command is not registered');
+    const ctx = createMockCommandContext({ kasCommands: KAS_COMMANDS });
+    ctx.agentEngine = 'kas';
+
+    await handleHelp(helpCommand, '', ctx);
+
+    const setShowHelpPanel = ctx._spies.setShowHelpPanel;
+    if (!setShowHelpPanel) throw new Error('Help panel spy is unavailable');
+    const entries = setShowHelpPanel.mock.calls[0]?.[1] as
+      | Array<{ name: string }>
+      | undefined;
+    const names = entries?.map((entry) => entry.name) ?? [];
+    expect(names).toContain(KasCommandName.Goal);
+    expect(names).toContain(KasCommandName.Workflow);
+    expect(names).not.toContain(KasCommandName.Workflows);
+    expect(names).not.toContain(KasCommandName.WorkflowRun);
+    expect(names).not.toContain(KasCommandName.WorkflowResume);
+    expect(names).not.toContain(KasCommandName.WorkflowStatus);
+    expect(names).not.toContain(KasCommandName.WorkflowCancel);
   });
 });

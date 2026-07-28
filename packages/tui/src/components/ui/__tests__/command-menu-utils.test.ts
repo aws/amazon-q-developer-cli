@@ -11,6 +11,11 @@ describe('isCommandVisibleInUiMode', () => {
     description: '',
     meta: { liteOnly: true },
   };
+  const hidden: AvailableCommand = {
+    name: '/workflow-run',
+    description: '',
+    meta: { hidden: true },
+  };
 
   it('shows a plain command in both modes', () => {
     expect(isCommandVisibleInUiMode(plain, 'lite')).toBe(true);
@@ -20,5 +25,10 @@ describe('isCommandVisibleInUiMode', () => {
   it('shows a liteOnly command in lite but hides it in tui', () => {
     expect(isCommandVisibleInUiMode(liteOnly, 'lite')).toBe(true);
     expect(isCommandVisibleInUiMode(liteOnly, 'tui')).toBe(false);
+  });
+
+  it('hides compatibility commands in both modes', () => {
+    expect(isCommandVisibleInUiMode(hidden, 'lite')).toBe(false);
+    expect(isCommandVisibleInUiMode(hidden, 'tui')).toBe(false);
   });
 });

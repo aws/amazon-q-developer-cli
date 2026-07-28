@@ -16,7 +16,6 @@ import {
 } from './utils/spec-artifact-path';
 import type { SessionRepositoryEntry } from './utils/session-repositories';
 import type { ProcessHealthSnapshot } from './utils/process-health-collector';
-import type { SessionLifecycleEvent } from './types/multi-session';
 import type {
   SessionClient,
   ListSessionsResponse,
@@ -33,6 +32,19 @@ import type {
 } from './types/generated/chat-cli';
 import type { ToolInfo } from './stores/app-store';
 import type { AgentEntry } from './utils/kas-config-options';
+import type { SessionEvent } from './types/multi-session';
+import type {
+  WorkflowConversationApi,
+  WorkflowNodeSessionTarget,
+} from './types/workflow';
+import type {
+  WorkflowCancelResponse,
+  WorkflowControlApi,
+  WorkflowInspectResponse,
+  WorkflowPauseResponse,
+  WorkflowResumeResponse,
+  WorkflowRunSummary,
+} from './types/workflow-history';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -115,10 +127,14 @@ export class Kiro {
     subagents: any[],
     pendingStages?: any[]
   ) => void;
-  private sessionEventHandler?: (event: SessionLifecycleEvent) => void;
-  private multiSessionHandler?: (sessionId: string, event: any) => void;
+  private sessionEventHandler?: (event: SessionEvent) => void;
+  private multiSessionHandler?: (
+    sessionId: string,
+    event: AgentStreamEvent
+  ) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
   private liveContentHandler?: LiveContentHandler;
+  private workflowProgressHandler?: (event: AgentStreamEvent) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private initNotificationHandler?: (event: AgentStreamEvent) => void;
   private artifactWriteHandler?: (match: SpecArtifactPathMatch) => void;
@@ -253,7 +269,7 @@ export class Kiro {
     }
   }
 
-  onSessionEvent(handler: (event: SessionLifecycleEvent) => void): void {
+  onSessionEvent(handler: (event: SessionEvent) => void): void {
     this.sessionEventHandler = handler;
     const sessionClient = this.sessionClient;
     if (sessionClient?.onSessionEvent) {
@@ -263,7 +279,9 @@ export class Kiro {
     }
   }
 
-  onMultiSessionUpdate(handler: (sessionId: string, event: any) => void): void {
+  onMultiSessionUpdate(
+    handler: (sessionId: string, event: AgentStreamEvent) => void
+  ): void {
     this.multiSessionHandler = handler;
     const sessionClient = this.sessionClient;
     if (sessionClient?.onMultiSessionUpdate) {
@@ -409,6 +427,55 @@ export class Kiro {
     return this.sessionClient.clearSteering(sessionId);
   }
 
+  get workflowConversation(): WorkflowConversationApi {
+    if (!this.sessionClient) throw new Error('Kiro not initialized');
+    if (!this.sessionClient.workflowConversation) {
+      throw new Error(
+        'Workflow conversations are not supported by the current agent engine'
+      );
+    }
+    return this.sessionClient.workflowConversation;
+  }
+
+  async messageWorkflowNode(
+    target: WorkflowNodeSessionTarget,
+    content: string
+  ): Promise<void> {
+    this.onSessionMessageSent?.(target.sessionId);
+    await this.workflowConversation.sendMessage(target, content);
+  }
+
+  private get workflowControl(): WorkflowControlApi {
+    if (!this.sessionClient) throw new Error('Kiro not initialized');
+    if (!this.sessionClient.workflowControl) {
+      throw new Error('Workflow controls are not supported by this engine');
+    }
+    return this.sessionClient.workflowControl;
+  }
+
+  listWorkflows(): Promise<WorkflowRunSummary[]> {
+    return this.workflowControl.listRuns([process.cwd()]);
+  }
+
+  inspectWorkflow(workflowId: string): Promise<WorkflowInspectResponse> {
+    return this.workflowControl.inspectRun(workflowId);
+  }
+
+  pauseWorkflow(workflowId: string): Promise<WorkflowPauseResponse> {
+    return this.workflowControl.pauseRun(workflowId);
+  }
+
+  resumeWorkflow(workflowId: string): Promise<WorkflowResumeResponse> {
+    return this.workflowControl.resumeRun(workflowId);
+  }
+
+  cancelWorkflow(
+    workflowId: string,
+    targetStatus?: 'aborted' | 'completed'
+  ): Promise<WorkflowCancelResponse> {
+    return this.workflowControl.cancelRun(workflowId, targetStatus);
+  }
+
   onSessionMessageSent?: (sessionId: string) => void;
 
   sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void {
@@ -468,6 +535,10 @@ export class Kiro {
       handler.setHistoryReplay(false);
     }
     return true;
+  }
+
+  onWorkflowProgress(handler: (event: AgentStreamEvent) => void): void {
+    this.workflowProgressHandler = handler;
   }
 
   onTurnSummary(handler: (event: AgentStreamEvent) => void): void {
@@ -692,12 +763,26 @@ export class Kiro {
           if (this.turnSummaryHandler) {
             this.turnSummaryHandler(event);
           }
+          this.historyHandler?.(event);
+          if (
+            this.liveContentHandler &&
+            this.historyReplaySubscribers === 0 &&
+            !this._promptActive
+          ) {
+            this.liveContentHandler(event);
+          }
         }
         const isSteeringLifecycleEvent =
           event.type === AgentEventType.SteeringQueued ||
           event.type === AgentEventType.SteeringConsumed ||
           event.type === AgentEventType.SteeringCleared;
         // Observer errors and lifecycle events must follow the same route as content.
+        if (
+          event.type === AgentEventType.WorkflowProgress &&
+          this.workflowProgressHandler
+        ) {
+          this.workflowProgressHandler(event);
+        }
         if (
           event.type === AgentEventType.UserMessage ||
           event.type === AgentEventType.Content ||
@@ -786,6 +871,18 @@ export class Kiro {
 
     this.assertCurrentClient(generation, sessionClient);
 
+    // Attach extension-owned channels before newSession/loadSession. KAS can
+    // synchronously replay workflow child events while either call is pending.
+    if (this.sessionEventHandler && sessionClient.onSessionEvent) {
+      this.replaceClientSubscription('sessionEvent', () =>
+        sessionClient.onSessionEvent!(this.sessionEventHandler!)
+      );
+    }
+    if (this.multiSessionHandler && sessionClient.onMultiSessionUpdate) {
+      this.replaceClientSubscription('multiSession', () =>
+        sessionClient.onMultiSessionUpdate!(this.multiSessionHandler!)
+      );
+    }
     // Fetch user settings before creating a session (needed for greeting display)
     let settings: Record<string, unknown>;
     try {
@@ -812,17 +909,6 @@ export class Kiro {
       throw new Error('Session creation superseded by a newer client');
     }
 
-    // Wire up handlers after creating sessionClient
-    if (this.sessionEventHandler && sessionClient.onSessionEvent) {
-      this.replaceClientSubscription('sessionEvent', () =>
-        sessionClient.onSessionEvent!(this.sessionEventHandler!)
-      );
-    }
-    if (this.multiSessionHandler && sessionClient.onMultiSessionUpdate) {
-      this.replaceClientSubscription('multiSession', () =>
-        sessionClient.onMultiSessionUpdate!(this.multiSessionHandler!)
-      );
-    }
     if (this.subagentListHandler && sessionClient.onSubagentListUpdate) {
       this.replaceClientSubscription('subagentList', () =>
         sessionClient.onSubagentListUpdate!(this.subagentListHandler!)

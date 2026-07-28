@@ -35,6 +35,40 @@ export enum KasCommandName {
   UpgradeAgent = '/upgrade-agent',
   Repo = '/repo',
   Tangent = '/tangent',
+  Goal = '/goal',
+  Workflow = '/workflow',
+  Workflows = '/workflows',
+  WorkflowRun = '/workflow-run',
+  WorkflowResume = '/workflow-resume',
+  WorkflowStatus = '/workflow-status',
+  WorkflowCancel = '/workflow-cancel',
+}
+
+export type KasWorkflowAliasSubcommand =
+  | ''
+  | 'run'
+  | 'resume'
+  | 'status'
+  | 'cancel';
+
+export function getKasWorkflowAliasSubcommand(
+  name: string
+): KasWorkflowAliasSubcommand | undefined {
+  const normalized = (name.startsWith('/') ? name : `/${name}`).toLowerCase();
+  switch (normalized) {
+    case KasCommandName.Workflows:
+      return '';
+    case KasCommandName.WorkflowRun:
+      return 'run';
+    case KasCommandName.WorkflowResume:
+      return 'resume';
+    case KasCommandName.WorkflowStatus:
+      return 'status';
+    case KasCommandName.WorkflowCancel:
+      return 'cancel';
+    default:
+      return undefined;
+  }
 }
 
 const KAS_COMMAND_NAME_VALUES: ReadonlySet<string> = new Set(
@@ -240,6 +274,61 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: { inputType: 'panel' },
   },
   {
+    name: KasCommandName.Goal,
+    description: 'Work toward a goal in a loop until done',
+    feature: Feature.Workflows,
+    meta: {
+      inputType: 'panel',
+      local: true,
+      hint: '<description> [--max N]',
+    },
+  },
+  {
+    name: KasCommandName.Workflow,
+    description: 'Browse history or run a workflow',
+    feature: Feature.Workflows,
+    meta: {
+      inputType: 'panel',
+      local: true,
+      hint: '[list | run <recipe>]',
+      subcommands: ['list', 'run'],
+      subcommandHints: {
+        list: '',
+        run: '<recipe> [inputs]',
+      },
+    },
+  },
+  {
+    name: KasCommandName.Workflows,
+    description: 'Browse workflow history',
+    feature: Feature.Workflows,
+    meta: { local: true, hidden: true },
+  },
+  {
+    name: KasCommandName.WorkflowRun,
+    description: 'Run a workflow',
+    feature: Feature.Workflows,
+    meta: { local: true, hidden: true },
+  },
+  {
+    name: KasCommandName.WorkflowResume,
+    description: 'Resume a paused workflow',
+    feature: Feature.Workflows,
+    meta: { local: true, hidden: true },
+  },
+  {
+    name: KasCommandName.WorkflowStatus,
+    description: 'Check workflow status',
+    feature: Feature.Workflows,
+    meta: { local: true, hidden: true },
+  },
+  {
+    name: KasCommandName.WorkflowCancel,
+    description: 'Cancel a workflow',
+    feature: Feature.Workflows,
+    meta: { local: true, hidden: true },
+  },
+  {
     name: KasCommandName.UpgradeAgent,
     description: 'Upgrade V2 agent configs to universal (V2 + V3) format',
     meta: {
@@ -275,6 +364,17 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     },
   },
 ];
+
+const KAS_WORKFLOW_COMMAND_NAMES: ReadonlySet<string> = new Set(
+  KAS_COMMANDS.filter((command) => command.feature === Feature.Workflows).map(
+    (command) => command.name
+  )
+);
+
+export function isKasWorkflowCommandName(name: string): boolean {
+  const normalized = name.startsWith('/') ? name : `/${name}`;
+  return KAS_WORKFLOW_COMMAND_NAMES.has(normalized);
+}
 
 export function filterByEnabledFeatures(
   commands: readonly KasCommand[]

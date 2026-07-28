@@ -1,37 +1,25 @@
-/**
- * Local workflow contracts for the KAS `_kiro/workflow/*` extensions.
- *
- * The released `@kiro/acp-type-covenant` consumed by the TUI does not export
- * these types yet. Keep this module wire-compatible with the covenant and
- * remove it once the package export is available.
- */
+import type {
+  JoinPolicy,
+  NodeStatus,
+  NodeType,
+  OnMaxIterations,
+  StopCondition,
+  WatchOutcome,
+  WorkflowStatus as CovenantWorkflowStatus,
+} from '@kiro/acp-type-covenant';
 
-export type WorkflowStatus =
-  | 'running'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-  | 'aborted';
+export type WorkflowStatus = CovenantWorkflowStatus;
+export type WorkflowRunCompleteStatus = Exclude<WorkflowStatus, 'running'>;
+export type WorkflowNodeStatus = NodeStatus;
+export type WorkflowNodeType = NodeType;
+export type WorkflowCompletionSignal = NonNullable<
+  StopCondition['completionSignal']
+>;
+export type WorkflowJoinPolicy = JoinPolicy;
+export type WorkflowMaxIterationPolicy = OnMaxIterations;
+export type WorkflowWatchOutcome = WatchOutcome;
 
-export type WorkflowNodeStatus =
-  | 'pending'
-  | 'running'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-  | 'aborted'
-  | 'skipped';
-
-export type WorkflowNodeType =
-  | 'step'
-  | 'sequence'
-  | 'repeat'
-  | 'parallel'
-  | 'watch';
-
-export type WorkflowCompletionSignal = 'success' | 'need_input' | 'error';
-
-export interface WorkflowStopCondition {
+interface WorkflowStopConditionFields {
   containsText?: string;
   fileCheck?: {
     path: string;
@@ -40,6 +28,13 @@ export interface WorkflowStopCondition {
   };
   completionSignal?: WorkflowCompletionSignal;
 }
+
+export type WorkflowStopCondition = WorkflowStopConditionFields &
+  (
+    | { containsText: string }
+    | { fileCheck: NonNullable<WorkflowStopConditionFields['fileCheck']> }
+    | { completionSignal: WorkflowCompletionSignal }
+  );
 
 /** Static plan node sent by run_start, inspect, and list-recipe calls. */
 export interface WorkflowNodeDescriptor {
@@ -50,10 +45,11 @@ export interface WorkflowNodeDescriptor {
   effortLevel?: string;
   steps?: WorkflowNodeDescriptor[];
   branches?: WorkflowNodeDescriptor[];
+  joinPolicy?: WorkflowJoinPolicy;
   maxIterations?: number;
   stopCondition?: WorkflowStopCondition;
   stopWhen?: string;
-  onMaxIterations?: 'abort' | 'continue' | 'pause';
+  onMaxIterations?: WorkflowMaxIterationPolicy;
 }
 
 /** Durable runtime state for one node. */
@@ -84,15 +80,54 @@ export interface WorkflowStateSnapshot {
   workflowId: string;
   workflowName: string;
   status: WorkflowStatus;
-  inputs?: Record<string, string>;
-  artifacts?: Record<string, string>;
-  capturedOutputs?: Record<string, string>;
-  root?: WorkflowNodeState;
+  inputs: Record<string, string>;
+  artifacts: Record<string, string>;
+  capturedOutputs: Record<string, string>;
+  root: WorkflowNodeState;
   pauseReason?: string;
   parentSessionId?: string;
   workspacePath?: string;
   additionalDirectories?: string[];
   createdAt?: string;
+  parentModelId?: string;
+  modelId?: string;
+  parentEffortLevel?: string;
+  effortLevel?: string;
+  planRevision?: number;
+}
+
+/** Durable identity for one workflow-created ACP session. */
+export interface WorkflowStepSessionRef {
+  nodeId: string;
+  nodePath: readonly string[];
+  sessionId: string;
+  iteration?: number;
+  branchId?: string;
+}
+
+/** User-facing operations require the full ownership chain, not a bare ID. */
+export interface WorkflowNodeSessionTarget extends WorkflowStepSessionRef {
+  workflowId: string;
+  parentSessionId: string;
+}
+
+/**
+ * Optional engine capability for continuing workflow-created conversations
+ * without changing the primary chat session.
+ */
+export interface WorkflowConversationApi {
+  sendMessage(
+    target: WorkflowNodeSessionTarget,
+    content: string
+  ): Promise<void>;
+}
+
+/** Authoritative response from `_kiro/workflow/load`. */
+export interface WorkflowLoadResponse {
+  workflowId: string;
+  state: WorkflowStateSnapshot;
+  stepSessions: WorkflowStepSessionRef[];
+  nodePlan?: WorkflowNodeDescriptor[];
 }
 
 interface WorkflowEventBase {
@@ -104,16 +139,16 @@ interface WorkflowEventBase {
 export type WorkflowEvent =
   | (WorkflowEventBase & {
       type: 'run_start';
-      workflowName?: string;
-      inputs?: Record<string, string>;
-      nodeTree?: WorkflowNodeDescriptor[];
+      workflowName: string;
+      inputs: Record<string, string>;
+      nodeTree: WorkflowNodeDescriptor[];
     })
   | (WorkflowEventBase & {
       type: 'node_start';
       nodeId: string;
-      nodePath?: readonly string[];
+      nodePath: readonly string[];
       /** The wire payload calls this field `type`; normalized to avoid a clash. */
-      nodeType?: WorkflowNodeType;
+      nodeType: WorkflowNodeType;
       agentName?: string;
       prompt?: string;
       sessionId?: string;
@@ -123,7 +158,7 @@ export type WorkflowEvent =
   | (WorkflowEventBase & {
       type: 'node_complete';
       nodeId: string;
-      nodePath?: readonly string[];
+      nodePath: readonly string[];
       status: WorkflowNodeStatus;
       sessionId?: string;
       iteration?: number;
@@ -136,7 +171,7 @@ export type WorkflowEvent =
   | (WorkflowEventBase & {
       type: 'node_paused';
       nodeId: string;
-      nodePath?: readonly string[];
+      nodePath: readonly string[];
       sessionId?: string;
       iteration?: number;
       branchId?: string;
@@ -158,20 +193,29 @@ export type WorkflowEvent =
   | (WorkflowEventBase & {
       type: 'watch_poll';
       nodeId: string;
-      nodePath?: readonly string[];
-      outcome: string;
-      at?: string;
+      nodePath: readonly string[];
+      outcome: WorkflowWatchOutcome;
+      at: string;
     })
   | (WorkflowEventBase & {
       type: 'paused';
       pauseReason: string;
     })
-  | (WorkflowEventBase & {
-      type: 'run_complete';
-      status: WorkflowStatus;
-      finalState?: WorkflowStateSnapshot;
-    })
+  | (WorkflowEventBase &
+      (
+        | {
+            type: 'run_complete';
+            status: WorkflowRunCompleteStatus;
+            finalState: WorkflowStateSnapshot;
+            legacyTerminalAlias?: false;
+          }
+        | {
+            type: 'run_complete';
+            status: 'failed' | 'aborted';
+            legacyTerminalAlias: true;
+          }
+      ))
   | (WorkflowEventBase & {
       type: 'steps_queued';
-      pendingSteps?: WorkflowNodeDescriptor[];
+      pendingSteps: WorkflowNodeDescriptor[];
     });

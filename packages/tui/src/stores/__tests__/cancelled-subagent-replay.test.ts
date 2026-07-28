@@ -135,9 +135,9 @@ describe('cancelled subagent session replay', () => {
     const { RustAcpClient } = await import('../../acp-client/rust');
     const client: any = Object.create(RustAcpClient.prototype);
     client.sessionId = 'main';
-    client.kasSteerBuffer = new Map();
+    client.kasSteerBuffers = new Map();
     client.artifactWriteCallsById = new Map();
-    client.pendingDisplayError = null;
+    client.pendingDisplayErrors = new Map();
     client.updateHandlers = new Set();
     const broadcasts: any[] = [];
     client.broadcastStreamEvent = (e: any) => broadcasts.push(e);

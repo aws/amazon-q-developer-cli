@@ -2,6 +2,13 @@ import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { AgentEventType } from '../types/agent-events';
 import type { AgentStreamEvent } from '../types/agent-events';
+import type {
+  WorkflowCancelResponse,
+  WorkflowInspectResponse,
+  WorkflowPauseResponse,
+  WorkflowResumeResponse,
+  WorkflowRunSummary,
+} from '../types/workflow-history.js';
 
 // --- Mock logger ---
 mock.module('../utils/logger', () => ({
@@ -19,6 +26,32 @@ const mockUpdateHandlers = new Set<(event: AgentStreamEvent) => void>();
 const mockSessionEventUnsubscribe = mock(() => {});
 const mockMultiSessionUnsubscribe = mock(() => {});
 const mockSubagentListUnsubscribe = mock(() => {});
+const mockWorkflowControl = {
+  listRuns: mock(
+    (_workspacePaths: readonly string[]): Promise<WorkflowRunSummary[]> =>
+      Promise.resolve([])
+  ),
+  inspectRun: mock(
+    async (_workflowId: string): Promise<WorkflowInspectResponse> => {
+      throw new Error('inspectRun response not configured');
+    }
+  ),
+  pauseRun: mock(
+    (_workflowId: string): Promise<WorkflowPauseResponse> =>
+      Promise.resolve({ paused: true })
+  ),
+  resumeRun: mock(
+    (workflowId: string): Promise<WorkflowResumeResponse> =>
+      Promise.resolve({ workflowId, status: 'running' as const })
+  ),
+  cancelRun: mock(
+    (
+      _workflowId: string,
+      _targetStatus?: 'aborted' | 'completed'
+    ): Promise<WorkflowCancelResponse> =>
+      Promise.resolve({ ok: true, previousStatus: 'running' as const })
+  ),
+};
 
 function broadcastMockUpdate(event: AgentStreamEvent): void {
   for (const handler of [...mockUpdateHandlers]) handler(event);
@@ -82,6 +115,7 @@ const mockSessionClient = {
   invokeSpec: mock((req: { sessionId: string }) =>
     Promise.resolve({ sessionId: req.sessionId, executionId: 'exec-1' })
   ),
+  workflowControl: mockWorkflowControl,
 };
 
 const MockAcpClientClass = class MockAcpClient {
@@ -111,6 +145,7 @@ const MockAcpClientClass = class MockAcpClient {
   listSessions = mockSessionClient.listSessions;
   resolveSpecSession = mockSessionClient.resolveSpecSession;
   invokeSpec = mockSessionClient.invokeSpec;
+  workflowControl = mockSessionClient.workflowControl;
   constructor() {}
 };
 
@@ -172,6 +207,11 @@ describe('Kiro', () => {
     mockSessionClient.listSessions.mockClear();
     mockSessionClient.resolveSpecSession.mockClear();
     mockSessionClient.invokeSpec.mockClear();
+    mockWorkflowControl.listRuns.mockClear();
+    mockWorkflowControl.inspectRun.mockClear();
+    mockWorkflowControl.pauseRun.mockClear();
+    mockWorkflowControl.resumeRun.mockClear();
+    mockWorkflowControl.cancelRun.mockClear();
     mockUpdateHandlers.clear();
     mockOnUpdateHandler = null;
     mockSessionClient.initialize.mockImplementation(() => Promise.resolve());
@@ -187,6 +227,13 @@ describe('Kiro', () => {
         currentAgent: { name: 'test-agent', welcomeMessage: 'Welcome!' },
       });
     });
+    mockSessionClient.loadSession.mockImplementation((id: string) =>
+      Promise.resolve({
+        sessionId: id,
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: { name: 'test-agent' },
+      })
+    );
   });
 
   it('initialize creates AcpClient and calls initialize', async () => {
@@ -305,6 +352,97 @@ describe('Kiro', () => {
     });
   });
 
+  it('subscribes before newSession can replay workflow child events', async () => {
+    const received: string[] = [];
+    let sessionEventHandler: ((event: any) => void) | undefined;
+    let multiSessionHandler:
+      | ((sessionId: string, event: AgentStreamEvent) => void)
+      | undefined;
+    mockSessionClient.onSessionEvent.mockImplementation((handler) => {
+      sessionEventHandler = handler;
+      return mockSessionEventUnsubscribe;
+    });
+    mockSessionClient.onMultiSessionUpdate.mockImplementation((handler) => {
+      multiSessionHandler = handler;
+      return mockMultiSessionUnsubscribe;
+    });
+    mockSessionClient.newSession.mockImplementation(() => {
+      sessionEventHandler!({
+        type: 'session_created',
+        session: { id: 'workflow-child' },
+      });
+      multiSessionHandler!('workflow-child', {
+        type: AgentEventType.Content,
+        content: { type: 'text', text: 'replayed child output' },
+      } as AgentStreamEvent);
+      return Promise.resolve({
+        sessionId: 'session-1',
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: {
+          name: 'test-agent',
+          welcomeMessage: 'Welcome!',
+        },
+      });
+    });
+
+    const kiro = new Kiro();
+    kiro.onSessionEvent(() => received.push('session'));
+    kiro.onMultiSessionUpdate(() => received.push('message'));
+    kiro.onSubagentListUpdate(() => {});
+
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession();
+
+    expect(received).toEqual(['session', 'message']);
+    expect(mockSessionClient.onSessionEvent).toHaveBeenCalledTimes(1);
+    expect(mockSessionClient.onMultiSessionUpdate).toHaveBeenCalledTimes(1);
+    expect(mockSessionClient.onSubagentListUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribes before loadSession can replay workflow child events', async () => {
+    const received: string[] = [];
+    let sessionEventHandler: ((event: any) => void) | undefined;
+    let multiSessionHandler:
+      | ((sessionId: string, event: AgentStreamEvent) => void)
+      | undefined;
+    mockSessionClient.onSessionEvent.mockImplementation((handler) => {
+      sessionEventHandler = handler;
+      return mockSessionEventUnsubscribe;
+    });
+    mockSessionClient.onMultiSessionUpdate.mockImplementation((handler) => {
+      multiSessionHandler = handler;
+      return mockMultiSessionUnsubscribe;
+    });
+    mockSessionClient.loadSession.mockImplementation((sessionId: string) => {
+      sessionEventHandler!({
+        type: 'session_created',
+        session: { id: 'workflow-child' },
+      });
+      multiSessionHandler!('workflow-child', {
+        type: AgentEventType.Content,
+        content: { type: 'text', text: 'loaded child output' },
+      } as AgentStreamEvent);
+      return Promise.resolve({
+        sessionId,
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: { name: 'test-agent' },
+      });
+    });
+
+    const kiro = new Kiro();
+    kiro.onSessionEvent(() => received.push('session'));
+    kiro.onMultiSessionUpdate(() => received.push('message'));
+    kiro.onSubagentListUpdate(() => {});
+
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession('existing-session');
+
+    expect(received).toEqual(['session', 'message']);
+    expect(mockSessionClient.onSessionEvent).toHaveBeenCalledTimes(1);
+    expect(mockSessionClient.onMultiSessionUpdate).toHaveBeenCalledTimes(1);
+    expect(mockSessionClient.onSubagentListUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it('onCommandsUpdate registers handler and handler receives commands from onUpdate events', async () => {
     const kiro = new Kiro();
     const commandsHandler = mock(() => {});
@@ -376,6 +514,75 @@ describe('Kiro', () => {
     await kiro.initialize('/path/to/agent');
     await kiro.executeCommand({ command: 'test' } as any);
     expect(mockSessionClient.executeCommand).toHaveBeenCalled();
+  });
+
+  it('forwards workflow history and controls through the typed capability', async () => {
+    const kiro = new Kiro();
+    const state = {
+      workflowId: 'workflow-1',
+      workflowName: 'Test workflow',
+      status: 'completed' as const,
+      inputs: {},
+      artifacts: {},
+      capturedOutputs: {},
+      root: {
+        nodeId: 'root',
+        type: 'sequence' as const,
+        status: 'completed' as const,
+      },
+    };
+    const summary = {
+      workflowId: 'workflow-1',
+      name: 'Test workflow',
+      status: 'completed' as const,
+      createdAt: '2026-07-19T10:00:00.000Z',
+      updatedAt: '2026-07-19T10:01:00.000Z',
+    };
+    mockWorkflowControl.listRuns.mockResolvedValueOnce([summary]);
+    mockWorkflowControl.inspectRun.mockResolvedValueOnce({
+      workflowId: 'workflow-1',
+      state,
+    });
+    await kiro.initialize('/path/to/agent');
+
+    await expect(kiro.listWorkflows()).resolves.toEqual([summary]);
+    await expect(kiro.inspectWorkflow('workflow-1')).resolves.toEqual({
+      workflowId: 'workflow-1',
+      state,
+    });
+    await expect(kiro.pauseWorkflow('workflow-1')).resolves.toEqual({
+      paused: true,
+    });
+    await expect(kiro.resumeWorkflow('workflow-1')).resolves.toEqual({
+      workflowId: 'workflow-1',
+      status: 'running',
+    });
+    await expect(
+      kiro.cancelWorkflow('workflow-1', 'completed')
+    ).resolves.toEqual({
+      ok: true,
+      previousStatus: 'running',
+    });
+
+    expect(mockWorkflowControl.listRuns).toHaveBeenCalledWith([process.cwd()]);
+    expect(mockWorkflowControl.inspectRun).toHaveBeenCalledWith('workflow-1');
+    expect(mockWorkflowControl.pauseRun).toHaveBeenCalledWith('workflow-1');
+    expect(mockWorkflowControl.resumeRun).toHaveBeenCalledWith('workflow-1');
+    expect(mockWorkflowControl.cancelRun).toHaveBeenCalledWith(
+      'workflow-1',
+      'completed'
+    );
+  });
+
+  it('preserves workflow control errors for the command layer', async () => {
+    const error = new Error('workflow transport unavailable');
+    mockWorkflowControl.listRuns.mockRejectedValueOnce(error);
+    mockWorkflowControl.inspectRun.mockRejectedValueOnce(error);
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+
+    await expect(kiro.listWorkflows()).rejects.toBe(error);
+    await expect(kiro.inspectWorkflow('workflow-1')).rejects.toBe(error);
   });
 
   it('cancel does nothing when not initialized', async () => {
@@ -1165,15 +1372,22 @@ describe('Kiro — handler registration and forwarding', () => {
   it('onTurnSummary receives TurnSummary events', async () => {
     const kiro = new Kiro();
     const handler = mock(() => {});
+    const historyHandler = mock(() => {});
+    const liveHandler = mock(() => {});
     kiro.onTurnSummary(handler);
+    kiro.onHistoryEvent(historyHandler);
+    kiro.onLiveContent(liveHandler);
     await kiro.initialize('/path/to/agent');
+    const event = {
+      type: AgentEventType.TurnSummary,
+      meteringUsage: [],
+    } as AgentStreamEvent;
     if (mockOnUpdateHandler) {
-      mockOnUpdateHandler({
-        type: AgentEventType.TurnSummary,
-        meteringUsage: [],
-      } as AgentStreamEvent);
+      mockOnUpdateHandler(event);
     }
-    expect(handler).toHaveBeenCalled();
+    expect(historyHandler).toHaveBeenCalledWith(event);
+    expect(handler).toHaveBeenCalledWith(event);
+    expect(liveHandler).toHaveBeenCalledWith(event);
   });
 
   it('AgentSwitched event notifies agent and model handlers', async () => {

@@ -63,6 +63,8 @@ const mockSpawn = mock((_cmd: string, _args: string[], _opts: any) => {
 // --- Mock @kiro/client ---
 let capturedSessionUpdateHandler: any = null;
 let capturedPermissionHandler: any = null;
+const capturedSessionUpdateHandlers = new Map<string, any>();
+const capturedPermissionHandlers = new Map<string, any>();
 
 const mockKiroInitialize = mock(() =>
   Promise.resolve({
@@ -180,13 +182,29 @@ const MockKiroClient = class {
   sendExtMethod = mockKiroSendExtMethod;
   sendExtNotification = mockKiroSendExtNotification;
   listSessions = mockKiroListSessions;
-  onSessionUpdate = mock((_sessionId: string, handler: any) => {
+  onSessionUpdate = mock((sessionId: string, handler: any) => {
+    capturedSessionUpdateHandlers.set(sessionId, handler);
     capturedSessionUpdateHandler = handler;
-    return { dispose: mockSessionUpdateDispose };
+    return {
+      dispose: () => {
+        mockSessionUpdateDispose();
+        if (capturedSessionUpdateHandlers.get(sessionId) === handler) {
+          capturedSessionUpdateHandlers.delete(sessionId);
+        }
+      },
+    };
   });
-  onPermissionRequest = mock((_sessionId: string, handler: any) => {
+  onPermissionRequest = mock((sessionId: string, handler: any) => {
+    capturedPermissionHandlers.set(sessionId, handler);
     capturedPermissionHandler = handler;
-    return { dispose: mockPermissionRequestDispose };
+    return {
+      dispose: () => {
+        mockPermissionRequestDispose();
+        if (capturedPermissionHandlers.get(sessionId) === handler) {
+          capturedPermissionHandlers.delete(sessionId);
+        }
+      },
+    };
   });
   onExtNotification = mock((_method: string, _handler: any) => {
     if (!this._extNotifHandlers) this._extNotifHandlers = {};
@@ -228,6 +246,7 @@ const mockRecordTuiSessionStarted = mock((_a: unknown) => {});
 const mockRecordTuiCloudSession = mock((_a: unknown) => {});
 const mockRecordTuiCloudSessionReady = mock((_a: unknown) => {});
 const mockRecordTuiAutonomousMode = mock((_a: unknown) => {});
+const mockRecordTuiUserTurn = mock((_a: unknown) => {});
 const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
 const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 mock.module('../utils/tui-telemetry-observer', () => ({
@@ -239,7 +258,7 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiAutonomousMode: mockRecordTuiAutonomousMode,
   recordTuiCloudRepoAttach: mock(() => {}),
   recordTuiModeActive: mock(() => {}),
-  recordTuiUserTurn: mock(() => {}),
+  recordTuiUserTurn: mockRecordTuiUserTurn,
   recordTuiModelInvocation: mock(() => {}),
   recordTuiTurnOutcome: mock(() => {}),
   recordTuiTokensConsumed: mock(() => {}),
@@ -309,6 +328,7 @@ const {
   resolveFeedbackUrl,
 } = await import('../acp-client?kas-test');
 const { browserOpenCommand } = await import('../utils/browser');
+const { Feature, features } = await import('../features');
 const { createStore } = await import('zustand/vanilla');
 const {
   createInitialKasSubagentRoutingState,
@@ -351,10 +371,13 @@ function freshMocks() {
   mockRecordTuiCloudSession.mockClear();
   mockRecordTuiAutonomousMode.mockClear();
   mockRecordTuiCloudSessionReady.mockClear();
+  mockRecordTuiUserTurn.mockClear();
   toolStartCalls.length = 0;
   toolFinishCalls.length = 0;
   capturedSessionUpdateHandler = null;
   capturedPermissionHandler = null;
+  capturedSessionUpdateHandlers.clear();
+  capturedPermissionHandlers.clear();
   capturedKiroClientConfig = null;
   mockSessionUpdateDispose.mockClear();
   mockPermissionRequestDispose.mockClear();
@@ -372,6 +395,13 @@ function freshMocks() {
     };
     return mockProcess;
   });
+}
+
+function setWorkflowsEnabled(enabled: boolean) {
+  process.env.KIRO_ENABLED_FEATURES = JSON.stringify(
+    enabled ? [Feature.Workflows] : []
+  );
+  features._resetForTests();
 }
 
 describe('resolveFeedbackUrl', () => {
@@ -448,16 +478,25 @@ describe('browserOpenCommand', () => {
 
 describe('KasAcpClient', () => {
   let origKasPath: string | undefined;
+  let origEnabledFeatures: string | undefined;
 
   beforeEach(() => {
     origKasPath = process.env.KIRO_KAS_SERVER_PATH;
+    origEnabledFeatures = process.env.KIRO_ENABLED_FEATURES;
     process.env.KIRO_KAS_SERVER_PATH = '/fake/acp-server.js';
+    setWorkflowsEnabled(false);
     freshMocks();
   });
 
   afterEach(() => {
     if (origKasPath === undefined) delete process.env.KIRO_KAS_SERVER_PATH;
     else process.env.KIRO_KAS_SERVER_PATH = origKasPath;
+    if (origEnabledFeatures === undefined) {
+      delete process.env.KIRO_ENABLED_FEATURES;
+    } else {
+      process.env.KIRO_ENABLED_FEATURES = origEnabledFeatures;
+    }
+    features._resetForTests();
   });
 
   it('constructor spawns process with KAS server args', () => {
@@ -574,6 +613,30 @@ describe('KasAcpClient', () => {
     const client = new KasAcpClient();
     await client.initialize();
     expect(mockKiroInitialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps workflow runtime integration dark when the rollout is disabled', async () => {
+    const client = new KasAcpClient();
+
+    await client.initialize();
+    await client.newSession();
+
+    expect(client.workflowConversation).toBeUndefined();
+    expect(client.workflowControl).toBeUndefined();
+    expect((client as any).workflowExtensionInstance).toBeUndefined();
+    expect((client as any).extensionRuntimeInstance).toBeUndefined();
+  });
+
+  it('starts workflow runtime integration when the rollout is enabled', async () => {
+    setWorkflowsEnabled(true);
+    const client = new KasAcpClient();
+
+    await client.initialize();
+
+    expect(client.workflowConversation).toBeDefined();
+    expect(client.workflowControl).toBeDefined();
+    expect((client as any).workflowExtensionInstance).toBeDefined();
+    expect((client as any).extensionRuntimeInstance).toBeDefined();
   });
 
   it('newSession() creates session and sets autopilot config', async () => {
@@ -784,6 +847,37 @@ describe('KasAcpClient', () => {
     expect(capturedSessionUpdateHandler).not.toBeNull();
   });
 
+  it('loadSession() does not emit turn telemetry for replayed updates', async () => {
+    const completion = {
+      sessionId: 'existing-session',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            elapsedTime: 100,
+            inputTokens: 10,
+            outputTokens: 5,
+            status: 'success',
+          },
+        },
+      },
+    };
+    mockKiroLoadSession.mockImplementationOnce(async ({ sessionId }) => {
+      await capturedSessionUpdateHandlers.get(sessionId)?.(completion);
+      return { sessionId, configOptions: [] };
+    });
+    const client = new KasAcpClient();
+
+    await client.loadSession('existing-session');
+
+    expect(mockRecordTuiUserTurn).not.toHaveBeenCalled();
+    const liveHandler = capturedSessionUpdateHandlers.get('existing-session');
+    expect(liveHandler).toBeDefined();
+    await liveHandler(completion);
+    expect(mockRecordTuiUserTurn).toHaveBeenCalledTimes(1);
+  });
+
   it('loadSession() disposes previous session listeners', async () => {
     const client = new KasAcpClient();
     await client.newSession();
@@ -794,8 +888,38 @@ describe('KasAcpClient', () => {
 
     // Switch session — old listeners should be disposed
     await client.loadSession('second-session');
-    expect(mockSessionUpdateDispose).toHaveBeenCalledTimes(1);
-    expect(mockPermissionRequestDispose).toHaveBeenCalledTimes(1);
+    // One disposal releases the temporary replay capture and one releases the
+    // previous primary listener.
+    expect(mockSessionUpdateDispose).toHaveBeenCalledTimes(2);
+    expect(mockPermissionRequestDispose).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the previous session active when session/load fails', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const previousUpdateHandler =
+      capturedSessionUpdateHandlers.get('kas-session-1');
+    const previousPermissionHandler =
+      capturedPermissionHandlers.get('kas-session-1');
+    mockKiroLoadSession.mockRejectedValueOnce(new Error('load failed'));
+
+    await expect(client.loadSession('failed-session')).rejects.toThrow(
+      'load failed'
+    );
+
+    expect(capturedSessionUpdateHandlers.get('kas-session-1')).toBe(
+      previousUpdateHandler
+    );
+    expect(capturedPermissionHandlers.get('kas-session-1')).toBe(
+      previousPermissionHandler
+    );
+    expect(capturedSessionUpdateHandlers.has('failed-session')).toBe(false);
+    expect(capturedPermissionHandlers.has('failed-session')).toBe(false);
+
+    await client.prompt([{ type: 'text', text: 'still here' }]);
+    expect(mockKiroPrompt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sessionId: 'kas-session-1' })
+    );
   });
 
   it('loadSession() returns the normalized agent id for wire vibe (not the raw wire id)', async () => {
@@ -3526,6 +3650,86 @@ describe('KasAcpClient', () => {
 
   // ── available_commands_update partitions into typed slices ──
 
+  it('filters KAS-advertised workflow commands when workflows are disabled', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'help', description: 'Show help' },
+          {
+            name: 'workflow-run',
+            description: 'Run a workflow recipe',
+            _meta: { kiro: { type: 'workflow' } },
+          },
+          {
+            name: 'workflow-resume',
+            description: 'Resume a paused workflow',
+            _meta: { kiro: { type: 'workflow' } },
+          },
+          {
+            name: 'workflow-status',
+            description: 'Check workflow status',
+            _meta: { kiro: { type: 'workflow' } },
+          },
+          {
+            name: 'workflow-cancel',
+            description: 'Cancel a running workflow',
+            _meta: { kiro: { type: 'workflow' } },
+          },
+          {
+            name: 'future-workflow-command',
+            description: 'Future workflow command',
+            _meta: { kiro: { type: 'workflow' } },
+          },
+        ],
+      },
+    });
+
+    const commandsEvent = events.find(
+      (event) => event.type === AgentEventType.CommandsUpdate
+    );
+    expect(commandsEvent.commands.map((command: any) => command.name)).toEqual([
+      'help',
+    ]);
+  });
+
+  it('keeps KAS-advertised workflow commands when workflows are enabled', async () => {
+    setWorkflowsEnabled(true);
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          {
+            name: 'workflow-run',
+            description: 'Run a workflow recipe',
+            _meta: { kiro: { type: 'workflow' } },
+          },
+        ],
+      },
+    });
+
+    const commandsEvent = events.find(
+      (event) => event.type === AgentEventType.CommandsUpdate
+    );
+    expect(commandsEvent.commands.map((command: any) => command.name)).toEqual([
+      'workflow-run',
+    ]);
+  });
+
   it('available_commands_update session notification partitions into prompts/skills/steering', async () => {
     const client = new KasAcpClient();
     await client.newSession();
@@ -5403,7 +5607,45 @@ describe('MCP OAuth flow', () => {
   // ── Task 2: _meta.kiro extraction in convertAcpUpdateToEvent ──
 
   describe('_meta.kiro extraction', () => {
+    it('leaves persisted workflow rows on the base ACP path while disabled', async () => {
+      const client = new KasAcpClient();
+      const handler = mock((_event: any) => {});
+      client.onUpdate(handler);
+      await client.newSession();
+      handler.mockClear();
+
+      await capturedSessionUpdateHandler({
+        sessionId: 'kas-session-1',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'opaque workflow payload' },
+          _meta: {
+            kiro: {
+              kind: 'workflow-progress',
+              messageId: 'wf-progress-disabled',
+            },
+          },
+        },
+      });
+
+      expect(handler).toHaveBeenCalledWith({
+        type: AgentEventType.UserMessage,
+        id: 'wf-progress-disabled',
+        content: {
+          type: ContentType.Text,
+          text: 'opaque workflow payload',
+        },
+        meta: {
+          kiro: {
+            kind: 'workflow-progress',
+            messageId: 'wf-progress-disabled',
+          },
+        },
+      });
+    });
+
     it('drops malformed persisted workflow progress instead of emitting user chat', async () => {
+      setWorkflowsEnabled(true);
       const client = new KasAcpClient();
       const handler = mock((_event: any) => {});
       client.onUpdate(handler);
@@ -5428,6 +5670,7 @@ describe('MCP OAuth flow', () => {
     });
 
     it('drops unknown persisted workflow events instead of emitting user chat', async () => {
+      setWorkflowsEnabled(true);
       const client = new KasAcpClient();
       const handler = mock((_event: any) => {});
       client.onUpdate(handler);

@@ -1,7 +1,6 @@
 import React from 'react';
 import { Box, Text } from '../../renderer.js';
-import { useAppStore, MessageRole } from '../../stores/app-store.js';
-import type { MessageType } from '../../stores/app-store.js';
+import { useAppStore } from '../../stores/app-store.js';
 import { SessionOutput } from '../multi-agent/SessionOutput.js';
 import { getAgentColor } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
@@ -35,20 +34,9 @@ export const SessionViewScreen: React.FC = () => {
     if (!activeSessionId || !content.trim()) return;
     try {
       await kiro.sendMessage(activeSessionId, content.trim());
-
-      // Add user message directly to session conversations store
-      const userMessage: MessageType = {
-        id: crypto.randomUUID(),
-        role: MessageRole.User,
-        content: content.trim(),
-      };
-
-      sessionConversationsStore.setState((state) => {
-        const conversations = new Map(state.conversations);
-        const messages = conversations.get(activeSessionId) || [];
-        conversations.set(activeSessionId, [...messages, userMessage]);
-        return { ...state, conversations };
-      });
+      sessionConversationsStore
+        .getState()
+        .appendLocalUserMessage(activeSessionId, content.trim());
     } catch {
       showTransientAlert({
         message: 'Failed to send message to session',

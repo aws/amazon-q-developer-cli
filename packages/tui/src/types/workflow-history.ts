@@ -24,5 +24,32 @@ export interface WorkflowListResponse {
 export interface WorkflowInspectResponse {
   workflowId: string;
   state: WorkflowStateSnapshot;
+  pendingSteps?: WorkflowNodeDescriptor[];
   nodePlan?: WorkflowNodeDescriptor[];
+}
+
+export interface WorkflowPauseResponse {
+  paused: boolean;
+}
+
+export interface WorkflowResumeResponse {
+  workflowId: string;
+  status: WorkflowStatus;
+}
+
+export interface WorkflowCancelResponse {
+  ok: boolean;
+  previousStatus: WorkflowStatus;
+}
+
+/** Typed control plane for persisted and live workflow runs. */
+export interface WorkflowControlApi {
+  listRuns(workspacePaths: readonly string[]): Promise<WorkflowRunSummary[]>;
+  inspectRun(workflowId: string): Promise<WorkflowInspectResponse>;
+  pauseRun(workflowId: string): Promise<WorkflowPauseResponse>;
+  resumeRun(workflowId: string): Promise<WorkflowResumeResponse>;
+  cancelRun(
+    workflowId: string,
+    targetStatus?: 'aborted' | 'completed'
+  ): Promise<WorkflowCancelResponse>;
 }

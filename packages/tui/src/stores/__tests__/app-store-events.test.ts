@@ -3,6 +3,7 @@
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { AgentEventType, ContentType } from '../../types/agent-events';
+import { SessionLifecycleOwner } from '../../types/multi-session.js';
 import { CommandHistory } from '../../utils/command-history';
 
 mock.module('../../kiro', () => ({
@@ -2269,6 +2270,36 @@ describe('Input buffer — setViewport', () => {
 });
 
 describe('Session management', () => {
+  it('cancels only approvals owned by the released session', () => {
+    const store = makeStore();
+    const resolveReleased = mock();
+    const resolveOther = mock();
+    const releasedApproval = {
+      originSessionId: 'workflow-child',
+      toolCall: { toolCallId: 'tool-released' },
+      permissionOptions: [],
+      resolve: resolveReleased,
+    };
+    const otherApproval = {
+      sessionId: 'other-child',
+      toolCall: { toolCallId: 'tool-other' },
+      permissionOptions: [],
+      resolve: resolveOther,
+    };
+    store.setState({
+      approvalQueue: [releasedApproval, otherApproval],
+      pendingApproval: releasedApproval,
+    });
+
+    store.getState().cancelSessionApprovals('workflow-child');
+
+    expect(resolveReleased).toHaveBeenCalledWith({ outcome: 'cancelled' });
+    expect(resolveReleased).toHaveBeenCalledTimes(1);
+    expect(resolveOther).not.toHaveBeenCalled();
+    expect(store.getState().approvalQueue).toEqual([otherApproval]);
+    expect(store.getState().pendingApproval).toBe(otherApproval);
+  });
+
   it('addSubagentSession adds a session', () => {
     const store = makeStore();
     store.getState().addSubagentSession({
@@ -2364,6 +2395,89 @@ describe('Session management', () => {
     } as any);
     expect(store.getState().sessions.has('old')).toBe(false);
     expect(store.getState().sessions.has('new')).toBe(true);
+  });
+
+  it('addSession preserves terminated workflow sessions', () => {
+    const store = makeStore();
+    store.setState({
+      sessions: new Map([
+        [
+          'workflow-child',
+          {
+            id: 'workflow-child',
+            name: 'completed-step',
+            status: 'terminated',
+            type: 'ephemeral',
+            created: new Date(),
+            lastActivity: new Date(),
+            lifecycleOwner: SessionLifecycleOwner.WorkflowExtension,
+          },
+        ],
+      ]) as any,
+    });
+
+    store.getState().addSession({
+      id: 'new',
+      name: 'new',
+      status: 'busy',
+      type: 'ephemeral',
+      created: new Date(),
+      lastActivity: new Date(),
+    } as any);
+
+    expect(store.getState().sessions.has('workflow-child')).toBe(true);
+    expect(store.getState().sessions.has('new')).toBe(true);
+  });
+
+  it('session tools preserve workflow-owned sessions and transcripts', async () => {
+    const store = makeStore();
+    const workflowSession = {
+      id: 'workflow-child',
+      name: 'completed-step',
+      status: 'terminated',
+      type: 'ephemeral',
+      created: new Date(),
+      lastActivity: new Date(),
+      lifecycleOwner: SessionLifecycleOwner.WorkflowExtension,
+    };
+    store.setState({
+      sessionId: 'main-session',
+      sessions: new Map([
+        ['workflow-child', workflowSession],
+        [
+          'stale-subagent',
+          {
+            id: 'stale-subagent',
+            name: 'stale',
+            status: 'terminated',
+            type: 'ephemeral',
+            created: new Date(),
+            lastActivity: new Date(),
+          },
+        ],
+      ]) as any,
+      sessionEventBuffer: {
+        'workflow-child': [{ type: AgentEventType.Content, text: 'kept' }],
+        'stale-subagent': [{ type: AgentEventType.Content, text: 'removed' }],
+      },
+    });
+
+    store.getState().createStreamEventHandler()({
+      type: AgentEventType.ToolCall,
+      id: 'new-crew',
+      name: 'subagent',
+      args: {},
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(store.getState().sessions.has('workflow-child')).toBe(true);
+    expect(store.getState().sessionEventBuffer['workflow-child']).toHaveLength(
+      1
+    );
+    expect(store.getState().sessions.has('stale-subagent')).toBe(false);
+    expect(
+      store.getState().sessionEventBuffer['stale-subagent']
+    ).toBeUndefined();
   });
 
   it('updateSession updates existing session', () => {

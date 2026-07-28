@@ -80,7 +80,10 @@ import type {
 } from '../utils/kas-config-options';
 import type { StatusType } from '../types/componentTypes';
 import type { SubagentInfo, SubagentStatus } from '../types/subagent.js';
-import type { AgentSession } from '../types/multi-session.js';
+import {
+  isWorkflowSession,
+  type AgentSession,
+} from '../types/multi-session.js';
 import type {
   SessionActivityStatus,
   SessionsChangedNotification,
@@ -569,6 +572,15 @@ function resolveApprovalOptionIdByKind(
 ): string {
   return (
     approval.permissionOptions.find((o) => o.kind === kind)?.optionId ?? kind
+  );
+}
+
+function approvalBelongsToSession(
+  approval: ApprovalRequestInfo,
+  sessionId: string
+): boolean {
+  return (
+    approval.sessionId === sessionId || approval.originSessionId === sessionId
   );
 }
 
@@ -1166,6 +1178,7 @@ interface BaseAppActions {
   addSession: (session: AgentSession) => void;
   updateSession: (id: string, updates: Partial<AgentSession>) => void;
   removeSession: (id: string) => void;
+  cancelSessionApprovals: (sessionId: string) => void;
   cleanupTerminatedSession: (sessionId: string) => void;
   terminateAllCrewSessions: () => Promise<void>;
   setActiveSession: (id: string) => void;
@@ -3855,7 +3868,8 @@ export const createAppStore = (props: AppStoreProps) => {
                   if (
                     s.type === 'ephemeral' &&
                     id !== state.sessionId &&
-                    !belongsToActiveInvocation
+                    !belongsToActiveInvocation &&
+                    !isWorkflowSession(s)
                   ) {
                     staleNames.add(s.name);
                     staleSessionIds.add(id);
@@ -6629,7 +6643,7 @@ export const createAppStore = (props: AppStoreProps) => {
         // Clear old terminated sessions when a new active session arrives
         if (session.status === 'busy' && !newSessions.has(session.id)) {
           for (const [id, s] of newSessions) {
-            if (s.status === 'terminated') {
+            if (s.status === 'terminated' && !isWorkflowSession(s)) {
               staleIds.push(id);
               newSessions.delete(id);
             }
@@ -6711,16 +6725,34 @@ export const createAppStore = (props: AppStoreProps) => {
         };
       }),
 
-    cleanupTerminatedSession: (sessionId) => {
-      const { approvalQueue, pendingApproval, questionQueue, pendingQuestion } =
-        get();
-      // Cancel pending approvals for this session
-      const sessionApprovals = approvalQueue.filter(
-        (a) => a.sessionId === sessionId
+    cancelSessionApprovals: (sessionId) => {
+      const { approvalQueue, pendingApproval } = get();
+      const cancelled = approvalQueue.filter((approval) =>
+        approvalBelongsToSession(approval, sessionId)
       );
-      for (const a of sessionApprovals) {
-        a.resolve({ outcome: 'cancelled' });
+      const pendingIsCancelled =
+        pendingApproval !== null &&
+        approvalBelongsToSession(pendingApproval, sessionId);
+      if (cancelled.length === 0 && !pendingIsCancelled) return;
+
+      const remaining = approvalQueue.filter(
+        (approval) => !approvalBelongsToSession(approval, sessionId)
+      );
+      set({
+        approvalQueue: remaining,
+        pendingApproval: pendingIsCancelled
+          ? (remaining[0] ?? null)
+          : pendingApproval,
+        ...(pendingIsCancelled ? { approvalMode: 'dropdown' as const } : {}),
+      });
+      for (const approval of cancelled) {
+        approval.resolve({ outcome: 'cancelled' });
       }
+    },
+
+    cleanupTerminatedSession: (sessionId) => {
+      const { questionQueue, pendingQuestion } = get();
+      get().cancelSessionApprovals(sessionId);
       const sessionQuestions = questionQueue.filter(
         (question) => question.sessionId === sessionId
       );
@@ -6734,14 +6766,6 @@ export const createAppStore = (props: AppStoreProps) => {
       const session = get().sessions.get(sessionId);
       const agentName = session?.name;
       set((state) => ({
-        approvalQueue:
-          sessionApprovals.length > 0
-            ? state.approvalQueue.filter((a) => a.sessionId !== sessionId)
-            : state.approvalQueue,
-        pendingApproval:
-          pendingApproval?.sessionId === sessionId
-            ? null
-            : state.pendingApproval,
         questionQueue:
           sessionQuestions.length > 0
             ? remainingQuestions

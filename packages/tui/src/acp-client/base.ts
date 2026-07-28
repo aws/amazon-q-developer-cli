@@ -9,7 +9,6 @@ import type {
   ListSessionsResponse,
 } from '../types/session-client';
 import type { ContextBreakdownData } from '../types/context';
-import type { SessionLifecycleEvent } from '../types/multi-session';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type {
   ModeChangedNotification,
@@ -23,6 +22,7 @@ import {
   ApprovalOptionId,
   ToolCallStatus,
   type AgentStreamEvent,
+  type ApprovalRequestEvent,
   type KiroMeta,
   type MeteringUsage,
 } from '../types/agent-events';
@@ -37,8 +37,13 @@ import type {
   SteeringSource,
   TuiCommand,
 } from '../types/commands';
+import type { SessionEvent } from '../types/multi-session';
 import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
-import { parsePersistedWorkflowProgress } from '../utils/workflow-protocol';
+import {
+  decodeExtSessionUpdate,
+  extractKiroMeta,
+  type ExtSessionUpdateEnvelope,
+} from './kas-extensions/session-update-contract';
 
 /**
  * Strip the `@serverName/` prefix from KAS MCP tool titles.
@@ -91,15 +96,11 @@ export type AcpSessionUpdate = acp.SessionNotification['update'];
  * Use {@link extractKiroMetaFromUpdate} to read `_meta.kiro` from an
  * `AcpSessionUpdate` without scattering casts across the codebase.
  */
-export type KasAcpSessionUpdate = AcpSessionUpdate & {
-  _meta?: { kiro?: KiroMeta } | null;
-};
-
 /** Type-safe `_meta.kiro` accessor for ACP session updates. */
 export function extractKiroMetaFromUpdate(
-  update: AcpSessionUpdate
+  update: unknown
 ): KiroMeta | undefined {
-  return (update as KasAcpSessionUpdate)._meta?.kiro;
+  return extractKiroMeta(update);
 }
 
 function extractToolKiroMetaFromUpdate(
@@ -643,13 +644,12 @@ export abstract class BaseAcpClient implements SessionClient {
   private multiSessionHandlers: Set<
     (sessionId: string, event: AgentStreamEvent) => void
   > = new Set();
-  private sessionEventHandlers: Set<(event: SessionLifecycleEvent) => void> =
-    new Set();
+  private sessionEventHandlers: Set<(event: SessionEvent) => void> = new Set();
   private subagentListHandlers: Set<
     (subagents: any[], pendingStages?: any[]) => void
   > = new Set();
   /** Captured from session_info_update displayError — consumed as fallback by tool_call_update Failed */
-  private pendingDisplayError: string | null = null;
+  private readonly pendingDisplayErrors = new Map<string, string>();
   private compactCompletionFallbackTimer: ReturnType<typeof setTimeout> | null =
     null;
   private compactCompletionAttemptId = 0;
@@ -659,7 +659,7 @@ export abstract class BaseAcpClient implements SessionClient {
   // SteeringQueued handler expects (Rust sends it whole; KAS sends deltas).
   // Reset per-session in wireSessionListeners (a /clear mid-steer ends the
   // session with no injected/cleared event, so it can't reset itself).
-  protected kasSteerBuffer = new Map<string, string>();
+  protected readonly kasSteerBuffers = new Map<string, Map<string, string>>();
 
   constructor(agentProcess: AgentProcess) {
     this.agentProcess = agentProcess;
@@ -774,7 +774,7 @@ export abstract class BaseAcpClient implements SessionClient {
     return this.addHandler(this.subagentListHandlers, handler);
   }
 
-  onSessionEvent(handler: (event: SessionLifecycleEvent) => void): () => void {
+  onSessionEvent(handler: (event: SessionEvent) => void): () => void {
     return this.addHandler(this.sessionEventHandlers, handler);
   }
 
@@ -896,8 +896,22 @@ export abstract class BaseAcpClient implements SessionClient {
     this.multiSessionHandlers.forEach((h) => h(sessionId, event));
   }
 
-  protected broadcastSessionEvent(event: SessionLifecycleEvent): void {
+  protected broadcastSessionEvent(event: SessionEvent): void {
     this.sessionEventHandlers.forEach((h) => h(event));
+  }
+
+  protected clearSessionConversionState(sessionId?: string): void {
+    if (sessionId !== undefined) {
+      this.pendingDisplayErrors.delete(sessionId);
+      this.kasSteerBuffers.delete(sessionId);
+      return;
+    }
+    this.pendingDisplayErrors.clear();
+    this.kasSteerBuffers.clear();
+    this.resetCompactCompletionFallback();
+    this.compactCompletionAttemptId = 0;
+    this.observedCompactCompletionAttemptId = 0;
+    this.externalCompactInProgress = false;
   }
 
   protected broadcastSubagentList(
@@ -1133,45 +1147,38 @@ export abstract class BaseAcpClient implements SessionClient {
   }
 
   protected handleExtSessionUpdate(params: Record<string, unknown>) {
-    const update = params.update as Record<string, unknown> | undefined;
-    if (!update) return;
-    const sessionUpdate = update.sessionUpdate;
+    const decoded = decodeExtSessionUpdate(params);
+    if (decoded) this.handleDecodedExtSessionUpdate(decoded);
+  }
 
-    if (sessionUpdate === 'tool_call_chunk') {
-      const chunk = update as {
-        toolCallId: string;
-        title: string;
-        kind: string;
-      };
-      const sessionId = params.sessionId as string | undefined;
+  protected handleDecodedExtSessionUpdate(
+    envelope: ExtSessionUpdateEnvelope
+  ): void {
+    const { sessionId, update } = envelope;
+    if (update.sessionUpdate === 'tool_call_chunk') {
       const isSubagentEvent = sessionId && sessionId !== this.sessionId;
       const event: AgentStreamEvent = {
         type: AgentEventType.ToolCall,
-        id: chunk.toolCallId,
-        name: stripMcpTitlePrefix(chunk.title) || chunk.title,
-        kind: chunk.kind,
+        id: update.toolCallId,
+        name: stripMcpTitlePrefix(update.title) || update.title,
+        kind: update.kind,
         args: {},
         sessionId: isSubagentEvent ? sessionId : undefined,
+        ...(update.kiroMeta ? { meta: { kiro: update.kiroMeta } } : {}),
       };
       if (isSubagentEvent) this.broadcastMultiSession(sessionId, event);
       this.broadcastStreamEvent(event);
       return;
     }
 
-    if (sessionUpdate === 'retry_warning') {
-      const warning = update as {
-        attempt: number;
-        maxAttempts: number;
-        delaySecs: number;
-        message: string;
-      };
-      logger.warn('Retry warning received:', warning);
+    if (update.sessionUpdate === 'retry_warning') {
+      logger.warn('Retry warning received:', update);
       this.broadcastStreamEvent({
         type: AgentEventType.RetryWarning,
-        attempt: warning.attempt,
-        maxAttempts: warning.maxAttempts,
-        delaySecs: warning.delaySecs,
-        message: warning.message,
+        attempt: update.attempt,
+        maxAttempts: update.maxAttempts,
+        delaySecs: update.delaySecs,
+        message: update.message,
       });
       return;
     }
@@ -1188,25 +1195,24 @@ export abstract class BaseAcpClient implements SessionClient {
     // `convertAcpUpdateToEvent`. Both paths map onto the same internal events.
     // Keep in sync with the kas-acp-client test fixture
     // (packages/tui/src/__tests__/kas-acp-client.test.ts).
-    if (sessionUpdate === 'AgentExecutionUserMessageQueued') {
+    if (update.sessionUpdate === 'AgentExecutionUserMessageQueued') {
       this.broadcastStreamEvent({
         type: AgentEventType.SteeringQueued,
-        message: (update as { content?: string }).content ?? '',
+        message: update.content,
       });
       return;
     }
 
-    if (sessionUpdate === 'AgentExecutionSteeringInjected') {
+    if (update.sessionUpdate === 'AgentExecutionSteeringInjected') {
       this.broadcastStreamEvent({
         type: AgentEventType.SteeringConsumed,
-        content: (update as { content?: string }).content ?? '',
+        content: update.content,
       });
       return;
     }
 
-    if (sessionUpdate === 'AgentExecutionUserMessageCleared') {
+    if (update.sessionUpdate === 'AgentExecutionUserMessageCleared') {
       this.broadcastStreamEvent({ type: AgentEventType.SteeringCleared });
-      return;
     }
   }
 
@@ -1233,19 +1239,20 @@ export abstract class BaseAcpClient implements SessionClient {
 
   protected convertAcpUpdateToEvent(
     update: AcpSessionUpdate,
-    notifSessionId?: string
+    notifSessionId?: string,
+    sideEffectSink?: (event: AgentStreamEvent) => void
   ): AgentStreamEvent | null {
+    const sessionStateKey = notifSessionId ?? this.sessionId ?? '';
+    const isPrimarySession =
+      notifSessionId === undefined || notifSessionId === this.sessionId;
+    const emitSideEffect =
+      sideEffectSink ?? ((event) => this.broadcastStreamEvent(event));
+    const emitSynthesized =
+      sideEffectSink ??
+      ((event) => this.broadcastSynthesizedFailedToolCall(event));
+
     switch (update.sessionUpdate) {
       case 'user_message_chunk': {
-        const workflowProgress = parsePersistedWorkflowProgress(update);
-        if (workflowProgress.kind === 'workflow-progress') {
-          return {
-            type: AgentEventType.WorkflowProgress,
-            id: workflowProgress.progress.messageId ?? crypto.randomUUID(),
-            event: workflowProgress.progress.event,
-          };
-        }
-        if (workflowProgress.kind === 'invalid-workflow') return null;
         const kiroMeta = extractKiroMetaFromUpdate(update);
         return update.content.type === 'text'
           ? {
@@ -1356,7 +1363,7 @@ export abstract class BaseAcpClient implements SessionClient {
             if (notifSessionId && notifSessionId !== this.sessionId) {
               synthesized.sessionId = notifSessionId;
             }
-            this.broadcastSynthesizedFailedToolCall(synthesized);
+            emitSynthesized(synthesized);
           }
           return {
             type: AgentEventType.ToolCallFinished,
@@ -1411,7 +1418,7 @@ export abstract class BaseAcpClient implements SessionClient {
             if (notifSessionId && notifSessionId !== this.sessionId) {
               synthesized.sessionId = notifSessionId;
             }
-            this.broadcastSynthesizedFailedToolCall(synthesized);
+            emitSynthesized(synthesized);
           }
           // Prefer a descriptive error from the content block; fall back to
           // rawOutput, then a generic message.
@@ -1438,10 +1445,12 @@ export abstract class BaseAcpClient implements SessionClient {
           // here as a final fallback so the failure surfaces with text
           // instead of a bare `✗ failed` chip. Always cleared after read
           // so a stale value can't bleed into the next tool failure.
-          if (!errorText && this.pendingDisplayError) {
-            errorText = this.pendingDisplayError;
+          const pendingDisplayError =
+            this.pendingDisplayErrors.get(sessionStateKey);
+          if (!errorText && pendingDisplayError) {
+            errorText = pendingDisplayError;
           }
-          this.pendingDisplayError = null;
+          this.pendingDisplayErrors.delete(sessionStateKey);
           // Recover user-cancellation from the canonical reason string the
           // V2 Rust side tunnels through the failure content (acp_agent.rs
           // ToolCallFinished arm for ToolCallResult::Cancelled). ACP's
@@ -1586,15 +1595,15 @@ export abstract class BaseAcpClient implements SessionClient {
               otherCommands.push(cmd);
           }
         }
-        this.broadcastStreamEvent({
+        emitSideEffect({
           type: AgentEventType.PromptsUpdate,
           prompts,
         });
-        this.broadcastStreamEvent({
+        emitSideEffect({
           type: AgentEventType.SkillsUpdate,
           skills,
         });
-        this.broadcastStreamEvent({
+        emitSideEffect({
           type: AgentEventType.SteeringUpdate,
           steering,
         });
@@ -1620,7 +1629,10 @@ export abstract class BaseAcpClient implements SessionClient {
         // pendingDisplayError so tool_call_update Failed can fall back to it
         // when its own error fields are empty.
         if (meta?.displayError?.message) {
-          this.pendingDisplayError = meta.displayError.message;
+          this.pendingDisplayErrors.set(
+            sessionStateKey,
+            meta.displayError.message
+          );
         }
         // The session's bound-repo set, pushed when the sandbox attaches or
         // detaches repos mid-session (KAS relay of the sandbox agent's
@@ -1645,7 +1657,7 @@ export abstract class BaseAcpClient implements SessionClient {
             return null;
           }
           if (completion.contextUsagePercentage != null) {
-            this.broadcastStreamEvent({
+            emitSideEffect({
               type: AgentEventType.ContextUsage,
               percent: completion.contextUsagePercentage,
             });
@@ -1663,6 +1675,13 @@ export abstract class BaseAcpClient implements SessionClient {
           };
         }
         if (meta?.kind === 'summarization_completed') {
+          if (!isPrimarySession) {
+            return {
+              type: AgentEventType.CompactionStatus,
+              status: 'completed',
+              summary: extractKasSummarizationSummary(meta),
+            };
+          }
           const attemptId = this.consumeCompactSummaryAttemptId();
           if (attemptId === null) return null;
           return {
@@ -1673,6 +1692,12 @@ export abstract class BaseAcpClient implements SessionClient {
           };
         }
         if (meta?.kind === 'summarization_started') {
+          if (!isPrimarySession) {
+            return {
+              type: AgentEventType.CompactionStatus,
+              status: 'started',
+            };
+          }
           if (
             this.isCompactCompletionAttemptPending(
               this.compactCompletionAttemptId
@@ -1687,6 +1712,13 @@ export abstract class BaseAcpClient implements SessionClient {
           };
         }
         if (meta?.kind === 'summarization_failed') {
+          if (!isPrimarySession) {
+            return {
+              type: AgentEventType.CompactionStatus,
+              status: 'failed',
+              error: extractKasError(meta),
+            };
+          }
           const attemptId = this.consumeCompactSummaryAttemptId();
           if (attemptId === null) return null;
           return {
@@ -1699,13 +1731,13 @@ export abstract class BaseAcpClient implements SessionClient {
         if (meta?.kind === 'context_usage' || meta?.contextUsage) {
           const percent = normalizeKasContextUsagePercentage(meta);
           if (typeof percent === 'number') {
-            this.broadcastStreamEvent({
+            emitSideEffect({
               type: AgentEventType.ContextUsage,
               percent,
             });
           }
           if (meta?.breakdown) {
-            this.broadcastStreamEvent({
+            emitSideEffect({
               type: AgentEventType.ContextBreakdownUpdate,
               breakdown: meta.breakdown as ContextBreakdownData,
             });
@@ -1715,7 +1747,7 @@ export abstract class BaseAcpClient implements SessionClient {
           meta?.kind === 'user_message_id_assigned' &&
           typeof (meta as any)?.userMessageId === 'string'
         ) {
-          this.broadcastStreamEvent({
+          emitSideEffect({
             type: AgentEventType.KasMessageIdAssigned,
             kasMessageId: (meta as any).userMessageId,
           });
@@ -1729,24 +1761,28 @@ export abstract class BaseAcpClient implements SessionClient {
         // side-effect broadcasts (like `context_usage`), so broadcast and
         // return null rather than returning the event.
         if (meta?.kind === 'steering_queued') {
-          this.kasSteerBuffer.set(meta.messageId ?? '', meta.content ?? '');
-          this.broadcastStreamEvent({
+          const steerBuffer =
+            this.kasSteerBuffers.get(sessionStateKey) ??
+            new Map<string, string>();
+          steerBuffer.set(meta.messageId ?? '', meta.content ?? '');
+          this.kasSteerBuffers.set(sessionStateKey, steerBuffer);
+          emitSideEffect({
             type: AgentEventType.SteeringQueued,
-            message: [...this.kasSteerBuffer.values()].join('\n\n'),
+            message: [...steerBuffer.values()].join('\n\n'),
           });
           return null;
         }
         if (meta?.kind === 'steering_injected') {
-          this.kasSteerBuffer.clear();
-          this.broadcastStreamEvent({
+          this.kasSteerBuffers.delete(sessionStateKey);
+          emitSideEffect({
             type: AgentEventType.SteeringConsumed,
             content: meta.content ?? '',
           });
           return null;
         }
         if (meta?.kind === 'steering_cleared') {
-          this.kasSteerBuffer.clear();
-          this.broadcastStreamEvent({ type: AgentEventType.SteeringCleared });
+          this.kasSteerBuffers.delete(sessionStateKey);
+          emitSideEffect({ type: AgentEventType.SteeringCleared });
           return null;
         }
         // Turn boundaries must reach clients that did not submit the turn.
@@ -1801,11 +1837,13 @@ export abstract class BaseAcpClient implements SessionClient {
   // ── Shared permission handling ──
 
   protected handlePermissionRequest(
-    params: acp.RequestPermissionRequest
+    params: acp.RequestPermissionRequest,
+    eventSink: (event: ApprovalRequestEvent) => void = (event) =>
+      this.broadcastStreamEvent(event)
   ): Promise<acp.RequestPermissionResponse> {
     return new Promise<acp.RequestPermissionResponse>((resolve) => {
       const meta = params._meta as any;
-      const event: AgentStreamEvent = {
+      const event: ApprovalRequestEvent = {
         type: AgentEventType.ApprovalRequest,
         value: {
           sessionId: (params as any).sessionId as string | undefined,
@@ -1848,7 +1886,7 @@ export abstract class BaseAcpClient implements SessionClient {
           },
         },
       };
-      this.broadcastStreamEvent(event);
+      eventSink(event);
     });
   }
 

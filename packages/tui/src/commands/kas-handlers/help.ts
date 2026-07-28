@@ -20,10 +20,9 @@ export async function handleHelp(
   // lite — matching the V2 showHelpPanel effect and the autocomplete menu.
   const uiMode = ctx.getUiMode?.() === 'lite' ? 'lite' : 'tui';
   const commands = [
-    // Cloud-only commands are hidden from autocomplete outside cloud
-    // sessions; keep /help consistent so they don't leak there either.
     ...ctx.kasCommands
       .filter((c) => !c.meta?.cloudOnly || ctx.cloudSessionActive)
+      .filter((c) => isCommandVisibleInUiMode(c, uiMode))
       .map((c) => ({
         name: c.name,
         description: c.description ?? '',

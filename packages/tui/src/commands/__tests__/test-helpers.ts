@@ -124,6 +124,9 @@ export function createMockCommandContext(
     setShowRewindExplorer: spy('setShowRewindExplorer') as any,
     setShowTangentExplorer: spy('setShowTangentExplorer') as any,
     setTangentName: spy('setTangentName') as any,
+    setShowWorkflowHistory: spy(
+      'setShowWorkflowHistory'
+    ) as CommandContext['setShowWorkflowHistory'],
     setUpgradeDiagnostics: spy('setUpgradeDiagnostics') as any,
     setUpgradeRunPreview: spy('setUpgradeRunPreview') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,

@@ -8,6 +8,10 @@ export type SessionStatus =
   | 'pending';
 export type SessionType = 'persistent' | 'ephemeral';
 
+export enum SessionLifecycleOwner {
+  WorkflowExtension = 'workflow-extension',
+}
+
 export interface AgentSession {
   id: string;
   name: string;
@@ -33,6 +37,8 @@ export interface AgentSession {
    * Populated for remote/cloud sessions; read by {@link isRemoteSession}.
    */
   executionTarget?: ExecutionTarget;
+  /** Prevents generic session cleanup from taking over extension-owned state. */
+  lifecycleOwner?: SessionLifecycleOwner;
 }
 
 /**
@@ -64,11 +70,42 @@ export function isRemoteSession(
 }
 
 /**
- * Subagent lifecycle event: `session_created` carries the full roster entry
- * for a newly started subagent session; `session_terminated` carries only
- * the ended session's id. Emitted on the v3 engine path only - the V2 engine
- * conveys lifecycle implicitly through roster snapshots.
+ * True when lifecycle and conversation cleanup belong to the workflow
+ * extension.
  */
+export function isWorkflowSession(
+  session: Pick<AgentSession, 'lifecycleOwner'> | undefined | null
+): boolean {
+  return session?.lifecycleOwner === SessionLifecycleOwner.WorkflowExtension;
+}
+
 export type SessionLifecycleEvent =
-  | { type: 'session_created'; session: AgentSession }
-  | { type: 'session_terminated'; sessionId: string };
+  | {
+      type: 'session_created';
+      session: AgentSession;
+    }
+  | {
+      type: 'session_terminated';
+      sessionId: string;
+    };
+
+export type WorkflowSessionControlEvent =
+  | {
+      type: 'session_removed';
+      sessionId: string;
+    }
+  | {
+      type: 'session_status_changed';
+      sessionId: string;
+      status: SessionStatus;
+    }
+  | {
+      type: 'session_conversation_reset' | 'session_turn_started';
+      sessionId: string;
+    }
+  | {
+      type: 'session_approvals_cancelled';
+      sessionId: string;
+    };
+
+export type SessionEvent = SessionLifecycleEvent | WorkflowSessionControlEvent;
