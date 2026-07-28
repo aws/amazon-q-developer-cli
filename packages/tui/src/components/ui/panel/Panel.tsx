@@ -11,6 +11,7 @@ export interface PanelProps {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  width?: number;
   onTabSwitch?: () => void;
   showTabHint?: boolean;
   tabHintLabel?: string;
@@ -40,6 +41,7 @@ export const Panel: React.FC<PanelProps> = ({
   title,
   children,
   onClose,
+  width,
   onTabSwitch,
   showTabHint = false,
   tabHintLabel = 'to switch view',
@@ -57,6 +59,7 @@ export const Panel: React.FC<PanelProps> = ({
 }) => {
   const { getColor } = useTheme();
   const { width: termWidth } = useTerminalSize();
+  const panelWidth = width ?? termWidth;
   const keybindings = useKeybindings();
   const primary = getColor('primary');
   const dim = getColor('secondary');
@@ -116,7 +119,7 @@ export const Panel: React.FC<PanelProps> = ({
   });
 
   return (
-    <Box flexDirection="column" width={termWidth}>
+    <Box flexDirection="column" width={panelWidth}>
       <Box paddingX={1}>
         <Text>{primary(title)}</Text>
       </Box>

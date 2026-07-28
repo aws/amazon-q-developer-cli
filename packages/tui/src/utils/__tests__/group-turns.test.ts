@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { MessageRole, type MessageType } from '../../stores/app-store';
-import { groupMessagesIntoTurns } from '../group-turns';
+import { groupMessagesIntoTurns, hasTurnOutcome } from '../group-turns';
 
 // --- Builders -------------------------------------------------------------
 
@@ -98,6 +98,26 @@ describe('groupMessagesIntoTurns', () => {
     const turns = groupMessagesIntoTurns([user('u1', 'do something')]);
     expect(turns).toHaveLength(1);
     expect(turns[0]!.aiMessages).toEqual([]);
+  });
+
+  it('treats a workflow start row as an intercepted command outcome', () => {
+    const [turn] = groupMessagesIntoTurns([
+      user('u1', '/goal say hello'),
+      {
+        id: 'workflow-lifecycle:wf-1:started',
+        role: MessageRole.System,
+        content: 'Workflow "goal" started',
+        success: true,
+        kind: 'workflow-lifecycle',
+        workflowId: 'wf-1',
+        workflowName: 'goal',
+        workflowStatus: 'started',
+        workflowTurnId: 'u1',
+      },
+    ]);
+
+    expect(turn).toBeDefined();
+    expect(hasTurnOutcome(turn!)).toBe(true);
   });
 
   it('a cancelled turn that received steers still has no assistant body', () => {

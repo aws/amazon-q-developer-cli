@@ -90,18 +90,31 @@ import type {
   SessionsChangedNotification,
   ProvisioningFailureCode,
 } from '../types/session-client';
+import type {
+  WorkflowLifecycleNotice,
+  WorkflowLifecycleStatus,
+} from '../types/workflow-lifecycle.js';
+import { MessageRole } from '../types/message-role.js';
 import type { TaskItem, RawTask } from '../types/tasks';
 import type { ContextBreakdownData } from '../types/context';
 import type { UiMode } from '../types/ui-mode.js';
+import type { AppMode } from '../types/app-mode.js';
 import {
   createInitialKasSubagentRoutingState,
   createKasSubagentRoutingActions,
   type KasSubagentRoutingState,
   type KasSubagentRoutingStore,
 } from './kas-subagent-routing';
+import {
+  activeWorkflowOriginTurnId,
+  appendWorkflowLifecycleMessage,
+  createWorkflowLifecycleTracker,
+  hasWorkflowLaunchToolForTurn,
+} from '../utils/workflow-lifecycle.js';
 
 export type { ContextBreakdownData } from '../types/context';
 export type { KasSubagentRoutingStore } from './kas-subagent-routing';
+export { MessageRole } from '../types/message-role.js';
 
 /** A selectable turn in the `/rewind` Explorer. Shape is defined by the
  *  backend `/rewind` execute handler in `CommandResult.data.turns`. */
@@ -333,6 +346,8 @@ export type {
 export type { SpecConfig } from '../utils/spec-config.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { spliceSteerLine, removeSteerLine } from '../utils/queue-navigation.js';
+import { workflowStore } from './workflow-store.js';
+import { summarizeWorkflowRuns } from './workflow-view-model.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
 import { collectCloudAttachments } from '../utils/cloud-attach.js';
 import { logger } from '../utils/logger.js';
@@ -382,13 +397,6 @@ import {
   IMPLEMENT_PLAN_SURVEY,
   type SurveyDefinition,
 } from '../constants/survey.js';
-
-export enum MessageRole {
-  User = 'user',
-  Model = 'model',
-  ToolUse = 'tool_use',
-  System = 'system',
-}
 
 // Helper to generate unique message IDs
 const generateMessageId = () => crypto.randomUUID();
@@ -549,6 +557,12 @@ export type MessageType =
       success: boolean;
       /** True for status rows emitted while a user turn is in flight. */
       turnOwned?: boolean;
+      /** Structured workflow rows support durable styling and turn ownership. */
+      kind?: 'workflow-lifecycle' | 'workflow-completion';
+      workflowId?: string;
+      workflowTurnId?: string;
+      workflowName?: string;
+      workflowStatus?: WorkflowLifecycleStatus;
     };
 
 /**
@@ -1178,9 +1192,7 @@ interface BaseAppActions {
   navigateHistory: (direction: 'up' | 'down') => string | null;
 
   // UI actions
-  setMode: (
-    mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
-  ) => void;
+  setMode: (mode: AppMode) => void;
   setUiMode: (uiMode: UiMode, notice?: string) => void;
   /** Lite-only: see {@link LiteState.staticSkipBefore}. */
   setLiteStaticSkipBefore: (idx: number) => void;
@@ -1744,7 +1756,7 @@ export interface AppState {
   setReverseSearchActive: (active: boolean) => void;
 
   // UI state
-  mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view';
+  mode: AppMode;
   sessions: Map<string, AgentSession>;
   activeSessionId: string;
   selectedSessionId?: string;
@@ -2430,6 +2442,15 @@ export function buildCommandContext(
         });
       }
     },
+    announceWorkflowLifecycle: (notice: WorkflowLifecycleNotice) => {
+      set((current) => {
+        const messages = appendWorkflowLifecycleMessage(
+          current.messages,
+          notice
+        );
+        return messages === current.messages ? {} : { messages };
+      });
+    },
     setLoadingMessage: state.setLoadingMessage,
     setActiveCommand: state.setActiveCommand,
     setCurrentModel: state.setCurrentModel,
@@ -2450,6 +2471,18 @@ export function buildCommandContext(
     setShowRewindExplorer: state.setShowRewindExplorer,
     setShowTangentExplorer: state.setShowTangentExplorer,
     setTangentName: state.setTangentName,
+    setShowWorkflowHistory: (show, runs = []) => {
+      if (show) workflowStore.getState().openWorkflowHistory(runs);
+      else workflowStore.getState().closeWorkflowHistory();
+    },
+    getLocalWorkflowRuns: () => {
+      const workflowState = workflowStore.getState();
+      const byId = new Map([
+        ...workflowState.archivedWorkflows,
+        ...workflowState.workflows,
+      ]);
+      return summarizeWorkflowRuns(byId.values());
+    },
     setUpgradeDiagnostics: state.setUpgradeDiagnostics,
     setUpgradeRunPreview: state.setUpgradeRunPreview,
     setShowMcpPanel: state.setShowMcpPanel,
@@ -2590,6 +2623,16 @@ export function buildCommandContext(
 
 export const createAppStore = (props: AppStoreProps) => {
   const agentEngine: AgentEngine = props.agentEngine ?? resolveAgentEngine();
+  const initialInterruptMode = parseInterruptMode(
+    readStringSetting(
+      Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
+      DEFAULT_INTERRUPT_MODE
+    )
+  );
+  let confirmedInterruptMode = initialInterruptMode;
+  let interruptModeSyncVersion = 0;
+  let pendingInterruptModeSyncs = 0;
+  let interruptModeSyncQueue = Promise.resolve();
   const store = createStore<AppState & AppActions>((set, get) => ({
     // Initial state
     messages: [],
@@ -2925,12 +2968,7 @@ export const createAppStore = (props: AppStoreProps) => {
     streamingBuffer: { startBuffering: null, stopBuffering: null },
 
     // Dual-mode interrupt behavior
-    activeInterruptMode: parseInterruptMode(
-      readStringSetting(
-        Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
-        DEFAULT_INTERRUPT_MODE
-      )
-    ),
+    activeInterruptMode: initialInterruptMode,
 
     // Task management
     tasks: [],
@@ -3292,6 +3330,13 @@ export const createAppStore = (props: AppStoreProps) => {
       // synchronous set() calls from the ACP notification handler.
       let pendingContentFlush: ReturnType<typeof setTimeout> | null = null;
       let lastContentEventId: string | null = null;
+      const initialState = get();
+      const workflowLifecycle = createWorkflowLifecycleTracker(
+        activeWorkflowOriginTurnId(
+          initialState.messages,
+          initialState.isProcessing
+        )
+      );
 
       // User messages inside an open observer turn are steers.
       let turnOpen = false;
@@ -3722,6 +3767,8 @@ export const createAppStore = (props: AppStoreProps) => {
                 });
                 break;
               }
+              const rowId = isCloudReplay ? generateMessageId() : id;
+              if (!turnOpen) workflowLifecycle.recordOriginTurn(rowId);
               set((state) => ({
                 messages: [
                   ...state.messages,
@@ -3729,9 +3776,8 @@ export const createAppStore = (props: AppStoreProps) => {
                     // The static renderer dedupes rows by id, so a repeated
                     // persisted id needs a fresh row id; live-echo dedupe and
                     // rewind still match via kasMessageId.
-                    ...(isCloudReplay
-                      ? { id: generateMessageId(), kasMessageId: id }
-                      : { id }),
+                    id: rowId,
+                    ...(isCloudReplay ? { kasMessageId: id } : {}),
                     role: MessageRole.User,
                     content: text,
                     agentName: state.currentAgent?.name,
@@ -4569,6 +4615,37 @@ export const createAppStore = (props: AppStoreProps) => {
               }
             }
             break;
+          case AgentEventType.WorkflowProgress: {
+            const state = get();
+            const notice = workflowLifecycle.consume(
+              event.event,
+              activeWorkflowOriginTurnId(
+                state.messages,
+                state.isProcessing,
+                event.event.type === 'run_start'
+                  ? event.event.workflowName
+                  : undefined
+              )
+            );
+            if (!notice) break;
+            set((state) => {
+              if (
+                notice.status === 'started' &&
+                hasWorkflowLaunchToolForTurn(
+                  state.messages,
+                  notice.workflowTurnId
+                )
+              ) {
+                return {};
+              }
+              const messages = appendWorkflowLifecycleMessage(
+                state.messages,
+                notice
+              );
+              return messages === state.messages ? {} : { messages };
+            });
+            break;
+          }
           case AgentEventType.TurnSummary:
             // Handled by global handleTurnSummaryEvent, not here
             break;
@@ -7757,12 +7834,38 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Dual-mode interrupt behavior toggle
     toggleInterruptMode: () => {
-      const switchingToQueue =
-        get().activeInterruptMode === InterruptMode.STEER;
+      const currentMode = get().activeInterruptMode;
+      const switchingToQueue = currentMode === InterruptMode.STEER;
       const newMode = switchingToQueue
         ? InterruptMode.QUEUE
         : InterruptMode.STEER;
+      if (pendingInterruptModeSyncs === 0) {
+        confirmedInterruptMode = currentMode;
+      }
+      pendingInterruptModeSyncs += 1;
+      const syncVersion = ++interruptModeSyncVersion;
       set({ activeInterruptMode: newMode });
+
+      interruptModeSyncQueue = interruptModeSyncQueue.then(async () => {
+        try {
+          await get().kiro.setWorkflowNotificationDelivery(newMode);
+          confirmedInterruptMode = newMode;
+        } catch (error) {
+          logger.error(
+            'toggleInterruptMode: failed to sync workflow notifications',
+            error
+          );
+          if (syncVersion !== interruptModeSyncVersion) return;
+          set({ activeInterruptMode: confirmedInterruptMode });
+          get().showTransientAlert({
+            message: 'Failed to switch interrupt mode',
+            status: 'error',
+            autoHideMs: 3000,
+          });
+        } finally {
+          pendingInterruptModeSyncs -= 1;
+        }
+      });
       get().showTransientAlert({
         message: switchingToQueue
           ? 'Switched to Queue mode'
@@ -7773,6 +7876,8 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setActiveInterruptMode: (mode: InterruptMode) => {
+      confirmedInterruptMode = mode;
+      interruptModeSyncVersion += 1;
       set({ activeInterruptMode: mode });
     },
 

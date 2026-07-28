@@ -18,6 +18,7 @@ import type {
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import type { SessionPickerRow } from '../components/ui/SessionPickerPanel.js';
 import type { WorkflowRunSummary } from '../types/workflow-history.js';
+import type { WorkflowLifecycleNotice } from '../types/workflow-lifecycle.js';
 import type {
   AgentEntry,
   EffortEntry,
@@ -87,6 +88,8 @@ export interface CommandContext {
     success?: boolean,
     autoHideMs?: number
   ) => void;
+  /** Persist a typed workflow lifecycle row in the conversation scrollback. */
+  announceWorkflowLifecycle: (notice: WorkflowLifecycleNotice) => void;
   /** Set loading message (shows shimmer) */
   setLoadingMessage: (message: string | null) => void;
   /** Set active command (for selection menus) */
@@ -150,8 +153,10 @@ export interface CommandContext {
     }>
   ) => void;
   setTangentName: (name: string | null) => void;
-  /** Open the session-scoped workflow history surface when it is installed. */
-  setShowWorkflowHistory?: (show: boolean, runs?: WorkflowRunSummary[]) => void;
+  /** Open or close the session-scoped workflow history surface. */
+  setShowWorkflowHistory: (show: boolean, runs?: WorkflowRunSummary[]) => void;
+  /** Runs observed locally, including those omitted by the backend list RPC. */
+  getLocalWorkflowRuns: () => readonly WorkflowRunSummary[];
   setUpgradeDiagnostics: (
     rows: UpgradeAnalysisRow[],
     description: string

@@ -10,11 +10,14 @@
  */
 import type { Key } from '../../hooks/useKeypress.js';
 import { matchesKeybinding, type Keybinding } from '../../utils/keybindings.js';
-
-export type AppMode = 'inline' | 'expanded' | 'crew-monitor' | 'session-view';
+import type { AppMode } from '../../types/app-mode.js';
 
 export interface AppKeypressState {
   mode: AppMode;
+  hasWorkflow: boolean;
+  workflowInputActive: boolean;
+  workflowHistoryOpen: boolean;
+  activityTrayExpanded: boolean;
   isProcessing: boolean;
   isShellEscape: boolean;
   hasCommandInput: boolean;
@@ -43,6 +46,8 @@ export interface AppKeypressActions {
   disarmSuspend: () => void;
   setMode: (mode: AppMode) => void;
   enterCrewMonitor: () => void;
+  enterWorkflowMonitor: () => void;
+  collapseActivityTray: () => void;
   fireTransientAlertAction: () => void;
   dismissTransientAlert: () => void;
   copyOAuthUrl: (url: string) => void;
@@ -76,6 +81,13 @@ export function dispatchAppKeypress(
   actions: AppKeypressActions,
   bindings: AppKeypressBindings
 ): boolean {
+  if (state.workflowHistoryOpen) return true;
+
+  if (state.mode === 'inline' && state.activityTrayExpanded && key.escape) {
+    actions.collapseActivityTray();
+    return true;
+  }
+
   // Shell-escape: forward everything to the PTY.
   if (state.isShellEscape && actions.shellEscapeWrite) {
     if (key.ctrl && input === 'c') {
@@ -86,6 +98,10 @@ export function dispatchAppKeypress(
     // Caller is responsible for converting to raw bytes; the shell-escape
     // write itself happens at the call site because it needs keyToRawBytes.
     return false;
+  }
+
+  if (state.mode === 'workflow-monitor' && state.workflowInputActive) {
+    return true;
   }
 
   if (key.ctrl && input === 'z') {
@@ -123,7 +139,11 @@ export function dispatchAppKeypress(
   }
 
   if (matchesKeybinding(bindings.quit, input, key)) {
-    if (state.mode === 'crew-monitor' || state.mode === 'session-view') {
+    if (
+      state.mode === 'crew-monitor' ||
+      state.mode === 'workflow-monitor' ||
+      state.mode === 'session-view'
+    ) {
       return true;
     }
     if (state.reverseSearchActive) {
@@ -144,7 +164,11 @@ export function dispatchAppKeypress(
   }
 
   if (key.ctrl && input === 'd') {
-    if (state.mode === 'crew-monitor' || state.mode === 'session-view') {
+    if (
+      state.mode === 'crew-monitor' ||
+      state.mode === 'workflow-monitor' ||
+      state.mode === 'session-view'
+    ) {
       return true;
     }
     if (state.isShellEscape) {
@@ -157,6 +181,7 @@ export function dispatchAppKeypress(
   }
 
   if (matchesKeybinding(bindings.cancelStream, input, key)) {
+    if (state.mode === 'workflow-monitor') return true;
     // Subagent panel claims Esc to close itself — don't piggyback a cancel.
     if (state.subagentPanelOpen) return true;
     if (
@@ -174,15 +199,24 @@ export function dispatchAppKeypress(
     !key.ctrl &&
     !key.meta &&
     input === 'q' &&
-    (state.mode === 'crew-monitor' || state.mode === 'session-view')
+    (state.mode === 'crew-monitor' ||
+      state.mode === 'workflow-monitor' ||
+      state.mode === 'session-view')
   ) {
     actions.setMode('inline');
     return true;
   }
 
+  if (key.tab && state.mode === 'crew-monitor' && state.hasWorkflow) {
+    actions.enterWorkflowMonitor();
+    return true;
+  }
+
   if (key.ctrl && input === 'g') {
-    if (state.mode === 'crew-monitor') {
+    if (state.mode === 'crew-monitor' || state.mode === 'workflow-monitor') {
       actions.setMode('inline');
+    } else if (state.hasWorkflow) {
+      actions.enterWorkflowMonitor();
     } else {
       actions.enterCrewMonitor();
     }

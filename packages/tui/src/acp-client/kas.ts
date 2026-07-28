@@ -21,10 +21,11 @@ import {
   getTelemetryIdentity,
   isTelemetryEnabled,
 } from '../utils/telemetry-identity';
-import { buildKasSettings } from '../utils/kas-settings';
+import { buildKasSettings, type KasSettings } from '../utils/kas-settings';
 import { webToolsGovernanceFromState } from '../utils/governance-state';
 import { readCliSettings, updateCliSetting } from '../utils/cli-settings';
 import { Settings } from '../constants/settings';
+import type { InterruptMode } from '../constants/interrupt-mode';
 import { maybeWrapStreamWithRecorder } from '../acp-recorder';
 import { createGetAccessTokenCapability } from '../auth/acp-auth-callback';
 import { createCopyUrlToClipboardCapability } from '../capabilities/copy-url-to-clipboard';
@@ -120,6 +121,10 @@ import {
 import { KasWorkflowExtension } from './kas-extensions/workflow/controller';
 import type { WorkflowExtensionHost } from './kas-extensions/workflow/ports';
 import { parsePersistedWorkflowProgress } from './kas-extensions/workflow/contracts';
+import {
+  WORKFLOW_NOTIFICATION_DELIVERY_CONTRACT,
+  WORKFLOW_NOTIFICATION_DELIVERY_METHOD,
+} from './kas-extensions/workflow/notification-delivery-contract';
 import { createWorkflowEffectSink } from './kas-extensions/workflow/effect-adapter';
 import {
   KiroClientExtensionRuntime,
@@ -137,6 +142,22 @@ import {
 const KAS_CLIENT_INFO_META = {
   userAgentTags: ['app/AmazonQ-For-CLI'],
 } as const;
+
+function buildKasClientMeta(kasSettings?: KasSettings) {
+  const telemetryEnabled = isTelemetryEnabled();
+  return {
+    telemetryEnabled,
+    ...(telemetryEnabled && { telemetry: getTelemetryIdentity() }),
+    knowledge: true,
+    hooks: { enabled: true, v2: true },
+    requirementsAnalysis: true,
+    specPhaseCheckpoints: true,
+    ...(process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED === '1' && {
+      infrastructureSafety: true,
+    }),
+    ...(kasSettings && { settings: kasSettings }),
+  };
+}
 
 /**
  * Validate the opaque `agentCapabilities._meta.kiro` blob from the KAS
@@ -347,6 +368,11 @@ export class KasAcpClient extends BaseAcpClient {
   private readonly initialEffort?: string;
 
   /**
+   * Session settings snapshot, including confirmed notification delivery.
+   */
+  private kasSettings?: KasSettings;
+
+  /**
    * Execution target for the first `newSession`, from the `--cloud` CLI flag.
    * `{ kind: 'cloud-sandbox' }` when `--cloud` was passed, else undefined
    * (treated as local). Sent as `_meta.kiro.executionTarget` on `session/new`,
@@ -460,11 +486,13 @@ export class KasAcpClient extends BaseAcpClient {
   constructor(options: KasAcpClientOptions) {
     const kasSubagentRoutingStore = options.kasSubagentRoutingStore;
     if (options.stream) {
+      const kasSettings = buildKasSettings();
       super(createNullAgentProcess());
       this.kasSubagentRoutingStore = kasSubagentRoutingStore;
       this.initialAgent = options.initialAgent;
       this.initialModel = options.initialModel;
       this.initialEffort = options.initialEffort;
+      this.kasSettings = kasSettings;
       this.version = options.version ?? getCliVersion();
       this.executionTarget = options.executionTarget;
       this.repos = options.repos;
@@ -482,6 +510,7 @@ export class KasAcpClient extends BaseAcpClient {
             this.handleUserInputRequest(request)
           ),
         ],
+        clientMeta: buildKasClientMeta(kasSettings),
       });
       return;
     }
@@ -557,6 +586,7 @@ export class KasAcpClient extends BaseAcpClient {
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     const kasSettings = buildKasSettings();
+    this.kasSettings = kasSettings;
     this.kiroClient = new KiroClient({
       stream: finalStream,
       clientInfo: {
@@ -572,24 +602,7 @@ export class KasAcpClient extends BaseAcpClient {
         createCopyUrlToClipboardCapability(),
         ...createSecretStorageCapabilities(),
       ],
-      clientMeta: {
-        telemetryEnabled: isTelemetryEnabled(),
-        ...(isTelemetryEnabled() && { telemetry: getTelemetryIdentity() }),
-        knowledge: true,
-        hooks: { enabled: true, v2: true },
-        requirementsAnalysis: true,
-        // The CLI shows the agent's per-phase check-in question, so the spec
-        // workflow should pause and ask instead of advancing on its own.
-        specPhaseCheckpoints: true,
-        // ICECAP infra-safety capability. Gated to the internal cohort by the
-        // Rust launcher, which exports KIRO_INFRA_SAFETY_ROLLOUT_ENABLED from the
-        // Feature::InfraSafety rollout decision. Advertised only when enabled, in
-        // lockstep with the infraSafety* settings in buildKasSettings().
-        ...(process.env.KIRO_INFRA_SAFETY_ROLLOUT_ENABLED === '1' && {
-          infrastructureSafety: true,
-        }),
-        ...(kasSettings && { settings: kasSettings }),
-      },
+      clientMeta: buildKasClientMeta(kasSettings),
     });
   }
 
@@ -1248,7 +1261,9 @@ export class KasAcpClient extends BaseAcpClient {
     const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
     // Build the `_meta.kiro` payload once, merging mode + execution target so
     // neither overwrites the other (two separate `_meta` spreads would drop one).
-    const kiroMeta: Record<string, unknown> = {};
+    const kiroMeta: Record<string, unknown> = {
+      ...(this.kasSettings && { settings: this.kasSettings }),
+    };
     if (initialMode) kiroMeta.modeId = toKasModeId(initialMode);
     // Effective placement; an unset target == local (the contract default).
     const target = this.executionTarget ?? { kind: 'local' };
@@ -1463,13 +1478,18 @@ export class KasAcpClient extends BaseAcpClient {
     // with a remote retry when the local store reports not-found.
     const remoteCapable =
       this.kiroCapabilities.sessionSources?.includes('remote') ?? false;
-    const loadFrom = (source?: 'remote') =>
-      this.kiroClient.loadSession({
+    const loadFrom = (source?: 'remote') => {
+      const kiroMeta: Record<string, unknown> = {
+        ...(this.kasSettings && { settings: this.kasSettings }),
+        ...(source && { sessionSource: source }),
+      };
+      return this.kiroClient.loadSession({
         sessionId,
         cwd: process.cwd(),
         mcpServers: [],
-        ...(source && { _meta: { kiro: { sessionSource: source } } }),
+        ...(Object.keys(kiroMeta).length > 0 && { _meta: { kiro: kiroMeta } }),
       });
+    };
     const explicit = options?.source;
     const startRemote =
       remoteCapable &&
@@ -1518,6 +1538,7 @@ export class KasAcpClient extends BaseAcpClient {
         });
       }
     }
+    await this.workflowExtension?.restoreParentRuns([process.cwd()]);
     this.assertActive('session load');
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',
@@ -2699,6 +2720,50 @@ export class KasAcpClient extends BaseAcpClient {
 
   async setSetting(key: string, value: unknown): Promise<void> {
     await updateCliSetting(key, value);
+  }
+
+  async setWorkflowNotificationDelivery(
+    delivery: InterruptMode
+  ): Promise<void> {
+    if (!this.workflowsEnabled) {
+      return;
+    }
+
+    const sessionId = this.sessionId;
+    const canUpdateActiveSession =
+      sessionId !== undefined &&
+      this.kiroCapabilities.extensionMethods?.includes(
+        WORKFLOW_NOTIFICATION_DELIVERY_METHOD
+      );
+    if (!canUpdateActiveSession) {
+      this.rememberWorkflowNotificationDelivery(delivery);
+      return;
+    }
+
+    await this.extensionRuntime.request(
+      WORKFLOW_NOTIFICATION_DELIVERY_CONTRACT,
+      {
+        sessionId,
+        delivery,
+      }
+    );
+    this.rememberWorkflowNotificationDelivery(delivery);
+  }
+
+  private rememberWorkflowNotificationDelivery(delivery: InterruptMode): void {
+    const current = this.kasSettings?.workflowNotifications;
+    const workflowNotifications =
+      current !== null && typeof current === 'object' && !Array.isArray(current)
+        ? (current as Record<string, unknown>)
+        : {};
+    this.kasSettings = {
+      ...this.kasSettings,
+      workflowNotifications: {
+        ...workflowNotifications,
+        enabled: true,
+        delivery,
+      },
+    };
   }
 
   async terminateSession(_sessionId: string): Promise<void> {}

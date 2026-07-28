@@ -5,6 +5,71 @@ import type {
 } from '../types/workflow-monitor.js';
 import { isLiveWorkflowStatus } from '../types/workflow-status.js';
 import { workflowNodePathsEqual } from '../utils/workflow-node-path.js';
+import type {
+  WorkflowInspectResponse,
+  WorkflowRunSummary,
+} from '../types/workflow-history.js';
+import {
+  buildWorkflowNodesFromState,
+  collectWorkflowSessions,
+} from './workflow-reducer.js';
+import { isTerminalWorkflowStatus } from '../types/workflow-status.js';
+
+function timestamp(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+export function buildHistoricalWorkflowRun(
+  summary: WorkflowRunSummary,
+  inspected: WorkflowInspectResponse
+): WorkflowRunView {
+  const { state } = inspected;
+  const status = state.status ?? summary.status;
+  return {
+    workflowId: summary.workflowId,
+    parentSessionId: state.parentSessionId ?? summary.parentSessionId,
+    name: state.workflowName || summary.name,
+    status,
+    nodes: buildWorkflowNodesFromState(inspected.nodePlan, state.root),
+    stepSessions: collectWorkflowSessions(state.root),
+    startedAt:
+      timestamp(summary.startedAt) ??
+      timestamp(state.createdAt) ??
+      timestamp(summary.createdAt),
+    completedAt: isTerminalWorkflowStatus(status)
+      ? (timestamp(summary.endedAt) ?? timestamp(summary.updatedAt))
+      : null,
+    pauseReason: state.pauseReason,
+  };
+}
+
+export function summarizeWorkflowRuns(
+  workflows: Iterable<WorkflowRunView>
+): WorkflowRunSummary[] {
+  return [...workflows].map((workflow) => {
+    const startedAt =
+      workflow.startedAt === null
+        ? undefined
+        : new Date(workflow.startedAt).toISOString();
+    const endedAt =
+      workflow.completedAt === null
+        ? undefined
+        : new Date(workflow.completedAt).toISOString();
+    const createdAt = startedAt ?? endedAt ?? new Date(0).toISOString();
+    return {
+      workflowId: workflow.workflowId,
+      name: workflow.name,
+      status: workflow.status,
+      createdAt,
+      updatedAt: endedAt ?? startedAt ?? createdAt,
+      startedAt,
+      endedAt,
+      parentSessionId: workflow.parentSessionId,
+    };
+  });
+}
 
 export function buildWorkflowNodeConversations(
   workflow: WorkflowRunView

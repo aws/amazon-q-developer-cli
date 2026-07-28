@@ -17,6 +17,7 @@ import { ImageRead } from '../chat/tools/ImageRead.js';
 import { WebSearch } from '../chat/tools/WebSearch.js';
 import { WebFetch } from '../chat/tools/WebFetch.js';
 import { SessionTool } from '../chat/tools/SessionTool.js';
+import { WorkflowTool } from '../chat/tools/WorkflowTool.js';
 import { Tool } from '../chat/tools/Tool.js';
 import { ToolMeta } from '../chat/tools/ToolMeta.js';
 import {
@@ -47,6 +48,7 @@ import {
   IMAGE_READ_TOOL_NAMES,
   TASK_TOOL_NAMES,
   KNOWLEDGE_TOOL_NAMES,
+  WORKFLOW_TOOL_NAMES,
   type ToolDiff,
   type ToolKind,
   type ToolCallLocation,
@@ -307,6 +309,18 @@ const FullToolContent = React.memo(function FullToolContent({
         <MarkdownRenderer content={name} color={getColor('primary')} />
         {cancelled && <Text>{getColor('error')('Cancelled')}</Text>}
       </Box>
+    );
+  }
+
+  if (WORKFLOW_TOOL_NAMES.has(name)) {
+    return (
+      <WorkflowTool
+        name={name}
+        isFinished={effectiveFinished}
+        content={content}
+        result={result}
+        status={status}
+      />
     );
   }
 

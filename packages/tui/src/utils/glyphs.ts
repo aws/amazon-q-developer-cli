@@ -19,6 +19,7 @@ export interface Glyphs {
   progress75: string;
   executing: string;
   lineHorizontal: string;
+  lineHorizontalHeavy: string;
   lineVertical: string;
   cornerTopRight: string;
   cornerBottomRight: string;
@@ -82,6 +83,7 @@ export const UNICODE_GLYPHS: Glyphs = {
   progress75: '◕',
   executing: '◐',
   lineHorizontal: '─',
+  lineHorizontalHeavy: '━',
   lineVertical: '│',
   cornerTopRight: '┐',
   cornerBottomRight: '┘',
@@ -136,6 +138,7 @@ export const ASCII_GLYPHS: Glyphs = {
   progress75: '/',
   executing: '*',
   lineHorizontal: '-',
+  lineHorizontalHeavy: '-',
   lineVertical: '|',
   cornerTopRight: '+',
   cornerBottomRight: '+',

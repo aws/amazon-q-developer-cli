@@ -6,6 +6,7 @@ import {
   AgentEventType,
   type AgentStreamEvent,
   type KasModelConfigUpdateEvent,
+  type WorkflowProgressStreamEvent,
 } from './types/agent-events';
 import {
   isFileWriteToolName,
@@ -46,6 +47,12 @@ import type {
   WorkflowRunSummary,
 } from './types/workflow-history';
 import type {
+  WorkflowCreateRequest,
+  WorkflowCreateResponse,
+  WorkflowInvokeResponse,
+  WorkflowRecipeDescriptor,
+} from './types/workflow-launch';
+import type {
   CommandOptionsResponse,
   CommandResult,
   CommandMeta,
@@ -64,6 +71,7 @@ import type {
   SourceProviderResourcePage,
   SourceProviderResourcesRequest,
 } from '@kiro/acp-type-covenant';
+import type { InterruptMode } from './constants/interrupt-mode';
 
 /** Narrow source-provider slice the `/repo` command needs. */
 export interface RepoProviderSource {
@@ -79,6 +87,8 @@ type LiveContentHandler = ((event: AgentStreamEvent) => void) & {
 };
 
 type ClientSubscription = 'sessionEvent' | 'multiSession' | 'subagentList';
+
+export type WorkflowProgressSource = 'live' | 'history-replay';
 
 /**
  * Stateless Kiro class that only manages session client lifecycle.
@@ -134,7 +144,10 @@ export class Kiro {
   ) => void;
   private historyHandler?: (event: AgentStreamEvent) => void;
   private liveContentHandler?: LiveContentHandler;
-  private workflowProgressHandler?: (event: AgentStreamEvent) => void;
+  private workflowProgressHandler?: (
+    event: WorkflowProgressStreamEvent,
+    source: WorkflowProgressSource
+  ) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private initNotificationHandler?: (event: AgentStreamEvent) => void;
   private artifactWriteHandler?: (match: SpecArtifactPathMatch) => void;
@@ -427,6 +440,12 @@ export class Kiro {
     return this.sessionClient.clearSteering(sessionId);
   }
 
+  async setWorkflowNotificationDelivery(
+    delivery: InterruptMode
+  ): Promise<void> {
+    await this.sessionClient?.setWorkflowNotificationDelivery?.(delivery);
+  }
+
   get workflowConversation(): WorkflowConversationApi {
     if (!this.sessionClient) throw new Error('Kiro not initialized');
     if (!this.sessionClient.workflowConversation) {
@@ -455,6 +474,20 @@ export class Kiro {
 
   listWorkflows(): Promise<WorkflowRunSummary[]> {
     return this.workflowControl.listRuns([process.cwd()]);
+  }
+
+  listWorkflowRecipes(): Promise<WorkflowRecipeDescriptor[]> {
+    return this.workflowControl.listRecipes([process.cwd()]);
+  }
+
+  createWorkflow(
+    request: WorkflowCreateRequest
+  ): Promise<WorkflowCreateResponse> {
+    return this.workflowControl.createRun(request);
+  }
+
+  invokeWorkflow(workflowId: string): Promise<WorkflowInvokeResponse> {
+    return this.workflowControl.invokeRun(workflowId);
   }
 
   inspectWorkflow(workflowId: string): Promise<WorkflowInspectResponse> {
@@ -537,7 +570,12 @@ export class Kiro {
     return true;
   }
 
-  onWorkflowProgress(handler: (event: AgentStreamEvent) => void): void {
+  onWorkflowProgress(
+    handler: (
+      event: WorkflowProgressStreamEvent,
+      source: WorkflowProgressSource
+    ) => void
+  ): void {
     this.workflowProgressHandler = handler;
   }
 
@@ -776,12 +814,12 @@ export class Kiro {
           event.type === AgentEventType.SteeringQueued ||
           event.type === AgentEventType.SteeringConsumed ||
           event.type === AgentEventType.SteeringCleared;
-        // Observer errors and lifecycle events must follow the same route as content.
-        if (
-          event.type === AgentEventType.WorkflowProgress &&
-          this.workflowProgressHandler
-        ) {
-          this.workflowProgressHandler(event);
+        if (event.type === AgentEventType.WorkflowProgress) {
+          this.historyHandler?.(event);
+          this.workflowProgressHandler?.(
+            event,
+            this.historyReplaySubscribers > 0 ? 'history-replay' : 'live'
+          );
         }
         if (
           event.type === AgentEventType.UserMessage ||

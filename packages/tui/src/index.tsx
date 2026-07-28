@@ -88,6 +88,8 @@ import {
   resetTerminalTitle,
 } from './utils/terminal-title';
 import { installConsoleInterceptor } from './utils/console-interceptor';
+import { connectMouseCapture } from './utils/mouse-capture.js';
+import { workflowStore } from './stores/workflow-store.js';
 
 // Route every `console.*` call through `logger` (file-only). Must run
 // before any third-party code (notably `@agentclientprotocol/sdk`)
@@ -242,6 +244,7 @@ let initPromise: Promise<void> | null = null;
 // Buffer history events during init so store updates don't trigger React
 // re-renders that cycle Ink's stdin listener (which breaks input under Bun).
 let pendingHistoryEvents: AgentStreamEvent[] = [];
+let initialHistoryReplayComplete = false;
 
 const wireUpHandlers = () => {
   // Wire up history event handler so resumed sessions populate the message list.
@@ -473,6 +476,7 @@ const wireUpHandlers = () => {
 
 const startInitialization = (resumePickerSessionId?: string) => {
   if (initPromise) return initPromise;
+  initialHistoryReplayComplete = false;
 
   wireUpHandlers();
 
@@ -644,6 +648,15 @@ const startInitialization = (resumePickerSessionId?: string) => {
   kiro.onMultiSessionUpdate((sessionId: string, event: AgentStreamEvent) => {
     appStore.getState().pushSessionEvent(sessionId, event);
     getOrCreateHandler(sessionId)(event);
+  });
+  const workflowLifecycleHandler = appStore
+    .getState()
+    .createStreamEventHandler();
+  kiro.onWorkflowProgress((event, source) => {
+    workflowStore.getState().applyEvent(event.event);
+    if (source === 'live' && initialHistoryReplayComplete) {
+      workflowLifecycleHandler(event);
+    }
   });
   // Reset handler when user sends a message — ensures next response starts a fresh turn
   kiro.onSessionMessageSent = (sessionId: string) =>
@@ -1008,6 +1021,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
           }, 0);
         });
       }
+      initialHistoryReplayComplete = true;
 
       // Mark initialization complete and drain any messages queued while initializing
       appStore.setState({ isInitialized: true });
@@ -1508,6 +1522,9 @@ const startApp = async () => {
     {
       exitOnCtrlC: false,
       patchConsole: false,
+      // Install hit testing once. Terminal mouse reporting is immediately
+      // disabled below and only enabled by an explicit in-app toggle.
+      mouse: true,
       // Lite and wrap-disabled surfaces use wrap="overflow", where a logical
       // line can occupy multiple terminal rows. TUI -> lite switches update
       // this below so ordinary TUI sessions keep the old fast path.
@@ -1519,6 +1536,11 @@ const startApp = async () => {
   // Assigned before any other post-render wiring so no exit inside this
   // function finds the safety net unset while the protocol is enabled.
   resetKeyboardModes = () => instance.resetKeyboardModes();
+  const disconnectMouseCapture = connectMouseCapture(instance);
+  const stopRenderer = () => {
+    disconnectMouseCapture();
+    instance.unmount();
+  };
   let lastRendererWideLinesEnabled = rendererWideLinesEnabled(uiMode);
   appStore.subscribe((state) => {
     const enabled = rendererWideLinesEnabled(state.uiMode);
@@ -1537,14 +1559,14 @@ const startApp = async () => {
   }
 
   // Ensure twinki unmounts cleanly on exit to prevent stale terminal writes
-  appStore.setState({ onExit: () => instance.unmount() });
+  appStore.setState({ onExit: stopRenderer });
   // The cloud detach notice must land on a settled terminal — unmount the
   // renderer first so the notice text can't splice into a mid-paint frame
   // (rule lines / hint fragments fusing with "Quit session ..."). Unmount is
   // idempotent, so the process-exit unmount below stays harmless.
-  setCloudDetachNoticePreamble(() => instance.unmount());
+  setCloudDetachNoticePreamble(stopRenderer);
   process.on('exit', () => {
-    instance.unmount();
+    stopRenderer();
     try {
       if (!cliArgs.noInteractive && process.stdout.isTTY) {
         const sessionId = appStore.getState().sessionId;

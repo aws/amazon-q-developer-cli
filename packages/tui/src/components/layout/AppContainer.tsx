@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
+import { useStore } from 'zustand';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
+import { WorkflowMonitorScreen } from './workflow-monitor/index.js';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
@@ -25,6 +27,7 @@ import {
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { useAllowAnimations } from '../../hooks/useGlyphs.js';
 import { UI_VARIANTS } from './ui-variants.js';
+import { workflowStore } from '../../stores/workflow-store.js';
 
 /**
  * Enhanced-keyboard controls published on globalThis by index.tsx (the
@@ -69,6 +72,22 @@ function suspendProcess(): void {
 export const AppContainer: React.FC = () => {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
+  const hasWorkflow = useStore(
+    workflowStore,
+    (state) => state.workflows.size > 0
+  );
+  const workflowInputActive = useStore(
+    workflowStore,
+    (state) => state.inputActive
+  );
+  const workflowHistoryOpen = useStore(
+    workflowStore,
+    (state) => state.history.isOpen
+  );
+  const activityTrayExpanded = useAppStore(
+    (state) => state.activityTrayExpanded
+  );
+  const toggleActivityTray = useAppStore((state) => state.toggleActivityTray);
   const uiMode = useAppStore((state) => state.uiMode);
   const trustAllToolsRequested = useAppStore(
     (state) => state.trustAllToolsRequested
@@ -165,6 +184,10 @@ export const AppContainer: React.FC = () => {
 
     const state: AppKeypressState = {
       mode,
+      hasWorkflow,
+      workflowInputActive,
+      workflowHistoryOpen,
+      activityTrayExpanded,
       isProcessing,
       isShellEscape,
       hasCommandInput,
@@ -194,6 +217,11 @@ export const AppContainer: React.FC = () => {
         process.stdout.write('\x1b[?1049h');
         setMode('crew-monitor');
       },
+      enterWorkflowMonitor: () => {
+        process.stdout.write('\x1b[?1049h');
+        setMode('workflow-monitor');
+      },
+      collapseActivityTray: toggleActivityTray,
       fireTransientAlertAction: () => transientAlert?.action?.onAction(),
       dismissTransientAlert,
       acceptSurveyPrompt: () => {
@@ -254,6 +282,7 @@ export const AppContainer: React.FC = () => {
       )}
       {mode === 'expanded' && <ExpandedLayout />}
       {mode === 'crew-monitor' && <CrewMonitorScreen />}
+      {mode === 'workflow-monitor' && <WorkflowMonitorScreen />}
       {mode === 'session-view' && <SessionViewScreen />}
     </AnimationPausedContext.Provider>
   );

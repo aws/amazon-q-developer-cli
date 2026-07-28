@@ -52,6 +52,8 @@ export interface CreateMockCtxOptions {
   mcpRegistryCache?: CommandContext['mcpRegistryCache'];
   /** Whether the current session is a cloud session. Default: false */
   cloudSessionActive?: boolean;
+  /** Locally observed workflow runs. Default: [] */
+  localWorkflowRuns?: ReturnType<CommandContext['getLocalWorkflowRuns']>;
 }
 
 /**
@@ -100,6 +102,7 @@ export function createMockCommandContext(
     kasAvailableEfforts: opts.kasAvailableEfforts ?? [],
     showAlert: spy('showAlert') as any,
     announceSystem: spy('announceSystem') as any,
+    announceWorkflowLifecycle: spy('announceWorkflowLifecycle') as any,
     setLoadingMessage: spy('setLoadingMessage') as any,
     setActiveCommand: spy('setActiveCommand') as any,
     setCurrentModel: spy('setCurrentModel') as any,
@@ -127,6 +130,7 @@ export function createMockCommandContext(
     setShowWorkflowHistory: spy(
       'setShowWorkflowHistory'
     ) as CommandContext['setShowWorkflowHistory'],
+    getLocalWorkflowRuns: () => opts.localWorkflowRuns ?? [],
     setUpgradeDiagnostics: spy('setUpgradeDiagnostics') as any,
     setUpgradeRunPreview: spy('setUpgradeRunPreview') as any,
     setShowMcpPanel: spy('setShowMcpPanel') as any,

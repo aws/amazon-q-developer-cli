@@ -107,10 +107,16 @@ export class WorkflowParentRelayFilter {
 
   shouldSuppress(event: AgentStreamEvent, meta: KiroMeta | undefined): boolean {
     if (!PARENT_RELAY_TYPES.has(event.type)) return false;
+    const hidden =
+      meta?.visibility === 'hidden' ||
+      (meta?.agentInitiated === true &&
+        event.type === AgentEventType.UserMessage);
     const workflowOwned =
+      hidden ||
       meta?.workflow !== undefined ||
       meta?.kind === 'workflow-progress' ||
-      meta?.notification?.kind === 'workflow-progress';
+      meta?.notification?.kind === 'workflow-progress' ||
+      meta?.notification?.workflowId !== undefined;
 
     if (event.type === AgentEventType.ToolCall) {
       const tracked = this.parentRelayToolCalls.has(event.id);

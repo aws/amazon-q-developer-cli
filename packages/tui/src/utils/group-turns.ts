@@ -74,3 +74,17 @@ export function groupMessagesIntoTurns(
 
   return turns;
 }
+
+/** Whether a completed turn produced a user-visible result. */
+export function hasTurnOutcome(turn: ConversationTurn): boolean {
+  if (turn.userMessage.role === MessageRole.Model) return true;
+
+  return turn.aiMessages.some(
+    (message) =>
+      message.role === MessageRole.ToolUse ||
+      (message.role === MessageRole.Model && message.content.length > 0) ||
+      (message.role === MessageRole.System &&
+        (message.kind === 'workflow-lifecycle' ||
+          message.kind === 'workflow-completion'))
+  );
+}

@@ -23,6 +23,7 @@ import type {
 import type { SessionEvent } from './multi-session';
 import type { WorkflowConversationApi } from './workflow';
 import type { WorkflowControlApi } from './workflow-history';
+import type { InterruptMode } from '../constants/interrupt-mode';
 
 // ── KAS /context wire shapes ──────────────────────────────────────────
 // TODO: Replace these inline definitions with the typed `ContextParams`
@@ -286,6 +287,9 @@ export interface SessionClient {
    * @param sessionId - The session ID
    */
   clearSteering(sessionId: string): Promise<void>;
+
+  /** Synchronizes workflow notification delivery with the active interrupt mode. */
+  setWorkflowNotificationDelivery?(delivery: InterruptMode): Promise<void>;
 
   /** Optional engine capability for workflow-owned child conversations. */
   readonly workflowConversation?: WorkflowConversationApi;

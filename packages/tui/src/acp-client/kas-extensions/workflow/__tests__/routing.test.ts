@@ -535,7 +535,7 @@ describe('workflow ownership and event routing', () => {
     ).toBe(true);
   });
 
-  it('suppresses parent relays only when message metadata identifies a workflow', () => {
+  it('suppresses workflow-owned and hidden parent relays', () => {
     const router = new WorkflowParentRelayFilter();
     const workflowMeta: KiroMeta = {
       workflow: {
@@ -553,12 +553,16 @@ describe('workflow ownership and event routing', () => {
         workflowId: NODE_TARGET.workflowId,
       },
     };
-    const ordinaryNotificationMeta: KiroMeta = {
+    const workflowSystemNotificationMeta: KiroMeta = {
       kind: 'system-notification',
       notification: {
         kind: 'system-notification',
         workflowId: NODE_TARGET.workflowId,
       },
+    };
+    const ordinaryNotificationMeta: KiroMeta = {
+      kind: 'system-notification',
+      notification: { kind: 'system-notification' },
     };
 
     expect(
@@ -569,6 +573,27 @@ describe('workflow ownership and event routing', () => {
         assistantContent('workflow-notification'),
         notificationMeta
       )
+    ).toBe(true);
+    expect(
+      router.shouldSuppress(
+        userMessage('workflow-system-notification'),
+        workflowSystemNotificationMeta
+      )
+    ).toBe(true);
+    expect(
+      router.shouldSuppress(assistantContent('agent-initiated-turn'), {
+        agentInitiated: true,
+      })
+    ).toBe(false);
+    expect(
+      router.shouldSuppress(userMessage('agent-initiated-prompt'), {
+        agentInitiated: true,
+      })
+    ).toBe(true);
+    expect(
+      router.shouldSuppress(assistantContent('hidden-turn'), {
+        visibility: 'hidden',
+      })
     ).toBe(true);
     expect(
       router.shouldSuppress(userMessage('ordinary-parent-message'), undefined)

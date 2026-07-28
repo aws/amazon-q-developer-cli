@@ -20,8 +20,10 @@ const TRUST_ENTRY_ID = 'allow_always';
 
 export const ApprovalPanel = React.memo(function ApprovalPanel({
   approval,
+  width,
 }: {
   approval: ApprovalRequestInfo;
+  width?: number;
 }) {
   const respondToApproval = useAppStore((state) => state.respondToApproval);
   const agentEngine = useAppStore((state) => state.agentEngine);
@@ -245,6 +247,7 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
   return (
     <Panel
       title={title}
+      width={width}
       onClose={() => {
         if (page === 'trust' || page === 'kas-scope') {
           setPage('default');

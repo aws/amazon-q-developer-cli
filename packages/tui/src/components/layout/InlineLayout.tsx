@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useStore } from 'zustand';
 import { Box, Text } from './../../renderer.js';
 import { truncateToWidth } from '../../utils/text-width.js';
 import { usePlanModeToggle } from '../../hooks/usePlanModeToggle.js';
@@ -52,6 +53,7 @@ import {
   summarizeInitErrors,
   severityForInitErrors,
 } from '../../stores/app-store.js';
+import { workflowStore } from '../../stores/workflow-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useKeypress } from '../../hooks/useKeypress';
 import { useInteractionReady } from '../../hooks/useInteractionReady.js';
@@ -242,6 +244,10 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const settings = useAppStore((s) => s.settings);
   const mode = useAppStore((state) => state.mode);
   const backendPanelHandlers = useBackendPanelHandlers();
+  const workflowHistoryOpen = useStore(
+    workflowStore,
+    (state) => state.history.isOpen
+  );
 
   const toggleHintLabel = useMemo(() => {
     const binding = resolveKeybinding(settings, 'toggleInterruptMode');
@@ -834,6 +840,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               showSessionPicker ||
               showRepoPicker ||
               showCloudQuitPrompt ||
+              workflowHistoryOpen ||
               !!pendingApproval ||
               !!pendingQuestion
                 ? undefined
@@ -906,7 +913,8 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   showSurveyPanel ||
                   showSessionPicker ||
                   showRepoPicker ||
-                  showCloudQuitPrompt
+                  showCloudQuitPrompt ||
+                  workflowHistoryOpen
             }
           >
             {!pendingQuestion && <CommandMenu />}
@@ -982,6 +990,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 !showSessionPicker &&
                 !showRepoPicker &&
                 !showCloudQuitPrompt &&
+                !workflowHistoryOpen &&
                 commandInputValue.length === 0 &&
                 exitSequence === 0 &&
                 !suspendArmed

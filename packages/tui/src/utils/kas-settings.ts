@@ -12,8 +12,14 @@
 import { readCliSettings } from './cli-settings';
 import { features, Feature } from '../features';
 import { logger } from './logger';
+import { Settings } from '../constants/settings';
+import { parseInterruptMode } from '../constants/interrupt-mode';
 
-/** The shape sent as clientCapabilities._meta.kiro.settings on initialize. */
+/**
+ * The shape sent on initialize and each session/new or session/load request.
+ * KAS resolves workflow tools per session, so handshake settings alone are
+ * insufficient.
+ */
 export type KasSettings = Record<string, unknown>;
 
 /**
@@ -46,6 +52,7 @@ function applyGatedFeatures(settings: KasSettings): void {
 export function buildKasSettings(): KasSettings | undefined {
   const raw = readCliSettings();
   const settings: KasSettings = {};
+  const workflowsEnabled = features.isEnabled(Feature.Workflows);
 
   // ─── CLI defaults: tools that were always-on for CLI before settings-driven gating ───
   // These default to enabled unless explicitly disabled by the user.
@@ -111,6 +118,14 @@ export function buildKasSettings(): KasSettings | undefined {
       settings[key] = { enabled: defaultEnabled };
     }
   }
+
+  const rawInterruptMode = raw[Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR];
+  settings.workflowNotifications = {
+    enabled: workflowsEnabled,
+    delivery: parseInterruptMode(
+      typeof rawInterruptMode === 'string' ? rawInterruptMode : undefined
+    ),
+  };
 
   // ─── Feature-gated settings (FeatureManager rollout) ───────────────
   applyGatedFeatures(settings);

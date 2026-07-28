@@ -1,6 +1,7 @@
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore } from './app-store';
 import { Kiro } from '../kiro';
+import { InterruptMode } from '../constants/interrupt-mode.js';
 
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
@@ -48,7 +49,11 @@ describe('Queue state (simplified)', () => {
       const store = createTestStore();
       const mockSteerMessage = mock(() => Promise.resolve());
       (store.getState().kiro as any).steerMessage = mockSteerMessage;
-      store.setState({ sessionId: 'session-123', isInitialized: true });
+      store.setState({
+        sessionId: 'session-123',
+        isInitialized: true,
+        activeInterruptMode: InterruptMode.STEER,
+      });
 
       store.getState().queueMessage('  hello world  ');
 
@@ -64,7 +69,11 @@ describe('Queue state (simplified)', () => {
       const mockSteerMessage = mock(() => Promise.resolve());
       (store.getState().kiro as any).sendMessage = mockSendMessage;
       (store.getState().kiro as any).steerMessage = mockSteerMessage;
-      store.setState({ sessionId: 'session-123', isInitialized: true });
+      store.setState({
+        sessionId: 'session-123',
+        isInitialized: true,
+        activeInterruptMode: InterruptMode.STEER,
+      });
 
       store.getState().queueMessage('please redirect');
 

@@ -509,6 +509,11 @@ export class TUI extends Container {
     }
   }
 
+  /** Returns whether terminal mouse reporting is currently enabled. */
+  isMouseEnabled(): boolean {
+    return this.mouseEnabled;
+  }
+
   /**
    * Adds a mouse event listener. Enables mouse tracking on first listener.
    * @returns Unsubscribe function

@@ -290,11 +290,15 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       inputType: 'panel',
       local: true,
-      hint: '[list | run <recipe>]',
-      subcommands: ['list', 'run'],
+      hint: '[list | run <recipe> | pause|resume|status|cancel <workflowId>]',
+      subcommands: ['list', 'run', 'pause', 'resume', 'status', 'cancel'],
       subcommandHints: {
         list: '',
         run: '<recipe> [inputs]',
+        pause: '<workflowId>',
+        resume: '<workflowId>',
+        status: '<workflowId>',
+        cancel: '<workflowId>',
       },
     },
   },

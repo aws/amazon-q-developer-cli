@@ -13,6 +13,8 @@ export {
   Region,
   Scrollbar,
   StreamingPanel,
+  Split,
+  Tabs,
   Input,
   useTwinkiContext,
   useInput,
@@ -24,10 +26,19 @@ export {
   useMouse,
   usePaste,
   useFullscreen,
+  useTabs,
   render,
   measureElement,
   CURSOR_MARKER,
 } from 'twinki';
 
-export type { TextProps, BoxProps } from 'twinki';
-export type { Key } from 'twinki';
+export type {
+  TextProps,
+  BoxProps,
+  SplitProps,
+  Tab,
+  TabsProps,
+  UseTabsOpts,
+  TabsModel,
+} from 'twinki';
+export type { InkKey as Key } from 'twinki';

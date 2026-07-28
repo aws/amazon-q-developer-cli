@@ -3,6 +3,7 @@ import type {
   WorkflowStateSnapshot,
   WorkflowStatus,
 } from './workflow.js';
+import type { WorkflowLaunchApi } from './workflow-launch.js';
 
 /** One workflow run returned by `_kiro/workflow/list`. */
 export interface WorkflowRunSummary {
@@ -14,6 +15,11 @@ export interface WorkflowRunSummary {
   startedAt?: string;
   endedAt?: string;
   parentSessionId?: string;
+}
+
+export interface WorkflowHistoryViewState {
+  isOpen: boolean;
+  runs: readonly WorkflowRunSummary[];
 }
 
 export interface WorkflowListResponse {
@@ -43,7 +49,7 @@ export interface WorkflowCancelResponse {
 }
 
 /** Typed control plane for persisted and live workflow runs. */
-export interface WorkflowControlApi {
+export interface WorkflowControlApi extends WorkflowLaunchApi {
   listRuns(workspacePaths: readonly string[]): Promise<WorkflowRunSummary[]>;
   inspectRun(workflowId: string): Promise<WorkflowInspectResponse>;
   pauseRun(workflowId: string): Promise<WorkflowPauseResponse>;

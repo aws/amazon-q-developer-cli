@@ -1,4 +1,7 @@
-import type { AgentSession } from '../../types/multi-session.js';
+import {
+  isWorkflowSession,
+  type AgentSession,
+} from '../../types/multi-session.js';
 import { MessageRole, type MessageType } from '../../stores/app-store.js';
 import { isParentSubagentTool } from '../../types/agent-events.js';
 
@@ -114,6 +117,7 @@ export function selectSubagentToolSessions(
     if (session.id === options.mainSessionId) continue;
     if (session.id.startsWith('pending:')) continue;
     if (session.type !== 'ephemeral') continue;
+    if (isWorkflowSession(session)) continue;
     if (
       options.pipelineGroupIds !== undefined &&
       !options.pipelineGroupIds.has(session.group)

@@ -108,6 +108,14 @@ function parseKiroMeta(value: unknown): KiroMeta | null {
     if (!isOneOf(value.kind, KIRO_META_KINDS)) return null;
     result.kind = value.kind;
   }
+  if (value.agentInitiated !== undefined) {
+    if (typeof value.agentInitiated !== 'boolean') return null;
+    result.agentInitiated = value.agentInitiated;
+  }
+  if (value.visibility !== undefined) {
+    if (typeof value.visibility !== 'string') return null;
+    result.visibility = value.visibility;
+  }
   if (value.agentSubtaskId !== undefined) {
     if (typeof value.agentSubtaskId !== 'string') return null;
     result.agentSubtaskId = value.agentSubtaskId;

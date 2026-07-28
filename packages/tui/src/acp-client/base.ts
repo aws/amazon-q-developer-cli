@@ -231,9 +231,25 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   // KAS sends one steering_queued per steer (only its own text), unlike Rust
   // which echoes the whole buffer; accumulate by messageId to rebuild it.
   messageId?: string;
+  // Present only for workflow-internal notification steering. Keep this raw
+  // at the wire boundary and validate it before changing routing behavior.
+  notificationSeverity?: unknown;
 };
 
 const COMPACT_COMPLETION_FALLBACK_MS = 500;
+const KAS_NOTIFICATION_SEVERITIES = new Set([
+  'info',
+  'success',
+  'warning',
+  'error',
+]);
+
+function isKasNotificationSteering(meta: KasSessionInfoMeta): boolean {
+  return (
+    typeof meta.notificationSeverity === 'string' &&
+    KAS_NOTIFICATION_SEVERITIES.has(meta.notificationSeverity)
+  );
+}
 
 type KasTurnCompletionTelemetryPayload = {
   sessionId?: string;
@@ -1761,6 +1777,10 @@ export abstract class BaseAcpClient implements SessionClient {
         // side-effect broadcasts (like `context_usage`), so broadcast and
         // return null rather than returning the event.
         if (meta?.kind === 'steering_queued') {
+          // Workflow notifications are model-facing wakeups, not user turns.
+          // KAS supplies notificationSeverity specifically so clients can
+          // keep them out of the steering tray and conversation scrollback.
+          if (isKasNotificationSteering(meta)) return null;
           const steerBuffer =
             this.kasSteerBuffers.get(sessionStateKey) ??
             new Map<string, string>();
@@ -1773,6 +1793,7 @@ export abstract class BaseAcpClient implements SessionClient {
           return null;
         }
         if (meta?.kind === 'steering_injected') {
+          if (isKasNotificationSteering(meta)) return null;
           this.kasSteerBuffers.delete(sessionStateKey);
           emitSideEffect({
             type: AgentEventType.SteeringConsumed,

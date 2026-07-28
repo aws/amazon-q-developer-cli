@@ -7,6 +7,7 @@ import type { CommandContext } from '../types';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
 import { getActiveGlyphs } from '../../hooks/useGlyphs';
+import { shellSplit } from '../../utils/shell-split';
 
 /**
  * KAS-mode dispatch handler for `/context`.
@@ -227,39 +228,4 @@ async function runMultiMutation(
       ? `${verb} '${paths[0]}' ${preposition} context`
       : `${verb} ${ok} path(s) ${preposition} context`;
   ctx.showAlert(summary, 'success', 3000);
-}
-
-/**
- * Split a slash-command argument string into tokens, respecting quotes
- * and backslash escapes so paths with spaces survive as one token.
- * Mirrors V2's Rust `shell_split` — globs (`*`, `?`, `[`) pass through
- * literally for the agent to expand.
- */
-function shellSplit(input: string): string[] {
-  const tokens: string[] = [];
-  let cur = '';
-  let quote: '"' | "'" | null = null;
-  let has = false;
-  for (let i = 0; i < input.length; i++) {
-    const c = input.charAt(i);
-    if (quote) {
-      if (c === quote) quote = null;
-      else cur += c;
-    } else if (c === '"' || c === "'") {
-      quote = c;
-      has = true;
-    } else if (c === '\\' && i + 1 < input.length) {
-      cur += input.charAt(++i);
-      has = true;
-    } else if (/\s/.test(c)) {
-      if (has) tokens.push(cur);
-      cur = '';
-      has = false;
-    } else {
-      cur += c;
-      has = true;
-    }
-  }
-  if (has) tokens.push(cur);
-  return tokens;
 }

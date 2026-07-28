@@ -10,7 +10,11 @@ import {
   afterAll,
 } from 'bun:test';
 import { EventEmitter } from 'events';
-import { AgentEventType, ContentType } from '../types/agent-events';
+import {
+  AgentEventType,
+  ContentType,
+  type AgentStreamEvent,
+} from '../types/agent-events';
 import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
 import {
   KAS_DEFAULT_AGENT_ID,
@@ -532,6 +536,175 @@ describe('KasAcpClient', () => {
     });
   });
 
+  it('declares workflow settings in clientMeta', () => {
+    setWorkflowsEnabled(true);
+    const _client = new KasAcpClient();
+    expect(capturedKiroClientConfig?.clientMeta?.settings).toEqual(
+      expect.objectContaining({
+        workflows: { enabled: true },
+        goal: { enabled: true },
+        workflowNotifications: { enabled: true, delivery: 'steer' },
+      })
+    );
+  });
+
+  it('repeats the persisted notification delivery for new and loaded sessions', async () => {
+    setWorkflowsEnabled(true);
+    writeTestCliJson({ 'chat.defaultInterruptBehavior': 'queue' });
+    const client = new KasAcpClient({
+      stream: {
+        readable: new ReadableStream(),
+        writable: new WritableStream(),
+      },
+    });
+
+    expect(capturedKiroClientConfig?.clientMeta?.settings).toEqual(
+      expect.objectContaining({
+        workflows: { enabled: true },
+        goal: { enabled: true },
+        workflowNotifications: { enabled: true, delivery: 'queue' },
+      })
+    );
+
+    await client.newSession();
+    expect(
+      mockKiroNewSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+    ).toEqual(
+      expect.objectContaining({
+        workflows: { enabled: true },
+        goal: { enabled: true },
+        workflowNotifications: { enabled: true, delivery: 'queue' },
+      })
+    );
+
+    await client.loadSession('injected-session');
+    expect(
+      mockKiroLoadSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+    ).toEqual(
+      expect.objectContaining({
+        workflows: { enabled: true },
+        goal: { enabled: true },
+        workflowNotifications: { enabled: true, delivery: 'queue' },
+      })
+    );
+  });
+
+  it('applies a pre-session delivery toggle to new and loaded sessions', async () => {
+    setWorkflowsEnabled(true);
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    await client.setWorkflowNotificationDelivery('queue');
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalled();
+
+    await client.newSession();
+    expect(
+      mockKiroNewSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'queue' });
+
+    await client.loadSession('loaded-session');
+    expect(
+      mockKiroLoadSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'queue' });
+  });
+
+  it('updates notification delivery when KAS advertises the extension', async () => {
+    setWorkflowsEnabled(true);
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            extensionMethods: ['_kiro/session/setWorkflowNotificationDelivery'],
+          },
+        },
+      },
+    });
+    mockKiroSendExtMethod.mockResolvedValueOnce({ delivery: 'queue' });
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    await client.setWorkflowNotificationDelivery('queue');
+
+    expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+      '_kiro/session/setWorkflowNotificationDelivery',
+      {
+        sessionId: 'kas-session-1',
+        delivery: 'queue',
+      }
+    );
+  });
+
+  it('carries a confirmed delivery update into a later session load', async () => {
+    setWorkflowsEnabled(true);
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            extensionMethods: ['_kiro/session/setWorkflowNotificationDelivery'],
+          },
+        },
+      },
+    });
+    mockKiroSendExtMethod.mockResolvedValueOnce({ delivery: 'queue' });
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    await client.setWorkflowNotificationDelivery('queue');
+    await client.loadSession('loaded-session');
+
+    expect(
+      mockKiroLoadSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'queue' });
+  });
+
+  it('does not carry a rejected delivery update into a later session load', async () => {
+    setWorkflowsEnabled(true);
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            extensionMethods: ['_kiro/session/setWorkflowNotificationDelivery'],
+          },
+        },
+      },
+    });
+    mockKiroSendExtMethod.mockRejectedValueOnce(new Error('update rejected'));
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    await expect(
+      client.setWorkflowNotificationDelivery('queue')
+    ).rejects.toThrow('update rejected');
+    await client.loadSession('loaded-session');
+
+    expect(
+      mockKiroLoadSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'steer' });
+  });
+
+  it('skips notification delivery when KAS omits the extension', async () => {
+    setWorkflowsEnabled(true);
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    mockKiroSendExtMethod.mockClear();
+
+    await client.setWorkflowNotificationDelivery('queue');
+
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalled();
+  });
+
   it('emits and resolves user input through its own capability', async () => {
     const client = new KasAcpClient();
     let received: any;
@@ -697,12 +870,21 @@ describe('KasAcpClient', () => {
   });
 
   it('newSession() applies initialAgent as _meta.kiro.modeId (no mode round-trip)', async () => {
+    setWorkflowsEnabled(true);
     const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
     await client.newSession();
 
     expect(mockKiroNewSession).toHaveBeenCalledWith(
       expect.objectContaining({
-        _meta: { kiro: { modeId: 'plan' } },
+        _meta: {
+          kiro: expect.objectContaining({
+            modeId: 'plan',
+            settings: expect.objectContaining({
+              workflows: { enabled: true },
+              goal: { enabled: true },
+            }),
+          }),
+        },
       })
     );
     const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
@@ -712,6 +894,7 @@ describe('KasAcpClient', () => {
   });
 
   it('newSession() does not set mode when initialAgent absent and KIRO_MODE unset', async () => {
+    setWorkflowsEnabled(true);
     const prev = process.env.KIRO_MODE;
     delete process.env.KIRO_MODE;
     try {
@@ -721,8 +904,13 @@ describe('KasAcpClient', () => {
         ([req]: any[]) => req?.configId === 'mode'
       );
       expect(modeCalls.length).toBe(0);
-      expect(mockKiroNewSession).toHaveBeenCalledWith(
-        expect.not.objectContaining({ _meta: expect.anything() })
+      const request = mockKiroNewSession.mock.calls.at(-1)?.[0] as any;
+      expect(request?._meta?.kiro?.modeId).toBeUndefined();
+      expect(request?._meta?.kiro?.settings).toEqual(
+        expect.objectContaining({
+          workflows: { enabled: true },
+          goal: { enabled: true },
+        })
       );
     } finally {
       if (prev !== undefined) process.env.KIRO_MODE = prev;
@@ -730,13 +918,24 @@ describe('KasAcpClient', () => {
   });
 
   it('newSession() prefers initialAgent over KIRO_MODE env var', async () => {
+    setWorkflowsEnabled(true);
     const prev = process.env.KIRO_MODE;
     process.env.KIRO_MODE = KAS_DEFAULT_AGENT_ID;
     try {
       const client = new KasAcpClient({ initialAgent: 'kiro_planner' });
       await client.newSession();
       expect(mockKiroNewSession).toHaveBeenCalledWith(
-        expect.objectContaining({ _meta: { kiro: { modeId: 'plan' } } })
+        expect.objectContaining({
+          _meta: {
+            kiro: expect.objectContaining({
+              modeId: 'plan',
+              settings: expect.objectContaining({
+                workflows: { enabled: true },
+                goal: { enabled: true },
+              }),
+            }),
+          },
+        })
       );
       const modeCalls = mockKiroSetSessionConfigOption.mock.calls.filter(
         ([req]: any[]) => req?.configId === 'mode'
@@ -876,6 +1075,154 @@ describe('KasAcpClient', () => {
     expect(liveHandler).toBeDefined();
     await liveHandler(completion);
     expect(mockRecordTuiUserTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores live workflows owned by a resumed session', async () => {
+    setWorkflowsEnabled(true);
+    const parentSessionId = 'resumed-parent';
+    const workflowId = 'workflow-paused';
+    mockKiroSendExtMethod
+      .mockResolvedValueOnce({
+        runs: [
+          {
+            workflowId,
+            name: 'Paused workflow',
+            status: 'paused',
+            createdAt: '2026-07-20T10:00:00.000Z',
+            updatedAt: '2026-07-20T10:01:00.000Z',
+            parentSessionId,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        workflowId,
+        state: {
+          workflowId,
+          workflowName: 'Paused workflow',
+          status: 'paused',
+          inputs: {},
+          artifacts: {},
+          capturedOutputs: {},
+          parentSessionId,
+          root: {
+            nodeId: 'root',
+            type: 'sequence',
+            status: 'paused',
+            children: [],
+          },
+        },
+        stepSessions: [],
+      });
+    const events: AgentStreamEvent[] = [];
+    const client = new KasAcpClient();
+    client.onUpdate((event) => events.push(event));
+
+    await client.loadSession(parentSessionId);
+
+    expect(mockKiroSendExtMethod).toHaveBeenNthCalledWith(
+      1,
+      '_kiro/workflow/list',
+      { workspacePaths: [process.cwd()] }
+    );
+    expect(mockKiroSendExtMethod).toHaveBeenNthCalledWith(
+      2,
+      '_kiro/workflow/load',
+      { workflowId }
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: AgentEventType.WorkflowProgress,
+        event: expect.objectContaining({
+          type: 'run_snapshot',
+          workflowId,
+          parentSessionId,
+          state: expect.objectContaining({ status: 'paused' }),
+        }),
+      })
+    );
+  });
+
+  it('filters internal workflow prompts but preserves agent-initiated responses during replay', async () => {
+    setWorkflowsEnabled(true);
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    client.onUpdate((event: any) => events.push(event));
+    mockKiroLoadSession.mockImplementationOnce(async (request: any) => {
+      const replay = capturedSessionUpdateHandlers.get(request.sessionId);
+      expect(replay).toBeDefined();
+      await replay({
+        sessionId: request.sessionId,
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'WORKFLOW_INTERNAL' },
+          _meta: {
+            kiro: {
+              notification: {
+                kind: 'system-notification',
+                workflowId: 'workflow-1',
+              },
+            },
+          },
+        },
+      });
+      await replay({
+        sessionId: request.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'agent-initiated response' },
+          _meta: { kiro: { agentInitiated: true } },
+        },
+      });
+      await replay({
+        sessionId: request.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'hidden visibility response' },
+          _meta: { kiro: { visibility: 'hidden' } },
+        },
+      });
+      await replay({
+        sessionId: request.sessionId,
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'visible user' },
+        },
+      });
+      await replay({
+        sessionId: request.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'visible assistant' },
+        },
+      });
+      return {
+        sessionId: request.sessionId,
+        configOptions: [
+          {
+            id: 'mode',
+            category: 'mode',
+            type: 'select',
+            currentValue: 'vibe',
+            options: [{ value: 'vibe', name: 'Default' }],
+          },
+        ],
+      };
+    });
+
+    await client.loadSession('existing-session');
+
+    const replayedText = events
+      .filter(
+        (event) =>
+          event.type === AgentEventType.UserMessage ||
+          event.type === AgentEventType.Content
+      )
+      .map((event) => event.content.text);
+    expect(replayedText).toEqual([
+      'agent-initiated response',
+      'visible user',
+      'visible assistant',
+    ]);
   });
 
   it('loadSession() disposes previous session listeners', async () => {
@@ -1440,6 +1787,7 @@ describe('KasAcpClient', () => {
   });
 
   it('loads from the remote store (sessionSource:remote) for a cloud-sandbox session when advertised', async () => {
+    setWorkflowsEnabled(true);
     // session/load takes ONE concrete store (KAS rejects 'all' — list-only):
     // a cloud session reattaches remote; a local session omits the hint.
     mockKiroInitialize.mockResolvedValueOnce({
@@ -1456,10 +1804,19 @@ describe('KasAcpClient', () => {
     const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
     expect(req?.sessionId).toBe('maybe-remote-session');
     expect(req?.cwd).toBeDefined();
-    expect(req?._meta?.kiro).toEqual({ sessionSource: 'remote' });
+    expect(req?._meta?.kiro).toEqual(
+      expect.objectContaining({
+        sessionSource: 'remote',
+        settings: expect.objectContaining({
+          workflows: { enabled: true },
+          goal: { enabled: true },
+        }),
+      })
+    );
   });
 
-  it('omits the store hint on session/load for a local session even when the remote store is advertised', async () => {
+  it('omits the store hint but sends settings when loading a local session', async () => {
+    setWorkflowsEnabled(true);
     mockKiroInitialize.mockResolvedValueOnce({
       protocolVersion: '1.0',
       agentCapabilities: {
@@ -1470,18 +1827,32 @@ describe('KasAcpClient', () => {
     await client.initialize();
     await client.loadSession('local-session');
     const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
-    expect(req?._meta).toBeUndefined();
+    expect(req?._meta?.kiro?.sessionSource).toBeUndefined();
+    expect(req?._meta?.kiro?.settings).toEqual(
+      expect.objectContaining({
+        workflows: { enabled: true },
+        goal: { enabled: true },
+      })
+    );
   });
 
-  it('omits _meta.kiro on session/load when KAS advertises no remote store (existing-user path is byte-identical)', async () => {
+  it('sends settings on session/load when KAS advertises no remote store', async () => {
+    setWorkflowsEnabled(true);
     const client = new KasAcpClient(); // no initialize -> no caps captured
     await client.loadSession('local-session');
     const req = mockKiroLoadSession.mock.calls.at(-1)?.[0] as any;
     expect(req?.sessionId).toBe('local-session');
-    expect(req?._meta).toBeUndefined();
+    expect(req?._meta?.kiro?.sessionSource).toBeUndefined();
+    expect(req?._meta?.kiro?.settings).toEqual(
+      expect.objectContaining({
+        workflows: { enabled: true },
+        goal: { enabled: true },
+      })
+    );
   });
 
   it('retries session/load against the remote store when the local store reports not found', async () => {
+    setWorkflowsEnabled(true);
     // Pins the retry to the KAS not-found wording: a local miss falls through
     // to the remote store, so resuming a running cloud session still works.
     mockKiroInitialize.mockResolvedValueOnce({
@@ -1497,8 +1868,16 @@ describe('KasAcpClient', () => {
     expect(mockKiroLoadSession).toHaveBeenCalledTimes(2);
     const first = mockKiroLoadSession.mock.calls[0]?.[0] as any;
     const second = mockKiroLoadSession.mock.calls[1]?.[0] as any;
-    expect(first?._meta).toBeUndefined();
-    expect(second?._meta?.kiro).toEqual({ sessionSource: 'remote' });
+    expect(first?._meta?.kiro?.sessionSource).toBeUndefined();
+    expect(first?._meta?.kiro?.settings?.workflows).toEqual({ enabled: true });
+    expect(second?._meta?.kiro).toEqual(
+      expect.objectContaining({
+        sessionSource: 'remote',
+        settings: expect.objectContaining({
+          workflows: { enabled: true },
+        }),
+      })
+    );
   });
 
   it('does not retry the remote store when the local load fails for another reason', async () => {
@@ -2161,6 +2540,49 @@ describe('KasAcpClient', () => {
       (e) => e.type === AgentEventType.SteeringQueued
     );
     expect(queued.map((e) => e.message)).toEqual(['First', 'First\n\nSecond']);
+  });
+
+  it('keeps workflow notification steering out of chat and steer state', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'notification-1',
+      content:
+        '[notification/success] Workflow A reporting in — all systems go!',
+      notificationSeverity: 'success',
+    });
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'user-1',
+      content: 'First user steer',
+    });
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_injected',
+      messageId: 'notification-1',
+      content:
+        'A workflow you launched ("test-workflow-1") completed. Review its results and continue if you were waiting on it.',
+      notificationSeverity: 'info',
+    });
+    await sendKasSessionInfoUpdate({
+      kind: 'steering_queued',
+      messageId: 'user-2',
+      content: 'Second user steer',
+    });
+
+    const queued = events.filter(
+      (event) => event.type === AgentEventType.SteeringQueued
+    );
+    expect(queued.map((event) => event.message)).toEqual([
+      'First user steer',
+      'First user steer\n\nSecond user steer',
+    ]);
+    expect(
+      events.filter((event) => event.type === AgentEventType.SteeringConsumed)
+    ).toEqual([]);
   });
 
   it('a new session resets the steer buffer (no stale carryover after /clear mid-steer)', async () => {

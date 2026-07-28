@@ -33,9 +33,14 @@ import { useTwinkiContext } from 'twinki';
 import { useThinkingMode } from '../../hooks/useGlyphs.js';
 import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
 import type { ConversationTurn } from '../../stores/app-store.js';
-import { groupMessagesIntoTurns } from '../../utils/group-turns.js';
+import {
+  groupMessagesIntoTurns,
+  hasTurnOutcome,
+} from '../../utils/group-turns.js';
+import { includeInterleavedSystemRows } from '../../utils/conversation-system-rows.js';
 import { leadingGap } from '../../utils/message-spacing.js';
 import { CLEAR_SCREEN } from '../../utils/terminal-sequences.js';
+import { WorkflowLifecycleRow } from './WorkflowLifecycleRow.js';
 
 const CLEAR_SCREEN_AND_HOME = `${CLEAR_SCREEN}\x1b[H`;
 
@@ -67,6 +72,23 @@ const SystemMessage = React.memo(function SystemMessage({
 }: {
   message: StoreMessageType & { role: MessageRole.System };
 }) {
+  const workflowName = message.workflowName;
+  const workflowStatus = message.workflowStatus;
+  const isWorkflowLifecycle =
+    (message.kind === 'workflow-lifecycle' ||
+      message.kind === 'workflow-completion') &&
+    workflowName !== undefined &&
+    workflowStatus !== undefined;
+
+  if (isWorkflowLifecycle) {
+    return (
+      <WorkflowLifecycleRow
+        workflowName={workflowName}
+        status={workflowStatus}
+      />
+    );
+  }
+
   return (
     <Box marginY={1}>
       <StatusBar status={message.success ? 'success' : 'error'}>
@@ -415,18 +437,7 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
   const isOrphanModel = turn.userMessage.role === MessageRole.Model;
   const isPromptAnchor = turn.userMessage.role === MessageRole.User;
 
-  // Only a prompt-anchored turn with no assistant output is cancelled.
-  const hasAiContent =
-    isOrphanModel ||
-    !isPromptAnchor ||
-    turn.aiMessages.some(
-      (msg) =>
-        msg.role === MessageRole.ToolUse ||
-        // Only assistant output counts as "content". Steered user bubbles and
-        // system/status rows can live in the body, but must not mask a turn
-        // that produced no actual response.
-        (msg.role === MessageRole.Model && !!msg.content && msg.content !== '')
-    );
+  const hasAiContent = !isPromptAnchor || hasTurnOutcome(turn);
 
   return (
     <Box marginBottom={1}>
@@ -813,66 +824,18 @@ export const ConversationView = React.memo(function ConversationView({
     return { completedTurns: completed, activeTurn: active };
   }, [conversationMessages]);
 
-  const messageIndexById = new Map(
-    messages.map((message, index) => [message.id, index])
+  const groupedTurnsWithSystems = includeInterleavedSystemRows(
+    groupedActiveTurn
+      ? [...groupedCompletedTurns, groupedActiveTurn]
+      : groupedCompletedTurns,
+    messages
   );
-  const nextPromptIndexAfter = (startIndex: number): number | undefined => {
-    for (let index = startIndex + 1; index < messages.length; index++) {
-      const message = messages[index];
-      if (
-        message?.role === MessageRole.User &&
-        (message as { steered?: boolean }).steered !== true
-      ) {
-        return index;
-      }
-    }
-    return undefined;
-  };
-  const includeInterleavedSystemRows = (
-    turn: ConversationTurn
-  ): ConversationTurn => {
-    const startIndex = messageIndexById.get(turn.userMessage.id);
-    if (startIndex === undefined) return turn;
-
-    const turnBodyIds = new Set(turn.aiMessages.map((message) => message.id));
-    const nextPromptIndex = nextPromptIndexAfter(startIndex);
-    const endIndex = turn.isActive
-      ? messages.length - 1
-      : nextPromptIndex === undefined
-        ? messages.length - 1
-        : nextPromptIndex - 1;
-    const hasLaterTurnBody = (index: number): boolean => {
-      for (let laterIndex = index + 1; laterIndex <= endIndex; laterIndex++) {
-        const laterMessage = messages[laterIndex];
-        if (laterMessage && turnBodyIds.has(laterMessage.id)) return true;
-      }
-      return false;
-    };
-
-    let sawSystemRow = false;
-    const orderedBody: StoreMessageType[] = [];
-    for (let index = startIndex + 1; index <= endIndex; index++) {
-      const message = messages[index];
-      if (!message) continue;
-      if (
-        message.role === MessageRole.System &&
-        ((message as { turnOwned?: boolean }).turnOwned === true ||
-          hasLaterTurnBody(index))
-      ) {
-        sawSystemRow = true;
-        orderedBody.push(message);
-      } else if (turnBodyIds.has(message.id)) {
-        orderedBody.push(message);
-      }
-    }
-
-    return sawSystemRow ? { ...turn, aiMessages: orderedBody } : turn;
-  };
-  const completedTurnsWithSystems = groupedCompletedTurns.map(
-    includeInterleavedSystemRows
+  const completedTurnsWithSystems = groupedTurnsWithSystems.slice(
+    0,
+    groupedCompletedTurns.length
   );
   const groupedActiveTurnWithSystems = groupedActiveTurn
-    ? includeInterleavedSystemRows(groupedActiveTurn)
+    ? groupedTurnsWithSystems[groupedCompletedTurns.length]
     : undefined;
 
   const replayIdleActiveTurn =

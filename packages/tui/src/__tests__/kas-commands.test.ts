@@ -137,6 +137,10 @@ describe('kas-commands', () => {
           commands.find((command) => command.name === KasCommandName.Workflow)
             ?.meta?.hidden
         ).not.toBe(true);
+        expect(
+          commands.find((command) => command.name === KasCommandName.Workflow)
+            ?.meta?.subcommands
+        ).toEqual(['list', 'run', 'pause', 'resume', 'status', 'cancel']);
       });
     });
 

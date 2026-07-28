@@ -3,6 +3,7 @@ import type {
   WorkflowNodeDescriptor,
   WorkflowNodeState,
   WorkflowNodeStatus,
+  WorkflowProgressEvent,
   WorkflowStateSnapshot,
   WorkflowStatus,
 } from '../types/workflow.js';
@@ -56,6 +57,33 @@ function flattenPlan(
     }
   }
   return flattened;
+}
+
+function flattenState(root: WorkflowNodeState): WorkflowMonitorNode[] {
+  return workflowStateEntries(root).map(
+    ({ state, parentId, nodePath, depth }) => ({
+      id: state.nodeId,
+      type: state.type,
+      status: state.status,
+      label: state.agentName ?? state.nodeId,
+      parentId,
+      depth,
+      nodePath,
+      sessionId: state.sessionId,
+      agentName: state.agentName,
+      modelId: state.modelId,
+      effortLevel: state.effortLevel,
+      iteration: state.iteration,
+      branchId: state.branchId,
+      failureReason: state.failureReason,
+      capturedOutput: state.capturedOutput,
+      completionSignal: state.completionSignal,
+      pauseReason:
+        state.completionSignal === 'need_input'
+          ? 'Waiting for your input'
+          : undefined,
+    })
+  );
 }
 
 function reconcileNodes(
@@ -333,6 +361,36 @@ function withoutId(
   return next;
 }
 
+function parseTimestampOr(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function restoredSelectionIndex(nodes: readonly WorkflowMonitorNode[]): number {
+  const needsInput = nodes.findIndex(
+    (node) =>
+      node.sessionId !== undefined &&
+      node.status === 'paused' &&
+      node.completionSignal === 'need_input'
+  );
+  if (needsInput >= 0) return needsInput;
+
+  const activeSession = nodes.findIndex(
+    (node) =>
+      node.sessionId !== undefined &&
+      (node.status === 'running' || node.status === 'paused')
+  );
+  if (activeSession >= 0) return activeSession;
+
+  return Math.max(
+    0,
+    nodes.findIndex(
+      (node) => node.status === 'running' || node.status === 'paused'
+    )
+  );
+}
+
 function finalState(
   event: Extract<WorkflowEvent, { type: 'run_complete' }>
 ): WorkflowStateSnapshot | undefined {
@@ -341,9 +399,43 @@ function finalState(
 
 export function reduceWorkflowEvent(
   state: WorkflowCollectionState,
-  event: WorkflowEvent,
+  event: WorkflowProgressEvent,
   now: number
 ): WorkflowCollectionState {
+  if (event.type === 'run_snapshot') {
+    const previous = state.workflows.get(event.workflowId);
+    const nodes = buildWorkflowNodesFromState(event.nodePlan, event.state.root);
+    const stepSessions = mergeSessions(
+      event.stepSessions,
+      collectWorkflowSessions(event.state.root)
+    );
+    const restored: WorkflowRunView = {
+      workflowId: event.workflowId,
+      parentSessionId: event.parentSessionId,
+      name: event.state.workflowName,
+      status: event.state.status,
+      nodes,
+      stepSessions,
+      startedAt:
+        previous?.startedAt ?? parseTimestampOr(event.state.createdAt, now),
+      completedAt: null,
+      pauseReason: event.state.pauseReason,
+    };
+    const selectedIndex = previous ? undefined : restoredSelectionIndex(nodes);
+    const restoredState = replaceRun(state, restored, selectedIndex);
+    const archivedWorkflows = new Map(restoredState.archivedWorkflows);
+    archivedWorkflows.delete(event.workflowId);
+    return {
+      ...restoredState,
+      archivedWorkflows,
+      activeWorkflowId: restoredState.activeWorkflowId ?? event.workflowId,
+      pauseRequestedWorkflowIds: withoutId(
+        restoredState.pauseRequestedWorkflowIds,
+        event.workflowId
+      ),
+    };
+  }
+
   if (event.type === 'run_start') {
     const previous = state.workflows.get(event.workflowId);
     const freshNodes = flattenPlan(event.nodeTree);
@@ -606,6 +698,7 @@ export function buildWorkflowNodesFromState(
   plan: readonly WorkflowNodeDescriptor[] | undefined,
   root: WorkflowNodeState | undefined
 ): WorkflowMonitorNode[] {
+  if (root && (!plan || plan.length === 0)) return flattenState(root);
   const nodes = flattenPlan(plan ?? []);
   return root ? reconcileNodes(nodes, root) : nodes;
 }

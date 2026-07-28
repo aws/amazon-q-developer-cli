@@ -1,7 +1,11 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { AgentEventType } from '../types/agent-events';
-import type { AgentStreamEvent } from '../types/agent-events';
+import type {
+  AgentStreamEvent,
+  WorkflowProgressStreamEvent,
+} from '../types/agent-events';
+import type { WorkflowProgressSource } from '../kiro';
 import type {
   WorkflowCancelResponse,
   WorkflowInspectResponse,
@@ -9,6 +13,12 @@ import type {
   WorkflowResumeResponse,
   WorkflowRunSummary,
 } from '../types/workflow-history.js';
+import type {
+  WorkflowCreateRequest,
+  WorkflowCreateResponse,
+  WorkflowInvokeResponse,
+  WorkflowRecipeDescriptor,
+} from '../types/workflow-launch.js';
 
 // --- Mock logger ---
 mock.module('../utils/logger', () => ({
@@ -27,6 +37,21 @@ const mockSessionEventUnsubscribe = mock(() => {});
 const mockMultiSessionUnsubscribe = mock(() => {});
 const mockSubagentListUnsubscribe = mock(() => {});
 const mockWorkflowControl = {
+  listRecipes: mock(
+    (_workspacePaths: readonly string[]): Promise<WorkflowRecipeDescriptor[]> =>
+      Promise.resolve([])
+  ),
+  createRun: mock(
+    async (
+      _request: WorkflowCreateRequest
+    ): Promise<WorkflowCreateResponse> => {
+      throw new Error('createRun response not configured');
+    }
+  ),
+  invokeRun: mock(
+    (workflowId: string): Promise<WorkflowInvokeResponse> =>
+      Promise.resolve({ workflowId, status: 'running' })
+  ),
   listRuns: mock(
     (_workspacePaths: readonly string[]): Promise<WorkflowRunSummary[]> =>
       Promise.resolve([])
@@ -516,7 +541,7 @@ describe('Kiro', () => {
     expect(mockSessionClient.executeCommand).toHaveBeenCalled();
   });
 
-  it('forwards workflow history and controls through the typed capability', async () => {
+  it('forwards workflow launch, history, and controls through the typed capability', async () => {
     const kiro = new Kiro();
     const state = {
       workflowId: 'workflow-1',
@@ -539,6 +564,17 @@ describe('Kiro', () => {
       updatedAt: '2026-07-19T10:01:00.000Z',
     };
     mockWorkflowControl.listRuns.mockResolvedValueOnce([summary]);
+    mockWorkflowControl.listRecipes.mockResolvedValueOnce([
+      {
+        name: 'release',
+        source: 'bundled://release',
+        builtIn: true,
+      },
+    ]);
+    mockWorkflowControl.createRun.mockResolvedValueOnce({
+      workflowId: 'workflow-1',
+      initialState: state,
+    });
     mockWorkflowControl.inspectRun.mockResolvedValueOnce({
       workflowId: 'workflow-1',
       state,
@@ -546,6 +582,27 @@ describe('Kiro', () => {
     await kiro.initialize('/path/to/agent');
 
     await expect(kiro.listWorkflows()).resolves.toEqual([summary]);
+    await expect(kiro.listWorkflowRecipes()).resolves.toEqual([
+      {
+        name: 'release',
+        source: 'bundled://release',
+        builtIn: true,
+      },
+    ]);
+    await expect(
+      kiro.createWorkflow({
+        source: { type: 'path', workflowPath: 'bundled://release' },
+        inputs: {},
+        parentSessionId: 'parent-session',
+      })
+    ).resolves.toEqual({
+      workflowId: 'workflow-1',
+      initialState: state,
+    });
+    await expect(kiro.invokeWorkflow('workflow-1')).resolves.toEqual({
+      workflowId: 'workflow-1',
+      status: 'running',
+    });
     await expect(kiro.inspectWorkflow('workflow-1')).resolves.toEqual({
       workflowId: 'workflow-1',
       state,
@@ -565,6 +622,15 @@ describe('Kiro', () => {
     });
 
     expect(mockWorkflowControl.listRuns).toHaveBeenCalledWith([process.cwd()]);
+    expect(mockWorkflowControl.listRecipes).toHaveBeenCalledWith([
+      process.cwd(),
+    ]);
+    expect(mockWorkflowControl.createRun).toHaveBeenCalledWith({
+      source: { type: 'path', workflowPath: 'bundled://release' },
+      inputs: {},
+      parentSessionId: 'parent-session',
+    });
+    expect(mockWorkflowControl.invokeRun).toHaveBeenCalledWith('workflow-1');
     expect(mockWorkflowControl.inspectRun).toHaveBeenCalledWith('workflow-1');
     expect(mockWorkflowControl.pauseRun).toHaveBeenCalledWith('workflow-1');
     expect(mockWorkflowControl.resumeRun).toHaveBeenCalledWith('workflow-1');
@@ -1304,6 +1370,88 @@ describe('Kiro — handler registration and forwarding', () => {
 
     expect(historyHandler).toHaveBeenCalledTimes(1);
     expect(liveHandler).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps switched-session workflow lifecycle in buffered history order', async () => {
+    const incomingUser = {
+      type: AgentEventType.UserMessage,
+      id: 'incoming-user',
+      content: { type: 'text', text: 'run release' },
+    } as AgentStreamEvent;
+    const replayedWorkflow = {
+      type: AgentEventType.WorkflowProgress,
+      id: 'replayed-workflow',
+      event: {
+        type: 'run_start',
+        workflowId: 'wf-replayed',
+        workflowName: 'release',
+        inputs: {},
+        nodeTree: [],
+      },
+    } as AgentStreamEvent;
+    const liveWorkflow = {
+      type: AgentEventType.WorkflowProgress,
+      id: 'live-workflow',
+      event: {
+        type: 'run_start',
+        workflowId: 'wf-live',
+        workflowName: 'live',
+        inputs: {},
+        nodeTree: [],
+      },
+    } as AgentStreamEvent;
+    mockSessionClient.loadSession.mockImplementationOnce(async (sessionId) => {
+      broadcastMockUpdate(incomingUser);
+      broadcastMockUpdate(replayedWorkflow);
+      return {
+        sessionId,
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: { name: 'test-agent' },
+      };
+    });
+
+    const renderedIds = ['outgoing-user'];
+    const kiro = new Kiro();
+    const liveHandler = Object.assign(
+      (event: AgentStreamEvent) =>
+        renderedIds.push('id' in event ? event.id : event.type),
+      {
+        resetSession: mock(() => {}),
+        setHistoryReplay: mock((_value: boolean) => {}),
+      }
+    );
+    kiro.onLiveContent(liveHandler);
+    kiro.onWorkflowProgress(
+      (event: WorkflowProgressStreamEvent, source: WorkflowProgressSource) => {
+        if (source === 'live') renderedIds.push(event.id);
+      }
+    );
+    await kiro.initialize('/path/to/agent');
+
+    const buffered: AgentStreamEvent[] = [];
+    await kiro.loadSession('incoming-session', (event: AgentStreamEvent) =>
+      buffered.push(event)
+    );
+
+    expect(renderedIds).toEqual(['outgoing-user']);
+    expect(
+      buffered.map((event) => ('id' in event ? event.id : event.type))
+    ).toEqual(['incoming-user', 'replayed-workflow']);
+
+    expect(kiro.replayHistory(buffered)).toBe(true);
+    expect(renderedIds).toEqual([
+      'outgoing-user',
+      'incoming-user',
+      'replayed-workflow',
+    ]);
+
+    broadcastMockUpdate(liveWorkflow);
+    expect(renderedIds).toEqual([
+      'outgoing-user',
+      'incoming-user',
+      'replayed-workflow',
+      'live-workflow',
+    ]);
   });
 
   it('routes steering lifecycle through the persistent handler during a local prompt', async () => {

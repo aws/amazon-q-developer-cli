@@ -1,5 +1,9 @@
 import { createStore, type StoreApi } from 'zustand';
-import type { WorkflowEvent } from '../types/workflow.js';
+import type { WorkflowProgressEvent } from '../types/workflow.js';
+import type {
+  WorkflowHistoryViewState,
+  WorkflowRunSummary,
+} from '../types/workflow-history.js';
 import type {
   WorkflowCollectionState,
   WorkflowMonitorLayout,
@@ -30,14 +34,21 @@ function collectionState(): WorkflowCollectionState {
 }
 
 export interface WorkflowStoreState extends WorkflowCollectionState {
+  history: WorkflowHistoryViewState;
   monitorLayout: WorkflowMonitorLayout;
   monitorSplitRatios: Record<WorkflowMonitorLayout, number>;
   inputActive: boolean;
   nodeConversations: WorkflowNodeConversation[];
 
-  applyEvent(event: WorkflowEvent): void;
+  applyEvent(event: WorkflowProgressEvent): void;
   setActiveWorkflow(workflowId: string): void;
   removeWorkflow(workflowId: string): void;
+  openWorkflowHistory(runs: readonly WorkflowRunSummary[]): void;
+  closeWorkflowHistory(): void;
+  setHistoryRunStatus(
+    workflowId: string,
+    status: WorkflowRunSummary['status']
+  ): void;
   openHistoricalWorkflow(workflow: WorkflowRunView): void;
   setSelectedNode(index: number): void;
   setWorkflowSurfaceOpen(surface: WorkflowSurface, isOpen: boolean): void;
@@ -54,6 +65,7 @@ export function createWorkflowStore(
 ): StoreApi<WorkflowStoreState> {
   return createStore<WorkflowStoreState>((set) => ({
     ...collectionState(),
+    history: { isOpen: false, runs: [] },
     monitorLayout: 'side-by-side',
     monitorSplitRatios: { ...DEFAULT_SPLIT_RATIOS },
     inputActive: false,
@@ -77,6 +89,24 @@ export function createWorkflowStore(
             ? (workflows.keys().next().value ?? null)
             : state.activeWorkflowId;
         return { workflows, selectedNodeIndices, activeWorkflowId };
+      }),
+    openWorkflowHistory: (runs) =>
+      set({ history: { isOpen: true, runs: [...runs] } }),
+    closeWorkflowHistory: () =>
+      set((state) => ({
+        history: { ...state.history, isOpen: false },
+      })),
+    setHistoryRunStatus: (workflowId, status) =>
+      set((state) => {
+        let changed = false;
+        const runs = state.history.runs.map((run) => {
+          if (run.workflowId !== workflowId || run.status === status) {
+            return run;
+          }
+          changed = true;
+          return { ...run, status };
+        });
+        return changed ? { history: { ...state.history, runs } } : {};
       }),
     openHistoricalWorkflow: (workflow) =>
       set((state) => ({
@@ -150,6 +180,7 @@ export function createWorkflowStore(
     reset: () =>
       set({
         ...collectionState(),
+        history: { isOpen: false, runs: [] },
         monitorLayout: 'side-by-side',
         monitorSplitRatios: { ...DEFAULT_SPLIT_RATIOS },
         inputActive: false,

@@ -4,6 +4,7 @@ import type {
   AgentStreamEvent,
   ApprovalRequestInfo,
 } from '../../../types/agent-events.js';
+import { AgentEventType, ContentType } from '../../../types/agent-events.js';
 import { isTerminalWorkflowNodeStatus } from '../../../types/workflow-status.js';
 import type { AcpSessionUpdate } from '../../base.js';
 import type { Disposable, KasExtensionRuntime } from '../runtime.js';
@@ -114,6 +115,7 @@ export class WorkflowChildSessions {
 
       try {
         try {
+          this.projectPrompt(owner.sessionId, text);
           await this.runtime.promptSession(owner.sessionId, text);
         } catch (error) {
           if (!this.isSessionNotFoundError(error)) throw error;
@@ -124,6 +126,7 @@ export class WorkflowChildSessions {
             requirePersisted: true,
           });
           this.assertOwnerActive(owner);
+          this.projectPrompt(owner.sessionId, text);
           await this.runtime.promptSession(owner.sessionId, text);
         }
       } finally {
@@ -275,6 +278,17 @@ export class WorkflowChildSessions {
     }
     this.liveTranscripts.add(sessionId);
     this.host.emitEffect({ type: 'child_event', sessionId, event });
+  }
+
+  private projectPrompt(sessionId: string, content: string): void {
+    // session/prompt does not echo a live user_message_chunk. Project the
+    // accepted prompt before child thinking/output so the completed-node
+    // conversation preserves its user turn, matching KiroProjects.
+    this.routeEvent(sessionId, {
+      type: AgentEventType.UserMessage,
+      id: `workflow-local-${crypto.randomUUID()}`,
+      content: { type: ContentType.Text, text: content },
+    });
   }
 
   private async loadTranscript(

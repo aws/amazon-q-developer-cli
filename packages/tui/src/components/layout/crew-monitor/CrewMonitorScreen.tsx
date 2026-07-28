@@ -36,8 +36,7 @@ function useSessionsWithEvents(): Set<string> {
   }, [raw]);
 }
 
-export const CrewMonitorScreen: React.FC = () => {
-  useFullscreen();
+export const CrewMonitorContent: React.FC = () => {
   const [elapsed, setElapsed] = useState(0);
   const focusedCrewIndex = useAppStore((state) => state.focusedCrewIndex);
   const [selectedIndex, setSelectedIndex] = useState(focusedCrewIndex);
@@ -228,4 +227,9 @@ export const CrewMonitorScreen: React.FC = () => {
       height={height}
     />
   );
+};
+
+export const CrewMonitorScreen: React.FC = () => {
+  useFullscreen();
+  return <CrewMonitorContent />;
 };

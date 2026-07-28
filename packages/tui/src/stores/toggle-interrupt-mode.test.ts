@@ -8,6 +8,7 @@ mock.module('../kiro', () => ({
     sendMessage: mock(),
     steerMessage: mock(),
     clearSteering: mock(),
+    setWorkflowNotificationDelivery: mock(() => Promise.resolve()),
     cancel: mock(),
     close: mock(),
   })),
@@ -24,6 +25,20 @@ function createTestStore() {
   return store;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushAsyncWork() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('toggleInterruptMode', () => {
   describe('Steering → Queueing', () => {
     it('flips mode from steering to queuing', () => {
@@ -33,6 +48,100 @@ describe('toggleInterruptMode', () => {
       store.getState().toggleInterruptMode();
 
       expect(store.getState().activeInterruptMode).toBe('queue');
+    });
+
+    it('synchronizes workflow notification delivery with KAS', async () => {
+      const store = createTestStore();
+      store.setState({ activeInterruptMode: 'steer' });
+
+      store.getState().toggleInterruptMode();
+      await flushAsyncWork();
+
+      expect(
+        store.getState().kiro.setWorkflowNotificationDelivery
+      ).toHaveBeenCalledWith('queue');
+    });
+
+    it('rolls back when KAS rejects the policy update', async () => {
+      const store = createTestStore();
+      const syncPolicy = mock(() =>
+        Promise.reject(new Error('extension unavailable'))
+      );
+      (
+        store.getState().kiro as unknown as {
+          setWorkflowNotificationDelivery: typeof syncPolicy;
+        }
+      ).setWorkflowNotificationDelivery = syncPolicy;
+      store.setState({ activeInterruptMode: 'steer' });
+
+      store.getState().toggleInterruptMode();
+      await flushAsyncWork();
+
+      expect(store.getState().activeInterruptMode).toBe('steer');
+      expect(store.getState().transientAlert).toMatchObject({
+        message: 'Failed to switch interrupt mode',
+        status: 'error',
+      });
+    });
+
+    it('ignores a stale rejection while a newer toggle is pending', async () => {
+      const store = createTestStore();
+      const first = deferred<void>();
+      const second = deferred<void>();
+      const syncPolicy = mock((mode: string) =>
+        mode === 'queue' ? first.promise : second.promise
+      );
+      (
+        store.getState().kiro as unknown as {
+          setWorkflowNotificationDelivery: typeof syncPolicy;
+        }
+      ).setWorkflowNotificationDelivery = syncPolicy;
+      store.setState({ activeInterruptMode: 'steer' });
+
+      store.getState().toggleInterruptMode();
+      store.getState().toggleInterruptMode();
+      await flushAsyncWork();
+      expect(syncPolicy).toHaveBeenCalledTimes(1);
+
+      first.reject(new Error('stale update failed'));
+      await flushAsyncWork();
+      expect(syncPolicy).toHaveBeenCalledTimes(2);
+
+      second.resolve();
+      await flushAsyncWork();
+
+      expect(store.getState().activeInterruptMode).toBe('steer');
+      expect(store.getState().transientAlert?.status).toBe('info');
+    });
+
+    it('rolls back to the last confirmed mode when the latest toggle fails', async () => {
+      const store = createTestStore();
+      const first = deferred<void>();
+      const second = deferred<void>();
+      const syncPolicy = mock((mode: string) =>
+        mode === 'queue' ? first.promise : second.promise
+      );
+      (
+        store.getState().kiro as unknown as {
+          setWorkflowNotificationDelivery: typeof syncPolicy;
+        }
+      ).setWorkflowNotificationDelivery = syncPolicy;
+      store.setState({ activeInterruptMode: 'steer' });
+
+      store.getState().toggleInterruptMode();
+      store.getState().toggleInterruptMode();
+      await flushAsyncWork();
+
+      first.resolve();
+      await flushAsyncWork();
+      second.reject(new Error('latest update failed'));
+      await flushAsyncWork();
+
+      expect(store.getState().activeInterruptMode).toBe('queue');
+      expect(store.getState().transientAlert).toMatchObject({
+        message: 'Failed to switch interrupt mode',
+        status: 'error',
+      });
     });
 
     it('does NOT modify pendingSteerContent (no migration)', () => {

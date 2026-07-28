@@ -93,6 +93,10 @@ export interface Instance {
 	getMetrics(): RenderMetrics;
 	/** Register a callback invoked after each throttled resize (dimensions already updated). */
 	onResize(cb: () => void): void;
+	/** Enables or disables terminal mouse reporting at runtime. */
+	setMouseEnabled(enabled: boolean): void;
+	/** Returns whether terminal mouse reporting is currently enabled. */
+	isMouseEnabled(): boolean;
 }
 
 /**
@@ -431,6 +435,13 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		},
 		onResize(cb: () => void) {
 			tui.onResize(cb);
+		},
+		setMouseEnabled(enabled: boolean) {
+			if (enabled) tui.enableMouse();
+			else tui.disableMouse();
+		},
+		isMouseEnabled() {
+			return tui.isMouseEnabled();
 		},
 	};
 

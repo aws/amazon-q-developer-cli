@@ -58,6 +58,7 @@ import {
 import { shouldCancelApprovalForKilledStage } from './subagent-kill.js';
 import { engineSupportsSubagentKill } from '../../../agent-engine.js';
 import { sessionConversationsStore } from '../../../stores/session-conversations.js';
+import { workflowStore } from '../../../stores/workflow-store.js';
 import {
   selectBootIndicatorPhase,
   formatBootIndicator,
@@ -245,6 +246,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const goalStatus = useAppStore((s) => s.goalStatus);
 
   const handlers = useBackendPanelHandlers();
+  const workflowHistoryOpen = useStore(
+    workflowStore,
+    (state) => state.history.isOpen
+  );
 
   // Tick every 60s while a goal is active so the elapsed time in the status
   // line advances even when idle (mirrors InlineLayout's goal chip).
@@ -283,7 +288,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     !!artifactViewOpen ||
     showSurveyPanel ||
     showSessionPicker ||
-    showCloudQuitPrompt;
+    showCloudQuitPrompt ||
+    workflowHistoryOpen;
 
   // The lite /verbosity menu renders via <CommandMenu> (not a backend panel)
   // for its live preview + truncation editor, but presents like other

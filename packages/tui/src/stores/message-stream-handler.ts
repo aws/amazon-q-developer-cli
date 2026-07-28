@@ -67,8 +67,73 @@ export function createMessageStreamHandler(
     flushContent();
   };
 
+  const appendUserTurn = (
+    id: string,
+    content: string,
+    steered = false
+  ): void => {
+    flushNow();
+    bufferedContent = '';
+    bufferedThinking = '';
+    lastContentId = null;
+    if (!content) return;
+
+    setMessages((msgs) => {
+      const existingIndex = msgs.findIndex(
+        (message) => message.role === MessageRole.User && message.id === id
+      );
+      if (existingIndex !== -1) {
+        const existing = msgs[existingIndex]!;
+        if (existing.role !== MessageRole.User) return msgs;
+        if (
+          existing.content === content ||
+          existing.content.endsWith(content)
+        ) {
+          return msgs;
+        }
+        const next = [...msgs];
+        next[existingIndex] = {
+          ...existing,
+          content: existing.content + content,
+          steered: existing.steered || steered,
+        };
+        return next;
+      }
+
+      const last = msgs[msgs.length - 1];
+      if (
+        steered &&
+        last?.role === MessageRole.User &&
+        last.steered &&
+        last.content === content
+      ) {
+        return msgs;
+      }
+      return [
+        ...msgs,
+        {
+          id,
+          role: MessageRole.User,
+          content,
+          agentName: getAgentName?.(),
+          ...(steered ? { steered: true } : {}),
+        },
+      ];
+    });
+  };
+
   return (event: AgentStreamEvent) => {
     switch (event.type) {
+      case AgentEventType.UserMessage:
+        if (event.content.type === 'text') {
+          appendUserTurn(event.id, event.content.text);
+        }
+        break;
+
+      case AgentEventType.SteeringConsumed:
+        appendUserTurn(crypto.randomUUID(), event.content, true);
+        break;
+
       case AgentEventType.Content:
         if (event.content.type === 'text') {
           bufferedContent += event.content.text;

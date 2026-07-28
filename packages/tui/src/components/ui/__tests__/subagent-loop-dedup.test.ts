@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'bun:test';
-import type { AgentSession } from '../../../types/multi-session.js';
+import {
+  SessionLifecycleOwner,
+  type AgentSession,
+} from '../../../types/multi-session.js';
 import { MessageRole, type MessageType } from '../../../stores/app-store.js';
 import {
   selectActiveSubagentToolScopes,
@@ -117,6 +120,25 @@ describe('SubagentToolPanel loop deduplication', () => {
       'session-a',
       'session-b',
     ]);
+  });
+
+  it('excludes workflow children from generic orchestration rows', () => {
+    const sessions = [
+      makeSession({
+        id: 'workflow-child',
+        name: 'branch-alpha',
+        group: 'workflow',
+        lifecycleOwner: SessionLifecycleOwner.WorkflowExtension,
+      }),
+      makeSession({
+        id: 'crew-child',
+        name: 'current-agent',
+        group: 'pipeline-current',
+      }),
+    ];
+
+    const result = selectSubagentToolSessions(sessions);
+    expect(result.map((session) => session.id)).toEqual(['crew-child']);
   });
 
   it('scopes rows to the current pipeline invocation', () => {

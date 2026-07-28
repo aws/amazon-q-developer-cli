@@ -31,6 +31,8 @@ export interface SplitProps {
 	activeColor?: string;
 	/** Inactive pane border color. */
 	inactiveColor?: string;
+	/** Whether each pane renders its own rounded border. Defaults to true. */
+	showPaneBorders?: boolean;
 	/** Two children: pane A, pane B. */
 	children: [React.ReactElement, React.ReactElement];
 	/**
@@ -56,6 +58,7 @@ export const Split: React.FC<SplitProps> = ({
 	activePane = 'a',
 	activeColor = DEFAULT_ACTIVE,
 	inactiveColor = DEFAULT_INACTIVE,
+	showPaneBorders = true,
 	children,
 	onResize,
 }) => {
@@ -96,7 +99,7 @@ export const Split: React.FC<SplitProps> = ({
 				<Box
 					width={aWidth}
 					height={height}
-					borderStyle="round"
+					borderStyle={showPaneBorders ? 'round' : undefined}
 					borderColor={activePane === 'a' ? activeColor : inactiveColor}
 					flexDirection="column"
 				>
@@ -106,15 +109,23 @@ export const Split: React.FC<SplitProps> = ({
 					width={separatorWidth}
 					height={height}
 					flexDirection="column"
-					justifyContent="center"
+					justifyContent={showPaneBorders ? 'center' : undefined}
 					onMouseDown={startDrag}
 				>
-					<Text color={dragging ? activeColor : inactiveColor}>│</Text>
+					{showPaneBorders ? (
+						<Text color={dragging ? activeColor : inactiveColor}>│</Text>
+					) : (
+						Array.from({ length: height }, (_, index) => (
+							<Text key={index} color={dragging ? activeColor : inactiveColor}>
+								│
+							</Text>
+						))
+					)}
 				</Box>
 				<Box
 					width={bWidth}
 					height={height}
-					borderStyle="round"
+					borderStyle={showPaneBorders ? 'round' : undefined}
 					borderColor={activePane === 'b' ? activeColor : inactiveColor}
 					flexDirection="column"
 				>
@@ -135,7 +146,7 @@ export const Split: React.FC<SplitProps> = ({
 			<Box
 				width={width}
 				height={aHeight}
-				borderStyle="round"
+				borderStyle={showPaneBorders ? 'round' : undefined}
 				borderColor={activePane === 'a' ? activeColor : inactiveColor}
 				flexDirection="column"
 			>
@@ -147,7 +158,7 @@ export const Split: React.FC<SplitProps> = ({
 			<Box
 				width={width}
 				height={bHeight}
-				borderStyle="round"
+				borderStyle={showPaneBorders ? 'round' : undefined}
 				borderColor={activePane === 'b' ? activeColor : inactiveColor}
 				flexDirection="column"
 			>

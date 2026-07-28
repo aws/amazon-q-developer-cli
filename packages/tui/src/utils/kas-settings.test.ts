@@ -10,6 +10,7 @@ const CLI_DEFAULTS = {
   knowledge: { enabled: true },
   thinking: { enabled: true },
   subagentOrchestration: { enabled: true },
+  workflowNotifications: { enabled: false, delivery: 'steer' },
 };
 
 describe('buildKasSettings', () => {
@@ -65,6 +66,11 @@ describe('buildKasSettings', () => {
     return mod.buildKasSettings;
   }
 
+  function enableWorkflows(): void {
+    process.env.KIRO_ENABLED_FEATURES = JSON.stringify([Feature.Workflows]);
+    features._resetForTests();
+  }
+
   test('returns defaults when no settings file exists', async () => {
     const buildKasSettings = await getBuildKasSettings();
     expect(buildKasSettings()).toEqual(CLI_DEFAULTS);
@@ -82,16 +88,23 @@ describe('buildKasSettings', () => {
 
     expect(settings?.workflows).toBeUndefined();
     expect(settings?.goal).toBeUndefined();
+    expect(settings?.workflowNotifications).toEqual({
+      enabled: false,
+      delivery: 'steer',
+    });
   });
 
   test('enables workflow settings when the rollout is enabled', async () => {
-    process.env.KIRO_ENABLED_FEATURES = JSON.stringify([Feature.Workflows]);
-    features._resetForTests();
+    enableWorkflows();
     const buildKasSettings = await getBuildKasSettings();
     const settings = buildKasSettings();
 
     expect(settings?.workflows).toEqual({ enabled: true });
     expect(settings?.goal).toEqual({ enabled: true });
+    expect(settings?.workflowNotifications).toEqual({
+      enabled: true,
+      delivery: 'steer',
+    });
   });
 
   test('maps boolean flag to { enabled: true }', async () => {
@@ -122,6 +135,28 @@ describe('buildKasSettings', () => {
     writeSettings({ 'chat.enableCodeIntelligence': false });
     const buildKasSettings = await getBuildKasSettings();
     expect(buildKasSettings()?.codeIntelligence).toEqual({ enabled: false });
+  });
+
+  test('maps queue interrupt behavior to workflow notification delivery', async () => {
+    enableWorkflows();
+    writeSettings({ 'chat.defaultInterruptBehavior': 'queue' });
+    const buildKasSettings = await getBuildKasSettings();
+
+    expect(buildKasSettings()?.workflowNotifications).toEqual({
+      enabled: true,
+      delivery: 'queue',
+    });
+  });
+
+  test('falls back to steer for invalid interrupt behavior', async () => {
+    enableWorkflows();
+    writeSettings({ 'chat.defaultInterruptBehavior': 'later' });
+    const buildKasSettings = await getBuildKasSettings();
+
+    expect(buildKasSettings()?.workflowNotifications).toEqual({
+      enabled: true,
+      delivery: 'steer',
+    });
   });
 
   test('maps all boolean flags correctly', async () => {

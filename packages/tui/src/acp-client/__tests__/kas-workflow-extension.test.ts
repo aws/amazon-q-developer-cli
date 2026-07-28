@@ -113,6 +113,19 @@ function userUpdate(text: string): AcpSessionUpdate {
   };
 }
 
+function steeringInjectedUpdate(text: string): AcpSessionUpdate {
+  return {
+    sessionUpdate: 'session_info_update',
+    _meta: {
+      kiro: {
+        kind: 'steering_injected',
+        messageId: 'workflow-steer',
+        content: text,
+      },
+    },
+  };
+}
+
 function permissionRequest(
   sessionId: string = TARGET.sessionId
 ): acp.RequestPermissionRequest {
@@ -154,7 +167,7 @@ function nodeStartEvent(
 
 function loadedWorkflow(
   target: WorkflowNodeSessionTarget = TARGET,
-  status: 'completed' | 'running' = 'completed'
+  status: 'completed' | 'running' | 'paused' = 'completed'
 ): WorkflowLoadResponse {
   return {
     workflowId: target.workflowId,
@@ -196,6 +209,9 @@ function loadedWorkflow(
 }
 
 function textFromEvent(event: AgentStreamEvent): string | undefined {
+  if (event.type === AgentEventType.SteeringConsumed) {
+    return event.content;
+  }
   if (
     (event.type === AgentEventType.Content ||
       event.type === AgentEventType.UserMessage) &&
@@ -403,6 +419,7 @@ class FakeKasWorkflowExtensionHost implements KasWorkflowExtensionHost {
   readonly clearedSessions: string[] = [];
   readonly timeline: string[] = [];
   autoResolvePermissions = true;
+  steerBehavior?: (sessionId: string, content: string) => Promise<void>;
 
   private readonly conversations = new Map<string, AgentStreamEvent[]>();
   private nextEventId = 0;
@@ -410,8 +427,22 @@ class FakeKasWorkflowExtensionHost implements KasWorkflowExtensionHost {
   convertUpdate(
     update: AcpSessionUpdate,
     _sessionId: string,
-    _sideEffectSink: (event: AgentStreamEvent) => void
+    sideEffectSink: (event: AgentStreamEvent) => void
   ): AgentStreamEvent | null {
+    if (update.sessionUpdate === 'session_info_update') {
+      const meta = (
+        update._meta as
+          | { kiro?: { kind?: string; content?: string } }
+          | undefined
+      )?.kiro;
+      if (meta?.kind === 'steering_injected') {
+        sideEffectSink({
+          type: AgentEventType.SteeringConsumed,
+          content: meta.content ?? '',
+        });
+      }
+      return null;
+    }
     if (
       (update.sessionUpdate !== 'agent_message_chunk' &&
         update.sessionUpdate !== 'user_message_chunk') ||
@@ -475,6 +506,7 @@ class FakeKasWorkflowExtensionHost implements KasWorkflowExtensionHost {
 
   async steerSession(sessionId: string, content: string): Promise<void> {
     this.steerCalls.push({ sessionId, content });
+    await this.steerBehavior?.(sessionId, content);
   }
 
   emitEffect(effect: WorkflowExtensionEffect): void {
@@ -638,7 +670,7 @@ function emitNodeStart(
 }
 
 describe('KasWorkflowExtension', () => {
-  it('routes workflow history and controls through typed RPC contracts', async () => {
+  it('routes workflow launch, history, and controls through typed RPC contracts', async () => {
     const { transport, extension } = createFixture();
     const state = loadedWorkflow().state;
     const summary = {
@@ -650,6 +682,23 @@ describe('KasWorkflowExtension', () => {
       parentSessionId: TARGET.parentSessionId,
     } as const;
     transport.setRpcResponse('_kiro/workflow/list', { runs: [summary] });
+    transport.setRpcResponse('_kiro/workflow/listRecipes', {
+      recipes: [
+        {
+          name: 'release',
+          source: 'bundled://release',
+          builtIn: true,
+        },
+      ],
+    });
+    transport.setRpcResponse('_kiro/workflow/new', {
+      workflowId: TARGET.workflowId,
+      initialState: state,
+    });
+    transport.setRpcResponse('_kiro/workflow/invoke', {
+      workflowId: TARGET.workflowId,
+      status: 'running',
+    });
     transport.setRpcResponse('_kiro/workflow/inspect', {
       workflowId: TARGET.workflowId,
       state,
@@ -667,6 +716,27 @@ describe('KasWorkflowExtension', () => {
     await expect(extension.listRuns(['/workspace'])).resolves.toEqual([
       summary,
     ]);
+    await expect(extension.listRecipes(['/workspace'])).resolves.toEqual([
+      {
+        name: 'release',
+        source: 'bundled://release',
+        builtIn: true,
+      },
+    ]);
+    await expect(
+      extension.createRun({
+        source: { type: 'path', workflowPath: 'bundled://release' },
+        inputs: { prompt: 'ship it' },
+        parentSessionId: TARGET.parentSessionId,
+      })
+    ).resolves.toEqual({
+      workflowId: TARGET.workflowId,
+      initialState: state,
+    });
+    await expect(extension.invokeRun(TARGET.workflowId)).resolves.toEqual({
+      workflowId: TARGET.workflowId,
+      status: 'running',
+    });
     await expect(extension.inspectRun(TARGET.workflowId)).resolves.toEqual({
       workflowId: TARGET.workflowId,
       state,
@@ -690,6 +760,22 @@ describe('KasWorkflowExtension', () => {
         params: { workspacePaths: ['/workspace'] },
       },
       {
+        method: '_kiro/workflow/listRecipes',
+        params: { workspacePaths: ['/workspace'] },
+      },
+      {
+        method: '_kiro/workflow/new',
+        params: {
+          workflowPath: 'bundled://release',
+          inputs: { prompt: 'ship it' },
+          parentSessionId: TARGET.parentSessionId,
+        },
+      },
+      {
+        method: '_kiro/workflow/invoke',
+        params: { workflowId: TARGET.workflowId },
+      },
+      {
         method: '_kiro/workflow/inspect',
         params: { workflowId: TARGET.workflowId },
       },
@@ -709,6 +795,138 @@ describe('KasWorkflowExtension', () => {
         },
       },
     ]);
+  });
+
+  it('restores only live runs owned by the resumed parent', async () => {
+    const { transport, host, extension } = createFixture();
+    const pausedTarget = {
+      ...TARGET,
+      workflowId: 'workflow-paused',
+      sessionId: 'node-session-paused',
+    };
+    const running = loadedWorkflow(TARGET, 'running');
+    const paused = loadedWorkflow(pausedTarget, 'paused');
+    const failedLoadId = 'workflow-load-fails';
+    transport.setRpcResponse('_kiro/workflow/list', {
+      runs: [
+        {
+          workflowId: running.workflowId,
+          name: 'Running',
+          status: 'running',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: PARENT_SESSION_ID,
+        },
+        {
+          workflowId: paused.workflowId,
+          name: 'Paused',
+          status: 'paused',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: PARENT_SESSION_ID,
+        },
+        {
+          workflowId: 'workflow-completed',
+          name: 'Completed',
+          status: 'completed',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: PARENT_SESSION_ID,
+        },
+        {
+          workflowId: 'workflow-other-parent',
+          name: 'Other parent',
+          status: 'running',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: OTHER_PARENT_SESSION_ID,
+        },
+        {
+          workflowId: failedLoadId,
+          name: 'Failed load',
+          status: 'running',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: PARENT_SESSION_ID,
+        },
+      ],
+    });
+    transport.setWorkflowLoad(running);
+    transport.setWorkflowLoad(paused);
+
+    await expect(
+      extension.restoreParentRuns(['/workspace'])
+    ).resolves.toBeUndefined();
+
+    expect(
+      transport.requests
+        .filter(({ method }) => method === '_kiro/workflow/load')
+        .map(({ params }) => params.workflowId)
+    ).toEqual([running.workflowId, paused.workflowId, failedLoadId]);
+    expect(transport.leaseCalls).toEqual([
+      TARGET.sessionId,
+      pausedTarget.sessionId,
+    ]);
+    expect(transport.hasUpdateListener(TARGET.sessionId)).toBe(true);
+    expect(transport.hasUpdateListener(pausedTarget.sessionId)).toBe(true);
+    expect(
+      host.effects
+        .filter((effect) => effect.type === 'workflow_progress')
+        .map((effect) =>
+          effect.type === 'workflow_progress' ? effect.event : undefined
+        )
+    ).toEqual([
+      expect.objectContaining({
+        type: 'run_snapshot',
+        workflowId: running.workflowId,
+        parentSessionId: PARENT_SESSION_ID,
+      }),
+      expect.objectContaining({
+        type: 'run_snapshot',
+        workflowId: paused.workflowId,
+        parentSessionId: PARENT_SESSION_ID,
+      }),
+    ]);
+    expect(
+      host.effects.filter((effect) => effect.type === 'child_registered')
+    ).toHaveLength(2);
+  });
+
+  it('ignores unavailable or stale workflow restoration', async () => {
+    const { transport, host, extension } = createFixture();
+    transport.setRpcResponse('_kiro/workflow/list', {
+      runs: [
+        {
+          workflowId: TARGET.workflowId,
+          name: 'Running',
+          status: 'running',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: PARENT_SESSION_ID,
+        },
+      ],
+    });
+    const loadStarted = deferred<void>();
+    const releaseLoad = deferred<WorkflowLoadResponse>();
+    transport.workflowLoadBehavior = async () => {
+      loadStarted.resolve();
+      return releaseLoad.promise;
+    };
+
+    const restore = extension.restoreParentRuns(['/workspace']);
+    await loadStarted.promise;
+    extension.setParentSession(OTHER_PARENT_SESSION_ID);
+    releaseLoad.resolve(loadedWorkflow(TARGET, 'running'));
+    await expect(restore).resolves.toBeUndefined();
+
+    expect(transport.leaseCalls).toEqual([]);
+    expect(host.effects).toEqual([]);
+
+    const unavailable = createFixture();
+    await expect(
+      unavailable.extension.restoreParentRuns(['/workspace'])
+    ).resolves.toBeUndefined();
+    expect(unavailable.host.effects).toEqual([]);
   });
 
   it('registers lifecycle nodes with dedicated child listeners and session events', () => {
@@ -921,9 +1139,60 @@ describe('KasWorkflowExtension', () => {
     ]);
     expect(transport.replayCalls).toEqual([]);
     expect(transport.promptCalls).toEqual([]);
+    expect(host.conversationTexts(TARGET.sessionId)).toEqual([]);
   });
 
-  it('atomically replays a completed node and exposes later prompt echoes', async () => {
+  it('adds a steer to child history only after KAS reports it injected', async () => {
+    const { transport, host, extension } = createFixture();
+    emitNodeStart(transport);
+
+    await extension.sendMessage(TARGET, 'revise the implementation');
+    await transport.emitUpdate(
+      TARGET.sessionId,
+      agentUpdate('continued child output')
+    );
+    await transport.emitUpdate(
+      TARGET.sessionId,
+      steeringInjectedUpdate('revise the implementation')
+    );
+
+    expect(
+      host.childEvents.filter(
+        ({ event }) => event.type === AgentEventType.SteeringConsumed
+      )
+    ).toHaveLength(1);
+    expect(host.conversationTexts(TARGET.sessionId)).toEqual([
+      'continued child output',
+      'revise the implementation',
+    ]);
+  });
+
+  it('does not project a stale steer after parent ownership changes', async () => {
+    const { transport, host, extension } = createFixture();
+    emitNodeStart(transport);
+    const steerStarted = deferred<void>();
+    const releaseSteer = deferred<void>();
+    host.steerBehavior = async () => {
+      steerStarted.resolve();
+      await releaseSteer.promise;
+    };
+
+    const message = extension.sendMessage(TARGET, 'stale steer');
+    await steerStarted.promise;
+    extension.setParentSession(OTHER_PARENT_SESSION_ID);
+    releaseSteer.resolve();
+    await expect(message).resolves.toBeUndefined();
+
+    expect(host.childEvents).toEqual([]);
+    expect(
+      await transport.emitUpdate(
+        TARGET.sessionId,
+        steeringInjectedUpdate('stale steer')
+      )
+    ).toBe(false);
+  });
+
+  it('atomically replays a completed node and projects its follow-up prompt', async () => {
     const { transport, host, extension } = createFixture();
     transport.setWorkflowLoad(loadedWorkflow());
     host.seedConversation(TARGET.sessionId, [
@@ -963,6 +1232,7 @@ describe('KasWorkflowExtension', () => {
     ]);
     expect(host.conversationTexts(TARGET.sessionId)).toEqual([
       'persisted response',
+      'normal follow-up',
       'follow-up response',
     ]);
   });

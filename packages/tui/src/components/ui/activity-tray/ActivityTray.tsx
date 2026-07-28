@@ -1,32 +1,52 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useStore } from 'zustand';
 import { Box, useInput } from '../../../renderer.js';
 import {
   useTaskState,
   useTaskActions,
   useQueueState,
 } from '../../../stores/selectors.js';
-import { useAppStore } from '../../../stores/app-store.js';
-import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
+import {
+  selectLiveWorkflowCount,
+  workflowStore,
+} from '../../../stores/workflow-store.js';
+import { buildUnifiedQueueEntries } from '../../../utils/queue-navigation.js';
 import { ActivityTrayCollapsed } from './ActivityTrayCollapsed.js';
 import { ActivityTrayExpanded } from './ActivityTrayExpanded.js';
 
 export const ActivityTray = React.memo(function ActivityTray() {
   const { tasks, activityTrayExpanded } = useTaskState();
-  const { pendingSteerContent } = useQueueState();
-  const queuedMessages = useAppStore((s) => s.queuedMessages);
+  const { pendingSteerContent, queuedMessages } = useQueueState();
   const toggleActivityTray = useTaskActions();
-  // showTasks off → hide the task rows (parity with lite's LiteTaskTray gate);
-  // steer/queue are not tasks, so they remain visible.
-  const { showTasks } = useVerboseDisplay();
+  const historyOpen = useStore(workflowStore, (state) => state.history.isOpen);
+  const workflowCount = useStore(
+    workflowStore,
+    (state) => state.workflows.size
+  );
+  const liveWorkflowCount = useStore(workflowStore, selectLiveWorkflowCount);
+  const setWorkflowSurfaceOpen = useStore(
+    workflowStore,
+    (state) => state.setWorkflowSurfaceOpen
+  );
 
-  const hasTasks = showTasks && tasks.length > 0;
+  const hasTasks = tasks.length > 0;
+  const queuedMessageCount = buildUnifiedQueueEntries(
+    pendingSteerContent,
+    queuedMessages
+  ).length;
+  const visible =
+    hasTasks ||
+    queuedMessageCount > 0 ||
+    liveWorkflowCount > 0 ||
+    (activityTrayExpanded && workflowCount > 0);
+  const traySurfaceOpen = visible && activityTrayExpanded;
 
-  // Both steer and queue can be visible simultaneously
-  const hasSteer = pendingSteerContent != null;
-  const hasQueue = queuedMessages.length > 0;
-  const visible = hasTasks || hasSteer || hasQueue;
-
-  const queueCount = queuedMessages.length;
+  useEffect(() => {
+    setWorkflowSurfaceOpen('tray', traySurfaceOpen);
+    return () => {
+      if (traySurfaceOpen) setWorkflowSurfaceOpen('tray', false);
+    };
+  }, [setWorkflowSurfaceOpen, traySurfaceOpen]);
 
   useInput(
     (input, key) => {
@@ -34,7 +54,7 @@ export const ActivityTray = React.memo(function ActivityTray() {
         toggleActivityTray();
       }
     },
-    { isActive: visible }
+    { isActive: visible && !historyOpen }
   );
 
   if (!visible) return null;
@@ -51,9 +71,7 @@ export const ActivityTray = React.memo(function ActivityTray() {
     <Box flexDirection="column">
       <ActivityTrayCollapsed
         hasTasks={hasTasks}
-        hasSteer={hasSteer}
-        hasQueue={hasQueue}
-        queueCount={queueCount}
+        queuedMessageCount={queuedMessageCount}
       />
     </Box>
   );

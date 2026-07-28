@@ -219,3 +219,20 @@ export type WorkflowEvent =
       type: 'steps_queued';
       pendingSteps: WorkflowNodeDescriptor[];
     });
+
+/**
+ * Local restore event built from `_kiro/workflow/load`.
+ *
+ * This is never decoded from a notification. It lets the workflow store
+ * atomically restore a live run before its child sessions resume streaming.
+ */
+export interface WorkflowRunSnapshotEvent {
+  type: 'run_snapshot';
+  workflowId: string;
+  parentSessionId: string;
+  state: WorkflowStateSnapshot;
+  stepSessions: WorkflowStepSessionRef[];
+  nodePlan?: WorkflowNodeDescriptor[];
+}
+
+export type WorkflowProgressEvent = WorkflowEvent | WorkflowRunSnapshotEvent;

@@ -33,6 +33,10 @@ const baseState = (
   overrides: Partial<AppKeypressState> = {}
 ): AppKeypressState => ({
   mode: 'inline',
+  hasWorkflow: false,
+  workflowInputActive: false,
+  workflowHistoryOpen: false,
+  activityTrayExpanded: false,
   isProcessing: false,
   isShellEscape: false,
   hasCommandInput: false,
@@ -69,6 +73,8 @@ function makeActions(): AppKeypressActions & {
     disarmSuspend: track('disarmSuspend'),
     setMode: track('setMode'),
     enterCrewMonitor: track('enterCrewMonitor'),
+    enterWorkflowMonitor: track('enterWorkflowMonitor'),
+    collapseActivityTray: track('collapseActivityTray'),
     fireTransientAlertAction: track('fireTransientAlertAction'),
     dismissTransientAlert: track('dismissTransientAlert'),
     copyOAuthUrl: track('copyOAuthUrl'),
@@ -415,16 +421,22 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
     expect(actions._calls.cancelMessage).toBeUndefined();
   });
 
-  it('q in crew-monitor returns to inline', () => {
-    const actions = makeActions();
-    dispatchAppKeypress(
-      'q',
-      blankKey(),
-      baseState({ mode: 'crew-monitor' }),
-      actions,
-      DEFAULT_BINDINGS
-    );
-    expect(actions._args.setMode).toEqual(['inline']);
+  it('q leaves monitor and generic session views', () => {
+    for (const mode of [
+      'crew-monitor',
+      'workflow-monitor',
+      'session-view',
+    ] as const) {
+      const actions = makeActions();
+      dispatchAppKeypress(
+        'q',
+        blankKey(),
+        baseState({ mode }),
+        actions,
+        DEFAULT_BINDINGS
+      );
+      expect(actions._args.setMode).toEqual(['inline']);
+    }
   });
 
   it('Ctrl+Y with transient alert action fires and dismisses', () => {
@@ -462,6 +474,110 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
       DEFAULT_BINDINGS
     );
     expect(actions._calls.enterCrewMonitor).toBe(1);
+  });
+
+  it('Ctrl+G from inline enters workflow monitor when a run is retained', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'g',
+      blankKey({ ctrl: true }),
+      baseState({ hasWorkflow: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.enterWorkflowMonitor).toBe(1);
+    expect(actions._calls.enterCrewMonitor).toBeUndefined();
+  });
+
+  it('Ctrl+G from workflow monitor returns to inline', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'g',
+      blankKey({ ctrl: true }),
+      baseState({ mode: 'workflow-monitor', hasWorkflow: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._args.setMode).toEqual(['inline']);
+  });
+
+  it('Tab from standalone agent monitor opens retained workflows', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      '',
+      blankKey({ tab: true }),
+      baseState({ mode: 'crew-monitor', hasWorkflow: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.enterWorkflowMonitor).toBe(1);
+  });
+
+  it('workflow text input prevents global shortcuts from firing', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'g',
+      blankKey({ ctrl: true }),
+      baseState({
+        mode: 'workflow-monitor',
+        hasWorkflow: true,
+        workflowInputActive: true,
+      }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.enterWorkflowMonitor).toBeUndefined();
+    expect(actions._calls.setMode).toBeUndefined();
+  });
+
+  it('workflow history prevents global shortcuts from firing underneath', () => {
+    const actions = makeActions();
+    const handled = dispatchAppKeypress(
+      'g',
+      blankKey({ ctrl: true }),
+      baseState({
+        hasWorkflow: true,
+        workflowHistoryOpen: true,
+      }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(handled).toBe(true);
+    expect(actions._calls.enterWorkflowMonitor).toBeUndefined();
+    expect(actions._calls.enterCrewMonitor).toBeUndefined();
+    expect(actions._calls.setMode).toBeUndefined();
+  });
+
+  it('Esc collapses the activity tray without cancelling the active turn', () => {
+    const actions = makeActions();
+    const handled = dispatchAppKeypress(
+      '',
+      blankKey({ escape: true }),
+      baseState({
+        activityTrayExpanded: true,
+        isProcessing: true,
+      }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(handled).toBe(true);
+    expect(actions._calls.collapseActivityTray).toBe(1);
+    expect(actions._calls.cancelMessage).toBeUndefined();
+  });
+
+  it('a hidden expanded tray does not claim Esc from the workflow monitor', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      '',
+      blankKey({ escape: true }),
+      baseState({
+        mode: 'workflow-monitor',
+        activityTrayExpanded: true,
+      }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.collapseActivityTray).toBeUndefined();
   });
 
   it('Ctrl+G from crew-monitor returns to inline', () => {

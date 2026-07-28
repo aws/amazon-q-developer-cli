@@ -2,7 +2,7 @@ import type {
   AgentStreamEvent,
   ApprovalRequestEvent,
 } from '../../../types/agent-events.js';
-import type { WorkflowEvent } from '../../../types/workflow.js';
+import type { WorkflowProgressEvent } from '../../../types/workflow.js';
 import type { WorkflowSessionOwner } from './owner-registry.js';
 
 /**
@@ -15,7 +15,7 @@ import type { WorkflowSessionOwner } from './owner-registry.js';
 export type WorkflowExtensionEffect =
   | {
       type: 'workflow_progress';
-      event: WorkflowEvent;
+      event: WorkflowProgressEvent;
     }
   | {
       type: 'child_registered';

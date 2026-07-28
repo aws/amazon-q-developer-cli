@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useMemo,
 } from 'react';
+import { useStore } from 'zustand';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useKeypress, type Key } from '../../../hooks/useKeypress.js';
 import { useGlyphs, useAllowAsciiArt } from '../../../hooks/useGlyphs.js';
@@ -14,6 +15,7 @@ import { getBarRamp } from '../../../utils/glyphs.js';
 import { Text } from '../../ui/text/Text.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import { chalk } from '../../../utils/color.js';
+import { workflowStore } from '../../../stores/workflow-store.js';
 import { PastedChip, shouldCollapsePaste } from './PastedChip.js';
 import { FileChip } from './FileChip.js';
 import {
@@ -207,8 +209,12 @@ export const PromptInput = React.memo(function PromptInput({
   // picker, source-provider gate). While one is open the prompt must not also
   // consume keystrokes, or typing (e.g. the picker's type-to-search) echoes in
   // both places at once.
-  const inputPanelOpen = useAppStore(
-    (s) => s.showRepoPicker || s.showSessionPicker || s.showSourceProviderGate
+  const appInputPanelOpen = useAppStore(
+    (s) =>
+      s.showRepoPicker ||
+      s.showSessionPicker ||
+      s.showSourceProviderGate ||
+      s.activityTrayExpanded
   );
   const specDescriptionPending = useAppStore(
     (s) => s.pendingSpecDescription !== null
@@ -216,6 +222,11 @@ export const PromptInput = React.memo(function PromptInput({
   const cancelSpecDescription = useAppStore(
     (s) => s.cancelPendingSpecDescription
   );
+  const workflowHistoryOpen = useStore(
+    workflowStore,
+    (state) => state.history.isOpen
+  );
+  const inputPanelOpen = appInputPanelOpen || workflowHistoryOpen;
   const keybindings = useKeybindings();
   const glyphs = useGlyphs();
   const { allowAsciiArt } = useAllowAsciiArt();

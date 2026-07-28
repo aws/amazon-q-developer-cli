@@ -5,13 +5,16 @@ import type {
 } from '../../../../types/workflow.js';
 import {
   parseWorkflowCancelResponse,
+  parseWorkflowCreateResponse,
   parseWorkflowInspectResponse,
+  parseWorkflowInvokeResponse,
   parseWorkflowListResponse,
   parseWorkflowPauseResponse,
   parsePersistedWorkflowProgress,
   parseWorkflowResumeResponse,
   parseWorkflowLoadResponse,
   parseWorkflowNotification,
+  parseWorkflowRecipeListResponse,
 } from '../contracts.js';
 
 const PARENT_SESSION_ID = 'parent-session';
@@ -597,6 +600,48 @@ describe('workflow protocol boundary', () => {
     ).toEqual({ ok: true, previousStatus: 'running' });
   });
 
+  it('validates workflow recipe, create, and invoke responses', () => {
+    const load = validLoadResponse();
+    expect(
+      parseWorkflowRecipeListResponse({
+        recipes: [
+          {
+            name: 'release',
+            source: 'bundled://release',
+            builtIn: true,
+            inputs: { prompt: 'string' },
+            plan: [{ nodeId: 'build', type: 'step' }],
+          },
+        ],
+      })
+    ).toEqual({
+      recipes: [
+        {
+          name: 'release',
+          source: 'bundled://release',
+          builtIn: true,
+          inputs: { prompt: 'string' },
+          plan: [{ nodeId: 'build', type: 'step' }],
+        },
+      ],
+    });
+    expect(
+      parseWorkflowCreateResponse({
+        workflowId: load.workflowId,
+        initialState: load.state,
+      })
+    ).toEqual({
+      workflowId: load.workflowId,
+      initialState: load.state,
+    });
+    expect(
+      parseWorkflowInvokeResponse({
+        workflowId: load.workflowId,
+        status: 'running',
+      })
+    ).toEqual({ workflowId: load.workflowId, status: 'running' });
+  });
+
   it('rejects malformed workflow history and control responses', () => {
     const load = validLoadResponse();
     expect(
@@ -621,6 +666,23 @@ describe('workflow protocol boundary', () => {
       parseWorkflowCancelResponse({
         ok: true,
         previousStatus: 'unknown',
+      })
+    ).toBeNull();
+    expect(
+      parseWorkflowRecipeListResponse({
+        recipes: [{ name: '', builtIn: 'yes' }],
+      })
+    ).toBeNull();
+    expect(
+      parseWorkflowCreateResponse({
+        workflowId: 'different',
+        initialState: load.state,
+      })
+    ).toBeNull();
+    expect(
+      parseWorkflowInvokeResponse({
+        workflowId: load.workflowId,
+        status: 'unknown',
       })
     ).toBeNull();
   });

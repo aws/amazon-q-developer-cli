@@ -16,14 +16,24 @@ import type {
   WorkflowResumeResponse,
   WorkflowRunSummary,
 } from '../../../types/workflow-history.js';
+import type {
+  WorkflowCreateRequest,
+  WorkflowCreateResponse,
+  WorkflowInvokeResponse,
+  WorkflowRecipeDescriptor,
+} from '../../../types/workflow-launch.js';
+import { isTerminalWorkflowNodeStatus } from '../../../types/workflow-status.js';
 import { logger } from '../../../utils/logger.js';
 import type { Disposable, KasExtensionRuntime } from '../runtime.js';
 import { WorkflowChildSessions } from './child-sessions.js';
 import {
   WORKFLOW_CANCEL_CONTRACT,
+  WORKFLOW_CREATE_CONTRACT,
   WORKFLOW_INSPECT_CONTRACT,
+  WORKFLOW_INVOKE_CONTRACT,
   WORKFLOW_LIFECYCLE_CONTRACTS,
   WORKFLOW_LIST_CONTRACT,
+  WORKFLOW_LIST_RECIPES_CONTRACT,
   WORKFLOW_LOAD_CONTRACT,
   WORKFLOW_PAUSE_CONTRACT,
   WORKFLOW_RESUME_CONTRACT,
@@ -109,7 +119,10 @@ export class KasWorkflowExtension
     sourceParentSessionId: string
   ): AgentStreamEvent | null {
     let intercepted = event;
-    if (intercepted.type === AgentEventType.WorkflowProgress) {
+    if (
+      intercepted.type === AgentEventType.WorkflowProgress &&
+      intercepted.event.type !== 'run_snapshot'
+    ) {
       const accepted = this.acceptLifecycle(
         intercepted.event,
         sourceParentSessionId
@@ -160,6 +173,95 @@ export class KasWorkflowExtension
       workspacePaths,
     });
     return response.runs;
+  }
+
+  async listRecipes(
+    workspacePaths: readonly string[]
+  ): Promise<WorkflowRecipeDescriptor[]> {
+    const response = await this.runtime.request(
+      WORKFLOW_LIST_RECIPES_CONTRACT,
+      { workspacePaths }
+    );
+    return response.recipes;
+  }
+
+  createRun(request: WorkflowCreateRequest): Promise<WorkflowCreateResponse> {
+    return this.runtime.request(WORKFLOW_CREATE_CONTRACT, request);
+  }
+
+  invokeRun(workflowId: string): Promise<WorkflowInvokeResponse> {
+    return this.runtime.request(WORKFLOW_INVOKE_CONTRACT, { workflowId });
+  }
+
+  async restoreParentRuns(workspacePaths: readonly string[]): Promise<void> {
+    const parentSessionId = this.parentSessionId;
+    if (!parentSessionId) return;
+
+    let runs: WorkflowRunSummary[];
+    try {
+      runs = await this.listRuns(workspacePaths);
+    } catch (error) {
+      logger.debug('[acp-client] Workflow restore is unavailable', { error });
+      return;
+    }
+
+    for (const run of runs) {
+      if (
+        run.parentSessionId !== parentSessionId ||
+        (run.status !== 'running' && run.status !== 'paused')
+      ) {
+        continue;
+      }
+
+      try {
+        const response = await this.runtime.request(WORKFLOW_LOAD_CONTRACT, {
+          workflowId: run.workflowId,
+        });
+        if (
+          this.parentSessionId !== parentSessionId ||
+          response.workflowId !== run.workflowId ||
+          response.state.parentSessionId !== parentSessionId ||
+          (response.state.status !== 'running' &&
+            response.state.status !== 'paused')
+        ) {
+          continue;
+        }
+
+        const registration = this.owners.registerLoadedRun(
+          response,
+          parentSessionId
+        );
+        if (!registration) continue;
+        for (const sessionId of registration.removedSessionIds) {
+          this.removeSession(sessionId);
+        }
+        this.host.emitEffect({
+          type: 'workflow_progress',
+          event: {
+            type: 'run_snapshot',
+            workflowId: response.workflowId,
+            parentSessionId,
+            state: response.state,
+            stepSessions: response.stepSessions,
+            ...(response.nodePlan === undefined
+              ? {}
+              : { nodePlan: response.nodePlan }),
+          },
+        });
+        for (const owner of registration.owners) {
+          this.activateOwner(owner);
+          this.restoreStatus(owner);
+          if (isTerminalWorkflowNodeStatus(owner.status)) {
+            this.children.disposeLeaseWhenIdle(owner.sessionId);
+          }
+        }
+      } catch (error) {
+        logger.warn('[acp-client] Failed to restore active workflow', {
+          workflowId: run.workflowId,
+          error,
+        });
+      }
+    }
   }
 
   inspectRun(workflowId: string): Promise<WorkflowInspectResponse> {

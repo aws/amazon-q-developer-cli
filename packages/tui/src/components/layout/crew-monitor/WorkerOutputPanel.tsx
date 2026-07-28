@@ -13,10 +13,12 @@ export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
   selectedStage,
   workerOutputH,
   width,
+  title = 'SUBAGENT OUTPUT',
 }: {
   selectedStage: Stage | undefined;
   workerOutputH: number;
   width: number;
+  title?: string;
 }) {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
@@ -30,7 +32,7 @@ export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
     <>
       <Box paddingX={1} marginTop={1}>
         <Text bold color="white">
-          SUBAGENT OUTPUT
+          {title}
         </Text>
         {selectedStage && (
           <Text color={getAgentColor(selectedStage.name, getColor).hex}>

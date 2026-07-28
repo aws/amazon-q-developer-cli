@@ -7,12 +7,18 @@ import {
   type HookInfo,
 } from './app-store';
 import { AgentEventType, ContentType } from '../types/agent-events';
+import type {
+  WorkflowProgressEvent,
+  WorkflowStatus,
+} from '../types/workflow.js';
 import { Kiro } from '../kiro';
+import { Feature, features } from '../features';
 
 // Mock Kiro
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),
+    sendChatSlashCommandTelemetry: mock(),
     cancel: mock(),
     close: mock(),
   })),
@@ -185,6 +191,243 @@ describe('Streaming content flush', () => {
     // Messages should not have been unnecessarily replaced
     const msgsAfter = store.getState().messages;
     expect(msgsAfter).toHaveLength(1);
+  });
+});
+
+describe('Stream event handler workflow lifecycle', () => {
+  const progress = (id: string, event: WorkflowProgressEvent) => ({
+    type: AgentEventType.WorkflowProgress as const,
+    id,
+    event,
+  });
+  const runStart = (
+    workflowId: string,
+    workflowName = 'release'
+  ): WorkflowProgressEvent => ({
+    type: 'run_start',
+    workflowId,
+    workflowName,
+    inputs: {},
+    nodeTree: [],
+  });
+  const runComplete = (
+    workflowId: string,
+    status: Extract<WorkflowStatus, 'completed' | 'failed' | 'aborted'>,
+    workflowName = 'release'
+  ): WorkflowProgressEvent => ({
+    type: 'run_complete',
+    workflowId,
+    status,
+    finalState: {
+      workflowId,
+      workflowName,
+      status,
+      inputs: {},
+      artifacts: {},
+      capturedOutputs: {},
+      root: { nodeId: 'root', type: 'sequence', status },
+    },
+  });
+
+  it('uses the launch tool row and preserves completion ownership', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    store.setState({
+      isProcessing: true,
+      messages: [
+        { id: 'launch-turn', role: MessageRole.User, content: 'run release' },
+        {
+          id: 'run-tool',
+          role: MessageRole.ToolUse,
+          name: 'run_workflow',
+          content: '{"name":"release"}',
+          isFinished: true,
+          result: {
+            status: 'success',
+            output: '{"workflowId":"wf-1"}',
+          },
+        },
+      ],
+    });
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(progress('start', runStart('wf-1')));
+    store.setState({ isProcessing: false });
+    handler(progress('complete', runComplete('wf-1', 'completed')));
+    handler(progress('duplicate', runComplete('wf-1', 'completed')));
+
+    const lifecycleRows = store
+      .getState()
+      .messages.filter(
+        (message) =>
+          message.role === MessageRole.System &&
+          (message.kind === 'workflow-lifecycle' ||
+            message.kind === 'workflow-completion')
+      );
+    expect(lifecycleRows).toHaveLength(1);
+    expect(lifecycleRows[0]).toMatchObject({
+      content: 'Workflow "release" completed',
+      workflowTurnId: 'launch-turn',
+      workflowStatus: 'completed',
+      success: true,
+    });
+  });
+
+  it('keeps a fast goal lifecycle on its settled command turn', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+    store.setState({
+      isProcessing: false,
+      messages: [
+        {
+          id: 'goal-turn',
+          role: MessageRole.User,
+          content: '/goal say hello',
+        },
+      ],
+    });
+
+    handler(progress('start', runStart('wf-goal', 'goal')));
+    handler(progress('complete', runComplete('wf-goal', 'completed', 'goal')));
+
+    const lifecycleRows = store
+      .getState()
+      .messages.filter((message) => message.role === MessageRole.System);
+    expect(lifecycleRows).toHaveLength(2);
+    expect(lifecycleRows.map((message) => message.workflowStatus)).toEqual([
+      'started',
+      'completed',
+    ]);
+    expect(lifecycleRows.map((message) => message.workflowTurnId)).toEqual([
+      'goal-turn',
+      'goal-turn',
+    ]);
+  });
+
+  it('keeps an unowned failed workflow notice standalone', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+
+    handler(progress('start', runStart('wf-2')));
+    handler(progress('failed', runComplete('wf-2', 'failed')));
+
+    const notice = store.getState().messages.at(-1);
+    expect(notice).toMatchObject({
+      role: MessageRole.System,
+      workflowStatus: 'failed',
+      success: false,
+    });
+    expect(
+      notice?.role === MessageRole.System
+        ? notice.workflowTurnId
+        : 'not-a-system-message'
+    ).toBeUndefined();
+  });
+
+  it('owns a replayed workflow with its rendered cloud prompt id', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store
+      .getState()
+      .createStreamEventHandler({ cloudReplay: true });
+    handler.setHistoryReplay(true);
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'persisted-prompt',
+      content: { type: ContentType.Text, text: 'run release' },
+    });
+    handler.setHistoryReplay(false);
+
+    const renderedPrompt = store.getState().messages.at(-1);
+    expect(renderedPrompt?.id).not.toBe('persisted-prompt');
+    handler(progress('start', runStart('wf-cloud')));
+    handler(progress('complete', runComplete('wf-cloud', 'completed')));
+
+    expect(store.getState().messages.at(-1)).toMatchObject({
+      workflowTurnId: renderedPrompt?.id,
+    });
+  });
+
+  it('keeps an in-turn steer from replacing workflow prompt ownership', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'prompt',
+      content: { type: ContentType.Text, text: 'run release' },
+    });
+    handler({ type: AgentEventType.TurnStart });
+    handler({
+      type: AgentEventType.UserMessage,
+      id: 'steer',
+      content: { type: ContentType.Text, text: 'focus on tests' },
+    });
+    handler(progress('start', runStart('wf-steered')));
+    handler(progress('complete', runComplete('wf-steered', 'completed')));
+
+    expect(store.getState().messages.at(-1)).toMatchObject({
+      workflowTurnId: 'prompt',
+    });
+  });
+});
+
+describe('/workflow command lifecycle', () => {
+  it('persists the started system row in the full TUI', async () => {
+    const originalEnabledFeatures = process.env.KIRO_ENABLED_FEATURES;
+    try {
+      process.env.KIRO_ENABLED_FEATURES = JSON.stringify([Feature.Workflows]);
+      features._resetForTests();
+      const mockKiro = new Kiro();
+      mockKiro.listWorkflowRecipes = mock(async () => [
+        {
+          name: 'release',
+          source: 'bundled://release',
+          builtIn: true,
+        },
+      ]);
+      mockKiro.createWorkflow = mock(async () => ({
+        workflowId: 'workflow-created',
+        initialState: {
+          workflowId: 'workflow-created',
+          workflowName: 'release',
+          status: 'running' as const,
+          inputs: {},
+          artifacts: {},
+          capturedOutputs: {},
+          root: {
+            nodeId: 'root',
+            type: 'sequence' as const,
+            status: 'running' as const,
+          },
+        },
+      }));
+      mockKiro.invokeWorkflow = mock(async (workflowId: string) => ({
+        workflowId,
+        status: 'running' as const,
+      }));
+      const store = createAppStore({
+        kiro: mockKiro,
+        agentEngine: 'kas',
+        uiMode: 'tui',
+      });
+      store.setState({ isInitialized: true });
+
+      await store.getState().handleUserInput('/workflow run release');
+
+      expect(store.getState().messages.at(-1)).toMatchObject({
+        id: 'workflow-lifecycle:workflow-created:started',
+        role: MessageRole.System,
+        kind: 'workflow-lifecycle',
+        workflowName: 'release',
+        workflowStatus: 'started',
+      });
+      expect(store.getState().transientAlert).toBeNull();
+    } finally {
+      if (originalEnabledFeatures === undefined) {
+        delete process.env.KIRO_ENABLED_FEATURES;
+      } else {
+        process.env.KIRO_ENABLED_FEATURES = originalEnabledFeatures;
+      }
+      features._resetForTests();
+    }
   });
 });
 

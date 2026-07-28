@@ -28,6 +28,59 @@ function setup(initialMessages: MessageType[] = []) {
 }
 
 describe('createMessageStreamHandler', () => {
+  describe('user turn boundaries', () => {
+    it('preserves protocol user messages before subsequent reasoning', async () => {
+      const { handler, getMessages } = setup();
+
+      handler({
+        type: AgentEventType.UserMessage,
+        id: 'user-1',
+        content: { type: ContentType.Text, text: 'tighten the validation' },
+      });
+      handler({
+        type: AgentEventType.Thought,
+        id: 'thought-1',
+        content: { type: ContentType.Text, text: 'Reviewing the evidence.' },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(getMessages()).toEqual([
+        {
+          id: 'user-1',
+          role: MessageRole.User,
+          content: 'tighten the validation',
+          agentName: 'test-agent',
+        },
+        {
+          id: 'thought-1',
+          role: MessageRole.Model,
+          content: '',
+          thinking: 'Reviewing the evidence.',
+          agentName: 'test-agent',
+        },
+      ]);
+    });
+
+    it('renders one consumed steering message when delivery repeats', () => {
+      const { handler, getMessages } = setup();
+      const event = {
+        type: AgentEventType.SteeringConsumed,
+        content: 'focus on the failed assertion',
+      } as const;
+
+      handler(event);
+      handler(event);
+
+      expect(getMessages()).toHaveLength(1);
+      expect(getMessages()[0]).toMatchObject({
+        role: MessageRole.User,
+        content: 'focus on the failed assertion',
+        steered: true,
+      });
+    });
+  });
+
   describe('Content events', () => {
     it('buffers text and flushes after timer', async () => {
       const { handler, getMessages } = setup();

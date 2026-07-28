@@ -165,4 +165,30 @@ describe('extension session update contract', () => {
       },
     });
   });
+
+  it('preserves typed hidden-turn markers and rejects malformed values', () => {
+    expect(
+      extractKiroMeta({
+        _meta: {
+          kiro: {
+            agentInitiated: true,
+            visibility: 'hidden',
+          },
+        },
+      })
+    ).toEqual({
+      agentInitiated: true,
+      visibility: 'hidden',
+    });
+    expect(
+      extractKiroMeta({
+        _meta: { kiro: { agentInitiated: 'true' } },
+      })
+    ).toBeUndefined();
+    expect(
+      extractKiroMeta({
+        _meta: { kiro: { visibility: 1 } },
+      })
+    ).toBeUndefined();
+  });
 });

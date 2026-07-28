@@ -20,7 +20,7 @@ import type {
   UserInputRequest,
   UserInputResponse,
 } from '@kiro/acp-type-covenant';
-import type { WorkflowEvent } from './workflow.js';
+import type { WorkflowProgressEvent } from './workflow.js';
 
 export enum AgentEventType {
   Content = 'content',
@@ -209,6 +209,18 @@ export const TASK_TOOL_NAMES: Set<string> = new Set([
   'todo',
   'Task List',
 ]);
+export const WORKFLOW_LAUNCH_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'run_workflow',
+  'Run Workflow',
+]);
+export const WORKFLOW_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...WORKFLOW_LAUNCH_TOOL_NAMES,
+  'inspect_workflow',
+  'Inspect Workflow',
+]);
+
+export const isWorkflowLaunchTool = (name?: string): boolean =>
+  name !== undefined && WORKFLOW_LAUNCH_TOOL_NAMES.has(name);
 
 /** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */
 export function resolveToolId(name: string): BuiltinToolId | undefined {
@@ -410,6 +422,14 @@ export interface KiroMeta {
   /** Discriminator for per-stage events. The pipeline parent itself has no
    *  `kind` — it is identified by the presence of `pipeline`. */
   kind?: 'agent-subtask' | 'system-notification' | 'workflow-progress';
+  /**
+   * KAS marker for a model-only turn initiated by the agent rather than the
+   * user. Older persisted transcripts may carry this transient marker on the
+   * assistant rows even though newer producers should use `visibility`.
+   */
+  agentInitiated?: boolean;
+  /** Render visibility supplied by KAS. `hidden` rows never enter chat. */
+  visibility?: string;
   agentSubtaskId?: string;
   pipeline?: {
     groupId: string;
@@ -861,7 +881,7 @@ export interface SteeringClearedEvent {
 export interface WorkflowProgressStreamEvent {
   type: AgentEventType.WorkflowProgress;
   id: string;
-  event: WorkflowEvent;
+  event: WorkflowProgressEvent;
 }
 
 export type AgentStreamEvent =

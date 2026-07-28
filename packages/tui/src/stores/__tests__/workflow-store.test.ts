@@ -4,6 +4,10 @@ import type {
   WorkflowNodeDescriptor,
   WorkflowStateSnapshot,
 } from '../../types/workflow.js';
+import type {
+  WorkflowInspectResponse,
+  WorkflowRunSummary,
+} from '../../types/workflow-history.js';
 import {
   createWorkflowStore,
   selectActiveWorkflow,
@@ -11,6 +15,7 @@ import {
   selectWorkflowNodeIndex,
 } from '../workflow-store.js';
 import {
+  buildHistoricalWorkflowRun,
   buildWorkflowNodeConversations,
   workflowActivityCounts,
   workflowProgress,
@@ -234,6 +239,72 @@ describe('workflow store', () => {
     ]);
   });
 
+  it('atomically restores a live snapshot with canonical repeat paths', () => {
+    const store = createWorkflowStore(() => 500);
+    const state: WorkflowStateSnapshot = {
+      workflowId: 'restored',
+      workflowName: 'Restored workflow',
+      status: 'paused',
+      inputs: {},
+      artifacts: {},
+      capturedOutputs: {},
+      createdAt: 'not-a-date',
+      parentSessionId: 'parent-1',
+      pauseReason: 'Waiting for review',
+      root: {
+        nodeId: 'root',
+        type: 'repeat',
+        status: 'paused',
+        children: [
+          {
+            nodeId: 'review#2',
+            type: 'step',
+            status: 'paused',
+            sessionId: 'session-review-2',
+            iteration: 2,
+            agentName: 'reviewer',
+            completionSignal: 'need_input',
+          },
+        ],
+      },
+    };
+
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'restored',
+      parentSessionId: 'parent-1',
+      state,
+      stepSessions: [],
+    });
+
+    const restored = store.getState().workflows.get('restored');
+    expect(restored).toMatchObject({
+      workflowId: 'restored',
+      parentSessionId: 'parent-1',
+      name: 'Restored workflow',
+      status: 'paused',
+      startedAt: 500,
+      completedAt: null,
+      pauseReason: 'Waiting for review',
+    });
+    expect(restored?.nodes[1]).toMatchObject({
+      id: 'review#2',
+      nodePath: ['root', 'iter-2'],
+      sessionId: 'session-review-2',
+      status: 'paused',
+    });
+    expect(restored?.stepSessions).toEqual([
+      expect.objectContaining({
+        nodeId: 'review#2',
+        nodePath: ['root', 'iter-2'],
+        sessionId: 'session-review-2',
+        status: 'paused',
+      }),
+    ]);
+    expect(store.getState().activeWorkflowId).toBe('restored');
+    expect(selectWorkflowNodeIndex(store.getState())).toBe(1);
+  });
+
   it('does not move selection while node input owns focus', () => {
     const store = createWorkflowStore();
     store.getState().applyEvent(startEvent('input'));
@@ -335,6 +406,78 @@ describe('workflow store', () => {
       'session-two',
     ]);
     expect(conversations[0]?.nodeStatus).toBe('completed');
+  });
+
+  it('owns workflow history state outside the app store', () => {
+    const store = createWorkflowStore();
+    const run: WorkflowRunSummary = {
+      workflowId: 'history',
+      name: 'Historical workflow',
+      status: 'completed',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      updatedAt: '2026-07-19T10:01:00.000Z',
+      parentSessionId: 'parent-1',
+    };
+
+    store.getState().openWorkflowHistory([run]);
+    expect(store.getState().history).toEqual({
+      isOpen: true,
+      runs: [run],
+    });
+
+    store.getState().setHistoryRunStatus(run.workflowId, 'paused');
+    expect(store.getState().history.runs[0]).toEqual({
+      ...run,
+      status: 'paused',
+    });
+
+    store.getState().closeWorkflowHistory();
+    expect(store.getState().history).toEqual({
+      isOpen: false,
+      runs: [{ ...run, status: 'paused' }],
+    });
+  });
+
+  it('builds a historical run from runtime state when nodePlan is absent', () => {
+    const run: WorkflowRunSummary = {
+      workflowId: 'history',
+      name: 'Summary name',
+      status: 'completed',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      updatedAt: '2026-07-19T10:01:00.000Z',
+      startedAt: '2026-07-19T10:00:05.000Z',
+      endedAt: '2026-07-19T10:00:45.000Z',
+      parentSessionId: 'parent-1',
+    };
+    const inspected: WorkflowInspectResponse = {
+      workflowId: run.workflowId,
+      state: snapshot(run.workflowId),
+    };
+
+    const historical = buildHistoricalWorkflowRun(run, inspected);
+
+    expect(historical).toMatchObject({
+      workflowId: 'history',
+      name: 'Workflow history',
+      status: 'completed',
+      parentSessionId: 'parent-1',
+      startedAt: Date.parse(run.startedAt!),
+      completedAt: Date.parse(run.endedAt!),
+    });
+    expect(
+      historical.nodes.map(({ id, parentId, depth, sessionId }) => ({
+        id,
+        parentId,
+        depth,
+        sessionId,
+      }))
+    ).toEqual([
+      { id: 'root', parentId: null, depth: 0, sessionId: undefined },
+      { id: 'one', parentId: 'root', depth: 1, sessionId: 'session-one' },
+      { id: 'two', parentId: 'root', depth: 1, sessionId: 'session-two' },
+    ]);
+    expect(historical.nodes[1]?.nodePath).toEqual(['root', 'one']);
+    expect(historical.stepSessions).toHaveLength(2);
   });
 
   it('tracks pause intent and clears it when the backend confirms pause', () => {

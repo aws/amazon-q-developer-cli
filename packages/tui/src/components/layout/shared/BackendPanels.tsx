@@ -4,6 +4,7 @@
  * layout supplies its own wrapper and the shared useBackendPanelHandlers.
  */
 import React, { useCallback, useMemo } from 'react';
+import { useStore } from 'zustand';
 import { ContextBreakdown } from '../../ui/ContextBreakdown.js';
 import { HelpPanel } from '../../ui/HelpPanel.js';
 import { TuiPanel } from '../../ui/TuiPanel.js';
@@ -45,6 +46,8 @@ import { copyToSystemClipboard } from '../../../commands/effects.js';
 import { engineSupportsMcpCommandActions } from '../../../agent-engine.js';
 import type { BackendPanelHandlers } from './useBackendPanelHandlers.js';
 import { runMcpPanelAction } from './mcp-panel-actions.js';
+import { workflowStore } from '../../../stores/workflow-store.js';
+import { WorkflowHistoryPanel } from '../workflow-monitor/WorkflowHistoryPanel.js';
 
 interface BackendPanelsProps {
   handlers: BackendPanelHandlers;
@@ -107,6 +110,10 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
   const closeSurveyPanel = useAppStore((s) => s.closeSurveyPanel);
   const submitSurvey = useAppStore((s) => s.submitSurvey);
+  const workflowHistoryOpen = useStore(
+    workflowStore,
+    (state) => state.history.isOpen
+  );
 
   // Overlay auth-required status onto MCP servers pending OAuth or with a forced
   // (re-)authentication in progress — same shaping both layouts had locally.
@@ -291,6 +298,9 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
           initErrors={initErrors}
           onClose={handlers.handleCloseToolsPanel}
         />
+      )}
+      {workflowHistoryOpen && (
+        <WorkflowHistoryPanel onClose={handlers.handleCloseWorkflowHistory} />
       )}
       {showGoalPanel && <GoalPanel onClose={handlers.handleCloseGoalPanel} />}
       {showTuiPanel && <TuiPanel onClose={handlers.handleCloseTuiPanel} />}

@@ -17,6 +17,7 @@ import {
   type CodePanelData,
 } from '../../../stores/app-store.js';
 import { resolveTangentSelection } from '../../../utils/tangent-nav.js';
+import { workflowStore } from '../../../stores/workflow-store.js';
 
 export function useBackendPanelHandlers() {
   const {
@@ -123,6 +124,12 @@ export function useBackendPanelHandlers() {
     clearCommandInput,
     setSettingsReturnOnEscape,
   ]);
+
+  const handleCloseWorkflowHistory = useCallback(() => {
+    workflowStore.getState().closeWorkflowHistory();
+    setActiveCommand(null);
+    clearCommandInput();
+  }, [setActiveCommand, clearCommandInput]);
 
   const handleTabFromContext = useCallback(async () => {
     try {
@@ -255,6 +262,7 @@ export function useBackendPanelHandlers() {
 
   return {
     ...closeHandlers,
+    handleCloseWorkflowHistory,
     handleCloseSettingsPanel,
     handleTabFromContext,
     handleTabFromUsage,

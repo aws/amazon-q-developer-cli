@@ -24,6 +24,13 @@ import type {
   WorkflowResumeResponse,
   WorkflowRunSummary,
 } from '../../../types/workflow-history.js';
+import type {
+  WorkflowCreateRequest,
+  WorkflowCreateResponse,
+  WorkflowInvokeResponse,
+  WorkflowRecipeDescriptor,
+  WorkflowRecipeListResponse,
+} from '../../../types/workflow-launch.js';
 import type { NotificationContract, RpcContract } from '../runtime.js';
 
 const WORKFLOW_METHOD_PREFIX = '_kiro/workflow/';
@@ -643,6 +650,93 @@ export const WORKFLOW_LOAD_CONTRACT: RpcContract<
   method: '_kiro/workflow/load',
   encode: ({ workflowId }) => ({ workflowId }),
   decode: parseWorkflowLoadResponse,
+};
+
+function isWorkflowRecipeDescriptor(
+  value: unknown
+): value is WorkflowRecipeDescriptor {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.name) &&
+    isOptionalString(value.description) &&
+    isOptionalString(value.source) &&
+    isOptionalBoolean(value.builtIn) &&
+    isOptionalString(value.validationError) &&
+    isOptionalStringMap(value.inputs) &&
+    (value.plan === undefined ||
+      (Array.isArray(value.plan) &&
+        value.plan.every((node) => isWorkflowNodeDescriptor(node))))
+  );
+}
+
+export function parseWorkflowRecipeListResponse(
+  value: unknown
+): WorkflowRecipeListResponse | null {
+  return isRecord(value) &&
+    Array.isArray(value.recipes) &&
+    value.recipes.every(isWorkflowRecipeDescriptor)
+    ? { recipes: value.recipes }
+    : null;
+}
+
+export function parseWorkflowCreateResponse(
+  value: unknown
+): WorkflowCreateResponse | null {
+  return isRecord(value) &&
+    isNonEmptyString(value.workflowId) &&
+    isWorkflowStateSnapshot(value.initialState) &&
+    value.initialState.workflowId === value.workflowId
+    ? {
+        workflowId: value.workflowId,
+        initialState: value.initialState,
+      }
+    : null;
+}
+
+export function parseWorkflowInvokeResponse(
+  value: unknown
+): WorkflowInvokeResponse | null {
+  return isRecord(value) &&
+    isNonEmptyString(value.workflowId) &&
+    isWorkflowStatus(value.status)
+    ? {
+        workflowId: value.workflowId,
+        status: value.status,
+      }
+    : null;
+}
+
+export const WORKFLOW_LIST_RECIPES_CONTRACT: RpcContract<
+  { workspacePaths: readonly string[] },
+  WorkflowRecipeListResponse
+> = {
+  method: '_kiro/workflow/listRecipes',
+  encode: ({ workspacePaths }) => ({ workspacePaths: [...workspacePaths] }),
+  decode: parseWorkflowRecipeListResponse,
+};
+
+export const WORKFLOW_CREATE_CONTRACT: RpcContract<
+  WorkflowCreateRequest,
+  WorkflowCreateResponse
+> = {
+  method: '_kiro/workflow/new',
+  encode: ({ source, inputs, parentSessionId }) => ({
+    ...(source.type === 'path'
+      ? { workflowPath: source.workflowPath }
+      : { workflow: source.workflow }),
+    inputs,
+    ...(parentSessionId === undefined ? {} : { parentSessionId }),
+  }),
+  decode: parseWorkflowCreateResponse,
+};
+
+export const WORKFLOW_INVOKE_CONTRACT: RpcContract<
+  { workflowId: string },
+  WorkflowInvokeResponse
+> = {
+  method: '_kiro/workflow/invoke',
+  encode: ({ workflowId }) => ({ workflowId }),
+  decode: parseWorkflowInvokeResponse,
 };
 
 function isWorkflowRunSummary(value: unknown): value is WorkflowRunSummary {
