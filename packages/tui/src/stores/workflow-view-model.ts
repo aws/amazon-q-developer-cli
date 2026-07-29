@@ -138,11 +138,43 @@ export function workflowActivityCounts(workflows: Iterable<WorkflowRunView>): {
   running: number;
   paused: number;
 } {
+  const { running, paused } = workflowActivitySummary(workflows);
+  return { running, paused };
+}
+
+export interface WorkflowActivitySummary {
+  running: number;
+  paused: number;
+  completedSteps: number;
+  totalSteps: number;
+}
+
+export function workflowActivitySummary(
+  workflows: Iterable<WorkflowRunView>
+): WorkflowActivitySummary {
   let running = 0;
   let paused = 0;
+  let completedSteps = 0;
+  let totalSteps = 0;
+
   for (const workflow of workflows) {
-    if (workflow.status === 'running') running += 1;
-    if (workflow.status === 'paused') paused += 1;
+    switch (workflow.status) {
+      case 'running':
+        running += 1;
+        break;
+      case 'paused':
+        paused += 1;
+        break;
+      case 'completed':
+      case 'failed':
+      case 'aborted':
+        continue;
+    }
+
+    const progress = workflowProgress(workflow.nodes);
+    completedSteps += progress.completed;
+    totalSteps += progress.total;
   }
-  return { running, paused };
+
+  return { running, paused, completedSteps, totalSteps };
 }

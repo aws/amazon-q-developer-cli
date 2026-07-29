@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import { InlineLayout } from './InlineLayout.js';
 import { LiteLayout } from './lite/LiteLayout.js';
 import { ActivityTray as TuiActivityTray } from '../ui/activity-tray/index.js';
-import { LiteTaskTray } from './lite/LiteTaskTray.js';
+import { LiteActivityTray } from './lite/LiteActivityTray.js';
 import { LiteApprovalSurface, TuiApprovalSurface } from './approval-surface.js';
 import { TuiStatusSurface } from './tui-status-surface.js';
 import { LiteStatusSurface } from './lite/status-surface.js';
@@ -33,6 +33,6 @@ export const UI_VARIANTS = {
     Layout: LiteLayout,
     ApprovalPrompt: LiteApprovalSurface,
     StatusLine: LiteStatusSurface,
-    ActivityTray: LiteTaskTray,
+    ActivityTray: LiteActivityTray,
   },
 } satisfies Record<UiMode, VariantSurfaces>;

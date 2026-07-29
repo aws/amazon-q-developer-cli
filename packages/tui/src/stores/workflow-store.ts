@@ -15,6 +15,7 @@ import {
   pruneTerminalWorkflowRuns,
   reduceWorkflowEvent,
 } from './workflow-reducer.js';
+import { isLiveWorkflowStatus } from '../types/workflow-status.js';
 
 const DEFAULT_SPLIT_RATIOS: Record<WorkflowMonitorLayout, number> = {
   'side-by-side': 0.34,
@@ -208,9 +209,7 @@ export function selectWorkflowNodeIndex(state: WorkflowStoreState): number {
 export function selectLiveWorkflowCount(state: WorkflowStoreState): number {
   let count = 0;
   for (const workflow of state.workflows.values()) {
-    if (workflow.status === 'running' || workflow.status === 'paused') {
-      count += 1;
-    }
+    if (isLiveWorkflowStatus(workflow.status)) count += 1;
   }
   return count;
 }

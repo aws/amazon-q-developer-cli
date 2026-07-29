@@ -13,7 +13,7 @@ import {
 } from '../approval-surface.js';
 import { LiteStatusSurface } from '../lite/status-surface.js';
 import { TuiStatusSurface } from '../tui-status-surface.js';
-import { LiteTaskTray } from '../lite/LiteTaskTray.js';
+import { LiteActivityTray } from '../lite/LiteActivityTray.js';
 import { ActivityTray as TuiActivityTray } from '../../ui/activity-tray/index.js';
 import type { VariantLayoutProps } from '../variant-layout.js';
 import type { StatusSurfaceProps } from '../status-surface.js';
@@ -135,7 +135,7 @@ describe('UI variant layout rendering', () => {
         Layout: LiteLayout,
         ApprovalPrompt: LiteApprovalSurface,
         StatusLine: LiteStatusSurface,
-        ActivityTray: LiteTaskTray,
+        ActivityTray: LiteActivityTray,
       },
     } satisfies Record<UiMode, VariantSurfaces>);
 

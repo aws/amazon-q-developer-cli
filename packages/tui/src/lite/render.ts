@@ -2238,9 +2238,9 @@ export function formatTaskToolBody(
   const g = resolveGlyphs(glyphsArg);
   const indent = '  ';
 
-  // Numbered task list with tree connectors (treeCorner on the last row),
-  // mirroring LiteTaskTray's expanded view; subjects wrap with continuation
-  // rows aligned under the subject, optional dim `details` below.
+  // Numbered task list with tree connectors (treeCorner on the last row);
+  // subjects wrap with continuation rows aligned under the subject, with
+  // optional dim `details` below.
   const renderTaskList = (tasks: TaskInputArg[]): string[] => {
     const out: string[] = [];
     if (tasks.length === 0) return out;

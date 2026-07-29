@@ -18,6 +18,7 @@ import {
   buildHistoricalWorkflowRun,
   buildWorkflowNodeConversations,
   workflowActivityCounts,
+  workflowActivitySummary,
   workflowProgress,
 } from '../workflow-view-model.js';
 
@@ -522,6 +523,15 @@ describe('workflow store', () => {
       parentSessionId: 'parent-1',
       pauseReason: 'input',
     });
+    expect(
+      workflowActivitySummary(store.getState().workflows.values())
+    ).toEqual({
+      running: 1,
+      paused: 1,
+      completedSteps: 0,
+      totalSteps: 4,
+    });
+
     store.getState().applyEvent({
       type: 'node_complete',
       workflowId: 'running',
@@ -537,5 +547,13 @@ describe('workflow store', () => {
     expect(workflowActivityCounts(store.getState().workflows.values())).toEqual(
       { running: 1, paused: 1 }
     );
+    expect(
+      workflowActivitySummary(store.getState().workflows.values())
+    ).toEqual({
+      running: 1,
+      paused: 1,
+      completedSteps: 1,
+      totalSteps: 4,
+    });
   });
 });

@@ -2138,10 +2138,9 @@ describe('resetMessages', () => {
     expect(store.getState().messages).toEqual([]);
   });
 
-  it('clears tasks and collapses the task tray (lite /chat new fix)', () => {
+  it('clears tasks and collapses the activity tray on /chat new', () => {
     // Bug: starting a new chat from within a session left the prior turn's
-    // todo list in `tasks`, so LiteTaskTray kept rendering it and Ctrl+X
-    // (gated on tasks.length > 0) still toggled the stale tray.
+    // todo list in `tasks`, so activity surfaces kept rendering stale state.
     const store = makeStore();
     store.setState({
       messages: [{ id: 'x', role: MessageRole.User, content: 'hi' }],

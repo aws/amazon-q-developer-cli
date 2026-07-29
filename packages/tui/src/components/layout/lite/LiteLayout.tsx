@@ -58,7 +58,10 @@ import {
 import { shouldCancelApprovalForKilledStage } from './subagent-kill.js';
 import { engineSupportsSubagentKill } from '../../../agent-engine.js';
 import { sessionConversationsStore } from '../../../stores/session-conversations.js';
-import { workflowStore } from '../../../stores/workflow-store.js';
+import {
+  selectLiveWorkflowCount,
+  workflowStore,
+} from '../../../stores/workflow-store.js';
 import {
   selectBootIndicatorPhase,
   formatBootIndicator,
@@ -170,7 +173,13 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const editingSteerLineIndex = useAppStore((s) => s.editingSteerLineIndex);
   const activeInterruptMode = useAppStore((s) => s.activeInterruptMode);
   const tasks = useAppStore((s) => s.tasks);
+  const activityTrayExpanded = useAppStore((s) => s.activityTrayExpanded);
   const toggleActivityTray = useAppStore((s) => s.toggleActivityTray);
+  const liveWorkflowCount = useStore(workflowStore, selectLiveWorkflowCount);
+  const retainedWorkflowCount = useStore(
+    workflowStore,
+    (state) => state.workflows.size
+  );
   const setActiveTrigger = useAppStore((s) => s.setActiveTrigger);
   const activeTrigger = useAppStore((s) => s.activeTrigger);
   const activeCommand = useAppStore((s) => s.activeCommand);
@@ -460,13 +469,17 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     }
   });
 
-  // Ctrl+X — toggle the lite task tray (mirrors <ActivityTray />). Gated on
-  // tasks.length > 0; bails for queue-edit / approval / panel / subagent
-  // modes that own Ctrl+X. The editingQueueIndex bail mirrors PromptInput's
-  // own Ctrl+X gate so they don't both fire.
+  // Ctrl+X expands the lite activity tray when it has workflow or task detail
+  // to show. Keep retained terminal workflows collapsible until closing the
+  // tray releases the workflow surface and pruning runs.
   useKeypress((input, key) => {
     if (!(key.ctrl && (input === 'x' || input === 'X'))) return;
-    if (tasks.length === 0) return;
+    const hasVisibleTasks = getVerboseDisplay().showTasks && tasks.length > 0;
+    const hasExpandableActivity =
+      hasVisibleTasks ||
+      liveWorkflowCount > 0 ||
+      (activityTrayExpanded && retainedWorkflowCount > 0);
+    if (!hasExpandableActivity) return;
     if (isEditingEntry()) return;
     if (pendingApprovalRef.current || pendingQuestionRef.current) return;
     if (anyPanelOpenRef.current) return;

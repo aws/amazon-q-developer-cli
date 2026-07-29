@@ -1,11 +1,14 @@
 import type { WorkflowStatus } from '../../../types/workflow.js';
+import { isLiveWorkflowStatus } from '../../../types/workflow-status.js';
 
 export type ActivityTrayTab = 'tasks' | 'queue' | 'workflow';
 
 export function isWorkflowTrayActive(
   status: WorkflowStatus | null | undefined
 ): boolean {
-  return status === 'running' || status === 'paused';
+  return (
+    status !== null && status !== undefined && isLiveWorkflowStatus(status)
+  );
 }
 
 export interface ActivityTrayTabPresence {
