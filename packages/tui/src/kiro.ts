@@ -117,7 +117,7 @@ export class Kiro {
     }>
   ) => void;
   private kasCommandsHandler?: (commands: KasCommand[]) => void;
-  private toolsHandler?: (tools: ToolInfo[]) => void;
+  private toolsHandler?: (tools: ToolInfo[], sessionTagged?: boolean) => void;
   private mcpServersHandler?: (
     servers: Array<{ name: string; status: string; toolCount: number }>
   ) => void;
@@ -202,7 +202,9 @@ export class Kiro {
     this.kasCommandsHandler = handler;
   }
 
-  onToolsUpdate(handler: (tools: ToolInfo[]) => void): void {
+  onToolsUpdate(
+    handler: (tools: ToolInfo[], sessionTagged?: boolean) => void
+  ): void {
     this.toolsHandler = handler;
   }
 
@@ -676,7 +678,7 @@ export class Kiro {
           this.kasCommandsHandler(event.commands);
         }
         if (event.type === AgentEventType.ToolsUpdate && this.toolsHandler) {
-          this.toolsHandler(event.tools);
+          this.toolsHandler(event.tools, event.sessionTagged);
         }
         if (
           event.type === AgentEventType.McpServersUpdate &&

@@ -3,7 +3,10 @@
  */
 
 import type { TerminalColor } from '../types/themeTypes.js';
-import type { StreamEventHandler } from '../stores/app-store.js';
+import type {
+  StreamEventHandler,
+  ClientDisplaySnapshot,
+} from '../stores/app-store.js';
 import type { Kiro } from '../kiro.js';
 import type { AgentEngine } from '../agent-engine.js';
 import type { KasCommand } from '../kas-commands.js';
@@ -284,6 +287,10 @@ export interface CommandContext {
   resetMessages: () => void;
   /** Clear all command UI state (menus, panels) */
   clearUIState: () => void;
+  /** Drop display caches on session switch; returns a rollback snapshot. */
+  resetClientDisplayCaches: () => ClientDisplaySnapshot;
+  /** Rollback for resetClientDisplayCaches after a rejected switch RPC. */
+  restoreClientDisplayCaches: (snapshot: ClientDisplaySnapshot) => void;
   /** Lite-only: signal LiteLayout to wipe scrollback + render cache.
    *  Used on /chat <id> and /rewind to drop stale flushed rows so the
    *  resumed history isn't stacked under the previous session. No-op in TUI. */

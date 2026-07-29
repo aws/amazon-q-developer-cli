@@ -1870,4 +1870,109 @@ describe('resetClientDisplayCaches', () => {
       hooksList: [],
     });
   });
+
+  it('resets cloud snapshot readiness to awaiting-sandbox (session switch)', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    store.getState().markCloudSnapshotReceived('mcp');
+    store.getState().markCloudSnapshotReceived('tools');
+    expect(store.getState().cloudSnapshotReadiness).toEqual({
+      mcp: 'received',
+      tools: 'received',
+    });
+
+    store.getState().resetClientDisplayCaches();
+
+    expect(store.getState().cloudSnapshotReadiness).toEqual({
+      mcp: 'awaiting-sandbox',
+      tools: 'awaiting-sandbox',
+    });
+  });
+
+  it('returns the outgoing snapshot and restoreClientDisplayCaches brings it back', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const toolsList = [
+      { name: 'tool', source: 'builtin', description: 'A tool' },
+    ];
+    store.setState({ toolsList });
+    store.getState().markCloudSnapshotReceived('tools');
+
+    const snapshot = store.getState().resetClientDisplayCaches();
+    expect(store.getState().toolsList).toEqual([]);
+    expect(store.getState().cloudSnapshotReadiness.tools).toBe(
+      'awaiting-sandbox'
+    );
+
+    store.getState().restoreClientDisplayCaches(snapshot);
+    expect(store.getState().toolsList).toEqual(toolsList);
+    expect(store.getState().cloudSnapshotReadiness.tools).toBe('received');
+  });
+});
+
+describe('cloud snapshot readiness (stream events)', () => {
+  it('a session-tagged McpServerSnapshot flips mcp readiness to received', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.McpServerSnapshot,
+      servers: [],
+      sessionTagged: true,
+    } as any);
+    expect(store.getState().cloudSnapshotReadiness.mcp).toBe('received');
+    expect(store.getState().cloudSnapshotReadiness.tools).toBe(
+      'awaiting-sandbox'
+    );
+  });
+
+  it('an untagged McpServerSnapshot does NOT flip readiness', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.McpServerSnapshot,
+      servers: [{ name: 's', status: 'running', toolCount: 0 }],
+    } as any);
+    expect(store.getState().cloudSnapshotReadiness.mcp).toBe(
+      'awaiting-sandbox'
+    );
+  });
+
+  it('a session-tagged ToolsUpdate flips tools readiness to received (empty set counts)', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolsUpdate,
+      tools: [],
+      sessionTagged: true,
+    } as any);
+    expect(store.getState().cloudSnapshotReadiness.tools).toBe('received');
+    expect(store.getState().cloudSnapshotReadiness.mcp).toBe(
+      'awaiting-sandbox'
+    );
+  });
+
+  it('an untagged ToolsUpdate does NOT flip readiness', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolsUpdate,
+      tools: [{ name: 't', source: 'builtin', description: 'd' }],
+    } as any);
+    expect(store.getState().cloudSnapshotReadiness.tools).toBe(
+      'awaiting-sandbox'
+    );
+  });
+
+  it('tagged snapshots arriving mid-load are retained (reset then event)', () => {
+    // loadExistingSession resets caches BEFORE the RPC; target-session pushes
+    // can land while the load is in flight and must survive.
+    const store = createAppStore({ kiro: new Kiro() });
+    store.getState().resetClientDisplayCaches();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolsUpdate,
+      tools: [{ name: 'sandboxTool', source: 'mcp', description: 'd' }],
+      sessionTagged: true,
+    } as any);
+    expect(store.getState().toolsList).toHaveLength(1);
+    expect(store.getState().cloudSnapshotReadiness.tools).toBe('received');
+  });
 });

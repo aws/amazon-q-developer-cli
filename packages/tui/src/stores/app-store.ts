@@ -217,6 +217,23 @@ export interface ToolInfo {
   status?: ToolStatus;
 }
 
+/** 'awaiting-sandbox' until a push tagged with the active session id arrives
+ *  ('received' after; an empty tagged snapshot counts — it's authoritative). */
+export type CloudSnapshotReadiness = 'awaiting-sandbox' | 'received';
+
+/** Rollback snapshot for a rejected session switch. */
+export interface ClientDisplaySnapshot {
+  contextBreakdownCache: ContextBreakdownData | null;
+  mcpServerCache: McpServerInfo[];
+  mcpRegistryCache: McpServerInfo[];
+  toolsList: ToolInfo[];
+  hooksList: HookInfo[];
+  cloudSnapshotReadiness: {
+    mcp: CloudSnapshotReadiness;
+    tools: CloudSnapshotReadiness;
+  };
+}
+
 export interface RequestStat {
   request_id: string | null;
   timestamp: string;
@@ -1306,8 +1323,10 @@ interface BaseAppActions {
     mode?: string,
     registryServers?: McpServerInfo[]
   ) => void;
-  /** Clear display snapshots derived from the active transport client. */
-  resetClientDisplayCaches: () => void;
+  /** Drop display caches on session switch; returns a rollback snapshot. */
+  resetClientDisplayCaches: () => ClientDisplaySnapshot;
+  /** Rollback for resetClientDisplayCaches after a rejected switch RPC. */
+  restoreClientDisplayCaches: (snapshot: ClientDisplaySnapshot) => void;
   setShowToolsPanel: (show: boolean, tools?: ToolInfo[]) => void;
   /** Update the cached session tool listing without toggling the panel. */
   setToolsList: (tools: ToolInfo[]) => void;
@@ -1647,6 +1666,13 @@ export interface AppState {
   kasCommands: KasCommand[];
   /** True for cloud sessions; gates cloud-only slash commands. */
   cloudSessionActive: boolean;
+  /** Per-surface sandbox snapshot readiness (cloud sessions only). */
+  cloudSnapshotReadiness: {
+    mcp: CloudSnapshotReadiness;
+    tools: CloudSnapshotReadiness;
+  };
+  /** Flip a surface's readiness to 'received' (tagged snapshot arrived). */
+  markCloudSnapshotReceived: (surface: 'mcp' | 'tools') => void;
   /** Frozen at boot from props.agentEngine ?? process.env.KIRO_AGENT_ENGINE. */
   agentEngine: AgentEngine;
   /**
@@ -2524,6 +2550,8 @@ export function buildCommandContext(
     openArtifactView: state.openArtifactView,
     clearMessages: state.clearMessages,
     resetMessages: state.resetMessages,
+    resetClientDisplayCaches: state.resetClientDisplayCaches,
+    restoreClientDisplayCaches: state.restoreClientDisplayCaches,
     bumpLiteScrollbackClear: state.bumpLiteScrollbackClear,
     sendMessage: state.sendMessage,
     createStreamEventHandler: state.createStreamEventHandler,
@@ -2779,6 +2807,10 @@ export const createAppStore = (props: AppStoreProps) => {
       ),
     kasCommands: agentEngine === 'kas' ? [...getKasCommands()] : [],
     cloudSessionActive: false,
+    cloudSnapshotReadiness: {
+      mcp: 'awaiting-sandbox',
+      tools: 'awaiting-sandbox',
+    },
     agentEngine,
     prompts: [],
     skills: [],
@@ -4325,6 +4357,7 @@ export const createAppStore = (props: AppStoreProps) => {
             break;
           case AgentEventType.McpServerSnapshot:
             set({ mcpServerCache: event.servers });
+            if (event.sessionTagged) get().markCloudSnapshotReceived('mcp');
             break;
           case AgentEventType.McpRegistrySnapshot:
             set({ mcpRegistryCache: event.registryServers });
@@ -4842,6 +4875,7 @@ export const createAppStore = (props: AppStoreProps) => {
             // re-renders automatically; otherwise the handler reads this
             // cache when opening the panel.
             set({ toolsList: event.tools });
+            if (event.sessionTagged) get().markCloudSnapshotReceived('tools');
             break;
         }
       };
@@ -7242,13 +7276,42 @@ export const createAppStore = (props: AppStoreProps) => {
       });
     },
     resetClientDisplayCaches: () => {
+      const s = get();
+      const snapshot: ClientDisplaySnapshot = {
+        contextBreakdownCache: s.contextBreakdownCache,
+        mcpServerCache: s.mcpServerCache,
+        mcpRegistryCache: s.mcpRegistryCache,
+        toolsList: s.toolsList,
+        hooksList: s.hooksList,
+        cloudSnapshotReadiness: s.cloudSnapshotReadiness,
+      };
       set({
         contextBreakdownCache: null,
         mcpServerCache: [],
         mcpRegistryCache: [],
         toolsList: [],
         hooksList: [],
+        cloudSnapshotReadiness: {
+          mcp: 'awaiting-sandbox',
+          tools: 'awaiting-sandbox',
+        },
       });
+      return snapshot;
+    },
+    restoreClientDisplayCaches: (snapshot) => {
+      set({
+        contextBreakdownCache: snapshot.contextBreakdownCache,
+        mcpServerCache: snapshot.mcpServerCache,
+        mcpRegistryCache: snapshot.mcpRegistryCache,
+        toolsList: snapshot.toolsList,
+        hooksList: snapshot.hooksList,
+        cloudSnapshotReadiness: snapshot.cloudSnapshotReadiness,
+      });
+    },
+    markCloudSnapshotReceived: (surface) => {
+      const current = get().cloudSnapshotReadiness;
+      if (current[surface] === 'received') return;
+      set({ cloudSnapshotReadiness: { ...current, [surface]: 'received' } });
     },
 
     setShowToolsPanel: (show, tools) => {

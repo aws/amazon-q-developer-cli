@@ -105,6 +105,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
   const { contextUsagePercent, currentModel, currentAgent } = useContextState();
   const { kiro } = useKiroClient();
   const agentEngine = useAppStore((s) => s.agentEngine);
+  const cloudSessionActive = useAppStore((s) => s.cloudSessionActive);
+  const cloudSnapshotReadiness = useAppStore((s) => s.cloudSnapshotReadiness);
   const supportsMcpCommandActions =
     engineSupportsMcpCommandActions(agentEngine);
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
@@ -253,6 +255,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
           initErrors={initErrors}
           pendingOAuthUrls={pendingOAuthServers}
           mode={mcpMode}
+          cloudSessionActive={cloudSessionActive}
+          cloudSnapshotReadiness={cloudSnapshotReadiness.mcp}
           onClose={handlers.handleCloseMcpPanel}
           onAuthenticate={startMcpServerOAuth}
           onForceAuth={
@@ -296,6 +300,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
         <ToolsPanel
           tools={toolsList}
           initErrors={initErrors}
+          cloudSessionActive={cloudSessionActive}
+          cloudSnapshotReadiness={cloudSnapshotReadiness.tools}
           onClose={handlers.handleCloseToolsPanel}
         />
       )}
@@ -314,6 +320,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
       {showHooksPanel && (
         <HooksPanel
           hooks={hooksList}
+          cloudSessionActive={cloudSessionActive}
           onClose={handlers.handleCloseHooksPanel}
         />
       )}

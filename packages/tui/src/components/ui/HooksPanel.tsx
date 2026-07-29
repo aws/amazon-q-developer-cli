@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import { Box } from '../../renderer.js';
 import { Text } from './text/Text';
 import { Panel } from './panel/index.js';
 import { Table, type Row } from './table/index.js';
@@ -8,15 +9,24 @@ import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
 import type { HookInfo } from '../../stores/app-store.js';
 import { truncateToWidth } from '../../utils/text-width.js';
+import {
+  cloudPanelNotice,
+  cloudNoticeLineCount,
+} from './cloud-panel-notice.js';
 
 interface HooksPanelProps {
   hooks: HookInfo[];
+  cloudSessionActive?: boolean;
   onClose: () => void;
 }
 
 const GAP = 2;
 
-export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
+export const HooksPanel: React.FC<HooksPanelProps> = ({
+  hooks,
+  cloudSessionActive = false,
+  onClose,
+}) => {
   const { getColor } = useTheme();
   const { width: termWidth, height: termHeight } = useTerminalSize();
   const glyphs = useGlyphs();
@@ -25,7 +35,13 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
   const brand = getColor('brand');
   const info = getColor('info');
 
-  const maxVisible = Math.max(termHeight - 9, 5);
+  const cloudNotice = cloudPanelNotice('hooks', cloudSessionActive);
+  const noticeLines = cloudNoticeLineCount(
+    cloudNotice,
+    termWidth - 2,
+    hooks.length > 0
+  );
+  const maxVisible = Math.max(termHeight - 9 - noticeLines, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [search, setSearch] = useState('');
 
@@ -108,11 +124,18 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({ hooks, onClose }) => {
         )
       }
     >
-      {hooks.length === 0 ? (
-        <Text>{dim('No hooks configured')}</Text>
-      ) : (
-        <Table columns={columns} rows={rows} />
-      )}
+      <Box flexDirection="column">
+        {cloudNotice && (
+          <Box marginBottom={hooks.length > 0 ? 1 : 0}>
+            <Text>{info(cloudNotice)}</Text>
+          </Box>
+        )}
+        {hooks.length === 0 ? (
+          <Text>{dim('No hooks configured')}</Text>
+        ) : (
+          <Table columns={columns} rows={rows} />
+        )}
+      </Box>
     </Panel>
   );
 };

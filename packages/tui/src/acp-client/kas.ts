@@ -1047,6 +1047,10 @@ export class KasAcpClient extends BaseAcpClient {
     this.hooksNotificationDisposable = this.kiroClient.onExtNotification(
       '_kiro/hooks/didChange',
       (params: Record<string, unknown>) => {
+        const sessionId = params.sessionId as string | undefined;
+        if (sessionId && this.sessionId && sessionId !== this.sessionId) {
+          return;
+        }
         const rawHooks = Array.isArray(params.hooks) ? params.hooks : [];
         const hooks = this.projectHooks(rawHooks);
         this.broadcastStreamEvent({
@@ -1072,13 +1076,25 @@ export class KasAcpClient extends BaseAcpClient {
         this.broadcastStreamEvent({
           type: AgentEventType.ToolsUpdate,
           tools,
+          sessionTagged: !!sessionId && sessionId === this.sessionId,
         });
       }
     );
 
-    // Register ext notification handlers
+    // Drop pushes tagged for another session; during a cloud session drop
+    // untagged ones too (only a pre-#1892 KAS's local pool emits those).
     this.kiroClient.onExtNotification('_kiro/mcp/status', (params) => {
-      this.handleMcpStatusNotification(params);
+      const sessionId = params.sessionId as string | undefined;
+      if (sessionId && this.sessionId && sessionId !== this.sessionId) {
+        return;
+      }
+      if (!sessionId && this.startedCloudSession) {
+        return;
+      }
+      this.handleMcpStatusNotification(
+        params,
+        !!sessionId && sessionId === this.sessionId
+      );
     });
 
     // Route KAS _kiro/* notifications to the same handlers used by the Rust backend path.
@@ -2300,7 +2316,10 @@ export class KasAcpClient extends BaseAcpClient {
    * Handle `_kiro/mcp/status` notification from KAS.
    * Normalizes the wire data and publishes store-owned display snapshots.
    */
-  private handleMcpStatusNotification(params: Record<string, unknown>): void {
+  private handleMcpStatusNotification(
+    params: Record<string, unknown>,
+    sessionTagged = false
+  ): void {
     const servers = params.servers as
       | Array<{
           name: string;
@@ -2347,6 +2366,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.broadcastStreamEvent({
       type: AgentEventType.McpServerSnapshot,
       servers: serverSnapshot,
+      sessionTagged,
     });
 
     if (servers) {

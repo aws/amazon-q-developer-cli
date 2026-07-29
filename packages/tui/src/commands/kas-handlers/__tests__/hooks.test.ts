@@ -51,6 +51,35 @@ describe('/hooks KAS handler', () => {
     expect(ctx._spies.setShowHooksPanel).toHaveBeenCalledWith(true, hooks);
   });
 
+  it('bypasses a warm cache and fetches when a cloud session is active', async () => {
+    const staleLocalHooks: HookInfo[] = [
+      { trigger: 'preToolUse', matcher: 'write', command: 'local.sh' },
+    ];
+    const sandboxHooks: HookInfo[] = [
+      { trigger: 'agentSpawn', command: 'sandbox-setup.sh' },
+    ];
+    const executeCommand = mock(() =>
+      Promise.resolve({
+        success: true,
+        message: '1 hook configured',
+        data: { hooks: sandboxHooks },
+      })
+    );
+    const ctx = createMockCommandContext({
+      hooksList: staleLocalHooks,
+      cloudSessionActive: true,
+      kiro: { executeCommand },
+    });
+
+    await handleHooks(hooksCmd, '', ctx);
+
+    expect(executeCommand).toHaveBeenCalledTimes(1);
+    expect(ctx._spies.setShowHooksPanel).toHaveBeenCalledWith(
+      true,
+      sandboxHooks
+    );
+  });
+
   it('surfaces transport failures without opening the panel', async () => {
     const ctx = createMockCommandContext({
       kiro: {

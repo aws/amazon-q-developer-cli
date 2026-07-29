@@ -188,6 +188,9 @@ async function startNewSession(
   // would repaint the incoming one mid-stream.
   cancelCloudClearRewipes();
   ctx.clearUIState();
+  // Display caches describe the outgoing session; snapshot kept for the
+  // rejected-RPC path (previous session stays active).
+  const displaySnapshot = ctx.resetClientDisplayCaches();
   // The bound repo/branch describe the PREVIOUS session's sandbox — stash so
   // switching back to it restores its footer, then clear for the new session.
   // Keep the id: a rejected RPC leaves that session active, so its scope must
@@ -235,8 +238,8 @@ async function startNewSession(
     // A reconcile left armed would keep re-wiping the restored session.
     cancelCloudClearRewipes();
     // The previous session is still the active one — bring its footer
-    // repo/branch back from the stash cleared above.
     ctx.restoreCloudSessionScope(previousSessionId);
+    ctx.restoreClientDisplayCaches(displaySnapshot);
     logger.error('[chat] newSession failed', {
       err: JSON.stringify(err),
       stack: err instanceof Error ? err.stack : undefined,
@@ -295,6 +298,8 @@ export async function loadExistingSession(
   ctx.clearUIState();
   // Deliberately no resetMessages: switches APPEND each load's replay,
   // matching local-session behavior.
+  // Same as startNewSession: drop the outgoing session's display caches.
+  const displaySnapshot = ctx.resetClientDisplayCaches();
   // The bound repo/branch describe the PREVIOUS session's sandbox — snapshot
   // them under that session's id (so switching back restores its footer
   // without a re-fetch), then clear so nothing leaks into the loaded session.
@@ -378,8 +383,8 @@ export async function loadExistingSession(
   } catch (err) {
     restoreKasSession();
     // The previous session is still the active one — bring its footer
-    // repo/branch back from the stash cleared above.
     ctx.restoreCloudSessionScope(previousSessionId);
+    ctx.restoreClientDisplayCaches(displaySnapshot);
     logger.error('[chat] loadSession failed', {
       sessionId,
       err: JSON.stringify(err),

@@ -7,9 +7,18 @@ import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
-import type { McpServerInfo, InitError } from '../../stores/app-store.js';
+import type {
+  McpServerInfo,
+  InitError,
+  CloudSnapshotReadiness,
+} from '../../stores/app-store.js';
 import { visibleWidth } from '../../utils/text-width.js';
 import { copyToSystemClipboard } from '../../commands/effects.js';
+import {
+  cloudPanelNotice,
+  cloudPanelEmptyMessage,
+  cloudNoticeLineCount,
+} from './cloud-panel-notice.js';
 
 interface McpPanelProps {
   servers: McpServerInfo[];
@@ -17,6 +26,9 @@ interface McpPanelProps {
   initErrors?: InitError[];
   pendingOAuthUrls?: Map<string, string>;
   mode: string;
+  cloudSessionActive?: boolean;
+  /** Sandbox snapshot readiness for this surface (cloud sessions only). */
+  cloudSnapshotReadiness?: CloudSnapshotReadiness;
   onClose: () => void;
   onAction?: (serverNames: string[]) => Promise<void>;
   onAuthenticate?: (serverName: string) => void;
@@ -36,6 +48,8 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   initErrors = [],
   pendingOAuthUrls = new Map(),
   mode,
+  cloudSessionActive = false,
+  cloudSnapshotReadiness,
   onClose,
   onAction,
   onAuthenticate,
@@ -44,11 +58,12 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   onRemoveCredentials,
 }) => {
   const { getColor } = useTheme();
-  const { height: termHeight } = useTerminalSize();
+  const { width: termWidth, height: termHeight } = useTerminalSize();
   const glyphs = useGlyphs();
   const { allowIcons } = useAllowIcons();
   const primary = getColor('primary');
   const dim = getColor('secondary');
+  const info = getColor('info');
   const success = getColor('success');
   const warning = getColor('warning');
   const error = getColor('error');
@@ -80,7 +95,19 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     return map;
   }, [initErrors]);
 
-  const maxVisible = Math.max(termHeight - 9, 5);
+  const cloudNotice = cloudPanelNotice(
+    'mcp',
+    cloudSessionActive,
+    cloudSnapshotReadiness
+  );
+  const awaitingSandbox =
+    cloudSessionActive && cloudSnapshotReadiness === 'awaiting-sandbox';
+  const noticeLines = cloudNoticeLineCount(
+    cloudNotice,
+    termWidth - 2,
+    !awaitingSandbox && servers.length > 0
+  );
+  const maxVisible = Math.max(termHeight - 9 - noticeLines, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [search, setSearch] = useState('');
   const [cursorIndex, setCursorIndex] = useState(0);
@@ -366,9 +393,11 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     ? governanceDisabled.apiFailure
       ? `${!allowIcons ? '' : glyphs.warning} Failed to retrieve MCP settings — MCP disabled`
       : `${!allowIcons ? '' : glyphs.warning} MCP has been disabled by your administrator`
-    : isRegistryView
-      ? 'No servers in MCP registry'
-      : 'No MCP servers configured';
+    : cloudSessionActive && !isRegistryView
+      ? cloudPanelEmptyMessage('mcp')
+      : isRegistryView
+        ? 'No servers in MCP registry'
+        : 'No MCP servers configured';
 
   const isStatusView = !isRegistryView && !isListMode;
   const statusActionHints = [
@@ -411,34 +440,45 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       }
       footerExtra={footerExtra}
     >
-      {!hasConfigured && !hasRegistry ? (
-        <Text>{dim(emptyMessage)}</Text>
-      ) : isListMode && !isRegistryView ? (
-        <Box flexDirection="column">
-          {hasConfigured && (
-            <Box flexDirection="column">
-              <Text>{primary.bold('Configured Servers')}</Text>
-              <Table columns={columns} rows={rows} />
-            </Box>
-          )}
-          {hasRegistry && (
-            <Box flexDirection="column" marginTop={hasConfigured ? 1 : 0}>
-              <Text>{primary.bold('Registry Servers')}</Text>
-              <Table columns={registryColumns} rows={registryRows} />
-            </Box>
-          )}
-        </Box>
-      ) : (
-        <Table
-          columns={columns}
-          rows={rows}
-          highlightedRow={
-            isInteractive || isStatusView
-              ? cursorIndex - scrollOffset
-              : undefined
-          }
-        />
-      )}
+      <Box flexDirection="column">
+        {cloudNotice && (
+          <Box
+            marginBottom={
+              !awaitingSandbox && (hasConfigured || hasRegistry) ? 1 : 0
+            }
+          >
+            <Text>{info(cloudNotice)}</Text>
+          </Box>
+        )}
+        {awaitingSandbox ? null : !hasConfigured && !hasRegistry ? (
+          <Text>{dim(emptyMessage)}</Text>
+        ) : isListMode && !isRegistryView ? (
+          <Box flexDirection="column">
+            {hasConfigured && (
+              <Box flexDirection="column">
+                <Text>{primary.bold('Configured Servers')}</Text>
+                <Table columns={columns} rows={rows} />
+              </Box>
+            )}
+            {hasRegistry && (
+              <Box flexDirection="column" marginTop={hasConfigured ? 1 : 0}>
+                <Text>{primary.bold('Registry Servers')}</Text>
+                <Table columns={registryColumns} rows={registryRows} />
+              </Box>
+            )}
+          </Box>
+        ) : (
+          <Table
+            columns={columns}
+            rows={rows}
+            highlightedRow={
+              isInteractive || isStatusView
+                ? cursorIndex - scrollOffset
+                : undefined
+            }
+          />
+        )}
+      </Box>
     </Panel>
   );
 };

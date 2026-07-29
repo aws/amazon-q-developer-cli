@@ -314,9 +314,10 @@ const wireUpHandlers = () => {
     appStore.getState().setKasCommands(commands);
   });
 
-  kiro.onToolsUpdate((tools) => {
+  kiro.onToolsUpdate((tools, sessionTagged) => {
     logger.debug('[tui] tools update received:', tools.length, 'tools');
     appStore.getState().setToolsList(tools);
+    if (sessionTagged) appStore.getState().markCloudSnapshotReceived('tools');
   });
 
   kiro.onMcpServersUpdate((servers) => {

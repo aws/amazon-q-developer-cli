@@ -9,7 +9,8 @@ export async function handleHooks(
   ctx: CommandContext,
   _options?: DispatchOptions
 ): Promise<void> {
-  if (ctx.hooksList.length > 0) {
+  // The warm cache is local-fed; cloud hooks live in the sandbox — re-fetch.
+  if (!ctx.cloudSessionActive && ctx.hooksList.length > 0) {
     ctx.setShowHooksPanel(true, [...ctx.hooksList]);
     return;
   }

@@ -780,6 +780,16 @@ describe('handleChat (KAS-mode dispatch)', () => {
       }
     });
 
+    it('new: drops the client display caches so panels cannot show the previous session', async () => {
+      const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { newSession } as any,
+      });
+      await handleChat(CHAT_CMD, 'new', ctx);
+      expect(ctx._spies.resetClientDisplayCaches).toHaveBeenCalled();
+    });
+
     it('new <prompt>: forwards the prompt via sendMessage', async () => {
       const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
       const ctx = createMockCommandContext({
@@ -823,6 +833,16 @@ describe('handleChat (KAS-mode dispatch)', () => {
       // are handled by the cloud-replay dedupe-skip in the stream handler.
       expect(ctx._spies.resetMessages).not.toHaveBeenCalled();
       expect(ctx._spies.setSessionId).toHaveBeenCalledWith('sid');
+    });
+
+    it('bare sessionId: drops the client display caches so panels cannot show the previous session', async () => {
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(ctx._spies.resetClientDisplayCaches).toHaveBeenCalled();
     });
 
     it('bare sessionId: replays history through the persistent renderer', async () => {
@@ -890,6 +910,54 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(ctx._spies.restoreCloudSessionScope).toHaveBeenCalledWith(
         'prev-sid'
       );
+    });
+
+    it('new: a rejected newSession restores the display caches from the pre-reset snapshot', async () => {
+      const newSession = mock(() => Promise.reject(new Error('boom')));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { newSession, sessionId: 'prev-sid' } as any,
+      });
+      await handleChat(CHAT_CMD, 'new', ctx);
+      const snapshot = (ctx._spies.resetClientDisplayCaches as any).mock
+        .results[0]?.value;
+      expect(ctx._spies.restoreClientDisplayCaches).toHaveBeenCalledWith(
+        snapshot
+      );
+    });
+
+    it('new: a resolved newSession does NOT restore the display caches', async () => {
+      const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { newSession } as any,
+      });
+      await handleChat(CHAT_CMD, 'new', ctx);
+      expect(ctx._spies.restoreClientDisplayCaches).not.toHaveBeenCalled();
+    });
+
+    it('bare sessionId: a rejected loadSession restores the display caches from the pre-reset snapshot', async () => {
+      const loadSession = mock(() => Promise.reject(new Error('nope')));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, sessionId: 'prev-sid' } as any,
+      });
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      const snapshot = (ctx._spies.resetClientDisplayCaches as any).mock
+        .results[0]?.value;
+      expect(ctx._spies.restoreClientDisplayCaches).toHaveBeenCalledWith(
+        snapshot
+      );
+    });
+
+    it('bare sessionId: a resolved loadSession does NOT restore the display caches', async () => {
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession } as any,
+      });
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(ctx._spies.restoreClientDisplayCaches).not.toHaveBeenCalled();
     });
 
     it('loading a cloud session from a local one announces "Connected"', async () => {

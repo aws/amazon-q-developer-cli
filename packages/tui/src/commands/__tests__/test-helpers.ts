@@ -170,6 +170,22 @@ export function createMockCommandContext(
     bumpLiteScrollbackClear: spy('bumpLiteScrollbackClear') as any,
     sendMessage: spy('sendMessage') as any,
     clearUIState: spy('clearUIState') as any,
+    resetClientDisplayCaches: (() => {
+      const fn = mock(() => ({
+        contextBreakdownCache: null,
+        mcpServerCache: [],
+        mcpRegistryCache: [],
+        toolsList: [],
+        hooksList: [],
+        cloudSnapshotReadiness: {
+          mcp: 'awaiting-sandbox' as const,
+          tools: 'awaiting-sandbox' as const,
+        },
+      }));
+      spies['resetClientDisplayCaches'] = fn;
+      return fn;
+    })() as any,
+    restoreClientDisplayCaches: spy('restoreClientDisplayCaches') as any,
     createStreamEventHandler: spy('createStreamEventHandler') as any,
     setSessionId: spy('setSessionId') as any,
     addSystemMessage: spy('addSystemMessage') as any,

@@ -641,6 +641,9 @@ export interface ToolsUpdateEvent {
     description: string;
     status?: 'allowed' | 'requires-approval' | 'denied';
   }>;
+  /** True when the originating notification carried the active session's id
+   *  (KAS >= 0.26.14 tags every push). Feeds cloud snapshot readiness. */
+  sessionTagged?: boolean;
 }
 
 export interface McpServersUpdateEvent {
@@ -655,6 +658,9 @@ export interface McpServerSnapshotEvent {
     status: 'running' | 'loading' | 'failed' | 'disabled' | 'auth-required';
     toolCount: number;
   }>;
+  /** True when the originating notification carried the active session's id
+   *  (KAS >= 0.26.14 tags every push). Feeds cloud snapshot readiness. */
+  sessionTagged?: boolean;
 }
 
 export interface McpRegistrySnapshotEvent {

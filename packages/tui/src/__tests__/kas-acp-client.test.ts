@@ -5664,6 +5664,191 @@ describe('mcp command (push model)', () => {
     ]);
   });
 
+  it('drops a status notification tagged with another session id', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession(); // active session: kas-session-1
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
+
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/mcp/status']({
+      sessionId: 'some-other-session',
+      servers: [{ name: 'other-server', status: 'connected', tools: [] }],
+    });
+
+    expect(
+      events.find((event) => event.type === AgentEventType.McpServerSnapshot)
+    ).toBeUndefined();
+  });
+
+  it('accepts a status notification tagged with the active session id', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
+
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/mcp/status']({
+      sessionId: 'kas-session-1',
+      servers: [
+        {
+          name: 'mine',
+          status: 'connected',
+          tools: [{ name: 't1', disabled: false }],
+        },
+      ],
+    });
+
+    const snapshot = events.find(
+      (event) => event.type === AgentEventType.McpServerSnapshot
+    );
+    expect(snapshot.servers).toEqual([
+      { name: 'mine', status: 'running', toolCount: 1 },
+    ]);
+    expect(snapshot.sessionTagged).toBe(true);
+  });
+
+  it('accepts an untagged status notification in a local session (older KAS)', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
+
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/mcp/status']({
+      servers: [
+        {
+          name: 'untagged',
+          status: 'connected',
+          tools: [{ name: 't1', disabled: false }],
+        },
+      ],
+    });
+
+    const snapshot = events.find(
+      (event) => event.type === AgentEventType.McpServerSnapshot
+    );
+    expect(snapshot.servers).toEqual([
+      { name: 'untagged', status: 'running', toolCount: 1 },
+    ]);
+    expect(snapshot.sessionTagged).toBe(false);
+  });
+
+  it('drops an untagged status notification while a cloud session is active', async () => {
+    // KAS >= 0.26.14 tags every mcp/status push and never emits local pool
+    // status for cloud sessions (kiro-agent#1882 + #1892), so an untagged
+    // snapshot during a cloud session can only be an older KAS's local pool.
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            executionTargets: ['local', 'cloud-sandbox'],
+            sessionSources: ['local', 'remote'],
+          },
+        },
+      },
+    } as any);
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
+
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/mcp/status']({
+      servers: [{ name: 'local-pool', status: 'connected', tools: [] }],
+    });
+
+    expect(
+      events.find((event) => event.type === AgentEventType.McpServerSnapshot)
+    ).toBeUndefined();
+  });
+
+  it('accepts a tagged status notification while a cloud session is active', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            executionTargets: ['local', 'cloud-sandbox'],
+            sessionSources: ['local', 'remote'],
+          },
+        },
+      },
+    } as any);
+    const client = new KasAcpClient({
+      executionTarget: { kind: 'cloud-sandbox' },
+    });
+    await client.initialize();
+    await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
+
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/mcp/status']({
+      sessionId: client.sessionId,
+      servers: [
+        {
+          name: 'sandbox-server',
+          status: 'connected',
+          tools: [{ name: 't1', disabled: false }],
+        },
+      ],
+    });
+
+    const snapshot = events.find(
+      (event) => event.type === AgentEventType.McpServerSnapshot
+    );
+    expect(snapshot.servers).toEqual([
+      { name: 'sandbox-server', status: 'running', toolCount: 1 },
+    ]);
+    expect(snapshot.sessionTagged).toBe(true);
+  });
+
+  it('drops a hooks didChange tagged with another session id', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession(); // active session: kas-session-1
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
+
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/hooks/didChange']({
+      sessionId: 'some-other-session',
+      hooks: [{ trigger: 'agentSpawn', action: { command: 'other.sh' } }],
+    });
+
+    expect(
+      events.find((event) => event.type === AgentEventType.HooksUpdate)
+    ).toBeUndefined();
+  });
+
+  it('accepts a hooks didChange tagged with the active session id', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    const events: any[] = [];
+    client.onUpdate((event) => events.push(event));
+
+    const kc = (client as any).kiroClient;
+    kc._extNotifHandlers['_kiro/hooks/didChange']({
+      sessionId: 'kas-session-1',
+      hooks: [{ trigger: 'agentSpawn', action: { command: 'mine.sh' } }],
+    });
+
+    const update = events.find(
+      (event) => event.type === AgentEventType.HooksUpdate
+    );
+    expect(update).toBeDefined();
+    expect(update.hooks).toHaveLength(1);
+  });
+
   it('publishes an empty configured-server snapshot when servers are omitted', async () => {
     const client = new KasAcpClient();
     await client.initialize();

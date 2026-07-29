@@ -14,10 +14,19 @@ import type {
 } from '../../stores/app-store.js';
 import { visibleWidth, truncateToWidth } from '../../utils/text-width.js';
 import { webToolsGovernanceMessage } from './toolsPanelMessages.js';
+import {
+  cloudPanelNotice,
+  cloudPanelEmptyMessage,
+  cloudNoticeLineCount,
+} from './cloud-panel-notice.js';
+import type { CloudSnapshotReadiness } from '../../stores/app-store.js';
 
 interface ToolsPanelProps {
   tools: ToolInfo[];
   initErrors?: InitError[];
+  cloudSessionActive?: boolean;
+  /** Sandbox snapshot readiness for this surface (cloud sessions only). */
+  cloudSnapshotReadiness?: CloudSnapshotReadiness;
   onClose: () => void;
 }
 
@@ -34,6 +43,8 @@ const GAP = 2;
 export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   tools,
   initErrors = [],
+  cloudSessionActive = false,
+  cloudSnapshotReadiness,
   onClose,
 }) => {
   const { getColor } = useTheme();
@@ -61,7 +72,19 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
   // when no row carries a status (the Rust engine always sets one).
   const showStatus = tools.some((t) => t.status !== undefined);
 
-  const maxVisible = Math.max(termHeight - 9, 5);
+  const cloudNotice = cloudPanelNotice(
+    'tools',
+    cloudSessionActive,
+    cloudSnapshotReadiness
+  );
+  const awaitingSandbox =
+    cloudSessionActive && cloudSnapshotReadiness === 'awaiting-sandbox';
+  const noticeLines = cloudNoticeLineCount(
+    cloudNotice,
+    termWidth - 2,
+    !awaitingSandbox && tools.length > 0
+  );
+  const maxVisible = Math.max(termHeight - 9 - noticeLines, 5);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [search, setSearch] = useState('');
 
@@ -186,15 +209,36 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({
       }
     >
       <Box flexDirection="column">
-        {governanceWarning && (
-          <Box marginBottom={tools.length > 0 ? 1 : 0}>
-            <Text>{warning(governanceWarning)}</Text>
+        {cloudNotice && (
+          <Box
+            marginBottom={
+              !awaitingSandbox && (tools.length > 0 || governanceWarning)
+                ? 1
+                : 0
+            }
+          >
+            <Text>{info(cloudNotice)}</Text>
           </Box>
         )}
-        {tools.length === 0 ? (
-          <Text>{dim('No tools available')}</Text>
-        ) : (
-          <Table columns={columns} rows={rows} />
+        {awaitingSandbox ? null : (
+          <>
+            {governanceWarning && (
+              <Box marginBottom={tools.length > 0 ? 1 : 0}>
+                <Text>{warning(governanceWarning)}</Text>
+              </Box>
+            )}
+            {tools.length === 0 ? (
+              <Text>
+                {dim(
+                  cloudSessionActive
+                    ? cloudPanelEmptyMessage('tools')
+                    : 'No tools available'
+                )}
+              </Text>
+            ) : (
+              <Table columns={columns} rows={rows} />
+            )}
+          </>
         )}
       </Box>
     </Panel>

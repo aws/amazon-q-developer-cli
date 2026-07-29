@@ -1117,7 +1117,25 @@ describe('Kiro — handler registration and forwarding', () => {
         tools,
       } as AgentStreamEvent);
     }
-    expect(handler).toHaveBeenCalledWith(tools);
+    expect(handler).toHaveBeenCalledWith(tools, undefined);
+  });
+
+  it('onToolsUpdate forwards the session-tagged flag when the push carries it', async () => {
+    const kiro = new Kiro();
+    const handler = mock(() => {});
+    kiro.onToolsUpdate(handler);
+    await kiro.initialize('/path/to/agent');
+    const tools = [
+      { name: 'read', source: 'builtin', description: 'read tools' },
+    ];
+    if (mockOnUpdateHandler) {
+      mockOnUpdateHandler({
+        type: AgentEventType.ToolsUpdate,
+        tools,
+        sessionTagged: true,
+      } as AgentStreamEvent);
+    }
+    expect(handler).toHaveBeenCalledWith(tools, true);
   });
 
   it('onCompactionStatus receives compaction events', async () => {
