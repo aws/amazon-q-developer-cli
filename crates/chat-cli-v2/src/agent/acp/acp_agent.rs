@@ -1990,6 +1990,7 @@ impl AcpSession {
         let notification = super::schema::MetadataNotification {
             session_id: self.session_id_str.clone(),
             context_usage_percentage: metadata.context_usage_percentage,
+            context_usage_invalidated: false,
             metering_usage: metering,
             turn_duration_ms: metadata.turn_duration.map(|d| d.as_millis() as u64),
             effort: self.current_effort(),
@@ -2030,6 +2031,7 @@ impl AcpSession {
         let notification = super::schema::MetadataNotification {
             session_id: self.session_id_str.clone(),
             context_usage_percentage: Some(estimated_pct),
+            context_usage_invalidated: false,
             metering_usage: None,
             turn_duration_ms: None,
             effort: self.current_effort(),
@@ -2338,7 +2340,27 @@ impl AcpSession {
             AcpSessionRequest::SetModel { model_id, respond_to } => {
                 let settings = self.os.database.settings.clone();
                 let result = update_model_info(&self.api_client, &settings, &self.rts_state, Some(&model_id)).await;
-                let _ = respond_to.send(result);
+                if result.as_ref().is_ok_and(|changed| *changed) {
+                    let context_usage = super::commands::context::recompute_context_usage_after_model_change(
+                        &self.agent,
+                        &self.rts_state,
+                    )
+                    .await;
+                    let notification = super::schema::MetadataNotification {
+                        session_id: self.session_id_str.clone(),
+                        context_usage_percentage: context_usage,
+                        context_usage_invalidated: context_usage.is_none(),
+                        metering_usage: None,
+                        turn_duration_ms: None,
+                        effort: self.current_effort(),
+                        stop_reason: None,
+                        refusal: None,
+                    };
+                    if let Err(e) = self.connection_cx.send_notification(notification) {
+                        warn!("Failed to send metadata after model change: {}", e);
+                    }
+                }
+                let _ = respond_to.send(result.map(|_| ()));
             },
             AcpSessionRequest::GetModelId { respond_to } => {
                 let _ = respond_to.send(self.rts_state.model_id().unwrap_or_default());
@@ -2465,6 +2487,7 @@ impl AcpSession {
                 let notification = super::schema::MetadataNotification {
                     session_id: self.session_id_str.clone(),
                     context_usage_percentage: self.rts_state.context_usage_percentage(),
+                    context_usage_invalidated: false,
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
@@ -2664,6 +2687,7 @@ impl AcpSession {
                     let notification = super::schema::MetadataNotification {
                         session_id: self.session_id_str.clone(),
                         context_usage_percentage: None,
+                        context_usage_invalidated: false,
                         metering_usage: None,
                         turn_duration_ms: None,
                         effort: None,
@@ -2690,6 +2714,7 @@ impl AcpSession {
                 let notification = super::schema::MetadataNotification {
                     session_id: self.session_id_str.clone(),
                     context_usage_percentage: Some(pct),
+                    context_usage_invalidated: false,
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
@@ -2953,6 +2978,7 @@ impl AcpSession {
                     let notification = super::schema::MetadataNotification {
                         session_id: self.session_id_str.clone(),
                         context_usage_percentage: self.rts_state.context_usage_percentage(),
+                        context_usage_invalidated: false,
                         metering_usage: None,
                         turn_duration_ms: None,
                         effort: self.current_effort(),
@@ -2995,6 +3021,7 @@ impl AcpSession {
                 let notification = super::schema::MetadataNotification {
                     session_id: self.session_id_str.clone(),
                     context_usage_percentage: self.rts_state.context_usage_percentage(),
+                    context_usage_invalidated: false,
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
@@ -4012,7 +4039,7 @@ async fn update_model_info(
     settings: &crate::database::settings::Settings,
     rts_state: &RtsState,
     model: Option<&str>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     use crate::database::settings::Setting;
 
     let (models, api_default) = get_available_models(client)
@@ -4031,11 +4058,11 @@ async fn update_model_info(
         api_default
     };
 
-    rts_state.set_model_info(Some(model_info));
+    let model_changed = rts_state.set_model_info(Some(model_info));
     // Apply per-model defaults (e.g. reasoning effort) from the shared settings store.
     rts_state.apply_model_defaults(settings);
 
-    Ok(())
+    Ok(model_changed)
 }
 
 fn rate_limit_message(kind: &StreamErrorKind) -> Option<&str> {

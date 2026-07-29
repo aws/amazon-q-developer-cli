@@ -1,14 +1,14 @@
 ---
 doc_meta:
   validated: 2026-07-29
-  commit: 07ecd6a76
+  commit: d896ecb68
   status: validated
   testable_headless: true
   category: slash_command
   title: /model
   description: Select AI model for current conversation session
-  keywords: [model, ai, claude, select, switch, autocomplete, default, set-current-as-default]
-  related: [default-model, cmd-chat]
+  keywords: [model, ai, claude, select, switch, autocomplete, default, set-current-as-default, context]
+  related: [default-model, cmd-chat, context]
 ---
 
 # /model
@@ -139,7 +139,7 @@ Starts a new session with the specified model.
 
 ### How do I switch models mid-session?
 
-Use `/model` to open the picker or `/model <name>` to switch directly. The change takes effect immediately for subsequent messages.
+Use `/model` to open the picker or `/model <name>` to switch directly. The change takes effect immediately for subsequent messages. The context usage percentage in the prompt bar updates to reflect the new model's context window size.
 
 ### How do I set a default model?
 
@@ -203,3 +203,5 @@ Run `/model` without arguments to see the interactive picker with all available 
 **Tab Completion**: Model names are fetched dynamically and filtered by prefix as you type.
 
 **Persistence**: Model selection is session-only. Save a default explicitly with `/model set-current-as-default` or the `chat.defaultModel` setting. When resuming, the session's saved model is restored.
+
+**Context Usage**: Switching models recalculates the context usage percentage immediately. A model with a smaller context window will show higher usage for the same conversation state.

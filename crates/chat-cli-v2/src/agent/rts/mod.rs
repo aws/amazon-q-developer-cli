@@ -632,11 +632,22 @@ impl RtsState {
         self.inner.lock().unwrap().model_info.clone()
     }
 
-    pub fn set_model_info(&self, info: Option<ModelInfo>) {
+    pub fn set_model_info(&self, info: Option<ModelInfo>) -> bool {
         let mut inner = self.inner.lock().unwrap();
+        let changed = match (&inner.model_info, &info) {
+            (Some(current), Some(next)) => {
+                current.model_id != next.model_id || current.context_window_tokens != next.context_window_tokens
+            },
+            (None, None) => false,
+            _ => true,
+        };
+        if changed {
+            inner.context_usage_percentage = None;
+        }
         // Reset additional fields from the new model's schema (clears any prior overrides)
         inner.additional_fields = info.as_ref().and_then(|m| m.additional_fields.clone());
         inner.model_info = info;
+        changed
     }
 
     /// Apply model overrides: hardcoded Claude defaults + user-level DB settings.
@@ -1307,6 +1318,48 @@ mod tests {
         if !was_cancelled {
             panic!("stream was never cancelled");
         }
+    }
+
+    fn model_info(id: &str, context_window_tokens: usize) -> ModelInfo {
+        ModelInfo {
+            model_id: id.to_string(),
+            model_name: Some(id.to_string()),
+            description: None,
+            context_window_tokens,
+            rate_multiplier: None,
+            rate_unit: None,
+            additional_fields: None,
+        }
+    }
+
+    #[test]
+    fn model_change_invalidates_context_usage() {
+        let state = RtsState::new("conversation".to_string());
+        assert!(state.set_model_info(Some(model_info("model-a", 1_000_000))));
+        state.set_context_usage_percentage(Some(42.0));
+
+        assert!(state.set_model_info(Some(model_info("model-b", 272_000))));
+        assert_eq!(state.context_usage_percentage(), None);
+    }
+
+    #[test]
+    fn same_model_preserves_context_usage() {
+        let state = RtsState::new("conversation".to_string());
+        state.set_model_info(Some(model_info("model-a", 272_000)));
+        state.set_context_usage_percentage(Some(12.0));
+
+        assert!(!state.set_model_info(Some(model_info("model-a", 272_000))));
+        assert_eq!(state.context_usage_percentage(), Some(12.0));
+    }
+
+    #[test]
+    fn context_window_change_invalidates_context_usage() {
+        let state = RtsState::new("conversation".to_string());
+        state.set_model_info(Some(model_info("model-a", 1_000_000)));
+        state.set_context_usage_percentage(Some(2.0));
+
+        assert!(state.set_model_info(Some(model_info("model-a", 272_000))));
+        assert_eq!(state.context_usage_percentage(), None);
     }
 
     #[test]

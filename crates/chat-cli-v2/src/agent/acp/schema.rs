@@ -152,6 +152,8 @@ pub struct MetadataNotification {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_usage_percentage: Option<f32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub context_usage_invalidated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metering_usage: Option<Vec<MeteringUsageInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -451,5 +453,23 @@ mod tests {
         test_ser_deser!(UiModeSource, UiModeSource::EnvVar, "envVar");
         test_ser_deser!(UiModeSource, UiModeSource::Setting, "setting");
         test_ser_deser!(UiModeSource, UiModeSource::Default, "default");
+    }
+
+    #[test]
+    fn metadata_context_invalidation_is_explicit() {
+        let notification = MetadataNotification {
+            session_id: "session".to_string(),
+            context_usage_percentage: None,
+            context_usage_invalidated: true,
+            metering_usage: None,
+            turn_duration_ms: None,
+            effort: None,
+            stop_reason: None,
+            refusal: None,
+        };
+        let value = serde_json::to_value(notification).unwrap();
+
+        assert_eq!(value["contextUsageInvalidated"], true);
+        assert!(value.get("contextUsagePercentage").is_none());
     }
 }

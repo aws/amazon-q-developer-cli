@@ -71,6 +71,10 @@ pub struct AgentSnapshot {
     #[typeshare(skip)]
     #[serde(default)]
     pub tool_specs: Vec<super::agent_loop::types::ToolSpec>,
+    /// Maps each model-visible tool name to `built-in`, `mcp:<server>`, or `agent:<name>`.
+    #[typeshare(skip)]
+    #[serde(skip)]
+    pub tool_spec_sources: std::collections::BTreeMap<String, String>,
     /// Paths added via /context add during this session
     #[typeshare(skip)]
     #[serde(default)]
@@ -94,6 +98,7 @@ impl AgentSnapshot {
             settings: Default::default(),
             permissions: Default::default(),
             tool_specs: Default::default(),
+            tool_spec_sources: Default::default(),
             session_resource_paths: Default::default(),
             has_knowledge_provider: false,
         }
@@ -552,6 +557,7 @@ mod tests {
     fn test_agent_snapshot_default() {
         let s = AgentSnapshot::default();
         assert!(s.tool_specs.is_empty());
+        assert!(s.tool_spec_sources.is_empty());
         assert!(s.session_resource_paths.is_empty());
     }
 
@@ -560,6 +566,7 @@ mod tests {
         let cfg = LoadedAgentConfig::default();
         let s = AgentSnapshot::new_empty(cfg);
         assert!(s.tool_specs.is_empty());
+        assert!(s.tool_spec_sources.is_empty());
     }
 
     #[test]

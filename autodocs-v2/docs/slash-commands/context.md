@@ -1,14 +1,14 @@
 ---
 doc_meta:
   validated: 2026-07-29
-  commit: 07ecd6a76
+  commit: d896ecb68
   status: validated
   testable_headless: false
   category: slash_command
   title: /context
   description: View context window usage and manage context files with add, remove, show, and clear operations
-  keywords: [context, files, usage, tokens, window, manage, percentage, skill]
-  related: [agent-config, hooks]
+  keywords: [context, files, usage, tokens, window, manage, percentage, skill, tools, breakdown]
+  related: [agent-config, hooks, tool-search]
 ---
 
 # /context
@@ -123,10 +123,29 @@ Context breakdown - 75% used
 
 The UI displays a breakdown with categories:
 - `context_files` - Agent context files
-- `tools` - Tool definitions
+- `tools` - Tool definitions (grouped by source)
 - `kiro_responses` - Assistant responses
 - `your_prompts` - User prompts
 - `session_files` - Temporary session files
+
+The tools section shows a per-source breakdown. Tools are grouped by their origin:
+- **Built-in** — tools bundled with Kiro (e.g., read, write, grep)
+- **MCP server name** — tools provided by connected MCP servers
+- **Agent: name** — tools from subagents
+
+Each group shows its percentage of the context window and tool count, and individual tools within the group show their own percentage:
+
+```
+Tools
+  Built-in 3.2% · 12 tools
+    · read 0.8%
+    · write 0.6%
+    · grep 0.4%
+    ...
+  docs-server 1.1% · 2 tools
+    · search_docs 0.6%
+    · fetch_docs 0.5%
+```
 
 ### Example 2: Show Context Files
 
@@ -283,7 +302,7 @@ Context files have size limits to prevent overwhelming context window:
 
 **Token Counting**: Uses approximate token counter (characters / 4).
 
-**Context Window**: Size varies by model (e.g., 200K for Claude 3.5 Sonnet).
+**Context Window**: Size varies by model (e.g., 200K for Claude 3.5 Sonnet). When you switch models via `/model`, the context usage percentage recalculates immediately to reflect the new model's context window size.
 
 **File Matching**: Uses glob patterns with gitignore syntax. `**` matches recursively.
 

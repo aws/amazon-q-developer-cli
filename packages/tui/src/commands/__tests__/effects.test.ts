@@ -692,6 +692,68 @@ describe('/model effect', () => {
     expect(ctx._spies.setCurrentModel!).toHaveBeenCalledWith(model);
   });
 
+  it('updates context usage returned by a model switch', () => {
+    const cmd: SlashCommand = {
+      name: '/model',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    const result = {
+      success: true,
+      message: '',
+      data: {
+        model: { id: 'gpt-5.6-sol', name: 'GPT 5.6' },
+        contextUsagePercentage: 7.5,
+      },
+    };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx._spies.setContextUsage!).toHaveBeenCalledWith(7.5);
+  });
+
+  it('clears stale context usage when model-switch recomputation fails', () => {
+    const cmd: SlashCommand = {
+      name: '/model',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    const result = {
+      success: true,
+      message: '',
+      data: {
+        model: { id: 'gpt-5.6-sol', name: 'GPT 5.6' },
+        contextUsagePercentage: null,
+      },
+    };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx._spies.setContextUsage!).toHaveBeenCalledWith(null);
+  });
+
+  it('preserves context usage when the selected model is already active', () => {
+    const cmd: SlashCommand = {
+      name: '/model',
+      description: '',
+      source: 'backend',
+    };
+    const ctx = createMockCommandContext();
+    const result = {
+      success: true,
+      message: '',
+      data: {
+        model: { id: 'gpt-5.6-sol', name: 'GPT 5.6' },
+      },
+    };
+
+    runEffect(cmd, result, ctx, '');
+
+    expect(ctx._spies.setContextUsage!).not.toHaveBeenCalled();
+  });
+
   it('does not call setCurrentModel when model data is absent', () => {
     const cmd: SlashCommand = {
       name: '/model',

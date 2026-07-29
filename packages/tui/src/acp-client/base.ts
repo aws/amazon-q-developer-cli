@@ -1017,9 +1017,13 @@ export abstract class BaseAcpClient implements SessionClient {
   private handleMetadataUpdate(params: Record<string, unknown>) {
     const sessionId = params.sessionId as string | undefined;
     if (sessionId && sessionId !== this.sessionId) return;
-    const percent =
-      (params.contextUsagePercentage as number | undefined) ?? null;
-    if (percent !== null) {
+    const percent = params.contextUsagePercentage as number | undefined;
+    if (params.contextUsageInvalidated === true) {
+      this.broadcastStreamEvent({
+        type: AgentEventType.ContextUsage,
+        percent: null,
+      });
+    } else if (percent != null) {
       this.broadcastStreamEvent({ type: AgentEventType.ContextUsage, percent });
     }
     const metering = params.meteringUsage as MeteringUsage[] | undefined;

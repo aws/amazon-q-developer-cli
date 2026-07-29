@@ -205,10 +205,16 @@ let themeDeprecationAnnounced = false;
 const effectHandlers: Record<EffectName, EffectHandler> = {
   updateModel: (result, ctx) => {
     const data = result?.data as
-      | { model?: { id: string; name: string } }
+      | {
+          model?: { id: string; name: string };
+          contextUsagePercentage?: number | null;
+        }
       | undefined;
     if (data?.model) {
       ctx.setCurrentModel(data.model);
+      if (data.contextUsagePercentage !== undefined) {
+        ctx.setContextUsage(data.contextUsagePercentage);
+      }
       // Lite has no transient toast; emit a System row for scrollback visibility.
       if (ctx.getUiMode?.() === 'lite') {
         ctx.announceSystem(`Switched to model: ${data.model.name}`);

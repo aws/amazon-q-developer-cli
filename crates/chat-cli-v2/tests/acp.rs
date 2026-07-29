@@ -883,6 +883,114 @@ async fn prompt_with_resource_link() {
 }
 
 #[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn set_model_recomputes_context_usage_metadata() {
+    let (_harness, client, session_id, _) = AcpTestHarnessBuilder::new("set_model_recomputes_context_usage_metadata")
+        .with_setting("chat.defaultModel", "claude-sonnet-4.6")
+        .build_with_session()
+        .await;
+
+    assert!(
+        client
+            .wait_for_timeout(
+                |captured| {
+                    captured
+                        .ext_notifications
+                        .iter()
+                        .any(|notification| notification.method.as_ref() == "kiro.dev/metadata")
+                },
+                Duration::from_secs(5),
+            )
+            .await,
+        "session should emit initial context metadata"
+    );
+    let before = client
+        .captured()
+        .await
+        .ext_notifications
+        .iter()
+        .filter(|notification| notification.method.as_ref() == "kiro.dev/metadata")
+        .count();
+
+    client
+        .set_session_model(session_id, "claude-opus-4.7".to_string())
+        .await
+        .expect("set_session_model failed");
+
+    assert!(
+        client
+            .wait_for_timeout(
+                |captured| {
+                    captured
+                        .ext_notifications
+                        .iter()
+                        .filter(|notification| notification.method.as_ref() == "kiro.dev/metadata")
+                        .count()
+                        > before
+                },
+                Duration::from_secs(5),
+            )
+            .await,
+        "model switch should emit new context metadata"
+    );
+    let captured = client.captured().await;
+    let metadata_notifications = captured
+        .ext_notifications
+        .iter()
+        .filter(|notification| notification.method.as_ref() == "kiro.dev/metadata")
+        .collect::<Vec<_>>();
+    assert_eq!(metadata_notifications.len(), before + 1);
+
+    let metadata =
+        serde_json::from_str::<serde_json::Value>(metadata_notifications.last().unwrap().params.get()).unwrap();
+    assert!(
+        metadata
+            .get("contextUsagePercentage")
+            .and_then(serde_json::Value::as_f64)
+            .is_some(),
+        "model switch metadata should include recomputed context usage: {metadata}"
+    );
+    assert_ne!(
+        metadata
+            .get("contextUsageInvalidated")
+            .and_then(serde_json::Value::as_bool),
+        Some(true),
+        "successful recomputation should not invalidate context usage"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn model_command_omits_context_usage_for_unchanged_model() {
+    let (_harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("model_command_omits_context_usage_for_unchanged_model")
+            .with_setting("chat.defaultModel", "claude-sonnet-4.6")
+            .build_with_session()
+            .await;
+
+    let result = client
+        .execute_command(
+            session_id,
+            serde_json::json!({
+                "command": "model",
+                "args": { "value": "claude-sonnet-4.6" }
+            }),
+        )
+        .await
+        .expect("model command failed");
+
+    assert!(result.success, "model command should succeed: {}", result.message);
+    let data = result.data.expect("model command should return model data");
+    assert_eq!(data["model"]["id"], "claude-sonnet-4.6");
+    assert!(
+        data.get("contextUsagePercentage").is_none(),
+        "an unchanged model must preserve the displayed context estimate: {data}"
+    );
+}
+
+#[tokio::test]
 #[ignore = "TODO: times out in CI but passes locally, needs investigation"]
 #[timeout(30000)]
 #[serial]
@@ -3763,11 +3871,38 @@ async fn model_switch_applies_settings_defaults() {
         .build_with_session()
         .await;
 
+    client
+        .wait_for(|captured| {
+            captured
+                .ext_notifications
+                .iter()
+                .any(|notification| notification.method.as_ref() == "kiro.dev/metadata")
+        })
+        .await;
+    let metadata_count = client
+        .captured()
+        .await
+        .ext_notifications
+        .iter()
+        .filter(|notification| notification.method.as_ref() == "kiro.dev/metadata")
+        .count();
+
     // Switch to opus-4.7 via /model command (slash commands don't consume mock responses)
     client
         .prompt_text(session_id.clone(), "/model claude-opus-4.7")
         .await
         .expect("model switch failed");
+
+    let captured = client.captured().await;
+    assert_eq!(
+        captured
+            .ext_notifications
+            .iter()
+            .filter(|notification| notification.method.as_ref() == "kiro.dev/metadata")
+            .count(),
+        metadata_count,
+        "slash model switches should return context usage in command data without a duplicate metadata notification"
+    );
 
     // Send a prompt to capture the request with the new model's settings
     harness

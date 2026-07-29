@@ -16,10 +16,46 @@ use agent::util::steering::{
     should_include_steering_file,
 };
 use serde_json::json;
+use tracing::warn;
 
 use super::CommandContext;
 
 pub const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 200_000;
+
+pub async fn recompute_context_usage_after_model_change(
+    agent: &agent::AgentHandle,
+    rts_state: &crate::agent::rts::RtsState,
+) -> Option<f32> {
+    rts_state.set_context_usage_percentage(None);
+    if let Err(error) = agent.invalidate_cached_tool_specs().await {
+        warn!(%error, "Failed to invalidate tool specs after model change");
+        return None;
+    }
+    // Tool specs are rebuilt lazily by the info request before the snapshot is created.
+    if let Err(error) = agent.get_tool_info().await {
+        warn!(%error, "Failed to rebuild tool specs after model change");
+        return None;
+    }
+    let snapshot = match agent.create_snapshot().await {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            warn!(%error, "Failed to create context snapshot after model change");
+            return None;
+        },
+    };
+    let context_window = rts_state
+        .model_info()
+        .map_or(DEFAULT_CONTEXT_WINDOW_TOKENS, |model| model.context_window_tokens);
+    let percentage = estimate_context_usage(&snapshot, context_window);
+    rts_state.set_context_usage_percentage(Some(percentage));
+    Some(percentage)
+}
+
+fn estimate_context_usage(snapshot: &AgentSnapshot, context_window_tokens: usize) -> f32 {
+    let sizes = calculate_component_sizes(snapshot);
+    let total_tokens = sizes.context_files + sizes.session_files + sizes.tools + sizes.kiro + sizes.user + sizes.system;
+    (total_tokens as f32 / context_window_tokens as f32) * 100.0
+}
 
 pub async fn execute(args: &ContextArgs, ctx: &CommandContext<'_>) -> CommandResult {
     // Check for subcommand
@@ -200,7 +236,7 @@ async fn execute_show(args: &ContextArgs, ctx: &CommandContext<'_>, expanded: bo
 #[serde(rename_all = "camelCase")]
 struct ContextBreakdown {
     context_files: CategoryBreakdown,
-    tools: CategoryBreakdown,
+    tools: ToolCategoryBreakdown,
     kiro_responses: CategoryBreakdown,
     your_prompts: CategoryBreakdown,
     session_files: CategoryBreakdown,
@@ -216,6 +252,32 @@ struct CategoryBreakdown {
 }
 
 #[derive(serde::Serialize)]
+struct ToolCategoryBreakdown {
+    tokens: usize,
+    #[serde(rename = "percent")]
+    percentage: f32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    groups: Vec<ToolGroupBreakdown>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ToolGroupBreakdown {
+    name: String,
+    source: String,
+    tokens: usize,
+    percent: f32,
+    items: Vec<ToolBreakdownItem>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ToolBreakdownItem {
+    name: String,
+    tokens: usize,
+    percent: f32,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BreakdownItem {
     name: String,
     tokens: usize,
@@ -263,6 +325,13 @@ fn calculate_context_breakdown(
     for item in &mut sizes.session_file_items {
         item.percent = (item.tokens as f32 / cw) * 100.0;
     }
+    let tools_scale = if tools_pct > 0.0 { tools_final / tools_pct } else { 0.0 };
+    for group in &mut sizes.tool_groups {
+        group.percent = (group.tokens as f32 / cw) * 100.0 * tools_scale;
+        for item in &mut group.items {
+            item.percent = (item.tokens as f32 / cw) * 100.0 * tools_scale;
+        }
+    }
 
     let breakdown = ContextBreakdown {
         context_files: CategoryBreakdown {
@@ -270,10 +339,10 @@ fn calculate_context_breakdown(
             percentage: context_files_final,
             items: sizes.context_file_items,
         },
-        tools: CategoryBreakdown {
+        tools: ToolCategoryBreakdown {
             tokens: sizes.tools,
             percentage: tools_final,
-            items: vec![],
+            groups: sizes.tool_groups,
         },
         kiro_responses: CategoryBreakdown {
             tokens: sizes.kiro,
@@ -366,6 +435,7 @@ pub struct ComponentSizes {
     pub session_files: usize,
     pub session_file_items: Vec<BreakdownItem>,
     pub tools: usize,
+    tool_groups: Vec<ToolGroupBreakdown>,
     pub kiro: usize,
     pub user: usize,
     pub system: usize,
@@ -374,12 +444,14 @@ pub struct ComponentSizes {
 pub fn calculate_component_sizes(snapshot: &AgentSnapshot) -> ComponentSizes {
     let (context_files, context_file_items, session_files, session_file_items) =
         calculate_context_files_tokens(snapshot);
+    let (tools, tool_groups) = calculate_tools_breakdown(snapshot);
     ComponentSizes {
         context_files,
         context_file_items,
         session_files,
         session_file_items,
-        tools: calculate_tools_tokens(snapshot),
+        tools,
+        tool_groups,
         kiro: calculate_message_tokens(snapshot, Role::Assistant),
         user: calculate_message_tokens(snapshot, Role::User),
         system: snapshot.agent_config.global_prompt().map_or(0, |s| s.len() / 4),
@@ -551,13 +623,76 @@ fn calculate_file_tokens(path: &str, is_skill: bool) -> (usize, bool, bool) {
     }
 }
 
-fn calculate_tools_tokens(snapshot: &AgentSnapshot) -> usize {
-    // Use actual tool specs - no fallback estimates
-    if !snapshot.tool_specs.is_empty() {
-        let specs_json = serde_json::to_string(&snapshot.tool_specs).unwrap_or_default();
-        return specs_json.len() / 4;
+fn calculate_tools_breakdown(snapshot: &AgentSnapshot) -> (usize, Vec<ToolGroupBreakdown>) {
+    if snapshot.tool_specs.is_empty() {
+        return (0, Vec::new());
     }
-    0
+
+    let mut tools = snapshot
+        .tool_specs
+        .iter()
+        .map(|spec| {
+            let source = snapshot
+                .tool_spec_sources
+                .get(&spec.name)
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string());
+            let tokens = serde_json::to_string(spec).unwrap_or_default().len() / 4;
+            (source, ToolBreakdownItem {
+                name: spec.name.clone(),
+                tokens,
+                percent: 0.0,
+            })
+        })
+        .collect::<Vec<_>>();
+    let total_tokens = tools.iter().map(|(_, item)| item.tokens).sum();
+    tools.sort_by(|(source_a, tool_a), (source_b, tool_b)| {
+        tool_source_sort_key(source_a)
+            .cmp(&tool_source_sort_key(source_b))
+            .then(tool_a.name.cmp(&tool_b.name))
+    });
+
+    let mut grouped = std::collections::BTreeMap::<String, Vec<ToolBreakdownItem>>::new();
+    for (source, item) in tools {
+        grouped.entry(source).or_default().push(item);
+    }
+
+    let mut groups = grouped
+        .into_iter()
+        .map(|(source, items)| ToolGroupBreakdown {
+            name: tool_source_label(&source),
+            source,
+            tokens: items.iter().map(|item| item.tokens).sum(),
+            percent: 0.0,
+            items,
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by(|a, b| tool_source_sort_key(&a.source).cmp(&tool_source_sort_key(&b.source)));
+    (total_tokens, groups)
+}
+
+fn tool_source_sort_key(source: &str) -> (u8, &str) {
+    if source == "built-in" {
+        (0, source)
+    } else if let Some(server) = source.strip_prefix("mcp:") {
+        (1, server)
+    } else if let Some(agent) = source.strip_prefix("agent:") {
+        (2, agent)
+    } else {
+        (3, source)
+    }
+}
+
+fn tool_source_label(source: &str) -> String {
+    if source == "built-in" {
+        "Built-in".to_string()
+    } else if let Some(server) = source.strip_prefix("mcp:") {
+        server.to_string()
+    } else if let Some(agent) = source.strip_prefix("agent:") {
+        format!("Agent: {agent}")
+    } else {
+        "Other".to_string()
+    }
 }
 
 fn calculate_message_tokens(snapshot: &AgentSnapshot, role: Role) -> usize {
@@ -815,6 +950,160 @@ mod tests {
             original_ratio,
             adjusted_ratio
         );
+    }
+
+    #[test]
+    fn test_context_estimate_uses_selected_model_window() {
+        use agent::agent_config::LoadedAgentConfig;
+        use agent::agent_loop::types::ToolSpec;
+
+        let mut snapshot = AgentSnapshot::new_empty(LoadedAgentConfig::default());
+        snapshot.tool_specs = vec![ToolSpec {
+            name: "large_tool".to_string(),
+            description: "x".repeat(40_000),
+            input_schema: serde_json::Map::new(),
+        }];
+
+        let million_token_usage = estimate_context_usage(&snapshot, 1_000_000);
+        let small_window_usage = estimate_context_usage(&snapshot, 272_000);
+        assert!(small_window_usage > million_token_usage * 3.6);
+        assert!(small_window_usage < million_token_usage * 3.7);
+    }
+
+    #[test]
+    fn test_context_estimate_includes_session_files() {
+        use agent::agent_config::definitions::AgentConfig;
+        use agent::agent_config::types::ResourcePath;
+        use agent::agent_config::{
+            ConfigSource,
+            LoadedAgentConfig,
+            ResolvedGlobalPrompt,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.md");
+        std::fs::write(&path, "x".repeat(4_000)).unwrap();
+        let resource = format!("file://{}", path.display());
+        let mut config = AgentConfig::default();
+        match &mut config {
+            AgentConfig::V2025_08_22(config) => {
+                config.resources = vec![ResourcePath::FilePath(resource.clone())];
+            },
+        }
+        let mut snapshot = AgentSnapshot::new_empty(LoadedAgentConfig::new(
+            config,
+            ConfigSource::BuiltIn,
+            ResolvedGlobalPrompt::None,
+        ));
+        snapshot.session_resource_paths.insert(resource);
+
+        let sizes = calculate_component_sizes(&snapshot);
+        assert!(sizes.session_files > 0);
+        assert_eq!(
+            estimate_context_usage(&snapshot, 10_000),
+            (sizes.session_files as f32 / 10_000.0) * 100.0
+        );
+    }
+
+    #[test]
+    fn test_tool_breakdown_percentages_follow_adjusted_total() {
+        use agent::agent_config::LoadedAgentConfig;
+        use agent::agent_loop::types::ToolSpec;
+
+        let mut snapshot = AgentSnapshot::new_empty(LoadedAgentConfig::default());
+        snapshot.tool_specs = vec![ToolSpec {
+            name: "large_tool".to_string(),
+            description: "x".repeat(4_000),
+            input_schema: serde_json::Map::new(),
+        }];
+        snapshot
+            .tool_spec_sources
+            .insert("large_tool".to_string(), "built-in".to_string());
+
+        let raw_tools_percent = (calculate_component_sizes(&snapshot).tools as f32 / 10_000.0) * 100.0;
+        let adjusted_tools_percent = raw_tools_percent / 2.0;
+        let (breakdown, _) = calculate_context_breakdown(&snapshot, Some(adjusted_tools_percent), 10_000);
+        let group_percent: f32 = breakdown.tools.groups.iter().map(|group| group.percent).sum();
+        let item_percent: f32 = breakdown.tools.groups[0].items.iter().map(|item| item.percent).sum();
+
+        assert!((breakdown.tools.percentage - adjusted_tools_percent).abs() < 0.001);
+        assert!((group_percent - breakdown.tools.percentage).abs() < 0.001);
+        assert!((item_percent - breakdown.tools.groups[0].percent).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_tool_breakdown_groups_model_visible_specs_by_source() {
+        use agent::agent_config::LoadedAgentConfig;
+        use agent::agent_loop::types::ToolSpec;
+
+        let mut snapshot = AgentSnapshot::new_empty(LoadedAgentConfig::default());
+        snapshot.tool_specs = vec![
+            ToolSpec {
+                name: "read".to_string(),
+                description: "Read files".to_string(),
+                input_schema: serde_json::Map::new(),
+            },
+            ToolSpec {
+                name: "search_docs".to_string(),
+                description: "Search docs".to_string(),
+                input_schema: serde_json::Map::new(),
+            },
+            ToolSpec {
+                name: "fetch_docs".to_string(),
+                description: "Fetch docs".to_string(),
+                input_schema: serde_json::Map::new(),
+            },
+        ];
+        snapshot
+            .tool_spec_sources
+            .insert("read".to_string(), "built-in".to_string());
+        snapshot
+            .tool_spec_sources
+            .insert("search_docs".to_string(), "mcp:docs-server".to_string());
+        snapshot
+            .tool_spec_sources
+            .insert("fetch_docs".to_string(), "mcp:docs-server".to_string());
+
+        let expected_tokens = snapshot
+            .tool_specs
+            .iter()
+            .map(|spec| serde_json::to_string(spec).unwrap().len() / 4)
+            .sum::<usize>();
+        let expected_read_tokens = serde_json::to_string(&snapshot.tool_specs[0]).unwrap().len() / 4;
+        let sizes = calculate_component_sizes(&snapshot);
+        assert_eq!(sizes.tool_groups.len(), 2);
+        assert_eq!(sizes.tool_groups[0].name, "Built-in");
+        assert_eq!(sizes.tool_groups[0].items[0].name, "read");
+        assert_eq!(sizes.tool_groups[0].items[0].tokens, expected_read_tokens);
+        assert_eq!(sizes.tool_groups[1].name, "docs-server");
+        assert_eq!(
+            sizes.tool_groups[1]
+                .items
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["fetch_docs", "search_docs"]
+        );
+        assert_eq!(sizes.tools, expected_tokens);
+        assert_eq!(
+            sizes.tools,
+            sizes.tool_groups.iter().map(|group| group.tokens).sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn test_breakdown_item_serializes_camel_case_fields() {
+        let value = serde_json::to_value(BreakdownItem {
+            name: "skill.md".to_string(),
+            tokens: 10,
+            matched: true,
+            percent: 1.0,
+            auto_included: true,
+        })
+        .unwrap();
+
+        assert_eq!(value["autoIncluded"], true);
+        assert!(value.get("auto_included").is_none());
     }
 
     /// The same file referenced as a literal path, via overlapping globs, and
