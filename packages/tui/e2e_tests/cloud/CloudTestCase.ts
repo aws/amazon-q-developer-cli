@@ -25,6 +25,10 @@ const KAS_SERVER = path.join(
 );
 const MOCK_BFF = path.join(__dirname, 'mock-bff.mjs');
 
+// Single source of truth, shared with mock-bff.mjs (see mock-space-ids.mjs) —
+// no hand-kept sync contract. Re-exported so tests keep importing it from here.
+export { MOCK_SPACE_IDS } from './mock-space-ids.mjs';
+
 async function freePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -50,9 +54,20 @@ export class CloudHarness {
   private bff: ChildProcess | null = null;
   readonly bffPort: number;
   testCase: E2ETestCase | null = null;
+  private bffStdout = '';
 
   private constructor(bffPort: number) {
     this.bffPort = bffPort;
+  }
+
+  /**
+   * Everything the mock BFF printed so far (op log lines; full decoded
+   * request bodies when the test launched with MOCK_BFF_LOG_BODIES=1).
+   * Lets a test assert on wire content — e.g. that attached-file bytes
+   * actually reached the BFF in-band.
+   */
+  bffOutput(): string {
+    return this.bffStdout;
   }
 
   static async launch(opts: CloudHarnessOptions): Promise<CloudHarness> {
@@ -70,7 +85,10 @@ export class CloudHarness {
           // KAS engine, spawning the published server from node_modules.
           KIRO_AGENT_ENGINE: 'kas',
           KIRO_KAS_SERVER_PATH: KAS_SERVER,
-          KIRO_KAS_NODE_PATH: 'node',
+          // The KAS session/list merge needs Node >= 20 (Array.toSorted) —
+          // honor an explicit override so a machine whose default `node` is
+          // older can point at a newer one; CI runners are already >= 20.
+          KIRO_KAS_NODE_PATH: process.env.KIRO_KAS_NODE_PATH ?? 'node',
           // Point KAS at the per-test mock BFF; this is also what advertises
           // the cloud capabilities (executionTargets, sessionSources, providers).
           KIRO_REMOTE_SESSIONS_ENDPOINT: `http://127.0.0.1:${bffPort}`,
@@ -90,22 +108,29 @@ export class CloudHarness {
   }
 
   private async startBff(env: Record<string, string>): Promise<void> {
+    // Strip ambient MOCK_BFF_* toggles so a developer's exported vars can't
+    // change a test's BFF behavior — each test states its toggles via bffEnv.
+    const ambient = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.startsWith('MOCK_BFF_'))
+    );
     this.bff = spawn('bun', [MOCK_BFF], {
       env: {
-        ...process.env,
+        ...ambient,
         MOCK_BFF_PORT: String(this.bffPort),
         ...env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     // Wait for the listen line so a slow spawn can't race the TUI boot.
+    // Keep accumulating stdout afterwards so bffOutput() sees the full log.
     await new Promise<void>((resolve, reject) => {
       const t = setTimeout(
         () => reject(new Error('mock BFF did not boot in 10s')),
         10_000
       );
       this.bff!.stdout!.on('data', (d: Buffer) => {
-        if (d.toString().includes('listening')) {
+        this.bffStdout += d.toString();
+        if (this.bffStdout.includes('listening')) {
           clearTimeout(t);
           resolve();
         }

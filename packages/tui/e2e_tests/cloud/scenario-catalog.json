@@ -1,0 +1,99 @@
+{
+  "_comment": "Reviewer-facing catalog: WHAT each cloud-sandbox scenario is and HOW it is validated. Folded into the review HTML by gen-review-report.py alongside the live KR frames. Keep ids in sync with kr-review-run.sh.",
+  "invariant": {
+    "title": "Global no-error invariant (applies to every scenario)",
+    "what": "At the end of EVERY scenario, no error text may be visible anywhere on screen — 'Internal error', 'rejected by sandbox', 'Remote session source', raw session-uuid 'not found', 'Failed to …', 'error occurred' — with exactly two deliberate exceptions: the humanized gate refusals ('… is not available for a cloud session yet.') and the provider-gate screen ('Source provider not found' + setup handoff).",
+    "how": "kr-review-run.sh no_error_check(): dumps the live screen, greps for the error signatures, subtracts the two allowlisted shapes; any surviving row fails the scenario and is recorded verbatim in the manifest (shown as 'error row:' notes below the checks). This replaces per-command error tests by design decision — raw wire errors are a bug in ANY flow, not just /knowledge or /plan."
+  },
+  "scenarios": {
+    "S01": {
+      "covers": "Basic user story 1 (start a cloud session); bug #30 (startup tools labelled Cancelled) — CLI side",
+      "what": "A user runs `kiro chat --cloud`. They should see the connect checklist progress (kiro.dev, GitHub, session created, repo count), end at a usable prompt, and the persistent ☁ Cloud footer chip — with no phantom 'Cancelled' tool rows from sandbox startup prefetches.",
+      "how": "Boot the real TUI + published KAS against the mock BFF with --cloud. Poll the live screen for each checklist milestone in order ('Cloud session created', 'repositories found', 'ask a question'), then assert the Cloud footer chip is present and 'Cancelled' appears nowhere. Frame captured at the settled state. Mirrors E2E cloud-sessions.test.ts t1.",
+      "limits": "The mock serves no startup tool frames, so the Cancelled check pins only client-synthesized rows; the real prefetch path (bug #30's actual trigger) needs a prod-mode run."
+    },
+    "S02": {
+      "covers": "Basic user story 2 (source provider connection)",
+      "what": "A user without a GitHub/GitLab connection starts a cloud session. Instead of a broken chat, they get a gate screen explaining the requirement and a Kiro Web handoff to complete the connection — and no chat prompt while gated.",
+      "how": "Restart the mock BFF with MOCK_BFF_NO_PROVIDER=1 (ListAvailableProviders returns DISCONNECTED; CheckProviderSetup returns the setup URL). Boot --cloud, wait for the gate text, assert the kiro.dev/browser handoff is offered and 'ask a question' is absent. The provider-gate screen is one of the two allowlisted 'deliberate block' shapes in the no-error invariant. Mirrors E2E t2."
+    },
+    "S03": {
+      "covers": "Basic user story 3 (repo selection); bug #28 (Tab to switch panels / interactive Selected section); pink-checkmark nit — both fixed by #3656",
+      "what": "The /repo picker lists the provider's repos with a two-panel layout. Space toggles selection; Tab moves focus to the Selected panel where space UNCHECKS (pre-fix the Selected panel was inert); the checked row shows its ✓ mark.",
+      "how": "Type /repo, wait for the mock's 3 repos to render, assert the 'tab to switch panels' hint. Press space and pin the header counter 'Selected(1)' (unambiguous — titles can't fake it). Press Tab then space and pin 'Selected(0)'. Frames at open/selected/unchecked. Mirrors E2E cloud-repo-picker.test.ts (which additionally regex-pins the [✓] mark placement)."
+    },
+    "S04": {
+      "covers": "Basic user story 3b (--repo flag); known-behavior note 'repo is not cloned until the first message'",
+      "what": "`--cloud --repo kiro-team/banana-service` binds the repo directly: footer shows it, the interactive picker never opens, and nothing clones before the first message (same deferred-clone behavior as Kiro Web).",
+      "how": "Boot with the flag; assert the repo name renders, 'space to toggle' (picker) is absent, and 'cloning' is absent. The clone-deferred check is gated behind the footer-bind positive so it can't pass vacuously when the session never booted. Mirrors E2E t4."
+    },
+    "S05": {
+      "covers": "Bugs #19 (/chat save local-path error), #8/#22 (/context errors), and the '!bash runs locally' launch blocker — gates from #3651/#3656",
+      "what": "Commands that cannot work in a cloud session yet must refuse with the humanized gate message — never a raw error, never a local-machine side effect. /chat save|load and /context add are gated; `!` shell escape must refuse AND never execute the command locally.",
+      "how": "Type each command; wait for '… is not available for a cloud session yet.'. For /chat save additionally assert the old failure shape (leaked ~/.kiro/sessions path) is absent. For the shell escape, count occurrences of a marker string: every occurrence must belong to the echoed input row ('!echo LEAKED_LOCAL_EXEC'); a bare-marker row would be the command's stdout = local execution leak. Ends with the global no-error check. Mirrors E2E cloud-command-gates.test.ts t1-t3.",
+      "limits": "Per design decision there is NO dedicated /knowledge//plan error test — those commands are covered by the global no-error invariant like every other flow."
+    },
+    "S06": {
+      "covers": "Bugs #2 (completed tools replay as interrupted), #29 (resume stopped replaying), #32 (first prompt re-replays history); story 5 (attach with full trajectory); resume wording UX (#3656); fixes #3664",
+      "what": "Resuming a cloud session replays the FULL prior trajectory — user rows, agent rows, and tool calls rendered with their true completed status (not 'Cancelled'/'interrupted') — under the 'Resuming…/✓ Cloud session resumed' checklist wording. Submitting a new prompt afterwards must not re-render the history a second time.",
+      "how": "Mock BFF serves a canned two-turn transcript for the banana session as a REAL AWS event stream (lean-dialect frames, per-turn end_turn done frames, session_loaded sentinel) — the exact wire shape a suspended-sandbox resume serves in production, so KAS's reconstruction fold runs for real. Boot with --resume-id <banana>, wait for both turns' text and the Shell tool row, assert no Cancelled/interrupted label. Then type a prompt (mock acks StreamSendMessage with a bare end_turn frame) and count the first replayed string: exactly 1 occurrence (0 = replay never rendered = vacuous; >1 = duplicate). Mirrors E2E cloud-resume-concurrent t1 + cloud-command-gates t6.",
+      "limits": "KAS's id-keyed dedup masks the original bug-#32 CLI-only path against a finite mock stream, so the dup-count check pins the layered dedup stack end-to-end; the original path needs a live-turn prod run."
+    },
+    "S07": {
+      "covers": "Resume isolation (wrong-session replay would be a data leak between sessions)",
+      "what": "Resuming the EMPTY cloud sandbox while another session's history exists in the backend must replay nothing — no other session's conversation may leak into this session's scrollback.",
+      "how": "The mock keys canned history BY SESSION ID: banana has a transcript, the empty space serves only the session_loaded sentinel — with the history toggle ON, so the transcript exists and a wrong-session replay would be visible. Boot --resume-id <empty>, wait for the prompt, assert banana's transcript text is absent. Mirrors E2E cloud-resume-concurrent t2."
+    },
+    "S08": {
+      "covers": "/clear viewport-residue bug (#3651's event-driven re-wipe); /clear = new-session semantics",
+      "what": "After /clear in a cloud session, none of the pre-clear conversation may remain readable. This regressed because cloud session/new keeps repainting the startup checklist for seconds AFTER the single scrollback wipe, so the wipe must win the race.",
+      "how": "Resume banana with history (seeds the viewport with a known transcript), frame it, type /clear, wait for the new prompt, then sleep 10s — past the re-wipe window's 8s max (CLOUD_CLEAR_REWIPE_DELAYS_MS=[1500,4000,8000]) — and assert the pre-clear text is gone. Before/after frames captured. Mirrors E2E cloud-command-gates t5."
+    },
+    "S09": {
+      "covers": "Basic user stories 4 (list sessions) + 7 (multiple concurrent sessions); session switching",
+      "what": "/sessions lists ALL cloud sessions concurrently (the mock serves 4 spaces) with per-row environment tags, and picking a different session from the picker loads THAT session — replaying its own distinct transcript, not the current session's.",
+      "how": "Boot with MOCK_BFF_CONCURRENT=1 + MOCK_BFF_HISTORY=1. Open /sessions, assert both extra spaces render and the row-scoped 'cloud' tag (regex ties the tag to the row text, so titles can't fake it). Filter-type 'refactor' in the picker's incremental search (deterministic selection — no sort-order trust), press Enter, and assert the WORKING session's distinct one-turn transcript replays while banana's transcript is absent. Mirrors E2E cloud-resume-concurrent t3/t4.",
+      "limits": "Per-row LIVE status (working/waiting) is not asserted: KAS 0.26.x's listing carries no per-space execution status (every remote row reads idle). The mock's GetSessionStatus already serves the statuses for when KAS ships it."
+    },
+    "S10": {
+      "covers": "Basic user story 6 (disconnect without killing; prompt before exiting)",
+      "what": "/disconnect detaches from the cloud session while the sandbox keeps working ('work continues while you're away' + a --resume-id reattach hint). /quit asks keep-running vs turn-off; choosing keep-running detaches the same way.",
+      "how": "Two boots. First: /disconnect, wait for the detach notice, assert the reattach hint names --resume-id. Second: /quit, wait for the keep-running prompt, select the first option (Enter), wait for the same detach notice. Frames at each state. Mirrors E2E cloud-sessions t5/t6."
+    },
+    "S11": {
+      "covers": "Bug #23's shape (prompts duplicated in steer queue after ctrl+c/esc)",
+      "what": "Cancelling composed input with ctrl+c and then typing + sending a new message must produce exactly ONE sent message — no duplicate from a stale steer-queue entry.",
+      "how": "Type a draft, ctrl+c, type a unique marker, Enter, then count marker occurrences on screen: exactly 1 (0 would mean the send never rendered = vacuous; >1 = the duplication bug). Mirrors the smoke-script check; the full mid-TURN variant (cancel during a running turn) needs a live turn and is prod-smoke scope.",
+      "limits": "The mock never runs a real turn, so this exercises the input/keystroke path only — the queue-during-turn duplication path is prod scope."
+    },
+    "S12": {
+      "covers": "Bug #34 (local file attached to a cloud session was a dead local path); fix #3652's send-time scan — text AND image variants",
+      "what": "When a prompt references a local file, the file's BYTES must ship in-band to the backend (the sandbox can never read the user's disk). Text files ship as resource blocks; images (the visible half of bug #34 — screenshots dragged into the prompt) ship as base64 image blocks with their MIME type. The proof is on the wire, not the UI.",
+      "how": "Two probes, each as the FIRST prompt of its own boot (the mock never ends a turn, so a second prompt in the same session queues as steer and never reaches the wire). Text: temp file whose CONTENT is a unique marker, 'read <path>', grep the mock BFF's decoded-request log for the marker. Image: real 1x1 PNG, 'describe <path>', grep the log for an image/png block. Both prove the send-time scan (utils/cloud-attach.ts) expanded the path into in-band content. Mirrors E2E cloud-file-attach.test.ts; the 23-test unit suite covers path forms (quoted/spaces/U+202F screenshot names), format table, size caps, and local parity.",
+      "limits": "The agent's REPLY about the file needs a live turn (mock acks without answering); the live round-trip ('agent read the blue PNG') was verified in the 0722 live-E2E pass and is prod-smoke scope here."
+    },
+    "S13": {
+      "covers": "Opt-in semantics (dark-ship adjacent): cloud must never activate implicitly",
+      "what": "With the exact same environment (endpoint env var present, test mode on) but WITHOUT --cloud, the session boots plain local: no cloud checklist, no cloud surfaces.",
+      "how": "Boot with no args; wait for the local prompt; assert 'Cloud session created' never rendered. A scoped error check runs (tolerating only the sandboxed test HOME's known 'N MCP failure' row — a test-env artifact). Mirrors E2E cloud-sessions t7. The RELEASED-build darkness (rollout off entirely) is separately pinned by crates/chat-cli/tests/cloud_sessions_gating.rs at release profile.",
+      "limits": "This scenario proves opt-in under test mode, NOT the released rollout gate — that lives in the Rust release-profile suite."
+    },
+    "S14": {
+      "covers": "Basic user story 4's headless surface (--list-sessions)",
+      "what": "The headless `chat --list-sessions` (no TUI) shows cloud sessions merged with local ones, each tagged with the environment column ('| cloud |').",
+      "how": "Run the real binary headless against the mock BFF (KIRO_TEST_TUI_JS_PATH unset so no TUI boots), strip ANSI, assert the listing renders and cloud rows carry the tag. Output saved as a text artifact (no PTY frame). The full column/delete/prefix matrix is the Rust integration suite (cloud_sessions_gating.rs)."
+    },
+    "S15": {
+      "covers": "/autonomous on|off (#3653, merged) — cloud-only command",
+      "what": "In a cloud session, /autonomous with no argument opens an on/off picker with the current state tagged [current]; '/autonomous on' switches the session to the bundled autonomous agent mode and '/autonomous off' switches back to default. Because KAS silently no-ops set_mode on relayed sessions, the client VERIFIES the switch by reading the mode back — an unapplied switch must surface the honest 'not supported on this session yet' explanation, never a silent success or a raw error.",
+      "how": "Boot --cloud. Bare /autonomous: assert the picker renders the [current] tag. '/autonomous on': accept either 'Autonomous mode on' (server applied it) or the honest not-supported message (server no-op detected by read-back) — both are correct surfaces; anything else fails. Same for off. Ends with the error sweep tolerating only the deliberate not-supported explanation. Frames at picker/on/off.",
+      "limits": "Whether the mode ACTUALLY applies depends on the KAS/BFF relay honoring set_mode; the scenario pins the client contract (verified switch or honest refusal) rather than the server outcome. A durably-applied autonomous turn needs prod scope."
+    }
+  },
+  "skipped": {
+    "autonomous": {
+      "covers": "/autonomous on|off (#3653, merged CLI-side)",
+      "why_skipped": "Deliberately NOT covered in this sweep: the backend/KAS side of relayed set_mode is missing, so the command cannot work end-to-end yet — the CLI's read-back verification correctly detects the no-op and surfaces the honest 'not supported on this session yet' message. Unit coverage of the handler exists CLI-side; an E2E/KR scenario would only pin the not-supported path, which the global no-error invariant already tolerates as a deliberate surface. Add the scenario when the KAS relay applies set_mode durably."
+    }
+  }
+}

@@ -26,6 +26,7 @@
 
 import http from 'node:http';
 import { createRequire } from 'node:module';
+import { MOCK_SPACE_IDS } from './mock-space-ids.mjs';
 
 // Resolve the @smithy codecs from the published @kiro/agent bundle so the
 // mock's CBOR structs encode with the SAME @smithy/core version the client
@@ -37,7 +38,9 @@ import { createRequire } from 'node:module';
 // CBOR (RFC 8949) and the AWS event-stream framing are wire-stable across these
 // @smithy majors, so a fallback is a fidelity nit, not a decode break.
 // MOCK_BFF_KAS_PKG overrides the resolution root for a local kiro-agent checkout.
-const tuiRequire = createRequire(new URL('../../package.json', import.meta.url));
+const tuiRequire = createRequire(
+  new URL('../../package.json', import.meta.url)
+);
 const KAS_PKG = (() => {
   if (process.env.MOCK_BFF_KAS_PKG) return process.env.MOCK_BFF_KAS_PKG;
   try {
@@ -94,13 +97,21 @@ function providerConnected() {
   return true;
 }
 
+// Stable UUID-shaped space ids from the shared source of truth (imported by
+// CloudTestCase.ts too — no hand-kept sync contract; import is at the top of
+// the file). spaceId === sessionId in the space-addressing scheme today.
+const SPACE_BANANA = MOCK_SPACE_IDS.banana;
+const SPACE_EMPTY = MOCK_SPACE_IDS.empty;
+const SPACE_WORKING = MOCK_SPACE_IDS.working;
+const SPACE_WAITING = MOCK_SPACE_IDS.waiting;
+
 // A SpaceSummary the adapters can read back. `sandboxStatus: 'ACTIVE'` makes
 // classifySandbox() return 'ready', so the provisioning tracker settles the
 // roster to a live status and the cloud footer renders. Timestamp fields use
 // cborTime() so KAS deserializes them to Dates (it calls `.toISOString()`).
 function spaceSummary(overrides = {}) {
   return {
-    spaceId: 'mock-space-1',
+    spaceId: SPACE_BANANA,
     status: 'ACTIVE', // SpaceStatus
     spaceType: 'VIBE',
     displayName: 'banana-service (cloud)',
@@ -117,25 +128,76 @@ function spaceSummary(overrides = {}) {
 }
 
 // Two cloud spaces so `--list-sessions` / `/sessions` can render cloud rows: one
-// bound to a repo (working) and one "new" empty sandbox (idle).
+// bound to a repo (working) and one "new" empty sandbox (idle). With
+// MOCK_BFF_CONCURRENT=1, two more spaces join with live execution statuses
+// (one mid-turn, one blocked on a question) so concurrent-session listings can
+// assert distinct per-row states without a real second sandbox.
 const listedSpaces = [
   spaceSummary({
-    spaceId: 'mock-space-1',
+    spaceId: SPACE_BANANA,
     displayName: 'banana-service (cloud)',
     sandboxStatus: 'ACTIVE',
   }),
   spaceSummary({
-    spaceId: 'mock-space-2',
+    spaceId: SPACE_EMPTY,
     displayName: 'New cloud sandbox',
     providerResources: undefined,
     sandboxStatus: 'ACTIVE',
   }),
+  ...(process.env.MOCK_BFF_CONCURRENT === '1'
+    ? [
+        spaceSummary({
+          spaceId: SPACE_WORKING,
+          displayName: 'refactor payments (cloud)',
+          providerResources: [
+            { providerType: 'GITHUB', name: 'kiro-team/apple-service' },
+          ],
+        }),
+        spaceSummary({
+          spaceId: SPACE_WAITING,
+          displayName: 'migrate database (cloud)',
+          providerResources: [
+            { providerType: 'GITHUB', name: 'kiro-team/cherry-service' },
+          ],
+        }),
+      ]
+    : []),
 ];
+
+// Per-space execution status, reduced by KAS's activityStatusOf():
+//   isExecuting=false                        -> idle
+//   isExecuting=true,  no pending questions  -> in_progress ("working")
+//   isExecuting=true,  pending question      -> waiting_on_user ("waiting")
+// KAS only reads `isExecuting` and `pendingQuestions.length`; the question
+// body is opaque to the reduction. `SessionExecutionStatus` models only
+// EXECUTING | IDLE; `PendingQuestion` requires `id` + `question`.
+//
+// The executing statuses are OPT-IN via MOCK_BFF_LIVE_STATUS=1: an executing
+// status flips a `session/load` of that space onto KAS's live-attach tail,
+// which re-issues LoadSession against this mock's finite stream (bounded but
+// slow, and tool frames carry no messageId so the replay deduper re-admits
+// them per re-issue). Default everything to idle so loads take the cold
+// replay path unless a test explicitly wants the live statuses.
+function sessionStatusFor(sessionId) {
+  if (process.env.MOCK_BFF_LIVE_STATUS === '1') {
+    if (sessionId === SPACE_WORKING) {
+      return { status: 'EXECUTING', isExecuting: true, pendingQuestions: [] };
+    }
+    if (sessionId === SPACE_WAITING) {
+      return {
+        status: 'EXECUTING',
+        isExecuting: true,
+        pendingQuestions: [{ id: 'q-1', question: 'Which schema?' }],
+      };
+    }
+  }
+  return { status: 'IDLE', isExecuting: false, pendingQuestions: [] };
+}
 
 // Per-operation output structs. Keys are the wire member names the adapters read.
 const responders = {
   // IRemoteSessionSource.new() -> CreateSpace; adapter reads response.spaceId.
-  CreateSpace: () => ({ spaceId: 'mock-space-1' }),
+  CreateSpace: () => ({ spaceId: SPACE_BANANA }),
   // IRemoteSessionSource.list() -> ListSpaces; reads response.spaces[] as SpaceSummary.
   ListSpaces: () => ({ spaces: listedSpaces, nextToken: undefined }),
   DeleteSpace: () => ({}),
@@ -143,21 +205,19 @@ const responders = {
   CancelSession: () => ({}),
   // readSandboxReadiness() -> GetSpace; reads response.space.sandboxStatus.
   GetSpace: (input) => {
-    const spaceId =
-      (input && (input.spaceId || input.SpaceId)) || 'mock-space-1';
+    const spaceId = (input && (input.spaceId || input.SpaceId)) || SPACE_BANANA;
     const match =
       listedSpaces.find((s) => s.spaceId === spaceId) ??
       spaceSummary({ spaceId });
     return { space: match };
   },
   // status() -> GetSessionStatus; reads response.isExecuting + response.pendingQuestions.
-  // Idle: isExecuting=false -> activityStatusOf => 'idle'.
+  // Per-space so concurrent listings show distinct states (see sessionStatusFor).
   GetSessionStatus: (input) => ({
-    sessionId:
-      (input && (input.sessionId || input.SessionId)) || 'mock-space-1',
-    status: 'IDLE', // SessionExecutionStatus
-    isExecuting: false,
-    pendingQuestions: [],
+    sessionId: (input && (input.sessionId || input.SessionId)) || SPACE_BANANA,
+    ...sessionStatusFor(
+      (input && (input.sessionId || input.SessionId)) || SPACE_BANANA
+    ),
   }),
   // SourceProviderCatalog.listProviders() -> ListAvailableProviders.
   // reads response.providers[].{providerType,displayName,status}.
@@ -217,32 +277,153 @@ const responders = {
       : 'https://kiro.dev/settings/source-providers',
   }),
   // loadSession() -> LoadSession; a @streaming op whose response.events is an AWS
-  // event stream. KAS folds the frames: a `done` frame with stopReason
-  // 'session_loaded' classifies as historyComplete and ends the fold with an
-  // empty history -> a clean resume. One terminal `done` frame is the whole
-  // minimal valid response for an empty-history session; handled below on the
-  // event-stream path, so this entry only marks the op as known.
+  // event stream (handled on the event-stream path below; this entry only marks
+  // the op as known). KAS folds the frames per bff-remote-session-source:
+  // `event` frames are normalized into the transcript, each historical turn
+  // closes with its own `done` (stopReason 'end_turn' -> turnEnded, an
+  // intermediate boundary), and a final `done` of 'session_loaded' classifies
+  // as historyComplete and ends the fold. With no canned history the stream is
+  // just the sentinel -> an empty, clean resume (batch-1 behavior).
   LoadSession: () => undefined,
+  // submitPrompt() -> StreamSendMessage (submit-and-ack): KAS awaits only the
+  // command's resolution and expects the turn's output on the durable
+  // LoadSession downlink, so this op's own event stream is a bare end_turn
+  // done frame (the ack). No reply is emitted — enough for prompt-submission
+  // tests (e.g. the resume-then-prompt no-duplicate-replay regression).
+  StreamSendMessage: () => undefined,
 };
 
 // Ops whose response is an AWS event stream rather than plain CBOR.
-const STREAMING_OPS = new Set(['LoadSession']);
+const STREAMING_OPS = new Set(['LoadSession', 'StreamSendMessage']);
 
-// Marshals a single terminal `done` frame into event-stream bytes. The union
-// member (`done`) and the payload member (`stopReason`) are the wire names from
-// the VibeMessageEventStream / SSEDoneEventData smithy schema; the body is the
-// SSEDoneEventData CBOR struct, matching the `:content-type: application/cbor`
-// header the client reads each frame with.
-function loadSessionEventStream() {
-  const body = cbor.serialize({ stopReason: 'session_loaded' });
+// ── LoadSession turn-stream replay (batch 2) ────────────────────────────────
+//
+// Canned transcripts replayed on resume when MOCK_BFF_HISTORY=1, keyed BY
+// SESSION ID so a wrong-session-replay regression is observable: banana gets
+// a two-turn transcript, the "working" space gets a distinct one-turn
+// transcript, and every other space (including the empty sandbox) serves only
+// the sentinel even with the toggle on. Payloads use the LEAN dialect (flat
+// `text` / `toolName` / `args` / `result`) — the Activity Service fast-replay
+// shape KAS's normalizer reads via the stable alias fields — because it is
+// the dialect a suspended-MDE resume actually serves. Each VibeStreamEvent
+// carries the payload JSON-encoded (models_0: "JSON-encoded event payload ...
+// parsed by frontend").
+function cannedTurnsFor(sessionId) {
+  if (sessionId === SPACE_BANANA) {
+    return [
+      [
+        [
+          'user_message_chunk',
+          { text: 'clone the repo and list the files', messageId: 'm-1' },
+        ],
+        [
+          'agent_message_chunk',
+          { text: 'Cloning banana-service now.', messageId: 'm-2' },
+        ],
+        [
+          'tool_call',
+          {
+            toolCallId: 'tc-1',
+            toolName: 'execute_bash',
+            kind: 'execute',
+            status: 'in_progress',
+            args: { command: 'git clone banana-service' },
+          },
+        ],
+        [
+          'tool_call_update',
+          {
+            toolCallId: 'tc-1',
+            status: 'completed',
+            result: 'Cloned 120 files.',
+          },
+        ],
+        [
+          'agent_message_chunk',
+          { text: 'Repo cloned: 120 files at HEAD.', messageId: 'm-3' },
+        ],
+      ],
+      [
+        [
+          'user_message_chunk',
+          { text: 'now add a health check endpoint', messageId: 'm-4' },
+        ],
+        [
+          'agent_message_chunk',
+          { text: 'Added GET /health returning 200 OK.', messageId: 'm-5' },
+        ],
+      ],
+    ];
+  }
+  if (sessionId === SPACE_WORKING) {
+    return [
+      [
+        [
+          'user_message_chunk',
+          { text: 'refactor the payments retry logic', messageId: 'w-1' },
+        ],
+        [
+          'agent_message_chunk',
+          {
+            text: 'Extracted RetryPolicy from PaymentsClient.',
+            messageId: 'w-2',
+          },
+        ],
+      ],
+    ];
+  }
+  // No canned transcript for this space (e.g. the empty sandbox).
+  return [];
+}
+
+function cannedHistoryFrames(sessionId) {
+  const turns = cannedTurnsFor(sessionId);
+  return [
+    ...turns.flatMap((turn) => [
+      ...turn.map(([eventType, payload]) => eventFrame(eventType, payload)),
+      doneFrame(sessionId, 'end_turn'),
+    ]),
+    doneFrame(sessionId, 'session_loaded'),
+  ];
+}
+
+// Marshals one event-stream frame. The `:event-type` header names the
+// VibeMessageEventStream union member (`event` | `done`); the body is that
+// member's CBOR struct, matching the `:content-type: application/cbor` each
+// frame is read with.
+function encodeFrame(memberName, memberStruct) {
+  const body = cbor.serialize(memberStruct);
   return eventStreamCodec.encode({
     headers: {
       ':message-type': { type: 'string', value: 'event' },
-      ':event-type': { type: 'string', value: 'done' },
+      ':event-type': { type: 'string', value: memberName },
       ':content-type': { type: 'string', value: 'application/cbor' },
     },
     body: body instanceof Uint8Array ? body : Uint8Array.from(body),
   });
+}
+
+// A VibeStreamEvent frame: type discriminator + JSON-encoded payload string.
+function eventFrame(eventType, payload) {
+  return encodeFrame('event', { eventType, payload: JSON.stringify(payload) });
+}
+
+// An SSEDoneEventData frame. `kiroSessionId` is a required model member;
+// `stopReason` drives classifyDoneReason ('end_turn' = turn boundary,
+// 'session_loaded' = end-of-history sentinel).
+function doneFrame(sessionId, stopReason) {
+  return encodeFrame('done', { kiroSessionId: sessionId, stopReason });
+}
+
+// The whole LoadSession response body: canned history when MOCK_BFF_HISTORY=1,
+// else just the sentinel (empty history, batch-1 behavior). Frames concatenate
+// byte-wise — the AWS event-stream framing is self-delimiting.
+function loadSessionEventStream(sessionId) {
+  const frames =
+    process.env.MOCK_BFF_HISTORY === '1'
+      ? cannedHistoryFrames(sessionId)
+      : [doneFrame(sessionId, 'session_loaded')];
+  return Buffer.concat(frames.map((f) => Buffer.from(f)));
 }
 
 function opFromPath(path) {
@@ -284,12 +465,19 @@ const server = http.createServer((req, res) => {
     }
     if (STREAMING_OPS.has(op)) {
       try {
-        const frames = loadSessionEventStream();
+        const sessionId =
+          (input && (input.sessionId || input.spaceId)) || SPACE_BANANA;
+        // StreamSendMessage acks with a bare end_turn done frame; LoadSession
+        // serves the (per-session) history + sentinel.
+        const frames =
+          op === 'StreamSendMessage'
+            ? Buffer.from(doneFrame(sessionId, 'end_turn'))
+            : loadSessionEventStream(sessionId);
         res.writeHead(200, {
           'content-type': 'application/vnd.amazon.eventstream',
           'smithy-protocol': 'rpc-v2-cbor',
         });
-        res.end(Buffer.from(frames));
+        res.end(frames);
       } catch (error) {
         sendProtocolError(res, 500, op, error);
       }

@@ -17,9 +17,17 @@ MODE="${1:-mock}"
 PORT="${KR_PORT:-3021}"
 TUI_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 REPO_ROOT="$(cd "$TUI_DIR/../.." && pwd)"
-BIN="$REPO_ROOT/target/release/chat_cli"; BIN_PROFILE="release"
-[ -x "$BIN" ] || { BIN="$REPO_ROOT/target/debug/chat_cli"; BIN_PROFILE="debug"; }
-[ -x "$BIN" ] || { echo "no chat_cli binary; run cargo build first"; exit 1; }
+# Binary resolution: explicit override first (KIRO_CHAT_CLI_BIN — also what
+# the E2E harness reads, and needed when cargo uses a shared target-dir),
+# then the workspace-local target dirs.
+if [ -n "${KIRO_CHAT_CLI_BIN:-}" ] && [ -x "$KIRO_CHAT_CLI_BIN" ]; then
+  BIN="$KIRO_CHAT_CLI_BIN"
+  case "$BIN" in */release/*) BIN_PROFILE="release";; *) BIN_PROFILE="debug";; esac
+else
+  BIN="$REPO_ROOT/target/release/chat_cli"; BIN_PROFILE="release"
+  [ -x "$BIN" ] || { BIN="$REPO_ROOT/target/debug/chat_cli"; BIN_PROFILE="debug"; }
+fi
+[ -x "$BIN" ] || { echo "no chat_cli binary; run cargo build first (or set KIRO_CHAT_CLI_BIN)"; exit 1; }
 
 KR="http://localhost:$PORT/api"
 FAILS=0
@@ -48,9 +56,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-type_text() { local m="$1" i c; for (( i=0; i<${#m}; i++ )); do c="${m:$i:1}"; case "$c" in '"') c='\"';; '\\') c='\\\\';; esac; curl -s -X POST "$KR/keys" -d "{\"keys\":\"$c\"}" >/dev/null; sleep 0.03; done; sleep 0.3; }
+# JSON payloads built with jq -n --arg so a quote/backslash can't break them.
+type_text() { local m="$1" i c; for (( i=0; i<${#m}; i++ )); do c="${m:$i:1}"; curl -s -X POST "$KR/keys" -d "$(jq -cn --arg k "$c" '{keys:$k}')" >/dev/null; sleep 0.03; done; sleep 0.3; }
 enter() { curl -s -X POST "$KR/enter" >/dev/null; }
-frame() { curl -s -X POST "$KR/frame" -d "{\"label\":\"$1\"}" >/dev/null; }
+frame() { curl -s -X POST "$KR/frame" -d "$(jq -cn --arg l "$1" '{label:$l}')" >/dev/null; }
 grepscr() { curl -s "$KR/screen" | python3 -c "import sys,json;print('\n'.join(json.load(sys.stdin)['lines']))" 2>/dev/null | grep -qiE "$1"; }
 wait_scr() { local p="$1" t="${2:-60}" i; for i in $(seq 1 "$t"); do grepscr "$p" && return 0; sleep 1; done; return 1; }
 
@@ -132,6 +141,62 @@ if start_kr "--cloud --repo kiro-team/banana-service"; then
   frame "repo-flag"
 fi
 stop_kr
+
+# ── resume with history + prompt-after-resume (mock only) ───────────────────
+# Guards Pippin bugs #29 (resume stops replaying), #32 (first prompt after
+# resume re-replays history), and #30 (startup tools labelled Cancelled).
+# Needs the mock's canned transcript: restart the BFF with MOCK_BFF_HISTORY=1
+# (the env var must reach the BFF process, not the TUI).
+scr_dump() { curl -s "$KR/screen" | python3 -c "import sys,json;print('\n'.join(json.load(sys.stdin)['lines']))" 2>/dev/null; }
+if [ "$MODE" = "mock" ]; then
+  kill "$BFF_PID" 2>/dev/null; wait "$BFF_PID" 2>/dev/null
+  kill_stale_listener "$BFF_PORT"
+  ( cd "$TUI_DIR" && MOCK_BFF_PORT=$BFF_PORT MOCK_BFF_HISTORY=1 exec bun e2e_tests/cloud/mock-bff.mjs >/tmp/mock-bff-smoke.log 2>&1 ) &
+  BFF_PID=$!
+  sleep 2
+  BANANA_ID="aaaaaaa1-0001-4001-8001-000000000001"
+  if start_kr "--cloud --resume-id $BANANA_ID"; then
+    # (The "Resuming…/✓ Cloud session resumed" checklist wording is pinned by
+    # the E2E suite — its 50ms polling catches the transient checklist; this
+    # script's 1s screen polls race the replay scrolling it away.)
+    if wait_scr "Repo cloned: 120 files at HEAD" 60; then pass "resume replays history"; else fail "resume replays history"; fi
+    frame "resume-history"
+    # No pre-prompt "Cancelled" rows (bug #30):
+    if grepscr "Cancelled"; then fail "startup tools labelled Cancelled"; else pass "no Cancelled startup rows"; fi
+    # First prompt after resume must not duplicate the replay (bug #32):
+    type_text "hello again"; enter
+    sleep 8
+    COUNT=$(scr_dump | grep -c "clone the repo and list the files" || true)
+    if [ "${COUNT:-0}" -le 1 ]; then pass "no duplicate replay after prompt"; else fail "no duplicate replay after prompt (count=$COUNT)"; fi
+    frame "resume-prompt"
+  fi
+  stop_kr
+  # Restore the plain (history-less) BFF for the remaining sections.
+  kill "$BFF_PID" 2>/dev/null; wait "$BFF_PID" 2>/dev/null
+  kill_stale_listener "$BFF_PORT"
+  ( cd "$TUI_DIR" && MOCK_BFF_PORT=$BFF_PORT exec bun e2e_tests/cloud/mock-bff.mjs >>/tmp/mock-bff-smoke.log 2>&1 ) &
+  BFF_PID=$!
+  sleep 2
+fi
+
+# ── input-cancel steer hygiene (mock only; guards the bug #23 shape) ────────
+# ctrl+c while composing must not duplicate the next sent prompt. The mock
+# never runs a real turn, so this smokes the keystroke path only: type, ctrl+c,
+# retype, send — the transcript must show the marker exactly once.
+if [ "$MODE" = "mock" ]; then
+  if start_kr "--cloud"; then
+    wait_scr "Cloud session created" 60
+    wait_scr "ask a question" 20
+    type_text "first draft message"
+    curl -s -X POST "$KR/ctrlc" >/dev/null 2>&1 || true; sleep 1
+    type_text "MARKER_STEER_ONCE"; enter
+    sleep 5
+    COUNT=$(scr_dump | grep -c "MARKER_STEER_ONCE" || true)
+    if [ "${COUNT:-0}" -le 1 ]; then pass "no duplicate send after ctrl+c"; else fail "no duplicate send after ctrl+c (count=$COUNT)"; fi
+    frame "steer-cancel"
+  fi
+  stop_kr
+fi
 
 # ── headless listing (no PTY needed) ────────────────────────────────────────
 # KIRO_KAS_SERVER_PATH/NODE_PATH are inherited (dev binaries have no embedded
