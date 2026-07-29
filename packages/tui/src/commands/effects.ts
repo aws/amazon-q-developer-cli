@@ -493,6 +493,19 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       if (ctx.cloudSessionActive) ctx.beginKasSession('new');
       ctx.clearUIState();
       ctx.resetMessages();
+      // The repo footer describes the replaced session's sandbox; left in
+      // place it would also get stashed under the new session's id and leak
+      // back on every later switch to it.
+      if (ctx.cloudSessionActive) {
+        ctx.resetCloudSessionScope();
+        const boundRepos = ctx.kiro.getSessionRepositories();
+        if (boundRepos && boundRepos.length > 0) {
+          ctx.applyRepoFooter(
+            boundRepos.map((r) => r.name),
+            boundRepos[0]?.branch ?? null
+          );
+        }
+      }
       // Cloud: session/new provisions a sandbox, and the startup checklist
       // keeps re-rendering for seconds after the wipe above. Those repaints
       // interleave with the scrollback reset and can leave pre-clear rows

@@ -1287,6 +1287,62 @@ describe('clearMessages effect', () => {
     expect(ctx._spies.clearMessages).toHaveBeenCalled();
   });
 
+  // The repo footer describes the replaced session; a cloud /clear must reset
+  // it so it can't be stashed under the new session's id and leak back later.
+  it('resets the cloud repo scope on a cloud /clear (no binding reported)', () => {
+    const ctx = createMockCommandContext({
+      cloudSessionActive: true,
+      kiro: {
+        isCloudSessionActive: () => true,
+        getSessionRepositories: () => null,
+        setConfigOption: () => Promise.resolve(),
+      } as any,
+    });
+    const result = {
+      success: true,
+      message: '',
+      data: { sessionId: 'new-sess-2' },
+    };
+    runEffect(clearCmd, result, ctx, '');
+    expect(ctx._spies.resetCloudSessionScope).toHaveBeenCalled();
+    expect(ctx._spies.applyRepoFooter).not.toHaveBeenCalled();
+  });
+
+  it('re-lights the footer from the create-reported binding on cloud /clear', () => {
+    const ctx = createMockCommandContext({
+      cloudSessionActive: true,
+      kiro: {
+        isCloudSessionActive: () => true,
+        getSessionRepositories: () => [
+          { name: 'KiroCLIReviewerCDK', branch: 'main' },
+        ],
+        setConfigOption: () => Promise.resolve(),
+      } as any,
+    });
+    const result = {
+      success: true,
+      message: '',
+      data: { sessionId: 'new-sess-3' },
+    };
+    runEffect(clearCmd, result, ctx, '');
+    expect(ctx._spies.resetCloudSessionScope).toHaveBeenCalled();
+    expect(ctx._spies.applyRepoFooter).toHaveBeenCalledWith(
+      ['KiroCLIReviewerCDK'],
+      'main'
+    );
+  });
+
+  it('does not touch the cloud repo scope on a local KAS /clear', () => {
+    const ctx = createMockCommandContext();
+    const result = {
+      success: true,
+      message: '',
+      data: { sessionId: 'new-sess-4' },
+    };
+    runEffect(clearCmd, result, ctx, '');
+    expect(ctx._spies.resetCloudSessionScope).not.toHaveBeenCalled();
+  });
+
   // Cloud: the sandbox-provisioning checklist repaints for an unbounded time
   // after the initial wipe, so the effect ARMS an event-driven reconcile that
   // wipes once now and re-wipes on each subsequent repaint until the stream

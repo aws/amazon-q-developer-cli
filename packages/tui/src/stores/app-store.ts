@@ -2567,6 +2567,12 @@ export function buildCommandContext(
         // re-sets it immediately after via switchToKasSession/resolveTangentName.
         tangentName: null,
         pendingSpecDescription: null,
+        // Footer readings describe the OUTGOING session; the incoming one
+        // re-seeds them, but a cloud create pushes no context_usage until its
+        // next turn completes, so without this blank the stale values linger.
+        contextUsagePercent: null,
+        lastTurnTokens: null,
+        goalStatus: null,
         ...extraClearState,
       }),
     getMessages: () => get().messages,
