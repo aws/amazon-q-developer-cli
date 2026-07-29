@@ -787,6 +787,14 @@ export interface TransientAlert {
   action?: { label: string; key: string; onAction: () => void };
 }
 
+/** Speech-model details shown in the first-use download confirm gate. */
+export interface VoiceModelDownloadInfo {
+  model: string;
+  sizeMb: number;
+  license: string;
+  licenseUrl: string;
+}
+
 /**
  * Inline retry status shown alongside the thinking spinner while the HTTP client
  * is backing off between attempts. Replaces the previous transient-alert UX so the
@@ -1210,6 +1218,23 @@ interface BaseAppActions {
   setVoicePartialText: (text: string | null) => void;
   pendingVoiceText: string | null;
   setPendingVoiceText: (text: string | null) => void;
+  /**
+   * When set, a confirm gate is shown asking the user whether to download the
+   * speech model on first voice use. `onConfirm`/`onDecline` are supplied by the
+   * voice dispatcher; the confirm UI owns the keyboard while this is active.
+   */
+  voiceDownloadConfirm: {
+    info: VoiceModelDownloadInfo;
+    onConfirm: () => void;
+    onDecline: () => void;
+  } | null;
+  setVoiceDownloadConfirm: (
+    confirm: {
+      info: VoiceModelDownloadInfo;
+      onConfirm: () => void;
+      onDecline: () => void;
+    } | null
+  ) => void;
 
   navigateHistory: (direction: 'up' | 'down') => string | null;
 
@@ -2080,6 +2105,11 @@ export interface AppState {
   voiceHintIndex: number;
   voicePartialText: string | null;
   pendingVoiceText: string | null;
+  voiceDownloadConfirm: {
+    info: VoiceModelDownloadInfo;
+    onConfirm: () => void;
+    onDecline: () => void;
+  } | null;
 
   // Announcement state
   announcement: { id: string; maxLines: number } | null;
@@ -2458,6 +2488,7 @@ export function buildCommandContext(
     kasAvailableEfforts: state.kas.availableEfforts,
     showAlert: (message, status, autoHideMs = 3000) =>
       state.showTransientAlert({ message, status, autoHideMs }),
+    setVoiceDownloadConfirm: state.setVoiceDownloadConfirm,
     announceSystem: (
       message: string,
       success: boolean = true,
@@ -2863,6 +2894,7 @@ export const createAppStore = (props: AppStoreProps) => {
     voiceHintIndex: 0,
     voicePartialText: null,
     pendingVoiceText: null,
+    voiceDownloadConfirm: null,
 
     input: initialInputBufferState(),
     reverseSearchActive: false,
@@ -6056,6 +6088,9 @@ export const createAppStore = (props: AppStoreProps) => {
     },
     setPendingVoiceText: (text) => {
       set({ pendingVoiceText: text });
+    },
+    setVoiceDownloadConfirm: (confirm) => {
+      set({ voiceDownloadConfirm: confirm });
     },
 
     clearCommandInput: () => {

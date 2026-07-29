@@ -33,8 +33,27 @@ use crate::streaming::{
 const DEFAULT_MODEL_SIZE: &str = "base";
 const CDN_BASE: &str = "https://prod.download.cli.kiro.dev/stable/models";
 
-fn model_filename(size: &str) -> String {
-    format!("ggml-{}.bin", size)
+/// Normalize an arbitrary model-size string to a supported value, falling back
+/// to the default for anything unknown. Single source of truth so the filename,
+/// download size, and readiness check never disagree for a bogus setting.
+pub fn normalize_model_size(size: &str) -> &'static str {
+    match size {
+        "small" => "small",
+        _ => DEFAULT_MODEL_SIZE,
+    }
+}
+
+/// The on-disk / CDN filename for a (normalized) model size, e.g. `ggml-base.bin`.
+pub fn model_filename(size: &str) -> String {
+    format!("ggml-{}.bin", normalize_model_size(size))
+}
+
+/// Approximate download size in MB for a (normalized) model size, for UI notices.
+pub fn model_download_size_mb(size: &str) -> u32 {
+    match normalize_model_size(size) {
+        "small" => 466,
+        _ => 148,
+    }
 }
 
 fn model_url(size: &str) -> String {
@@ -65,12 +84,7 @@ impl LocalWhisperProvider {
     }
 
     pub async fn with_model_size(size: &str) -> VoiceResult<Self> {
-        let valid = ["base", "small"];
-        let size = if valid.contains(&size) {
-            size
-        } else {
-            DEFAULT_MODEL_SIZE
-        };
+        let size = normalize_model_size(size);
         let model_path = Self::ensure_model(size).await?;
         info!("Using whisper model: {}", model_path.display());
 
@@ -104,12 +118,6 @@ impl LocalWhisperProvider {
 
     /// Check if the model file exists and is plausible (>1MB).
     pub fn model_ready(size: &str) -> bool {
-        let valid = ["base", "small"];
-        let size = if valid.contains(&size) {
-            size
-        } else {
-            DEFAULT_MODEL_SIZE
-        };
         let path = Self::model_dir().join(model_filename(size));
         path.exists() && std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false)
     }
@@ -136,6 +144,13 @@ impl LocalWhisperProvider {
         }
 
         let url = model_url(size);
+
+        // Model + whisper.cpp are MIT-licensed; surface the notice before downloading.
+        eprintln!(
+            "\nThe voice feature downloads the OpenAI Whisper model (ggml format via whisper.cpp).\n\
+             Model license: MIT — https://github.com/openai/whisper/blob/main/LICENSE\n\
+             whisper.cpp license: MIT — https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE\n"
+        );
         eprintln!("Downloading whisper model ({})...", filename);
         tokio::fs::create_dir_all(&dir)
             .await
@@ -509,5 +524,25 @@ mod tests {
         assert!(is_hallucination("..."));
         assert!(is_hallucination("---"));
         assert!(is_hallucination("   "));
+    }
+
+    #[test]
+    fn normalize_model_size_falls_back_to_default() {
+        assert_eq!(normalize_model_size("base"), "base");
+        assert_eq!(normalize_model_size("small"), "small");
+        // Anything unsupported normalizes to the default so downstream state agrees.
+        assert_eq!(normalize_model_size("large"), DEFAULT_MODEL_SIZE);
+        assert_eq!(normalize_model_size(""), DEFAULT_MODEL_SIZE);
+    }
+
+    #[test]
+    fn model_filename_and_size_agree_for_invalid_size() {
+        // A bogus size must not produce a "ggml-large.bin" filename with a
+        // mismatched download size — both derive from the normalized value.
+        assert_eq!(model_filename("large"), "ggml-base.bin");
+        assert_eq!(model_download_size_mb("large"), model_download_size_mb("base"));
+        assert_eq!(model_filename("small"), "ggml-small.bin");
+        assert_eq!(model_download_size_mb("small"), 466);
+        assert_eq!(model_download_size_mb("base"), 148);
     }
 }

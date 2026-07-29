@@ -101,6 +101,7 @@ export function createMockCommandContext(
     kasAvailableAgents: opts.kasAvailableAgents ?? [],
     kasAvailableEfforts: opts.kasAvailableEfforts ?? [],
     showAlert: spy('showAlert') as any,
+    setVoiceDownloadConfirm: spy('setVoiceDownloadConfirm') as any,
     announceSystem: spy('announceSystem') as any,
     announceWorkflowLifecycle: spy('announceWorkflowLifecycle') as any,
     setLoadingMessage: spy('setLoadingMessage') as any,

@@ -1637,12 +1637,28 @@ export const PromptInput = React.memo(function PromptInput({
                 onPartial: (text) => {
                   setVoicePartialText(text);
                 },
+                onNeedsDownload: () => {
+                  // The model isn't downloaded yet. Don't inline-confirm during a
+                  // space-hold — route the user to /voice, which owns the
+                  // interactive download confirmation.
+                  pttActiveRef.current = false;
+                  pttSessionRef.current = null;
+                  setVoiceCancel(null);
+                  setVoiceLevel(null);
+                  showTransientAlert({
+                    message:
+                      'Voice needs a one-time model download. Type /voice to set it up.',
+                    status: 'info',
+                    autoHideMs: 8000,
+                  });
+                },
                 onStatus: (status) => {
                   if (status === 'recording') {
                     setVoiceLevel(0);
                   } else if (status === 'downloading') {
                     showTransientAlert({
-                      message: 'Downloading voice model...',
+                      message:
+                        'Downloading voice model — this runs once, then voice is ready.',
                       status: 'info',
                       autoHideMs: 120000,
                     });

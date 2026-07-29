@@ -140,6 +140,11 @@ pub enum RootSubcommand {
         /// Push-to-talk mode (disables silence auto-stop)
         #[arg(long)]
         ptt: bool,
+        /// Proceed with downloading the speech model if it is not present.
+        /// Without this flag, a missing model emits `status:needs_download`
+        /// and exits so the caller (TUI) can ask the user to confirm first.
+        #[arg(long)]
+        confirm_download: bool,
     },
     /// Start a voice recording server for remote/cloud desktop use.
     #[cfg(feature = "voice")]
@@ -247,7 +252,7 @@ impl RootSubcommand {
             },
             Self::AcpClient { agent } => crate::agent::acp::acp_client::execute(agent).await,
             #[cfg(feature = "voice")]
-            Self::Voice { ptt } => {
+            Self::Voice { ptt, confirm_download } => {
                 use crate::database::settings::Setting;
                 let server_url = os.database.settings.get_string(Setting::VoiceServerUrl);
                 let backend = if server_url.is_some() {
@@ -268,8 +273,14 @@ impl RootSubcommand {
                 };
                 let language = os.database.settings.get_string(Setting::VoiceLanguage);
                 let model_size = os.database.settings.get_string(Setting::VoiceModelSize);
-                let result =
-                    voice::voice_handler::voice_only_mode(server_url, silence_timeout, language, model_size).await;
+                let result = voice::voice_handler::voice_only_mode(
+                    server_url,
+                    silence_timeout,
+                    language,
+                    model_size,
+                    confirm_download,
+                )
+                .await;
                 let (telem_result, reason, reason_desc) = match &result {
                     Ok(_) => (crate::telemetry::TelemetryResult::Succeeded, None, None),
                     Err(e) => (

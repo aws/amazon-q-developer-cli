@@ -13,8 +13,120 @@ import { runEffect } from './effects.js';
 import { kasHandlers } from './kas-handlers/index.js';
 import { handleChat as handleV2Chat } from './v2-handlers/chat.js';
 import { isKasCommand, KasCommandName } from '../kas-commands.js';
-import { startPTTRecording } from './voice-helper.js';
+import { startPTTRecording, type ModelDownloadInfo } from './voice-helper.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+
+/**
+ * Run one local voice capture round.
+ *
+ * On first use the speech model isn't present. Rather than downloading
+ * silently, the subprocess emits `needs_download`; we surface an interactive
+ * confirm gate (Yes downloads, No declines). Accepting re-runs this with
+ * `confirmDownload=true`, which proceeds through download → "ready" and the user
+ * runs /voice again to actually record.
+ */
+async function runVoiceCapture(
+  ctx: CommandContext,
+  confirmDownload: boolean
+): Promise<void> {
+  const remoteServerUrl = process.env.KIRO_VOICE_SERVER_URL ?? undefined;
+  let terminal = false; // true when the round ended without a transcript (download/confirm/cancel)
+  let cancelled = false;
+
+  const session = startPTTRecording(
+    remoteServerUrl,
+    {
+      onLevel: (level: number) => ctx.setVoiceLevel(level),
+      onPartial: (text: string) => ctx.setVoicePartialText(text),
+      onNeedsDownload: (info: ModelDownloadInfo) => {
+        terminal = true;
+        promptModelDownload(ctx, info);
+      },
+      onStatus: (status: string) => {
+        if (status === 'recording') {
+          ctx.setVoiceLevel(0);
+        } else if (status === 'downloading') {
+          ctx.showAlert(
+            'Downloading voice model — this runs once, then voice is ready.',
+            'success',
+            120000
+          );
+        } else if (status === 'download_complete') {
+          terminal = true;
+          ctx.showAlert(
+            'Voice model ready! Hold Space or type /voice to start recording.',
+            'success',
+            8000
+          );
+        }
+      },
+    },
+    false,
+    confirmDownload
+  );
+  ctx.setVoiceStop(session.stop);
+  ctx.setVoiceCancel(() => {
+    cancelled = true;
+    session.cancel();
+  });
+
+  let text: string | null | undefined;
+  try {
+    text = await session.text;
+  } finally {
+    // Always tear down the recording UI, even when session.text rejects
+    // (e.g. a model-download failure) — otherwise the level meter / ghost
+    // text would stick around after the round ends.
+    ctx.setVoiceStop(null);
+    ctx.setVoiceCancel(null);
+    ctx.setVoiceLevel(null);
+    ctx.setVoicePartialText(null);
+  }
+
+  if (terminal || cancelled) return;
+  ctx.incrementVoiceHint();
+  if (text) {
+    if (ctx.voiceAutoSubmit) {
+      await ctx.sendMessage(text);
+    } else {
+      ctx.setPendingVoiceText(text);
+    }
+  } else {
+    ctx.showAlert('No speech detected', 'error', 2000);
+  }
+}
+
+/**
+ * Surface the interactive "download the speech model?" confirm gate. The gate
+ * (a dedicated menu that owns the keyboard) resolves via Yes/No: accepting kicks
+ * off the download; declining leaves voice off with a hint.
+ */
+function promptModelDownload(
+  ctx: CommandContext,
+  info: ModelDownloadInfo
+): void {
+  ctx.setVoiceDownloadConfirm({
+    info,
+    onConfirm: () => {
+      ctx.setVoiceDownloadConfirm(null);
+      ctx.showAlert('Downloading voice model…', 'success', 120000);
+      // Re-run with confirmation. Fire-and-forget: errors surface via alert.
+      runVoiceCapture(ctx, true).catch((error) => {
+        const msg =
+          error instanceof Error ? error.message : 'Voice download failed';
+        ctx.showAlert(msg, 'error', 3000);
+      });
+    },
+    onDecline: () => {
+      ctx.setVoiceDownloadConfirm(null);
+      ctx.showAlert(
+        'Voice needs a one-time model download. Run /voice again when ready.',
+        'warning',
+        6000
+      );
+    },
+  });
+}
 
 export interface DispatchOptions {
   /** True when args were provided programmatically rather than typed by the user. */
@@ -131,60 +243,10 @@ export async function dispatch(
   // Voice command: spawn local voice helper, capture text, place in input or auto-submit
   if (cmdName === 'voice') {
     try {
-      const remoteServerUrl = process.env.KIRO_VOICE_SERVER_URL ?? undefined;
-      let downloadOnly = false;
-      let cancelled = false;
-      const session = startPTTRecording(
-        remoteServerUrl,
-        {
-          onLevel: (level: number) => {
-            ctx.setVoiceLevel(level);
-          },
-          onPartial: (text: string) => {
-            ctx.setVoicePartialText(text);
-          },
-          onStatus: (status: string) => {
-            if (status === 'recording') {
-              ctx.setVoiceLevel(0);
-            } else if (status === 'downloading') {
-              ctx.showAlert('Downloading voice model...', 'success', 120000);
-            } else if (status === 'download_complete') {
-              downloadOnly = true;
-              ctx.showAlert(
-                'Voice model ready! Hold Space or type /voice to start recording.',
-                'success',
-                8000
-              );
-            }
-          },
-        },
-        false
-      );
-      ctx.setVoiceStop(session.stop);
-      ctx.setVoiceCancel(() => {
-        cancelled = true;
-        session.cancel();
-      });
-      const text = await session.text;
-      ctx.setVoiceStop(null);
-      ctx.setVoiceCancel(null);
-      ctx.setVoiceLevel(null);
-      ctx.setVoicePartialText(null);
-      if (downloadOnly || cancelled) return;
-      ctx.incrementVoiceHint();
-      if (text) {
-        if (ctx.voiceAutoSubmit) {
-          await ctx.sendMessage(text);
-        } else {
-          ctx.setPendingVoiceText(text);
-        }
-      } else {
-        ctx.showAlert('No speech detected', 'error', 2000);
-      }
+      await runVoiceCapture(ctx, false);
     } catch (error) {
-      ctx.setVoiceStop(null);
-      ctx.setVoiceCancel(null);
-      ctx.setVoiceLevel(null);
+      // runVoiceCapture tears down its own UI state in a finally; here we just
+      // surface the failure (e.g. model download failed) to the user.
       const msg = error instanceof Error ? error.message : 'Voice input failed';
       ctx.showAlert(msg, 'error', 3000);
       emitFrontendCommandUsage(cmd, args, ctx, false);

@@ -17,7 +17,10 @@ use tracing::{
 };
 
 use super::provider::TranscriptionProvider;
-use super::providers::local_whisper::LocalWhisperProvider;
+use super::providers::local_whisper::{
+    self,
+    LocalWhisperProvider,
+};
 use super::providers::remote_server::RemoteServerProvider;
 use super::silero_vad::SileroVad;
 use super::transcription_provider::TranscriptionBackend;
@@ -79,6 +82,12 @@ fn emit_voice_event(event_type: &str, value: serde_json::Value) {
     io::stdout().flush().ok();
 }
 
+/// Emit a structured `error` event `{code, message}` so the caller (TUI) can
+/// surface an accurate failure instead of inferring "no speech" from a silent exit.
+fn emit_voice_error(code: &str, message: &str) {
+    emit_voice_event("error", serde_json::json!({ "code": code, "message": message }));
+}
+
 /// Standalone voice mode: record → transcribe → print to stdout → exit.
 /// Output format depends on whether stdout is a TTY:
 /// - TTY (interactive): prints plain text transcription with volume bar
@@ -88,6 +97,7 @@ pub async fn voice_only_mode(
     silence_timeout_secs: Option<u64>,
     language: Option<String>,
     model_size: Option<String>,
+    confirm_download: bool,
 ) -> eyre::Result<std::process::ExitCode> {
     use std::io::IsTerminal;
     let is_piped = !std::io::stdout().is_terminal();
@@ -95,14 +105,34 @@ pub async fn voice_only_mode(
     let language = language.filter(|l| l != "auto");
     let silence_timeout = silence_timeout_secs.map(Duration::from_secs);
 
-    // If model isn't downloaded yet, download it and exit — don't auto-start recording.
-    // The caller (TUI) will show a message telling the user to try again.
-    let effective_model_size = model_size.as_deref().unwrap_or("base");
+    // The local Whisper model must be downloaded on first use. Don't download
+    // silently: unless the caller passed --confirm-download, emit a structured
+    // `needs_download` event (model size + license) and exit so the caller (TUI)
+    // can ask the user to confirm first. Once confirmed, the caller re-invokes
+    // with --confirm-download and we proceed with the download.
+    // Normalize once so the filename, size, and readiness checks all agree even
+    // for an unknown model_size (see local_whisper::normalize_model_size).
+    let effective_model_size = local_whisper::normalize_model_size(model_size.as_deref().unwrap_or("base"));
     if is_piped && !LocalWhisperProvider::model_ready(effective_model_size) {
+        if !confirm_download {
+            emit_voice_event(
+                "needs_download",
+                serde_json::json!({
+                    "model": local_whisper::model_filename(effective_model_size),
+                    "sizeMb": local_whisper::model_download_size_mb(effective_model_size),
+                    "license": "MIT",
+                    "licenseUrl": "https://github.com/openai/whisper/blob/main/LICENSE",
+                }),
+            );
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
         emit_voice_event("status", serde_json::json!("downloading"));
-        LocalWhisperProvider::ensure_model(effective_model_size)
-            .await
-            .map_err(|e| eyre::eyre!("Model download failed: {}", e))?;
+        if let Err(e) = LocalWhisperProvider::ensure_model(effective_model_size).await {
+            // Surface a structured error so the TUI shows a real download failure
+            // rather than silently surfacing it as "no speech detected" on exit.
+            emit_voice_error("DOWNLOAD_FAILED", &format!("Model download failed: {}", e));
+            return Ok(std::process::ExitCode::FAILURE);
+        }
         emit_voice_event("status", serde_json::json!("download_complete"));
         return Ok(std::process::ExitCode::SUCCESS);
     }

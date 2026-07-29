@@ -25,6 +25,7 @@ import { SnackBar } from '../chat/prompt-bar/SnackBar.js';
 import { NotificationBar } from '../chat/notification-bar/NotificationBar.js';
 import { BlockingErrorAlert } from '../ui/alert/BlockingErrorAlert.js';
 import { CrewApprovalRequest } from '../ui/CrewApprovalRequest.js';
+import { VoiceModelDownloadGate } from '../ui/VoiceModelDownloadGate.js';
 import { Question } from '../ui/Question.js';
 import { SpecDescriptionIntro } from '../ui/SpecDescriptionIntro.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
@@ -156,6 +157,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   );
   const specCheckpointActive = useAppStore(
     (state) => state.specPhaseCheckpoint !== null
+  );
+  const voiceDownloadConfirm = useAppStore(
+    (state) => state.voiceDownloadConfirm
   );
   const globalPaused = useAnimationPaused();
   const keybindings = useKeybindings();
@@ -842,7 +846,8 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               showCloudQuitPrompt ||
               workflowHistoryOpen ||
               !!pendingApproval ||
-              !!pendingQuestion
+              !!pendingQuestion ||
+              !!voiceDownloadConfirm
                 ? undefined
                 : toolOutputsExpanded
                   ? (dimmedPromptBarHeader ?? undefined)
@@ -892,6 +897,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   noInteractive ||
                   !!pendingApproval ||
                   !!pendingQuestion ||
+                  !!voiceDownloadConfirm ||
                   showContextBreakdown ||
                   showHelpPanel ||
                   showTuiPanel ||
@@ -950,6 +956,13 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   onInputSubmit={handleSubmit}
                 />
               ))}
+            {voiceDownloadConfirm && mode === 'inline' && (
+              <VoiceModelDownloadGate
+                info={voiceDownloadConfirm.info}
+                onConfirm={voiceDownloadConfirm.onConfirm}
+                onDecline={voiceDownloadConfirm.onDecline}
+              />
+            )}
             {!pendingQuestion && (
               <BackendPanels handlers={backendPanelHandlers} />
             )}

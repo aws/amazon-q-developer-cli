@@ -34,10 +34,26 @@ function getBinaryPath(): string {
   return path;
 }
 
+/** Details of a model that must be downloaded before voice can run. */
+export interface ModelDownloadInfo {
+  model: string;
+  sizeMb: number;
+  license: string;
+  licenseUrl: string;
+}
+
+/** Structured failure emitted by the voice subprocess (e.g. model download failed). */
+export interface VoiceErrorInfo {
+  code: string;
+  message: string;
+}
+
 export interface VoiceHelperCallbacks {
   onLevel?: (level: number) => void;
   onStatus?: (status: string) => void;
   onPartial?: (text: string) => void;
+  /** Fired when the speech model is missing and needs the user to confirm a download. */
+  onNeedsDownload?: (info: ModelDownloadInfo) => void;
 }
 
 export interface PTTSession {
@@ -189,7 +205,8 @@ function startRemoteRecording(
 export function startPTTRecording(
   remoteServerUrl?: string,
   callbacks?: VoiceHelperCallbacks,
-  ptt = true
+  ptt = true,
+  confirmDownload = false
 ): PTTSession {
   // When a remote server is configured, use it directly — skip local binary
   if (remoteServerUrl) {
@@ -198,6 +215,8 @@ export function startPTTRecording(
 
   const binary = getBinaryPath();
   const args = ptt ? ['voice', '--ptt'] : ['voice'];
+  // Only pass --confirm-download after the user has accepted the model download.
+  if (confirmDownload) args.push('--confirm-download');
   logger.debug('[voice] spawning voice helper:', binary, args);
 
   const child = spawn(binary, args, {
@@ -211,6 +230,10 @@ export function startPTTRecording(
 
   let stdout = '';
   let finalText: string | null = null;
+  // Set when the subprocess emits a structured `error` event; the close handler
+  // rejects with this so callers surface a real failure (e.g. download failed)
+  // instead of treating a silent non-zero exit as "no speech detected".
+  let voiceError: VoiceErrorInfo | null = null;
   let resolveText: ((t: string | null) => void) | null = null;
   let rejectText: ((e: Error) => void) | null = null;
 
@@ -237,6 +260,12 @@ export function startPTTRecording(
             break;
           case 'partial':
             if (event.value) callbacks?.onPartial?.(event.value as string);
+            break;
+          case 'needs_download':
+            callbacks?.onNeedsDownload?.(event.value as ModelDownloadInfo);
+            break;
+          case 'error':
+            voiceError = event.value as VoiceErrorInfo;
             break;
           case 'text':
             finalText = (event.value as string | null) ?? null;
@@ -284,7 +313,9 @@ export function startPTTRecording(
       }
     }
 
-    if (code === 0 && finalText) {
+    if (voiceError) {
+      rejectText!(new Error(voiceError.message || 'Voice failed'));
+    } else if (code === 0 && finalText) {
       resolveText!(finalText);
     } else {
       resolveText!(null);

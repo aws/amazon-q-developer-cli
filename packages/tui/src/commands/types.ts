@@ -81,6 +81,23 @@ export interface CommandContext {
     autoHideMs?: number
   ) => void;
   /**
+   * Show/clear the first-use voice model download confirm gate. When set, a
+   * dedicated confirm UI owns the keyboard (so y/n/Enter don't leak to the
+   * prompt); pass null to dismiss it.
+   */
+  setVoiceDownloadConfirm: (
+    confirm: {
+      info: {
+        model: string;
+        sizeMb: number;
+        license: string;
+        licenseUrl: string;
+      };
+      onConfirm: () => void;
+      onDecline: () => void;
+    } | null
+  ) => void;
+  /**
    * Announce a state change the user should see persistently.
    * In lite mode this writes to the chat scrollback as a system message;
    * in TUI mode it falls back to a transient alert (since classic has a

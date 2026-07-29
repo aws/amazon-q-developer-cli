@@ -48,6 +48,7 @@ import { getVerboseDisplay, getVerboseFilters } from '../../../lite/verbose.js';
 import { pickTip, formatTipLine } from '../../../tips/tips.js';
 import { Question } from '../../ui/Question.js';
 import { SpecDescriptionIntro } from '../../ui/SpecDescriptionIntro.js';
+import { VoiceModelDownloadGate } from '../../ui/VoiceModelDownloadGate.js';
 import type { VariantLayoutProps } from '../variant-layout.js';
 import {
   formatSubagentRow,
@@ -160,6 +161,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     (s) => s.pendingSpecDescription?.featureName ?? null
   );
   const respondToQuestion = useAppStore((s) => s.respondToQuestion);
+  const voiceDownloadConfirm = useAppStore((s) => s.voiceDownloadConfirm);
   const mainSessionId = useAppStore((s) => s.sessionId);
   const currentModel = useAppStore((s) => s.currentModel);
   const currentAgent = useAppStore((s) => s.currentAgent);
@@ -493,7 +495,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const showQuestion = interactionReady ? pendingQuestion : null;
   const showApproval =
     interactionReady && !pendingQuestion ? pendingApproval : null;
-  const showInteraction = !!showApproval || !!showQuestion;
+  const showInteraction =
+    !!showApproval || !!showQuestion || !!voiceDownloadConfirm;
   const questionStageName =
     pendingQuestion?.sessionId && pendingQuestion.sessionId !== mainSessionId
       ? sessions.get(pendingQuestion.sessionId)?.name
@@ -1857,6 +1860,18 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
             }
             mainAgentName={agentName}
             onInputSubmit={handleNotesSubmit}
+          />
+        </Box>
+      )}
+
+      {/* First-use voice model download confirm gate. Owns the keyboard (y/n,
+          Enter/Esc) in place of the prompt input, same as Question/Approval. */}
+      {!showQuestion && !showApproval && voiceDownloadConfirm && (
+        <Box flexDirection="column">
+          <VoiceModelDownloadGate
+            info={voiceDownloadConfirm.info}
+            onConfirm={voiceDownloadConfirm.onConfirm}
+            onDecline={voiceDownloadConfirm.onDecline}
           />
         </Box>
       )}
