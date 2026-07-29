@@ -178,6 +178,8 @@ jobs:
       - name: Configure sccache
         if: inputs.branch_name != 'prod'
         uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: "v0.16.0"
 
       - name: Set Rust compiler wrapper
         if: inputs.branch_name != 'prod'

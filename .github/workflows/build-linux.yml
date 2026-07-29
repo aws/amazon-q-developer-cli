@@ -138,6 +138,8 @@ jobs:
       - name: Configure sccache
         if: inputs.branch_name != 'prod' && !matrix.musl && !matrix.cross_target
         uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: "v0.16.0"
 
       - name: Set Rust compiler wrapper
         if: inputs.branch_name != 'prod' && !matrix.musl && !matrix.cross_target
