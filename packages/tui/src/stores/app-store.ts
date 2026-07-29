@@ -77,6 +77,7 @@ import type {
   SkillEntry,
   SteeringEntry,
 } from '../types/commands';
+import type { WorkflowRecipeInputPanelModel } from '../types/workflow-command.js';
 import type {
   AgentEntry,
   EffortEntry,
@@ -735,6 +736,7 @@ export interface SlashCommand extends AvailableCommand {
 export interface ActiveCommand {
   command: AvailableCommand;
   options: CommandOption[];
+  panel?: WorkflowRecipeInputPanelModel;
   /**
    * Cursor row to highlight when the menu opens. Defaults to 0.
    * Used by submenu navigation (e.g. /verbose) so that re-entering the top

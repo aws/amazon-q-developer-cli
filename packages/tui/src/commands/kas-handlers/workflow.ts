@@ -5,13 +5,15 @@ import type {
   WorkflowRecipeDescriptor,
   WorkflowRunSource,
 } from '../../types/workflow-launch';
+import {
+  decodeWorkflowRecipeAction,
+  encodeWorkflowRecipeAction,
+} from '../../types/workflow-command.js';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
 import type { CommandContext } from '../types';
 
 type WorkflowControlSubcommand = 'pause' | 'resume' | 'status' | 'cancel';
-
-const RECIPE_SELECTION_PREFIX = '__kiro_workflow_recipe__:';
 
 export async function handleWorkflow(
   cmd: KasCommand,
@@ -21,12 +23,17 @@ export async function handleWorkflow(
 ): Promise<void> {
   const trimmed = args.trim();
   if (options?.argIsSynthetic && trimmed) {
-    const recipe = decodeRecipeSelection(trimmed);
-    if (!recipe) {
+    const action = decodeWorkflowRecipeAction(trimmed);
+    if (!action) {
       ctx.showAlert('Invalid workflow recipe selection.', 'error', 3000);
       return;
     }
-    await runRecipe(ctx, recipe, {});
+    await prepareRecipeLaunch(
+      cmd,
+      ctx,
+      action.recipe,
+      action.type === 'run' ? action.values : {}
+    );
     return;
   }
 
@@ -41,7 +48,7 @@ export async function handleWorkflow(
 
   switch (subcommand) {
     case 'list':
-      await openRecipePicker(cmd, ctx);
+      await openWorkflowHistory(ctx);
       return;
     case 'run':
       await runWorkflowCommand(cmd, rest, ctx);
@@ -83,7 +90,7 @@ async function runWorkflowCommand(
     if (!recipe) {
       throw new Error(`No workflow recipe named "${selector}" was found.`);
     }
-    await runRecipe(ctx, recipe, inputs);
+    await prepareRecipeLaunch(cmd, ctx, recipe, inputs);
   } catch (error) {
     ctx.setLoadingMessage(null);
     ctx.showAlert(
@@ -114,7 +121,10 @@ async function openRecipePicker(
     ctx.setActiveCommand({
       command: cmd,
       options: recipes.map((recipe) => ({
-        value: encodeRecipeSelection(recipe),
+        value: encodeWorkflowRecipeAction({
+          type: 'select',
+          recipe: serializableRecipe(recipe),
+        }),
         label: recipe.validationError ? `Invalid: ${recipe.name}` : recipe.name,
         description:
           recipe.validationError ?? recipe.description ?? recipe.source ?? '',
@@ -128,6 +138,41 @@ async function openRecipePicker(
       5000
     );
   }
+}
+
+async function prepareRecipeLaunch(
+  cmd: KasCommand,
+  ctx: CommandContext,
+  recipe: WorkflowRecipeDescriptor,
+  inputs: Record<string, string>
+): Promise<void> {
+  if (recipe.validationError) {
+    ctx.setLoadingMessage(null);
+    ctx.showAlert(
+      `Workflow recipe "${recipe.name}" is invalid: ${recipe.validationError}`,
+      'error',
+      5000
+    );
+    return;
+  }
+
+  const declaredInputs = Object.keys(recipe.inputs ?? {});
+  const missingInput = declaredInputs.find((name) => !inputs[name]?.trim());
+  if (missingInput) {
+    ctx.setLoadingMessage(null);
+    ctx.setActiveCommand({
+      command: cmd,
+      options: [],
+      panel: {
+        type: 'workflow-recipe-inputs',
+        recipe: serializableRecipe(recipe),
+        initialValues: inputs,
+      },
+    });
+    return;
+  }
+
+  await runRecipe(ctx, recipe, inputs);
 }
 
 async function runRecipe(
@@ -202,58 +247,21 @@ function findRecipe(
   );
 }
 
-function encodeRecipeSelection(recipe: WorkflowRecipeDescriptor): string {
-  return `${RECIPE_SELECTION_PREFIX}${encodeURIComponent(
-    JSON.stringify({
-      name: recipe.name,
-      ...(recipe.source ? { source: recipe.source } : {}),
-      ...(recipe.builtIn === undefined ? {} : { builtIn: recipe.builtIn }),
-      ...(recipe.validationError
-        ? { validationError: recipe.validationError }
-        : {}),
-    })
-  )}`;
-}
-
-function decodeRecipeSelection(value: string): WorkflowRecipeDescriptor | null {
-  if (!value.startsWith(RECIPE_SELECTION_PREFIX)) return null;
-  try {
-    const decoded: unknown = JSON.parse(
-      decodeURIComponent(value.slice(RECIPE_SELECTION_PREFIX.length))
-    );
-    if (
-      decoded === null ||
-      typeof decoded !== 'object' ||
-      Array.isArray(decoded)
-    ) {
-      return null;
-    }
-    const record = decoded as Record<string, unknown>;
-    if (typeof record.name !== 'string' || record.name.length === 0)
-      return null;
-    if (record.source !== undefined && typeof record.source !== 'string') {
-      return null;
-    }
-    if (record.builtIn !== undefined && typeof record.builtIn !== 'boolean') {
-      return null;
-    }
-    if (
-      record.validationError !== undefined &&
-      typeof record.validationError !== 'string'
-    ) {
-      return null;
-    }
-    return {
-      name: record.name,
-      ...(record.source === undefined ? {} : { source: record.source }),
-      ...(record.builtIn === undefined ? {} : { builtIn: record.builtIn }),
-      ...(record.validationError === undefined
-        ? {}
-        : { validationError: record.validationError }),
-    };
-  } catch {
-    return null;
-  }
+function serializableRecipe(
+  recipe: WorkflowRecipeDescriptor
+): WorkflowRecipeDescriptor {
+  return {
+    name: recipe.name,
+    ...(recipe.description === undefined
+      ? {}
+      : { description: recipe.description }),
+    ...(recipe.source === undefined ? {} : { source: recipe.source }),
+    ...(recipe.builtIn === undefined ? {} : { builtIn: recipe.builtIn }),
+    ...(recipe.validationError === undefined
+      ? {}
+      : { validationError: recipe.validationError }),
+    ...(recipe.inputs === undefined ? {} : { inputs: recipe.inputs }),
+  };
 }
 
 /** Parse `--key=value`, `--key value`, and a free-form prompt tail. */

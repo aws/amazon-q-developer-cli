@@ -18,7 +18,7 @@ export function buildMonitorFooterHints(ctx: MonitorFooterContext): string {
   if (ctx.stopConfirmationArmed) {
     return 'Ctrl+X stop workflow | Esc keep running';
   }
-  if (ctx.inputOpen) return 'Enter send | Esc cancel';
+  if (ctx.inputOpen) return 'Enter send | Up/Down nodes | Esc close';
 
   const hints: string[] = [];
   const node = ctx.selectedNode;

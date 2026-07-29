@@ -11,12 +11,14 @@
     "packages/twinki/packages/*"
   ],
   "devDependencies": {
-    "eslint": "^9.17.0",
+    "eslint": "^10.0.1",
     "prettier": "^3.4.2"
   },
   "overrides": {
     "vite": "7.3.5",
     "@babel/core": "7.29.6",
+    "brace-expansion": "5.0.8",
+    "glob": "13.0.6",
     "@hono/node-server": "2.0.11",
     "@opentelemetry/core": "2.9.0",
     "@opentelemetry/propagator-jaeger": "2.9.0",
@@ -29,13 +31,13 @@
     "ip-address": "10.1.1",
     "js-yaml": "4.3.0",
     "langsmith": "0.6.0",
-    "postcss": "8.5.12",
+    "postcss": "8.5.18",
     "@opentelemetry/exporter-prometheus": "0.217.0",
     "@opentelemetry/sdk-node": "0.217.0",
     "protobufjs": "8.6.6",
     "sharp": "0.35.0",
     "shell-quote": "1.9.0",
-    "tar": "7.5.19",
+    "tar": "7.5.21",
     "uuid": "^14.0.0",
     "ws": "8.21.0"
   }

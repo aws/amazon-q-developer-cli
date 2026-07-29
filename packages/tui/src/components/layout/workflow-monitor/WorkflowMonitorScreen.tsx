@@ -46,6 +46,7 @@ import { classifyWorkflowStopKey } from './workflow-stop-confirmation.js';
 import { workflowControlShortcut } from './workflow-control-shortcut.js';
 import { isTerminalWorkflowStatus } from '../../../types/workflow-status.js';
 import type { WorkflowMonitorNode } from '../../../types/workflow-monitor.js';
+import type { WorkflowNodeSessionTarget } from '../../../types/workflow.js';
 import { setMouseCaptureEnabled } from '../../../utils/mouse-capture.js';
 import {
   WORKFLOW_MESSAGE_COMPOSER_HEIGHT,
@@ -80,6 +81,10 @@ function messageModeForNode(
   }
   if (node?.status === 'completed') return 'message';
   return null;
+}
+
+function messageDraftKey(target: WorkflowNodeSessionTarget): string {
+  return `${target.workflowId}\u0000${target.sessionId}`;
 }
 
 export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
@@ -134,7 +139,7 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
 
   const [inputMode, setInputMode] = useState<InputMode>('none');
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputTextState] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
   const [mouseModeEnabled, setMouseModeEnabled] = useState(false);
   const [activeView, setActiveView] = useState<'workflows' | 'agents'>(
@@ -144,6 +149,8 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
     string | null
   >(null);
   const composerRevisionRef = useRef(0);
+  const inputTextRef = useRef('');
+  const messageDraftsRef = useRef(new Map<string, string>());
   const [, setClock] = useState(0);
 
   useEffect(() => {
@@ -221,9 +228,14 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
     stopConfirmationWorkflowId === workflow.workflowId &&
     !isTerminalWorkflowStatus(workflow.status);
 
+  const replaceInputText = (value: string) => {
+    inputTextRef.current = value;
+    setInputTextState(value);
+  };
+
   const clearInput = () => {
     setInputMode('none');
-    setInputText('');
+    replaceInputText('');
     setInputError(null);
     setInputState(false);
   };
@@ -245,21 +257,81 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   const openInput = () => {
     composerRevisionRef.current += 1;
     const nextMode = inputModeForSelection();
-    if (!nextMode) {
+    if (!nextMode || !selectedConversation) {
       setInputError('This workflow step cannot receive a message.');
       return;
     }
     setInputMode(nextMode);
-    setInputText('');
+    replaceInputText(
+      messageDraftsRef.current.get(
+        messageDraftKey(selectedConversation.target)
+      ) ?? ''
+    );
+    setInputError(null);
+    setInputState(true);
+  };
+
+  const persistMessageDraft = (
+    target: WorkflowNodeSessionTarget,
+    value: string
+  ) => {
+    const key = messageDraftKey(target);
+    if (value) messageDraftsRef.current.set(key, value);
+    else messageDraftsRef.current.delete(key);
+  };
+
+  const updateInputText = (update: (value: string) => string) => {
+    const next = update(inputTextRef.current);
+    inputTextRef.current = next;
+    if (selectedConversation) {
+      persistMessageDraft(selectedConversation.target, next);
+    }
+    setInputTextState(next);
+  };
+
+  const moveComposerSelection = (offset: -1 | 1) => {
+    if (!workflow) return;
+    const nextIndex = Math.min(
+      Math.max(0, selectedIndex + offset),
+      Math.max(0, workflow.nodes.length - 1)
+    );
+    if (nextIndex === selectedIndex) return;
+
+    const nextNode = workflow.nodes[nextIndex] ?? null;
+    const nextConversation = nextNode
+      ? buildWorkflowNodeConversation(workflow, nextNode)
+      : null;
+    const nextMode = messageModeForNode(nextNode);
+    if (selectedConversation) {
+      persistMessageDraft(selectedConversation.target, inputTextRef.current);
+    }
+    composerRevisionRef.current += 1;
+    setInputState(false);
+    setSelectedNode(nextIndex);
+
+    if (!nextConversation || !nextMode) {
+      setInputMode('none');
+      replaceInputText('');
+      setInputError('This workflow step cannot receive a message.');
+      return;
+    }
+
+    setInputMode(nextMode);
+    replaceInputText(
+      messageDraftsRef.current.get(messageDraftKey(nextConversation.target)) ??
+        ''
+    );
     setInputError(null);
     setInputState(true);
   };
 
   const submitInput = () => {
-    const content = inputText.trim();
+    const content = inputTextRef.current.trim();
     if (!selectedConversation || !content || inputMode === 'none') return;
     const submittedTarget = selectedConversation.target;
+    const submittedDraftKey = messageDraftKey(submittedTarget);
     const submissionRevision = ++composerRevisionRef.current;
+    messageDraftsRef.current.delete(submittedDraftKey);
     void kiro
       .messageWorkflowNode(submittedTarget, content)
       .catch((error: unknown) => {
@@ -284,8 +356,9 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
         ) {
           return;
         }
+        messageDraftsRef.current.set(submittedDraftKey, content);
         setInputMode(retryMode);
-        setInputText(content);
+        replaceInputText(content);
         setInputError(null);
         setInputState(true);
       });
@@ -327,13 +400,21 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
     }
 
     if (inputMode !== 'none') {
+      if (key.upArrow) {
+        moveComposerSelection(-1);
+        return;
+      }
+      if (key.downArrow) {
+        moveComposerSelection(1);
+        return;
+      }
       const action = classifyInputKey(input, key);
       if (action === 'cancel') closeInput();
       else if (action === 'submit') submitInput();
       else if (action === 'delete') {
-        setInputText((value) => value.slice(0, -1));
+        updateInputText((value) => value.slice(0, -1));
       } else if (typeof action === 'object') {
-        setInputText((value) => value + action.append);
+        updateInputText((value) => value + action.append);
       }
       return;
     }

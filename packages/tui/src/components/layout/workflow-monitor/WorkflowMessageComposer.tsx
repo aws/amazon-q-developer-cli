@@ -51,7 +51,7 @@ export const WorkflowMessageComposer = React.memo(
         </Text>
         <Text wrap="truncate">
           {getColor('secondary')(
-            `${glyphs.enter} send ${glyphs.smallDot} esc cancel`
+            `${glyphs.enter} send ${glyphs.smallDot} ${glyphs.arrowUp}${glyphs.arrowDown} nodes ${glyphs.smallDot} esc close`
           )}
         </Text>
       </Box>

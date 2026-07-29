@@ -546,11 +546,13 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   useEffect(() => {
     if (!activeCommand) return;
     if (activeCommand.options.length > 0) return; // selection picker — legit
+    if (activeCommand.panel) return;
     if (anyPanelOpen) return; // a backend panel is up — legit freeze
     const t = setTimeout(() => {
       if (
         !activeCommandRef.current ||
         activeCommandRef.current.options.length > 0 ||
+        activeCommandRef.current.panel ||
         anyPanelOpenRef.current
       )
         return;

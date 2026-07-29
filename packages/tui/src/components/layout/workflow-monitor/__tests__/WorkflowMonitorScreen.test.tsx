@@ -14,6 +14,7 @@ import {
 } from '../../../../types/agent-events.js';
 import type { WorkflowNodeSessionTarget } from '../../../../types/workflow.js';
 import type {
+  WorkflowCancelResponse,
   WorkflowInspectResponse,
   WorkflowPauseResponse,
   WorkflowRunSummary,
@@ -25,12 +26,17 @@ class MockTerminal implements Terminal {
   private onInput: ((data: string) => void) | null = null;
   output = '';
 
+  constructor(
+    private readonly columnCount = 120,
+    private readonly rowCount = 40
+  ) {}
+
   get columns() {
-    return 120;
+    return this.columnCount;
   }
 
   get rows() {
-    return 40;
+    return this.rowCount;
   }
 
   get kittyProtocolActive() {
@@ -129,6 +135,55 @@ function openMessageableWorkflow(name: string): void {
   });
 }
 
+function openMultiNodeMessageableWorkflow(): void {
+  workflowStore.getState().openHistoricalWorkflow({
+    workflowId: 'workflow-1',
+    parentSessionId: 'parent-1',
+    name: 'Multi-node drafts',
+    status: 'running',
+    nodes: [
+      {
+        id: 'step-1',
+        type: 'step',
+        status: 'running',
+        label: 'coder',
+        parentId: null,
+        depth: 0,
+        sessionId: 'child-1',
+        agentName: 'coder',
+      },
+      {
+        id: 'step-2',
+        type: 'step',
+        status: 'running',
+        label: 'reviewer',
+        parentId: null,
+        depth: 0,
+        sessionId: 'child-2',
+        agentName: 'reviewer',
+      },
+    ],
+    stepSessions: [
+      {
+        nodeId: 'step-1',
+        nodePath: ['step-1'],
+        sessionId: 'child-1',
+        status: 'running',
+        agentName: 'coder',
+      },
+      {
+        nodeId: 'step-2',
+        nodePath: ['step-2'],
+        sessionId: 'child-2',
+        status: 'running',
+        agentName: 'reviewer',
+      },
+    ],
+    startedAt: Date.now(),
+    completedAt: null,
+  });
+}
+
 describe('WorkflowMonitorScreen', () => {
   it('renders a retained workflow in the alternate screen', async () => {
     workflowStore.getState().openHistoricalWorkflow({
@@ -217,6 +272,61 @@ describe('WorkflowMonitorScreen', () => {
     expect(messages[0]?.content).toBe('Keep this inside the workflow');
     expect(appStore.getState().transientAlert).toBeNull();
     expect(workflowStore.getState().inputActive).toBe(false);
+  });
+
+  it('retains separate message drafts while navigating workflow nodes', async () => {
+    openMultiNodeMessageableWorkflow();
+
+    const messages: Array<{
+      target: WorkflowNodeSessionTarget;
+      content: string;
+    }> = [];
+    const kiro = new Kiro();
+    kiro.messageWorkflowNode = async (target, content) => {
+      messages.push({ target, content });
+    };
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowMonitorScreen />
+      </AppStoreContext.Provider>,
+      {
+        terminal,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        mouse: true,
+      }
+    );
+    await flush();
+
+    terminal.sendInput('s');
+    await flush();
+    terminal.sendInput('Draft for coder');
+    terminal.sendInput('\x1b[B');
+    await flush();
+    terminal.sendInput('Draft for reviewer');
+    terminal.sendInput('\x1b[A');
+    await flush();
+    terminal.sendInput('\r');
+    await flush();
+
+    expect(messages[0]).toMatchObject({
+      target: { workflowId: 'workflow-1', sessionId: 'child-1' },
+      content: 'Draft for coder',
+    });
+
+    terminal.sendInput('\x1b[B');
+    await flush();
+    terminal.sendInput('s');
+    await flush();
+    terminal.sendInput('\r');
+    await flush();
+
+    expect(messages[1]).toMatchObject({
+      target: { workflowId: 'workflow-1', sessionId: 'child-2' },
+      content: 'Draft for reviewer',
+    });
   });
 
   it('restores the submitted workflow message when sending fails', async () => {
@@ -477,6 +587,7 @@ describe('WorkflowHistoryPanel', () => {
     );
     await flush();
     expect(stripAnsi(terminal.output)).toContain('p pause');
+    expect(stripAnsi(terminal.output)).toContain('x cancel');
 
     terminal.sendInput('p');
     terminal.sendInput('p');
@@ -484,16 +595,111 @@ describe('WorkflowHistoryPanel', () => {
     expect(pauseWorkflow).toHaveBeenCalledWith('workflow-1');
     expect(pauseWorkflow).toHaveBeenCalledTimes(1);
     expect(workflowStore.getState().history.runs[0]?.status).toBe('running');
+    expect(stripAnsi(terminal.output)).toContain('pausing...');
 
     resolvePause({ paused: true });
     await flush();
     expect(workflowStore.getState().history.runs[0]?.status).toBe('paused');
     expect(stripAnsi(terminal.output)).toContain('r resume');
+    expect(stripAnsi(terminal.output)).toContain('x cancel');
 
     terminal.sendInput('r');
     await flush();
     expect(resumeWorkflow).toHaveBeenCalledWith('workflow-1');
     expect(workflowStore.getState().history.runs[0]?.status).toBe('running');
+  });
+
+  it('confirms cancellation and shows the pending status in narrow panels', async () => {
+    workflowStore.getState().openWorkflowHistory([
+      {
+        workflowId: 'workflow-1',
+        name: 'A workflow name that must yield space to its status',
+        status: 'running',
+        createdAt: '2026-07-20T10:00:00.000Z',
+        updatedAt: '2026-07-20T10:01:00.000Z',
+        parentSessionId: 'parent-1',
+      },
+    ]);
+    let resolveCancel!: (response: WorkflowCancelResponse) => void;
+    const cancelWorkflow = mock(
+      (_workflowId: string, _targetStatus?: 'aborted' | 'completed') =>
+        new Promise<WorkflowCancelResponse>((resolve) => {
+          resolveCancel = resolve;
+        })
+    );
+    const kiro = new Kiro();
+    kiro.cancelWorkflow = cancelWorkflow;
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal(48);
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowHistoryPanel onClose={() => {}} />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, patchConsole: false }
+    );
+    await flush();
+
+    expect(stripAnsi(terminal.output)).toContain('p pause');
+    expect(stripAnsi(terminal.output)).toContain('x cancel');
+    terminal.sendInput('x');
+    await flush();
+
+    expect(cancelWorkflow).not.toHaveBeenCalled();
+    expect(stripAnsi(terminal.output)).toContain('x confirm cancel');
+
+    terminal.output = '';
+    terminal.sendInput('\x1b');
+    await flush();
+    expect(cancelWorkflow).not.toHaveBeenCalled();
+    expect(stripAnsi(terminal.output)).not.toContain('x confirm cancel');
+
+    terminal.sendInput('x');
+    await flush();
+    terminal.sendInput('x');
+    await flush();
+    expect(cancelWorkflow).toHaveBeenCalledTimes(1);
+    expect(cancelWorkflow).toHaveBeenCalledWith('workflow-1', 'aborted');
+    expect(stripAnsi(terminal.output)).toContain('cancelling...');
+    expect(workflowStore.getState().history.runs[0]?.status).toBe('running');
+
+    resolveCancel({ ok: true, previousStatus: 'running' });
+    await flush();
+    expect(workflowStore.getState().history.runs[0]?.status).toBe('aborted');
+  });
+
+  it('keeps the authoritative terminal status when cancellation loses a race', async () => {
+    workflowStore.getState().openWorkflowHistory([
+      {
+        workflowId: 'workflow-1',
+        name: 'Already finished',
+        status: 'running',
+        createdAt: '2026-07-20T10:00:00.000Z',
+        updatedAt: '2026-07-20T10:01:00.000Z',
+        parentSessionId: 'parent-1',
+      },
+    ]);
+    const kiro = new Kiro();
+    kiro.cancelWorkflow = mock(async () => ({
+      ok: true,
+      previousStatus: 'completed' as const,
+    }));
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowHistoryPanel onClose={() => {}} />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, patchConsole: false }
+    );
+    await flush();
+
+    terminal.sendInput('x');
+    terminal.sendInput('x');
+    await flush();
+
+    expect(workflowStore.getState().history.runs[0]?.status).toBe('completed');
   });
 
   it('opens a run only once when Enter repeats', async () => {

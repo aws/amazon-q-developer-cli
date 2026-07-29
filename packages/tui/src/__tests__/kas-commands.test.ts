@@ -140,7 +140,7 @@ describe('kas-commands', () => {
         expect(
           commands.find((command) => command.name === KasCommandName.Workflow)
             ?.meta?.subcommands
-        ).toEqual(['list', 'run', 'pause', 'resume', 'status', 'cancel']);
+        ).toEqual(['run', 'list']);
       });
     });
 

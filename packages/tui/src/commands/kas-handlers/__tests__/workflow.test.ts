@@ -6,6 +6,7 @@ import type {
   WorkflowCreateRequest,
   WorkflowRecipeDescriptor,
 } from '../../../types/workflow-launch';
+import { encodeWorkflowRecipeAction } from '../../../types/workflow-command.js';
 import { executeCommand, executeCommandWithArg } from '../../index';
 import {
   createMockCommandContext,
@@ -100,6 +101,26 @@ describe('/workflow KAS command', () => {
     ]);
   });
 
+  it('uses list as an explicit alias for workflow history', async () => {
+    const historical = run(
+      'historical',
+      'session-1',
+      '2026-07-19T10:00:00.000Z'
+    );
+    const listWorkflows = mock(async () => [historical]);
+    const ctx = createKasContext({
+      sessionId: 'session-1',
+      listWorkflows,
+    });
+
+    expect(await executeCommand('/workflow list', ctx)).toBe(true);
+
+    expect(listWorkflows).toHaveBeenCalledTimes(1);
+    expect(ctx._spies.setShowWorkflowHistory).toHaveBeenCalledWith(true, [
+      historical,
+    ]);
+  });
+
   it('reports an empty history without opening the history surface', async () => {
     const ctx = createKasContext({
       sessionId: 'session-1',
@@ -162,7 +183,7 @@ describe('/workflow KAS command', () => {
     expect(ctx._spies.showAlert).not.toHaveBeenCalled();
   });
 
-  it('opens a recipe picker from the typed workflow list', async () => {
+  it('opens a recipe picker from the typed workflow run command', async () => {
     const workflow = workflowRecipes([
       {
         name: 'release',
@@ -173,7 +194,7 @@ describe('/workflow KAS command', () => {
     ]);
     const ctx = createKasContext(workflow);
 
-    expect(await executeCommand('/workflow list', ctx)).toBe(true);
+    expect(await executeCommand('/workflow run', ctx)).toBe(true);
 
     expect(workflow.listWorkflowRecipes).toHaveBeenCalledTimes(1);
     expect(ctx._spies.setActiveCommand).toHaveBeenCalledTimes(1);
@@ -233,7 +254,7 @@ describe('/workflow KAS command', () => {
       ...workflow,
     });
 
-    await executeCommand('/workflow list', ctx);
+    await executeCommand('/workflow run', ctx);
     const picker = ctx._spies.setActiveCommand!.mock.calls[0]![0] as {
       options: Array<{ value: string }>;
     };
@@ -247,6 +268,85 @@ describe('/workflow KAS command', () => {
     expect(workflow.invokeWorkflow).toHaveBeenCalledWith('workflow-created');
   });
 
+  it('collects declared recipe inputs before launching from the picker', async () => {
+    const recipe: WorkflowRecipeDescriptor = {
+      name: 'release',
+      description: 'Build and validate a release',
+      source: 'bundled://release',
+      builtIn: true,
+      inputs: { target: 'prompt', branch: 'string' },
+    };
+    const workflow = workflowRecipes([recipe]);
+    const ctx = createKasContext({
+      sessionId: 'session-1',
+      ...workflow,
+    });
+
+    await executeCommand('/workflow run', ctx);
+    const picker = ctx._spies.setActiveCommand!.mock.calls[0]![0] as {
+      options: Array<{ value: string }>;
+    };
+    await executeCommandWithArg('workflow', picker.options[0]!.value, ctx);
+
+    expect(ctx._spies.setActiveCommand).toHaveBeenLastCalledWith({
+      command: expect.objectContaining({ name: '/workflow' }),
+      options: [],
+      panel: {
+        type: 'workflow-recipe-inputs',
+        recipe,
+        initialValues: {},
+      },
+    });
+    expect(workflow.createWorkflow).not.toHaveBeenCalled();
+
+    await executeCommandWithArg(
+      'workflow',
+      encodeWorkflowRecipeAction({
+        type: 'run',
+        recipe,
+        values: { target: 'staging', branch: 'main' },
+      }),
+      ctx
+    );
+
+    expect(workflow.createWorkflow).toHaveBeenCalledWith({
+      source: { type: 'path', workflowPath: 'bundled://release' },
+      inputs: { target: 'staging', branch: 'main' },
+      parentSessionId: 'session-1',
+    });
+    expect(workflow.invokeWorkflow).toHaveBeenCalledWith('workflow-created');
+  });
+
+  it('preserves partial command-line inputs in the input form', async () => {
+    const workflow = workflowRecipes([
+      {
+        name: 'release',
+        source: 'bundled://release',
+        inputs: { target: 'prompt', branch: 'string' },
+      },
+    ]);
+    const ctx = createKasContext(workflow);
+
+    expect(
+      await executeCommand('/workflow run release --branch main', ctx)
+    ).toBe(true);
+
+    expect(ctx._spies.setActiveCommand).toHaveBeenCalledWith({
+      command: expect.objectContaining({ name: '/workflow' }),
+      options: [],
+      panel: {
+        type: 'workflow-recipe-inputs',
+        recipe: {
+          name: 'release',
+          source: 'bundled://release',
+          inputs: { target: 'prompt', branch: 'string' },
+        },
+        initialValues: { branch: 'main' },
+      },
+    });
+    expect(workflow.createWorkflow).not.toHaveBeenCalled();
+  });
+
   it('surfaces an invalid recipe selected from the picker', async () => {
     const workflow = workflowRecipes([
       {
@@ -257,7 +357,7 @@ describe('/workflow KAS command', () => {
     ]);
     const ctx = createKasContext(workflow);
 
-    await executeCommand('/workflow list', ctx);
+    await executeCommand('/workflow run', ctx);
     const picker = ctx._spies.setActiveCommand!.mock.calls[0]![0] as {
       options: Array<{ value: string }>;
     };

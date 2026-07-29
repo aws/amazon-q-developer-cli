@@ -39,6 +39,8 @@ import {
   getDensityPresetFilters,
   type DensityPreset,
 } from '../../lite/verbose.js';
+import { encodeWorkflowRecipeAction } from '../../types/workflow-command.js';
+import { WorkflowRecipeInputForm } from './menu/WorkflowRecipeInputForm.js';
 
 // Ctrl+P is the master switch (hidden ↔ mini); `p` refines (mini → expanded).
 // Two keys so a stray `p` while typing can't pop a preview.
@@ -567,6 +569,28 @@ export const CommandMenu: React.FC = () => {
   }
 
   if (activeCommand) {
+    if (activeCommand.panel?.type === 'workflow-recipe-inputs') {
+      const panel = activeCommand.panel;
+      return (
+        <WorkflowRecipeInputForm
+          key={panel.recipe.name}
+          recipe={panel.recipe}
+          initialValues={panel.initialValues}
+          onSubmit={(values) => {
+            clearCommandInput();
+            executeCommandWithArg(
+              encodeWorkflowRecipeAction({
+                type: 'run',
+                recipe: panel.recipe,
+                values,
+              })
+            );
+          }}
+          onCancel={handleActiveCommandClose}
+        />
+      );
+    }
+
     if (activeCommand.command.name === '/prompts') {
       return (
         <PromptsMenu

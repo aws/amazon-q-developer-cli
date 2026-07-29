@@ -15,26 +15,53 @@ import type { WorkflowRunSummary } from '../../../types/workflow-history.js';
 import { Panel } from '../../ui/panel/index.js';
 import { Text } from '../../ui/text/Text.js';
 import { RUN_STATUS_COLOR_TOKEN, runStatusGlyph } from './run-status-style.js';
-import { truncateToWidth } from '../../../utils/text-width.js';
+import { truncateToWidth, visibleWidth } from '../../../utils/text-width.js';
 import {
   workflowControlShortcut,
   type WorkflowControlShortcut,
 } from './workflow-control-shortcut.js';
+import {
+  isLiveWorkflowStatus,
+  isTerminalWorkflowStatus,
+} from '../../../types/workflow-status.js';
 
 interface WorkflowHistoryPanelProps {
   onClose: () => void;
 }
 
+type WorkflowRunControl = WorkflowControlShortcut | 'cancel';
+
 type PendingWorkflowAction = {
   workflowId: string;
-  kind: 'load' | WorkflowControlShortcut;
+  kind: 'load' | WorkflowRunControl;
 };
 
 const PENDING_ACTION_LABEL: Record<PendingWorkflowAction['kind'], string> = {
-  load: 'loading',
-  pause: 'pausing',
-  resume: 'resuming',
+  load: 'loading...',
+  pause: 'pausing...',
+  resume: 'resuming...',
+  cancel: 'cancelling...',
 };
+
+function fitFooterHint(
+  maxWidth: number,
+  controls: string,
+  navigation: string,
+  compactNavigation: string,
+  separator: string
+): string {
+  const candidates = controls
+    ? [
+        `${controls}${separator}${navigation}`,
+        `${controls}${separator}${compactNavigation}`,
+        controls,
+      ]
+    : [navigation, compactNavigation];
+  return (
+    candidates.find((candidate) => visibleWidth(candidate) <= maxWidth) ??
+    truncateToWidth(candidates.at(-1)!, maxWidth, '')
+  );
+}
 
 function runDuration(run: WorkflowRunSummary): string {
   if (!run.startedAt || !run.endedAt) return '';
@@ -72,11 +99,20 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
   const [pendingAction, setPendingAction] =
     useState<PendingWorkflowAction | null>(null);
   const pendingActionRef = useRef<PendingWorkflowAction | null>(null);
+  const [cancelConfirmationWorkflowId, setCancelConfirmationWorkflowId] =
+    useState<string | null>(null);
+  const cancelConfirmationWorkflowIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedRun = runs[selectedIndex];
 
+  const setCancelConfirmation = (workflowId: string | null): void => {
+    cancelConfirmationWorkflowIdRef.current = workflowId;
+    setCancelConfirmationWorkflowId(workflowId);
+  };
+
   const beginAction = (action: PendingWorkflowAction): boolean => {
     if (pendingActionRef.current) return false;
+    setCancelConfirmation(null);
     pendingActionRef.current = action;
     setPendingAction(action);
     setError(null);
@@ -91,11 +127,12 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
 
   const controlRun = async (
     run: WorkflowRunSummary,
-    actionKind: WorkflowControlShortcut
+    actionKind: WorkflowRunControl
   ): Promise<void> => {
     if (
       (actionKind === 'pause' && run.status !== 'running') ||
-      (actionKind === 'resume' && run.status !== 'paused')
+      (actionKind === 'resume' && run.status !== 'paused') ||
+      (actionKind === 'cancel' && !isLiveWorkflowStatus(run.status))
     ) {
       return;
     }
@@ -112,8 +149,18 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
         }
         setHistoryRunStatus(run.workflowId, 'paused');
       } else {
-        const response = await kiro.resumeWorkflow(run.workflowId);
-        setHistoryRunStatus(run.workflowId, response.status);
+        if (actionKind === 'resume') {
+          const response = await kiro.resumeWorkflow(run.workflowId);
+          setHistoryRunStatus(run.workflowId, response.status);
+        } else {
+          const response = await kiro.cancelWorkflow(run.workflowId, 'aborted');
+          setHistoryRunStatus(
+            run.workflowId,
+            isTerminalWorkflowStatus(response.previousStatus)
+              ? response.previousStatus
+              : 'aborted'
+          );
+        }
       }
     } catch (cause) {
       setError(
@@ -147,15 +194,43 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
     }
   };
 
-  const controlHint =
-    !pendingAction && selectedRun?.status === 'running'
-      ? `${glyphs.smallDot} p pause`
+  const cancelConfirmationArmed =
+    selectedRun !== undefined &&
+    cancelConfirmationWorkflowId === selectedRun.workflowId;
+  const controlHint = cancelConfirmationArmed
+    ? `x confirm cancel ${glyphs.smallDot} Esc keep running`
+    : !pendingAction && selectedRun?.status === 'running'
+      ? `p pause ${glyphs.smallDot} x cancel`
       : !pendingAction && selectedRun?.status === 'paused'
-        ? `${glyphs.smallDot} r resume`
-        : '';
+        ? `r resume ${glyphs.smallDot} x cancel`
+        : pendingAction
+          ? PENDING_ACTION_LABEL[pendingAction.kind]
+          : '';
+  const footerWidth = Math.max(1, width - 20);
+  const footerHint = fitFooterHint(
+    footerWidth,
+    controlHint,
+    `${glyphs.arrowUp}${glyphs.arrowDown} move ${glyphs.smallDot} Enter view`,
+    `${glyphs.arrowUp}${glyphs.arrowDown} ${glyphs.smallDot} Enter`,
+    ` ${glyphs.smallDot} `
+  );
 
   useKeypress((input, key) => {
     if (pendingActionRef.current) return;
+    const confirmingWorkflowId = cancelConfirmationWorkflowIdRef.current;
+    if (confirmingWorkflowId !== null) {
+      if (key.escape) {
+        setCancelConfirmation(null);
+      } else if (
+        selectedRun?.workflowId === confirmingWorkflowId &&
+        !key.ctrl &&
+        !key.meta &&
+        input === 'x'
+      ) {
+        void controlRun(selectedRun, 'cancel');
+      }
+      return;
+    }
     if (key.upArrow || input === 'k') {
       setSelectedIndex((index) => Math.max(0, index - 1));
     } else if (key.downArrow || input === 'j') {
@@ -164,6 +239,14 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
       );
     } else if (key.return || key.rightArrow) {
       if (selectedRun) void openRun(selectedRun);
+    } else if (
+      selectedRun &&
+      isLiveWorkflowStatus(selectedRun.status) &&
+      !key.ctrl &&
+      !key.meta &&
+      input === 'x'
+    ) {
+      setCancelConfirmation(selectedRun.workflowId);
     } else {
       const control = workflowControlShortcut(input, key);
       if (selectedRun && control) void controlRun(selectedRun, control);
@@ -175,11 +258,9 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
       title="WORKFLOWS"
       onClose={onClose}
       footerExtra={
-        <Text>
-          {getColor('secondary')(
-            `${glyphs.arrowUp}${glyphs.arrowDown} move ${glyphs.smallDot} Enter view${controlHint ? ` ${controlHint}` : ''}`
-          )}
-        </Text>
+        <Box width={footerWidth} flexShrink={1} overflow="hidden">
+          <Text wrap="truncate">{getColor('secondary')(footerHint)}</Text>
+        </Box>
       }
     >
       <Box marginBottom={1}>
@@ -190,13 +271,23 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
         {runs.map((run, index) => {
           const selected = index === selectedIndex;
           const duration = runDuration(run);
-          const tail = `${run.status}${duration ? ` ${glyphs.smallDot} ${duration}` : ''}`;
-          const nameWidth = Math.max(8, width - tail.length - 10);
-          const statusColor = getColor(RUN_STATUS_COLOR_TOKEN[run.status]);
           const pendingLabel =
             pendingAction?.workflowId === run.workflowId
               ? PENDING_ACTION_LABEL[pendingAction.kind]
               : null;
+          const tail = pendingLabel
+            ? pendingLabel
+            : `${run.status}${duration ? ` ${glyphs.smallDot} ${duration}` : ''}`;
+          const prefix = `${selected ? glyphs.chevron : ' '} ${runStatusGlyph(run.status, glyphs)} `;
+          const suffix = `  ${tail}`;
+          const nameWidth = Math.max(
+            1,
+            width - 2 - visibleWidth(prefix) - visibleWidth(suffix)
+          );
+          const statusColor = getColor(RUN_STATUS_COLOR_TOKEN[run.status]);
+          const tailColor = pendingLabel
+            ? getColor('info')
+            : getColor('secondary');
           return (
             <Box key={run.workflowId}>
               <Text>
@@ -209,8 +300,7 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
                   : getColor('secondary')(
                       truncateToWidth(run.name, nameWidth, '...')
                     )}
-                {getColor('secondary')(`  ${tail}`)}
-                {pendingLabel ? getColor('info')(`  ${pendingLabel}`) : ''}
+                {tailColor(suffix)}
               </Text>
             </Box>
           );
