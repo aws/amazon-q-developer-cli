@@ -571,7 +571,7 @@ export interface SteeringUpdateEvent {
 
 export interface ContextUsageEvent {
   type: AgentEventType.ContextUsage;
-  percent: number | null;
+  percent: number;
 }
 
 export interface ContextBreakdownUpdateEvent {

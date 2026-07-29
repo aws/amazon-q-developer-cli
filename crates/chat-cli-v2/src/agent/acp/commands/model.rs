@@ -133,18 +133,13 @@ async fn switch_model(name: &str, ctx: &CommandContext<'_>) -> CommandResult {
                     .map(crate::cli::chat::legacy::model::ModelInfo::from_api_model)
             })
             .unwrap_or_else(|| to_legacy_model_info(m));
-        let model_changed = ctx.rts_state.set_model_info(Some(full_model));
+        ctx.rts_state.set_model_info(Some(full_model));
         ctx.rts_state.apply_model_defaults(&ctx.os.database.settings);
-        let mut data = serde_json::json!({
-            "model": { "id": id, "name": display_name }
-        });
-        if model_changed {
-            data["contextUsagePercentage"] = serde_json::json!(
-                super::context::recompute_context_usage_after_model_change(ctx.agent, ctx.rts_state).await
-            );
-        }
 
-        return CommandResult::success_with_data(format!("Model changed to {}", display_name), data);
+        return CommandResult::success_with_data(
+            format!("Model changed to {}", display_name),
+            serde_json::json!({ "model": { "id": id, "name": display_name } }),
+        );
     }
 
     // Fuzzy match — suggest, don't switch

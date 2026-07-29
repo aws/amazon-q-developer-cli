@@ -20,7 +20,6 @@ pub mod types;
 pub mod util;
 
 use std::collections::{
-    BTreeMap,
     HashMap,
     HashSet,
     VecDeque,
@@ -655,7 +654,8 @@ impl AgentHandle {
         Ok(())
     }
 
-    /// Invalidate cached tool specs so they are rebuilt before the next use.
+    /// Invalidate cached tool specs to simulate MCP ToolListChanged race condition.
+    /// Exposed for integration testing.
     pub async fn invalidate_cached_tool_specs(&self) -> Result<(), AgentError> {
         self.sender
             .send_recv(AgentRequest::InvalidateCachedToolSpecs)
@@ -1212,25 +1212,12 @@ impl Agent {
     }
 
     fn create_snapshot(&self) -> AgentSnapshot {
-        let (mut tool_specs, tool_spec_sources) = self.cached_tool_specs.as_ref().map_or_else(
-            || (Vec::new(), BTreeMap::new()),
-            |specs| {
-                let sources = specs
-                    .tool_map()
-                    .values()
-                    .map(|spec| {
-                        let source = match spec.canonical_name() {
-                            CanonicalToolName::BuiltIn(_) => "built-in".to_string(),
-                            CanonicalToolName::Mcp { server_name, .. } => format!("mcp:{server_name}"),
-                            CanonicalToolName::Agent { agent_name } => format!("agent:{agent_name}"),
-                        };
-                        (spec.tool_spec().name.clone(), source)
-                    })
-                    .collect();
-                (specs.tool_specs_with_priority(self.is_subagent), sources)
-            },
-        );
-        add_tool_use_purpose_arg(&mut tool_specs);
+        // Get tool specs from cache if available
+        let tool_specs = self
+            .cached_tool_specs
+            .as_ref()
+            .map(|s| s.tool_map().values().map(|t| t.tool_spec().clone()).collect())
+            .unwrap_or_default();
 
         AgentSnapshot {
             id: self.id.clone(),
@@ -1243,7 +1230,6 @@ impl Agent {
             settings: self.settings.clone(),
             permissions: self.permissions.clone(),
             tool_specs,
-            tool_spec_sources,
             session_resource_paths: self.session_resource_paths.clone(),
             has_knowledge_provider: self.knowledge_provider.is_some(),
         }

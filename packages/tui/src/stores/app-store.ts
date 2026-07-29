@@ -1267,7 +1267,7 @@ interface BaseAppActions {
   setHasExpandableToolOutputs: (has: boolean) => void;
 
   // Context usage actions
-  setContextUsage: (percent: number | null) => void;
+  setContextUsage: (percent: number) => void;
   /**
    * Merge a `_kiro/sessions/changed` delta into the roster and re-derive the
    * attached session's cloud status (null when the roster no longer tracks it,
@@ -7213,9 +7213,6 @@ export const createAppStore = (props: AppStoreProps) => {
     setCloudExtraRepos: (cloudExtraRepos) => set({ cloudExtraRepos }),
     setContextUsage: (percent) => {
       set((state) => {
-        if (percent === null) {
-          return { contextUsagePercent: null };
-        }
         const lastUserIdx = state.messages.findLastIndex(
           (m) => m.role === MessageRole.User
         );

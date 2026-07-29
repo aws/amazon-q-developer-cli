@@ -71,10 +71,6 @@ pub struct AgentSnapshot {
     #[typeshare(skip)]
     #[serde(default)]
     pub tool_specs: Vec<super::agent_loop::types::ToolSpec>,
-    /// Maps each model-visible tool name to `built-in`, `mcp:<server>`, or `agent:<name>`.
-    #[typeshare(skip)]
-    #[serde(skip)]
-    pub tool_spec_sources: std::collections::BTreeMap<String, String>,
     /// Paths added via /context add during this session
     #[typeshare(skip)]
     #[serde(default)]
@@ -98,7 +94,6 @@ impl AgentSnapshot {
             settings: Default::default(),
             permissions: Default::default(),
             tool_specs: Default::default(),
-            tool_spec_sources: Default::default(),
             session_resource_paths: Default::default(),
             has_knowledge_provider: false,
         }
@@ -188,7 +183,7 @@ pub struct AgentSettings {
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
     /// When true, MCP tools are hidden until activated via search_tools.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub tool_search_enabled: bool,
     /// MCP server names that must always have their tools immediately available
     /// (bypass tool_search deferral). Set via ASBX_KIRO_MANDATORY_MCPS env var.
@@ -213,11 +208,11 @@ fn default_true() -> bool {
 }
 
 fn default_tool_search_min_pct() -> Option<f64> {
-    Some(3.0)
+    Some(5.0)
 }
 
 fn default_tool_search_min_tokens() -> Option<u64> {
-    Some(10_000)
+    Some(50_000)
 }
 
 impl Default for AgentSettings {
@@ -228,7 +223,7 @@ impl Default for AgentSettings {
             trust_all_tools: false,
             web_tools_enabled: true,
             mcp_enabled: true,
-            tool_search_enabled: true,
+            tool_search_enabled: false,
             mandatory_mcp_names: Vec::new(),
             tool_search_min_pct: default_tool_search_min_pct(),
             tool_search_min_tokens: default_tool_search_min_tokens(),
@@ -557,24 +552,7 @@ mod tests {
     fn test_agent_snapshot_default() {
         let s = AgentSnapshot::default();
         assert!(s.tool_specs.is_empty());
-        assert!(s.tool_spec_sources.is_empty());
         assert!(s.session_resource_paths.is_empty());
-    }
-
-    #[test]
-    fn test_agent_settings_enable_tool_search_by_default() {
-        let settings = AgentSettings::default();
-        assert!(settings.tool_search_enabled);
-        assert_eq!(settings.tool_search_min_pct, Some(3.0));
-        assert_eq!(settings.tool_search_min_tokens, Some(10_000));
-    }
-
-    #[test]
-    fn test_agent_settings_missing_tool_search_field_defaults_to_enabled() {
-        let mut value = serde_json::to_value(AgentSettings::default()).unwrap();
-        value.as_object_mut().unwrap().remove("tool_search_enabled");
-        let settings: AgentSettings = serde_json::from_value(value).unwrap();
-        assert!(settings.tool_search_enabled);
     }
 
     #[test]
@@ -582,7 +560,6 @@ mod tests {
         let cfg = LoadedAgentConfig::default();
         let s = AgentSnapshot::new_empty(cfg);
         assert!(s.tool_specs.is_empty());
-        assert!(s.tool_spec_sources.is_empty());
     }
 
     #[test]

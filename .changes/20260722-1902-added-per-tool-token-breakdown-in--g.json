@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "Per-tool token breakdown in `/context`, grouped by source (built-in, MCP server, agent)"
-}

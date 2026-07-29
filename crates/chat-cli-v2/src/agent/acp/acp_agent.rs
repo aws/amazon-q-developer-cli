@@ -1695,7 +1695,21 @@ impl AcpSession {
                 }
                 s.agent_config.allowed_tools_mut().extend(tools);
             }
-            apply_tool_search_settings(&mut s.settings, &os.database.settings);
+            s.settings.tool_search_enabled = os
+                .database
+                .settings
+                .get_bool(Setting::ToolSearchEnabled)
+                .unwrap_or(false);
+            s.settings.tool_search_min_pct = os
+                .database
+                .settings
+                .get_value(Setting::ToolSearchMinPct)
+                .and_then(|v| v.as_f64());
+            s.settings.tool_search_min_tokens = os
+                .database
+                .settings
+                .get_value(Setting::ToolSearchMinTokens)
+                .and_then(|v| v.as_u64());
             s
         };
 
@@ -1976,7 +1990,6 @@ impl AcpSession {
         let notification = super::schema::MetadataNotification {
             session_id: self.session_id_str.clone(),
             context_usage_percentage: metadata.context_usage_percentage,
-            context_usage_invalidated: false,
             metering_usage: metering,
             turn_duration_ms: metadata.turn_duration.map(|d| d.as_millis() as u64),
             effort: self.current_effort(),
@@ -2017,7 +2030,6 @@ impl AcpSession {
         let notification = super::schema::MetadataNotification {
             session_id: self.session_id_str.clone(),
             context_usage_percentage: Some(estimated_pct),
-            context_usage_invalidated: false,
             metering_usage: None,
             turn_duration_ms: None,
             effort: self.current_effort(),
@@ -2326,27 +2338,7 @@ impl AcpSession {
             AcpSessionRequest::SetModel { model_id, respond_to } => {
                 let settings = self.os.database.settings.clone();
                 let result = update_model_info(&self.api_client, &settings, &self.rts_state, Some(&model_id)).await;
-                if result.as_ref().is_ok_and(|changed| *changed) {
-                    let context_usage = super::commands::context::recompute_context_usage_after_model_change(
-                        &self.agent,
-                        &self.rts_state,
-                    )
-                    .await;
-                    let notification = super::schema::MetadataNotification {
-                        session_id: self.session_id_str.clone(),
-                        context_usage_percentage: context_usage,
-                        context_usage_invalidated: context_usage.is_none(),
-                        metering_usage: None,
-                        turn_duration_ms: None,
-                        effort: self.current_effort(),
-                        stop_reason: None,
-                        refusal: None,
-                    };
-                    if let Err(e) = self.connection_cx.send_notification(notification) {
-                        warn!("Failed to send metadata after model change: {}", e);
-                    }
-                }
-                let _ = respond_to.send(result.map(|_| ()));
+                let _ = respond_to.send(result);
             },
             AcpSessionRequest::GetModelId { respond_to } => {
                 let _ = respond_to.send(self.rts_state.model_id().unwrap_or_default());
@@ -2473,7 +2465,6 @@ impl AcpSession {
                 let notification = super::schema::MetadataNotification {
                     session_id: self.session_id_str.clone(),
                     context_usage_percentage: self.rts_state.context_usage_percentage(),
-                    context_usage_invalidated: false,
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
@@ -2673,7 +2664,6 @@ impl AcpSession {
                     let notification = super::schema::MetadataNotification {
                         session_id: self.session_id_str.clone(),
                         context_usage_percentage: None,
-                        context_usage_invalidated: false,
                         metering_usage: None,
                         turn_duration_ms: None,
                         effort: None,
@@ -2700,7 +2690,6 @@ impl AcpSession {
                 let notification = super::schema::MetadataNotification {
                     session_id: self.session_id_str.clone(),
                     context_usage_percentage: Some(pct),
-                    context_usage_invalidated: false,
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
@@ -2964,7 +2953,6 @@ impl AcpSession {
                     let notification = super::schema::MetadataNotification {
                         session_id: self.session_id_str.clone(),
                         context_usage_percentage: self.rts_state.context_usage_percentage(),
-                        context_usage_invalidated: false,
                         metering_usage: None,
                         turn_duration_ms: None,
                         effort: self.current_effort(),
@@ -3007,7 +2995,6 @@ impl AcpSession {
                 let notification = super::schema::MetadataNotification {
                     session_id: self.session_id_str.clone(),
                     context_usage_percentage: self.rts_state.context_usage_percentage(),
-                    context_usage_invalidated: false,
                     metering_usage: None,
                     turn_duration_ms: None,
                     effort: self.current_effort(),
@@ -4011,29 +3998,6 @@ fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
     }
 }
 
-fn apply_tool_search_settings(
-    agent_settings: &mut agent::types::AgentSettings,
-    persisted_settings: &crate::database::settings::Settings,
-) {
-    use crate::database::settings::Setting;
-
-    agent_settings.tool_search_enabled = persisted_settings
-        .get_bool(Setting::ToolSearchEnabled)
-        .unwrap_or(agent_settings.tool_search_enabled);
-    if let Some(min_pct) = persisted_settings
-        .get_value(Setting::ToolSearchMinPct)
-        .and_then(|value| value.as_f64())
-    {
-        agent_settings.tool_search_min_pct = Some(min_pct);
-    }
-    if let Some(min_tokens) = persisted_settings
-        .get_value(Setting::ToolSearchMinTokens)
-        .and_then(|value| value.as_u64())
-    {
-        agent_settings.tool_search_min_tokens = Some(min_tokens);
-    }
-}
-
 /// Update model ID in RTS state.
 ///
 /// Priority: 1) explicit model arg, 2) user's saved default, 3) API default.
@@ -4048,7 +4012,7 @@ async fn update_model_info(
     settings: &crate::database::settings::Settings,
     rts_state: &RtsState,
     model: Option<&str>,
-) -> Result<bool, String> {
+) -> Result<(), String> {
     use crate::database::settings::Setting;
 
     let (models, api_default) = get_available_models(client)
@@ -4067,67 +4031,11 @@ async fn update_model_info(
         api_default
     };
 
-    let model_changed = rts_state.set_model_info(Some(model_info));
+    rts_state.set_model_info(Some(model_info));
     // Apply per-model defaults (e.g. reasoning effort) from the shared settings store.
     rts_state.apply_model_defaults(settings);
 
-    Ok(model_changed)
-}
-
-#[cfg(test)]
-mod tool_search_settings_tests {
-    use agent::types::AgentSettings;
-
-    use super::apply_tool_search_settings;
-    use crate::database::settings::{
-        Setting,
-        Settings,
-    };
-
-    #[test]
-    fn unset_tool_search_settings_keep_defaults() {
-        let persisted_settings = Settings::default();
-        let mut agent_settings = AgentSettings::default();
-
-        apply_tool_search_settings(&mut agent_settings, &persisted_settings);
-
-        assert!(agent_settings.tool_search_enabled);
-        assert_eq!(agent_settings.tool_search_min_pct, Some(3.0));
-        assert_eq!(agent_settings.tool_search_min_tokens, Some(10_000));
-    }
-
-    #[tokio::test]
-    async fn explicit_tool_search_disable_wins() {
-        let persisted_settings = Settings::default();
-        persisted_settings
-            .set(Setting::ToolSearchEnabled, false, None)
-            .await
-            .unwrap();
-        let mut agent_settings = AgentSettings::default();
-
-        apply_tool_search_settings(&mut agent_settings, &persisted_settings);
-
-        assert!(!agent_settings.tool_search_enabled);
-    }
-
-    #[tokio::test]
-    async fn explicit_tool_search_thresholds_win() {
-        let persisted_settings = Settings::default();
-        persisted_settings
-            .set(Setting::ToolSearchMinPct, 7.5, None)
-            .await
-            .unwrap();
-        persisted_settings
-            .set(Setting::ToolSearchMinTokens, 25_000, None)
-            .await
-            .unwrap();
-        let mut agent_settings = AgentSettings::default();
-
-        apply_tool_search_settings(&mut agent_settings, &persisted_settings);
-
-        assert_eq!(agent_settings.tool_search_min_pct, Some(7.5));
-        assert_eq!(agent_settings.tool_search_min_tokens, Some(25_000));
-    }
+    Ok(())
 }
 
 fn rate_limit_message(kind: &StreamErrorKind) -> Option<&str> {

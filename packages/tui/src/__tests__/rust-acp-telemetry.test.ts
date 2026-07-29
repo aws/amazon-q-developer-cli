@@ -7,7 +7,6 @@
  */
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
-import { AgentEventType, type AgentStreamEvent } from '../types/agent-events';
 
 type ToolFinishArgs = {
   outcome: 'success' | 'error' | 'cancelled' | 'denied';
@@ -226,25 +225,6 @@ describe('RustAcpClient v2 telemetry wiring (§H.4/§H.6)', () => {
     await c.prompt([{ type: 'text', text: 'hi' } as any]);
     expect(recordTuiTokensConsumed).not.toHaveBeenCalled();
     expect(recordTuiContextUsage).not.toHaveBeenCalled();
-  });
-
-  it('emits explicit context invalidation metadata as a cleared usage event', async () => {
-    const c = new AcpClient('/agent', []);
-    await c.newSession();
-    const events: AgentStreamEvent[] = [];
-    c.onUpdate((event: AgentStreamEvent) => events.push(event));
-
-    await c.extNotification?.('_kiro.dev/metadata', {
-      sessionId: 'v2-session-1',
-      contextUsageInvalidated: true,
-    });
-
-    expect(
-      events.some(
-        (event) =>
-          event.type === AgentEventType.ContextUsage && event.percent === null
-      )
-    ).toBe(true);
   });
 
   it('main-session tool_call → observer.start, tool_call_update → observer.finish', async () => {
