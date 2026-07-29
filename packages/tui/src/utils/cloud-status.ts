@@ -19,9 +19,10 @@ export function cloudWorkspacePath(repo?: string | null): string | null {
 
 /**
  * Persistent cloud-session footer label (not the activity status). Renders
- * `<icon> Cloud · ~/kiro/<repo-name> · <branch> (+N other[s])`, dropping any
- * segment that is absent:
- *  - A New empty sandbox (no repo) shows just `<icon> Cloud`.
+ * `<icon> Cloud (Preview) · ~/kiro/<repo-name> · <branch> (+N other[s])`,
+ * dropping any segment that is absent. Cloud sessions are a preview feature,
+ * so the label carries the "(Preview)" qualifier (KIRONEXT-1).
+ *  - A New empty sandbox (no repo) shows just `<icon> Cloud (Preview)`.
  *  - One bound repo shows `~/kiro/<repo> · <branch>`.
  *  - More than one bound repo appends `(+N other)`/`(+N others)` after the
  *    first repo segment (including its branch when present), where N =
@@ -42,7 +43,7 @@ export function formatCloudFooter(
 ): string {
   const dot = glyphs.smallDot;
   const prefix = icon ? `${icon} ` : '';
-  const parts = ['Cloud'];
+  const parts = ['Cloud (Preview)'];
   const workspacePath = cloudWorkspacePath(repo);
   if (workspacePath) {
     let repoSegment = workspacePath;
