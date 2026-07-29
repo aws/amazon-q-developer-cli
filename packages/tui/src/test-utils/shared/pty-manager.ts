@@ -352,6 +352,23 @@ export class PtyManager {
   }
 
   /**
+   * Returns only the currently visible terminal viewport, excluding scrollback.
+   * Visual certification uses this so every frame has exactly `rows` lines.
+   */
+  getVisibleSnapshot(): string[] {
+    const buffer = this.terminal.buffer.active;
+    const lines: string[] = [];
+    const firstVisibleLine = buffer.baseY;
+    const lastVisibleLine = firstVisibleLine + this.terminal.rows;
+
+    for (let y = firstVisibleLine; y < lastVisibleLine; y++) {
+      lines.push(buffer.getLine(y)?.translateToString() ?? '');
+    }
+
+    return lines;
+  }
+
+  /**
    * Returns the snapshot formatted with a terminal border for display.
    */
   getSnapshotFormatted(): string {

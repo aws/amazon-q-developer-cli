@@ -1,12 +1,32 @@
 import React, { useState } from 'react';
 import { Box, Text } from './../renderer.js';
 import { useTheme } from '../hooks/useThemeContext.js';
-import { stories } from './stories.js';
+import { resolveStorybookSelection, stories } from './stories.js';
 import { useKeypress } from '../hooks/useKeypress.js';
+import type {
+  StorybookDefinition,
+  StorybookSelection,
+  StorybookVariant,
+} from './contracts.js';
 
 type AppState = 'componentList' | 'componentView';
 
-export function Storybook() {
+export interface StorybookProps {
+  selection?: StorybookSelection;
+}
+
+function renderVariant(
+  story: StorybookDefinition,
+  variant: StorybookVariant,
+  key: string
+): React.ReactNode {
+  const Component = variant.component ?? story.component;
+  return Component
+    ? React.createElement(Component, { key, ...variant.props })
+    : null;
+}
+
+export function Storybook({ selection }: StorybookProps) {
   const [state, setState] = useState<AppState>('componentList');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set()
@@ -18,6 +38,9 @@ export function Storybook() {
   const textColor = getColor('secondary');
   const accentColor = getColor('accent');
   const successColor = getColor('success');
+  const resolvedSelection = selection
+    ? resolveStorybookSelection(selection)
+    : null;
 
   // Group stories by category
   // Group stories by category (e.g., "UI/Radio/RadioButton" -> category is "UI/Radio")
@@ -170,6 +193,8 @@ export function Storybook() {
   }, 0);
 
   useKeypress((input, key) => {
+    if (selection) return;
+
     if (state === 'componentList') {
       if (key.upArrow) {
         // Move to previous navigable item (skip section headers)
@@ -370,7 +395,6 @@ export function Storybook() {
     if (!currentComponent) return null;
     const currentVariant = currentComponent.variants[selectedVariant];
     if (!currentVariant) return null;
-    const Component = currentComponent.component;
 
     return (
       <Box flexDirection="column" height="100%">
@@ -441,7 +465,8 @@ export function Storybook() {
                       typeof value.type === 'string'
                         ? value.type
                         : value.type?.name || 'Component';
-                    const childrenProp = (value.props as any)?.children;
+                    const childrenProp = (value.props as { children?: unknown })
+                      .children;
                     if (typeof childrenProp === 'string') {
                       displayValue = `<${elementType}>${childrenProp}</${elementType}>`;
                     } else {
@@ -482,19 +507,33 @@ export function Storybook() {
         </Box>
 
         <Box flexGrow={1}>
-          {currentVariant.component
-            ? React.createElement(currentVariant.component, {
-                key: `${selectedItem.storyIndex}-${selectedVariant}`,
-                ...currentVariant.props,
-              })
-            : React.createElement(Component as any, {
-                key: `${selectedItem.storyIndex}-${selectedVariant}`,
-                ...currentVariant.props,
-              })}
+          {renderVariant(
+            currentComponent,
+            currentVariant,
+            `${selectedItem.storyIndex}-${selectedVariant}`
+          )}
         </Box>
       </Box>
     );
   };
+
+  if (selection) {
+    if (!resolvedSelection) {
+      return (
+        <Box flexDirection="column">
+          <Text color="red">Unknown Storybook selection.</Text>
+          <Text>
+            {selection.storyId}/{selection.variantId}
+          </Text>
+        </Box>
+      );
+    }
+    return renderVariant(
+      resolvedSelection.story,
+      resolvedSelection.variant,
+      `${selection.storyId}-${selection.variantId}`
+    );
+  }
 
   switch (state) {
     case 'componentList':

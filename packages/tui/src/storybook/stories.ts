@@ -1,3 +1,12 @@
+import type React from 'react';
+import type {
+  ResolvedStorybookSelection,
+  StorybookDefinition,
+  StorybookParameters,
+  StorybookPlay,
+  StorybookSelection,
+} from './contracts.js';
+
 // Import all component stories in Storybook format
 import * as CardStories from '../components/ui/card/Card.stories.js';
 import * as WelcomeScreenStories from '../components/welcome-screen/WelcomeScreen.stories.js';
@@ -37,6 +46,44 @@ import * as PieSpinnerStories from '../components/ui/spinner/PieSpinner.stories.
 import * as SpinnerStories from '../components/ui/spinner/Spinner.stories.js';
 import * as ToolStories from '../components/chat/tools/Tool.stories.js';
 import * as ImageReadStories from '../components/chat/tools/ImageRead.stories.js';
+import * as WorkflowMonitorStories from '../components/layout/workflow-monitor/WorkflowMonitorScreen.stories.js';
+import * as ActivityTrayStories from '../components/ui/activity-tray/ActivityTray.stories.js';
+import * as WorkflowToolStories from '../components/chat/tools/WorkflowTool.stories.js';
+import * as WorkflowLifecycleRowStories from '../components/ui/WorkflowLifecycleRow.stories.js';
+
+interface RawStory {
+  args?: Record<string, unknown>;
+  component?: React.ElementType;
+  parameters?: StorybookParameters;
+  play?: StorybookPlay;
+  render?: React.ElementType;
+}
+
+interface RawStoryMeta {
+  component?: React.ElementType | null;
+  parameters?: StorybookParameters;
+  title?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function slug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function rawStory(value: unknown): RawStory | null {
+  return isRecord(value) ? (value as RawStory) : null;
+}
+
+function rawMeta(value: unknown): RawStoryMeta | null {
+  return isRecord(value) ? (value as RawStoryMeta) : null;
+}
 
 /**
  * Derives a title from the import path if meta.title is not provided.
@@ -98,8 +145,12 @@ function deriveTitleFromPath(importPath: string): string {
 }
 
 // Convert Storybook format to our internal format
-function convertStoryModule(storyModule: any, importPath?: string) {
-  const { default: meta, ...stories } = storyModule;
+function convertStoryModule(
+  storyModule: Record<string, unknown>,
+  importPath?: string
+): StorybookDefinition {
+  const { default: metaValue, ...storyExports } = storyModule;
+  const meta = rawMeta(metaValue);
 
   if (!meta) {
     throw new Error('Story module missing meta object');
@@ -109,43 +160,56 @@ function convertStoryModule(storyModule: any, importPath?: string) {
   const title =
     meta.title ||
     (importPath ? deriveTitleFromPath(importPath) : 'Uncategorized/Component');
-  const componentName = title.split('/').pop();
+  const componentName = title.split('/').pop() ?? 'Component';
 
   // Check if the meta has a custom story order defined
   const customOrder = meta.parameters?.storyOrder;
 
-  let storyEntries = Object.entries(stories);
+  let storyEntries = Object.entries(storyExports).flatMap(([name, value]) => {
+    const story = rawStory(value);
+    return story ? ([[name, story]] as const) : [];
+  });
 
   // Apply custom ordering if defined in meta.parameters.storyOrder
   if (customOrder && Array.isArray(customOrder)) {
-    storyEntries = customOrder
-      .filter((name) => stories[name]) // Only include stories that exist
-      .map((name) => [name, stories[name]]);
+    storyEntries = customOrder.flatMap((name) => {
+      const story = rawStory(storyExports[name]);
+      return story ? ([[name, story]] as const) : [];
+    });
   }
 
   // Get component name safely - handle React.memo wrapped components
-  const getComponentName = (component: any): string => {
+  const getComponentName = (component: unknown): string => {
     if (!component) return componentName;
-    // React.memo components have displayName or the wrapped function name
-    return (
-      component.displayName ||
-      component.name ||
-      component.type?.name ||
-      componentName
-    );
+    if (typeof component === 'function') {
+      const namedComponent = component as {
+        displayName?: string;
+        name?: string;
+      };
+      return namedComponent.displayName || namedComponent.name || componentName;
+    }
+    if (!isRecord(component)) return componentName;
+    if (typeof component.displayName === 'string') return component.displayName;
+    const wrapped = component.type;
+    return typeof wrapped === 'function' && wrapped.name
+      ? wrapped.name
+      : componentName;
   };
 
   return {
+    id: slug(title),
     name: componentName, // Get component name from title
     description: getComponentName(meta.component) + ' component',
     category: title, // Use full title as category (e.g., "UI/Radio/RadioButton")
-    variants: storyEntries.map(([name, story]: [string, any]) => ({
+    variants: storyEntries.map(([name, story]) => ({
+      id: slug(name),
       name,
       props: story.args || {},
       component: story.render || story.component,
       parameters: { ...(meta.parameters || {}), ...(story.parameters || {}) },
+      play: story.play,
     })),
-    component: meta.component,
+    component: meta.component ?? null,
   };
 }
 
@@ -263,4 +327,30 @@ export const stories = [
     ImageReadStories,
     '../components/chat/tools/ImageRead.stories.js'
   ),
+  convertStoryModule(
+    WorkflowMonitorStories,
+    '../components/layout/workflow-monitor/WorkflowMonitorScreen.stories.js'
+  ),
+  convertStoryModule(
+    ActivityTrayStories,
+    '../components/ui/activity-tray/ActivityTray.stories.js'
+  ),
+  convertStoryModule(
+    WorkflowToolStories,
+    '../components/chat/tools/WorkflowTool.stories.js'
+  ),
+  convertStoryModule(
+    WorkflowLifecycleRowStories,
+    '../components/ui/WorkflowLifecycleRow.stories.js'
+  ),
 ];
+
+export function resolveStorybookSelection(
+  selection: StorybookSelection
+): ResolvedStorybookSelection | null {
+  const story = stories.find((candidate) => candidate.id === selection.storyId);
+  const variant = story?.variants.find(
+    (candidate) => candidate.id === selection.variantId
+  );
+  return story && variant ? { story, variant } : null;
+}
