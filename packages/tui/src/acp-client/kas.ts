@@ -73,6 +73,7 @@ import type {
 } from '../stores/kas-subagent-routing';
 import { parseToolsDidChange } from '../utils/kas-tools';
 import { extractRpcErrorMessage } from '../utils/error-handling';
+import { classifyCloudError } from '../utils/cloud-error-classify';
 import { openUrlInBrowser } from '../utils/browser';
 import { getCliVersion } from '../utils/version';
 import { getKasCommands, isKasWorkflowCommandName } from '../kas-commands';
@@ -83,6 +84,7 @@ import {
   modeFromId,
   recordTuiContextUsage,
   recordTuiModeActive,
+  recordTuiCloudError,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
   recordTuiAutonomousMode,
@@ -1329,6 +1331,10 @@ export class KasAcpClient extends BaseAcpClient {
       .catch((err) => {
         if (intendedCloudSandbox) {
           recordTuiCloudSession({ event: 'start_failed' });
+          recordTuiCloudError({
+            op: 'session_new',
+            kind: classifyCloudError(err),
+          });
         }
         throw err;
       });
@@ -1496,6 +1502,9 @@ export class KasAcpClient extends BaseAcpClient {
       (explicit === 'remote' ||
         (!explicit && this.executionTarget?.kind === 'cloud-sandbox'));
     const retryRemoteOnMiss = remoteCapable && !explicit && !startRemote;
+    // Tracks whether the failing call actually targeted the remote store, so
+    // the error metric never counts a purely local failure as a cloud error.
+    let hitRemoteStore = startRemote;
     let r: acp.LoadSessionResponse;
     try {
       r = await loadFrom(startRemote ? 'remote' : undefined).catch((err) => {
@@ -1508,9 +1517,16 @@ export class KasAcpClient extends BaseAcpClient {
           '[acp-client] local session/load missed; retrying remote store:',
           err
         );
+        hitRemoteStore = true;
         return loadFrom('remote');
       });
     } catch (error) {
+      if (hitRemoteStore) {
+        recordTuiCloudError({
+          op: 'session_load',
+          kind: classifyCloudError(error),
+        });
+      }
       replayUpdateSubscription.dispose();
       replayPermissionSubscription.dispose();
       // Loading the currently active id temporarily replaced its SDK handler.
@@ -1681,6 +1697,17 @@ export class KasAcpClient extends BaseAcpClient {
         this.kiroClient.prompt({ prompt: messages, sessionId: this.sessionId }),
         crashed,
       ]);
+    } catch (err) {
+      // A failed relayed turn is the highest-signal cloud failure (covers the
+      // observed "relayed stream ended without a done frame" truncation).
+      // Local turns keep their existing error surface untouched.
+      if (this.startedCloudSession) {
+        recordTuiCloudError({
+          op: 'turn_stream',
+          kind: classifyCloudError(err),
+        });
+      }
+      throw err;
     } finally {
       unsubscribe();
       this.invokeSubagentAdapter.endTurn();
@@ -2816,7 +2843,16 @@ export class KasAcpClient extends BaseAcpClient {
           e
         );
         if (attempt === 0) {
-          await new Promise((r) => setTimeout(r, 1500));
+          // A throttled backend gets a longer pause than the token-refresh
+          // blip the retry was built for — retrying a 429 at 1.5s just burns
+          // the client's goodwill with the rate limiter.
+          const throttled = classifyCloudError(e) === 'throttling';
+          await new Promise((r) => setTimeout(r, throttled ? 5000 : 1500));
+        } else {
+          recordTuiCloudError({
+            op: 'source_providers_list',
+            kind: classifyCloudError(e),
+          });
         }
       }
     }
@@ -2845,6 +2881,10 @@ export class KasAcpClient extends BaseAcpClient {
       );
     } catch (e) {
       logger.debug('[kas] sourceProviders/listResources failed:', e);
+      recordTuiCloudError({
+        op: 'source_providers_resources',
+        kind: classifyCloudError(e),
+      });
       return undefined;
     }
   }

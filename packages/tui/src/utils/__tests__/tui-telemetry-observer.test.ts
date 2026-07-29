@@ -30,6 +30,9 @@ const {
   recordTuiContextUsage,
   recordTuiModeActive,
   recordTuiSubagentDelegation,
+  attachSizeBucket,
+  recordTuiCloudAttach,
+  recordTuiCloudError,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
   recordTuiAutonomousMode,
@@ -733,6 +736,71 @@ describe('recordTuiCloudSession', () => {
       'detached',
       'turned_off',
       'fell_back_local',
+    ]);
+  });
+});
+
+describe('attachSizeBucket', () => {
+  it('buckets byte sizes into the bounded enum', () => {
+    expect(attachSizeBucket(0)).toBe('under_64k');
+    expect(attachSizeBucket(64 * 1024 - 1)).toBe('under_64k');
+    expect(attachSizeBucket(64 * 1024)).toBe('under_1m');
+    expect(attachSizeBucket(1024 * 1024)).toBe('under_5m');
+    expect(attachSizeBucket(5 * 1024 * 1024)).toBe('over_5m');
+  });
+});
+
+describe('recordTuiCloudAttach', () => {
+  it('emits kiro_cli_cloud_attach_total with kind + bucketed size', () => {
+    recordTuiCloudAttach({ kind: 'image', sizeBytes: 200 * 1024 }, deps);
+    expect(counterCalls).toHaveLength(1);
+    const c = counterCalls[0]!;
+    expect(c.name).toBe('kiro_cli_cloud_attach_total');
+    expectEngineV3(c);
+    expect(c.attrs?.['attach_kind']).toBe('image');
+    expect(c.attrs?.['attach_size_bucket']).toBe('under_1m');
+  });
+
+  it('carries each attachment kind', () => {
+    recordTuiCloudAttach({ kind: 'document', sizeBytes: 10 }, deps);
+    recordTuiCloudAttach({ kind: 'text', sizeBytes: 10 }, deps);
+    recordTuiCloudAttach({ kind: 'binary', sizeBytes: 10 }, deps);
+    expect(counterCalls.map((c) => c.attrs?.['attach_kind'])).toEqual([
+      'document',
+      'text',
+      'binary',
+    ]);
+  });
+});
+
+describe('recordTuiCloudError', () => {
+  it('emits kiro_cli_cloud_error_total with op + kind + engine=v3', () => {
+    recordTuiCloudError({ op: 'session_new', kind: 'version_skew' }, deps);
+    expect(counterCalls).toHaveLength(1);
+    const c = counterCalls[0]!;
+    expect(c.name).toBe('kiro_cli_cloud_error_total');
+    expect(c.value).toBe(1);
+    expectEngineV3(c);
+    expect(c.attrs?.['cloud_op']).toBe('session_new');
+    expect(c.attrs?.['cloud_error_kind']).toBe('version_skew');
+  });
+
+  it('carries each op surface through cloud_op', () => {
+    recordTuiCloudError({ op: 'session_load', kind: 'not_found' }, deps);
+    recordTuiCloudError({ op: 'turn_stream', kind: 'stream_truncated' }, deps);
+    recordTuiCloudError(
+      { op: 'source_providers_list', kind: 'throttling' },
+      deps
+    );
+    expect(counterCalls.map((c) => c.attrs?.['cloud_op'])).toEqual([
+      'session_load',
+      'turn_stream',
+      'source_providers_list',
+    ]);
+    expect(counterCalls.map((c) => c.attrs?.['cloud_error_kind'])).toEqual([
+      'not_found',
+      'stream_truncated',
+      'throttling',
     ]);
   });
 });

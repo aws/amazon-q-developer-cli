@@ -41,6 +41,18 @@ metrics:
     priority: P1
     temporality: delta
     attributes: [repo_attach_event, repo_count_bucket, engine]
+  - name: kiro_cli_cloud_error_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [cloud_op, cloud_error_kind, engine]
+  - name: kiro_cli_cloud_attach_total
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [attach_kind, attach_size_bucket, engine]
   - name: kiro_cli_ui_mode_session_started_total
     kind: counter
     unit: "1"

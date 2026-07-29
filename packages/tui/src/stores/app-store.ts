@@ -25,7 +25,10 @@ import {
   resolveSourceProviderConnection,
 } from '../utils/repo-attach';
 import { dedupeRepoResources } from '../utils/repo-multiselect';
-import { recordTuiCloudRepoAttach } from '../utils/tui-telemetry-observer';
+import {
+  recordTuiCloudAttach,
+  recordTuiCloudRepoAttach,
+} from '../utils/tui-telemetry-observer';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import type {
   AgentScope,
@@ -3132,6 +3135,28 @@ export const createAppStore = (props: AppStoreProps) => {
               abortController.signal
             )
           : { images: [], resources: [], blobs: [] };
+        // One count per attached file; size buckets are the early-warning
+        // signal for relay payload-cap rejections before users hit them.
+        for (const img of cloudAttachments.images) {
+          recordTuiCloudAttach({ kind: 'image', sizeBytes: img.sizeBytes });
+        }
+        for (const res of cloudAttachments.resources) {
+          recordTuiCloudAttach({
+            kind: 'text',
+            sizeBytes: Buffer.byteLength(res.text, 'utf8'),
+          });
+        }
+        for (const blob of cloudAttachments.blobs) {
+          recordTuiCloudAttach({
+            kind:
+              blob.mimeType === 'application/octet-stream'
+                ? 'binary'
+                : 'document',
+            // Exact decoded byte count (padding-aware) so buckets reflect
+            // the on-disk size users reason about, not the encoded size.
+            sizeBytes: Buffer.byteLength(blob.blob, 'base64'),
+          });
+        }
         const allImagesWithCloud = [
           ...allImages,
           ...cloudAttachments.images.map(({ base64, mimeType }) => ({

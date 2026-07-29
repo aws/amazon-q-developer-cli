@@ -196,6 +196,49 @@ impl CurrentEnvironment {
     }
 }
 
+/// Cloud-sandbox / remote-session diagnostics: the fields an oncall needs to
+/// triage a "cloud session won't start" report without asking the customer to
+/// re-run with env vars. Endpoint values are reported as configured/absent
+/// only — never the URL itself (it may embed an account-specific hostname).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct CloudDiagnostic {
+    /// Whether the compile-time rollout gate enables the remote-sandbox
+    /// feature for this build + cohort (`rollout.json`; forced on in debug /
+    /// KIRO_TEST_MODE builds).
+    pub remote_sandbox_rollout: bool,
+    /// Whether a remote-sessions endpoint override is present in the
+    /// environment (`KIRO_REMOTE_SESSIONS_ENDPOINT`). Without one, KAS uses
+    /// its baked-in default; the capability handshake decides from there.
+    pub remote_sessions_endpoint_configured: bool,
+    /// Extracted KAS bundle versions on disk, most recently used first —
+    /// tells the oncall which agent version the CLI actually runs (vs. the
+    /// CLI's own version).
+    pub extracted_kas_versions: Vec<String>,
+}
+
+impl CloudDiagnostic {
+    async fn new(env: &Env) -> CloudDiagnostic {
+        let extracted_kas_versions = match crate::database::Database::new_default().await {
+            Ok(db) => db
+                .list_extracted_kas_versions()
+                .map(|mut versions| {
+                    // Most-recently-used first; the store returns rows unordered.
+                    versions.sort_by(|a, b| b.1.cmp(&a.1));
+                    versions.into_iter().map(|(v, _)| v).collect()
+                })
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+
+        CloudDiagnostic {
+            remote_sandbox_rollout: crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
+            remote_sessions_endpoint_configured: env.get("KIRO_REMOTE_SESSIONS_ENDPOINT").is_ok(),
+            extracted_kas_versions,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Diagnostics {
@@ -203,6 +246,7 @@ pub struct Diagnostics {
     pub build_details: BuildDetails,
     pub system_info: SystemInfo,
     pub environment: CurrentEnvironment,
+    pub cloud: CloudDiagnostic,
     #[serde(flatten)]
     pub environment_variables: EnvVarDiagnostic,
 }
@@ -213,6 +257,7 @@ impl Diagnostics {
             build_details: BuildDetails::new(),
             system_info: SystemInfo::new(),
             environment: CurrentEnvironment::new(env).await,
+            cloud: CloudDiagnostic::new(env).await,
             environment_variables: EnvVarDiagnostic::new(),
         }
     }

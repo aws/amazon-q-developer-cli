@@ -70,6 +70,16 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     records.push(chat_session_started(Mode::Interactive, ClientApplication::ChatCliV3));
     records.push(cloud_session_total(CloudSessionEvent::Started, Engine::V3));
     records.push(autonomous_mode_total(AutonomousEvent::Enabled, Engine::V3));
+    records.push(cloud_error_total(
+        CloudOp::SessionNew,
+        CloudErrorKind::VersionSkew,
+        Engine::V3,
+    ));
+    records.push(cloud_attach_total(
+        AttachKind::Image,
+        AttachSizeBucket::Under1m,
+        Engine::V3,
+    ));
     records.push(ui_mode_session_started(
         UiMode::Tui,
         UiModeSource::Default,

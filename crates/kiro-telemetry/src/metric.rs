@@ -820,6 +820,183 @@ impl DurationStage {
     }
 }
 
+/// Which cloud-sandbox RPC surface an error came from (`cloud_op` on
+/// `kiro_cli_cloud_error_total`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloudOp {
+    SessionNew,
+    SessionLoad,
+    TurnStream,
+    SourceProvidersList,
+    SourceProvidersResources,
+    ListSessions,
+    DeleteSession,
+    Other,
+}
+
+impl CloudOp {
+    pub fn from_name(value: &str) -> Self {
+        match value {
+            "session_new" => Self::SessionNew,
+            "session_load" => Self::SessionLoad,
+            "turn_stream" => Self::TurnStream,
+            "source_providers_list" => Self::SourceProvidersList,
+            "source_providers_resources" => Self::SourceProvidersResources,
+            "list_sessions" => Self::ListSessions,
+            "delete_session" => Self::DeleteSession,
+            _ => Self::Other,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SessionNew => "session_new",
+            Self::SessionLoad => "session_load",
+            Self::TurnStream => "turn_stream",
+            Self::SourceProvidersList => "source_providers_list",
+            Self::SourceProvidersResources => "source_providers_resources",
+            Self::ListSessions => "list_sessions",
+            Self::DeleteSession => "delete_session",
+            Self::Other => "_other_",
+        }
+    }
+}
+
+impl_metric_string_serde!(CloudOp, CloudOp::from_name);
+
+/// Failure class for a cloud-sandbox RPC (`cloud_error_kind` on
+/// `kiro_cli_cloud_error_total`). `version_skew` is the proven
+/// `UnknownOperationException` KAS↔BFF mismatch; `stream_truncated` is a
+/// relayed turn ending without a done frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloudErrorKind {
+    Throttling,
+    Auth,
+    VersionSkew,
+    NotFound,
+    Network,
+    Timeout,
+    StreamTruncated,
+    ServerError,
+    Other,
+}
+
+impl CloudErrorKind {
+    pub fn from_name(value: &str) -> Self {
+        match value {
+            "throttling" => Self::Throttling,
+            "auth" => Self::Auth,
+            "version_skew" => Self::VersionSkew,
+            "not_found" => Self::NotFound,
+            "network" => Self::Network,
+            "timeout" => Self::Timeout,
+            "stream_truncated" => Self::StreamTruncated,
+            "server_error" => Self::ServerError,
+            _ => Self::Other,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Throttling => "throttling",
+            Self::Auth => "auth",
+            Self::VersionSkew => "version_skew",
+            Self::NotFound => "not_found",
+            Self::Network => "network",
+            Self::Timeout => "timeout",
+            Self::StreamTruncated => "stream_truncated",
+            Self::ServerError => "server_error",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl_metric_string_serde!(CloudErrorKind, CloudErrorKind::from_name);
+
+/// What kind of local file rode along on a cloud prompt (`attach_kind` on
+/// `kiro_cli_cloud_attach_total`). Mirrors the collectCloudAttachments
+/// classification: image (base64 image block), document (known doc MIME
+/// blob), text (utf-8 resource), binary (octet-stream blob).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttachKind {
+    Image,
+    Document,
+    Text,
+    Binary,
+    Other,
+}
+
+impl AttachKind {
+    pub fn from_name(value: &str) -> Self {
+        match value {
+            "image" => Self::Image,
+            "document" => Self::Document,
+            "text" => Self::Text,
+            "binary" => Self::Binary,
+            _ => Self::Other,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::Document => "document",
+            Self::Text => "text",
+            Self::Binary => "binary",
+            Self::Other => "_other_",
+        }
+    }
+}
+
+impl_metric_string_serde!(AttachKind, AttachKind::from_name);
+
+/// Bounded upload-size bucket (`attach_size_bucket`), so raw byte counts
+/// never land as a metric attribute.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttachSizeBucket {
+    Under64k,
+    Under1m,
+    Under5m,
+    Over5m,
+    Other,
+}
+
+impl AttachSizeBucket {
+    pub fn from_bytes(bytes: u64) -> Self {
+        if bytes < 64 * 1024 {
+            Self::Under64k
+        } else if bytes < 1024 * 1024 {
+            Self::Under1m
+        } else if bytes < 5 * 1024 * 1024 {
+            Self::Under5m
+        } else {
+            Self::Over5m
+        }
+    }
+
+    pub fn from_name(value: &str) -> Self {
+        match value {
+            "under_64k" => Self::Under64k,
+            "under_1m" => Self::Under1m,
+            "under_5m" => Self::Under5m,
+            "over_5m" => Self::Over5m,
+            _ => Self::Other,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Under64k => "under_64k",
+            Self::Under1m => "under_1m",
+            Self::Under5m => "under_5m",
+            Self::Over5m => "over_5m",
+            Self::Other => "_other_",
+        }
+    }
+}
+
+impl_metric_string_serde!(AttachSizeBucket, AttachSizeBucket::from_name);
+
 /// Which process in the engine's pid tree sampled a perf metric. The host
 /// samples the native tree (`host` + `kas_subprocess`); the bun TUI samples
 /// itself (`tui`). See telemetry-metric-inventory.md §E.
@@ -3595,6 +3772,26 @@ pub fn autonomous_mode_total(event: AutonomousEvent, engine: Engine) -> MetricRe
         .expect_valid()
 }
 
+/// A cloud-sandbox RPC failed (`kiro_cli_cloud_error_total`), labeled by the
+/// RPC surface and failure class so operators can tell a throttled backend
+/// from a version-skewed one without log access.
+pub fn cloud_error_total(op: CloudOp, kind: CloudErrorKind, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_cloud_error_total", 1)
+        .attribute("cloud_op", op.as_str())
+        .attribute("cloud_error_kind", kind.as_str())
+        .attribute("engine", engine.as_str())
+        .expect_valid()
+}
+
+/// A local file attached in-band to a cloud prompt (`kiro_cli_cloud_attach_total`).
+pub fn cloud_attach_total(kind: AttachKind, size: AttachSizeBucket, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_cloud_attach_total", 1)
+        .attribute("attach_kind", kind.as_str())
+        .attribute("attach_size_bucket", size.as_str())
+        .attribute("engine", engine.as_str())
+        .expect_valid()
+}
+
 pub fn chat_session_started_from_context(
     app_type: Option<&str>,
     mode: Option<&str>,
@@ -5159,6 +5356,16 @@ mod tests {
             "kiro_cli_cloud_session_total",
             MetricValue::Counter(1),
             &[("cloud_event", "started"), ("engine", "v3")],
+        );
+        assert_metric_shape(
+            cloud_error_total(CloudOp::SessionNew, CloudErrorKind::VersionSkew, Engine::V3),
+            "kiro_cli_cloud_error_total",
+            MetricValue::Counter(1),
+            &[
+                ("cloud_op", "session_new"),
+                ("cloud_error_kind", "version_skew"),
+                ("engine", "v3"),
+            ],
         );
 
         assert_metric_shape(

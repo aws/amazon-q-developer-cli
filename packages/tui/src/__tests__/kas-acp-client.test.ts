@@ -251,6 +251,7 @@ const mockRecordTuiCloudSession = mock((_a: unknown) => {});
 const mockRecordTuiCloudSessionReady = mock((_a: unknown) => {});
 const mockRecordTuiAutonomousMode = mock((_a: unknown) => {});
 const mockRecordTuiUserTurn = mock((_a: unknown) => {});
+const mockRecordTuiCloudError = mock((_a: unknown) => {});
 const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
 const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 mock.module('../utils/tui-telemetry-observer', () => ({
@@ -260,6 +261,10 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiCloudSession: mockRecordTuiCloudSession,
   recordTuiCloudSessionReady: mockRecordTuiCloudSessionReady,
   recordTuiAutonomousMode: mockRecordTuiAutonomousMode,
+  recordTuiCloudError: mockRecordTuiCloudError,
+  recordTuiCloudAttach: mock(() => {}),
+  attachSizeBucket: (bytes: number) =>
+    bytes < 65536 ? 'under_64k' : 'under_1m',
   recordTuiCloudRepoAttach: mock(() => {}),
   recordTuiModeActive: mock(() => {}),
   recordTuiUserTurn: mockRecordTuiUserTurn,

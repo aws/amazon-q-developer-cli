@@ -95,6 +95,14 @@ attributes:
     allowed_values: [started, start_failed, reattached, ready, provision_failed, detached, turned_off, fell_back_local, _other_]
   - name: autonomous_event
     allowed_values: [enabled, disabled, switch_failed, reverted, _other_]
+  - name: cloud_op
+    allowed_values: [session_new, session_load, turn_stream, source_providers_list, source_providers_resources, list_sessions, delete_session, _other_]
+  - name: cloud_error_kind
+    allowed_values: [throttling, auth, version_skew, not_found, network, timeout, stream_truncated, server_error, other, _other_]
+  - name: attach_kind
+    allowed_values: [image, document, text, binary, _other_]
+  - name: attach_size_bucket
+    allowed_values: [under_64k, under_1m, under_5m, over_5m, _other_]
   - name: repo_attach_event
     allowed_values: [opened, submitted, _other_]
   - name: repo_count_bucket

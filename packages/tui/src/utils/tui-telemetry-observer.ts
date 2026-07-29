@@ -337,6 +337,94 @@ export function recordTuiAutonomousMode(
   );
 }
 
+/** Allowed `cloud_op` enum (mirrors the schema catalog type). */
+export type CloudOpLabel =
+  | 'session_new'
+  | 'session_load'
+  | 'turn_stream'
+  | 'source_providers_list'
+  | 'source_providers_resources'
+  | 'list_sessions'
+  | 'delete_session'
+  | '_other_';
+
+/** Allowed `cloud_error_kind` enum (mirrors the schema catalog type). */
+export type CloudErrorKindLabel =
+  | 'throttling'
+  | 'auth'
+  | 'version_skew'
+  | 'not_found'
+  | 'network'
+  | 'timeout'
+  | 'stream_truncated'
+  | 'server_error'
+  | 'other'
+  | '_other_';
+
+/**
+ * A cloud-sandbox RPC failed (`kiro_cli_cloud_error_total`), labeled by the
+ * RPC surface (`cloud_op`) and failure class (`cloud_error_kind`) so a
+ * dashboard can split "backend throttling us" from "KAS↔BFF version skew"
+ * from "relay stream truncation" without log access. Complements the coarse
+ * `start_failed`/`provision_failed` lifecycle counter — that says *a* failure
+ * happened; this says *why*. Dark-safe like the other cloud metrics: every
+ * emission point is behind the cloud capability/placement gates, so released
+ * builds read zero.
+ */
+export function recordTuiCloudError(
+  args: { op: CloudOpLabel; kind: CloudErrorKindLabel; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_cloud_error_total',
+    1,
+    {
+      cloud_op: args.op,
+      cloud_error_kind: args.kind,
+      engine: args.engine ?? DEFAULT_ENGINE,
+    },
+    TUI_SCOPE
+  );
+}
+
+/** Allowed `attach_kind` enum (mirrors the schema catalog type). */
+export type AttachKind = 'image' | 'document' | 'text' | 'binary';
+
+/** Bucket an attachment byte size into the bounded `attach_size_bucket` enum. */
+export function attachSizeBucket(bytes: number): string {
+  if (bytes < 64 * 1024) return 'under_64k';
+  if (bytes < 1024 * 1024) return 'under_1m';
+  if (bytes < 5 * 1024 * 1024) return 'under_5m';
+  return 'over_5m';
+}
+
+/**
+ * A local file was attached in-band to a cloud prompt
+ * (`kiro_cli_cloud_attach_total`), one count per file, labeled by the
+ * collectCloudAttachments classification (image/document/text/binary) and a
+ * bounded size bucket. Sizes ride the relay to the BFF, so the size
+ * distribution is the early-warning signal for payload-cap rejections
+ * (~1MB edge concerns) before users see hard failures. Dark-safe: only a
+ * cloud prompt collects attachments.
+ */
+export function recordTuiCloudAttach(
+  args: { kind: AttachKind; sizeBytes: number; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_cloud_attach_total',
+    1,
+    {
+      attach_kind: args.kind,
+      attach_size_bucket: attachSizeBucket(args.sizeBytes),
+      engine: args.engine ?? DEFAULT_ENGINE,
+    },
+    TUI_SCOPE
+  );
+}
+
 /** Allowed `repo_attach_event` funnel enum (mirrors the schema catalog type). */
 export type RepoAttachEvent = 'opened' | 'submitted' | '_other_';
 

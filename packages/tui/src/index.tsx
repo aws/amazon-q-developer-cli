@@ -13,6 +13,10 @@ import {
 } from './stores/app-store';
 import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
+import {
+  classifyCloudError,
+  cloudErrorGuidance,
+} from './utils/cloud-error-classify';
 import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { cmuxCleanup } from './utils/cmux.js';
@@ -1056,6 +1060,20 @@ const startInitialization = (resumePickerSessionId?: string) => {
       if (errorMsg.includes('active in another process')) {
         guidance =
           'Close the other session first, or start a new session without --resume.';
+      } else {
+        // A resume can hit the remote session store without --cloud, so
+        // backend-specific error kinds always get guidance; generic kinds
+        // (network/timeout) only when --cloud proves cloud intent.
+        const kind = classifyCloudError(error);
+        if (
+          cliArgs.cloud ||
+          kind === 'version_skew' ||
+          kind === 'throttling' ||
+          kind === 'auth' ||
+          kind === 'stream_truncated'
+        ) {
+          guidance = cloudErrorGuidance(kind);
+        }
       }
       // Mark any in-flight boot stage as failed so the connecting list
       // doesn't sit on a spinner forever.
