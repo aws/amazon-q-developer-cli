@@ -47,6 +47,7 @@ export interface WorkflowRunView {
   name: string;
   status: WorkflowStatus;
   nodes: WorkflowMonitorNode[];
+  queuedNodeIds?: readonly string[];
   stepSessions: WorkflowMonitorSession[];
   startedAt: number | null;
   completedAt: number | null;

@@ -203,7 +203,6 @@ export class WorkflowOwnerRegistry {
   ): WorkflowRouteResult {
     if (
       event.type === 'run_complete' &&
-      'finalState' in event &&
       (event.finalState.workflowId !== event.workflowId ||
         event.finalState.status !== event.status ||
         (event.parentSessionId !== undefined &&
@@ -218,7 +217,6 @@ export class WorkflowOwnerRegistry {
     }
     if (
       event.type === 'run_complete' &&
-      'finalState' in event &&
       this.hasConflictingTerminalOwner(event)
     ) {
       return {
@@ -231,7 +229,7 @@ export class WorkflowOwnerRegistry {
     const existingParent = this.workflowParents.get(event.workflowId);
     const reportedParent =
       event.parentSessionId ??
-      (event.type === 'run_complete' && 'finalState' in event
+      (event.type === 'run_complete'
         ? event.finalState.parentSessionId
         : undefined);
     const parentSessionId = reportedParent ?? existingParent;
@@ -296,7 +294,7 @@ export class WorkflowOwnerRegistry {
         status
       );
       if (owner) changedOwners.push(owner);
-    } else if (event.type === 'run_complete' && 'finalState' in event) {
+    } else if (event.type === 'run_complete') {
       const statesBySession = stateSessions(
         workflowStateEntries(event.finalState.root)
       );
@@ -305,19 +303,6 @@ export class WorkflowOwnerRegistry {
         const state = statesBySession.get(owner.sessionId);
         if (!state || state.status === owner.status) continue;
         const updated = { ...owner, status: state.status };
-        this.owners.set(owner.sessionId, updated);
-        changedOwners.push(updated);
-      }
-    } else if (event.type === 'run_complete') {
-      const fallbackStatus: WorkflowNodeStatus = event.status;
-      for (const owner of this.owners.values()) {
-        if (
-          owner.workflowId !== event.workflowId ||
-          owner.status !== 'running'
-        ) {
-          continue;
-        }
-        const updated = { ...owner, status: fallbackStatus };
         this.owners.set(owner.sessionId, updated);
         changedOwners.push(updated);
       }

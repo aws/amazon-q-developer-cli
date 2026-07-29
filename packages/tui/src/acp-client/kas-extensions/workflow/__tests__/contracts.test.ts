@@ -4,6 +4,7 @@ import type {
   WorkflowLoadResponse,
 } from '../../../../types/workflow.js';
 import {
+  WORKFLOW_NOTIFICATION_METHODS,
   parseWorkflowCancelResponse,
   parseWorkflowCreateResponse,
   parseWorkflowInspectResponse,
@@ -56,6 +57,30 @@ function validLoadResponse(): WorkflowLoadResponse {
 }
 
 describe('workflow protocol boundary', () => {
+  it('subscribes to exactly the lifecycle methods in the KAS covenant', () => {
+    expect(WORKFLOW_NOTIFICATION_METHODS).toEqual([
+      '_kiro/workflow/run_start',
+      '_kiro/workflow/node_start',
+      '_kiro/workflow/node_complete',
+      '_kiro/workflow/node_paused',
+      '_kiro/workflow/loop_iteration',
+      '_kiro/workflow/watch_poll',
+      '_kiro/workflow/paused',
+      '_kiro/workflow/run_complete',
+      '_kiro/workflow/steps_queued',
+    ]);
+
+    for (const method of [
+      '_kiro/workflow/need_input',
+      '_kiro/workflow/run_failed',
+      '_kiro/workflow/run_aborted',
+    ]) {
+      expect(
+        parseWorkflowNotification(method, { workflowId: 'workflow-1' })
+      ).toBeNull();
+    }
+  });
+
   it('normalizes a typed node_start notification', () => {
     expect(
       parseWorkflowNotification('_kiro/workflow/node_start', {
@@ -79,27 +104,6 @@ describe('workflow protocol boundary', () => {
       iteration: 2,
       branchId: 'branch-a',
     });
-  });
-
-  it('normalizes terminal aliases into run_complete', () => {
-    expect(
-      parseWorkflowNotification('_kiro/workflow/run_failed', {
-        workflowId: 'workflow-1',
-        parentSessionId: PARENT_SESSION_ID,
-      })
-    ).toEqual({
-      type: 'run_complete',
-      workflowId: 'workflow-1',
-      parentSessionId: PARENT_SESSION_ID,
-      status: 'failed',
-      legacyTerminalAlias: true,
-    });
-    expect(
-      parseWorkflowNotification('_kiro/workflow/run_aborted', {
-        workflowId: 'workflow-1',
-        parentSessionId: PARENT_SESSION_ID,
-      })
-    ).toMatchObject({ type: 'run_complete', status: 'aborted' });
   });
 
   it('accepts only coherent canonical terminal envelopes', () => {
@@ -166,54 +170,6 @@ describe('workflow protocol boundary', () => {
         },
       })
     ).not.toBeNull();
-  });
-
-  it('validates terminal aliases that include a final snapshot', () => {
-    const completedState = validLoadResponse().state;
-    const failedState = {
-      ...completedState,
-      status: 'failed' as const,
-      root: { ...completedState.root, status: 'failed' as const },
-    };
-    expect(
-      parseWorkflowNotification('_kiro/workflow/run_failed', {
-        workflowId: 'workflow-1',
-        parentSessionId: PARENT_SESSION_ID,
-        status: 'failed',
-        finalState: failedState,
-      })
-    ).toEqual({
-      type: 'run_complete',
-      workflowId: 'workflow-1',
-      parentSessionId: PARENT_SESSION_ID,
-      status: 'failed',
-      finalState: failedState,
-    });
-
-    expect(
-      parseWorkflowNotification('_kiro/workflow/run_failed', {
-        workflowId: 'workflow-1',
-        parentSessionId: PARENT_SESSION_ID,
-        status: 'aborted',
-      })
-    ).toBeNull();
-    expect(
-      parseWorkflowNotification('_kiro/workflow/run_failed', {
-        workflowId: 'workflow-1',
-        parentSessionId: PARENT_SESSION_ID,
-        finalState: { status: 'failed' },
-      })
-    ).toBeNull();
-    expect(
-      parseWorkflowNotification('_kiro/workflow/run_failed', {
-        workflowId: 'workflow-1',
-        parentSessionId: PARENT_SESSION_ID,
-        finalState: {
-          ...failedState,
-          parentSessionId: 'other-parent-session',
-        },
-      })
-    ).toBeNull();
   });
 
   it('rejects empty, duplicate, and parent-owned child session identities', () => {
@@ -295,21 +251,41 @@ describe('workflow protocol boundary', () => {
     ).toBeNull();
   });
 
-  it('does not trust a payload-controlled legacy marker', () => {
-    const finalState = validLoadResponse().state;
+  it('parses queued-plan state and validates its resolution', () => {
     expect(
-      parseWorkflowNotification('_kiro/workflow/run_complete', {
+      parseWorkflowNotification('_kiro/workflow/steps_queued', {
         workflowId: 'workflow-1',
         parentSessionId: PARENT_SESSION_ID,
-        status: 'completed',
-        finalState,
-        legacyTerminalAlias: true,
+        pendingSteps: [],
+        resolution: { outcome: 'rejected', reason: 'invalid replacement' },
       })
-    ).toMatchObject({
-      type: 'run_complete',
-      status: 'completed',
-      finalState,
+    ).toEqual({
+      type: 'steps_queued',
+      workflowId: 'workflow-1',
+      parentSessionId: PARENT_SESSION_ID,
+      pendingSteps: [],
+      resolution: { outcome: 'rejected', reason: 'invalid replacement' },
     });
+    expect(
+      parseWorkflowNotification('_kiro/workflow/steps_queued', {
+        workflowId: 'workflow-1',
+        pendingSteps: [],
+      })
+    ).toBeNull();
+    expect(
+      parseWorkflowNotification('_kiro/workflow/steps_queued', {
+        workflowId: 'workflow-1',
+        pendingSteps: [],
+        resolution: { outcome: 'unknown' },
+      })
+    ).toBeNull();
+    expect(
+      parseWorkflowNotification('_kiro/workflow/steps_queued', {
+        workflowId: 'workflow-1',
+        pendingSteps: [{ nodeId: 'next', type: 'step', prompt: 'Continue' }],
+        resolution: { outcome: 'applied' },
+      })
+    ).toBeNull();
   });
 
   it('rejects malformed lifecycle payloads', () => {

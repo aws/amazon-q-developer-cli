@@ -1437,11 +1437,6 @@ describe('KasWorkflowExtension', () => {
         parentSessionId: OTHER_PARENT_SESSION_ID,
       },
     });
-    transport.emitNotification('_kiro/workflow/run_failed', {
-      workflowId: TARGET.workflowId,
-      parentSessionId: TARGET.parentSessionId,
-      finalState: { status: 'failed' },
-    });
     transport.emitNotification('_kiro/workflow/run_complete', {
       workflowId: TARGET.workflowId,
       parentSessionId: TARGET.parentSessionId,
@@ -1472,7 +1467,6 @@ describe('KasWorkflowExtension', () => {
 
     expect(transport.invalidNotifications).toEqual([
       '_kiro/workflow/run_complete',
-      '_kiro/workflow/run_failed',
       '_kiro/workflow/run_complete',
     ]);
     expect(transport.hasUpdateListener(TARGET.sessionId)).toBe(true);

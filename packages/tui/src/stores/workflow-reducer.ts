@@ -1,10 +1,8 @@
 import type {
-  WorkflowEvent,
   WorkflowNodeDescriptor,
   WorkflowNodeState,
   WorkflowNodeStatus,
   WorkflowProgressEvent,
-  WorkflowStateSnapshot,
   WorkflowStatus,
 } from '../types/workflow.js';
 import type {
@@ -57,6 +55,20 @@ function flattenPlan(
     }
   }
   return flattened;
+}
+
+export function appendQueuedPlan(
+  nodes: readonly WorkflowMonitorNode[],
+  pendingSteps: readonly WorkflowNodeDescriptor[]
+): { nodes: WorkflowMonitorNode[]; queuedNodeIds: string[] } {
+  const existingIds = new Set(nodes.map((node) => node.id));
+  const appended = flattenPlan(pendingSteps).filter(
+    (node) => !existingIds.has(node.id)
+  );
+  return {
+    nodes: [...nodes, ...appended],
+    queuedNodeIds: appended.map((node) => node.id),
+  };
 }
 
 function flattenState(root: WorkflowNodeState): WorkflowMonitorNode[] {
@@ -391,12 +403,6 @@ function restoredSelectionIndex(nodes: readonly WorkflowMonitorNode[]): number {
   );
 }
 
-function finalState(
-  event: Extract<WorkflowEvent, { type: 'run_complete' }>
-): WorkflowStateSnapshot | undefined {
-  return 'finalState' in event ? event.finalState : undefined;
-}
-
 export function reduceWorkflowEvent(
   state: WorkflowCollectionState,
   event: WorkflowProgressEvent,
@@ -562,33 +568,6 @@ export function reduceWorkflowEvent(
         }),
       });
     }
-    case 'need_input': {
-      const identity: NodeIdentity = {
-        nodeId: event.nodeId,
-        nodePath: event.nodePath,
-      };
-      const nodes = patchNodes(run.nodes, identity, {
-        status: 'paused',
-        completionSignal: 'need_input',
-        pauseReason: event.reason,
-      });
-      const selectedIndex = state.selectionLocked
-        ? undefined
-        : nodes.findIndex((node) => node.id === event.nodeId);
-      return replaceRun(
-        state,
-        {
-          ...run,
-          nodes,
-          stepSessions: patchLatestSession(run.stepSessions, identity, {
-            status: 'paused',
-          }),
-        },
-        selectedIndex !== undefined && selectedIndex >= 0
-          ? selectedIndex
-          : undefined
-      );
-    }
     case 'loop_iteration':
       return replaceRun(state, {
         ...run,
@@ -619,7 +598,7 @@ export function reduceWorkflowEvent(
         { ...run, status: 'paused', pauseReason: event.pauseReason }
       );
     case 'run_complete': {
-      const snapshot = finalState(event);
+      const snapshot = event.finalState;
       const reconciled = snapshot
         ? reconcileNodes(run.nodes, snapshot.root)
         : run.nodes;
@@ -650,6 +629,7 @@ export function reduceWorkflowEvent(
         ...run,
         status: event.status,
         nodes,
+        queuedNodeIds: undefined,
         stepSessions: sessions,
         completedAt: paused ? run.completedAt : now,
         pauseReason:
@@ -680,13 +660,23 @@ export function reduceWorkflowEvent(
       return completeRun(state, completed);
     }
     case 'steps_queued': {
-      const existingIds = new Set(run.nodes.map((node) => node.id));
-      const appended = flattenPlan(event.pendingSteps).filter(
-        (node) => !existingIds.has(node.id)
+      const previousQueuedIds = new Set(run.queuedNodeIds ?? []);
+      const stableNodes = run.nodes.filter(
+        (node) => !previousQueuedIds.has(node.id)
       );
+      if (event.resolution !== undefined) {
+        const retainAppliedNodes = event.resolution.outcome === 'applied';
+        return replaceRun(state, {
+          ...run,
+          nodes: retainAppliedNodes ? run.nodes : stableNodes,
+          queuedNodeIds: undefined,
+        });
+      }
+      const queuedPlan = appendQueuedPlan(stableNodes, event.pendingSteps);
       return replaceRun(state, {
         ...run,
-        nodes: [...run.nodes, ...appended],
+        nodes: queuedPlan.nodes,
+        queuedNodeIds: queuedPlan.queuedNodeIds,
       });
     }
     default:

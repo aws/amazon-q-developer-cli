@@ -5,6 +5,7 @@ import type {
   OnMaxIterations,
   StopCondition,
   WatchOutcome,
+  WorkflowStepsQueuedResolution,
   WorkflowStatus as CovenantWorkflowStatus,
 } from '@kiro/acp-type-covenant';
 
@@ -136,6 +137,19 @@ interface WorkflowEventBase {
   parentSessionId?: string;
 }
 
+type WorkflowStepsQueuedEvent = WorkflowEventBase & {
+  type: 'steps_queued';
+} & (
+    | {
+        pendingSteps: [WorkflowNodeDescriptor, ...WorkflowNodeDescriptor[]];
+        resolution?: never;
+      }
+    | {
+        pendingSteps: [];
+        resolution: WorkflowStepsQueuedResolution;
+      }
+  );
+
 export type WorkflowEvent =
   | (WorkflowEventBase & {
       type: 'run_start';
@@ -178,13 +192,6 @@ export type WorkflowEvent =
       reason: string;
     })
   | (WorkflowEventBase & {
-      /** Compatibility event emitted by older workflow runtimes. */
-      type: 'need_input';
-      nodeId: string;
-      nodePath?: readonly string[];
-      reason: string;
-    })
-  | (WorkflowEventBase & {
       type: 'loop_iteration';
       loopId: string;
       iteration: number;
@@ -201,24 +208,12 @@ export type WorkflowEvent =
       type: 'paused';
       pauseReason: string;
     })
-  | (WorkflowEventBase &
-      (
-        | {
-            type: 'run_complete';
-            status: WorkflowRunCompleteStatus;
-            finalState: WorkflowStateSnapshot;
-            legacyTerminalAlias?: false;
-          }
-        | {
-            type: 'run_complete';
-            status: 'failed' | 'aborted';
-            legacyTerminalAlias: true;
-          }
-      ))
   | (WorkflowEventBase & {
-      type: 'steps_queued';
-      pendingSteps: WorkflowNodeDescriptor[];
-    });
+      type: 'run_complete';
+      status: WorkflowRunCompleteStatus;
+      finalState: WorkflowStateSnapshot;
+    })
+  | WorkflowStepsQueuedEvent;
 
 /**
  * Local restore event built from `_kiro/workflow/load`.

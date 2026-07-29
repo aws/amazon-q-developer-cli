@@ -10,6 +10,7 @@ import type {
   WorkflowRunSummary,
 } from '../types/workflow-history.js';
 import {
+  appendQueuedPlan,
   buildWorkflowNodesFromState,
   collectWorkflowSessions,
 } from './workflow-reducer.js';
@@ -27,12 +28,19 @@ export function buildHistoricalWorkflowRun(
 ): WorkflowRunView {
   const { state } = inspected;
   const status = state.status ?? summary.status;
+  const queuedPlan = appendQueuedPlan(
+    buildWorkflowNodesFromState(inspected.nodePlan, state.root),
+    inspected.pendingSteps ?? []
+  );
   return {
     workflowId: summary.workflowId,
     parentSessionId: state.parentSessionId ?? summary.parentSessionId,
     name: state.workflowName || summary.name,
     status,
-    nodes: buildWorkflowNodesFromState(inspected.nodePlan, state.root),
+    nodes: queuedPlan.nodes,
+    ...(queuedPlan.queuedNodeIds.length > 0
+      ? { queuedNodeIds: queuedPlan.queuedNodeIds }
+      : {}),
     stepSessions: collectWorkflowSessions(state.root),
     startedAt:
       timestamp(summary.startedAt) ??

@@ -1,4 +1,8 @@
 import type {
+  AgentNotificationMethod,
+  WorkflowStepsQueuedResolution,
+} from '@kiro/acp-type-covenant';
+import type {
   WorkflowEvent,
   WorkflowJoinPolicy,
   WorkflowLoadResponse,
@@ -36,41 +40,40 @@ import type { NotificationContract, RpcContract } from '../runtime.js';
 const WORKFLOW_METHOD_PREFIX = '_kiro/workflow/';
 const MAX_TREE_DEPTH = 100;
 
-export const WORKFLOW_NOTIFICATION_METHODS = [
-  '_kiro/workflow/run_start',
-  '_kiro/workflow/node_start',
-  '_kiro/workflow/node_complete',
-  '_kiro/workflow/node_paused',
-  '_kiro/workflow/need_input',
-  '_kiro/workflow/loop_iteration',
-  '_kiro/workflow/watch_poll',
-  '_kiro/workflow/paused',
-  '_kiro/workflow/run_complete',
-  '_kiro/workflow/run_failed',
-  '_kiro/workflow/run_aborted',
-  '_kiro/workflow/steps_queued',
-] as const;
+type CovenantWorkflowNotificationMethod = Extract<
+  AgentNotificationMethod,
+  `_kiro/workflow/${string}`
+>;
+
+const WORKFLOW_NOTIFICATION_METHOD_SET = {
+  '_kiro/workflow/run_start': true,
+  '_kiro/workflow/node_start': true,
+  '_kiro/workflow/node_complete': true,
+  '_kiro/workflow/node_paused': true,
+  '_kiro/workflow/loop_iteration': true,
+  '_kiro/workflow/watch_poll': true,
+  '_kiro/workflow/paused': true,
+  '_kiro/workflow/run_complete': true,
+  '_kiro/workflow/steps_queued': true,
+} as const satisfies Record<CovenantWorkflowNotificationMethod, true>;
 
 export type WorkflowNotificationMethod =
-  (typeof WORKFLOW_NOTIFICATION_METHODS)[number];
+  keyof typeof WORKFLOW_NOTIFICATION_METHOD_SET;
+
+export const WORKFLOW_NOTIFICATION_METHODS: readonly WorkflowNotificationMethod[] =
+  Object.keys(WORKFLOW_NOTIFICATION_METHOD_SET) as WorkflowNotificationMethod[];
 
 const EVENT_TYPES: ReadonlySet<WorkflowEvent['type']> = new Set([
   'run_start',
   'node_start',
   'node_complete',
   'node_paused',
-  'need_input',
   'loop_iteration',
   'watch_poll',
   'paused',
   'run_complete',
   'steps_queued',
 ]);
-
-const TERMINAL_EVENT_ALIASES = {
-  run_failed: 'failed',
-  run_aborted: 'aborted',
-} as const;
 
 const NODE_TYPES: ReadonlySet<WorkflowNodeType> = new Set([
   'step',
@@ -174,6 +177,19 @@ function isOptionalNonNegativeInteger(value: unknown): boolean {
   return (
     value === undefined ||
     (typeof value === 'number' && Number.isInteger(value) && value >= 0)
+  );
+}
+
+function isWorkflowStepsQueuedResolution(
+  value: unknown
+): value is WorkflowStepsQueuedResolution {
+  return (
+    value === undefined ||
+    (isRecord(value) &&
+      (value.outcome === 'applied' ||
+        value.outcome === 'rejected' ||
+        value.outcome === 'dropped') &&
+      isOptionalString(value.reason))
   );
 }
 
@@ -422,12 +438,6 @@ function isWorkflowEvent(value: unknown): value is WorkflowEvent {
         isOptionalNonNegativeInteger(payload.iteration) &&
         isOptionalString(payload.branchId)
       );
-    case 'need_input':
-      return (
-        typeof payload.nodeId === 'string' &&
-        typeof payload.reason === 'string' &&
-        isOptionalStringArray(payload.nodePath)
-      );
     case 'loop_iteration':
       return (
         typeof payload.loopId === 'string' &&
@@ -445,14 +455,15 @@ function isWorkflowEvent(value: unknown): value is WorkflowEvent {
     case 'paused':
       return typeof payload.pauseReason === 'string';
     case 'run_complete':
-      return payload.legacyTerminalAlias === true
-        ? (payload.status === 'failed' || payload.status === 'aborted') &&
-            payload.finalState === undefined
-        : isCanonicalRunComplete(payload);
+      return isCanonicalRunComplete(payload);
     case 'steps_queued':
       return (
         Array.isArray(payload.pendingSteps) &&
-        payload.pendingSteps.every((node) => isWorkflowNodeDescriptor(node))
+        payload.pendingSteps.every((node) => isWorkflowNodeDescriptor(node)) &&
+        isWorkflowStepsQueuedResolution(payload.resolution) &&
+        (payload.pendingSteps.length === 0
+          ? payload.resolution !== undefined
+          : payload.resolution === undefined)
       );
   }
   return false;
@@ -474,35 +485,14 @@ export function parseWorkflowNotification(
   }
 
   const wireType = method.slice(WORKFLOW_METHOD_PREFIX.length);
-  const terminalStatus =
-    TERMINAL_EVENT_ALIASES[wireType as keyof typeof TERMINAL_EVENT_ALIASES];
-  const type = terminalStatus ? 'run_complete' : wireType;
-  if (!EVENT_TYPES.has(type as WorkflowEvent['type'])) return null;
+  if (!EVENT_TYPES.has(wireType as WorkflowEvent['type'])) return null;
 
-  if (
-    terminalStatus &&
-    payload.status !== undefined &&
-    payload.status !== terminalStatus
-  ) {
-    return null;
-  }
-
-  const { legacyTerminalAlias: _legacyTerminalAlias, ...wirePayload } = payload;
-  void _legacyTerminalAlias;
-  const aliasHasFinalState =
-    terminalStatus !== undefined && payload.finalState !== undefined;
   const normalized: Record<string, unknown> = {
-    ...wirePayload,
-    ...(type === 'node_start' && payload.type !== undefined
+    ...payload,
+    ...(wireType === 'node_start' && payload.type !== undefined
       ? { nodeType: payload.type }
       : {}),
-    type,
-    ...(terminalStatus
-      ? {
-          status: terminalStatus,
-          ...(aliasHasFinalState ? {} : { legacyTerminalAlias: true }),
-        }
-      : {}),
+    type: wireType,
   };
 
   return isWorkflowEvent(normalized) ? normalized : null;

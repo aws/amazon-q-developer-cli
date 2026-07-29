@@ -123,6 +123,95 @@ describe('workflow store', () => {
     expect(workflow?.nodes[2]?.maxIterations).toBe(3);
   });
 
+  it('treats queued workflow steps as supersedable state', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent(startEvent('updated', [step('existing')]));
+    store.getState().applyEvent({
+      type: 'steps_queued',
+      workflowId: 'updated',
+      pendingSteps: [step('applied')],
+    });
+
+    expect(
+      store
+        .getState()
+        .workflows.get('updated')
+        ?.nodes.map((node) => node.id)
+    ).toEqual(['existing', 'applied']);
+    expect(store.getState().workflows.get('updated')?.queuedNodeIds).toEqual([
+      'applied',
+    ]);
+
+    store.getState().applyEvent({
+      type: 'steps_queued',
+      workflowId: 'updated',
+      pendingSteps: [],
+      resolution: { outcome: 'applied' },
+    });
+    store.getState().applyEvent({
+      type: 'steps_queued',
+      workflowId: 'updated',
+      pendingSteps: [step('dropped')],
+    });
+
+    expect(
+      store
+        .getState()
+        .workflows.get('updated')
+        ?.nodes.map((node) => node.id)
+    ).toEqual(['existing', 'applied', 'dropped']);
+
+    store.getState().applyEvent({
+      type: 'steps_queued',
+      workflowId: 'updated',
+      pendingSteps: [],
+      resolution: { outcome: 'dropped' },
+    });
+
+    const workflow = store.getState().workflows.get('updated');
+    expect(workflow?.nodes.map((node) => node.id)).toEqual([
+      'existing',
+      'applied',
+    ]);
+    expect(workflow?.queuedNodeIds).toBeUndefined();
+  });
+
+  it('replaces an announced queued plan and retracts a rejected one', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent(startEvent('updated', [step('existing')]));
+    store.getState().applyEvent({
+      type: 'steps_queued',
+      workflowId: 'updated',
+      pendingSteps: [step('first-plan')],
+    });
+    store.getState().applyEvent({
+      type: 'steps_queued',
+      workflowId: 'updated',
+      pendingSteps: [step('replacement-plan')],
+    });
+
+    expect(
+      store
+        .getState()
+        .workflows.get('updated')
+        ?.nodes.map((node) => node.id)
+    ).toEqual(['existing', 'replacement-plan']);
+
+    store.getState().applyEvent({
+      type: 'steps_queued',
+      workflowId: 'updated',
+      pendingSteps: [],
+      resolution: { outcome: 'rejected', reason: 'invalid plan' },
+    });
+
+    expect(
+      store
+        .getState()
+        .workflows.get('updated')
+        ?.nodes.map((node) => node.id)
+    ).toEqual(['existing']);
+  });
+
   it('keeps concurrent workflows and routes lifecycle events by id', () => {
     const store = createWorkflowStore(() => 100);
     store.getState().applyEvent(startEvent('first'));
@@ -511,6 +600,25 @@ describe('workflow store', () => {
       'side-by-side': 0.8,
       stacked: 0.2,
     });
+  });
+
+  it('projects pending replacement steps returned by inspect', () => {
+    const run: WorkflowRunSummary = {
+      workflowId: 'history',
+      name: 'Summary name',
+      status: 'running',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      updatedAt: '2026-07-19T10:01:00.000Z',
+      parentSessionId: 'parent-1',
+    };
+    const historical = buildHistoricalWorkflowRun(run, {
+      workflowId: run.workflowId,
+      state: snapshot(run.workflowId, 'running'),
+      pendingSteps: [step('queued-review')],
+    });
+
+    expect(historical.nodes.at(-1)?.id).toBe('queued-review');
+    expect(historical.queuedNodeIds).toEqual(['queued-review']);
   });
 
   it('derives progress and activity counts without mutating store state', () => {

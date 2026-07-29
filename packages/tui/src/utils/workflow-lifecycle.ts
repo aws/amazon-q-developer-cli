@@ -25,10 +25,7 @@ export function resolveWorkflowCompletion(
 
   return {
     workflowId: event.workflowId,
-    workflowName:
-      event.legacyTerminalAlias === true
-        ? event.workflowId
-        : event.finalState.workflowName,
+    workflowName: event.finalState.workflowName,
     status: event.status,
   };
 }
