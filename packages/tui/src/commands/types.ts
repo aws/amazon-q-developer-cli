@@ -308,6 +308,13 @@ export interface CommandContext {
   resetClientDisplayCaches: () => ClientDisplaySnapshot;
   /** Rollback for resetClientDisplayCaches after a rejected switch RPC. */
   restoreClientDisplayCaches: (snapshot: ClientDisplaySnapshot) => void;
+  /** Stash the outgoing session's display snapshot before a switch. */
+  stashDisplaySnapshot: (
+    sessionId: string | null | undefined,
+    snapshot: ClientDisplaySnapshot
+  ) => void;
+  /** Restore a stashed display snapshot on switch-back; returns whether one applied. */
+  restoreDisplaySnapshotFor: (sessionId: string | null | undefined) => boolean;
   /** Lite-only: signal LiteLayout to wipe scrollback + render cache.
    *  Used on /chat <id> and /rewind to drop stale flushed rows so the
    *  resumed history isn't stacked under the previous session. No-op in TUI. */

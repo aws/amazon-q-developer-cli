@@ -393,6 +393,9 @@ export class KasAcpClient extends BaseAcpClient {
    * false on every released build (no cloud-sandbox cap).
    */
   private startedCloudSession = false;
+  /** A session/new RPC is in flight: the created session's pushes arrive
+   *  tagged with an id the response hasn't reported yet. */
+  private createInFlight = false;
 
   /**
    * Advisory warnings from the last `session/new` (`_meta.kiro.warnings`),
@@ -1048,7 +1051,12 @@ export class KasAcpClient extends BaseAcpClient {
       '_kiro/hooks/didChange',
       (params: Record<string, unknown>) => {
         const sessionId = params.sessionId as string | undefined;
-        if (sessionId && this.sessionId && sessionId !== this.sessionId) {
+        if (
+          sessionId &&
+          this.sessionId &&
+          sessionId !== this.sessionId &&
+          !this.createInFlight
+        ) {
           return;
         }
         const rawHooks = Array.isArray(params.hooks) ? params.hooks : [];
@@ -1069,14 +1077,23 @@ export class KasAcpClient extends BaseAcpClient {
       '_kiro/tools/didChange',
       (params: Record<string, unknown>) => {
         const sessionId = params.sessionId as string | undefined;
-        if (sessionId && this.sessionId && sessionId !== this.sessionId) {
+        // Mid-create, a tag differing from the active id is the CREATED
+        // session's own push (the response hasn't reported the id yet).
+        if (
+          sessionId &&
+          this.sessionId &&
+          sessionId !== this.sessionId &&
+          !this.createInFlight
+        ) {
           return;
         }
         const tools = parseToolsDidChange(params);
+        // Any tagged push that survived the guard is this surface's own;
+        // mid-create the new id is not yet known, so equality would miss it.
         this.broadcastStreamEvent({
           type: AgentEventType.ToolsUpdate,
           tools,
-          sessionTagged: !!sessionId && sessionId === this.sessionId,
+          sessionTagged: !!sessionId,
         });
       }
     );
@@ -1085,16 +1102,18 @@ export class KasAcpClient extends BaseAcpClient {
     // untagged ones too (only a pre-#1892 KAS's local pool emits those).
     this.kiroClient.onExtNotification('_kiro/mcp/status', (params) => {
       const sessionId = params.sessionId as string | undefined;
-      if (sessionId && this.sessionId && sessionId !== this.sessionId) {
+      if (
+        sessionId &&
+        this.sessionId &&
+        sessionId !== this.sessionId &&
+        !this.createInFlight
+      ) {
         return;
       }
       if (!sessionId && this.startedCloudSession) {
         return;
       }
-      this.handleMcpStatusNotification(
-        params,
-        !!sessionId && sessionId === this.sessionId
-      );
+      this.handleMcpStatusNotification(params, !!sessionId);
     });
 
     // Route KAS _kiro/* notifications to the same handlers used by the Rust backend path.
@@ -1338,6 +1357,7 @@ export class KasAcpClient extends BaseAcpClient {
         kiroMeta.isEmptyWorkspace = true;
       }
     }
+    this.createInFlight = true;
     const r = await this.kiroClient
       .newSession({
         cwd: process.cwd(),
@@ -1345,6 +1365,7 @@ export class KasAcpClient extends BaseAcpClient {
         ...(Object.keys(kiroMeta).length > 0 && { _meta: { kiro: kiroMeta } }),
       })
       .catch((err) => {
+        this.createInFlight = false;
         if (intendedCloudSandbox) {
           recordTuiCloudSession({ event: 'start_failed' });
           recordTuiCloudError({
@@ -1354,6 +1375,7 @@ export class KasAcpClient extends BaseAcpClient {
         }
         throw err;
       });
+    this.createInFlight = false;
     this.assertActive('session creation');
     this.startedCloudSession = intendedCloudSandbox;
     // The invoke-subagent rendering port is cloud-only: local sessions

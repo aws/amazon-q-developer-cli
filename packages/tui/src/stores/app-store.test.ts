@@ -1908,6 +1908,64 @@ describe('resetClientDisplayCaches', () => {
   });
 });
 
+describe('per-session display snapshot stash', () => {
+  it('restores a switched-away session snapshot on switch-back', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    const mcpServerCache = [
+      { name: 'sandbox-mcp', status: 'running' as const, toolCount: 2 },
+    ];
+    store.setState({ mcpServerCache });
+    store.getState().markCloudSnapshotReceived('mcp');
+
+    // Switch away from session A: stash its snapshot, then reset.
+    const snapshotA = store.getState().resetClientDisplayCaches();
+    store.getState().stashDisplaySnapshot('session-A', snapshotA);
+    expect(store.getState().mcpServerCache).toEqual([]);
+    expect(store.getState().cloudSnapshotReadiness.mcp).toBe(
+      'awaiting-sandbox'
+    );
+
+    // Switch back to A: its panels and readiness come back with no re-push.
+    const applied = store.getState().restoreDisplaySnapshotFor('session-A');
+    expect(applied).toBe(true);
+    expect(store.getState().mcpServerCache).toEqual(mcpServerCache);
+    expect(store.getState().cloudSnapshotReadiness.mcp).toBe('received');
+  });
+
+  it('returns false when no snapshot was stashed for the session', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    expect(store.getState().restoreDisplaySnapshotFor('never-seen')).toBe(
+      false
+    );
+    expect(store.getState().restoreDisplaySnapshotFor(null)).toBe(false);
+  });
+
+  it('a live tagged push received mid-load wins over the stash', () => {
+    const store = createAppStore({ kiro: new Kiro() });
+    store.setState({
+      mcpServerCache: [{ name: 'old-view', status: 'running', toolCount: 1 }],
+    });
+    store.getState().markCloudSnapshotReceived('mcp');
+    const snapshot = store.getState().resetClientDisplayCaches();
+    store.getState().stashDisplaySnapshot('session-B', snapshot);
+
+    // The target session's own push lands during the load RPC.
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.McpServerSnapshot,
+      servers: [{ name: 'fresh-live', status: 'running', toolCount: 3 }],
+      sessionTagged: true,
+    } as any);
+    handler.flush();
+
+    store.getState().restoreDisplaySnapshotFor('session-B');
+    expect(store.getState().mcpServerCache).toEqual([
+      { name: 'fresh-live', status: 'running', toolCount: 3 },
+    ]);
+    expect(store.getState().cloudSnapshotReadiness.mcp).toBe('received');
+  });
+});
+
 describe('cloud snapshot readiness (stream events)', () => {
   it('a session-tagged McpServerSnapshot flips mcp readiness to received', () => {
     const store = createAppStore({ kiro: new Kiro() });

@@ -492,6 +492,9 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
       // A cleared cloud session has no prior history, even when the replaced session was resumed.
       if (ctx.cloudSessionActive) ctx.beginKasSession('new');
       ctx.clearUIState();
+      // Cloud only: the new sandbox's own pushes repopulate; a local
+      // /clear's caches were already replaced by the create-RPC pushes.
+      if (ctx.kiro.isCloudSessionActive()) ctx.resetClientDisplayCaches();
       ctx.resetMessages();
       // The repo footer describes the replaced session's sandbox; left in
       // place it would also get stashed under the new session's id and leak

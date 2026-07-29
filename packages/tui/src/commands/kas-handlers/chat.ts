@@ -189,13 +189,15 @@ async function startNewSession(
   cancelCloudClearRewipes();
   ctx.clearUIState();
   // Display caches describe the outgoing session; snapshot kept for the
-  // rejected-RPC path (previous session stays active).
+  // rejected-RPC path (previous session stays active) and stashed under the
+  // outgoing id so switching back restores its panels without a re-push.
   const displaySnapshot = ctx.resetClientDisplayCaches();
   // The bound repo/branch describe the PREVIOUS session's sandbox — stash so
   // switching back to it restores its footer, then clear for the new session.
   // Keep the id: a rejected RPC leaves that session active, so its scope must
   // come back out of the stash.
   const previousSessionId = ctx.kiro.sessionId;
+  ctx.stashDisplaySnapshot(previousSessionId, displaySnapshot);
   ctx.stashCloudSessionScope(previousSessionId);
   ctx.resetCloudSessionScope();
   ctx.resetMessages();
@@ -298,7 +300,7 @@ export async function loadExistingSession(
   ctx.clearUIState();
   // Deliberately no resetMessages: switches APPEND each load's replay,
   // matching local-session behavior.
-  // Same as startNewSession: drop the outgoing session's display caches.
+  // Outgoing session's display caches: stash under its id for switch-back.
   const displaySnapshot = ctx.resetClientDisplayCaches();
   // The bound repo/branch describe the PREVIOUS session's sandbox — snapshot
   // them under that session's id (so switching back restores its footer
@@ -306,6 +308,7 @@ export async function loadExistingSession(
   // Keep the id: a rejected load leaves that session active, so its scope
   // must come back out of the stash.
   const previousSessionId = ctx.kiro.sessionId;
+  ctx.stashDisplaySnapshot(previousSessionId, displaySnapshot);
   ctx.stashCloudSessionScope(previousSessionId);
   ctx.resetCloudSessionScope();
   ctx.setLoadingMessage(`Loading session ${sessionId}...`);
@@ -363,6 +366,9 @@ export async function loadExistingSession(
     // Mode follows the session: a local session loaded from a cloud surface
     // (or vice versa) flips the footer + cloud-only command gating globally.
     ctx.setCloudSessionActive(ctx.kiro.isCloudSessionActive());
+    // A re-load of an already-observed cloud session gets no fresh sandbox
+    // burst, so restore its last-known panels; a live push still overwrites.
+    ctx.restoreDisplaySnapshotFor(sessionId);
     // Hydrate this session's footer repo/branch: prefer the load response's
     // own bound repos (`_meta.kiro.repositories` — authoritative when
     // reported, even as an explicit zero-repo set), falling back to a prior

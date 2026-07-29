@@ -1886,6 +1886,16 @@ export interface AppState {
       attachedRepos: string[];
     }
   >;
+  /** Per-session display snapshots (mcp/tools/hooks caches + readiness), so
+   *  switching back to a session restores its panels without a re-push. */
+  displaySnapshotBySession: ReadonlyMap<string, ClientDisplaySnapshot>;
+  /** Stash the outgoing session's display snapshot before a switch. */
+  stashDisplaySnapshot: (
+    sessionId: string | null | undefined,
+    snapshot: ClientDisplaySnapshot
+  ) => void;
+  /** Restore a stashed display snapshot; returns whether one was applied. */
+  restoreDisplaySnapshotFor: (sessionId: string | null | undefined) => boolean;
   lastTurnTokens: LastTurnTokens | null;
   turnSummaries: Map<string, string>; // turnId (user message id) → formatted summary text
 
@@ -2583,6 +2593,8 @@ export function buildCommandContext(
     resetMessages: state.resetMessages,
     resetClientDisplayCaches: state.resetClientDisplayCaches,
     restoreClientDisplayCaches: state.restoreClientDisplayCaches,
+    stashDisplaySnapshot: state.stashDisplaySnapshot,
+    restoreDisplaySnapshotFor: state.restoreDisplaySnapshotFor,
     bumpLiteScrollbackClear: state.bumpLiteScrollbackClear,
     sendMessage: state.sendMessage,
     createStreamEventHandler: state.createStreamEventHandler,
@@ -2934,6 +2946,7 @@ export const createAppStore = (props: AppStoreProps) => {
     hasEnteredConversation: false,
     cloudExtraRepos: 0,
     cloudScopeBySession: new Map(),
+    displaySnapshotBySession: new Map(),
     lastTurnTokens: null,
     turnSummaries: new Map(),
     showContextBreakdown: false,
@@ -7342,6 +7355,45 @@ export const createAppStore = (props: AppStoreProps) => {
         hooksList: snapshot.hooksList,
         cloudSnapshotReadiness: snapshot.cloudSnapshotReadiness,
       });
+    },
+    stashDisplaySnapshot: (sessionId, snapshot) => {
+      if (!sessionId) return;
+      const next = new Map(get().displaySnapshotBySession);
+      next.delete(sessionId);
+      next.set(sessionId, snapshot);
+      // LRU bound; Map preserves insertion order.
+      const MAX_STASH = 20;
+      while (next.size > MAX_STASH) {
+        next.delete(next.keys().next().value as string);
+      }
+      set({ displaySnapshotBySession: next });
+    },
+    restoreDisplaySnapshotFor: (sessionId) => {
+      const stashed = sessionId
+        ? get().displaySnapshotBySession.get(sessionId)
+        : undefined;
+      if (!stashed) return false;
+      // Per-slice: a slice a live push repopulated mid-load holds NEWER data
+      // than the stash — restore only slices still in their post-reset state.
+      const now = get();
+      const mcpFresh = now.cloudSnapshotReadiness.mcp === 'received';
+      const toolsFresh = now.cloudSnapshotReadiness.tools === 'received';
+      set({
+        ...(now.contextBreakdownCache === null && {
+          contextBreakdownCache: stashed.contextBreakdownCache,
+        }),
+        ...(!mcpFresh && {
+          mcpServerCache: stashed.mcpServerCache,
+          mcpRegistryCache: stashed.mcpRegistryCache,
+        }),
+        ...(!toolsFresh && { toolsList: stashed.toolsList }),
+        ...(now.hooksList.length === 0 && { hooksList: stashed.hooksList }),
+        cloudSnapshotReadiness: {
+          mcp: mcpFresh ? 'received' : stashed.cloudSnapshotReadiness.mcp,
+          tools: toolsFresh ? 'received' : stashed.cloudSnapshotReadiness.tools,
+        },
+      });
+      return true;
     },
     markCloudSnapshotReceived: (surface) => {
       const current = get().cloudSnapshotReadiness;

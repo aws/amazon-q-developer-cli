@@ -187,6 +187,8 @@ export function createMockCommandContext(
       return fn;
     })() as any,
     restoreClientDisplayCaches: spy('restoreClientDisplayCaches') as any,
+    stashDisplaySnapshot: spy('stashDisplaySnapshot') as any,
+    restoreDisplaySnapshotFor: spy('restoreDisplaySnapshotFor') as any,
     createStreamEventHandler: spy('createStreamEventHandler') as any,
     setSessionId: spy('setSessionId') as any,
     addSystemMessage: spy('addSystemMessage') as any,
