@@ -55,6 +55,7 @@ import {
   type HooksUpdateEvent,
   type KiroMeta,
   type McpServerSnapshotEvent,
+  SPEC_CHECKPOINT_PHASES,
   type SpecCheckpointPhase,
 } from '../types/agent-events';
 import { InvokeSubagentPipelineAdapter } from '../utils/invoke-subagent-pipeline';
@@ -1174,7 +1175,7 @@ export class KasAcpClient extends BaseAcpClient {
           return;
         }
         const isPhase = (v: unknown): v is SpecCheckpointPhase =>
-          v === 'requirements' || v === 'design' || v === 'tasks';
+          SPEC_CHECKPOINT_PHASES.includes(v as SpecCheckpointPhase);
         if (
           typeof p.featureName !== 'string' ||
           !isPhase(p.phase) ||

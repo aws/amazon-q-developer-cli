@@ -718,7 +718,15 @@ export interface SessionRosterDeltaEvent {
  * in step with it, and should be imported from the covenant once its version
  * carries them.
  */
-export type SpecCheckpointPhase = 'requirements' | 'design' | 'tasks';
+export const SPEC_CHECKPOINT_PHASES = [
+  'requirements',
+  'design',
+  'tasks',
+  // A bugfix spec opens with bugfix.md in place of requirements.
+  'bugfix',
+] as const;
+
+export type SpecCheckpointPhase = (typeof SPEC_CHECKPOINT_PHASES)[number];
 
 /**
  * A spec phase's document is written and the agent is about to ask whether to

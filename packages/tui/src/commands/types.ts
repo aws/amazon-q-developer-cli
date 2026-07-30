@@ -298,6 +298,14 @@ export interface CommandContext {
     featureName: string,
     artifact: 'requirements' | 'design' | 'tasks'
   ) => Promise<void>;
+  /**
+   * Run a feature's tasks. `makeAllRequired` promotes every optional task to
+   * required first, which rewrites tasks.md.
+   */
+  runSpecTasks: (
+    featureName: string,
+    makeAllRequired: boolean
+  ) => Promise<void>;
   /** Clear conversation messages (keeps last turn for /clear) */
   clearMessages: () => void;
   /** Reset all messages (full wipe for /chat new) */

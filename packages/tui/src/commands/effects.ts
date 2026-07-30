@@ -898,7 +898,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
         );
         return true;
       }
-      await runSpecFeature(ctx, feature);
+      await ctx.runSpecTasks(feature.featureName, false);
       return true;
     }
 
@@ -1739,45 +1739,6 @@ async function openSpecView(
 
   await ctx.openArtifactView(name, artifact);
   return true;
-}
-
-/**
- * Resolve a spec session and invoke `runAllTasks` via the KAS ACP ext
- * methods.  The agent drives execution autonomously from there — the TUI
- * observes progress through the normal session-update stream.
- */
-async function runSpecFeature(
-  ctx: CommandContext,
-  feature: SpecFeatureSummary
-): Promise<void> {
-  try {
-    ctx.setLoadingMessage(`Running all tasks for ${feature.featureName}...`);
-    const { sessionId } = await ctx.kiro.resolveSpecSession({
-      featureName: feature.featureName,
-      strategy: 'reuse',
-      workspacePaths: [process.cwd()],
-    });
-    await ctx.kiro.invokeSpec({
-      operation: 'runAllTasks',
-      sessionId,
-      featureName: feature.featureName,
-      specDocuments: feature.specDocumentPaths,
-      tasksFilePath: feature.tasksFilePath!,
-    });
-    ctx.setLoadingMessage(null);
-    ctx.showAlert(
-      `Running all tasks for "${feature.featureName}" — the agent is working autonomously.`,
-      'success',
-      5000
-    );
-  } catch (err) {
-    ctx.setLoadingMessage(null);
-    ctx.showAlert(
-      extractRpcErrorMessage(err, 'Failed to run spec tasks'),
-      'error',
-      5000
-    );
-  }
 }
 
 /**

@@ -166,6 +166,7 @@ export function createMockCommandContext(
     setShowKnowledgePanel: spy('setShowKnowledgePanel') as any,
     setShowCodePanel: spy('setShowCodePanel') as any,
     openArtifactView: spy('openArtifactView') as any,
+    runSpecTasks: spy('runSpecTasks') as any,
     clearMessages: spy('clearMessages') as any,
     resetMessages: spy('resetMessages') as any,
     bumpLiteScrollbackClear: spy('bumpLiteScrollbackClear') as any,

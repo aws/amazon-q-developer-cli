@@ -6251,6 +6251,24 @@ describe('MCP OAuth flow', () => {
       expect(event.artifactPath).toBe('/w/.kiro/specs/web-clock/design.md');
     });
 
+    it('phaseCheckpoint handler broadcasts a bugfix phase', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/spec/phaseCheckpoint']({
+        sessionId: (client as any).sessionId,
+        featureName: 'quantity-zero-crash',
+        phase: 'bugfix',
+        artifactPath: '/w/.kiro/specs/quantity-zero-crash/bugfix.md',
+      });
+      const event = events.find((e) => e.type === 'spec_phase_checkpoint');
+      expect(event).toBeDefined();
+      expect(event.phase).toBe('bugfix');
+    });
+
     it('phaseCheckpoint handler drops a phase it does not know', async () => {
       const client = new KasAcpClient();
       await client.initialize();
@@ -6261,8 +6279,8 @@ describe('MCP OAuth flow', () => {
       kc._extNotifHandlers['_kiro/spec/phaseCheckpoint']({
         sessionId: (client as any).sessionId,
         featureName: 'web-clock',
-        phase: 'bugfix',
-        artifactPath: '/w/.kiro/specs/web-clock/bugfix.md',
+        phase: 'architecture',
+        artifactPath: '/w/.kiro/specs/web-clock/architecture.md',
       });
       expect(
         events.find((e) => e.type === 'spec_phase_checkpoint')

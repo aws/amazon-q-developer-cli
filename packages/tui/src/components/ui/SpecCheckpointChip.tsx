@@ -10,6 +10,8 @@ const PHASE_LABEL: Record<SpecCheckpointPhase, string> = {
   requirements: 'Requirements',
   design: 'Design',
   tasks: 'Tasks',
+  // Not "Bugfix", which reads as the bug being fixed rather than described.
+  bugfix: 'Bug analysis',
 };
 
 /**

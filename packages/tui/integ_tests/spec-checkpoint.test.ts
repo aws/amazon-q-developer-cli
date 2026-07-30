@@ -175,6 +175,53 @@ describe('spec phase checkpoint', () => {
     expect(testCase.getSnapshot().join('\n')).not.toContain(CHECKPOINT_MARKER);
   }, 30000);
 
+  it('starts the run the tasks checkpoint asked for once the turn ends', async () => {
+    testCase = await TestCase.builder()
+      .withTestName('spec-checkpoint-run')
+      .withTimeout(20000)
+      .withEnv({ KIRO_TEST_MOCK_TURN_TIMEOUT_MS: '20000' })
+      .launch();
+    await testCase.waitForVisibleText('ask a question', 15000);
+
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.SpecPhaseCheckpoint,
+      featureName: 'web-clock',
+      phase: 'tasks',
+      artifactPath: '/tmp/.kiro/specs/web-clock/tasks.md',
+    });
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.QuestionRequest,
+      value: {
+        sessionId: 'mock-session-id',
+        toolCallId: 'checkpoint-tasks',
+        question: 'Review the tasks, then:',
+        options: [
+          { title: 'Run required tasks' },
+          { title: 'Run required and optional tasks' },
+          { title: 'Not now' },
+        ],
+      } as QuestionRequestInfo,
+    });
+    await testCase.typeAndSubmit('draft the tasks');
+    await testCase.waitForVisibleText('Run required tasks', 10000);
+
+    await testCase.pressEnter();
+    await testCase.sleepMs(300);
+    // Held, not started: the answer still has to reach the agent, and a run
+    // begun now would race the turn that is finishing.
+    expect((await testCase.getStore()).pendingSpecRun).toEqual({
+      featureName: 'web-clock',
+      makeAllRequired: false,
+    });
+
+    await testCase.completeTurn();
+    await testCase.sleepMs(600);
+    // Consumed at the turn boundary. The mock agent implements no spec invoke, so
+    // the attempt fails and surfaces an alert — which is itself the evidence the
+    // run was started rather than dropped.
+    expect((await testCase.getStore()).pendingSpecRun).toBeNull();
+  }, 30000);
+
   it('clears the marker when the question is cancelled', async () => {
     testCase = await openCheckpoint('spec-checkpoint-cancel');
 

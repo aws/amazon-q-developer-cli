@@ -389,6 +389,8 @@ import {
   detectErrorCategory,
 } from '../utils/error-guidance.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+import { findSpecFeature } from '../utils/spec-workspace.js';
+import { runFromAnswer } from '../utils/spec-run-options.js';
 import { composeSpecKickoffPrompt } from '../utils/spec-workspace.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
@@ -1762,6 +1764,19 @@ export interface AppState {
   pendingQuestion: QuestionRequestInfo | null;
   questionQueue: QuestionRequestInfo[];
   /**
+   * Run a feature's tasks. The agent drives execution from there; progress
+   * arrives on the normal session-update stream.
+   */
+  runSpecTasks: (
+    featureName: string,
+    makeAllRequired: boolean
+  ) => Promise<void>;
+  /**
+   * A run the user asked for at a checkpoint, held until the turn that asked
+   * ends — starting it while that turn is still finishing would race it.
+   */
+  pendingSpecRun: { featureName: string; makeAllRequired: boolean } | null;
+  /**
    * The most recent spec phase checkpoint reported by the agent: the phase
    * whose document just completed. Cleared when the question it accompanies
    * resolves.
@@ -2603,6 +2618,7 @@ export function buildCommandContext(
     setShowKnowledgePanel: state.setShowKnowledgePanel,
     setShowCodePanel: state.setShowCodePanel,
     openArtifactView: state.openArtifactView,
+    runSpecTasks: state.runSpecTasks,
     clearMessages: state.clearMessages,
     resetMessages: state.resetMessages,
     resetClientDisplayCaches: state.resetClientDisplayCaches,
@@ -2897,6 +2913,7 @@ export const createAppStore = (props: AppStoreProps) => {
     pendingQuestion: null,
     questionQueue: [],
     specPhaseCheckpoint: null,
+    pendingSpecRun: null,
     pendingSpecDescription: null,
     approvalMode: 'dropdown',
     autoApproveCrewTools: false,
@@ -3208,6 +3225,10 @@ export const createAppStore = (props: AppStoreProps) => {
           _observerQueueBlocked: false,
           wasCancelled: false,
           lastTurnErrored: false,
+          // A run belongs to the turn that asked for it. One left over — the
+          // turn was cancelled, or failed before reaching its end — must not
+          // start files changing in a turn the user began for something else.
+          pendingSpecRun: null,
           autoApproveCrewTools: false,
           // The first prompt dismisses the post-create checklist.
           cloudNewSessionChecklist: false,
@@ -3327,6 +3348,15 @@ export const createAppStore = (props: AppStoreProps) => {
         // Must be after the set() above so the double-send guard in processQueue
         // sees isProcessing === false.
         await get().processQueue();
+
+        const queuedRun = get().pendingSpecRun;
+        if (queuedRun) {
+          set({ pendingSpecRun: null });
+          await get().runSpecTasks(
+            queuedRun.featureName,
+            queuedRun.makeAllRequired
+          );
+        }
       } catch (error) {
         // Drop buffered content from the cancelled/failed stream; see
         // StreamEventHandler for why this matters.
@@ -5856,8 +5886,18 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     respondToQuestion: (answer, target, answerForAgent = answer) => {
-      const { pendingQuestion, questionQueue } = get();
+      const { pendingQuestion, questionQueue, specPhaseCheckpoint } = get();
       if (!pendingQuestion || target !== pendingQuestion) return false;
+
+      // Running the tasks is the client's to carry out — the answer returns
+      // into a turn with no way to start a run — so it waits for that turn to
+      // end. The answer still goes to the agent, which closes out the phase.
+      const run =
+        specPhaseCheckpoint?.phase === 'tasks' ? runFromAnswer(answer) : null;
+      const queuedRun =
+        run && specPhaseCheckpoint
+          ? { featureName: specPhaseCheckpoint.featureName, ...run }
+          : null;
 
       const remainingQueue = questionQueue.filter(
         (question) => question !== pendingQuestion
@@ -5897,6 +5937,7 @@ export const createAppStore = (props: AppStoreProps) => {
           pendingQuestion: remainingQueue[0] ?? null,
           // The checkpoint marks one question only.
           specPhaseCheckpoint: null,
+          ...(queuedRun ? { pendingSpecRun: queuedRun } : {}),
         };
       });
       pendingQuestion.resolve({
@@ -5935,6 +5976,50 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setApprovalMode: (mode) => set({ approvalMode: mode }),
+
+    runSpecTasks: async (featureName, makeAllRequired) => {
+      const label = makeAllRequired
+        ? 'required and optional tasks'
+        : 'required tasks';
+      const feature = findSpecFeature(process.cwd(), featureName);
+      if (!feature?.tasksFilePath) {
+        get().showTransientAlert({
+          message: `No tasks.md for "${featureName}" — generate it first.`,
+          status: 'error',
+          autoHideMs: 5000,
+        });
+        return;
+      }
+      try {
+        get().setLoadingMessage(`Running ${label} for ${featureName}...`);
+        const { sessionId } = await get().kiro.resolveSpecSession({
+          featureName,
+          strategy: 'reuse',
+          workspacePaths: [process.cwd()],
+        });
+        await get().kiro.invokeSpec({
+          operation: 'runAllTasks',
+          sessionId,
+          featureName,
+          specDocuments: feature.specDocumentPaths,
+          tasksFilePath: feature.tasksFilePath,
+          makeAllRequired,
+        });
+        get().setLoadingMessage(null);
+        get().showTransientAlert({
+          message: `Running ${label} for "${featureName}" — the agent is working autonomously.`,
+          status: 'success',
+          autoHideMs: 5000,
+        });
+      } catch (err) {
+        get().setLoadingMessage(null);
+        get().showTransientAlert({
+          message: extractRpcErrorMessage(err, 'Failed to run spec tasks'),
+          status: 'error',
+          autoHideMs: 5000,
+        });
+      }
+    },
 
     setPendingSpecDescription: (pending) =>
       set({ pendingSpecDescription: pending }),
