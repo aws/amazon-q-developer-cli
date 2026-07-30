@@ -684,10 +684,24 @@ async fn launch_acp_interactive(
         cmd.env("KIRO_INTERNAL", "1");
     }
 
-    cmd.env(
-        "KIRO_ENABLED_FEATURES",
-        serde_json::to_string(&crate::rollout::rollout().enabled_features()).unwrap_or_default(),
-    );
+    {
+        let mut enabled = crate::rollout::rollout().enabled_features();
+        if let Ok(user_override) = std::env::var("KIRO_ENABLED_FEATURES")
+            && let Ok(extras) = serde_json::from_str::<Vec<String>>(&user_override)
+        {
+            use strum::IntoEnumIterator;
+            for feature in crate::rollout::Feature::iter() {
+                let name: &str = feature.into();
+                if extras.iter().any(|e| e == name) && !enabled.iter().any(|f| <&str>::from(*f) == name) {
+                    enabled.push(feature);
+                }
+            }
+        }
+        cmd.env(
+            "KIRO_ENABLED_FEATURES",
+            serde_json::to_string(&enabled).unwrap_or_default(),
+        );
+    }
 
     // Resolve telemetry identity for the TUI
     let telemetry_enabled = !crate::util::env_var::is_telemetry_disabled()

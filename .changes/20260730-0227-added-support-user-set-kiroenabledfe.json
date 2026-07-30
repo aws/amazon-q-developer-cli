@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Support user-set `KIRO_ENABLED_FEATURES` env var to force-enable feature flags in the TUI"
+}
