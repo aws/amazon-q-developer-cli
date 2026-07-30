@@ -1,3 +1,4 @@
+pub mod attempt_header;
 pub mod customization;
 pub mod delay_interceptor;
 mod endpoints;
@@ -62,6 +63,7 @@ use tracing::{
     error,
 };
 
+use crate::api_client::attempt_header::AttemptHeaderInterceptor;
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
@@ -1161,6 +1163,8 @@ impl RealApiClient {
                         .map(|v| crate::cli::chat::legacy::additional_fields::value_to_document(&v)),
                 )
                 .set_profile_arn(self.optional_profile_arn().await)
+                .customize()
+                .interceptor(AttemptHeaderInterceptor::new(MAX_ATTEMPTS))
                 .send()
                 .await
             {

@@ -1,3 +1,4 @@
+pub mod attempt_header;
 pub mod customization;
 pub mod delay_interceptor;
 mod endpoints;
@@ -51,6 +52,7 @@ use tracing::{
     error,
 };
 
+use crate::api_client::attempt_header::AttemptHeaderInterceptor;
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
@@ -128,6 +130,9 @@ pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-opto
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(600);
 
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
+
+/// Max attempts for API client requests.
+const MAX_ATTEMPTS: u32 = 3;
 
 /// Profile ARN for BuilderId (free tier) users who have no IAM IdC profile stored in the DB.
 pub(crate) const BUILDER_ID_PROFILE_ARN: &str = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
@@ -722,6 +727,8 @@ impl ApiClient {
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
                 .set_profile_arn(self.optional_profile_arn().await)
+                .customize()
+                .interceptor(AttemptHeaderInterceptor::new(MAX_ATTEMPTS))
                 .send()
                 .await
             {
@@ -1078,7 +1085,7 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
 
 fn retry_config() -> RetryConfig {
     RetryConfig::adaptive()
-        .with_max_attempts(3)
+        .with_max_attempts(MAX_ATTEMPTS)
         .with_max_backoff(MAX_RETRY_DELAY_DURATION)
 }
 
