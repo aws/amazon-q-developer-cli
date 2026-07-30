@@ -141,6 +141,7 @@ export class TUI extends Container {
    * - `resetsApplied`   — lines the per-frame line-reset pass rewrote
    * - `cursorScanned`   — iterations of the above-viewport cursor-marker scan
    * - `prefixLines`     — accumulated static lines present this frame
+   * - `prefixCopied`    — static references copied into a resident frame
    * - `prefixSkipped`   — whether the prefix was excluded from the diff
    */
   public perfLastFrame = {
@@ -148,6 +149,7 @@ export class TUI extends Container {
     resetsApplied: 0,
     cursorScanned: 0,
     prefixLines: 0,
+    prefixCopied: 0,
     prefixSkipped: false,
   };
   private readonly renderCompleteListeners = new Set<
@@ -1681,6 +1683,7 @@ export class TUI extends Container {
    * - Line-based diffing for minimal terminal writes
    */
   private _doRenderInner(): void {
+    this.perfLastFrame.prefixCopied = 0;
     const width = Math.max(this.terminal.columns - this.scrollbarWidth, this.minWidth);
     const height = this.terminal.rows;
 
@@ -1767,10 +1770,11 @@ export class TUI extends Container {
     const hasVisibleOverlay = this.hasOverlay();
 
     // OPTIMIZED: Combine accumulated static output with live content
-    // Use concat instead of spread operator for better performance with large arrays
     // Skip in alt screen — no scrollback buffer to display static content in.
     if (this.staticBuffer.length > 0 && !this.altScreen) {
-      newLines = this.staticBuffer.prepend(newLines);
+      const frame = this.staticBuffer.compose(newLines, this.previousLines);
+      newLines = frame.lines;
+      this.perfLastFrame.prefixCopied = frame.copiedPrefixLines;
     }
 
     if (hasVisibleOverlay) {
@@ -2035,6 +2039,13 @@ export class TUI extends Container {
     // No changes
     if (firstChanged === -1) {
       this.positionHardwareCursor(cursorPos, newPhysRows);
+      this.commitFrame(
+        newLines,
+        newHasWide,
+        newPhysRows,
+        width,
+        prefixIsPristine
+      );
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       return;
     }

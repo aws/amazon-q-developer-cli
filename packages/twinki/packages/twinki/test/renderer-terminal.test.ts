@@ -286,6 +286,25 @@ describe('TUI coverage', () => {
 		expect(tui.staticBufferLines).toBe(0);
 	});
 
+	it('renders a clean live frame after resetStaticOutput', async () => {
+		comp.lines = ['LIVE_OLD'];
+		tui = new TUI(term);
+		tui.addChild(comp);
+		tui.start();
+		await wait(); await term.flush();
+
+		tui.writeStaticLines(['STATIC_A', 'STATIC_B']);
+		tui.requestRender();
+		await wait(); await term.flush();
+
+		comp.lines = ['LIVE_NEW'];
+		tui.resetStaticOutput();
+		tui.requestRender();
+		await wait(); await term.flush();
+
+		expect(term.getViewport().filter(line => line.trim())).toEqual(['LIVE_NEW']);
+	});
+
 	it('replaceStaticOutput', async () => {
 		tui = new TUI(term);
 		tui.addChild(comp);
