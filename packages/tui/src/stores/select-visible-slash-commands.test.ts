@@ -283,6 +283,46 @@ describe('/autonomous feature + cloud visibility gates (dark-ship)', () => {
   });
 });
 
+describe('v2Only commands — hidden in KAS, visible in V2', () => {
+  it('hides /theme from autocomplete in KAS mode (hidden flag)', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    const theme = visible.find((c) => c.name === '/theme');
+    expect(theme).toBeDefined();
+    expect(theme!.meta?.hidden).toBe(true);
+  });
+
+  it('hides /verbosity from autocomplete in KAS mode (hidden flag)', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    const verbosity = visible.find((c) => c.name === '/verbosity');
+    expect(verbosity).toBeDefined();
+    expect(verbosity!.meta?.hidden).toBe(true);
+  });
+
+  it('shows /theme in autocomplete in V2 mode (not hidden)', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    const theme = visible.find((c) => c.name === '/theme');
+    expect(theme).toBeDefined();
+    expect(theme!.meta?.hidden).not.toBe(true);
+  });
+
+  it('keeps /settings visible in KAS mode', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    expect(visible.find((c) => c.name === '/settings')).toBeDefined();
+  });
+
+  it('/theme and /verbosity remain dispatchable in KAS (exact-match lookup)', () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const visible = selectVisibleSlashCommands(store.getState());
+    // hidden commands are excluded from prefix match but findable by exact name
+    expect(visible.find((c) => c.name === '/theme')).toBeDefined();
+    expect(visible.find((c) => c.name === '/verbosity')).toBeDefined();
+  });
+});
+
 describe('UI mode commands — KAS vs V2', () => {
   const withRollout = (value: string | undefined, fn: () => void) => {
     const prev = process.env.KIRO_LITE_ROLLOUT_ENABLED;

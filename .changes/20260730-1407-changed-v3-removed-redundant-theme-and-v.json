@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "[v3] Removed redundant /theme and /verbosity commands; use /settings instead"
+}

@@ -2818,7 +2818,7 @@ export const createAppStore = (props: AppStoreProps) => {
         description:
           '(moved to /settings theme) Select a theme that looks best for your terminal',
         source: 'local' as const,
-        meta: { local: true },
+        meta: { local: true, hidden: agentEngine === 'kas' },
       },
       {
         // /lite and /tui are the symmetric session swaps. The handlers route
@@ -2851,6 +2851,7 @@ export const createAppStore = (props: AppStoreProps) => {
         meta: {
           local: true,
           liteOnly: process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1',
+          hidden: agentEngine === 'kas',
         },
       },
       {
