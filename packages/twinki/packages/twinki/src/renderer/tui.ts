@@ -17,6 +17,7 @@ import { throttle } from 'es-toolkit/compat';
 import { parseSGRMouse, isSGRMouse } from '../input/mouse.js';
 import type { MouseEvent } from '../input/mouse.js';
 import { visibleWidth } from '../utils/visible-width.js';
+import { StaticBuffer } from './static-buffer.js';
 import { sliceByColumn, sliceWithWidth } from '../utils/slice.js';
 import { extractSegments } from '../utils/extract-segments.js';
 
@@ -123,12 +124,38 @@ export class TUI extends Container {
   public perfMaxRenderMs = 0;
   /** Total number of renders performed */
   public perfRenderCount = 0;
+  /**
+   * Per-frame work counters, rewritten on every render.
+   *
+   * @internal Diagnostics only — shape is unstable and may change without
+   * notice. Do not depend on this outside twinki's own tests.
+   *
+   * These exist to make the static-prefix invariant *deterministically*
+   * testable. Wall-clock timings are machine- and load-dependent, so a timing
+   * assertion is both flaky and weak evidence. These are exact integers: if
+   * frame work is genuinely independent of scrollback size, then for a fixed
+   * live region every counter here is identical at 1,000 and 10,000 accumulated
+   * static lines. That is an equality assertion, not a threshold.
+   *
+   * - `diffScanned`     — iterations of the differential comparison loop
+   * - `resetsApplied`   — lines the per-frame line-reset pass rewrote
+   * - `cursorScanned`   — iterations of the above-viewport cursor-marker scan
+   * - `prefixLines`     — accumulated static lines present this frame
+   * - `prefixSkipped`   — whether the prefix was excluded from the diff
+   */
+  public perfLastFrame = {
+    diffScanned: 0,
+    resetsApplied: 0,
+    cursorScanned: 0,
+    prefixLines: 0,
+    prefixSkipped: false,
+  };
   private readonly renderCompleteListeners = new Set<
     (event: RenderCompletedEvent) => void
   >();
   /** Number of lines currently held in the static scrollback buffer. */
   get staticBufferLines(): number {
-    return this.accumulatedStaticOutput.length;
+    return this.staticBuffer.length;
   }
   /** Number of rendered lines currently above the visible viewport (unreachable by cursor-up). */
   get linesAboveViewport(): number {
@@ -136,6 +163,11 @@ export class TUI extends Container {
   }
 
   private previousLines: string[] = [];
+  /**
+   * Generation of {@link staticBuffer} that `previousLines` was committed
+   * against. `-1` means there is no valid shadow buffer, forcing a full diff.
+   */
+  private frameGeneration = -1;
   /**
    * Whether `previousLines` contains any line wider than the current
    * terminal width. Cached because checking is O(n) over all lines and
@@ -168,7 +200,7 @@ export class TUI extends Container {
   private fullRedrawCount = 0;
   private stopped = false;
   private overlayStack: OverlayEntry[] = [];
-  private accumulatedStaticOutput: string[] = [];
+  private readonly staticBuffer = new StaticBuffer();
   /**
    * Cached flag: does `accumulatedStaticOutput` contain any line wider than
    * the last terminal width we saw? Recomputed lazily in
@@ -795,9 +827,7 @@ export class TUI extends Container {
    * so stop() doesn't write stale cursor movement into the wrong buffer.
    */
   clearRenderState(): void {
-    this.previousLines = [];
-    this.previousHasWide = false;
-    this.previousPhysRowsCache = 0;
+    this.invalidateFrame();
     this.previousWidth = -1;
     this.cursorRow = 0;
     this.hardwareCursorRow = 0;
@@ -860,10 +890,8 @@ export class TUI extends Container {
       this.terminal.write('\r\n');
     }
     // Clear internal collections to prevent memory retention after stop
-    this.previousLines = [];
-    this.previousHasWide = false;
-    this.previousPhysRowsCache = 0;
-    this.accumulatedStaticOutput = [];
+    this.invalidateFrame();
+    this.staticBuffer.clear();
     this.staticHasWide = false;
     this.staticHasWideWidth = -1;
     this.staticPhysRowsCache = -1;
@@ -890,9 +918,7 @@ export class TUI extends Container {
   requestRender(force = false): void {
     if (this.stopped) return;
     if (force) {
-      this.previousLines = [];
-      this.previousHasWide = false;
-      this.previousPhysRowsCache = 0;
+      this.invalidateFrame();
       this.previousWidth = -1;
       this.cursorRow = 0;
       this.hardwareCursorRow = 0;
@@ -1254,11 +1280,15 @@ export class TUI extends Container {
    *
    * @param lines - Rendered lines (modified in place)
    * @param height - Terminal height for viewport calculation
+   * @param minRow - Lowest index the above-viewport cleanup scan may reach.
+   *   Callers pass the accumulated-static prefix length; those lines are
+   *   marker-free by construction (scrubbed in writeStaticLines).
    * @returns Cursor position or null if no cursor found
    */
   private extractCursorPosition(
     lines: string[],
-    height: number
+    height: number,
+    minRow = 0
   ): { row: number; col: number } | null {
     const viewportTop = Math.max(0, lines.length - height);
 
@@ -1274,8 +1304,12 @@ export class TUI extends Container {
       }
     }
 
-    // Cleanup: strip any marker above viewport so it never leaks to terminal
-    for (let row = viewportTop - 1; row >= 0; row--) {
+    // Cleanup: strip any marker above viewport so it never leaks to terminal.
+    // Bounded below by `minRow`: the accumulated-static prefix is scrubbed of
+    // markers once at append time (writeStaticLines), so rescanning it every
+    // frame is O(static lines) of pure waste.
+    this.perfLastFrame.cursorScanned = Math.max(0, viewportTop - minRow);
+    for (let row = viewportTop - 1; row >= minRow; row--) {
       const idx = lines[row]!.indexOf(CURSOR_MARKER);
       if (idx !== -1) {
         lines[row] =
@@ -1295,14 +1329,72 @@ export class TUI extends Container {
    * and prevents visual artifacts.
    *
    * @param lines - Lines to process (modified in place)
+   * @param startIndex - First index to process. The accumulated-static prefix
+   *   is reset once at append time ({@link writeStaticLines}), so the per-frame
+   *   path skips it — rewriting those strings every frame would allocate a new
+   *   string per static line and destroy the reference identity the
+   *   differential diff relies on.
    * @returns Processed lines with reset sequences
    */
-  private applyLineResets(lines: string[]): string[] {
+  private applyLineResets(lines: string[], startIndex = 0): string[] {
     const reset = TUI.SEGMENT_RESET;
-    for (let i = 0; i < lines.length; i++) {
+    this.perfLastFrame.resetsApplied = Math.max(0, lines.length - startIndex);
+    for (let i = startIndex; i < lines.length; i++) {
       lines[i] = lines[i]! + reset;
     }
     return lines;
+  }
+
+  /**
+   * Appends the line-reset suffix to a copy of `lines`, scrubbing any cursor
+   * marker. Static lines are committed content: the cursor never belongs to
+   * them, and scrubbing here lets the per-frame cursor scan stop at the end of
+   * the prefix instead of walking it every frame.
+   */
+  private finalizeStaticLines(lines: string[]): string[] {
+    const reset = TUI.SEGMENT_RESET;
+    const out = new Array<string>(lines.length);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      const idx = line.indexOf(CURSOR_MARKER);
+      out[i] =
+        (idx === -1
+          ? line
+          : line.slice(0, idx) + line.slice(idx + CURSOR_MARKER.length)) + reset;
+    }
+    return out;
+  }
+
+  /**
+   * Records `lines` as the shadow buffer that the next frame diffs against,
+   * together with the static-buffer generation it was rendered from.
+   */
+  private commitFrame(
+    lines: string[],
+    hasWide: boolean,
+    physRows: number,
+    width: number,
+    staticPrefixPristine: boolean
+  ): void {
+    this.previousLines = lines;
+    this.previousHasWide = hasWide;
+    this.previousPhysRowsCache = physRows;
+    this.previousWidth = width;
+    this.frameGeneration = staticPrefixPristine
+      ? this.staticBuffer.generation
+      : -1;
+  }
+
+  /**
+   * Drops the shadow buffer, forcing the next render down a full-repaint path.
+   * Used whenever the terminal stops matching what we believe is on screen:
+   * clears, resize, suspend, external writes.
+   */
+  private invalidateFrame(): void {
+    this.previousLines = [];
+    this.previousHasWide = false;
+    this.previousPhysRowsCache = 0;
+    this.frameGeneration = -1;
   }
 
   /**
@@ -1311,7 +1403,12 @@ export class TUI extends Container {
    */
   writeStaticLines(lines: string[]): void {
     if (lines.length > 0 && !this.altScreen) {
-      this.accumulatedStaticOutput.push(...lines);
+      // Apply the line-reset suffix ONCE, here, instead of on every frame.
+      // These strings are then final: the per-frame path neither rewrites nor
+      // re-diffs them, so the prefix costs nothing per frame.
+      // When the fast path is off, store lines verbatim so the per-frame
+      // reset pass produces byte-identical output to the unoptimized path.
+      this.staticBuffer.append(this.finalizeStaticLines(lines));
       // Update cached staticHasWide/staticPhysRowsCache incrementally — only
       // scan the NEW lines, not the whole accumulated buffer. If wide mode
       // is off or our cached width is stale, skip (will be rebuilt next render).
@@ -1334,7 +1431,7 @@ export class TUI extends Container {
       // `previousLines` after the accumulated static prefix). When wide
       // lines aren't enabled, physical === logical (one row per line).
       const staticLogicalCount =
-        this.accumulatedStaticOutput.length - lines.length;
+        this.staticBuffer.length - lines.length;
       let liveRows: number;
       if (this.wideLinesEnabled) {
         const width = Math.max(this.terminal.columns || 80, this.minWidth);
@@ -1358,9 +1455,7 @@ export class TUI extends Container {
         }
         buf += '\r\x1b[J';
         this.terminal.write(buf);
-        this.previousLines = [];
-        this.previousHasWide = false;
-        this.previousPhysRowsCache = 0;
+        this.invalidateFrame();
         this.hardwareCursorRow = 0;
         this.cursorRow = 0;
         this.maxLinesRendered = 0;
@@ -1397,14 +1492,9 @@ export class TUI extends Container {
    * re-written to scrollback.
    */
   private trimStaticOutput(): void {
-    const cap = this.staticScrollbackCap;
-    // Only trim when 10% over cap — prune back to 75% to amortize the cost
-    if (this.accumulatedStaticOutput.length > cap * 1.1) {
-      this.accumulatedStaticOutput = this.accumulatedStaticOutput.slice(
-        -Math.floor(cap * 0.75)
-      );
-      // Invalidate — we may have dropped the only wide lines, and the
-      // cached physical-row sum no longer matches the buffer.
+    if (this.staticBuffer.trimTo(this.staticScrollbackCap)) {
+      // We may have dropped the only wide lines, so the cached wide flag and
+      // physical-row sum no longer describe the buffer.
       this.staticHasWideWidth = -1;
       this.staticPhysRowsCache = -1;
     }
@@ -1415,7 +1505,8 @@ export class TUI extends Container {
    * static content at the new width without duplication.
    */
   replaceStaticOutput(lines: string[]): void {
-    this.accumulatedStaticOutput = lines;
+    // Resets applied once here — see writeStaticLines.
+    this.staticBuffer.replace(this.finalizeStaticLines(lines));
     this.staticHasWideWidth = -1;
     this.staticPhysRowsCache = -1;
     this.trimStaticOutput();
@@ -1426,7 +1517,7 @@ export class TUI extends Container {
    * can be re-rendered at the new width.
    */
   resetStaticOutput(): void {
-    this.accumulatedStaticOutput = [];
+    this.staticBuffer.clear();
     this.staticHasWide = false;
     this.staticHasWideWidth = -1;
     this.staticPhysRowsCache = -1;
@@ -1491,14 +1582,12 @@ export class TUI extends Container {
    * the terminal along with everything else.
    */
   private handleExternalClear(): void {
-    this.previousLines = [];
-    this.previousHasWide = false;
-    this.previousPhysRowsCache = 0;
+    this.invalidateFrame();
     this.maxLinesRendered = 0;
     this.hardwareCursorRow = 0;
     this.cursorRow = 0;
     this.previousViewportTop = 0;
-    this.accumulatedStaticOutput = [];
+    this.staticBuffer.clear();
     this.staticHasWide = false;
     this.staticHasWideWidth = -1;
     this.staticPhysRowsCache = -1;
@@ -1672,18 +1761,19 @@ export class TUI extends Container {
     // when the static prefix has a cached wide flag.
     const liveLines = newLines;
     const staticPrefixLen =
-      this.accumulatedStaticOutput.length > 0 && !this.altScreen
-        ? this.accumulatedStaticOutput.length
+      this.staticBuffer.length > 0 && !this.altScreen
+        ? this.staticBuffer.length
         : 0;
+    const hasVisibleOverlay = this.hasOverlay();
 
     // OPTIMIZED: Combine accumulated static output with live content
     // Use concat instead of spread operator for better performance with large arrays
     // Skip in alt screen — no scrollback buffer to display static content in.
-    if (this.accumulatedStaticOutput.length > 0 && !this.altScreen) {
-      newLines = this.accumulatedStaticOutput.concat(newLines);
+    if (this.staticBuffer.length > 0 && !this.altScreen) {
+      newLines = this.staticBuffer.prepend(newLines);
     }
 
-    if (this.overlayStack.length > 0) {
+    if (hasVisibleOverlay) {
       newLines = this.compositeOverlays(newLines, width, height);
     }
 
@@ -1701,7 +1791,7 @@ export class TUI extends Container {
     ) {
       let total = 0;
       let anyWide = false;
-      for (const l of this.accumulatedStaticOutput) {
+      for (const l of this.staticBuffer.view) {
         const vw = visibleWidth(l);
         const r = vw <= width ? 1 : Math.ceil(vw / width);
         total += r;
@@ -1712,7 +1802,11 @@ export class TUI extends Container {
       this.staticHasWideWidth = width;
     }
 
-    const cursorPos = this.extractCursorPosition(newLines, height);
+    const cursorPos = this.extractCursorPosition(
+      newLines,
+      height,
+      hasVisibleOverlay ? 0 : staticPrefixLen
+    );
     // `cursorPos.row` is a LOGICAL line index into `newLines`. When lines
     // may soft-wrap (`wideLinesEnabled`), convert it to a physical row so
     // `positionHardwareCursor` — which operates on physical rows — lands
@@ -1748,7 +1842,18 @@ export class TUI extends Container {
         cursorPos.row = physRowOf(newLines, cursorPos.row);
       }
     }
-    newLines = this.applyLineResets(newLines);
+    // The accumulated-static prefix already carries its reset suffix (applied
+    // in writeStaticLines), so only the live suffix needs resetting. Skipping
+    // it keeps the prefix strings reference-identical to `previousLines`,
+    // which is what lets the diff below skip them.
+    //
+    // Overlays are the exception: compositeOverlays rebuilds the lines it
+    // covers, which can include prefix rows, so fall back to resetting all.
+    const prefixIsPristine = staticPrefixLen > 0 && !hasVisibleOverlay;
+    newLines = this.applyLineResets(
+      newLines,
+      prefixIsPristine ? staticPrefixLen : 0
+    );
 
     const widthChanged =
       this.previousWidth !== 0 && this.previousWidth !== width;
@@ -1837,10 +1942,13 @@ export class TUI extends Container {
         : Math.max(this.maxLinesRendered, newPhysRows);
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       this.positionHardwareCursor(cursorPos, newPhysRows);
-      this.previousLines = newLines;
-      this.previousHasWide = newHasWide;
-      this.previousPhysRowsCache = newPhysRows;
-      this.previousWidth = width;
+      this.commitFrame(
+        newLines,
+        newHasWide,
+        newPhysRows,
+        width,
+        prefixIsPristine
+      );
     };
 
     const CLEAR_ALL = TUI.CLEAR_ALL;
@@ -1855,8 +1963,8 @@ export class TUI extends Container {
       // Match accumulatedStaticOutput to newLines wrt wide-line state:
       // when nothing is wide at all, logical === physical.
       const staticPhysRows = this.wideLinesEnabled
-        ? physRows(this.accumulatedStaticOutput)
-        : this.accumulatedStaticOutput.length;
+        ? physRows(this.staticBuffer.view as string[])
+        : this.staticBuffer.length;
       const liveRows = newPhysRows - staticPhysRows;
       const needsScrollbackClear = liveRows > height;
       fullRender(
@@ -1880,7 +1988,7 @@ export class TUI extends Container {
     if (
       this.clearOnShrink &&
       newPhysRows < this.maxLinesRendered &&
-      this.overlayStack.length === 0
+      !hasVisibleOverlay
     ) {
       fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'shrink');
       return;
@@ -1895,7 +2003,17 @@ export class TUI extends Container {
     let firstChanged = -1;
     let lastChanged = -1;
     const maxLen = Math.max(newLines.length, this.previousLines.length);
-    for (let i = 0; i < maxLen; i++) {
+    // Skip the static prefix when it is provably identical to last frame's.
+    // StaticBuffer bumps its generation on every mutation, so an unchanged
+    // generation means an unchanged prefix. See StaticBuffer for why comparing
+    // line contents instead would be unsound.
+    const prefixAligned =
+      prefixIsPristine && this.frameGeneration === this.staticBuffer.generation;
+    const diffStart = prefixAligned ? staticPrefixLen : 0;
+    this.perfLastFrame.diffScanned = Math.max(0, maxLen - diffStart);
+    this.perfLastFrame.prefixLines = staticPrefixLen;
+    this.perfLastFrame.prefixSkipped = prefixAligned;
+    for (let i = diffStart; i < maxLen; i++) {
       const oldLine = this.previousLines[i] ?? '';
       const newLine = newLines[i] ?? '';
       if (oldLine !== newLine) {
@@ -1959,10 +2077,13 @@ export class TUI extends Container {
         this.hardwareCursorRow = targetPhysRow;
       }
       this.positionHardwareCursor(cursorPos, newPhysRows);
-      this.previousLines = newLines;
-      this.previousHasWide = newHasWide;
-      this.previousPhysRowsCache = newPhysRows;
-      this.previousWidth = width;
+      this.commitFrame(
+        newLines,
+        newHasWide,
+        newPhysRows,
+        width,
+        prefixIsPristine
+      );
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       return;
     }
@@ -1998,10 +2119,13 @@ export class TUI extends Container {
       }
       if (firstChanged === -1) {
         // Only off-screen changes — nothing to render
-        this.previousLines = newLines;
-        this.previousHasWide = newHasWide;
-        this.previousPhysRowsCache = newPhysRows;
-        this.previousWidth = width;
+        this.commitFrame(
+          newLines,
+          newHasWide,
+          newPhysRows,
+          width,
+          prefixIsPristine
+        );
         this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
         return;
       }
@@ -2134,10 +2258,13 @@ export class TUI extends Container {
     this.maxLinesRendered = Math.max(this.maxLinesRendered, newPhysRows);
     this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
     this.positionHardwareCursor(cursorPos, newPhysRows);
-    this.previousLines = newLines;
-    this.previousHasWide = newHasWide;
-    this.previousPhysRowsCache = newPhysRows;
-    this.previousWidth = width;
+    this.commitFrame(
+      newLines,
+      newHasWide,
+      newPhysRows,
+      width,
+      prefixIsPristine
+    );
   }
 
   /**

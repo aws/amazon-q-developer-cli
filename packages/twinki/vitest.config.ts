@@ -21,6 +21,9 @@ export default defineConfig({
         'examples/**',
         'docs/**',
         'scripts/**',
+        // Nested workspace packages have their own scripts/ dirs; the
+        // root-relative pattern above does not reach them.
+        '**/scripts/**',
         'packages/testing/**',
         'packages/testing-library/**',
         '**/vitest.config.ts',
