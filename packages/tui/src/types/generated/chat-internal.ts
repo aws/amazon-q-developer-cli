@@ -98,9 +98,10 @@ export enum Feature {
 	 */
 	C2s = "c2s",
 	/**
-	 * `/tangent` named side-conversations. Internal nightly only via
-	 * `rollout.json` (`segment: internal`, `channel: nightly`); registered as a
-	 * TUI command only when enabled.
+	 * `/tangent` named side-conversations. Generally available via
+	 * `rollout.json`; the launcher includes `tangent` in
+	 * `KIRO_ENABLED_FEATURES` and the TUI registers the `/tangent` command
+	 * only when enabled (treatment_percent is the kill-switch).
 	 */
 	Tangent = "tangent",
 }

@@ -69,9 +69,8 @@
     "channel": "nightly"
   },
   "tangent": {
-    "description": "/tangent named side-conversations. Internal nightly only; the launcher includes tangent in KIRO_ENABLED_FEATURES and the TUI registers the /tangent command only when enabled.",
+    "description": "/tangent named side-conversations. Generally available; the launcher includes tangent in KIRO_ENABLED_FEATURES and the TUI registers the /tangent command only when enabled. Dial treatment_percent to 0 to kill-switch.",
     "treatment_percent": 100,
-    "segment": "internal",
-    "channel": "nightly"
+    "segment": "all"
   }
 }
