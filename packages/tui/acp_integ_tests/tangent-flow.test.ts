@@ -23,6 +23,27 @@ import { defaultKasModes } from './shared/default-agent';
 // registers the command when the launcher-provided env enables it.
 const TANGENT_ENV = { KIRO_ENABLED_FEATURES: JSON.stringify(['tangent']) };
 
+/**
+ * Send one user turn with a mocked reply so the conversation has messages.
+ * The tangent create path refuses to fork an empty conversation (the
+ * empty-chat guard), matching KAS's own NO_FORK_POINT behavior.
+ */
+async function converseOnce(tc: AcpTestCase, sessionId: string): Promise<void> {
+  tc.mock.on('session/prompt', () => {
+    tc.mock.notify('session/update', {
+      sessionId,
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'ok' },
+      },
+    });
+    return { stopReason: 'end_turn' };
+  });
+  await tc.sendKeys('hello');
+  await tc.pressEnter();
+  await tc.waitForStore((s) => !s.isProcessing, 10000);
+}
+
 describe('/tangent full lifecycle flow', () => {
   let tc: AcpTestCase | null = null;
 
@@ -78,6 +99,7 @@ describe('/tangent full lifecycle flow', () => {
     await tc.launch();
     await tc.mock.awaitConnection();
     await tc.waitForVisibleText('ask a question', 10000);
+    await converseOnce(tc, 'root-session');
 
     // --- Step 1: Create tangent ---
     await tc.sendKeys('/tangent experiment');
@@ -177,6 +199,7 @@ describe('/tangent full lifecycle flow', () => {
     await tc.launch();
     await tc.mock.awaitConnection();
     await tc.waitForVisibleText('ask a question', 10000);
+    await converseOnce(tc, 'root-session');
 
     // /tangent from root should auto-create a tangent, not crash
     await tc.sendKeys('/tangent');

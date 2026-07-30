@@ -9,6 +9,7 @@ import {
   findSessionByTitle,
 } from '../../utils/tangent-tree';
 import type { CommandContext } from '../types';
+import { MessageRole } from '../../types/message-role';
 import type { KasCommand } from '../../kas-commands';
 import type { DispatchOptions } from '../dispatcher';
 
@@ -243,6 +244,17 @@ async function switchOrCreate(
   }
 
   // Create new tangent: fork current session
+  // KAS cannot fork a session with no messages (session/fork throws
+  // NO_FORK_POINT), which surfaces to the user as an opaque "Internal error".
+  // Guard with a friendly hint instead.
+  if (!ctx.getMessages().some((m) => m.role === MessageRole.User)) {
+    ctx.showAlert(
+      'Nothing to branch from yet — send a message first, then /tangent',
+      'warning',
+      4000
+    );
+    return;
+  }
   let newSessionId: string;
   try {
     const response = await ctx.kiro.fork({

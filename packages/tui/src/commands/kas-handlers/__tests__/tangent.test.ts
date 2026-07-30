@@ -221,6 +221,22 @@ describe('handleTangent — error recovery', () => {
     expect((ctx._spies.showAlert as any).mock.calls[0][1]).toBe('error');
   });
 
+  it('hints instead of forking when the conversation is empty (create path)', async () => {
+    // session/fork on a message-less session throws NO_FORK_POINT, which
+    // surfaced to users as an opaque "Internal error". The guard must show a
+    // friendly hint and never call fork.
+    const kiro = mockKiro();
+    const ctx = createMockCommandContext({ kiro: kiro as any, messages: [] });
+
+    await handleTangent(TAN_CMD, 'brand-new', ctx as any);
+
+    expect(kiro.fork).not.toHaveBeenCalled();
+    expect(kiro.loadSession).not.toHaveBeenCalled();
+    const alertCall = (ctx._spies.showAlert as any).mock.calls[0];
+    expect(alertCall[0]).toContain('send a message first');
+    expect(alertCall[1]).toBe('warning');
+  });
+
   it('alerts and does not load when fork returns failure (create path)', async () => {
     const kiro = mockKiro({
       fork: mock(() =>

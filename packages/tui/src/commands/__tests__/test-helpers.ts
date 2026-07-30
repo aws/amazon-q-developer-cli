@@ -10,7 +10,7 @@ export type MockCommandContext = CommandContext & {
 };
 
 export interface CreateMockCtxOptions {
-  /** Messages returned by getMessages(). Default: [] */
+  /** Messages returned by getMessages(). Default: one user message */
   messages?: Array<{ id: string; role: string; content: string }>;
   /** Slash commands available in context. Default: [] */
   slashCommands?: CommandContext['slashCommands'];
@@ -197,7 +197,9 @@ export function createMockCommandContext(
     setActiveSession: spy('setActiveSession') as any,
     sessions: new Map(),
     setMode: spy('setMode') as any,
-    getMessages: mock(() => opts.messages ?? []) as any,
+    getMessages: mock(
+      () => opts.messages ?? [{ id: 'msg-1', role: 'user', content: 'hello' }]
+    ) as any,
     setUserColors: spy('setUserColors') as any,
     setBaseTheme: spy('setBaseTheme') as any,
     setThemePreview: spy('setThemePreview') as any,
