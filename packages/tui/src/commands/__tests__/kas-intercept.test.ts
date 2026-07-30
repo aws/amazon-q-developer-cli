@@ -75,7 +75,7 @@ describe('dispatcher KAS intercept', () => {
       kiro: {
         sessionId: 'cur',
         executeCommand: exec,
-        sendChatSlashCommandTelemetry: telemetry,
+        recordSlashCommandInvocation: telemetry,
       } as any,
     });
     ctx.agentEngine = 'kas';
@@ -83,10 +83,7 @@ describe('dispatcher KAS intercept', () => {
     // KAS handler shells out to listAllSessions; rust backend not touched.
     expect(mockListAllSessions.mock.calls.length).toBe(1);
     expect((exec as any).mock.calls.length).toBe(0);
-    expect(telemetry).toHaveBeenCalledWith({
-      command: '/chat',
-      success: true,
-    });
+    expect(telemetry).not.toHaveBeenCalled();
   });
 
   it("agentEngine='v2' + /chat save: falls through to V2 backend executeCommand", async () => {
@@ -103,7 +100,7 @@ describe('dispatcher KAS intercept', () => {
       kiro: {
         sessionId: 'cur',
         executeCommand: exec,
-        sendChatSlashCommandTelemetry: telemetry,
+        recordSlashCommandInvocation: telemetry,
       } as any,
     });
     ctx.agentEngine = 'v2';
@@ -116,7 +113,7 @@ describe('dispatcher KAS intercept', () => {
     expect(telemetry).not.toHaveBeenCalled();
   });
 
-  it("agentEngine='v2' + /chat new: emits frontend-owned command usage", async () => {
+  it("agentEngine='v2' + /chat new: leaves invocation counting to executeCommand", async () => {
     const telemetry = mock(() => undefined);
     const newSession = mock(() =>
       Promise.resolve({ sessionId: 'v2-session-1' })
@@ -126,16 +123,12 @@ describe('dispatcher KAS intercept', () => {
       kiro: {
         sessionId: 'cur',
         newSession,
-        sendChatSlashCommandTelemetry: telemetry,
+        recordSlashCommandInvocation: telemetry,
       } as any,
     });
     ctx.agentEngine = 'v2';
     await dispatch(CHAT_CMD, 'new hello', ctx);
-    expect(telemetry).toHaveBeenCalledWith({
-      command: '/chat',
-      subcommand: 'new',
-      success: true,
-    });
+    expect(telemetry).not.toHaveBeenCalled();
   });
 
   it("agentEngine='kas' + non-handler command: falls through to existing dispatch", async () => {
@@ -152,7 +145,7 @@ describe('dispatcher KAS intercept', () => {
     expect(ctx.kiro.executeCommand).toHaveBeenCalled();
   });
 
-  it("agentEngine='kas' + local /help command: emits frontend-owned command usage", async () => {
+  it("agentEngine='kas' + local /help command: leaves invocation counting to executeCommand", async () => {
     const telemetry = mock(() => undefined);
     const HELP_CMD: KasCommand = {
       name: KasCommandName.Help,
@@ -162,19 +155,16 @@ describe('dispatcher KAS intercept', () => {
     const ctx = createMockCommandContext({
       kasCommands: [HELP_CMD],
       kiro: {
-        sendChatSlashCommandTelemetry: telemetry,
+        recordSlashCommandInvocation: telemetry,
       } as any,
     });
     ctx.agentEngine = 'kas';
     await dispatch(HELP_CMD, '', ctx);
     expect(ctx._spies.setShowHelpPanel).toHaveBeenCalled();
-    expect(telemetry).toHaveBeenCalledWith({
-      command: '/help',
-      success: true,
-    });
+    expect(telemetry).not.toHaveBeenCalled();
   });
 
-  it("agentEngine='kas' + /prompts skill selection: emits selected category once", async () => {
+  it("agentEngine='kas' + /prompts skill selection: does not count the picker continuation", async () => {
     const telemetry = mock(() => undefined);
     const ctx = createMockCommandContext({
       kasCommands: [PROMPTS_CMD],
@@ -186,7 +176,7 @@ describe('dispatcher KAS intercept', () => {
         },
       ],
       kiro: {
-        sendChatSlashCommandTelemetry: telemetry,
+        recordSlashCommandInvocation: telemetry,
       } as any,
     });
     ctx.agentEngine = 'kas';
@@ -194,11 +184,7 @@ describe('dispatcher KAS intercept', () => {
     await dispatch(PROMPTS_CMD, 'skill:review', ctx);
 
     expect(ctx._spies.sendMessage).toHaveBeenCalledWith('/review');
-    expect(telemetry).toHaveBeenCalledTimes(1);
-    expect(telemetry).toHaveBeenCalledWith({
-      command: '/skill',
-      success: true,
-    });
+    expect(telemetry).not.toHaveBeenCalled();
   });
 
   it("agentEngine='kas' + /context add: handler is invoked and forwards args via typed contextAdd", async () => {

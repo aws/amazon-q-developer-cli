@@ -23,6 +23,7 @@ import type { CommandOption } from './generated/agent';
 
 /** Command metadata for rich UI features */
 export interface CommandMeta {
+  telemetryId?: string;
   optionsMethod?: string;
   inputType?: 'text' | 'selection' | 'multiselect' | 'panel';
   searchable?: boolean;
@@ -83,6 +84,7 @@ export type PromptSource =
 export interface PromptEntry {
   name: string;
   description?: string;
+  telemetryId?: string;
   arguments: Array<{
     name: string;
     description?: string;
@@ -109,6 +111,7 @@ export type SkillSource =
 export interface SkillEntry {
   name: string;
   description?: string;
+  telemetryId?: string;
   source: SkillSource;
 }
 
@@ -121,6 +124,7 @@ export type SteeringSource =
 export interface SteeringEntry {
   name: string;
   description?: string;
+  telemetryId?: string;
   source: SteeringSource;
 }
 

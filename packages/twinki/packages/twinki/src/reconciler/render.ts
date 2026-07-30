@@ -6,6 +6,7 @@ import { Yoga } from '../layout/yoga.js';
 import { ProcessTerminal } from '../terminal/process-terminal.js';
 import type { Terminal } from '../terminal/terminal.js';
 import { TUI } from '../renderer/tui.js';
+import type { RenderCompletedEvent } from '../renderer/tui.js';
 import type { Component } from '../renderer/component.js';
 import { matchesKey } from '../input/keys.js';
 import { TwinkiCtx } from '../hooks/context.js';
@@ -91,6 +92,7 @@ export interface Instance {
 	adjustStaticCursor(removedCount: number): void;
 	/** Returns current render performance metrics */
 	getMetrics(): RenderMetrics;
+	onRenderComplete(cb: (event: RenderCompletedEvent) => void): () => void;
 	/** Register a callback invoked after each throttled resize (dimensions already updated). */
 	onResize(cb: () => void): void;
 	/** Enables or disables terminal mouse reporting at runtime. */
@@ -426,6 +428,9 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 				heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
 				rssMB: Math.round(mem.rss / 1024 / 1024),
 			};
+		},
+		onRenderComplete(cb: (event: RenderCompletedEvent) => void) {
+			return tui.onRenderComplete(cb);
 		},
 		rerender(newElement: React.ReactElement) {
 			reconciler.updateContainer(wrap(newElement), container, null, noop);

@@ -1,19 +1,15 @@
-//! KUTS accepts metrics/traces, not logs. Logs are disabled by default; set
-//! `KIRO_TELEMETRY_OTLP_LOGS_ENABLED=1` only for collectors that expose `/v1/logs`.
+//! Emits a representative metric set through the OTLP/HTTP exporter.
 
 use std::env;
 use std::error::Error;
 use std::sync::Arc;
 
 use kiro_telemetry::{
-    OtelLogsSink,
     OtelMetricsSink,
     OtelPipelineKind,
     TelemetryClient,
     TelemetryConfig,
-    TokenUsage,
     init_otel,
-    log,
     metric,
 };
 use opentelemetry::metrics::MeterProvider as _;
@@ -35,64 +31,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     config_pairs.extend(env::vars());
     let config = TelemetryConfig::from_pairs(config_pairs);
     let providers = init_otel(&config);
-    let include_logs = config.otlp_logs_enabled();
-
     if providers.pipeline_kind() != OtelPipelineKind::OtlpHttp {
         return Err("OTLP exporter did not initialize; check KIRO_TELEMETRY_OTLP_ENDPOINT".into());
     }
 
-    let mut client = TelemetryClient::new(config).with_sink(Arc::new(OtelMetricsSink::new(
+    let client = TelemetryClient::new(config).with_sink(Arc::new(OtelMetricsSink::new(
         providers.meter_provider().meter("kiro-telemetry-local-smoke"),
     )));
-    if include_logs {
-        client = client.with_sink(Arc::new(OtelLogsSink::from_providers(&providers)));
-    }
-
-    client.emit(metric::cli_session_started(
-        metric::OsType::from_name(env::consts::OS),
-        metric::InstallSource::Internal,
-        metric::ClientApplication::ChatCliV3,
-    ))?;
-    client.emit(metric::chat_session_started(
-        metric::Mode::Plan,
-        metric::ClientApplication::ChatCliV3,
-    ))?;
-    client.emit(metric::cli_session_completed(
-        metric::ExitReason::Clean,
-        metric::AgentKind::Kas,
-    ))?;
-    client.emit(metric::feature_used("local_smoke"))?;
-
-    let context = metric::TurnMetricContext::new(Some("claude-4-sonnet"), Some("kas")).app_type(Some("KAS"));
-    let response = metric::ModelResponseMetrics::from_turn_context(context, metric::TurnOutcome::Succeeded, true)
-        .context_file_length(Some(4096))
-        .time_to_first_chunk_ms(Some(250.0))
-        .time_between_chunks_ms(Some(&[32.0, 48.0]))
-        .request_duration_seconds(Some(1.5))
-        .token_usage(TokenUsage {
-            uncached_input_tokens: 1200,
-            cache_read_input_tokens: 300,
-            cache_write_input_tokens: 0,
-            output_tokens: 128,
-        })
-        .emit_user_turn_counter(true);
-
-    for record in metric::model_response_records(response) {
+    let os_type = metric::OsType::from_name(env::consts::OS);
+    let interface = metric::SessionInterface::InteractiveCli;
+    let engine = metric::Engine::V3;
+    let mode = metric::AgentMode::Plan;
+    client.emit(metric::record_run_started(interface, engine, os_type))?;
+    client.emit(metric::record_chat_session_started(interface, mode, engine))?;
+    client.emit(metric::record_model_invocation(engine, Some("claude-4-sonnet")))?;
+    client.emit(metric::record_user_turn(interface, mode, engine))?;
+    if let Some(record) = metric::record_user_turn_duration_seconds(1.5, interface, mode, engine) {
         client.emit(record)?;
     }
-
-    if include_logs {
-        client.emit_log(log::conversation_completed(
-            "local-smoke-session",
-            "local-smoke-conversation",
-            log::CompletionReason::Stop,
-        ))?;
-    }
+    client.emit(metric::record_run_outcome(
+        interface,
+        engine,
+        os_type,
+        metric::RunOutcome::Success,
+    ))?;
 
     providers.force_flush()?;
     providers.shutdown()?;
 
-    let payload_kind = if include_logs { "metrics and logs" } else { "metrics" };
-    println!("sent kiro-telemetry smoke {payload_kind} to {endpoint}");
+    println!("sent kiro-telemetry smoke metrics to {endpoint}");
     Ok(())
 }

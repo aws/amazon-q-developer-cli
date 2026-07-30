@@ -1,4 +1,4 @@
-//! Schema validation for metric and log records.
+//! Schema validation for metric records.
 //!
 //! The CLI no longer enforces a runtime cardinality budget — high-cardinality
 //! enforcement (per-series caps, "_other_" overflow bucketing) is handled by
@@ -20,7 +20,6 @@ use kiro_telemetry_schema::{
 use crate::record::{
     Attribute,
     MetricRecord,
-    TelemetryLogRecord,
 };
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -70,28 +69,6 @@ pub fn validate_metric_record(record: &MetricRecord) -> Result<(), LimitError> {
     }
 
     validate_attributes(registry, metric, &record.name, &record.attributes, true)
-}
-
-/// Validate a log record against the registered schema.
-///
-/// Same shape as [`validate_metric_record`] except the `metric_allowed` flag
-/// is not enforced (log events accept attributes such as
-/// `anonymous_client_id` that are forbidden on metrics).
-pub fn validate_log_record(record: &TelemetryLogRecord) -> Result<(), LimitError> {
-    let registry = registry();
-    let metric = registry
-        .metric(&record.name)
-        .ok_or_else(|| LimitError::UnknownMetric(record.name.clone()))?;
-
-    if metric.kind != MetricKind::LogEvent {
-        return Err(LimitError::WrongMetricKind {
-            metric: record.name.clone(),
-            expected: metric.kind,
-            actual: MetricKind::LogEvent,
-        });
-    }
-
-    validate_attributes(registry, metric, &record.name, &record.attributes, false)
 }
 
 fn validate_attributes(
@@ -153,10 +130,7 @@ fn validate_closed_value(metric_name: &str, attribute: &Attribute, spec: &Attrib
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        MetricRecord,
-        TelemetryLogRecord,
-    };
+    use crate::MetricRecord;
 
     // Raw records are intentional here: these tests exercise the limiter paths
     // that run after construction and cover malformed or overflow-bound inputs.
@@ -177,27 +151,16 @@ mod tests {
     }
 
     #[test]
-    fn rejects_forbidden_metric_attributes() {
+    fn rejects_unregistered_metric_attributes() {
         let err = validate_metric_record(
             &MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("anonymous_client_id", "abc"),
         )
-        .expect_err("high-cardinality user ids are metric-forbidden");
+        .expect_err("unregistered attributes must be rejected");
 
-        assert_eq!(err, LimitError::ForbiddenMetricAttribute {
+        assert_eq!(err, LimitError::UnknownAttribute {
             metric: "kiro_cli_model_invocations_total".to_string(),
             attribute: "anonymous_client_id".to_string()
         });
-    }
-
-    #[test]
-    fn accepts_log_only_attributes_on_log_events() {
-        validate_log_record(
-            &TelemetryLogRecord::new("kiro_cli_user_turn_completed")
-                .with_attribute("anonymous_client_id", "abc")
-                .with_attribute("conversation_id", "conversation-1")
-                .with_attribute("client_application", "chat_cli"),
-        )
-        .expect("log-only attributes are allowed on log events");
     }
 
     #[test]
@@ -205,13 +168,13 @@ mod tests {
         let err = validate_metric_record(
             &MetricRecord::counter("kiro_cli_model_invocations_total", 1)
                 .with_attribute("model", "claude-sonnet-4")
-                .with_attribute("version_full", "1.2.3"),
+                .with_attribute("auth_method", "builder_id"),
         )
         .expect_err("metric-specific attributes are enforced");
 
         assert_eq!(err, LimitError::UnexpectedAttribute {
             metric: "kiro_cli_model_invocations_total".to_string(),
-            attribute: "version_full".to_string()
+            attribute: "auth_method".to_string()
         });
     }
 
@@ -248,17 +211,17 @@ mod tests {
     #[test]
     fn rejects_closed_enum_without_other_bucket() {
         let err = validate_metric_record(
-            &MetricRecord::gauge("active_users_daily", 1.0)
-                .with_attribute("install_method", "brew")
-                .with_attribute("client_application", "chat_cli")
-                .with_attribute("is_internal_amazon", "maybe"),
+            &MetricRecord::counter("kiro_cli_chat_session_started_total", 1)
+                .with_attribute("session_interface", "browser")
+                .with_attribute("agent_mode", "default")
+                .with_attribute("agent_engine", "v2"),
         )
-        .expect_err("boolean-like enums do not silently bucket");
+        .expect_err("closed enums do not silently bucket");
 
         assert_eq!(err, LimitError::InvalidAttributeValue {
-            metric: "active_users_daily".to_string(),
-            attribute: "is_internal_amazon".to_string(),
-            value: "maybe".to_string()
+            metric: "kiro_cli_chat_session_started_total".to_string(),
+            attribute: "session_interface".to_string(),
+            value: "browser".to_string()
         });
     }
 }

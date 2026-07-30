@@ -5457,6 +5457,7 @@ name = "kiro-telemetry"
 version = "0.0.0-dev"
 dependencies = [
  "async-trait",
+ "fd-lock",
  "futures",
  "indexmap 2.14.0",
  "kiro-telemetry-schema",
@@ -5485,15 +5486,18 @@ dependencies = [
  "eyre",
  "futures",
  "kiro-telemetry",
+ "libc",
  "serde",
  "serde_json",
  "strum 0.28.0",
+ "sysinfo",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
  "typeshare",
  "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

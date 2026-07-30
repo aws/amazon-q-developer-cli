@@ -78,6 +78,13 @@ export interface TUIOptions {
   minWidth?: number;
 }
 
+export type RenderKind = 'full' | 'partial';
+
+export interface RenderCompletedEvent {
+  durationMs: number;
+  kind: RenderKind;
+}
+
 /**
  * Terminal User Interface (TUI) - The core rendering engine.
  *
@@ -116,6 +123,9 @@ export class TUI extends Container {
   public perfMaxRenderMs = 0;
   /** Total number of renders performed */
   public perfRenderCount = 0;
+  private readonly renderCompleteListeners = new Set<
+    (event: RenderCompletedEvent) => void
+  >();
   /** Number of lines currently held in the static scrollback buffer. */
   get staticBufferLines(): number {
     return this.accumulatedStaticOutput.length;
@@ -287,6 +297,13 @@ export class TUI extends Container {
    */
   get fullRedraws(): number {
     return this.fullRedrawCount;
+  }
+
+  onRenderComplete(
+    listener: (event: RenderCompletedEvent) => void
+  ): () => void {
+    this.renderCompleteListeners.add(listener);
+    return () => this.renderCompleteListeners.delete(listener);
   }
 
   /**
@@ -852,6 +869,7 @@ export class TUI extends Container {
     this.staticPhysRowsCache = -1;
     this.overlayStack = [];
     this.onResizeCallbacks.length = 0;
+    this.renderCompleteListeners.clear();
     this.inputListeners.clear();
     this.mouseListeners.clear();
     this.pasteListeners.clear();
@@ -1520,11 +1538,14 @@ export class TUI extends Container {
     }
 
     const renderStart = performance.now();
+    const fullRedrawsBefore = this.fullRedrawCount;
+    let completed = false;
     // Mark as internal write so our stdout interceptor ignores any clear
     // sequences emitted by the render strategies (e.g. Strategy 2 CLEAR_ALL).
     this.internalWrite = true;
     try {
       this._doRenderInner();
+      completed = true;
     } finally {
       this.internalWrite = false;
       const elapsed = performance.now() - renderStart;
@@ -1532,6 +1553,19 @@ export class TUI extends Container {
       this.perfTotalRenderMs += elapsed;
       this.perfRenderCount++;
       if (elapsed > this.perfMaxRenderMs) this.perfMaxRenderMs = elapsed;
+      if (completed && this.renderCompleteListeners.size > 0) {
+        const event: RenderCompletedEvent = {
+          durationMs: elapsed,
+          kind: this.fullRedrawCount > fullRedrawsBefore ? 'full' : 'partial',
+        };
+        for (const listener of this.renderCompleteListeners) {
+          try {
+            listener(event);
+          } catch {
+            // Observers cannot interrupt terminal rendering.
+          }
+        }
+      }
       this.debugLog(
         `perf: ${elapsed.toFixed(2)}ms render=#${this.perfRenderCount} fullRedraw=${this.fullRedrawCount} max=${this.perfMaxRenderMs.toFixed(2)}ms`
       );

@@ -10,6 +10,7 @@ use crossterm::{
     style,
 };
 use eyre::Result;
+use kiro_telemetry::metric::McpServerSource;
 use rmcp::model::CallToolRequestParams;
 use schemars::JsonSchema;
 use serde::{
@@ -110,6 +111,9 @@ pub struct CustomToolConfig {
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub source: McpServerSource,
 }
 
 impl CustomToolConfig {
@@ -152,6 +156,7 @@ impl CustomToolConfig {
     pub fn minimal_registry() -> Self {
         Self {
             transport_type: Some("registry".to_string()),
+            source: McpServerSource::Registry,
             ..Default::default()
         }
     }
@@ -447,6 +452,7 @@ impl Default for CustomToolConfig {
             disabled: false,
             disabled_tools: Vec::new(),
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Unknown,
         }
     }
 }
@@ -627,6 +633,7 @@ mod tests {
         assert!(config.env.is_none());
         assert!(!config.disabled);
         assert!(config.disabled_tools.is_empty());
+        assert_eq!(config.source, McpServerSource::Registry);
     }
 
     #[test]
@@ -647,6 +654,19 @@ mod tests {
 
         // The final JSON should be very minimal
         assert_eq!(json, r#"{"type":"registry"}"#);
+    }
+
+    #[test]
+    fn test_mcp_server_source_is_runtime_only() {
+        let config: CustomToolConfig = serde_json::from_str(r#"{"command":"test","source":"workspace"}"#).unwrap();
+
+        assert_eq!(config.source, McpServerSource::Unknown);
+        assert!(!serde_json::to_string(&config).unwrap().contains("source"));
+        assert!(
+            !serde_json::to_string(&schemars::schema_for!(CustomToolConfig))
+                .unwrap()
+                .contains("source")
+        );
     }
 
     #[test]

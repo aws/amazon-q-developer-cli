@@ -18,7 +18,7 @@ use kiro_telemetry::testing::{
     expect_metric,
     expect_metric_attrs,
 };
-use kiro_telemetry_legacy::event_to_otel_metric_records;
+use kiro_telemetry_legacy::event_to_otel_metric_record;
 use ntest::timeout;
 use serial_test::serial;
 use tokio::time::sleep;
@@ -3677,76 +3677,35 @@ async fn effort_command_e2e() {
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
-async fn command_execute_emits_chat_slash_command_telemetry() {
+async fn session_creation_emits_chat_session_started_telemetry_once() {
     let (mut harness, client, session_id, _) =
-        AcpTestHarnessBuilder::new("command_execute_emits_chat_slash_command_telemetry")
+        AcpTestHarnessBuilder::new("session_creation_emits_chat_session_started_telemetry_once")
             .with_trust_all(true)
             .build_with_session()
             .await;
-
-    let result = client
-        .execute_command(
-            session_id.clone(),
-            serde_json::json!({ "command": "effort", "args": { "value": "low" } }),
-        )
-        .await
-        .expect("execute_command for effort failed");
-    assert!(result.success, "effort execute should succeed: {}", result.message);
 
     let events = harness
         .wait_for_telemetry_events(Duration::from_secs(5), |events| {
             events.iter().any(|event| {
                 matches!(
                     &event.ty,
-                    chat_cli_v2::telemetry::core::EventType::ChatSlashCommandExecuted {
-                        command,
-                        subcommand,
-                        result,
-                        ..
-                    } if command == "/effort"
-                        && subcommand.is_none()
-                        && *result == chat_cli_v2::telemetry::TelemetryResult::Succeeded
+                    chat_cli_v2::telemetry::core::EventType::ChatSessionStarted { .. }
                 )
             })
         })
         .await;
-
-    let event = events
-        .iter()
-        .find(|event| {
-            matches!(
-                &event.ty,
-                chat_cli_v2::telemetry::core::EventType::ChatSlashCommandExecuted { command, .. }
-                    if command == "/effort"
-            )
-        })
-        .expect("expected /effort telemetry event");
-
-    let record = event_to_otel_metric_records(event)
-        .into_iter()
-        .next()
-        .expect("slash command metric");
-    expect_metric(
-        std::slice::from_ref(&record),
-        metric::slash_command_invoked_for_engine("/effort", None, metric::ResultKind::Success, metric::Engine::V2),
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    &event.ty,
+                    chat_cli_v2::telemetry::core::EventType::ChatSessionStarted { .. }
+                )
+            })
+            .count(),
+        1
     );
-    expect_metric_attrs(&record, &[
-        ("command", "/effort"),
-        ("subcommand", "none"),
-        ("result", "success"),
-        ("engine", "v2"),
-    ]);
-}
-
-#[tokio::test]
-#[timeout(30000)]
-#[serial]
-async fn prompt_emits_chat_session_started_telemetry_once() {
-    let (mut harness, client, session_id, _) =
-        AcpTestHarnessBuilder::new("prompt_emits_chat_session_started_telemetry_once")
-            .with_trust_all(true)
-            .build_with_session()
-            .await;
 
     harness
         .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/two_simple_responses.jsonl")
@@ -3796,21 +3755,19 @@ async fn prompt_emits_chat_session_started_telemetry_once() {
         .collect::<Vec<_>>();
     assert_eq!(start_events.len(), 1);
 
-    let record = event_to_otel_metric_records(start_events[0])
-        .into_iter()
-        .next()
-        .expect("chat session started metric");
+    let record = event_to_otel_metric_record(start_events[0]).expect("chat session started metric");
     expect_metric(
         std::slice::from_ref(&record),
-        metric::with_engine(
-            metric::chat_session_started(metric::Mode::AcpExternal, metric::ClientApplication::ExternalAcpClient),
+        metric::record_chat_session_started(
+            metric::SessionInterface::ExternalAcp,
+            metric::AgentMode::Custom,
             metric::Engine::V2,
         ),
     );
     expect_metric_attrs(&record, &[
-        ("mode", "acp_external"),
-        ("client_application", "acp_external"),
-        ("engine", "v2"),
+        ("session_interface", "external_acp"),
+        ("agent_mode", "custom"),
+        ("agent_engine", "v2"),
     ]);
 }
 

@@ -11,6 +11,10 @@ use eyre::Result;
 use kiro_telemetry::metric::{
     Engine,
     ExitReason,
+    ProcessRole,
+    RunOutcome,
+    SessionInterface,
+    StartupFailureStage,
 };
 use tracing::debug;
 
@@ -27,15 +31,20 @@ use crate::cli::chat::{
 use crate::database::Database;
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
-use crate::telemetry::v1_process_monitor::V1ProcessMonitor;
 
 const SETUP_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(2);
 const SESSION_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(8);
 const TRACKED_CLEANUP_GRACE_PERIOD: Duration = Duration::from_secs(7);
 
 pub async fn launch(args: ChatArgs, os: &mut Os, telemetry_name: String) -> Result<ExitCode> {
+    let session_interface = if args.no_interactive {
+        SessionInterface::NoninteractiveCli
+    } else {
+        SessionInterface::InteractiveCli
+    };
     emit_cli_invocation_telemetry(&os.telemetry, &os.database, Some(telemetry_name), Engine::V1).await;
-    let mut lifecycle = V1LaunchLifecycle::new(os);
+    os.telemetry.set_process_identity(Engine::V1, ProcessRole::Host);
+    let mut lifecycle = V1LaunchLifecycle::new(os, session_interface);
     let session_ready = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
     let shutdown = {
@@ -282,33 +291,59 @@ trait V1Lifecycle {
 struct V1LaunchLifecycle {
     telemetry: TelemetryThread,
     database: Database,
-    process_monitor: Option<V1ProcessMonitor>,
+    session_interface: SessionInterface,
 }
 
 impl V1LaunchLifecycle {
-    fn new(os: &Os) -> Self {
+    fn new(os: &Os, session_interface: SessionInterface) -> Self {
         Self {
             telemetry: os.telemetry.clone(),
             database: os.database.clone(),
-            process_monitor: None,
+            session_interface,
         }
     }
 }
 
 impl V1Lifecycle for V1LaunchLifecycle {
     async fn start(&mut self) {
-        emit_cli_session_started(&self.telemetry, &self.database, AgentEngine::V1).await;
-        self.process_monitor = V1ProcessMonitor::start(self.telemetry.clone());
+        emit_cli_session_started(&self.telemetry, &self.database, AgentEngine::V1, self.session_interface).await;
     }
 
-    async fn stop_monitor(&mut self) {
-        if let Some(monitor) = self.process_monitor.as_mut() {
-            monitor.stop().await;
-        }
-    }
+    async fn stop_monitor(&mut self) {}
 
     async fn complete(&mut self, exit_reason: ExitReason) {
-        emit_cli_session_completed(&self.telemetry, &self.database, AgentEngine::V1, exit_reason).await;
+        let startup_succeeded = self.telemetry.startup_succeeded();
+        if exit_reason != ExitReason::UserInterrupt
+            && !startup_succeeded
+            && let Err(error) =
+                self.telemetry
+                    .send_startup_failure(self.session_interface, Engine::V1, StartupFailureStage::Unknown)
+        {
+            debug!(%error, "failed to emit V1 startup-failure telemetry");
+        }
+        emit_cli_session_completed(
+            &self.telemetry,
+            &self.database,
+            AgentEngine::V1,
+            self.session_interface,
+            exit_reason,
+            v1_run_outcome(exit_reason, startup_succeeded),
+        )
+        .await;
+    }
+}
+
+fn v1_run_outcome(exit_reason: ExitReason, startup_succeeded: bool) -> RunOutcome {
+    match exit_reason {
+        ExitReason::UserInterrupt => RunOutcome::UserInterrupt,
+        _ if !startup_succeeded => RunOutcome::Failure,
+        ExitReason::Clean => RunOutcome::Success,
+        ExitReason::Crash
+        | ExitReason::Oom
+        | ExitReason::HangTimeout
+        | ExitReason::AuthFailure
+        | ExitReason::UpstreamOutage => RunOutcome::Failure,
+        ExitReason::Other => RunOutcome::Unknown,
     }
 }
 
@@ -580,5 +615,16 @@ mod tests {
         let crashed = V1RunOutcome::from_execution(Err(eyre::eyre!("failed")));
         assert!(crashed.result.is_err());
         assert_eq!(crashed.exit_reason, ExitReason::Crash);
+    }
+
+    #[test]
+    fn classifies_v1_run_outcomes_by_startup_state() {
+        assert_eq!(v1_run_outcome(ExitReason::Crash, false), RunOutcome::Failure);
+        assert_eq!(v1_run_outcome(ExitReason::Crash, true), RunOutcome::Failure);
+        assert_eq!(v1_run_outcome(ExitReason::Clean, true), RunOutcome::Success);
+        assert_eq!(
+            v1_run_outcome(ExitReason::UserInterrupt, false),
+            RunOutcome::UserInterrupt
+        );
     }
 }

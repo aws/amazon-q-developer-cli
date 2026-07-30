@@ -18,14 +18,12 @@ use agent::agent_loop::protocol::{
     LoopEndReason,
     LoopError,
     StreamMetadata,
-    StreamResult,
     UserTurnMetadata,
 };
 use agent::agent_loop::types::{
     MetadataUsage,
     StreamError,
     StreamErrorKind,
-    StreamEvent,
 };
 use agent::protocol::{
     AgentEvent,
@@ -204,6 +202,13 @@ struct SessionState {
     turn_state: TurnState,
     /// In-flight tool use trackers, keyed by tool_use_id.
     tool_trackers: HashMap<String, ToolUseTracker>,
+    context_recovery: Option<ContextRecoveryState>,
+}
+
+#[derive(Default)]
+struct ContextRecoveryState {
+    attempts: u32,
+    final_attempt: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -322,14 +327,10 @@ impl TelemetryObserver {
         let session = self.sessions.entry(session_id.to_string()).or_default();
 
         match event {
-            AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => match &loop_event.kind {
-                AgentLoopEventKind::ResponseStreamEnd { result, metadata } => {
+            AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => {
+                if let AgentLoopEventKind::ResponseStreamEnd { result, metadata } = &loop_event.kind {
                     self.handle_response_stream_end(session_id, result, metadata);
-                },
-                AgentLoopEventKind::Stream(StreamResult::Ok(StreamEvent::RetryWarning(warning))) => {
-                    self.handle_retry_warning(warning);
-                },
-                _ => {},
+                }
             },
             AgentEvent::Update(UpdateEvent::ToolCall(tool_call)) => {
                 let (mcp_server_name, aws_service_name, aws_operation_name) = match &tool_call.tool.kind {
@@ -410,16 +411,24 @@ impl TelemetryObserver {
             AgentEvent::Compaction(agent::protocol::CompactionEvent::Started) => {
                 session.turn_state.add_message_meta_tag(MessageMetaTag::Compact);
             },
+            AgentEvent::Compaction(agent::protocol::CompactionEvent::ContextRecoveryAttempt { final_attempt }) => {
+                let recovery = session.context_recovery.get_or_insert_default();
+                recovery.attempts = recovery.attempts.saturating_add(1);
+                recovery.final_attempt = *final_attempt;
+            },
             _ => {},
         }
     }
 
     fn handle_mcp_event(&self, session_id: &str, event: &agent::mcp::McpServerEvent) {
         match event {
-            agent::mcp::McpServerEvent::Initialized { server_name, .. } => {
+            agent::mcp::McpServerEvent::Initialized {
+                server_name, source, ..
+            } => {
                 self.emit(EventType::McpServerInit {
                     conversation_id: session_id.to_string(),
                     server_name: server_name.clone(),
+                    mcp_server_source: mcp_server_source(*source),
                     init_failure_reason: None,
                     number_of_tools: 0,
                     all_tool_names: None,
@@ -427,10 +436,15 @@ impl TelemetryObserver {
                     all_tools_count: 0,
                 });
             },
-            agent::mcp::McpServerEvent::InitializeError { server_name, error } => {
+            agent::mcp::McpServerEvent::InitializeError {
+                server_name,
+                source,
+                error,
+            } => {
                 self.emit(EventType::McpServerInit {
                     conversation_id: session_id.to_string(),
                     server_name: server_name.clone(),
+                    mcp_server_source: mcp_server_source(*source),
                     init_failure_reason: Some(error.clone()),
                     number_of_tools: 0,
                     all_tool_names: None,
@@ -442,14 +456,6 @@ impl TelemetryObserver {
             | agent::mcp::McpServerEvent::OauthRequest { .. }
             | agent::mcp::McpServerEvent::ToolListChanged { .. } => {},
         }
-    }
-
-    fn handle_retry_warning(&self, warning: &agent::agent_loop::types::RetryWarningEvent) {
-        self.emit(EventType::RetryAttempt {
-            upstream: metric::Upstream::Rts,
-            retry_reason: metric::RetryReason::Other,
-            attempt: warning.attempt,
-        });
     }
 
     fn handle_response_stream_end(
@@ -587,19 +593,22 @@ impl TelemetryObserver {
                 message_id: message_id.clone(),
                 model: self.context.model(),
             });
-            if metadata.request_attempts.is_some_and(|attempts| attempts > 1) {
-                self.emit(EventType::RetryExhausted {
-                    upstream: metric::Upstream::Rts,
-                    final_error_kind: metric::ErrorKind::from_reason(reason.as_deref(), final_status_code),
-                });
-            }
             let session = self.sessions.entry(session_id.to_string()).or_default();
             session.turn_state.last_error = Some(ErrorInfo {
-                reason: reason.unwrap_or_default(),
-                reason_desc: reason_desc.unwrap_or_default(),
+                reason: reason.clone().unwrap_or_default(),
+                reason_desc: reason_desc.clone().unwrap_or_default(),
                 status_code: final_status_code,
             });
         }
+
+        if let Some(total_attempts) = metadata.request_attempts.filter(|attempts| *attempts > 1) {
+            self.emit(EventType::AutomaticRetryCompleted {
+                retry_reason: transport_retry_reason(result, final_status_code),
+                additional_attempts: total_attempts - 1,
+                outcome: transport_retry_outcome(result),
+            });
+        }
+        self.handle_context_recovery_response(session_id, result);
 
         // Accumulate into turn state
         let session = self.sessions.entry(session_id.to_string()).or_default();
@@ -617,6 +626,26 @@ impl TelemetryObserver {
             session.turn_state.has_tool_use = true;
             session.turn_state.follow_up_count += 1;
         }
+    }
+
+    fn handle_context_recovery_response(
+        &mut self,
+        session_id: &str,
+        result: &Result<agent::agent_loop::types::Message, LoopError>,
+    ) {
+        let session = self.sessions.entry(session_id.to_string()).or_default();
+        let Some(recovery) = session.context_recovery.as_ref() else {
+            return;
+        };
+        let Some(outcome) = context_recovery_outcome(result, recovery.final_attempt) else {
+            return;
+        };
+        let attempts = session.context_recovery.take().unwrap().attempts;
+        self.emit(EventType::AutomaticRetryCompleted {
+            retry_reason: metric::RetryReason::ContextRecovery,
+            additional_attempts: attempts,
+            outcome,
+        });
     }
 
     fn handle_end_turn(&mut self, session_id: &str, metadata: &UserTurnMetadata) {
@@ -671,6 +700,7 @@ impl TelemetryObserver {
                 output_tokens: positive_i64(turn.output_tokens),
                 cache_read_input_tokens: positive_i64(turn.cache_read_input_tokens),
                 cache_write_input_tokens: positive_i64(turn.cache_write_input_tokens),
+                model_invocation_count: 0,
                 user_turn_duration_seconds,
                 follow_up_count: turn.follow_up_count,
                 message_meta_tags: turn.message_meta_tags,
@@ -809,12 +839,67 @@ impl TelemetryObserver {
     }
 }
 
+fn mcp_server_source(source: agent::agent_config::McpServerConfigSource) -> metric::McpServerSource {
+    match source {
+        agent::agent_config::McpServerConfigSource::Registry => metric::McpServerSource::Registry,
+        agent::agent_config::McpServerConfigSource::GlobalMcpJson => metric::McpServerSource::Global,
+        agent::agent_config::McpServerConfigSource::WorkspaceMcpJson => metric::McpServerSource::Workspace,
+        agent::agent_config::McpServerConfigSource::AgentConfig => metric::McpServerSource::Agent,
+        agent::agent_config::McpServerConfigSource::AcpInjected => metric::McpServerSource::AcpInjected,
+        agent::agent_config::McpServerConfigSource::Unknown => metric::McpServerSource::Unknown,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Free helpers
 // ---------------------------------------------------------------------------
 
 fn positive_i64(value: i64) -> Option<i64> {
     (value > 0).then_some(value)
+}
+
+fn transport_retry_reason(
+    result: &Result<agent::agent_loop::types::Message, LoopError>,
+    status_code: Option<u16>,
+) -> metric::RetryReason {
+    match result {
+        Err(LoopError::Stream(stream_err)) => match &stream_err.kind {
+            StreamErrorKind::Throttling => metric::RetryReason::Throttled,
+            StreamErrorKind::StreamTimeout { .. } => metric::RetryReason::Timeout,
+            StreamErrorKind::ServiceFailure => metric::RetryReason::ServerError,
+            _ if status_code.is_some_and(|status| status >= 500) => metric::RetryReason::ServerError,
+            _ => metric::RetryReason::Other,
+        },
+        _ => metric::RetryReason::Other,
+    }
+}
+
+fn transport_retry_outcome(result: &Result<agent::agent_loop::types::Message, LoopError>) -> metric::RetryOutcome {
+    match result {
+        Ok(_) => metric::RetryOutcome::Recovered,
+        Err(LoopError::Stream(stream_err)) if matches!(&stream_err.kind, StreamErrorKind::Interrupted) => {
+            metric::RetryOutcome::Cancelled
+        },
+        Err(_) => metric::RetryOutcome::Exhausted,
+    }
+}
+
+fn context_recovery_outcome(
+    result: &Result<agent::agent_loop::types::Message, LoopError>,
+    final_attempt: bool,
+) -> Option<metric::RetryOutcome> {
+    match result {
+        Ok(_) => Some(metric::RetryOutcome::Recovered),
+        Err(LoopError::Stream(stream_err)) if matches!(&stream_err.kind, StreamErrorKind::Interrupted) => {
+            Some(metric::RetryOutcome::Cancelled)
+        },
+        Err(LoopError::Stream(stream_err))
+            if matches!(&stream_err.kind, StreamErrorKind::ContextWindowOverflow) && !final_attempt =>
+        {
+            None
+        },
+        Err(_) => Some(metric::RetryOutcome::Exhausted),
+    }
 }
 
 fn mcp_server_name_from_tool_name(tool_name: &str) -> Option<String> {

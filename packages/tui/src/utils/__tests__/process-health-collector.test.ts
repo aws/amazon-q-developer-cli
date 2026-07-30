@@ -74,6 +74,47 @@ describe('ProcessHealthCollector', () => {
     expect(metricked.length).toBe(1);
   });
 
+  it('uses actual elapsed time for the teardown CPU sample', async () => {
+    const originalCpuUsage = process.cpuUsage;
+    const originalPerformanceNow = performance.now;
+    let nowMs = 1_000;
+    let cpu = { user: 2_000_000, system: 1_000_000 };
+    Object.defineProperty(performance, 'now', {
+      configurable: true,
+      value: () => nowMs,
+    });
+    process.cpuUsage = ((previous?: NodeJS.CpuUsage) =>
+      previous
+        ? {
+            user: cpu.user - previous.user,
+            system: cpu.system - previous.system,
+          }
+        : { ...cpu }) as typeof process.cpuUsage;
+
+    try {
+      const { startProcessHealthCollector } =
+        await import('../process-health-collector');
+      const payloads: any[] = [];
+      const stop = startProcessHealthCollector((payload) =>
+        payloads.push(payload)
+      );
+
+      nowMs += 10_000;
+      cpu = { user: cpu.user + 1_000_000, system: cpu.system + 500_000 };
+      stop();
+
+      expect(payloads).toHaveLength(1);
+      expect(payloads[0].cpuUserPct).toBeCloseTo(10);
+      expect(payloads[0].cpuSystemPct).toBeCloseTo(5);
+    } finally {
+      process.cpuUsage = originalCpuUsage;
+      Object.defineProperty(performance, 'now', {
+        configurable: true,
+        value: originalPerformanceNow,
+      });
+    }
+  });
+
   it('gracefully handles missing twinki instance', async () => {
     // Ensure no twinki instance
     const saved = (globalThis as any).__TWINKI_INSTANCE__;

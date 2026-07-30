@@ -16,16 +16,15 @@ use crate::cardinality::{
     LimitError,
     validate_metric_record,
 };
+use crate::drop_store::ExportDropStore;
 use crate::{
     MetricRecord,
     TelemetryConfig,
-    TelemetryLogRecord,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventClass {
     Metric,
-    Log,
     Audit,
     LegacyEvent,
 }
@@ -34,7 +33,6 @@ impl EventClass {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Metric => "metric",
-            Self::Log => "log",
             Self::Audit => "audit",
             Self::LegacyEvent => "legacy_event",
         }
@@ -60,10 +58,6 @@ pub trait TelemetrySink: Send + Sync {
     }
 
     fn emit(&self, record: &MetricRecord) -> Result<(), TelemetryError>;
-
-    fn emit_log(&self, _record: &TelemetryLogRecord) -> Result<(), TelemetryError> {
-        Ok(())
-    }
 }
 
 pub struct TelemetryClient {
@@ -111,7 +105,14 @@ impl TelemetryClient {
             return Ok(EmitOutcome { emitted: false });
         }
 
-        validate_metric_record(&record)?;
+        if let Err(err) = validate_metric_record(&record) {
+            ExportDropStore::new(self.config.state_dir.clone()).record(
+                "metrics",
+                crate::metric::ExportDropReason::InvalidRecord.as_str(),
+                1,
+            );
+            return Err(err.into());
+        }
 
         // Injected after schema validation: user_id is identity, not a metric
         // dimension — unbounded by nature, so it must never enter the
@@ -122,23 +123,12 @@ impl TelemetryClient {
 
         for sink in &self.sinks {
             if let Err(err) = sink.emit(&record) {
+                ExportDropStore::new(self.config.state_dir.clone()).record(
+                    "metrics",
+                    crate::metric::ExportDropReason::EncodingFailure.as_str(),
+                    1,
+                );
                 tracing::trace!(%err, "telemetry sink failed for metric");
-            }
-        }
-
-        Ok(EmitOutcome { emitted: true })
-    }
-
-    pub fn emit_log(&self, record: TelemetryLogRecord) -> Result<EmitOutcome, TelemetryError> {
-        if !self.config.otlp_logs_enabled() {
-            return Ok(EmitOutcome { emitted: false });
-        }
-
-        crate::cardinality::validate_log_record(&record)?;
-
-        for sink in &self.sinks {
-            if let Err(err) = sink.emit_log(&record) {
-                tracing::trace!(%err, "telemetry sink failed for log");
             }
         }
 
@@ -149,19 +139,11 @@ impl TelemetryClient {
 #[derive(Default)]
 pub struct InMemorySink {
     records: Mutex<Vec<MetricRecord>>,
-    log_records: Mutex<Vec<TelemetryLogRecord>>,
 }
 
 impl InMemorySink {
     pub fn records(&self) -> Vec<MetricRecord> {
         self.records.lock().expect("in-memory sink mutex poisoned").clone()
-    }
-
-    pub fn log_records(&self) -> Vec<TelemetryLogRecord> {
-        self.log_records
-            .lock()
-            .expect("in-memory log sink mutex poisoned")
-            .clone()
     }
 }
 
@@ -173,36 +155,27 @@ impl TelemetrySink for InMemorySink {
             .push(record.clone());
         Ok(())
     }
-
-    fn emit_log(&self, record: &TelemetryLogRecord) -> Result<(), TelemetryError> {
-        self.log_records
-            .lock()
-            .expect("in-memory log sink mutex poisoned")
-            .push(record.clone());
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        MetricRecord,
         OtelMode,
-        log,
+        metric,
     };
 
     #[test]
     fn opt_out_short_circuits_before_sink() {
         let sink = Arc::new(InMemorySink::default());
-        let config =
-            TelemetryConfig::new(false, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(true);
+        let config = TelemetryConfig::new(false, OtelMode::DualWrite, None, std::env::temp_dir());
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let outcome = client
-            .emit(
-                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
-            )
+            .emit(metric::record_model_invocation(
+                metric::Engine::V2,
+                Some("claude-sonnet-4"),
+            ))
             .expect("emit should not fail");
 
         assert!(!outcome.emitted);
@@ -212,14 +185,14 @@ mod tests {
     #[test]
     fn enabled_client_emits_known_record() {
         let sink = Arc::new(InMemorySink::default());
-        let config =
-            TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(true);
+        let config = TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir());
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let outcome = client
-            .emit(
-                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
-            )
+            .emit(metric::record_model_invocation(
+                metric::Engine::V2,
+                Some("claude-sonnet-4"),
+            ))
             .expect("emit should not fail");
 
         assert!(outcome.emitted);
@@ -234,9 +207,10 @@ mod tests {
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         client
-            .emit(
-                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
-            )
+            .emit(metric::record_model_invocation(
+                metric::Engine::V2,
+                Some("claude-sonnet-4"),
+            ))
             .expect("emit should not fail");
 
         let records = sink.records();
@@ -256,9 +230,10 @@ mod tests {
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         client
-            .emit(
-                MetricRecord::counter("kiro_cli_model_invocations_total", 1).with_attribute("model", "claude-sonnet-4"),
-            )
+            .emit(metric::record_model_invocation(
+                metric::Engine::V2,
+                Some("claude-sonnet-4"),
+            ))
             .expect("emit should not fail");
 
         let records = sink.records();
@@ -276,8 +251,8 @@ mod tests {
     #[test]
     fn unknown_metric_returns_schema_error() {
         let sink = Arc::new(InMemorySink::default());
-        let config =
-            TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(true);
+        let state = tempfile::tempdir().unwrap();
+        let config = TelemetryConfig::new(true, OtelMode::DualWrite, None, state.path().to_path_buf());
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
         let err = client
@@ -286,24 +261,9 @@ mod tests {
 
         assert!(matches!(err, TelemetryError::Schema(LimitError::UnknownMetric(_))));
         assert!(sink.records().is_empty());
-    }
-
-    #[test]
-    fn otlp_logs_disabled_short_circuits_before_sink() {
-        let sink = Arc::new(InMemorySink::default());
-        let config =
-            TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir()).with_otlp_logs_enabled(false);
-        let client = TelemetryClient::new(config).with_sink(sink.clone());
-
-        let outcome = client
-            .emit_log(log::conversation_completed(
-                "session-1",
-                "conversation-1",
-                log::CompletionReason::Stop,
-            ))
-            .expect("log emit should not fail");
-
-        assert!(!outcome.emitted);
-        assert!(sink.log_records().is_empty());
+        let drops = ExportDropStore::new(state.path().to_path_buf()).snapshot();
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].key.drop_reason, "invalid_record");
+        assert_eq!(drops[0].count, 1);
     }
 }

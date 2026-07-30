@@ -19,6 +19,8 @@ export type {
   OverlayHandle,
   OverlayOptions,
   OverlayAnchor,
+  RenderCompletedEvent,
+  RenderKind,
 } from './renderer/index.js';
 
 // React integration

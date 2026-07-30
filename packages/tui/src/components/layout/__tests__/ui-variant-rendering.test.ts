@@ -406,7 +406,7 @@ describe('UI variant layout rendering', () => {
     const store = createVariantStore('tui');
     const terminal = new MockTerminal();
     Object.assign(store.getState().kiro, {
-      sendChatSlashCommandTelemetry: () => {},
+      recordSlashCommandInvocation: () => {},
       sendUiModeChanged: () => {},
     });
 
@@ -466,7 +466,7 @@ describe('UI variant layout rendering', () => {
     const store = createVariantStore('tui');
     const terminal = new MockTerminal();
     Object.assign(store.getState().kiro, {
-      sendChatSlashCommandTelemetry: () => {},
+      recordSlashCommandInvocation: () => {},
       sendUiModeChanged: () => {},
     });
 

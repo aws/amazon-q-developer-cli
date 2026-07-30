@@ -5,7 +5,6 @@ import {
   KAS_DEFAULT_AGENT_ID,
 } from '../../constants/agents';
 import { extractRpcErrorMessage } from '../../utils/error-handling';
-import { recordTuiAutonomousMode } from '../../utils/tui-telemetry-observer';
 
 /**
  * `/autonomous on|off` for KAS cloud sessions. Autonomous mode is the bundled
@@ -46,7 +45,6 @@ export async function handleAutonomous(
     }
     const previousAgent = ctx.getCurrentAgent?.()?.name;
     if (!(await switchMode(ctx, KAS_AUTONOMOUS_AGENT_ID))) return;
-    recordTuiAutonomousMode({ event: 'enabled' });
     ctx.addSystemMessage(
       previousAgent && previousAgent !== KAS_DEFAULT_AGENT_ID
         ? 'Autonomous mode on, agent switched to Kiro Default'
@@ -61,7 +59,6 @@ export async function handleAutonomous(
     return;
   }
   if (!(await switchMode(ctx, KAS_DEFAULT_AGENT_ID))) return;
-  recordTuiAutonomousMode({ event: 'disabled' });
   ctx.addSystemMessage('Autonomous mode off', true);
 }
 
@@ -103,7 +100,6 @@ async function switchMode(
     await ctx.kiro.setSessionMode(agentName);
   } catch (err) {
     ctx.setLoadingMessage(null);
-    recordTuiAutonomousMode({ event: 'switch_failed' });
     ctx.showAlert(
       extractRpcErrorMessage(err, 'Failed to switch autonomous mode'),
       'error',

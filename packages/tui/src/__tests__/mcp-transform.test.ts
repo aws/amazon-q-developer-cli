@@ -2,8 +2,10 @@ import { describe, it, expect } from 'bun:test';
 import {
   mcpServerNameFromTitle,
   stripMcpTitlePrefix,
+  toolTelemetryStartFromEvent,
   unwrapKasMcpOutput,
 } from '../acp-client';
+import { AgentEventType } from '../types/agent-events';
 
 describe('stripMcpTitlePrefix', () => {
   it('strips @serverName/ prefix from MCP tool titles', () => {
@@ -44,6 +46,26 @@ describe('mcpServerNameFromTitle', () => {
     expect(mcpServerNameFromTitle('@/empty-server')).toBeUndefined();
     expect(mcpServerNameFromTitle('')).toBeUndefined();
     expect(mcpServerNameFromTitle(undefined)).toBeUndefined();
+  });
+});
+
+describe('toolTelemetryStartFromEvent', () => {
+  it('records pipeline delegation as the canonical built-in tool', () => {
+    expect(
+      toolTelemetryStartFromEvent({
+        type: AgentEventType.ToolCall,
+        id: 'delegate-1',
+        name: 'reviewer',
+        args: {},
+        meta: {
+          kiro: { pipeline: { groupId: 'group-1', stages: [] } },
+        },
+      })
+    ).toEqual({
+      name: 'reviewer',
+      toolOrigin: 'builtin',
+      builtinToolName: 'use_subagent',
+    });
   });
 });
 

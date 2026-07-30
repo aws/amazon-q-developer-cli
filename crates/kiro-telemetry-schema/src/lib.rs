@@ -10,7 +10,6 @@ pub const CLOUDWATCH_LEGACY_NAMESPACE: &str = "Toolkit";
 pub const CLOUDWATCH_OTEL_NAMESPACE: &str = "ChatCLI";
 pub const CLOUDWATCH_PRODUCT_DIMENSION: &str = "product";
 pub const CLOUDWATCH_PRODUCT_VALUE: &str = "CodewhispererTerminal";
-pub const KUTS_EXPORT_OVERSIZE_METRIC: &str = "kiro_cli_kuts_export_oversize_total";
 
 const METRICS_YAML: &str = include_str!("../schema/metrics.yaml");
 const TYPES_YAML: &str = include_str!("../schema/types.yaml");
@@ -22,8 +21,10 @@ pub enum SchemaError {
     Parse(String),
     #[error("metric `{metric}` references unknown attribute `{attribute}`")]
     UnknownAttribute { metric: String, attribute: String },
-    #[error("metric `{metric}` has {count} attributes; maximum is 10")]
-    TooManyAttributes { metric: String, count: usize },
+    #[error("metric `{metric}` has {count} CloudWatch dimensions; maximum is 10")]
+    TooManyCloudWatchDimensions { metric: String, count: usize },
+    #[error("metric `{metric}` declares CloudWatch dimension `{dimension}` without allowing it as an attribute")]
+    CloudWatchDimensionNotAttribute { metric: String, dimension: String },
     #[error("metric `{metric}` uses metric-forbidden attribute `{attribute}`")]
     ForbiddenMetricAttribute { metric: String, attribute: String },
     #[error("metric `{metric}` is missing a temporality")]
@@ -68,10 +69,10 @@ impl Registry {
         let attributes: HashSet<&str> = self.attributes.iter().map(|attr| attr.name.as_str()).collect();
 
         for metric in &self.metrics {
-            if metric.kind.is_metric() && metric.attributes.len() > 10 {
-                return Err(SchemaError::TooManyAttributes {
+            if metric.kind.is_metric() && metric.cloudwatch_dimensions.len() > 10 {
+                return Err(SchemaError::TooManyCloudWatchDimensions {
                     metric: metric.name.clone(),
-                    count: metric.attributes.len(),
+                    count: metric.cloudwatch_dimensions.len(),
                 });
             }
 
@@ -96,6 +97,15 @@ impl Registry {
                     });
                 }
             }
+
+            for dimension in &metric.cloudwatch_dimensions {
+                if !metric.attributes.contains(dimension) {
+                    return Err(SchemaError::CloudWatchDimensionNotAttribute {
+                        metric: metric.name.clone(),
+                        dimension: dimension.clone(),
+                    });
+                }
+            }
         }
 
         Ok(())
@@ -113,11 +123,14 @@ impl Registry {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct MetricSpec {
     pub name: String,
+    pub description: String,
     pub kind: MetricKind,
     pub unit: String,
     pub priority: Priority,
     #[serde(default)]
     pub attributes: Vec<String>,
+    #[serde(default)]
+    pub cloudwatch_dimensions: Vec<String>,
     #[serde(default)]
     pub temporality: Option<Temporality>,
 }
@@ -159,12 +172,11 @@ pub enum Temporality {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct AttributeSpec {
     pub name: String,
+    pub description: String,
     #[serde(default = "default_metric_allowed")]
     pub metric_allowed: bool,
     #[serde(default)]
     pub allowed_values: Vec<String>,
-    #[serde(default)]
-    pub max_distinct: Option<usize>,
 }
 
 impl AttributeSpec {
@@ -174,18 +186,6 @@ impl AttributeSpec {
 
     pub fn has_other_bucket(&self) -> bool {
         self.allowed_values.iter().any(|value| value == "_other_")
-    }
-
-    pub fn can_overflow_to_other(&self) -> bool {
-        self.max_distinct.is_some() || self.has_other_bucket()
-    }
-
-    pub fn cardinality_budget(&self) -> Option<usize> {
-        if self.is_closed_enum() {
-            Some(self.allowed_values.len())
-        } else {
-            self.max_distinct
-        }
     }
 
     pub fn accepts_value(&self, value: &str) -> bool {
@@ -215,10 +215,12 @@ impl LegacyMappings {
                 return Err(SchemaError::DuplicateLegacyEvent(mapping.event_type.clone()));
             }
 
-            if registry.metric(&mapping.otel_metric).is_none() {
+            if let Some(metric) = &mapping.otel_metric
+                && registry.metric(metric).is_none()
+            {
                 return Err(SchemaError::Parse(format!(
                     "legacy mapping for {} references unknown metric {}",
-                    mapping.event_type, mapping.otel_metric
+                    mapping.event_type, metric
                 )));
             }
         }
@@ -245,7 +247,7 @@ impl LegacyMappings {
         self.mappings
             .iter()
             .find(|mapping| mapping.event_type == event_type.as_str())
-            .map(|mapping| mapping.otel_metric.as_str())
+            .and_then(|mapping| mapping.otel_metric.as_deref())
     }
 
     pub fn parity_tolerance_for_event(&self, event_type: LegacyEventType) -> Option<ParityTolerance> {
@@ -260,7 +262,7 @@ impl LegacyMappings {
 pub struct LegacyMapping {
     pub event_type: String,
     pub legacy_metric: String,
-    pub otel_metric: String,
+    pub otel_metric: Option<String>,
     pub parity_tolerance: ParityTolerance,
 }
 
@@ -307,6 +309,7 @@ impl ParityTolerance {
 pub enum LegacyEventType {
     UserLoggedIn,
     AuthFailed,
+    RefreshCredentials,
     CliSubcommandExecuted,
     ChatSlashCommandExecuted,
     ChatStart,
@@ -333,6 +336,7 @@ impl LegacyEventType {
     pub const ALL: &'static [Self] = &[
         Self::UserLoggedIn,
         Self::AuthFailed,
+        Self::RefreshCredentials,
         Self::CliSubcommandExecuted,
         Self::ChatSlashCommandExecuted,
         Self::ChatStart,
@@ -359,6 +363,7 @@ impl LegacyEventType {
         match self {
             Self::UserLoggedIn => "UserLoggedIn",
             Self::AuthFailed => "AuthFailed",
+            Self::RefreshCredentials => "RefreshCredentials",
             Self::CliSubcommandExecuted => "CliSubcommandExecuted",
             Self::ChatSlashCommandExecuted => "ChatSlashCommandExecuted",
             Self::ChatStart => "ChatStart",
@@ -407,13 +412,9 @@ mod tests {
     fn registry_loads_and_validates() {
         let registry = Registry::parse().expect("schema should load");
 
-        assert!(registry.metric("kiro_cli_session_started_total").is_some());
-        assert!(registry.metric("kiro_cli.telemetry.emit.failures").is_some());
-        assert!(
-            registry
-                .attribute("anonymous_client_id")
-                .is_some_and(|attr| !attr.metric_allowed)
-        );
+        assert_eq!(registry.metrics.len(), 46);
+        assert!(registry.metric("kiro_cli_run_started_total").is_some());
+        assert!(registry.metric("kiro_cli_telemetry_export_dropped_total").is_some());
     }
 
     #[test]
@@ -422,6 +423,26 @@ mod tests {
 
         for metric in registry.metrics.iter().filter(|metric| metric.kind.is_metric()) {
             assert!(metric.temporality.is_some(), "{} must declare temporality", metric.name);
+        }
+    }
+
+    #[test]
+    fn catalog_entries_have_descriptions() {
+        let registry = Registry::parse().expect("schema should load");
+
+        for metric in &registry.metrics {
+            assert!(
+                !metric.description.trim().is_empty(),
+                "{} is missing a description",
+                metric.name
+            );
+        }
+        for attribute in &registry.attributes {
+            assert!(
+                !attribute.description.trim().is_empty(),
+                "{} is missing a description",
+                attribute.name
+            );
         }
     }
 
@@ -442,12 +463,12 @@ mod tests {
         ];
 
         for metric in registry.metrics.iter().filter(|metric| metric.kind.is_metric()) {
-            for attribute in &metric.attributes {
+            for dimension in &metric.cloudwatch_dimensions {
                 assert!(
-                    !forbidden.contains(&attribute.as_str()),
-                    "{} must not use high-cardinality attribute {}",
+                    !forbidden.contains(&dimension.as_str()),
+                    "{} must not use high-cardinality CloudWatch dimension {}",
                     metric.name,
-                    attribute
+                    dimension
                 );
             }
         }
@@ -496,10 +517,7 @@ mod tests {
             mappings.parity_tolerance_for_event(LegacyEventType::ModeChanged),
             Some(ParityTolerance::DailyAggregate)
         );
-        assert_eq!(
-            mappings.metric_for_event(LegacyEventType::ModeChanged),
-            Some("kiro_cli_mode_active_total")
-        );
+        assert_eq!(mappings.metric_for_event(LegacyEventType::ModeChanged), None);
         assert_eq!(
             mappings
                 .critical_alarms
@@ -540,69 +558,36 @@ mod tests {
         assert!(!ParityTolerance::HighVolume.is_within_threshold(0.0, 1.0));
     }
 
-    /// Every metric dimension must be bounded — a closed enum or `max_distinct`.
-    /// Per-series cardinality is now enforced by the OTel collector (not the
-    /// client), so we only assert each dimension is *declared* bounded; we do
-    /// not multiply out a client-side worst-case series budget.
     #[test]
-    fn metric_attributes_are_bounded() {
+    fn diagnostic_attributes_are_not_cloudwatch_dimensions() {
+        let registry = Registry::parse().expect("schema should load");
+        let mcp_init = registry
+            .metric("kiro_cli_mcp_server_init_total")
+            .expect("MCP init metric");
+
+        assert!(mcp_init.attributes.iter().any(|attr| attr == "mcp_server_name"));
+        assert!(
+            !mcp_init
+                .cloudwatch_dimensions
+                .iter()
+                .any(|dimension| dimension == "mcp_server_name")
+        );
+    }
+
+    #[test]
+    fn every_client_metric_has_a_version_dimension() {
         let registry = Registry::parse().expect("schema should load");
 
         for metric in registry.metrics.iter().filter(|metric| metric.kind.is_metric()) {
-            for attribute in &metric.attributes {
-                let attr = registry.attribute(attribute).expect("attribute exists");
-                assert!(
-                    attr.cardinality_budget().is_some(),
-                    "{} uses unbounded attribute {}; metric attributes must be closed or max_distinct",
-                    metric.name,
-                    attribute
-                );
-            }
+            assert!(
+                metric
+                    .cloudwatch_dimensions
+                    .iter()
+                    .any(|dimension| dimension == "version_full"),
+                "{} must be selectable by exact client version",
+                metric.name
+            );
         }
-    }
-
-    #[test]
-    fn log_events_can_carry_fact_row_attributes() {
-        let registry = Registry::parse().expect("schema should load");
-        let turn_fact = registry
-            .metric("kiro_cli_user_turn_completed")
-            .expect("turn completion fact row");
-
-        assert_eq!(turn_fact.kind, MetricKind::LogEvent);
-        assert!(turn_fact.attributes.len() > 10);
-    }
-
-    #[test]
-    fn version_full_only_on_allowlisted_metrics() {
-        let registry = Registry::parse().expect("schema should load");
-        let users: HashSet<&str> = registry
-            .metrics
-            .iter()
-            .filter(|metric| metric.kind.is_metric() && metric.attributes.iter().any(|attr| attr == "version_full"))
-            .map(|metric| metric.name.as_str())
-            .collect();
-
-        let allowed: HashSet<&str> = [
-            "client_version_seen",
-            "version_adoption_pct",
-            "kiro_cli_session_started_total",
-            "kiro_cli_user_logged_in_total",
-            "kiro_cli_chat_session_started_total",
-            "kiro_cli_slash_command_invoked_total",
-            "kiro_cli_feature_used_total",
-            "kiro_cli.startup.duration",
-            "kiro_cli.process.memory.rss",
-            "kiro_cli.process.memory.growth_rate",
-            "kiro_cli.process.memory.peak_rss",
-            "kiro_cli.process.memory.heap_used",
-            "kiro_cli.process.cpu.utilization",
-            "kiro_cli.process.fds.open",
-            "kiro_cli.process.threads",
-        ]
-        .into_iter()
-        .collect();
-
-        assert_eq!(users, allowed);
     }
 
     #[test]
@@ -625,12 +610,13 @@ mod tests {
                 "missing legacy mapping for {}",
                 event_type.as_str()
             );
-            assert!(
-                mappings.metric_for_event(*event_type).is_some(),
-                "{} should resolve to an OTel metric",
-                event_type.as_str()
-            );
         }
+
+        assert_eq!(
+            mappings.metric_for_event(LegacyEventType::ChatAddedMessage),
+            Some("kiro_cli_user_turns")
+        );
+        assert_eq!(mappings.metric_for_event(LegacyEventType::ChatEnd), None);
     }
 
     #[test]
@@ -776,14 +762,6 @@ mod tests {
             "MetricRecord::histogram(",
             "MetricRecord::gauge(",
             "MetricBuilder",
-            "kiro_telemetry::log::event",
-            "kiro_telemetry::log::LogBuilder",
-            "use kiro_telemetry::log::event",
-            "use kiro_telemetry::log::{event",
-            "use kiro_telemetry::log::{ event",
-            "log::event(",
-            "LogBuilder",
-            "TelemetryLogRecord::new(",
         ]
     }
 
@@ -798,14 +776,8 @@ mod tests {
 
                 let aliases_telemetry_crate = normalized.contains("use kiro_telemetry as ")
                     || normalized.contains("use kiro_telemetry::{self as ");
-                let aliases_log_module = normalized.contains("kiro_telemetry::log as ")
-                    || (normalized.starts_with("use kiro_telemetry::{") && normalized.contains("log as "));
-                let aliases_log_constructor = normalized.contains("kiro_telemetry::log::event as ")
-                    || normalized.contains("kiro_telemetry::log::LogBuilder as ")
-                    || (normalized.starts_with("use kiro_telemetry::log::{")
-                        && (normalized.contains("event as ") || normalized.contains("LogBuilder as ")));
 
-                (aliases_telemetry_crate || aliases_log_module || aliases_log_constructor).then_some(normalized)
+                aliases_telemetry_crate.then_some(normalized)
             })
             .collect()
     }
@@ -815,14 +787,7 @@ mod tests {
             .lines()
             .filter_map(|line| {
                 let trimmed = line.trim();
-                let uses_literal = [
-                    "MetricRecord {",
-                    "MetricRecord{",
-                    "TelemetryLogRecord {",
-                    "TelemetryLogRecord{",
-                ]
-                .iter()
-                .any(|literal| {
+                let uses_literal = ["MetricRecord {", "MetricRecord{"].iter().any(|literal| {
                     trimmed.starts_with(literal)
                         || trimmed.contains(&format!("= {literal}"))
                         || trimmed.contains(&format!("return {literal}"))
@@ -841,14 +806,11 @@ mod tests {
         let aliases = raw_telemetry_constructor_aliases(
             r#"
 use kiro_telemetry as telemetry;
-use kiro_telemetry::log as ktlog;
-use kiro_telemetry::{metric, log as telemetry_log};
-use kiro_telemetry::log::{event as raw_event, CompletionReason};
 use kiro_telemetry::metric as typed_metric;
 "#,
         );
 
-        assert_eq!(aliases.len(), 4);
+        assert_eq!(aliases.len(), 1);
     }
 
     #[test]

@@ -29,6 +29,7 @@ import {
   recordTuiCloudAttach,
   recordTuiCloudRepoAttach,
 } from '../utils/tui-telemetry-observer';
+import { getCliVersion } from '../utils/version';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
 import type {
   AgentScope,
@@ -351,6 +352,7 @@ import {
   executeCommand,
   executeCommandWithArg,
   isKnownSlashCommandToken,
+  recordSlashCommandInvocation,
   type CommandContext,
 } from '../commands/index.js';
 import {
@@ -2461,6 +2463,18 @@ function liteGateCommands(state: AppState): readonly AvailableCommand[] {
     : state.slashCommands;
 }
 
+function recordBusySlashCommandInvocation(
+  name: string,
+  state: AppState & AppActions
+): void {
+  const command = liteGateCommands(state).find(
+    (candidate) => candidate.name.toLowerCase() === name
+  );
+  if (command) {
+    recordSlashCommandInvocation(command, { kiro: state.kiro });
+  }
+}
+
 /** Build a CommandContext from the current AppState + setter. */
 export function buildCommandContext(
   state: AppState & AppActions,
@@ -2705,6 +2719,7 @@ export function buildCommandContext(
 
 export const createAppStore = (props: AppStoreProps) => {
   const agentEngine: AgentEngine = props.agentEngine ?? resolveAgentEngine();
+  const telemetryVersion = getCliVersion();
   const initialInterruptMode = parseInterruptMode(
     readStringSetting(
       Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
@@ -3223,12 +3238,17 @@ export const createAppStore = (props: AppStoreProps) => {
         // One count per attached file; size buckets are the early-warning
         // signal for relay payload-cap rejections before users hit them.
         for (const img of cloudAttachments.images) {
-          recordTuiCloudAttach({ kind: 'image', sizeBytes: img.sizeBytes });
+          recordTuiCloudAttach({
+            kind: 'image',
+            sizeBytes: img.sizeBytes,
+            version: telemetryVersion,
+          });
         }
         for (const res of cloudAttachments.resources) {
           recordTuiCloudAttach({
             kind: 'text',
             sizeBytes: Buffer.byteLength(res.text, 'utf8'),
+            version: telemetryVersion,
           });
         }
         for (const blob of cloudAttachments.blobs) {
@@ -3240,6 +3260,7 @@ export const createAppStore = (props: AppStoreProps) => {
             // Exact decoded byte count (padding-aware) so buckets reflect
             // the on-disk size users reason about, not the encoded size.
             sizeBytes: Buffer.byteLength(blob.blob, 'base64'),
+            version: telemetryVersion,
           });
         }
         const allImagesWithCloud = [
@@ -7451,7 +7472,10 @@ export const createAppStore = (props: AppStoreProps) => {
       const deduped = dedupeRepoResources(resources);
       set({ showRepoPicker: show, repoPickerResources: deduped });
       if (show) {
-        recordTuiCloudRepoAttach({ event: 'opened' });
+        recordTuiCloudRepoAttach({
+          event: 'opened',
+          version: telemetryVersion,
+        });
         // Zero-cost branch resolution: the picker already fetched these
         // resources (each carries an optional defaultBranch), so if the
         // session-bound repo is among them, light up the footer's branch
@@ -7489,6 +7513,7 @@ export const createAppStore = (props: AppStoreProps) => {
       recordTuiCloudRepoAttach({
         event: 'submitted',
         repoCount: selected.length,
+        version: telemetryVersion,
       });
       // One turn settles the workspace to the selected set: clone the newly
       // checked, remove the unchecked. Unchanged selection fires no turn.
@@ -8313,6 +8338,7 @@ export const createAppStore = (props: AppStoreProps) => {
         const normalized = lower.replace(/\s+/g, ' ');
 
         if (lower === '/quit' || lower === '/exit') {
+          recordBusySlashCommandInvocation(lower, state);
           state.clearInput();
           if (state.kiro.isCloudSessionActive?.()) {
             // Cloud: the keep-running/turn-off prompt must ALWAYS appear, even
@@ -8331,6 +8357,7 @@ export const createAppStore = (props: AppStoreProps) => {
         // the in-flight turn — so it must work mid-turn instead of queueing
         // behind a turn it doesn't interrupt.
         if (lower === '/disconnect' && state.kiro.isCloudSessionActive?.()) {
+          recordBusySlashCommandInvocation('/disconnect', state);
           state.clearInput();
           emitCloudDetachNoticeOnce(state.kiro.sessionId);
           state.kiro.close();
@@ -8365,6 +8392,7 @@ export const createAppStore = (props: AppStoreProps) => {
         };
 
         if (normalized === '/goal clear') {
+          recordBusySlashCommandInvocation('/goal', state);
           // Required escape hatch: user must be able to abort runaway goal loops.
           // Update TUI optimistically; backend notification will reconcile on next event.
           await runWhileProcessing('clear', 'Failed to clear goal', () =>
@@ -8373,6 +8401,7 @@ export const createAppStore = (props: AppStoreProps) => {
           return;
         }
         if (normalized === '/goal status') {
+          recordBusySlashCommandInvocation('/goal', state);
           // Read-only; no UI side effects.
           await runWhileProcessing('status', 'Failed to read goal status');
           return;

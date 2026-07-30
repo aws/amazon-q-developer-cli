@@ -27,6 +27,7 @@ use crossterm::{
     style,
 };
 use eyre::bail;
+use kiro_telemetry::metric::McpServerSource;
 pub use mcp_config::McpServerConfig;
 pub use root_command_args::*;
 use schemars::{
@@ -522,6 +523,13 @@ impl Agent {
         }
 
         let Self { mcp_servers, .. } = self;
+        for server in mcp_servers
+            .mcp_servers
+            .values_mut()
+            .filter(|server| !server.is_from_legacy_mcp_json)
+        {
+            set_mcp_server_source(server, McpServerSource::Agent);
+        }
 
         if let (true, Some(legacy_mcp_config)) = (self.include_mcp_json, legacy_mcp_config) {
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
@@ -1551,6 +1559,20 @@ fn set_agent_mcp_config(agent: &mut Agent, mcp_config: Option<McpServerConfig>) 
     }
 }
 
+fn set_mcp_server_sources(config: &mut McpServerConfig, source: McpServerSource) {
+    for server in config.mcp_servers.values_mut() {
+        set_mcp_server_source(server, source);
+    }
+}
+
+fn set_mcp_server_source(server: &mut crate::cli::chat::tools::custom_tool::CustomToolConfig, source: McpServerSource) {
+    server.source = if server.is_registry_type() {
+        McpServerSource::Registry
+    } else {
+        source
+    };
+}
+
 /// Loads legacy mcp config by combining workspace and global config.
 /// In case of a server naming conflict, the workspace config is prioritized.
 use std::sync::atomic::{
@@ -1568,7 +1590,10 @@ async fn load_legacy_mcp_config(os: &Os, output: &mut impl Write) -> eyre::Resul
 
     let global_mcp_path = resolver.global().mcp_config()?;
     let global_mcp_config = match McpServerConfig::load_from_file(os, &global_mcp_path).await {
-        Ok(config) => Some(config),
+        Ok(mut config) => {
+            set_mcp_server_sources(&mut config, McpServerSource::Global);
+            Some(config)
+        },
         Err(McpConfigError::Io(e)) => {
             tracing::debug!("Global MCP config not found: {}", e);
             None
@@ -1600,7 +1625,10 @@ async fn load_legacy_mcp_config(os: &Os, output: &mut impl Write) -> eyre::Resul
 
     let workspace_mcp_path = resolver.workspace().mcp_config()?;
     let workspace_mcp_config = match McpServerConfig::load_from_file(os, &workspace_mcp_path).await {
-        Ok(config) => Some(config),
+        Ok(mut config) => {
+            set_mcp_server_sources(&mut config, McpServerSource::Workspace);
+            Some(config)
+        },
         Err(McpConfigError::Io(e)) => {
             tracing::debug!("Workspace MCP config not found: {}", e);
             None
@@ -1708,6 +1736,7 @@ mod tests {
 
     use super::*;
     use crate::cli::agent::hook::Source;
+    use crate::cli::chat::tools::custom_tool::CustomToolConfig;
     const INPUT: &str = r#"
             {
               "name": "some_agent",
@@ -2540,8 +2569,6 @@ mod tests {
     fn test_set_agent_mcp_config() {
         use std::collections::HashMap;
 
-        use crate::cli::chat::tools::custom_tool::CustomToolConfig;
-
         let mut agent = Agent::default();
         let mut config = McpServerConfig::default();
 
@@ -2561,6 +2588,7 @@ mod tests {
                 disabled: false,
                 disabled_tools: vec![],
                 is_from_legacy_mcp_json: false,
+                source: McpServerSource::Workspace,
             });
         config
             .mcp_servers
@@ -2577,6 +2605,7 @@ mod tests {
                 disabled: false,
                 disabled_tools: vec![],
                 is_from_legacy_mcp_json: false,
+                source: McpServerSource::Global,
             });
 
         set_agent_mcp_config(&mut agent, Some(config));
@@ -2589,6 +2618,53 @@ mod tests {
         let global_server = &agent.mcp_servers.mcp_servers["global_server"];
         assert_eq!(workspace_server.args, vec!["workspace".to_string()]);
         assert_eq!(global_server.args, vec!["global".to_string()]);
+        assert_eq!(workspace_server.source, McpServerSource::Workspace);
+        assert_eq!(global_server.source, McpServerSource::Global);
+    }
+
+    #[test]
+    fn test_mcp_server_sources_preserve_origin_and_tag_registry() {
+        let mut config = McpServerConfig::default();
+        config
+            .mcp_servers
+            .insert("direct".to_string(), CustomToolConfig::default());
+        config
+            .mcp_servers
+            .insert("registry".to_string(), CustomToolConfig::minimal_registry());
+
+        set_mcp_server_sources(&mut config, McpServerSource::Agent);
+
+        assert_eq!(config.mcp_servers["direct"].source, McpServerSource::Agent);
+        assert_eq!(config.mcp_servers["registry"].source, McpServerSource::Registry);
+
+        set_mcp_server_sources(&mut config, McpServerSource::Global);
+        assert_eq!(config.mcp_servers["direct"].source, McpServerSource::Global);
+        assert_eq!(config.mcp_servers["registry"].source, McpServerSource::Registry);
+
+        set_mcp_server_sources(&mut config, McpServerSource::Workspace);
+        assert_eq!(config.mcp_servers["direct"].source, McpServerSource::Workspace);
+        assert_eq!(config.mcp_servers["registry"].source, McpServerSource::Registry);
+    }
+
+    #[test]
+    fn test_thaw_preserves_merged_mcp_server_source() {
+        let mut agent = Agent::default();
+        agent
+            .mcp_servers
+            .mcp_servers
+            .insert("direct".to_string(), CustomToolConfig::default());
+
+        let mut legacy = McpServerConfig::default();
+        let mut global_server = CustomToolConfig::default();
+        global_server.source = McpServerSource::Global;
+        legacy.mcp_servers.insert("global".to_string(), global_server);
+
+        agent
+            .thaw(Path::new("agent.json"), Some(&legacy), &mut Vec::new())
+            .unwrap();
+
+        assert_eq!(agent.mcp_servers.mcp_servers["direct"].source, McpServerSource::Agent);
+        assert_eq!(agent.mcp_servers.mcp_servers["global"].source, McpServerSource::Global);
     }
 
     #[test]

@@ -28,12 +28,17 @@ describe('executeCommand', () => {
     const ctx = createMockCommandContext({ slashCommands: [cmd] });
     const result = await executeCommand('/clear', ctx);
     expect(result).toBe(true);
+    expect(ctx.kiro.recordSlashCommandInvocation).toHaveBeenCalledTimes(1);
+    expect(ctx.kiro.recordSlashCommandInvocation).toHaveBeenCalledWith(
+      '/clear'
+    );
   });
 
   it('returns false for unknown slash commands', async () => {
     const ctx = createMockCommandContext({ slashCommands: [] });
     const result = await executeCommand('/nonexistent', ctx);
     expect(result).toBe(false);
+    expect(ctx.kiro.recordSlashCommandInvocation).not.toHaveBeenCalled();
   });
 
   it('matches by prefix (e.g. /cl matches /clear)', async () => {
@@ -41,6 +46,9 @@ describe('executeCommand', () => {
     const ctx = createMockCommandContext({ slashCommands: [cmd] });
     const result = await executeCommand('/cl', ctx);
     expect(result).toBe(true);
+    expect(ctx.kiro.recordSlashCommandInvocation).toHaveBeenCalledWith(
+      '/clear'
+    );
     // Should have dispatched the clear command (calls clearMessages effect)
     expect(ctx._spies.clearMessages!).toHaveBeenCalled();
   });
@@ -128,6 +136,35 @@ describe('executeCommand', () => {
     // clearMessages should NOT have been called (that's the /clear effect)
     expect(ctx._spies.clearMessages!.mock.calls.length).toBe(0);
   });
+
+  it('uses an agent-advertised telemetry id as the stable command identity', async () => {
+    const cmd = makeCmd({
+      name: '/renamed-workflow-command',
+      meta: { type: 'prompt', telemetryId: 'workflow-run' },
+    });
+    const ctx = createMockCommandContext({ slashCommands: [cmd] });
+
+    expect(await executeCommand('/renamed-workflow-command', ctx)).toBe(true);
+
+    expect(ctx.kiro.recordSlashCommandInvocation).toHaveBeenCalledTimes(1);
+    expect(ctx.kiro.recordSlashCommandInvocation).toHaveBeenCalledWith(
+      '/workflow-run'
+    );
+  });
+
+  it('buckets user-defined commands without a first-party telemetry id', async () => {
+    const cmd = makeCmd({
+      name: '/my-workspace-command',
+      meta: { type: 'steering' },
+    });
+    const ctx = createMockCommandContext({ slashCommands: [cmd] });
+
+    expect(await executeCommand('/my-workspace-command', ctx)).toBe(true);
+
+    expect(ctx.kiro.recordSlashCommandInvocation).toHaveBeenCalledWith(
+      '/steering'
+    );
+  });
 });
 
 describe('executeCommandWithArg', () => {
@@ -143,6 +180,7 @@ describe('executeCommandWithArg', () => {
     await executeCommandWithArg('help', 'topic', ctx);
 
     expect(ctx.kiro.executeCommand).toHaveBeenCalled();
+    expect(ctx.kiro.recordSlashCommandInvocation).not.toHaveBeenCalled();
   });
 
   it('shows alert for unknown command', async () => {

@@ -90,11 +90,13 @@ describe('selectVisibleSlashCommands', () => {
         source: { kind: 'agent-config', path: '/path/to/sop.md' },
       },
     ]);
-    store
-      .getState()
-      .setSteering([
-        { name: 'project-context', source: { kind: 'workspace' } },
-      ]);
+    store.getState().setSteering([
+      {
+        name: 'project-context',
+        telemetryId: 'workflow-run',
+        source: { kind: 'workspace' },
+      },
+    ]);
     const visible = selectVisibleSlashCommands(store.getState());
 
     const prompt = visible.find((c) => c.name === '/research');
@@ -113,6 +115,7 @@ describe('selectVisibleSlashCommands', () => {
 
     const steering = visible.find((c) => c.name === '/project-context');
     expect(steering?.meta?.type).toBe('steering');
+    expect(steering?.meta?.telemetryId).toBe('workflow-run');
   });
 
   it('does NOT duplicate prompts/skills/steering into AppState.slashCommands', () => {

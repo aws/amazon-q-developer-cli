@@ -49,6 +49,7 @@ function promptToSlashCommand(prompt: PromptEntry): AvailableCommand {
     description: prompt.description || `Prompt from ${groupLabel}`,
     meta: {
       type: 'prompt',
+      ...(prompt.telemetryId ? { telemetryId: prompt.telemetryId } : {}),
       arguments: prompt.arguments,
       source: prompt.source,
     },
@@ -62,6 +63,7 @@ function skillToSlashCommand(skill: SkillEntry): AvailableCommand {
       skill.description || `Skill from ${skill.source.kind.replace('-', ' ')}`,
     meta: {
       type: 'skill',
+      ...(skill.telemetryId ? { telemetryId: skill.telemetryId } : {}),
       source: skill.source,
     },
   };
@@ -73,6 +75,7 @@ function steeringToSlashCommand(steering: SteeringEntry): AvailableCommand {
     description: steering.description || `Steering (${steering.source.kind})`,
     meta: {
       type: 'steering',
+      ...(steering.telemetryId ? { telemetryId: steering.telemetryId } : {}),
       source: steering.source,
     },
   };

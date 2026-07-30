@@ -1,5 +1,5 @@
-//! Emits one record for every catalog metric and log_event that has a typed
-//! constructor, then flushes through the OTLP/HTTP exporter. Paired with
+//! Emits one record for every catalog metric that has a typed constructor,
+//! then flushes through the OTLP/HTTP exporter. Paired with
 //! `dev/telemetry/verify-catalog.sh`, this proves the full metric catalog reaches
 //! the local collector -> Prometheus stack.
 //!
@@ -16,12 +16,8 @@ use std::env;
 use std::error::Error;
 use std::sync::Arc;
 
-use kiro_telemetry::testing::{
-    catalog_log_records,
-    catalog_metric_records,
-};
+use kiro_telemetry::testing::catalog_metric_records;
 use kiro_telemetry::{
-    OtelLogsSink,
     OtelMetricsSink,
     OtelPipelineKind,
     TelemetryClient,
@@ -52,25 +48,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("OTLP exporter did not initialize; check KIRO_TELEMETRY_OTLP_ENDPOINT".into());
     }
 
-    let client = TelemetryClient::new(config)
-        .with_sink(Arc::new(OtelMetricsSink::new(
-            providers.meter_provider().meter("kiro-telemetry-catalog-smoke"),
-        )))
-        .with_sink(Arc::new(OtelLogsSink::from_providers(&providers)));
+    let client = TelemetryClient::new(config).with_sink(Arc::new(OtelMetricsSink::new(
+        providers.meter_provider().meter("kiro-telemetry-catalog-smoke"),
+    )));
 
     let metrics = catalog_metric_records();
-    let logs = catalog_log_records();
-    let (metric_count, log_count) = (metrics.len(), logs.len());
+    let metric_count = metrics.len();
     for record in metrics {
         client.emit(record)?;
-    }
-    for record in logs {
-        client.emit_log(record)?;
     }
 
     providers.force_flush()?;
     providers.shutdown()?;
 
-    println!("emitted {metric_count} catalog metric records + {log_count} logs to {endpoint}");
+    println!("emitted {metric_count} catalog metric records to {endpoint}");
     Ok(())
 }

@@ -1,317 +1,232 @@
 attributes:
-  - name: product
-    allowed_values: [CodewhispererTerminal]
   - name: version_full
-    max_distinct: 200
-  - name: from_version
-    max_distinct: 200
-  - name: to_version
-    max_distinct: 200
+    description: Full CLI version, including nightly or prerelease suffixes.
+  - name: session_interface
+    description: Interface through which the agent session is used.
+    allowed_values: [interactive_cli, noninteractive_cli, external_acp]
+  - name: agent_engine
+    description: Agent runtime responsible for the measured operation.
+    allowed_values: [v1, v2, v3, unknown]
   - name: os_type
-    allowed_values: [linux, macos, windows, _other_]
-  - name: host_arch
-    allowed_values: [x86_64, aarch64, arm64, _other_]
-  - name: install_source
-    allowed_values: [brew, download, internal, cargo, unknown, _other_]
-  - name: install_method
-    allowed_values: [brew, download, internal, cargo, unknown, _other_]
-  - name: client_application
-    allowed_values: [chat_cli, chat_cli_v2, chat_cli_v3, acp_external, _other_]
-  - name: credential_kind
-    allowed_values: [builder_id, idc, iam, unknown]
-  - name: is_internal_amazon
-    allowed_values: ["true", "false"]
-  - name: release_channel
-    allowed_values: [stable, beta, _other_]
-  - name: staleness_bucket
-    allowed_values: ["<30d", "30-60", "60-90", ">90", _other_]
-  - name: upgrade_trigger
-    allowed_values: [auto, prompted, manual, _other_]
-  - name: mode
-    max_distinct: 40
-  - name: ui_mode
-    allowed_values: [tui, lite, unset, _other_]
-  - name: ui_mode_source
-    allowed_values: [env_var, setting, default, _other_]
-  - name: ui_mode_default
-    allowed_values: [tui, lite, unset, _other_]
-  - name: ui_mode_from
-    allowed_values: [tui, lite, unset, _other_]
-  - name: ui_mode_to
-    allowed_values: [tui, lite, unset, _other_]
-  - name: ui_mode_change_source
-    allowed_values: [shift_tab, slash_command, _other_]
-  - name: ui_mode_default_from
-    allowed_values: [tui, lite, unset, _other_]
-  - name: ui_mode_default_to
-    allowed_values: [tui, lite, unset, _other_]
-  - name: command
-    max_distinct: 64
-  - name: subcommand
-    max_distinct: 64
-  - name: feature
-    max_distinct: 64
-  - name: feature_name
-    metric_allowed: false
-  - name: trigger
-    metric_allowed: false
-  - name: tool_origin
-    allowed_values: [builtin, mcp, custom, subagent_delegate, aws_api, _other_]
-  - name: builtin_tool_name
-    max_distinct: 64
-  - name: tool_name
-    metric_allowed: false
-  - name: mcp_server_name
-    max_distinct: 64
-  - name: mcp_server_class
-    allowed_values: [builtin_fs, builtin_code, builtin_knowledge, official_third_party, user_defined, internal_amazon, _other_]
-  - name: outcome
-    allowed_values: [success, error, denied, cancelled, recovered, still_empty, timeout, auth, protocol, other, _other_]
-  - name: result
-    allowed_values: [success, failed, cancelled, _other_]
-  - name: is_success
-    allowed_values: ["true", "false"]
-  - name: is_subagent
-    allowed_values: ["true", "false"]
-  - name: model
-    max_distinct: 10
-  - name: prompt_size_bucket
-    allowed_values: [small, medium, large, xlarge, _other_]
-  - name: tools_enabled
-    allowed_values: ["true", "false"]
-  - name: completion_reason
-    allowed_values: [stop, tool_use, max_tokens, error, cancelled, _other_]
-  - name: operation
-    allowed_values: [stream, invoke, refresh, login, logout, _other_]
-  - name: chat_conversation_type
-    allowed_values: [interactive, oneshot, subagent, acp, _other_]
-  - name: exit_reason
-    allowed_values: [clean, user_interrupt, crash, oom, hang_timeout, auth_failure, upstream_outage, _other_]
-  - name: agent_kind
-    allowed_values: [v1, v2, kas, _other_]
-  - name: engine
-    allowed_values: [v1, v2, v3, _other_]
-  - name: cloud_event
-    allowed_values: [started, start_failed, reattached, ready, provision_failed, detached, turned_off, fell_back_local, _other_]
-  - name: autonomous_event
-    allowed_values: [enabled, disabled, switch_failed, reverted, _other_]
-  - name: cloud_op
-    allowed_values: [session_new, session_load, turn_stream, source_providers_list, source_providers_resources, list_sessions, delete_session, _other_]
-  - name: cloud_error_kind
-    allowed_values: [throttling, auth, version_skew, not_found, network, timeout, stream_truncated, server_error, other, _other_]
-  - name: attach_kind
-    allowed_values: [image, document, text, binary, _other_]
-  - name: attach_size_bucket
-    allowed_values: [under_64k, under_1m, under_5m, over_5m, _other_]
-  - name: repo_attach_event
-    allowed_values: [opened, submitted, _other_]
-  - name: repo_count_bucket
-    allowed_values: [none, "1", "2", "3_5", "6_plus", _other_]
-  - name: session_start_kind
-    allowed_values: [new, resumed, _other_]
+    description: Operating-system family running the CLI process.
+    allowed_values: [linux, macos, windows, unknown]
+  - name: auth_method
+    description: Identity provider used by an explicit login flow.
+    allowed_values: [builder_id, identity_center, social, external_idp, unknown]
   - name: auth_flow
-    allowed_values: [device, pkce, _other_]
-  - name: profile_source
-    allowed_values: [user, auth, update, reload]
-  - name: profile_region
-    allowed_values: [commercial, govcloud, china, _other_]
-  - name: sso_region
-    allowed_values: [commercial, govcloud, china, _other_]
-  - name: contribution_source
-    allowed_values: [agent, user]
-  - name: contribution_change
-    allowed_values: [added, removed]
-  - name: count_kind
-    allowed_values: [available, loaded, builtin, mcp, agents_loaded, agents_failed, migrated]
-  - name: content_role
-    allowed_values: [context, assistant, input, output]
-  - name: message_tag
-    allowed_values: [compact, generate_agent, tangent_mode]
-  - name: message_kind
-    allowed_values: [not_tool_use, tool_use, _other_]
-  - name: is_accepted
-    allowed_values: ["true", "false"]
-  - name: is_trusted
-    allowed_values: ["true", "false"]
-  - name: is_valid
-    allowed_values: ["true", "false"]
-  - name: is_custom_tool
-    allowed_values: ["true", "false"]
-  - name: voice_backend
-    allowed_values: [local_whisper, remote_server, _other_]
-  - name: voice_input_method
-    allowed_values: [slash_command, ptt, continuous_voice, standalone, _other_]
-  - name: voice_model_size
-    allowed_values: [tiny, base, small, medium, large, _other_]
-  - name: duration_stage
-    allowed_values: [tool_call, tool_turn, recording, transcription]
-  - name: auto_submit
-    allowed_values: ["true", "false"]
-  - name: migration_executed
-    allowed_values: ["true", "false"]
+    description: Protocol used to complete an explicit login flow.
+    allowed_values: [pkce, device_code, not_applicable, unknown]
+  - name: agent_mode
+    description: Product-defined agent mode active for the session or turn.
+    allowed_values: [default, plan, spec, autonomous, custom]
+  - name: cloud_event
+    description: Lifecycle transition observed for a cloud development session.
+    allowed_values: [created, create_failed, ready, provision_failed, reattached, detached, turned_off, fell_back_local, unknown]
+  - name: autonomous_event
+    description: Terminal result of an autonomous-mode transition.
+    allowed_values: [enabled, disabled, switch_failed, reverted, unknown]
+  - name: cloud_op
+    description: Cloud operation that produced a client-observed failure.
+    allowed_values: [session_new, session_load, turn_stream, source_providers_list, source_providers_resources, list_sessions, delete_session, unknown]
+  - name: cloud_error_kind
+    description: Bounded client-observed class of a cloud operation failure.
+    allowed_values: [throttling, auth, version_skew, not_found, network, timeout, stream_truncated, server_error, other, unknown]
+  - name: attach_kind
+    description: Content class of a file attached to a cloud prompt.
+    allowed_values: [image, document, text, binary, unknown]
+  - name: attach_size_bucket
+    description: Decoded size range of a file attached to a cloud prompt.
+    allowed_values: [under_64k, under_1m, under_5m, over_5m, unknown]
+  - name: repo_attach_event
+    description: Funnel transition in the cloud repository picker.
+    allowed_values: [opened, submitted, unknown]
+  - name: repo_count_bucket
+    description: Bounded count of repositories selected for a cloud session.
+    allowed_values: [none, "1", "2", "3_5", "6_plus", unknown]
+  - name: ui_mode
+    description: First-party interactive layout selected at session start.
+    allowed_values: [tui, lite, unknown]
+  - name: release_channel
+    description: Release channel derived from the full CLI version.
+    allowed_values: [stable, nightly, beta, unknown]
+  - name: install_method
+    description: Installation mechanism known from a trusted local receipt.
+    allowed_values: [brew, internal_toolbox, unknown]
+  - name: command
+    description: Canonical recognized slash-command or top-level command name.
+    allowed_values:
+      - /agent
+      - /autonomous
+      - /changelog
+      - /chat
+      - /checkpoint
+      - /clear
+      - /code
+      - /compact
+      - /context
+      - /context-gatherer
+      - /copy
+      - /custom
+      - /disconnect
+      - /editor
+      - /effort
+      - /exit
+      - /experiment
+      - /feedback
+      - /general-task-execution
+      - /goal
+      - /guide
+      - /help
+      - /hooks
+      - /issue
+      - /knowledge
+      - /lite
+      - /load
+      - /logdump
+      - /mcp
+      - /model
+      - /paste
+      - /plan
+      - /prompt
+      - /prompts
+      - /quit
+      - /reply
+      - /repo
+      - /rewind
+      - /save
+      - /session-id
+      - /sessions
+      - /settings
+      - /skill
+      - /spawn
+      - /spec
+      - /stats
+      - /steering
+      - /switch
+      - /tangent
+      - /theme
+      - /title
+      - /todos
+      - /tools
+      - /transcript
+      - /tui
+      - /upgrade-agent
+      - /usage
+      - /verbosity
+      - /voice
+      - /workflow
+      - /workflow-cancel
+      - /workflow-resume
+      - /workflow-run
+      - /workflow-status
+      - /workflows
+      - agent
+      - chat
+      - completion
+      - doctor
+      - help
+      - issue
+      - login
+      - logout
+      - mcp
+      - profile
+      - settings
+      - unknown
+      - update
+      - version
+  - name: tool_origin
+    description: Subsystem that supplied a tool executed by the agent.
+    allowed_values: [builtin, mcp, unknown]
+  - name: builtin_tool_name
+    description: Canonical cross-engine identity of a Kiro-provided built-in tool.
+    allowed_values:
+      - fs_read
+      - fs_write
+      - execute_bash
+      - summary
+      - grep
+      - glob
+      - use_aws
+      - web_fetch
+      - web_search
+      - code
+      - use_subagent
+      - session
+      - switch_to_execution
+      - introspect
+      - knowledge
+      - tool_search
+      - task
+      - goal
+      - unknown
+  - name: tool_outcome
+    description: Terminal result of one attempted tool execution.
+    allowed_values: [success, error, denied, cancelled, unknown]
+  - name: execution_context
+    description: Whether a tool was invoked by the main agent or a subagent.
+    allowed_values: [main, subagent]
+  - name: model
+    description: Canonical model identifier supplied by the trusted agent or model service.
+  - name: model_request_outcome
+    description: Terminal result of one logical model request.
+    allowed_values: [success, failure, cancelled, unknown]
+  - name: run_outcome
+    description: Terminal result of one CLI process invocation.
+    allowed_values: [success, user_interrupt, failure, unknown]
   - name: process_role
+    description: Process in the agent process tree that owns an observation.
     allowed_values: [host, tui, kas_subprocess]
-  - name: render_kind
-    allowed_values: [partial, full]
-  - name: turn_outcome_reason
-    allowed_values: [interrupted, model_error, tool_error, timeout, context_limit, _other_]
-  - name: subagent_name_class
-    max_distinct: 64
   - name: crash_kind
-    allowed_values: [panic, segfault, abort, unhandled_signal, _other_]
+    description: Durable client-observable class of an abnormal process termination.
+    allowed_values: [panic, unclean_exit, unknown]
+  - name: startup_failure_stage
+    description: Coarse startup phase that failed before the interface became ready.
+    allowed_values: [runtime_setup, agent_launch, protocol_init, interface_init, unknown]
   - name: error_kind
-    allowed_values: [throttling, validation, model_error, server_error, timeout, connection, access_denied, other, _other_]
-  - name: status_class
-    allowed_values: [2xx, 4xx, 5xx, _other_]
-  - name: upstream
-    allowed_values: [bedrock, rts, kas, krs, cognito, _other_]
+    description: Typed coarse cause of a failed logical model request.
+    allowed_values: [throttling, context_limit, timeout, connection, server_error, access_denied, invalid_request, model_error, unknown]
   - name: retry_reason
-    allowed_values: [throttled, timeout, connection, empty_response, server_error, other, _other_]
-  - name: attempt_number_bucket
-    allowed_values: ["1", "2", "3+", _other_]
-  - name: final_error_kind
-    allowed_values: [throttling, validation, model_error, server_error, timeout, connection, access_denied, other, _other_]
-  - name: stuck_phase
-    allowed_values: [model_call, tool_exec, parse, render, unknown, _other_]
-  - name: detection
-    allowed_values: [watchdog, heartbeat, _other_]
-  - name: dependency
-    allowed_values: [bedrock, rts, kas, krs, cognito, oauth_idp, _other_]
-  - name: partition
-    allowed_values: [aws, aws-us-gov, aws-cn, _other_]
-  - name: slo_target
-    allowed_values: [turn, session, login, _other_]
-  - name: state
-    allowed_values: [streaming, idle, tool_running, compaction, _other_]
-  - name: loop_phase
-    allowed_values: [model_call, tool_exec, parse, render, _other_]
+    description: Typed cause that initiated an automatic retry sequence.
+    allowed_values: [throttled, timeout, connection, server_error, empty_response, context_recovery, unknown]
+  - name: retry_outcome
+    description: Terminal result of an automatic retry sequence.
+    allowed_values: [recovered, exhausted, cancelled, unknown]
   - name: token_type
-    allowed_values: [input_uncached, input_cache_read, input_cache_write, output, reasoning, _other_]
-  - name: metering_usage
-    metric_allowed: false
-  - name: metering_unit
-    metric_allowed: false
-  - name: metering_unit_plural
-    metric_allowed: false
-  - name: session_outcome
-    allowed_values: [user_quit, task_completed, error, timeout, crash, _other_]
-  - name: sentiment
-    allowed_values: [positive, negative, neutral, _other_]
-  - name: surface
-    allowed_values: [chat, review, settings, _other_]
-  - name: depth_bucket
-    allowed_values: ["1", "2", "3+", _other_]
-  - name: subagent_name
-    max_distinct: 64
-  - name: channel
-    allowed_values: [legacy_toolkit, legacy_codewhisperer, otel, meta_meter, _other_]
-  - name: event_class
-    allowed_values: [metric, log, audit, legacy_event, _other_]
-  - name: redactor
-    allowed_values: [default, _other_]
-  - name: redaction_result
-    allowed_values: [scrubbed, passthrough, error, _other_]
-  - name: pii_type
-    allowed_values: [email, aws_access_key, aws_secret, arn, ipv4, home_path, phone, jwt, credit_card, _other_]
-  - name: field_class
-    allowed_values: [prompt, context, tool_output, file_content, http_header, other, _other_]
-  - name: fail_action
-    allowed_values: [dropped, passthrough, _other_]
-  - name: check_kind
-    allowed_values: [hash, perms, owner, signature, _other_]
-  - name: integrity_result
-    allowed_values: [ok, tampered, missing, unreadable, _other_]
-  - name: auth_provider
-    allowed_values: [builder_id, cognito, sso, _other_]
-  - name: error_code
-    max_distinct: 32
-  - name: expected_partition
-    allowed_values: [aws, aws-us-gov, aws-cn, _other_]
-  - name: actual_partition
-    allowed_values: [aws, aws-us-gov, aws-cn, _other_]
-  - name: destination_class
-    allowed_values: [public_internet, aws_endpoint, internal_amzn, localhost, _other_]
-  - name: failure_reason
-    allowed_values: [cert_expired, bad_hostname, untrusted_root, protocol, other, _other_]
-  - name: scheme
-    allowed_values: [http, https, ws, wss, other, _other_]
-  - name: is_allowlisted
-    allowed_values: ["true", "false"]
-  - name: exporter
-    allowed_values: [legacy_toolkit, legacy_codewhisperer, otel, meta_meter, _other_]
-  - name: signal
-    allowed_values: [metrics, logs, traces, _other_]
-  - name: export_outcome
-    allowed_values: [success, retry, dropped, permanent_failure, _other_]
+    description: Service-reported token category.
+    allowed_values: [input_uncached, input_cache_read, output, reasoning]
+  - name: mcp_server_source
+    description: Configuration layer that supplied an MCP server.
+    allowed_values: [registry, global, workspace, agent, acp_injected, unknown]
+  - name: mcp_server_name
+    description: Raw configured MCP server identity retained only for EMF diagnostics.
+    metric_allowed: true
+  - name: mcp_init_outcome
+    description: Availability of an MCP server after initialization.
+    allowed_values: [success, degraded, failure, unknown]
+  - name: mcp_failure_stage
+    description: MCP initialization phase in which a failure occurred.
+    allowed_values: [configuration, process_launch, connection, handshake, capability_discovery, unknown]
+  - name: mcp_error_kind
+    description: Typed coarse cause of an MCP initialization failure.
+    allowed_values: [timeout, authentication, configuration, process_launch, connection, protocol, unknown]
+  - name: goal_outcome
+    description: Observed terminal result of an explicit goal workflow.
+    allowed_values: [completed, cancelled, iteration_limit, dispatch_failure, reinjection_failure, agent_error, unknown]
+  - name: telemetry_channel
+    description: Telemetry transport whose activation violated partition policy.
+    allowed_values: [legacy_toolkit, legacy_codewhisperer, otel, kuts, unknown]
   - name: drop_reason
-    allowed_values: [queue_full, timeout, opt_out, cardinality, redaction, exporter_error, oversize, _other_]
-  - name: metric_name
-    max_distinct: 64
-  - name: attribute
-    max_distinct: 64
-  - name: subsystem
-    allowed_values: [schema, limiter, wal, exporter, redactor, config, _other_]
-  - name: failure_kind
-    allowed_values: [invalid_schema, io, serialization, unknown_metric, unknown_attribute, _other_]
-  - name: shutdown_path
-    allowed_values: [clean, signal, panic, _other_]
-  - name: reason
-    allowed_values: [expired, oversize, corrupt, govcloud_disabled, _other_]
-  - name: cold_start
-    allowed_values: ["true", "false"]
-  - name: anonymous_client_id
-    metric_allowed: false
-  - name: install_date_epoch_day
-    metric_allowed: false
-  - name: session_id
-    metric_allowed: false
-  - name: conversation_id
-    metric_allowed: false
-  - name: request_id
-    metric_allowed: false
-  - name: tool_use_id
-    metric_allowed: false
-  - name: message_id
-    metric_allowed: false
+    description: Typed point at which telemetry records became permanently undeliverable.
+    allowed_values: [oversize, invalid_record, encoding_failure, retry_exhausted, permanent_rejection, unknown]
   - name: turn_failure_reason
-    metric_allowed: false
-  - name: status_code
-    metric_allowed: false
-  - name: time_to_first_chunks_ms
-    metric_allowed: false
-  - name: execution_duration_ms
-    metric_allowed: false
-  - name: user_prompt_length
-    metric_allowed: false
-  - name: assistant_response_length
-    metric_allowed: false
-  - name: user_turn_duration_seconds
-    metric_allowed: false
-  - name: follow_up_count
-    metric_allowed: false
-  - name: message_meta_tags
-    metric_allowed: false
-  - name: parent_tool_use_id
-    metric_allowed: false
-  - name: request_attempts
-    metric_allowed: false
-  - name: total_tokens
-    metric_allowed: false
-  - name: uncached_input_tokens
-    metric_allowed: false
-  - name: output_tokens
-    metric_allowed: false
-  - name: cache_read_input_tokens
-    metric_allowed: false
-  - name: cache_write_input_tokens
-    metric_allowed: false
-  - name: panic_location
-    metric_allowed: false
-  - name: host_id_hash
-    metric_allowed: false
-  - name: failure_reason_code
-    max_distinct: 64
-  - name: reason_desc
-    metric_allowed: false
-  - name: error_message
-    metric_allowed: false
+    description: Typed terminal cause of a failed user turn.
+    allowed_values: [context_limit, timeout, model_error, tool_error, execution_limit, internal_error, unknown]
+  - name: render_kind
+    description: Whether Twinki performed a differential or full-screen render.
+    allowed_values: [partial, full]
+  - name: auth_operation
+    description: Authentication lifecycle operation that failed.
+    allowed_values: [login, refresh]
+  - name: auth_failure_reason
+    description: Typed terminal cause of a failed authentication operation.
+    allowed_values: [authorization_denied, invalid_or_expired_credential, network, timeout, service_error, configuration, storage, identity_mismatch, unknown]

@@ -228,6 +228,49 @@ describe('TUI coverage', () => {
 		expect(tui.fullRedraws).toBeGreaterThanOrEqual(1);
 	});
 
+	it('reports every completed render with its duration and kind', async () => {
+		tui = new TUI(term);
+		tui.addChild(comp);
+		const events: Array<{ durationMs: number; kind: 'full' | 'partial' }> = [];
+		const unsubscribe = tui.onRenderComplete((event) => events.push(event));
+
+		tui.start();
+		await wait(); await term.flush();
+		comp.lines = ['updated'];
+		tui.requestRender();
+		await wait(); await term.flush();
+
+		expect(events).toHaveLength(2);
+		expect(events[0]?.kind).toBe('full');
+		expect(events[1]?.kind).toBe('partial');
+		expect(events.every((event) => event.durationMs >= 0)).toBe(true);
+
+		unsubscribe();
+		tui.requestRender();
+		await wait(); await term.flush();
+		expect(events).toHaveLength(2);
+	});
+
+	it('exposes render completion events through the React instance', async () => {
+		const instance = render(
+			React.createElement(Text, null, 'before'),
+			{ terminal: term, exitOnCtrlC: false },
+		);
+		await wait(); await term.flush();
+		const events: Array<{ durationMs: number; kind: 'full' | 'partial' }> = [];
+		const unsubscribe = instance.onRenderComplete((event) => events.push(event));
+
+		instance.rerender(React.createElement(Text, null, 'after'));
+		await wait(); await term.flush();
+
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('partial');
+		expect(events[0]?.durationMs).toBeGreaterThanOrEqual(0);
+
+		unsubscribe();
+		instance.unmount();
+	});
+
 	it('writeStaticLines and resetStaticOutput', async () => {
 		tui = new TUI(term);
 		tui.addChild(comp);

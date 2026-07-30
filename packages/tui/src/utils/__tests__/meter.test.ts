@@ -79,7 +79,7 @@ describe('meter (a) endpoint gating', () => {
     const exporter = injectInMemory();
 
     expect(() =>
-      counter('kiro_cli_disabled_total', 1, { engine: 'v3' })
+      counter('kiro_cli_disabled_total', 1, { agent_engine: 'v3' })
     ).not.toThrow();
     expect(() => gauge('kiro_cli_disabled_gauge', 0.5)).not.toThrow();
 
@@ -102,9 +102,9 @@ describe('meter (b) instrument memoization', () => {
     process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
     const exporter = injectInMemory();
 
-    counter('kiro_cli_user_turns', 1, { engine: 'v3' });
-    counter('kiro_cli_user_turns', 1, { engine: 'v3' });
-    counter('kiro_cli_user_turns', 1, { engine: 'v2' });
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v3' });
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v3' });
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v2' });
 
     await forceFlushMetrics();
 
@@ -115,7 +115,7 @@ describe('meter (b) instrument memoization', () => {
     expect(matching).toHaveLength(1);
     // DELTA: same-attr increments aggregate within the window.
     const v3 = matching[0]!.dataPoints.find(
-      (d) => (d.attributes as Record<string, unknown>)['engine'] === 'v3'
+      (d) => (d.attributes as Record<string, unknown>)['agent_engine'] === 'v3'
     );
     expect(v3?.value).toBe(2);
   });
@@ -128,18 +128,18 @@ describe('meter (c) gauge recording', () => {
     process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
     const exporter = injectInMemory();
 
-    gauge('kiro_cli_context_usage_percentage', 73, { engine: 'v3' });
+    gauge('kiro_cli_tui_heap_used_bytes', 73, { agent_engine: 'v3' });
 
     await forceFlushMetrics();
 
     const g = allMetrics(exporter.getMetrics()).find(
-      (m) => m.descriptor.name === 'kiro_cli_context_usage_percentage'
+      (m) => m.descriptor.name === 'kiro_cli_tui_heap_used_bytes'
     );
     expect(g).toBeDefined();
     expect(g!.dataPointType).toBe(DataPointType.GAUGE);
     expect(g!.dataPoints[0]!.value).toBe(73);
     expect(
-      (g!.dataPoints[0]!.attributes as Record<string, unknown>)['engine']
+      (g!.dataPoints[0]!.attributes as Record<string, unknown>)['agent_engine']
     ).toBe('v3');
   });
 
@@ -149,7 +149,9 @@ describe('meter (c) gauge recording', () => {
     process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
     const exporter = injectInMemory();
 
-    histogram('kiro_cli_tool_execution_duration_ms', 42, { engine: 'v3' });
+    histogram('kiro_cli_tool_execution_duration_ms', 42, {
+      agent_engine: 'v3',
+    });
     await forceFlushMetrics();
 
     const h = allMetrics(exporter.getMetrics()).find(
@@ -186,19 +188,21 @@ describe('meter (d) user_id datapoint attribute', () => {
     process.env['KIRO_USER_ID'] = 'test-user-id';
     const exporter = injectInMemory();
 
-    counter('kiro_cli_user_turns', 1, { engine: 'v2' });
-    histogram('kiro_cli_tool_execution_duration_ms', 42, { engine: 'v2' });
-    gauge('kiro_cli_context_usage_percentage', 50, { engine: 'v2' });
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v2' });
+    histogram('kiro_cli_tool_execution_duration_ms', 42, {
+      agent_engine: 'v2',
+    });
+    gauge('kiro_cli_tui_heap_used_bytes', 50, { agent_engine: 'v2' });
     await forceFlushMetrics();
 
     for (const name of [
       'kiro_cli_user_turns',
       'kiro_cli_tool_execution_duration_ms',
-      'kiro_cli_context_usage_percentage',
+      'kiro_cli_tui_heap_used_bytes',
     ]) {
       const attrs = attrsOf(name, exporter);
       expect(attrs?.['user_id']).toBe('test-user-id');
-      expect(attrs?.['engine']).toBe('v2');
+      expect(attrs?.['agent_engine']).toBe('v2');
     }
   });
 
@@ -209,7 +213,7 @@ describe('meter (d) user_id datapoint attribute', () => {
     delete process.env['KIRO_USER_ID'];
     const exporter = injectInMemory();
 
-    counter('kiro_cli_user_turns', 1, { engine: 'v2' });
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v2' });
     await forceFlushMetrics();
 
     const attrs = attrsOf('kiro_cli_user_turns', exporter);

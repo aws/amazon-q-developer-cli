@@ -632,6 +632,10 @@ impl ChatArgs {
         shutdown_rx: tokio::sync::oneshot::Receiver<()>,
         cleanup_tracker: McpCleanupTracker,
     ) -> Result<V1ExecutionOutcome> {
+        os.telemetry.set_process_identity(
+            kiro_telemetry::metric::Engine::V1,
+            kiro_telemetry::metric::ProcessRole::Host,
+        );
         let mut input = self.input;
 
         if self.no_interactive && input.is_none() {
@@ -1071,6 +1075,15 @@ impl ChatArgs {
             registry_data,
         )
         .await?;
+        if !session.interactive {
+            os.telemetry
+                .send_startup_duration(
+                    kiro_telemetry::process_start_elapsed().as_secs_f64(),
+                    metric::SessionInterface::NoninteractiveCli,
+                    metric::Engine::V1,
+                )
+                .ok();
+        }
         session_ready.store(true, std::sync::atomic::Ordering::Release);
         let result = session.spawn_with_shutdown(os, shutdown_rx).await;
         let exit_reason = session.exit_reason;
@@ -1345,7 +1358,7 @@ pub struct ChatSession {
     interactive: bool,
     relaunch_in_lite: bool,
     exit_reason: metric::ExitReason,
-    chat_telemetry: telemetry_lifecycle::ChatTelemetryLifecycle,
+    legacy_chat_telemetry: telemetry_lifecycle::LegacyChatTelemetryLifecycle,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
@@ -1614,7 +1627,7 @@ impl ChatSession {
             interactive,
             relaunch_in_lite: false,
             exit_reason: metric::ExitReason::Clean,
-            chat_telemetry: telemetry_lifecycle::ChatTelemetryLifecycle::default(),
+            legacy_chat_telemetry: telemetry_lifecycle::LegacyChatTelemetryLifecycle::default(),
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
@@ -1635,12 +1648,8 @@ impl ChatSession {
             session.ensure_fresh_mcp_data(os).await.ok();
         }
 
-        let session_start_kind = if existing_conversation {
-            metric::SessionStartKind::Resumed
-        } else {
-            metric::SessionStartKind::New
-        };
-        session.start_chat_telemetry(os, session_start_kind).await;
+        session.start_legacy_chat_telemetry(os).await;
+        session.emit_chat_session_started(os);
 
         Ok(session)
     }
@@ -1709,8 +1718,20 @@ impl ChatSession {
         self.pending_prompts.clear();
         self.pending_additional_context = None;
         self.existing_conversation = false;
+        self.transition_legacy_chat_telemetry(os).await;
+        self.emit_chat_session_started(os);
+    }
 
-        self.transition_chat_telemetry(os, metric::SessionStartKind::New).await;
+    fn emit_chat_session_started(&self, os: &Os) {
+        let session_interface = if self.interactive {
+            metric::SessionInterface::InteractiveCli
+        } else {
+            metric::SessionInterface::NoninteractiveCli
+        };
+        let agent_mode = metric::AgentMode::from_id(Some(&self.conversation.agents.active_idx));
+        if let Err(err) = os.telemetry.send_chat_session_started(session_interface, agent_mode) {
+            tracing::warn!(?err, "Failed to emit chat session start telemetry");
+        }
     }
 
     pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
@@ -2657,7 +2678,7 @@ impl ChatSession {
     #[cfg(test)]
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
         let result = self.run(os).await;
-        self.finish_chat_telemetry(os).await;
+        self.finish_legacy_chat_telemetry(os).await;
         self.shutdown().await;
         result
     }
@@ -2675,7 +2696,7 @@ impl ChatSession {
             self.exit_reason = metric::ExitReason::UserInterrupt;
         }
 
-        self.finish_chat_telemetry(os).await;
+        self.finish_legacy_chat_telemetry(os).await;
         self.shutdown().await;
         result
     }
@@ -3622,8 +3643,19 @@ impl ChatSession {
         self.stderr
             .send(signal_event)
             .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
-        if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
-            error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
+        match self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(()) => {
+                os.telemetry
+                    .send_startup_duration(
+                        kiro_telemetry::process_start_elapsed().as_secs_f64(),
+                        metric::SessionInterface::InteractiveCli,
+                        metric::Engine::V1,
+                    )
+                    .ok();
+            },
+            Err(e) => {
+                error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
+            },
         }
 
         #[cfg(feature = "voice")]
@@ -5720,7 +5752,10 @@ impl ChatSession {
             }
             .map(|v| v.to_string());
 
-            os.telemetry.send_tool_use_suggested(&os.database, event).await.ok();
+            os.telemetry
+                .send_tool_use_suggested(&os.database, event, metric::ExecutionContext::Main)
+                .await
+                .ok();
         }
     }
 
@@ -5859,7 +5894,12 @@ impl ChatSession {
                     &os.database,
                     conversation_id,
                     result,
-                    self.telemetry_mode(),
+                    if self.interactive {
+                        metric::SessionInterface::InteractiveCli
+                    } else {
+                        metric::SessionInterface::NoninteractiveCli
+                    },
+                    metric::AgentMode::from_id(Some(&self.conversation.agents.active_idx)),
                     RecordUserTurnCompletionArgs {
                         message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
                         request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
@@ -5878,6 +5918,7 @@ impl ChatSession {
                         output_tokens: positive_token_sum(|md| md.output_tokens),
                         cache_read_input_tokens: positive_token_sum(|md| md.cache_read_input_tokens),
                         cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
+                        model_invocation_count: 0,
                         request_attempts: None,
                         emit_user_turn_counter: true,
                         emit_turn_numeric_metrics: None,

@@ -44,6 +44,9 @@ pub const AGENT_NAME: &str = "Kiro CLI Agent";
 /// to be identified as V2 (vs generic ACP).
 pub const KIRO_ACP_CLIENT_NAME: &str = "kiro-tui";
 
+/// ACP client name used by the first-party one-shot CLI launcher.
+pub const KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME: &str = kiro_telemetry_observer::KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME;
+
 #[cfg(test)]
 mod tests {
     /// `env!("CARGO_PKG_VERSION")` flows outbound to KRS as the `appVersion`

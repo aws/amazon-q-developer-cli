@@ -33,6 +33,7 @@ use crossterm::{
     terminal,
 };
 use futures::future;
+use kiro_telemetry::metric::McpServerSource;
 use regex::Regex;
 use rmcp::ServiceError;
 use rmcp::model::{
@@ -488,6 +489,10 @@ impl ToolManagerBuilder {
         };
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
+        let mcp_server_sources = mcp_servers
+            .iter()
+            .map(|(name, config)| (name.clone(), config.source))
+            .collect::<HashMap<_, _>>();
 
         // Separate enabled and disabled servers
         let (enabled_servers, disabled_servers): (Vec<_>, Vec<_>) = mcp_servers
@@ -587,6 +592,7 @@ impl ToolManagerBuilder {
                 new_tool_specs,
                 total,
                 conv_id,
+                mcp_server_sources,
             );
         }
 
@@ -595,8 +601,10 @@ impl ToolManagerBuilder {
         let pre_initialized = enabled_servers
             .into_iter()
             .map(|(server_name, server_config)| {
+                let source = server_config.source;
                 (
                     server_name.clone(),
+                    source,
                     McpClientService::new(
                         server_name.clone(),
                         server_config,
@@ -606,7 +614,7 @@ impl ToolManagerBuilder {
             })
             .collect::<Vec<_>>();
 
-        for (mut name, mcp_client) in pre_initialized {
+        for (mut name, source, mcp_client) in pre_initialized {
             let init_res = mcp_client.init(os).await;
             match init_res {
                 Ok(mut running_service) => {
@@ -624,6 +632,7 @@ impl ToolManagerBuilder {
                             &os.database,
                             conversation_id.clone(),
                             name.clone(),
+                            source,
                             Some(e.to_string()),
                             0,
                             Some("".to_string()),
@@ -1796,6 +1805,7 @@ fn spawn_orchestrator_task(
     new_tool_specs: NewToolSpecs,
     total: usize,
     conv_id: String,
+    mcp_server_sources: HashMap<String, McpServerSource>,
 ) {
     tokio::spawn(async move {
         use tokio::sync::broadcast::Sender as BroadcastSender;
@@ -1910,6 +1920,7 @@ fn spawn_orchestrator_task(
             conv_id: &str,
             regex: &Regex,
             telemetry_clone: &TelemetryThread,
+            mcp_server_sources: &HashMap<String, McpServerSource>,
             mut loading_status_sender: Option<&MpscSender<LoadingMsg>>,
             new_tool_specs: &NewToolSpecs,
             has_new_stuff: &Arc<AtomicBool>,
@@ -2056,6 +2067,7 @@ fn spawn_orchestrator_task(
                                 database,
                                 conv_id,
                                 &server_name,
+                                mcp_server_sources.get(&server_name).copied().unwrap_or_default(),
                                 &mut specs,
                                 &mut sanitized_mapping,
                                 &alias_list,
@@ -2306,6 +2318,7 @@ fn spawn_orchestrator_task(
                             conv_id.as_str(),
                             &regex,
                             &telemetry,
+                            &mcp_server_sources,
                             loading_status_sender.as_ref(),
                             &new_tool_specs,
                             &has_new_stuff,
@@ -2331,6 +2344,7 @@ async fn process_tool_specs(
     database: &Database,
     conversation_id: &str,
     server_name: &str,
+    source: McpServerSource,
     specs: &mut Vec<ToolSpec>,
     tn_map: &mut HashMap<ModelToolName, ToolInfo>,
     alias_list: &HashMap<HostToolName, ModelToolName>,
@@ -2406,6 +2420,7 @@ async fn process_tool_specs(
             database,
             conversation_id,
             server_name.to_string(),
+            source,
             None,
             number_of_tools,
             all_tool_names,

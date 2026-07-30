@@ -11,18 +11,16 @@ const FORBIDDEN_PRODUCT_PATTERNS: &[&str] = &[
     "MetricRecord::counter_f64",
     "MetricRecord::histogram",
     "MetricRecord::gauge",
-    "TelemetryLogRecord::new",
     ".with_attribute(",
     ".with_resource_attribute(",
     "metric::counter(",
     "metric::counter_f64(",
     "metric::histogram(",
     "metric::gauge(",
-    "telemetry_log::event(",
 ];
 
 #[test]
-fn product_telemetry_uses_metric_and_log_constructors() {
+fn product_telemetry_uses_metric_constructors() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo_root = manifest_dir
         .parent()
@@ -36,7 +34,7 @@ fn product_telemetry_uses_metric_and_log_constructors() {
 
     assert!(
         violations.is_empty(),
-        "product telemetry must use kiro_telemetry::metric and kiro_telemetry::log constructors:\n{}",
+        "product telemetry must use kiro_telemetry::metric constructors:\n{}",
         violations.join("\n")
     );
 }

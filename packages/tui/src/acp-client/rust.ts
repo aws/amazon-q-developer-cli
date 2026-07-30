@@ -2,10 +2,7 @@ import * as acp from '@agentclientprotocol/sdk';
 import { logger } from '../utils/logger';
 import { maybeWrapStreamWithRecorder } from '../acp-recorder';
 import { spawn } from 'node:child_process';
-import type {
-  ChatSlashCommandTelemetryPayload,
-  ListSessionsResponse,
-} from '../types/session-client';
+import type { ListSessionsResponse } from '../types/session-client';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import type {
   ModeChangedNotification,
@@ -13,7 +10,6 @@ import type {
   UiModeDefaultChangedNotification,
   UiModeSessionStartNotification,
 } from '../types/generated/chat-cli';
-import { AgentEventType, type AgentStreamEvent } from '../types/agent-events';
 import type {
   CommandOptionsResponse,
   CommandResult,
@@ -22,18 +18,15 @@ import type {
 import { getCliVersion } from '../utils/version';
 import {
   modeFromId,
-  recordTuiModeActive,
-  recordTuiModelInvocation,
   recordTuiSessionStarted,
-  recordTuiTurnOutcome,
+  recordTuiSlashCommand,
   recordTuiUserTurn,
-  TuiToolCallObserver,
+  type TurnFailureReason,
 } from '../utils/tui-telemetry-observer';
 import {
   BaseAcpClient,
   EXT_METHODS,
   buildStdioStreams,
-  toolTelemetryStartFromEvent,
   toAgentProcess,
   type SessionResult,
 } from './base';
@@ -44,49 +37,41 @@ import {
  * KAS status strings, so V2 needs its own mapping off the ACP stop-reason
  * vocabulary (`end_turn | max_tokens | max_turn_requests | refusal |
  * cancelled`). A normal `end_turn` is a success; `cancelled` maps to cancelled;
- * `refusal` is a model-side failure; the token/turn limits are treated as
- * `_other_` (the turn did not fail per se, it hit a budget cap).
+ * `refusal` and execution limits are failures.
  */
 function resultFromStopReason(
   stopReason: acp.StopReason | undefined
-): 'success' | 'failed' | 'cancelled' | '_other_' {
+): 'success' | 'failed' | 'cancelled' {
   switch (stopReason) {
     case 'end_turn':
       return 'success';
     case 'cancelled':
       return 'cancelled';
     case 'refusal':
-      return 'failed';
     case 'max_tokens':
     case 'max_turn_requests':
     default:
-      return '_other_';
+      return 'failed';
   }
 }
 
 /**
- * Map a V2 `prompt()` {@link acp.StopReason} into a status string the KAS
- * observer's {@link turnOutcomeReasonFromStatus} already understands, so the
- * `kiro_cli_turn_outcome_total` bucketing is shared across engines. Returns
- * undefined for `end_turn` (a success turn emits no outcome counter). The token
- * cap maps to `context_limit`; the turn-request cap and refusal map to
- * `model_error`; cancellation to `interrupted` (via "cancelled").
+ * Map a V2 stop reason to the bounded turn-failure vocabulary.
  */
-function turnOutcomeStatusFromStopReason(
+function failureReasonFromStopReason(
   stopReason: acp.StopReason | undefined
-): string | undefined {
+): TurnFailureReason | undefined {
   switch (stopReason) {
     case 'end_turn':
-      return undefined;
     case 'cancelled':
-      return 'cancelled';
+      return undefined;
     case 'max_tokens':
-      return 'context_limit';
     case 'max_turn_requests':
+      return 'execution_limit';
     case 'refusal':
       return 'model_error';
     default:
-      return '_other_';
+      return 'unknown';
   }
 }
 
@@ -136,18 +121,11 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
    */
   private readonly version: string;
 
-  // V2 client-experience telemetry (engine=v2): same metric set as KAS minus
+  // V2 client-experience telemetry: same metric set as KAS minus
   // host-authoritative economics (tokens/cost/context_usage), which §H.6 leaves
   // to the Rust host to avoid double-counting.
-  private readonly v2ToolCalls = new TuiToolCallObserver(undefined, 'v2');
   /** Dedup guard so kiro_cli_chat_session_started_total fires once per session id. */
   private readonly v2SessionStartedSessions = new Set<string>();
-  /**
-   * Best-effort current model id, captured from session results +
-   * KasModelConfigUpdate events, written verbatim as the `model` attribute on V2
-   * metrics. Undefined → emitted as the empty string.
-   */
-  private v2CurrentModelId?: string;
   /** Current TUI mode id, captured from session results + setMode. */
   private v2CurrentMode = 'interactive';
 
@@ -202,10 +180,9 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     logger.debug('ACP session created', { sessionId: this.sessionId });
     // Drop any tool-call state stranded by a prior session so it cannot
     // cross-match into this one (mirrors KasAcpClient's per-session reset).
-    this.v2ToolCalls.reset();
     const currentModel = extractModel(r.models);
     const currentAgent = extractCurrentAgent(r.modes);
-    this.captureV2SessionContext(currentModel, currentAgent);
+    this.captureV2SessionContext(currentAgent);
     this.emitV2SessionStartedOnce(r.sessionId);
     return {
       sessionId: r.sessionId,
@@ -226,10 +203,9 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     logger.debug('[acp-client] loadSession completed for session:', sessionId);
     // Drop any tool-call state stranded by the prior session (mirrors
     // KasAcpClient's per-session reset).
-    this.v2ToolCalls.reset();
     const currentModel = extractModel(r.models);
     const currentAgent = extractCurrentAgent(r.modes);
-    this.captureV2SessionContext(currentModel, currentAgent);
+    this.captureV2SessionContext(currentAgent);
     this.emitV2SessionStartedOnce(sessionId);
     return {
       sessionId,
@@ -244,14 +220,12 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
    * string; a missing mode keeps the prior value (default `interactive`).
    */
   private captureV2SessionContext(
-    currentModel: { id: string; name: string } | undefined,
     currentAgent: { name: string } | undefined
   ): void {
-    if (currentModel?.id) this.v2CurrentModelId = currentModel.id;
     if (currentAgent?.name) this.v2CurrentMode = currentAgent.name;
   }
 
-  /** Emit V2 session-start metrics (session_started + mode_active) once per session id. */
+  /** Emit the V2 chat-session counter once per session id. */
   private emitV2SessionStartedOnce(sessionId: string): void {
     if (this.v2SessionStartedSessions.has(sessionId)) return;
     this.v2SessionStartedSessions.add(sessionId);
@@ -261,14 +235,15 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       version: this.version,
       engine: 'v2',
     });
-    recordTuiModeActive({ mode, engine: 'v2' });
   }
 
   async prompt(messages: acp.ContentBlock[]): Promise<void> {
     if (!this.sessionId)
       throw new Error('cannot send prompt without an active session');
-    if (this.connection.signal.aborted)
+    if (this.connection.signal.aborted) {
+      this.observeV2RejectedTurn();
       throw new Error('Agent connection closed unexpectedly');
+    }
 
     const connectionClosed = new Promise<never>((_resolve, reject) => {
       if (this.connection.signal.aborted) {
@@ -284,87 +259,65 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     connectionClosed.catch(() => {});
 
     const startMs = performance.now();
+    this.startFirstVisibleResponse({
+      mode: this.v2CurrentMode,
+      version: this.version,
+      engine: 'v2',
+    });
     try {
-      const response = await Promise.race([
-        this.connection.prompt({ prompt: messages, sessionId: this.sessionId }),
-        connectionClosed,
-      ]);
-      // V2 carries only a stopReason here (no modelId/tokens/duration), so we
-      // measure wall-clock duration client-side and label model from the session.
+      let response: acp.PromptResponse;
+      try {
+        response = await Promise.race([
+          this.connection.prompt({
+            prompt: messages,
+            sessionId: this.sessionId,
+          }),
+          connectionClosed,
+        ]);
+      } catch (err) {
+        this.observeV2RejectedTurn();
+        throw err;
+      }
       this.observeV2TurnCompletion(
         response?.stopReason,
         (performance.now() - startMs) / 1000
       );
     } finally {
-      // Clear in-flight tool calls at turn end so a stranded entry (finish never
-      // arrived) can't cross-match a same-id finish in a later turn.
-      this.v2ToolCalls.reset();
+      this.cancelFirstVisibleResponse();
     }
   }
 
+  private observeV2RejectedTurn(): void {
+    recordTuiUserTurn({
+      result: 'failed',
+      isSubagent: false,
+      mode: modeFromId(this.v2CurrentMode),
+      version: this.version,
+      failureReason: 'internal_error',
+      engine: 'v2',
+    });
+  }
+
   /**
-   * Emit V2 turn metrics (user_turns + duration, model_invocations, turn_outcome),
-   * engine='v2'. Economics are §H.6-omitted; is_subagent is always false (the
-   * main prompt() turn is the only turn on this wire).
+   * Emit the client-owned V2 top-level turn metrics.
    */
   private observeV2TurnCompletion(
     stopReason: acp.StopReason | undefined,
     durationSeconds: number
   ): void {
-    const model = this.v2CurrentModelId ?? '';
     const mode = modeFromId(this.v2CurrentMode);
     const isSubagent = false;
     recordTuiUserTurn({
-      model,
       result: resultFromStopReason(stopReason),
       isSubagent,
       mode,
-      chatConversationType: 'acp',
+      version: this.version,
+      failureReason: failureReasonFromStopReason(stopReason),
       durationSeconds:
         Number.isFinite(durationSeconds) && durationSeconds >= 0
           ? durationSeconds
           : undefined,
       engine: 'v2',
-    });
-    recordTuiModelInvocation({ model, engine: 'v2' });
-    recordTuiTurnOutcome({
-      status: turnOutcomeStatusFromStopReason(stopReason),
-      model,
-      mode,
-      engine: 'v2',
-    });
-  }
-
-  /**
-   * V2 tool-call + context observation, driven off the shared converted event
-   * (see {@link BaseAcpClient.observeTurnTelemetry}). Mirrors
-   * KasAcpClient.observeV3ToolCall — origin is decided once at ToolCall time,
-   * the finish emits `kiro_cli_tool_call_total` + `kiro_cli_tool_execution_duration_ms`
-   * via the `engine='v2'` observer. Also opportunistically tracks the current
-   * model id from KasModelConfigUpdate so the `model` label stays current after a
-   * model swap. NOTE: V2 sub-agent delegations only emit if the parent
-   * `orchestrate_subagent` ToolCall carries `_meta.kiro.pipeline`; if the V2
-   * host does not stamp it, the delegation counter simply does not fire (we do
-   * not fabricate it).
-   */
-  protected override observeTurnTelemetry(event: AgentStreamEvent): void {
-    if (event.type === AgentEventType.KasModelConfigUpdate) {
-      if (event.currentModelId) this.v2CurrentModelId = event.currentModelId;
-      return;
-    }
-    if (event.type === AgentEventType.ToolCall) {
-      this.v2ToolCalls.start(event.id, toolTelemetryStartFromEvent(event));
-      return;
-    }
-    if (event.type !== AgentEventType.ToolCallFinished) return;
-    this.v2ToolCalls.finish(event.id, {
-      outcome:
-        event.result?.status === 'error'
-          ? 'error'
-          : event.result?.status === 'cancelled'
-            ? 'cancelled'
-            : 'success',
-      model: this.v2CurrentModelId ?? '',
     });
   }
 
@@ -509,15 +462,12 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       .catch(() => {});
   }
 
-  sendChatSlashCommandTelemetry(
-    payload: ChatSlashCommandTelemetryPayload
-  ): void {
-    this.connection
-      .extNotification(this.ext('kiro.dev/telemetry/chatSlashCommand'), {
-        ...payload,
-        sessionId: this.sessionId,
-      } as unknown as Record<string, unknown>)
-      .catch(() => {});
+  recordSlashCommandInvocation(command: string): void {
+    recordTuiSlashCommand({
+      command,
+      version: this.version,
+      engine: 'v2',
+    });
   }
 
   sendUiModeSessionStart(payload: UiModeSessionStartNotification): void {

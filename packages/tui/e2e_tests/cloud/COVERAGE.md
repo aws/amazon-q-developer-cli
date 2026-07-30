@@ -37,7 +37,7 @@ Tiers:
 | List sessions: cloud rows + env/status columns                                                   | rust-integ + e2e | gating tests (feature-on shape); cloud-resume-concurrent t3 |
 | Attach/resume with full trajectory replay                                                        | e2e              | cloud-resume-concurrent t1 (batch 2)                        |
 | Resume auto-detects cloud (no --cloud flag)                                                      | e2e + unit       | cloud-resume-concurrent t1; resolve-resume-target.test.ts   |
-| Resume shows "Resuming…/✓ Cloud session resumed" wording (UX, #3656)                             | e2e              | cloud-resume-concurrent t1 assertion (new)                  |
+| Resume shows "Resuming…/✓ Cloud session resumed" wording (UX, #3656)                             | unit             | cloud-startup-checklist resumed-state assertion             |
 | Disconnect keeps session running; reattach hint                                                  | e2e + smoke      | cloud-sessions.test.ts t5; smoke "disconnect"               |
 | /quit keep-running prompt                                                                        | e2e + smoke      | cloud-sessions.test.ts t6; smoke "quit"                     |
 | Multiple concurrent sessions listed, one attached                                                | e2e              | cloud-resume-concurrent t3/t4                               |

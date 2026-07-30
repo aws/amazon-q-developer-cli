@@ -72,14 +72,7 @@ describe('cloud sessions — resume + concurrent (mock BFF)', () => {
       });
       const tc = harness.testCase!;
 
-      // Resume-flow wording (UX fix in #3656): the checklist step reads
-      // "Resuming cloud session…" / "✓ Cloud session resumed" — never the
-      // create-flow "Creating"/"created" wording that confused testers into
-      // thinking resume had made a NEW session.
-      await tc.waitForText('Cloud session resumed', BOOT_TIMEOUT);
-
-      // History replay: every replayed string is awaited (not just asserted
-      // on a later snapshot) so a slow tool-row render can't flake this.
+      // Replayed messages can replace the transient checklist before the observer attaches, so await durable transcript rows.
       await tc.waitForText('clone the repo and list the files', BOOT_TIMEOUT);
       await tc.waitForText('Shell git clone banana-service', 20_000);
       await tc.waitForText('Repo cloned: 120 files at HEAD.', 20_000);

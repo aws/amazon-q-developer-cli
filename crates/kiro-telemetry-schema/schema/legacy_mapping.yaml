@@ -1,15 +1,19 @@
 mappings:
   - event_type: UserLoggedIn
     legacy_metric: codewhispererterminal_userLoggedIn
-    otel_metric: kiro_cli_user_logged_in_total
+    otel_metric: kiro_cli_login_success_total
     parity_tolerance: daily_aggregate
   - event_type: AuthFailed
     legacy_metric: codewhispererterminal_authFailed
-    otel_metric: kiro_cli_auth_credential_failure_total
+    otel_metric: kiro_cli_auth_failure_total
+    parity_tolerance: low_volume
+  - event_type: RefreshCredentials
+    legacy_metric: codewhispererterminal_refreshCredentials
+    otel_metric:
     parity_tolerance: low_volume
   - event_type: CliSubcommandExecuted
     legacy_metric: codewhispererterminal_cliSubcommandExecuted
-    otel_metric: kiro_cli_feature_used_total
+    otel_metric: kiro_cli_top_level_command_invoked_total
     parity_tolerance: low_volume
   - event_type: ChatSlashCommandExecuted
     legacy_metric: codewhispererterminal_chatSlashCommandExecuted
@@ -17,23 +21,23 @@ mappings:
     parity_tolerance: low_volume
   - event_type: ChatStart
     legacy_metric: amazonq_startChat
-    otel_metric: kiro_cli_chat_session_started_total
+    otel_metric:
     parity_tolerance: high_volume
   - event_type: ChatEnd
     legacy_metric: amazonq_endChat
-    otel_metric: kiro_cli_conversation_completed_total
+    otel_metric:
     parity_tolerance: high_volume
   - event_type: ChatAddedMessage
     legacy_metric: codewhispererterminal_addChatMessage
-    otel_metric: kiro_cli_chat_messages_total
+    otel_metric: kiro_cli_user_turns
     parity_tolerance: high_volume
   - event_type: RecordUserTurnCompletion
     legacy_metric: codewhispererterminal_recordUserTurnCompletion
-    otel_metric: kiro_cli_user_turns
+    otel_metric:
     parity_tolerance: high_volume
   - event_type: TangentModeSession
     legacy_metric: codewhispererterminal_chatSlashCommandExecuted
-    otel_metric: kiro_cli_slash_command_invoked_total
+    otel_metric:
     parity_tolerance: low_volume
   - event_type: ToolUseSuggested
     legacy_metric: codewhispererterminal_toolUseSuggested
@@ -45,19 +49,19 @@ mappings:
     parity_tolerance: low_volume
   - event_type: AgentConfigInit
     legacy_metric: codewhispererterminal_agentConfigInit
-    otel_metric: kiro_cli_agent_config_init_total
+    otel_metric:
     parity_tolerance: low_volume
   - event_type: DidSelectProfile
     legacy_metric: amazonq_didSelectProfile
-    otel_metric: kiro_cli_profile_selection_total
+    otel_metric:
     parity_tolerance: low_volume
   - event_type: ProfileState
     legacy_metric: amazonq_profileState
-    otel_metric: kiro_cli_profile_state_total
+    otel_metric:
     parity_tolerance: low_volume
   - event_type: MessageResponseError
     legacy_metric: amazonq_messageResponseError
-    otel_metric: kiro_cli.bedrock.request.errors
+    otel_metric: kiro_cli_model_request_failure_total
     parity_tolerance: high_volume
   - event_type: DailyHeartbeat
     legacy_metric: amazonqcli_dailyHeartbeat
@@ -65,47 +69,47 @@ mappings:
     parity_tolerance: daily_aggregate
   - event_type: SubagentInvocation
     legacy_metric: kirocli_subagentInvocation
-    otel_metric: kiro_cli_subagent_delegations_total
+    otel_metric:
     parity_tolerance: low_volume
   - event_type: VoiceInput
     legacy_metric: kirocli_voiceInput
-    otel_metric: kiro_cli_voice_input_total
+    otel_metric:
     parity_tolerance: low_volume
   - event_type: AgentContribution
     legacy_metric: codewhispererterminal_agentContribution
-    otel_metric: kiro_cli_agent_contribution_total
+    otel_metric:
     parity_tolerance: high_volume
   - event_type: ProcessHealthMetric
     legacy_metric: codewhispererterminal_processHealthSnapshot
-    otel_metric: kiro_cli.process.memory.rss
+    otel_metric: kiro_cli_process_memory_rss_bytes
     parity_tolerance: low_volume
   - event_type: ModeChanged
     legacy_metric: codewhispererterminal_modeChanged
-    otel_metric: kiro_cli_mode_active_total
+    otel_metric:
     parity_tolerance: daily_aggregate
   - event_type: GoalCompleted
     legacy_metric: kirocli_goalCompleted
-    otel_metric: kiro_cli_session_outcome_total
+    otel_metric: kiro_cli_goal_outcome_total
     parity_tolerance: low_volume
 
 critical_alarms:
   - name: QCLI-FirstTokenLatency
     legacy_metric: timeToFirstChunk
-    otel_metric: kiro_cli.bedrock.stream.ttft
+    otel_metric: kiro_cli_model_time_to_first_content_ms
     parity_tolerance: high_volume
   - name: QCLI-SuccessRateDown
     legacy_metric: chatResponseSucceeded
-    otel_metric: kiro_cli.slo.success_rate
+    otel_metric: kiro_cli_turn_failure_total
     parity_tolerance: high_volume
   - name: QCLIRTSCallSuccessRate
     legacy_metric: rtsCallSucceeded
-    otel_metric: kiro_cli.bedrock.request.duration
+    otel_metric: kiro_cli_model_request_duration_seconds
     parity_tolerance: high_volume
   - name: QCLIFaultCount
     legacy_metric: serviceFault
-    otel_metric: kiro_cli.bedrock.request.errors
+    otel_metric: kiro_cli_model_request_failure_total
     parity_tolerance: low_volume
   - name: QCLIErrorCount
     legacy_metric: serviceError
-    otel_metric: kiro_cli.bedrock.request.errors
+    otel_metric: kiro_cli_model_request_failure_total
     parity_tolerance: low_volume

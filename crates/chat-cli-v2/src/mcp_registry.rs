@@ -748,8 +748,15 @@ pub struct RegistryAdapter {
     /// to surface user-supplied env / headers / timeout overrides for
     /// registry-managed servers (e.g. `BRAVE_API_KEY` for `npm-brave-search`).
     /// Empty when no overrides are configured.
-    mcp_json_overrides:
-        std::sync::Arc<std::collections::HashMap<String, agent::agent_config::definitions::McpServerConfig>>,
+    mcp_json_overrides: std::sync::Arc<
+        std::collections::HashMap<
+            String,
+            (
+                agent::agent_config::definitions::McpServerConfig,
+                agent::agent_config::McpServerConfigSource,
+            ),
+        >,
+    >,
 }
 
 impl RegistryAdapter {
@@ -781,7 +788,13 @@ impl RegistryAdapter {
             response.servers.iter().map(|e| e.server.name.clone()).collect();
 
         let mut overrides = std::collections::HashMap::new();
-        for path in [local_mcp_path, global_mcp_path].into_iter().flatten() {
+        for (path, source) in [
+            local_mcp_path.map(|path| (path, agent::agent_config::McpServerConfigSource::WorkspaceMcpJson)),
+            global_mcp_path.map(|path| (path, agent::agent_config::McpServerConfigSource::GlobalMcpJson)),
+        ]
+        .into_iter()
+        .flatten()
+        {
             let contents = match tokio::fs::read_to_string(path).await {
                 Ok(c) => c,
                 Err(_) => continue, // missing files are fine, common case
@@ -814,7 +827,7 @@ impl RegistryAdapter {
                 }
                 // First write wins. We process workspace mcp.json before global, so
                 // workspace-level entries take priority.
-                overrides.entry(name).or_insert(config);
+                overrides.entry(name).or_insert((config, source));
             }
         }
 
@@ -839,14 +852,12 @@ impl agent::mcp::McpRegistry for RegistryAdapter {
         if agent_config.config().use_legacy_mcp_json() && !self.mcp_json_overrides.is_empty() {
             let existing: std::collections::HashSet<String> =
                 agent_config.config().mcp_servers().keys().cloned().collect();
-            let new_entries: Vec<_> = self
+            for (name, (config, source)) in self
                 .mcp_json_overrides
                 .iter()
                 .filter(|(name, _)| !existing.contains(*name))
-                .map(|(name, cfg)| (name.clone(), cfg.clone()))
-                .collect();
-            if !new_entries.is_empty() {
-                agent_config.config_mut().add_mcp_servers(new_entries);
+            {
+                agent_config.add_mcp_servers_with_source([(name.clone(), config.clone())], *source);
             }
         }
 
@@ -886,9 +897,7 @@ fn filter_agent_config_tools_by_registry(
         registry.servers.iter().map(|e| e.server.name.as_str()).collect();
 
     // Remove MCP servers not in the registry
-    agent_config
-        .config_mut()
-        .retain_mcp_servers(|name| registry_servers.contains(name));
+    agent_config.retain_mcp_servers(|name| registry_servers.contains(name));
 
     // Block downstream `mcp.json` re-merge from re-introducing non-registry
     // servers. RegistryAdapter has already extracted any registry-type
@@ -1243,7 +1252,7 @@ fn resolve_registry_servers_for_agent_config(
             resolved.len(),
             resolved.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
         );
-        agent_config.config_mut().insert_mcp_servers(resolved);
+        agent_config.insert_mcp_servers_with_source(resolved, agent::agent_config::McpServerConfigSource::Registry);
     }
 
     // Remove any Registry placeholders that weren't resolved
@@ -1256,9 +1265,7 @@ fn resolve_registry_servers_for_agent_config(
         .collect();
     if !unresolved.is_empty() {
         tracing::warn!("Removing unresolved registry servers: {:?}", unresolved);
-        agent_config
-            .config_mut()
-            .retain_mcp_servers(|name| !unresolved.contains(name));
+        agent_config.retain_mcp_servers(|name| !unresolved.contains(name));
     }
 }
 
@@ -2544,9 +2551,10 @@ mod tests {
                 .get("npm-brave-search")
                 .expect("registry-type entry with name in registry must be kept");
             match entry {
-                McpServerConfig::Registry(reg) => {
+                (McpServerConfig::Registry(reg), source) => {
                     let env = reg.env.as_ref().expect("env override missing");
                     assert_eq!(env.get("BRAVE_API_KEY").map(String::as_str), Some("abc123"));
+                    assert_eq!(*source, agent::agent_config::McpServerConfigSource::WorkspaceMcpJson);
                 },
                 other => panic!("expected Registry variant, got {:?}", other),
             }
@@ -2565,9 +2573,10 @@ mod tests {
             );
             let adapter = RegistryAdapter::new(fixture_registry(), Some(&mcp), None).await;
             match adapter.mcp_json_overrides.get("keep-me") {
-                Some(McpServerConfig::Local(local)) => {
+                Some((McpServerConfig::Local(local), source)) => {
                     assert_eq!(local.command, "my-custom");
                     assert_eq!(local.args, vec!["--mine".to_string()]);
+                    assert_eq!(*source, agent::agent_config::McpServerConfigSource::WorkspaceMcpJson);
                 },
                 other => panic!("expected Local variant, got {:?}", other),
             }
@@ -2594,7 +2603,7 @@ mod tests {
             let adapter = RegistryAdapter::new(fixture_registry(), Some(&workspace), Some(&global)).await;
             let entry = adapter.mcp_json_overrides.get("npm-brave-search").unwrap();
             match entry {
-                McpServerConfig::Registry(reg) => {
+                (McpServerConfig::Registry(reg), source) => {
                     assert_eq!(
                         reg.env
                             .as_ref()
@@ -2603,6 +2612,7 @@ mod tests {
                         Some("workspace"),
                         "workspace mcp.json must win over global"
                     );
+                    assert_eq!(*source, agent::agent_config::McpServerConfigSource::WorkspaceMcpJson);
                 },
                 other => panic!("expected Registry variant, got {:?}", other),
             }
@@ -2662,6 +2672,10 @@ mod tests {
                 },
                 other => panic!("expected resolved Local, got {:?}", other),
             }
+            assert_eq!(
+                config.mcp_server_source("npm-brave-search"),
+                agent::agent_config::McpServerConfigSource::Registry
+            );
         }
 
         #[tokio::test]

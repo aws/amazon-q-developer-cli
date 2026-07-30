@@ -19,6 +19,7 @@ mock.module('../../kiro', () => ({
     cancel: mock(() => Promise.resolve()),
     clearSteering: mock(() => Promise.resolve()),
     close: mock(),
+    recordSlashCommandInvocation: mock(),
   })),
 }));
 

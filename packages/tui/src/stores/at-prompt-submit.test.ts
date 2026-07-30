@@ -15,7 +15,7 @@ mock.module('../kiro', () => ({
     clearSteering: mock(),
     cancel: mock(),
     close: mock(),
-    sendChatSlashCommandTelemetry: mock(),
+    recordSlashCommandInvocation: mock(),
   })),
 }));
 

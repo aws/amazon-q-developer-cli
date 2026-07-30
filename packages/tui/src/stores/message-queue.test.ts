@@ -11,11 +11,7 @@ mock.module('../kiro', () => ({
     clearSteering: mock(),
     cancel: mock(),
     close: mock(),
-    // Slash-command dispatch emits frontend command-usage telemetry via
-    // `ctx.kiro.sendChatSlashCommandTelemetry` (added on main). The drain-row
-    // tests dispatch real slash commands through processQueue, so the mock
-    // must stub it or the dispatcher throws "not a function".
-    sendChatSlashCommandTelemetry: mock(),
+    recordSlashCommandInvocation: mock(),
   })),
 }));
 
@@ -531,6 +527,31 @@ describe('Message queue (backend-driven)', () => {
       // A transient alert should be shown
       expect(store.getState().transientAlert).not.toBeNull();
       expect(store.getState().transientAlert?.status).toBe('warning');
+    });
+
+    it('records busy-session goal shortcuts through the invocation boundary', async () => {
+      const store = createTestStore();
+      const kiro = store.getState().kiro as any;
+      kiro.executeCommand = mock(() =>
+        Promise.resolve({ success: true, message: '' })
+      );
+      store.setState((state) => ({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        slashCommands: [
+          ...state.slashCommands,
+          { name: '/goal', description: 'Goal', source: 'backend' as const },
+        ],
+      }));
+
+      await store.getState().handleUserInput('/goal status');
+
+      expect(kiro.recordSlashCommandInvocation).toHaveBeenCalledTimes(1);
+      expect(kiro.recordSlashCommandInvocation).toHaveBeenCalledWith('/goal');
+      expect(kiro.executeCommand).toHaveBeenCalledWith({
+        command: 'goal',
+        args: { subcommand: 'status' },
+      });
     });
 
     it('rejects shell escape commands with a warning when processing', async () => {

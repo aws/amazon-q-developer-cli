@@ -1,10 +1,16 @@
 use std::ffi::OsString;
+use std::fs;
 use std::path::{
     Path,
     PathBuf,
 };
 use std::process::ExitCode;
+use std::sync::{
+    Arc,
+    Mutex,
+};
 use std::time::{
+    Duration,
     SystemTime,
     UNIX_EPOCH,
 };
@@ -21,10 +27,16 @@ use eyre::{
     bail,
 };
 use kiro_telemetry::metric::{
+    self,
     AgentKind,
     ClientApplication,
     Engine,
     ExitReason,
+    ProcessRole,
+    RunOutcome,
+    SessionInterface,
+    StartupFailureStage,
+    version_attr,
 };
 use tracing::{
     debug,
@@ -36,6 +48,10 @@ use crate::database::Database;
 use crate::embedded_tui::extract_tui_assets_if_needed;
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
+use crate::telemetry::core::{
+    RecordUserTurnCompletionArgs,
+    TelemetryResult,
+};
 use crate::util::consts::env_var::{
     KIRO_CHAT_CLI_BIN,
     KIRO_KAS_NODE_PATH,
@@ -43,6 +59,8 @@ use crate::util::consts::env_var::{
     KIRO_REMOTE_SESSIONS_ENDPOINT,
     KIRO_TELEMETRY_CLIENT_ID,
     KIRO_TUI_FORCE_COLOR,
+    KIRO_TUI_READY_FILE,
+    KIRO_TUI_READY_TOKEN,
     KIRO_VERSION_OVERRIDE,
 };
 use crate::util::launch_spinner::start_launch_spinner;
@@ -69,7 +87,11 @@ pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> 
         Engine::from_agent_kind(agent_kind_for_agent_engine(agent_engine)),
     )
     .await;
-    emit_cli_session_started(&os.telemetry, &os.database, agent_engine).await;
+    let session_interface = session_interface_for_interactivity(&interactivity);
+    let mut startup = StartupTelemetry::new(session_interface, engine_for_agent_engine(agent_engine));
+    os.telemetry
+        .set_process_identity(engine_for_agent_engine(agent_engine), ProcessRole::Host);
+    emit_cli_session_started(&os.telemetry, &os.database, agent_engine, session_interface).await;
 
     let non_interactive = matches!(&interactivity, Interactivity::NonInteractive { .. });
     run_kas_gc_on_startup(os, agent_engine, !non_interactive).await;
@@ -86,17 +108,154 @@ pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> 
             model,
             trust_tools,
             &mut cli_session_completion_emitted,
+            &mut startup,
         )
         .await
     } else {
-        launch_acp_interactive(os, agent_engine, mode, &mut cli_session_completion_emitted).await
+        launch_acp_interactive(
+            os,
+            agent_engine,
+            mode,
+            &mut cli_session_completion_emitted,
+            &mut startup,
+        )
+        .await
     };
 
+    let failed_before_ready = result.is_err() && startup.is_pending();
+    if result.is_err() {
+        startup.fail(os);
+    }
     if should_emit_launch_error_completion(&result, cli_session_completion_emitted) {
-        emit_cli_session_completed(&os.telemetry, &os.database, agent_engine, ExitReason::Crash).await;
+        emit_cli_session_completed(
+            &os.telemetry,
+            &os.database,
+            agent_engine,
+            session_interface,
+            ExitReason::Crash,
+            if failed_before_ready {
+                RunOutcome::Failure
+            } else {
+                failure_run_outcome(session_interface)
+            },
+        )
+        .await;
     }
 
     result
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartupState {
+    Pending,
+    Ready,
+    Interrupted,
+    Failed,
+}
+
+#[derive(Debug)]
+struct StartupTelemetry {
+    session_interface: SessionInterface,
+    engine: Engine,
+    failure_stage: StartupFailureStage,
+    state: StartupState,
+}
+
+impl StartupTelemetry {
+    fn new(session_interface: SessionInterface, engine: Engine) -> Self {
+        Self {
+            session_interface,
+            engine,
+            failure_stage: StartupFailureStage::RuntimeSetup,
+            state: StartupState::Pending,
+        }
+    }
+
+    fn set_failure_stage(&mut self, failure_stage: StartupFailureStage) {
+        if self.state == StartupState::Pending {
+            self.failure_stage = failure_stage;
+        }
+    }
+
+    fn is_pending(&self) -> bool {
+        self.state == StartupState::Pending
+    }
+
+    fn ready(&mut self, os: &Os) {
+        if !self.is_pending() {
+            return;
+        }
+        self.state = StartupState::Ready;
+        if let Err(err) = os.telemetry.send_startup_duration(
+            kiro_telemetry::process_start_elapsed().as_secs_f64(),
+            self.session_interface,
+            self.engine,
+        ) {
+            debug!(%err, "failed to emit startup-duration telemetry");
+        }
+    }
+
+    fn interrupt(&mut self) {
+        if self.is_pending() {
+            self.state = StartupState::Interrupted;
+        }
+    }
+
+    fn fail(&mut self, os: &Os) {
+        if !self.is_pending() {
+            return;
+        }
+        self.state = StartupState::Failed;
+        if let Err(err) = os
+            .telemetry
+            .send_startup_failure(self.session_interface, self.engine, self.failure_stage)
+        {
+            debug!(%err, "failed to emit startup-failure telemetry");
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TuiReadySignal {
+    directory: PathBuf,
+    path: PathBuf,
+    token: String,
+}
+
+impl TuiReadySignal {
+    fn new() -> Result<Self> {
+        let directory = std::env::temp_dir().join(format!("kiro-tui-ready-{}", Uuid::new_v4()));
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt as _;
+            builder.mode(0o700);
+        }
+        builder.create(&directory)?;
+
+        Ok(Self {
+            path: directory.join("ready"),
+            directory,
+            token: Uuid::new_v4().to_string(),
+        })
+    }
+
+    fn configure(&self, command: &mut tokio::process::Command) {
+        command
+            .env(KIRO_TUI_READY_FILE, &self.path)
+            .env(KIRO_TUI_READY_TOKEN, &self.token);
+    }
+
+    fn is_ready(&self) -> bool {
+        fs::read_to_string(&self.path).is_ok_and(|value| value == self.token)
+    }
+}
+
+impl Drop for TuiReadySignal {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+        let _ = fs::remove_dir(&self.directory);
+    }
 }
 
 /// Garbage-collect stale extracted KAS bundles at launch. Only relevant to the
@@ -147,9 +306,19 @@ async fn run_kas_gc_on_startup(os: &Os, agent_engine: AgentEngine, background: b
     }
 }
 
-async fn emit_cli_session_started(telemetry: &TelemetryThread, database: &Database, agent_engine: AgentEngine) {
+async fn emit_cli_session_started(
+    telemetry: &TelemetryThread,
+    database: &Database,
+    agent_engine: AgentEngine,
+    session_interface: SessionInterface,
+) {
     if let Err(err) = telemetry
-        .send_cli_session_started(database, client_application_for_agent_engine(agent_engine))
+        .send_cli_session_started(
+            database,
+            client_application_for_agent_engine(agent_engine),
+            session_interface,
+            engine_for_agent_engine(agent_engine),
+        )
         .await
     {
         debug!(%err, ?agent_engine, "failed to emit CLI session-start telemetry");
@@ -162,15 +331,13 @@ pub(crate) async fn emit_cli_invocation_telemetry(
     telemetry_name: Option<String>,
     engine: Engine,
 ) {
-    if database.record_heartbeat_if_needed()
-        && let Err(err) = telemetry.send_daily_heartbeat(database, engine).await
+    if database.record_heartbeat_if_needed(version_attr())
+        && let Err(err) = telemetry.send_daily_heartbeat()
     {
         debug!(%err, ?engine, "failed to emit daily-heartbeat telemetry");
     }
     if let Some(telemetry_name) = telemetry_name
-        && let Err(err) = telemetry
-            .send_cli_subcommand_executed(database, telemetry_name, engine)
-            .await
+        && let Err(err) = telemetry.send_cli_subcommand_executed(database, telemetry_name).await
     {
         debug!(%err, ?engine, "failed to emit CLI subcommand telemetry");
     }
@@ -180,10 +347,19 @@ async fn emit_cli_session_completed(
     telemetry: &TelemetryThread,
     database: &Database,
     agent_engine: AgentEngine,
+    session_interface: SessionInterface,
     exit_reason: ExitReason,
+    run_outcome: RunOutcome,
 ) {
     if let Err(err) = telemetry
-        .send_cli_session_completed(database, exit_reason, agent_kind_for_agent_engine(agent_engine))
+        .send_cli_session_completed(
+            database,
+            exit_reason,
+            agent_kind_for_agent_engine(agent_engine),
+            session_interface,
+            engine_for_agent_engine(agent_engine),
+            run_outcome,
+        )
         .await
     {
         debug!(%err, ?agent_engine, ?exit_reason, "failed to emit CLI session-completion telemetry");
@@ -195,6 +371,21 @@ fn client_application_for_agent_engine(agent_engine: AgentEngine) -> ClientAppli
         AgentEngine::V1 => ClientApplication::ChatCli,
         AgentEngine::V2 => ClientApplication::ChatCliV2,
         AgentEngine::Kas => ClientApplication::ChatCliV3,
+    }
+}
+
+fn engine_for_agent_engine(agent_engine: AgentEngine) -> Engine {
+    match agent_engine {
+        AgentEngine::V1 => Engine::V1,
+        AgentEngine::V2 => Engine::V2,
+        AgentEngine::Kas => Engine::V3,
+    }
+}
+
+fn session_interface_for_interactivity(interactivity: &Interactivity) -> SessionInterface {
+    match interactivity {
+        Interactivity::Interactive => SessionInterface::InteractiveCli,
+        Interactivity::NonInteractive { .. } => SessionInterface::NoninteractiveCli,
     }
 }
 
@@ -227,6 +418,29 @@ fn exit_reason_for_exit_code(exit_code: ExitCode) -> ExitReason {
         ExitReason::Clean
     } else {
         ExitReason::Crash
+    }
+}
+
+fn run_outcome_for_status(status: Option<&std::process::ExitStatus>) -> RunOutcome {
+    match status {
+        None => RunOutcome::UserInterrupt,
+        Some(status) if status.success() => RunOutcome::Success,
+        Some(_) => RunOutcome::Failure,
+    }
+}
+
+fn run_outcome_for_exit_code(exit_code: ExitCode) -> RunOutcome {
+    if exit_code == ExitCode::SUCCESS {
+        RunOutcome::Success
+    } else {
+        RunOutcome::Failure
+    }
+}
+
+fn failure_run_outcome(session_interface: SessionInterface) -> RunOutcome {
+    match session_interface {
+        SessionInterface::InteractiveCli | SessionInterface::NoninteractiveCli => RunOutcome::Failure,
+        SessionInterface::ExternalAcp => RunOutcome::Unknown,
     }
 }
 
@@ -359,6 +573,7 @@ async fn launch_acp_interactive(
     agent_engine: AgentEngine,
     mode: Option<AgentMode>,
     cli_session_completion_emitted: &mut bool,
+    startup: &mut StartupTelemetry,
 ) -> Result<ExitCode> {
     // Show a spinner immediately so the user knows the CLI is starting. The
     // guard stops the spinner and clears its line on every exit path — normal
@@ -495,7 +710,6 @@ async fn launch_acp_interactive(
     for env_var in [
         crate::util::consts::env_var::KIRO_TELEMETRY_OTEL,
         crate::util::consts::env_var::KIRO_TELEMETRY_EXPORT_INTERVAL_MS,
-        crate::util::consts::env_var::KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
     ] {
         if let Ok(value) = std::env::var(env_var)
             && !value.trim().is_empty()
@@ -519,6 +733,7 @@ async fn launch_acp_interactive(
 
     match agent_engine {
         AgentEngine::Kas => {
+            startup.set_failure_stage(StartupFailureStage::AgentLaunch);
             if !crate::util::platform::can_run_kas() {
                 bail!("V3 is currently not supported on this system.");
             }
@@ -570,11 +785,17 @@ async fn launch_acp_interactive(
         cmd.env("KIRO_MODE", mode.to_string());
     }
 
+    startup.set_failure_stage(StartupFailureStage::InterfaceInit);
+    let ready_signal = TuiReadySignal::new().context("failed to create TUI startup acknowledgement")?;
+    ready_signal.configure(&mut cmd);
+
     // Stop the spinner and clear its line before handing the terminal to the
     // TUI process. On any error path above, the guard's Drop already did this.
     drop(spinner);
 
     let mut child = cmd.spawn()?;
+    let mut ready_poll = tokio::time::interval(Duration::from_millis(25));
+    ready_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let status;
 
@@ -586,50 +807,278 @@ async fn launch_acp_interactive(
         };
         let mut sigterm = signal(SignalKind::terminate())?;
         let mut sighup = signal(SignalKind::hangup())?;
-        tokio::select! {
-            s = child.wait() => {
-                status = Some(s?);
-            }
-            _ = sigterm.recv() => {
-                let _ = child.kill().await;
-                status = None;
-            }
-            _ = sighup.recv() => {
-                let _ = child.kill().await;
-                status = None;
-            }
-            _ = tokio::signal::ctrl_c() => {
-                let _ = child.kill().await;
-                status = None;
+        loop {
+            tokio::select! {
+                _ = ready_poll.tick(), if startup.is_pending() => {
+                    if ready_signal.is_ready() {
+                        startup.ready(os);
+                    }
+                }
+                s = child.wait() => {
+                    status = Some(s?);
+                    break;
+                }
+                _ = sigterm.recv() => {
+                    let _ = child.kill().await;
+                    status = None;
+                    break;
+                }
+                _ = sighup.recv() => {
+                    let _ = child.kill().await;
+                    status = None;
+                    break;
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    let _ = child.kill().await;
+                    status = None;
+                    break;
+                }
             }
         }
     }
     #[cfg(not(unix))]
     {
-        tokio::select! {
-            s = child.wait() => {
-                status = Some(s?);
-            }
-            _ = tokio::signal::ctrl_c() => {
-                let _ = child.kill().await;
-                status = None;
+        loop {
+            tokio::select! {
+                _ = ready_poll.tick(), if startup.is_pending() => {
+                    if ready_signal.is_ready() {
+                        startup.ready(os);
+                    }
+                }
+                s = child.wait() => {
+                    status = Some(s?);
+                    break;
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    let _ = child.kill().await;
+                    status = None;
+                    break;
+                }
             }
         }
     }
 
+    if startup.is_pending() && ready_signal.is_ready() {
+        startup.ready(os);
+    }
+    let terminated_before_ready = startup.is_pending() && status.is_some();
+    if startup.is_pending() {
+        match status.as_ref() {
+            None => startup.interrupt(),
+            Some(_) => startup.fail(os),
+        }
+    }
+
     let exit_reason = exit_reason_for_status(status.as_ref());
+    let run_outcome = if terminated_before_ready {
+        RunOutcome::Failure
+    } else {
+        run_outcome_for_status(status.as_ref())
+    };
     let exit_code = status
         .as_ref()
         .and_then(|s| s.code())
         .map_or(ExitCode::FAILURE, |e| ExitCode::from(e as u8));
 
-    emit_cli_session_completed(&os.telemetry, &os.database, agent_engine, exit_reason).await;
+    emit_cli_session_completed(
+        &os.telemetry,
+        &os.database,
+        agent_engine,
+        SessionInterface::InteractiveCli,
+        exit_reason,
+        run_outcome,
+    )
+    .await;
     *cli_session_completion_emitted = true;
 
     Ok(exit_code)
 }
 
-/// Drive a non-interactive V2 session.
+#[derive(Debug, Default, PartialEq)]
+struct KasTurnCompletion {
+    status: Option<String>,
+    model: Option<String>,
+    turn_duration_seconds: i64,
+    uncached_input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    cache_read_input_tokens: Option<i64>,
+    cache_write_input_tokens: Option<i64>,
+    model_invocation_count: u64,
+    metering_usage: Vec<KasMeteringUsage>,
+}
+
+#[derive(Debug, PartialEq)]
+struct KasMeteringUsage {
+    value: f64,
+    unit: String,
+    unit_plural: String,
+}
+
+fn parse_kas_turn_completion(meta: Option<&agent_client_protocol::Meta>) -> Option<KasTurnCompletion> {
+    let payload = meta?.get("kiro")?.as_object()?;
+    if payload.get("kind")?.as_str()? != "turn_completion" {
+        return None;
+    }
+
+    let token_count = |names: &[&str]| {
+        ["tokenUsage", "usage", "metrics"]
+            .into_iter()
+            .filter_map(|source| payload.get(source).and_then(serde_json::Value::as_object))
+            .chain(std::iter::once(payload))
+            .find_map(|source| {
+                names.iter().find_map(|name| {
+                    source
+                        .get(*name)
+                        .and_then(serde_json::Value::as_f64)
+                        .filter(|value| value.is_finite() && *value > 0.0)
+                        .map(|value| value.floor().min(i64::MAX as f64) as i64)
+                })
+            })
+    };
+
+    let prompt_turn_summaries = payload.get("promptTurnSummaries").and_then(serde_json::Value::as_array);
+    let model_invocation_count = prompt_turn_summaries.map_or(0, |summaries| summaries.len() as u64);
+    let metering_usage = prompt_turn_summaries
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_object)
+        .filter_map(|summary| {
+            let value = summary.get("usage")?.as_f64()?;
+            value.is_finite().then(|| KasMeteringUsage {
+                value,
+                unit: summary
+                    .get("unit")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                unit_plural: summary
+                    .get("unitPlural")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+        })
+        .collect();
+
+    let turn_duration_seconds = payload
+        .get("elapsedTime")
+        .and_then(serde_json::Value::as_f64)
+        .filter(|milliseconds| milliseconds.is_finite() && *milliseconds > 0.0)
+        .map_or(0, |milliseconds| {
+            (milliseconds / 1000.0).ceil().min(i64::MAX as f64) as i64
+        });
+
+    Some(KasTurnCompletion {
+        status: payload
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        model: payload
+            .get("modelId")
+            .and_then(serde_json::Value::as_str)
+            .filter(|model| !model.trim().is_empty())
+            .map(str::to_string),
+        turn_duration_seconds,
+        uncached_input_tokens: token_count(&["uncachedInputTokens", "inputTokens"]),
+        output_tokens: token_count(&["outputTokens"]),
+        cache_read_input_tokens: token_count(&["cacheReadInputTokens", "cachedTokens"]),
+        cache_write_input_tokens: token_count(&["cacheWriteInputTokens"]),
+        model_invocation_count,
+        metering_usage,
+    })
+}
+
+fn kas_turn_result(status: Option<&str>, stop_reason: Option<&agent_client_protocol::StopReason>) -> TelemetryResult {
+    match status.unwrap_or_default().trim().to_ascii_lowercase().as_str() {
+        "completed" | "success" | "succeeded" => TelemetryResult::Succeeded,
+        "cancelled" | "canceled" | "interrupted" => TelemetryResult::Cancelled,
+        "errored" | "error" | "failed" => TelemetryResult::Failed,
+        _ => match stop_reason {
+            Some(agent_client_protocol::StopReason::EndTurn) => TelemetryResult::Succeeded,
+            Some(agent_client_protocol::StopReason::Cancelled) => TelemetryResult::Cancelled,
+            _ => TelemetryResult::Failed,
+        },
+    }
+}
+
+fn kas_turn_completion_args(
+    completion: &KasTurnCompletion,
+    configured_model: Option<String>,
+    result: TelemetryResult,
+) -> RecordUserTurnCompletionArgs {
+    let model = completion.model.clone().or(configured_model);
+    let total_tokens = [
+        completion.uncached_input_tokens,
+        completion.output_tokens,
+        completion.cache_read_input_tokens,
+    ]
+    .into_iter()
+    .flatten()
+    .try_fold(0_i64, i64::checked_add)
+    .filter(|total| *total > 0);
+    RecordUserTurnCompletionArgs {
+        model,
+        reason: (result == TelemetryResult::Failed)
+            .then(|| completion.status.clone().unwrap_or_else(|| "unknown".to_string())),
+        total_tokens,
+        uncached_input_tokens: completion.uncached_input_tokens,
+        output_tokens: completion.output_tokens,
+        cache_read_input_tokens: completion.cache_read_input_tokens,
+        cache_write_input_tokens: completion.cache_write_input_tokens,
+        model_invocation_count: completion.model_invocation_count,
+        user_turn_duration_seconds: completion.turn_duration_seconds,
+        ..Default::default()
+    }
+}
+
+async fn emit_kas_noninteractive_turn(
+    os: &Os,
+    session_id: String,
+    agent_mode: metric::AgentMode,
+    configured_model: Option<String>,
+    completion: Option<KasTurnCompletion>,
+    stop_reason: Option<&agent_client_protocol::StopReason>,
+) {
+    let completion = completion.unwrap_or_default();
+    let result = kas_turn_result(completion.status.as_deref(), stop_reason);
+    let args = kas_turn_completion_args(&completion, configured_model, result);
+    let model = args.model.clone();
+    if let Err(err) = os
+        .telemetry
+        .send_record_user_turn_completion_for_engine(
+            &os.database,
+            session_id,
+            result,
+            SessionInterface::NoninteractiveCli,
+            agent_mode,
+            Engine::V3,
+            args,
+        )
+        .await
+    {
+        debug!(%err, "failed to emit KAS non-interactive turn telemetry");
+    }
+
+    for usage in completion.metering_usage {
+        if let Err(err) = os
+            .telemetry
+            .send_metering_event_for_engine(
+                &os.database,
+                None,
+                model.clone(),
+                usage.value,
+                usage.unit,
+                usage.unit_plural,
+                Engine::V3,
+            )
+            .await
+        {
+            debug!(%err, "failed to emit KAS non-interactive metering telemetry");
+        }
+    }
+}
+
+/// Drive a non-interactive V2 or V3 session.
 #[allow(clippy::too_many_arguments)]
 async fn launch_acp_non_interactive(
     os: &Os,
@@ -641,6 +1090,7 @@ async fn launch_acp_non_interactive(
     model: Option<String>,
     trust_tools: Option<Vec<String>>,
     cli_session_completion_emitted: &mut bool,
+    startup: &mut StartupTelemetry,
 ) -> Result<ExitCode> {
     use agent_client_protocol::{
         self as acp,
@@ -654,6 +1104,7 @@ async fn launch_acp_non_interactive(
     struct NonInteractiveAcpClient {
         trust_all_tools: bool,
         trust_tools: Option<Vec<String>>,
+        kas_turn_completion: Arc<Mutex<Option<KasTurnCompletion>>>,
     }
 
     fn non_interactive_error(reason: &str) -> acp::Error {
@@ -685,6 +1136,11 @@ async fn launch_acp_non_interactive(
                 acp::SessionUpdate::ToolCallUpdate(update) => {
                     if let Some(status) = update.fields.status {
                         eprintln!("[tool] status: {status:?}");
+                    }
+                },
+                acp::SessionUpdate::SessionInfoUpdate(update) => {
+                    if let Some(completion) = parse_kas_turn_completion(update.meta.as_ref()) {
+                        *self.kas_turn_completion.lock().expect("KAS turn mutex poisoned") = Some(completion);
                     }
                 },
                 _ => {},
@@ -775,7 +1231,14 @@ async fn launch_acp_non_interactive(
         }
     }
 
+    let telemetry_mode_name = agent
+        .clone()
+        .or_else(|| mode.map(|mode| mode.to_string()))
+        .unwrap_or_else(|| "default".to_string());
+    let telemetry_agent_mode = metric::AgentMode::from_id(Some(&telemetry_mode_name));
+    let kas_turn_completion = Arc::new(Mutex::new(None));
     let current_exe = std::env::current_exe()?;
+    startup.set_failure_stage(StartupFailureStage::AgentLaunch);
     let mut cmd = tokio::process::Command::new(&current_exe);
     cmd.arg("acp");
     if matches!(agent_engine, AgentEngine::Kas) {
@@ -797,6 +1260,7 @@ async fn launch_acp_non_interactive(
         "spawning ACP server subprocess for non-interactive session"
     );
     let mut child = cmd.spawn().context("failed to spawn ACP server subprocess")?;
+    startup.set_failure_stage(StartupFailureStage::ProtocolInit);
 
     let outgoing = child
         .stdin
@@ -811,11 +1275,12 @@ async fn launch_acp_non_interactive(
 
     let local_set = tokio::task::LocalSet::new();
     let result: Result<ExitCode> = local_set
-        .run_until(async move {
+        .run_until(async {
             let (conn, handle_io) = acp::ClientSideConnection::new(
                 NonInteractiveAcpClient {
                     trust_all_tools,
                     trust_tools,
+                    kas_turn_completion: Arc::clone(&kas_turn_completion),
                 },
                 outgoing,
                 incoming,
@@ -827,9 +1292,12 @@ async fn launch_acp_non_interactive(
 
             conn.initialize(
                 acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
-                    acp::Implementation::new("kiro-cli-non-interactive", env!("CARGO_PKG_VERSION"))
-                        .title(Some("Kiro CLI (non-interactive)".to_string()))
-                        .meta(client_info_user_agent_meta()),
+                    acp::Implementation::new(
+                        chat_cli_v2::constants::KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME,
+                        env!("CARGO_PKG_VERSION"),
+                    )
+                    .title(Some("Kiro CLI (non-interactive)".to_string()))
+                    .meta(client_info_user_agent_meta()),
                 )),
             )
             .await
@@ -840,6 +1308,7 @@ async fn launch_acp_non_interactive(
                 .new_session(acp::NewSessionRequest::new(cwd))
                 .await
                 .context("ACP new_session failed")?;
+            let session_id = session.session_id.clone();
 
             if let Some(ref agent) = agent
                 && let Err(e) = conn
@@ -864,8 +1333,19 @@ async fn launch_acp_non_interactive(
                 eprintln!("[warn] failed to set model '{}': {}", model, e.message);
             }
 
+            if matches!(agent_engine, AgentEngine::Kas)
+                && let Err(err) = os.telemetry.send_chat_session_started_for_engine(
+                    SessionInterface::NoninteractiveCli,
+                    telemetry_agent_mode,
+                    Engine::V3,
+                )
+            {
+                debug!(%err, "failed to emit KAS non-interactive session telemetry");
+            }
+
+            startup.ready(os);
             let response = conn
-                .prompt(acp::PromptRequest::new(session.session_id, vec![
+                .prompt(acp::PromptRequest::new(session_id.clone(), vec![
                     acp::ContentBlock::Text(acp::TextContent::new(input)),
                 ]))
                 .await;
@@ -876,10 +1356,35 @@ async fn launch_acp_non_interactive(
             let response = match response {
                 Ok(r) => r,
                 Err(e) => {
+                    if matches!(agent_engine, AgentEngine::Kas) {
+                        let completion = kas_turn_completion.lock().expect("KAS turn mutex poisoned").take();
+                        emit_kas_noninteractive_turn(
+                            os,
+                            session_id.to_string(),
+                            telemetry_agent_mode,
+                            model.clone(),
+                            completion,
+                            None,
+                        )
+                        .await;
+                    }
                     eprintln!("Error: {}", e.message);
                     return Ok(ExitCode::FAILURE);
                 },
             };
+
+            if matches!(agent_engine, AgentEngine::Kas) {
+                let completion = kas_turn_completion.lock().expect("KAS turn mutex poisoned").take();
+                emit_kas_noninteractive_turn(
+                    os,
+                    session_id.to_string(),
+                    telemetry_agent_mode,
+                    model.clone(),
+                    completion,
+                    Some(&response.stop_reason),
+                )
+                .await;
+            }
 
             let exit_code = match response.stop_reason {
                 acp::StopReason::EndTurn | acp::StopReason::MaxTokens | acp::StopReason::MaxTurnRequests => {
@@ -895,11 +1400,30 @@ async fn launch_acp_non_interactive(
         .await;
 
     let _ = child.kill().await;
+    let terminated_before_ready = startup.is_pending();
+    if terminated_before_ready {
+        startup.fail(os);
+    }
     let exit_reason = match result.as_ref() {
         Ok(exit_code) => exit_reason_for_exit_code(*exit_code),
         Err(_) => ExitReason::Crash,
     };
-    emit_cli_session_completed(&os.telemetry, &os.database, agent_engine, exit_reason).await;
+    let run_outcome = if terminated_before_ready {
+        RunOutcome::Failure
+    } else {
+        result
+            .as_ref()
+            .map_or(RunOutcome::Failure, |exit_code| run_outcome_for_exit_code(*exit_code))
+    };
+    emit_cli_session_completed(
+        &os.telemetry,
+        &os.database,
+        agent_engine,
+        SessionInterface::NoninteractiveCli,
+        exit_reason,
+        run_outcome,
+    )
+    .await;
     *cli_session_completion_emitted = true;
     result
 }
@@ -1158,6 +1682,119 @@ mod tests {
     }
 
     #[test]
+    fn maps_command_exit_to_run_outcome() {
+        assert_eq!(run_outcome_for_exit_code(ExitCode::SUCCESS), RunOutcome::Success);
+        assert_eq!(run_outcome_for_exit_code(ExitCode::FAILURE), RunOutcome::Failure);
+        assert_eq!(run_outcome_for_status(None), RunOutcome::UserInterrupt);
+    }
+
+    #[test]
+    fn parses_kas_turn_completion_economics() {
+        let mut meta = agent_client_protocol::Meta::new();
+        meta.insert(
+            "kiro".to_string(),
+            serde_json::json!({
+                "kind": "turn_completion",
+                "status": "success",
+                "modelId": "model-1",
+                "elapsedTime": 1234,
+                "tokenUsage": {
+                    "inputTokens": 10.9,
+                    "outputTokens": 5,
+                    "cacheReadInputTokens": 2,
+                    "cacheWriteInputTokens": 3
+                },
+                "promptTurnSummaries": [
+                    {
+                        "usage": 1.5,
+                        "unit": "credit",
+                        "unitPlural": "credits"
+                    },
+                    {
+                        "usage": 500,
+                        "unit": "token",
+                        "unitPlural": "tokens"
+                    }
+                ]
+            }),
+        );
+
+        assert_eq!(
+            parse_kas_turn_completion(Some(&meta)),
+            Some(KasTurnCompletion {
+                status: Some("success".to_string()),
+                model: Some("model-1".to_string()),
+                turn_duration_seconds: 2,
+                uncached_input_tokens: Some(10),
+                output_tokens: Some(5),
+                cache_read_input_tokens: Some(2),
+                cache_write_input_tokens: Some(3),
+                model_invocation_count: 2,
+                metering_usage: vec![
+                    KasMeteringUsage {
+                        value: 1.5,
+                        unit: "credit".to_string(),
+                        unit_plural: "credits".to_string(),
+                    },
+                    KasMeteringUsage {
+                        value: 500.0,
+                        unit: "token".to_string(),
+                        unit_plural: "tokens".to_string(),
+                    },
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn kas_turn_completion_args_carry_model_invocation_count() {
+        let completion = KasTurnCompletion {
+            model: Some("model-1".to_string()),
+            model_invocation_count: 3,
+            ..Default::default()
+        };
+
+        let args = kas_turn_completion_args(
+            &completion,
+            Some("configured-model".to_string()),
+            TelemetryResult::Succeeded,
+        );
+
+        assert_eq!(args.model.as_deref(), Some("model-1"));
+        assert_eq!(args.model_invocation_count, 3);
+    }
+
+    #[test]
+    fn kas_turn_result_uses_typed_status_then_prompt_stop_reason() {
+        assert_eq!(
+            kas_turn_result(Some("cancelled"), Some(&agent_client_protocol::StopReason::EndTurn)),
+            TelemetryResult::Cancelled
+        );
+        assert_eq!(
+            kas_turn_result(None, Some(&agent_client_protocol::StopReason::EndTurn)),
+            TelemetryResult::Succeeded
+        );
+        assert_eq!(
+            kas_turn_result(None, Some(&agent_client_protocol::StopReason::Cancelled)),
+            TelemetryResult::Cancelled
+        );
+        assert_eq!(kas_turn_result(None, None), TelemetryResult::Failed);
+    }
+
+    #[test]
+    fn maps_unreported_launch_failures_by_session_interface() {
+        assert_eq!(
+            failure_run_outcome(SessionInterface::InteractiveCli),
+            RunOutcome::Failure
+        );
+        assert_eq!(
+            failure_run_outcome(SessionInterface::NoninteractiveCli),
+            RunOutcome::Failure
+        );
+        assert_eq!(failure_run_outcome(SessionInterface::ExternalAcp), RunOutcome::Unknown);
+    }
+
+    #[test]
     fn emits_completion_for_launch_errors_until_completion_is_recorded() {
         let failed: Result<ExitCode> = Err(eyre::eyre!("setup failed"));
         let succeeded: Result<ExitCode> = Ok(ExitCode::SUCCESS);
@@ -1175,6 +1812,7 @@ mod tests {
         let status = std::process::ExitStatus::from_raw(9);
 
         assert_eq!(exit_reason_for_status(Some(&status)), ExitReason::Crash);
+        assert_eq!(run_outcome_for_status(Some(&status)), RunOutcome::Failure);
     }
 
     #[test]

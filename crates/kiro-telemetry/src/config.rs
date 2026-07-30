@@ -8,7 +8,6 @@ const DEFAULT_DEPLOYMENT_ENVIRONMENT: &str = "dev";
 const KIRO_TELEMETRY_EXPORT_INTERVAL_MS: &str = "KIRO_TELEMETRY_EXPORT_INTERVAL_MS";
 const KIRO_TELEMETRY_MACHINE_ID: &str = "KIRO_TELEMETRY_MACHINE_ID";
 const KIRO_TELEMETRY_DEPLOYMENT_ENVIRONMENT: &str = "KIRO_TELEMETRY_DEPLOYMENT_ENVIRONMENT";
-const KIRO_TELEMETRY_OTLP_LOGS_ENABLED: &str = "KIRO_TELEMETRY_OTLP_LOGS_ENABLED";
 const KUTS_ENDPOINT_EU_CENTRAL_1: &str = "https://prod.eu-central-1.telemetry-v2.kiro.dev";
 const KUTS_ENDPOINT_US_EAST_1: &str = "https://prod.us-east-1.telemetry-v2.kiro.dev";
 
@@ -45,7 +44,6 @@ pub struct TelemetryConfig {
     pub enabled: bool,
     pub otel_mode: OtelMode,
     pub otlp_endpoint: Option<String>,
-    pub otlp_logs_enabled: bool,
     pub machine_id: String,
     pub user_id: Option<String>,
     pub service_version: String,
@@ -61,18 +59,12 @@ impl TelemetryConfig {
             enabled,
             otel_mode,
             otlp_endpoint,
-            otlp_logs_enabled: false,
             machine_id: DEFAULT_MACHINE_ID.to_string(),
             user_id: None,
             service_version: env!("CARGO_PKG_VERSION").to_string(),
             deployment_environment,
             state_dir,
         }
-    }
-
-    pub fn with_otlp_logs_enabled(mut self, enabled: bool) -> Self {
-        self.otlp_logs_enabled = enabled;
-        self
     }
 
     pub fn with_machine_id(mut self, machine_id: impl Into<String>) -> Self {
@@ -131,15 +123,11 @@ impl TelemetryConfig {
             .get("KIRO_TELEMETRY_OTLP_ENDPOINT")
             .filter(|value| !value.trim().is_empty())
             .cloned();
-        let otlp_logs_enabled = env
-            .get(KIRO_TELEMETRY_OTLP_LOGS_ENABLED)
-            .is_some_and(|value| !matches_disabled(value));
         let state_dir = env
             .get("KIRO_STATE_DIR")
             .map_or_else(|| std::env::temp_dir().join("kiro-telemetry"), PathBuf::from);
 
-        let mut config =
-            Self::new(enabled, otel_mode, otlp_endpoint, state_dir).with_otlp_logs_enabled(otlp_logs_enabled);
+        let mut config = Self::new(enabled, otel_mode, otlp_endpoint, state_dir);
         if let Some(machine_id) = env.get(KIRO_TELEMETRY_MACHINE_ID) {
             config = config.with_machine_id(machine_id.clone());
         }
@@ -151,14 +139,6 @@ impl TelemetryConfig {
 
     pub fn exports_enabled(&self) -> bool {
         self.enabled && self.otel_mode != OtelMode::Off
-    }
-
-    pub fn otlp_logs_enabled(&self) -> bool {
-        self.exports_enabled() && self.otlp_logs_enabled && !self.is_kuts_endpoint()
-    }
-
-    pub fn is_kuts_endpoint(&self) -> bool {
-        self.otlp_endpoint.as_deref().is_some_and(is_kuts_endpoint)
     }
 }
 
@@ -198,11 +178,6 @@ fn deployment_environment_from_endpoint(endpoint: Option<&str>) -> &'static str 
     }
 }
 
-fn is_kuts_endpoint(endpoint: &str) -> bool {
-    let endpoint = endpoint.to_ascii_lowercase();
-    endpoint.contains("telemetry-v2.kiro.dev") || endpoint.contains("telemetry-v2.kiro.aws.dev")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,47 +209,6 @@ mod tests {
 
         assert_eq!(config.otel_mode, OtelMode::OtelOnly);
         assert!(!config.exports_enabled());
-    }
-
-    #[test]
-    fn parses_otlp_logs_enabled_override() {
-        let config = TelemetryConfig::from_pairs([
-            ("KIRO_TELEMETRY_OTEL", "2"),
-            ("KIRO_TELEMETRY_OTLP_ENDPOINT", "https://otel.example.test"),
-            ("KIRO_TELEMETRY_OTLP_LOGS_ENABLED", "true"),
-        ]);
-
-        assert!(config.exports_enabled());
-        assert!(config.otlp_logs_enabled());
-    }
-
-    #[test]
-    fn otlp_logs_default_off_for_kuts() {
-        let config = TelemetryConfig::from_pairs([
-            ("KIRO_TELEMETRY_OTEL", "2"),
-            (
-                "KIRO_TELEMETRY_OTLP_ENDPOINT",
-                "https://prod.us-east-1.telemetry-v2.kiro.dev",
-            ),
-        ]);
-
-        assert!(config.exports_enabled());
-        assert!(!config.otlp_logs_enabled());
-    }
-
-    #[test]
-    fn kuts_endpoint_forces_logs_off_even_when_requested() {
-        let config = TelemetryConfig::from_pairs([
-            ("KIRO_TELEMETRY_OTEL", "2"),
-            (
-                "KIRO_TELEMETRY_OTLP_ENDPOINT",
-                "https://prod.us-east-1.telemetry-v2.kiro.dev",
-            ),
-            ("KIRO_TELEMETRY_OTLP_LOGS_ENABLED", "true"),
-        ]);
-
-        assert!(config.is_kuts_endpoint());
-        assert!(!config.otlp_logs_enabled());
     }
 
     #[test]

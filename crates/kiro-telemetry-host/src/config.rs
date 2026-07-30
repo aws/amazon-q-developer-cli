@@ -6,7 +6,6 @@
 //! [`LegacySink`] trait abstracts the V2-only Toolkit/CodeWhisperer post paths so
 //! the host crate stays free of AWS-SDK dependencies.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -17,7 +16,6 @@ use kiro_telemetry::metric::{
 use kiro_telemetry::{
     MetricRecord,
     TelemetryConfig,
-    TelemetryLogRecord,
 };
 use uuid::{
     Uuid,
@@ -25,6 +23,7 @@ use uuid::{
 };
 
 use crate::event::Event;
+use crate::process::ProcessIdentity;
 
 /// Sentinel client id used when telemetry is disabled.
 const TELEMETRY_DISABLED_CLIENT_ID: Uuid = uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff");
@@ -50,7 +49,6 @@ pub trait LegacySink: Send + Sync + std::fmt::Debug {
 /// can leave [`HostConfig::otel_translator`] as `None` to skip OTel emission.
 pub trait OtelEventTranslator: Send + Sync + std::fmt::Debug {
     fn metric_records(&self, event: &Event) -> Vec<MetricRecord>;
-    fn log_record(&self, event: &Event) -> Option<TelemetryLogRecord>;
 }
 
 /// Async closure that enriches an outbound [`Event`] with caller-supplied
@@ -82,11 +80,10 @@ pub struct HostConfig {
     pub engine: Option<Engine>,
     /// Reserved for PR L; defaults to `UserCli`.
     pub host_role: HostRole,
+    /// Physical process identity for the shared process sampler.
+    pub process_identity: Option<ProcessIdentity>,
     /// `Some("aws-us-gov")` disables the legacy-sink branch.
     pub govcloud_partition: Option<&'static str>,
-    /// Path to the settings file used for consent-integrity accounting.
-    /// `None` skips consent integrity emission (e.g. tests).
-    pub consent_settings_path: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for HostConfig {
@@ -104,8 +101,8 @@ impl std::fmt::Debug for HostConfig {
             .field("client_application", &self.client_application)
             .field("engine", &self.engine)
             .field("host_role", &self.host_role)
+            .field("process_identity", &self.process_identity)
             .field("govcloud_partition", &self.govcloud_partition)
-            .field("consent_settings_path", &self.consent_settings_path)
             .finish()
     }
 }
@@ -122,8 +119,8 @@ impl Default for HostConfig {
             client_application: None,
             engine: None,
             host_role: HostRole::UserCli,
+            process_identity: None,
             govcloud_partition: None,
-            consent_settings_path: None,
         }
     }
 }

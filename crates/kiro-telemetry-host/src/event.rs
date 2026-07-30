@@ -11,11 +11,7 @@ use std::time::{
 };
 
 use kiro_telemetry::{
-    EventClass,
-    FieldClass,
     LegacyEventType,
-    MetricRecord,
-    PiiRedactor,
     metric,
 };
 use serde::{
@@ -39,6 +35,8 @@ pub struct Event {
     pub app_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<metric::Engine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_interface: Option<metric::SessionInterface>,
     pub acp_client_name: Option<String>,
     pub acp_client_version: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -52,9 +50,10 @@ pub struct Event {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EventMetricContext {
     pub mode: Option<metric::Mode>,
-    pub session_start_kind: Option<metric::SessionStartKind>,
+    pub agent_mode: Option<metric::AgentMode>,
     pub install_method: Option<metric::InstallSource>,
     pub canonical_tool_name: Option<String>,
+    pub run_outcome: Option<metric::RunOutcome>,
 }
 
 impl Event {
@@ -67,6 +66,7 @@ impl Event {
             client_application: None,
             app_type: None,
             engine: None,
+            session_interface: None,
             acp_client_name: None,
             acp_client_version: None,
             is_subagent: false,
@@ -93,6 +93,10 @@ impl Event {
     pub fn set_engine(&mut self, engine: metric::Engine) {
         self.engine = Some(engine);
     }
+
+    pub fn set_session_interface(&mut self, session_interface: metric::SessionInterface) {
+        self.session_interface = Some(session_interface);
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, EnumString, Display, Serialize, Deserialize)]
@@ -118,15 +122,6 @@ pub enum EmptyResponseRetryOutcome {
     StillEmpty,
 }
 
-impl From<EmptyResponseRetryOutcome> for metric::Outcome {
-    fn from(value: EmptyResponseRetryOutcome) -> Self {
-        match value {
-            EmptyResponseRetryOutcome::Recovered => Self::Recovered,
-            EmptyResponseRetryOutcome::StillEmpty => Self::StillEmpty,
-        }
-    }
-}
-
 /// How a mode change was initiated. Add a new variant when adding a new entry point —
 /// the wire format is the camelCase variant name. Keeping this as an enum (rather than a
 /// free-form string) gives us spell-check at the call site and a single documented set of
@@ -142,23 +137,8 @@ pub enum ModeChangeSource {
     SlashCommand,
 }
 
-/// Total mapping — a new variant above is a compile error here, never a silent `Other`.
-impl From<ModeChangeSource> for metric::UiModeChangeSource {
-    fn from(value: ModeChangeSource) -> Self {
-        match value {
-            ModeChangeSource::ShiftTab => Self::ShiftTab,
-            ModeChangeSource::SlashCommand => Self::SlashCommand,
-        }
-    }
-}
-
 /// Which input source resolved the UI mode at session start. The wire format is the
-/// camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
-/// persisted setting > built-in default).
-///
-/// Defined here (rather than in `chat-cli-v2`'s `agent::acp::schema`) so the portable
-/// [`Event`] types can refer to it directly; `agent::acp::schema` re-exports it to keep
-/// the V2 API surface unchanged.
+/// camelCase variant name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumString, Display)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
@@ -170,17 +150,6 @@ pub enum UiModeSource {
     Setting,
     /// No env / setting — fell through to the built-in default.
     Default,
-}
-
-/// Total mapping — a new variant above is a compile error here, never a silent `Other`.
-impl From<UiModeSource> for metric::UiModeSource {
-    fn from(value: UiModeSource) -> Self {
-        match value {
-            UiModeSource::EnvVar => Self::EnvVar,
-            UiModeSource::Setting => Self::Setting,
-            UiModeSource::Default => Self::Default,
-        }
-    }
 }
 
 /// Optional fields to add for a chatAddedMessage telemetry event.
@@ -244,6 +213,8 @@ pub struct RecordUserTurnCompletionArgs {
     pub cache_read_input_tokens: Option<i64>,
     #[serde(default)]
     pub cache_write_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub model_invocation_count: u64,
     pub user_turn_duration_seconds: i64,
     pub follow_up_count: i64,
     pub message_meta_tags: Vec<MessageMetaTag>,
@@ -282,11 +253,25 @@ pub enum EventType {
         exit_reason: metric::ExitReason,
         agent_kind: metric::AgentKind,
     },
+    StartupDuration {
+        duration_seconds: f64,
+        os_type: metric::OsType,
+    },
+    StartupFailure {
+        os_type: metric::OsType,
+        failure_stage: metric::StartupFailureStage,
+    },
     AuthFailed {
         auth_method: String,
         oauth_flow: String,
         error_type: String,
         error_code: Option<String>,
+    },
+    RefreshCredentials {
+        request_id: String,
+        result: TelemetryResult,
+        reason: Option<String>,
+        oauth_flow: String,
     },
     CliSubcommandExecuted {
         subcommand: String,
@@ -359,6 +344,8 @@ pub enum EventType {
     McpServerInit {
         conversation_id: String,
         server_name: String,
+        #[serde(default)]
+        mcp_server_source: metric::McpServerSource,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
         all_tool_names: Option<String>,
@@ -508,14 +495,10 @@ pub enum EventType {
         model: Option<String>,
         outcome: EmptyResponseRetryOutcome,
     },
-    RetryAttempt {
-        upstream: metric::Upstream,
+    AutomaticRetryCompleted {
         retry_reason: metric::RetryReason,
-        attempt: u32,
-    },
-    RetryExhausted {
-        upstream: metric::Upstream,
-        final_error_kind: metric::ErrorKind,
+        additional_attempts: u32,
+        outcome: metric::RetryOutcome,
     },
 }
 
@@ -546,16 +529,6 @@ pub enum TelemetryResult {
     Cancelled,
 }
 
-impl From<TelemetryResult> for metric::TurnOutcome {
-    fn from(value: TelemetryResult) -> Self {
-        match value {
-            TelemetryResult::Succeeded => Self::Succeeded,
-            TelemetryResult::Failed => Self::Failed,
-            TelemetryResult::Cancelled => Self::Cancelled,
-        }
-    }
-}
-
 /// 'user' -> users change the profile through Q CLI user profile command
 /// 'auth' -> users change the profile through dashboard
 /// 'update' -> CLI auto select the profile on users' behalf as there is only 1 profile
@@ -574,7 +547,10 @@ impl EventType {
             Self::UserLoggedIn {} => Some(LegacyEventType::UserLoggedIn),
             Self::CliSessionStarted { .. } => None,
             Self::CliSessionCompleted { .. } => None,
+            Self::StartupDuration { .. } => None,
+            Self::StartupFailure { .. } => None,
             Self::AuthFailed { .. } => Some(LegacyEventType::AuthFailed),
+            Self::RefreshCredentials { .. } => Some(LegacyEventType::RefreshCredentials),
             Self::CliSubcommandExecuted { .. } => Some(LegacyEventType::CliSubcommandExecuted),
             Self::ChatSlashCommandExecuted { .. } => Some(LegacyEventType::ChatSlashCommandExecuted),
             Self::ChatStart { .. } => Some(LegacyEventType::ChatStart),
@@ -602,68 +578,11 @@ impl EventType {
             Self::MeteringEvent { .. } => None,
             Self::ContextUsagePercentage { .. } => None,
             Self::EmptyResponseRetry { .. } => None,
-            Self::RetryAttempt { .. } => None,
-            Self::RetryExhausted { .. } => None,
+            Self::AutomaticRetryCompleted { .. } => None,
             Self::ModelInvocation { .. } => None,
             Self::ChatSessionStarted { .. } => None,
         }
     }
-
-    pub(crate) fn redaction_metric_records(&self, channel: metric::TelemetryChannel) -> Vec<MetricRecord> {
-        match self {
-            Self::ChatAddedMessage {
-                data: ChatAddedMessageParams { reason_desc, .. },
-                ..
-            }
-            | Self::RecordUserTurnCompletion {
-                args: RecordUserTurnCompletionArgs { reason_desc, .. },
-                ..
-            }
-            | Self::ToolUseSuggested { reason_desc, .. }
-            | Self::MessageResponseError { reason_desc, .. }
-            | Self::VoiceInput { reason_desc, .. } => {
-                redaction_records_for_fields(channel, &[(FieldClass::Other, reason_desc.as_deref())])
-            },
-            Self::McpServerInit {
-                init_failure_reason,
-                all_tool_names,
-                loaded_tool_names,
-                ..
-            } => redaction_records_for_fields(channel, &[
-                (FieldClass::Other, init_failure_reason.as_deref()),
-                (FieldClass::Context, all_tool_names.as_deref()),
-                (FieldClass::Context, loaded_tool_names.as_deref()),
-            ]),
-            Self::AuthFailed { error_type, .. } => {
-                redaction_records_for_fields(channel, &[(FieldClass::Other, Some(error_type.as_str()))])
-            },
-            _ => Vec::new(),
-        }
-    }
-}
-
-impl Event {
-    pub fn redaction_metric_records(&self, channel: metric::TelemetryChannel) -> Vec<MetricRecord> {
-        self.ty.redaction_metric_records(channel)
-    }
-}
-
-fn redaction_records_for_fields(
-    channel: metric::TelemetryChannel,
-    fields: &[(FieldClass, Option<&str>)],
-) -> Vec<MetricRecord> {
-    let mut records = Vec::new();
-    for (field_class, value) in fields {
-        let Some(value) = value else {
-            continue;
-        };
-        records.extend(
-            PiiRedactor
-                .redact(*field_class, value)
-                .metric_records(EventClass::LegacyEvent, channel),
-        );
-    }
-    records
 }
 
 #[cfg(test)]

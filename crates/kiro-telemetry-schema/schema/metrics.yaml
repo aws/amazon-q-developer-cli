@@ -1,756 +1,369 @@
 metrics:
-  - name: kiro_cli_session_started_total
+  - name: kiro_cli_run_started_total
+    description: CLI process invocations that initialized enough to identify their interface and agent engine.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, os_type, install_source, client_application, engine]
-  - name: kiro_cli_user_logged_in_total
+    attributes: [version_full, session_interface, agent_engine, os_type]
+    cloudwatch_dimensions: [version_full, session_interface, agent_engine, os_type]
+  - name: kiro_cli_login_success_total
+    description: Explicit login flows that completed and stored usable credentials.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [client_application, credential_kind, version_full, install_method, engine]
+    attributes: [version_full, auth_method, auth_flow]
+    cloudwatch_dimensions: [version_full, auth_method, auth_flow]
   - name: kiro_cli_chat_session_started_total
+    description: Chat sessions created or loaded by a first-party client or external ACP caller.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, mode, client_application, session_start_kind, model, engine]
-  - name: kiro_cli_cloud_session_total
+    attributes: [version_full, session_interface, agent_mode, agent_engine]
+    cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
+  - name: kiro_cli_cloud_session_lifecycle_total
+    description: Cloud development session lifecycle transitions observed by the CLI.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [cloud_event, engine]
+    attributes: [version_full, cloud_event]
+    cloudwatch_dimensions: [version_full, cloud_event]
   - name: kiro_cli_cloud_session_ready_seconds
+    description: Time from cloud session creation until the session became ready.
     kind: histogram
     unit: s
     priority: P1
     temporality: delta
-    attributes: [engine]
+    attributes: [version_full]
+    cloudwatch_dimensions: [version_full]
   - name: kiro_cli_autonomous_mode_total
+    description: Autonomous-mode lifecycle transitions requested through the KAS client.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [autonomous_event, engine]
+    attributes: [version_full, autonomous_event, agent_engine]
+    cloudwatch_dimensions: [version_full, autonomous_event, agent_engine]
   - name: kiro_cli_cloud_repo_attach_total
+    description: Cloud repository picker opens and submissions, with selected repository counts bucketed.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [repo_attach_event, repo_count_bucket, engine]
+    attributes: [version_full, repo_attach_event, repo_count_bucket, agent_engine]
+    cloudwatch_dimensions: [version_full, repo_attach_event, repo_count_bucket, agent_engine]
   - name: kiro_cli_cloud_error_total
+    description: Failed cloud operations grouped by operation and bounded error class.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [cloud_op, cloud_error_kind, engine]
+    attributes: [version_full, cloud_op, cloud_error_kind, agent_engine]
+    cloudwatch_dimensions: [version_full, cloud_op, cloud_error_kind, agent_engine]
   - name: kiro_cli_cloud_attach_total
+    description: Files attached to cloud prompts grouped by content kind and decoded-size bucket.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [attach_kind, attach_size_bucket, engine]
+    attributes: [version_full, attach_kind, attach_size_bucket, agent_engine]
+    cloudwatch_dimensions: [version_full, attach_kind, attach_size_bucket, agent_engine]
   - name: kiro_cli_ui_mode_session_started_total
+    description: First-party interactive sessions started in each TUI layout.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [ui_mode, ui_mode_source, ui_mode_default]
-  - name: kiro_cli_ui_mode_changed_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [ui_mode_from, ui_mode_to, ui_mode_change_source]
-  - name: kiro_cli_ui_mode_default_changed_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [ui_mode_default_from, ui_mode_default_to]
-  - name: active_users_daily
-    kind: observable_gauge
-    unit: users
-    priority: P0
-    temporality: cumulative
-    attributes: [install_method, client_application, is_internal_amazon]
-  - name: active_users_weekly
-    kind: observable_gauge
-    unit: users
-    priority: P0
-    temporality: cumulative
-    attributes: [install_method, client_application, is_internal_amazon]
-  - name: active_users_monthly
-    kind: observable_gauge
-    unit: users
-    priority: P0
-    temporality: cumulative
-  - name: dau_mau_ratio
-    kind: observable_gauge
-    unit: ratio
-    priority: P0
-    temporality: cumulative
-  - name: new_users_daily
-    kind: observable_gauge
-    unit: users
-    priority: P0
-    temporality: cumulative
-    attributes: [install_source]
-  - name: client_version_seen
-    kind: observable_gauge
-    unit: users
-    priority: P0
-    temporality: cumulative
-    attributes: [version_full, release_channel, os_type]
-  - name: version_adoption_pct
-    kind: observable_gauge
-    unit: percent
-    priority: P0
-    temporality: cumulative
-    attributes: [version_full, release_channel]
-  - name: stale_version_users
-    kind: observable_gauge
-    unit: users
-    priority: P1
-    temporality: cumulative
-    attributes: [staleness_bucket]
-  - name: kiro_cli_upgrade_completed_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [from_version, to_version, upgrade_trigger]
-  - name: kiro_cli_client_identity
-    kind: log_event
-    unit: event
-    priority: P0
-    attributes: [anonymous_client_id, install_method, install_date_epoch_day, is_internal_amazon]
+    attributes: [version_full, ui_mode]
+    cloudwatch_dimensions: [version_full, ui_mode]
   - name: kiro_cli_daily_heartbeat
+    description: At-most-daily active installation heartbeat for the emitted full version.
     kind: counter
     unit: "1"
-    priority: P1
+    priority: P0
     temporality: delta
-    attributes: [client_application, install_method, credential_kind, engine]
+    attributes: [version_full, release_channel, os_type, install_method]
+    cloudwatch_dimensions: [version_full, release_channel, os_type, install_method]
   - name: kiro_cli_slash_command_invoked_total
+    description: Recognized slash-command invocation attempts.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [command, version_full, subcommand, result, engine]
-  - name: kiro_cli_feature_used_total
+    attributes: [version_full, agent_engine, command]
+    cloudwatch_dimensions: [version_full, agent_engine, command]
+  - name: kiro_cli_top_level_command_invoked_total
+    description: Recognized top-level CLI command invocation attempts.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [feature, version_full, subcommand, result, engine]
-  - name: kiro_cli_tangent_duration_seconds
-    kind: histogram
-    unit: s
-    priority: P1
-    temporality: delta
-    attributes: [result, engine]
-  - name: kiro_cli_tangent_entries_removed
-    kind: histogram
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [result, engine]
-  - name: feature_unique_users_weekly
-    kind: observable_gauge
-    unit: users
-    priority: P0
-    temporality: cumulative
-    attributes: [feature]
+    attributes: [version_full, command]
+    cloudwatch_dimensions: [version_full, command]
   - name: kiro_cli_tool_call_total
+    description: Attempted tool executions and their terminal outcomes.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [tool_origin, builtin_tool_name, mcp_server_name, outcome, model, is_accepted, is_trusted, is_valid, is_success, engine]
-  - name: tool_using_sessions_pct
-    kind: observable_gauge
-    unit: percent
-    priority: P0
-    temporality: cumulative
-  - name: kiro_cli_mcp_server_connected_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [mcp_server_class, engine]
+    attributes: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
+    cloudwatch_dimensions: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
   - name: kiro_cli_model_invocations_total
+    description: Logical model requests initiated by an agent loop, excluding transport retries.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [model, engine]
-  - name: mode_active_users_weekly
-    kind: observable_gauge
-    unit: users
+    attributes: [version_full, agent_engine, model]
+    cloudwatch_dimensions: [version_full, agent_engine, model]
+  - name: kiro_cli_model_time_to_first_content_ms
+    description: Time from a logical model request until its first meaningful content arrived.
+    kind: histogram
+    unit: ms
     priority: P0
-    temporality: cumulative
-    attributes: [mode]
-  - name: kiro_cli_feature_first_use
-    kind: log_event
-    unit: event
-    priority: P1
-    attributes: [anonymous_client_id, feature_name, session_id, trigger]
-  - name: kiro_cli.bedrock.stream.ttft
+    temporality: delta
+    attributes: [version_full, agent_engine, model]
+    cloudwatch_dimensions: [version_full, agent_engine, model]
+  - name: kiro_cli_time_to_first_visible_response_ms
+    description: Time from prompt submission until a first-party client rendered meaningful agent output.
+    kind: histogram
+    unit: ms
+    priority: P0
+    temporality: delta
+    attributes: [version_full, session_interface, agent_mode, agent_engine]
+    cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
+  - name: kiro_cli_model_request_duration_seconds
+    description: End-to-end duration of one logical model request, including internal transport retries.
     kind: histogram
     unit: s
     priority: P0
     temporality: delta
-    attributes: [model, prompt_size_bucket, tools_enabled, engine]
-  - name: kiro_cli.bedrock.stream.duration
-    kind: histogram
-    unit: s
-    priority: P0
-    temporality: delta
-    attributes: [model, completion_reason, engine]
-  - name: kiro_cli.bedrock.request.duration
-    kind: histogram
-    unit: s
-    priority: P0
-    temporality: delta
-    attributes: [model, operation, outcome, engine]
-  - name: kiro_cli.bedrock.stream.inter_token_latency
-    kind: histogram
-    unit: s
-    priority: P1
-    temporality: delta
-    attributes: [model, engine]
-  - name: kiro_cli.startup.duration
-    kind: histogram
-    unit: s
-    priority: P0
-    temporality: delta
-    attributes: [version_full, cold_start, os_type]
-  - name: kiro_cli.agent.loop.iteration_duration
-    kind: histogram
-    unit: s
-    priority: P0
-    temporality: delta
-    attributes: [loop_phase]
+    attributes: [version_full, agent_engine, model, model_request_outcome]
+    cloudwatch_dimensions: [version_full, agent_engine, model, model_request_outcome]
   - name: kiro_cli_user_turn_duration_seconds
+    description: Time from prompt submission until the user turn reached a terminal state.
     kind: histogram
     unit: s
     priority: P0
     temporality: delta
-    attributes: [model, chat_conversation_type, is_subagent, mode, engine]
-  - name: kiro_cli_time_to_first_chunk_ms
+    attributes: [version_full, session_interface, agent_mode, agent_engine]
+    cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
+  - name: kiro_cli_run_outcome_total
+    description: Terminal outcomes of completed CLI process invocations.
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [version_full, session_interface, agent_engine, os_type, run_outcome]
+    cloudwatch_dimensions: [version_full, session_interface, agent_engine, os_type, run_outcome]
+  - name: kiro_cli_crash_total
+    description: Abnormal process terminations recovered from durable crash receipts or panic hooks.
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [version_full, agent_engine, os_type, process_role, crash_kind]
+    cloudwatch_dimensions: [version_full, agent_engine, os_type, process_role, crash_kind]
+  - name: kiro_cli_startup_duration_seconds
+    description: Time from process launch until the selected interface became ready.
     kind: histogram
-    unit: ms
-    priority: P1
+    unit: s
+    priority: P0
     temporality: delta
-    attributes: [model, client_application, is_subagent, engine]
-  - name: kiro_cli.session.completed
+    attributes: [version_full, session_interface, agent_engine, os_type]
+    cloudwatch_dimensions: [version_full, session_interface, agent_engine, os_type]
+  - name: kiro_cli_startup_failure_total
+    description: Startup attempts that failed before the selected interface became ready.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [exit_reason, agent_kind, engine]
-  - name: kiro_cli.crash.total
+    attributes: [version_full, session_interface, agent_engine, os_type, startup_failure_stage]
+    cloudwatch_dimensions: [version_full, session_interface, agent_engine, os_type, startup_failure_stage]
+  - name: kiro_cli_model_request_failure_total
+    description: Logical model requests that terminated with a typed client-observed failure.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [crash_kind, os_type, host_arch]
-  - name: kiro_cli.bedrock.request.errors
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [model, operation, error_kind, status_class, failure_reason_code, engine]
-  - name: kiro_cli.bedrock.empty_response.retries
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [model, outcome, engine]
-  - name: kiro_cli_conversation_completed_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [model, engine]
-  - name: kiro_cli_chat_messages_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [model, result, message_kind, engine]
-  - name: kiro_cli_chat_content_length
-    kind: histogram
-    unit: By
-    priority: P1
-    temporality: delta
-    attributes: [content_role, model, engine]
-  - name: kiro_cli_chat_message_tags_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [message_tag, engine]
-  - name: kiro_cli_user_turn_prompt_length
-    kind: histogram
-    unit: By
-    priority: P1
-    temporality: delta
-    attributes: [model, engine]
-  - name: kiro_cli_user_turn_response_length
-    kind: histogram
-    unit: By
-    priority: P1
-    temporality: delta
-    attributes: [model, engine]
-  - name: kiro_cli_user_turn_follow_up_count
+    attributes: [version_full, agent_engine, model, error_kind]
+    cloudwatch_dimensions: [version_full, agent_engine, model, error_kind]
+  - name: kiro_cli_automatic_retries_per_operation
+    description: Additional automatic attempts made by operations that retried at least once.
     kind: histogram
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [engine]
-  - name: kiro_cli_user_turn_request_attempts
-    kind: histogram
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [engine]
-  - name: kiro_cli_user_turn_time_to_first_chunk_ms
-    kind: histogram
-    unit: ms
-    priority: P1
-    temporality: delta
-    attributes: [model, engine]
-  - name: kiro_cli_request_error_context_length
-    kind: histogram
-    unit: By
-    priority: P1
-    temporality: delta
-    attributes: [model, error_kind, engine]
-  - name: kiro_cli.retry.attempts
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [upstream, retry_reason, attempt_number_bucket]
-  - name: kiro_cli.retry.exhausted
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [upstream, final_error_kind]
-  - name: kiro_cli.agent.loop.stuck
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [stuck_phase, detection]
-  - name: kiro_cli.upstream.dependency.up
-    kind: observable_gauge
-    unit: "1"
-    priority: P0
-    temporality: cumulative
-    attributes: [dependency, partition]
-  - name: kiro_cli.slo.success_rate
-    kind: derived
-    unit: "1"
-    priority: P0
-    attributes: [slo_target]
-  - name: kiro_cli.slo.availability
-    kind: derived
-    unit: "1"
-    priority: P0
-    attributes: [slo_target]
-  - name: kiro_cli.process.memory.rss
+    attributes: [version_full, agent_engine, retry_reason, retry_outcome]
+    cloudwatch_dimensions: [version_full, agent_engine, retry_reason, retry_outcome]
+  - name: kiro_cli_process_memory_rss_bytes
+    description: Periodic resident-set-size observations for CLI process roles.
     kind: observable_gauge
     unit: By
-    priority: P0
-    temporality: cumulative
-    attributes: [version_full, agent_kind, engine, process_role]
-  - name: kiro_cli.process.memory.growth_rate
-    kind: histogram
-    unit: "By/s"
     priority: P1
-    temporality: delta
-    attributes: [version_full, agent_kind]
-  - name: kiro_cli.process.cpu.utilization
+    temporality: cumulative
+    attributes: [version_full, os_type, agent_engine, process_role]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine, process_role]
+  - name: kiro_cli_process_cpu_utilization_ratio
+    description: CPU time consumed divided by elapsed wall time for each sampling window.
     kind: histogram
     unit: "1"
-    priority: P0
+    priority: P1
     temporality: delta
-    attributes: [version_full, agent_kind, state, engine, process_role]
-  - name: kiro_cli.process.fds.open
+    attributes: [version_full, os_type, agent_engine, process_role]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine, process_role]
+  - name: kiro_cli_process_open_file_descriptor_count
+    description: Periodic open file descriptor count on supported operating systems.
     kind: observable_gauge
     unit: "1"
     priority: P1
     temporality: cumulative
-    attributes: [version_full, agent_kind, engine, process_role]
-  - name: kiro_cli.process.threads
+    attributes: [version_full, os_type, agent_engine, process_role]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine, process_role]
+  - name: kiro_cli_process_handle_count
+    description: Periodic Windows process handle count.
     kind: observable_gauge
     unit: "1"
-    priority: P2
+    priority: P1
     temporality: cumulative
-    attributes: [version_full, agent_kind, engine, process_role]
+    attributes: [version_full, agent_engine, process_role]
+    cloudwatch_dimensions: [version_full, agent_engine, process_role]
+  - name: kiro_cli_process_thread_count
+    description: Periodic native thread count for CLI process roles.
+    kind: observable_gauge
+    unit: "1"
+    priority: P1
+    temporality: cumulative
+    attributes: [version_full, os_type, agent_engine, process_role]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine, process_role]
   - name: kiro_cli_tokens_consumed
+    description: Service-reported token consumption by canonical model and token category.
     kind: counter
     unit: tokens
     priority: P0
     temporality: delta
-    attributes: [model, token_type, client_application, is_subagent, engine]
-  - name: kiro_cli_cache_hit_ratio
-    kind: histogram
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [model, chat_conversation_type, client_application, engine]
-  - name: kiro_cli_context_usage_percentage
-    kind: observable_gauge
-    unit: percent
-    priority: P1
-    temporality: cumulative
-    attributes: [model, client_application, is_subagent, engine]
-  - name: kiro_cli_metering_event
-    kind: log_event
-    unit: event
-    priority: P0
-    attributes: [request_id, model, client_application, metering_usage, metering_unit, metering_unit_plural]
-  - name: kiro_cli_user_turn_completed
-    kind: log_event
-    unit: event
-    priority: P0
-    attributes: [anonymous_client_id, session_id, conversation_id, request_id, message_id, model, client_application, result, turn_failure_reason, reason_desc, status_code, time_to_first_chunks_ms, user_prompt_length, assistant_response_length, user_turn_duration_seconds, follow_up_count, message_meta_tags, is_subagent, parent_tool_use_id, request_attempts, total_tokens, uncached_input_tokens, output_tokens, cache_read_input_tokens, cache_write_input_tokens]
-  - name: kiro_cli_tool_invoked
-    kind: log_event
-    unit: event
-    priority: P0
-    attributes: [tool_use_id, tool_name, mcp_server_name, model, is_success, execution_duration_ms]
-  - name: kiro_cli_tool_invocations
+    attributes: [version_full, agent_engine, model, token_type]
+    cloudwatch_dimensions: [version_full, agent_engine, model, token_type]
+  - name: kiro_cli_credits_consumed
+    description: Service-reported credit consumption by canonical model.
     kind: counter
-    unit: "1"
+    unit: credit
     priority: P1
     temporality: delta
-    attributes: [tool_origin, mcp_server_name, outcome, engine]
+    attributes: [version_full, model]
+    cloudwatch_dimensions: [version_full, model]
   - name: kiro_cli_tool_execution_duration_ms
+    description: Measured execution duration of completed tool calls.
     kind: histogram
     unit: ms
-    priority: P1
-    temporality: delta
-    attributes: [tool_origin, mcp_server_name, is_success, engine]
-  - name: kiro_cli_tool_token_size
-    kind: histogram
-    unit: tokens
-    priority: P1
-    temporality: delta
-    attributes: [content_role, tool_origin, engine]
-  - name: kiro_cli_tool_duration
-    kind: histogram
-    unit: s
-    priority: P1
-    temporality: delta
-    attributes: [duration_stage, tool_origin, engine]
-  - name: kiro_cli_mcp_server_init
-    kind: log_event
-    unit: event
     priority: P0
-    attributes: [mcp_server_name, mcp_server_class, outcome]
+    temporality: delta
+    attributes: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
+    cloudwatch_dimensions: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
   - name: kiro_cli_mcp_server_init_total
+    description: MCP server initialization attempts and resulting availability.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [mcp_server_class, outcome, engine]
-  - name: kiro_cli_mcp_tool_count
-    kind: histogram
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [mcp_server_class, count_kind, engine]
-  - name: kiro_cli_subagent_invoked
-    kind: log_event
-    unit: event
-    priority: P1
-    attributes: [subagent_name, depth_bucket, model]
-  - name: kiro_cli_subagent_tool_uses_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [count_kind, engine]
+    attributes: [version_full, agent_engine, mcp_server_source, mcp_init_outcome, mcp_server_name, mcp_failure_stage, mcp_error_kind]
+    cloudwatch_dimensions: [version_full, agent_engine, mcp_server_source, mcp_init_outcome]
   - name: kiro_cli_user_turns
+    description: User prompts that reached a terminal success, failure, or cancellation.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [model, client_application, result, is_subagent, mode, message_kind, engine]
-  - name: kiro_cli_session_outcome_total
+    attributes: [version_full, session_interface, agent_mode, agent_engine]
+    cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
+  - name: kiro_cli_goal_outcome_total
+    description: Observed terminal outcomes of explicit goal workflows.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, goal_outcome]
+    cloudwatch_dimensions: [version_full, agent_engine, goal_outcome]
+  - name: kiro_cli_prohibited_telemetry_channel_enabled_total
+    description: Failure-only signal that a telemetry channel forbidden by policy was initialized.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [session_outcome]
-  - name: kiro_cli_user_feedback_total
+    attributes: [version_full, telemetry_channel]
+    cloudwatch_dimensions: [version_full, telemetry_channel]
+  - name: kiro_cli_telemetry_export_dropped_total
+    description: Telemetry records permanently lost before KUTS accepted them.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [sentiment, surface]
-  - name: kiro_cli_message_regenerated_total
+    attributes: [version_full, drop_reason]
+    cloudwatch_dimensions: [version_full, drop_reason]
+  - name: kiro_cli_turn_failure_total
+    description: User turns that terminated with a typed failure.
     kind: counter
     unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [model]
-  - name: kiro_cli_conversation_completed
-    kind: log_event
-    unit: event
     priority: P0
-    attributes: [conversation_id, session_id, completion_reason]
-  - name: kiro_cli_agent_contribution_total
+    temporality: delta
+    attributes: [version_full, session_interface, agent_mode, agent_engine, turn_failure_reason]
+    cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine, turn_failure_reason]
+  - name: kiro_cli_turn_cancelled_total
+    description: User turns cancelled before reaching success or failure.
     kind: counter
     unit: "1"
-    priority: P1
+    priority: P0
     temporality: delta
-    attributes: [engine]
-  - name: kiro_cli_agent_contribution_lines_total
-    kind: counter
-    unit: lines
-    priority: P1
-    temporality: delta
-    attributes: [contribution_source, contribution_change, engine]
-  - name: kiro_cli_agent_config_init_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [result, migration_executed, engine]
-  - name: kiro_cli_agent_config_count
+    attributes: [version_full, session_interface, agent_mode, agent_engine]
+    cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
+  - name: kiro_cli_process_peak_rss_bytes
+    description: Peak resident-set size observed when a CLI process exits cleanly.
     kind: histogram
-    unit: "1"
+    unit: By
     priority: P1
     temporality: delta
-    attributes: [count_kind, engine]
-  - name: kiro_cli_profile_selection_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [profile_source, profile_region, sso_region, result, engine]
-  - name: kiro_cli_profile_state_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [profile_source, profile_region, sso_region, result, engine]
-  - name: kiro_cli_profile_count
-    kind: histogram
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [profile_source, engine]
-  - name: kiro_cli_voice_input_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [voice_backend, voice_input_method, voice_model_size, auto_submit, result, engine]
-  - name: kiro_cli_voice_duration
-    kind: histogram
-    unit: ms
-    priority: P1
-    temporality: delta
-    attributes: [duration_stage, voice_backend, engine]
-  - name: kiro_cli_voice_text_length
-    kind: histogram
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [voice_backend, engine]
-  - name: kiro_cli_telemetry_opt_out_respected_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [channel, event_class]
-  - name: kiro_cli_telemetry_opt_out_violation_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [channel]
-  - name: kiro_cli_pii_redaction_runs_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [redactor, event_class, channel, redaction_result]
-  - name: kiro_cli_pii_redaction_matches_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [pii_type, field_class]
-  - name: kiro_cli_pii_redaction_errors_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [redactor, error_kind, fail_action]
-  - name: kiro_cli_pii_redaction_coverage_ratio
-    kind: derived
-    unit: "1"
-    priority: P0
-  - name: kiro_cli_govcloud_channel_disabled_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [channel, partition, reason]
-  - name: kiro_cli_govcloud_channel_leak_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [channel]
-  - name: kiro_cli_kuts_export_oversize_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [signal]
-  - name: kiro_cli_consent_record_integrity_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [check_kind, integrity_result]
-  - name: kiro_cli_auth_credential_failure_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [auth_provider, auth_flow, error_code, operation, partition, result, engine]
-  - name: kiro_cli_auth_unexpected_identity_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [expected_partition, actual_partition, operation]
-  - name: kiro_cli_tls_validation_failure_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [destination_class, failure_reason]
-  - name: kiro_cli_tool_egress_destinations_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [destination_class, scheme, is_allowlisted]
-  - name: kiro_cli.telemetry.exporter.send.attempts
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [exporter, signal, export_outcome]
-  - name: kiro_cli.telemetry.exporter.send.duration
-    kind: histogram
-    unit: s
-    priority: P0
-    temporality: delta
-    attributes: [exporter, signal]
-  - name: kiro_cli.telemetry.exporter.dropped
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [exporter, signal, drop_reason]
-  - name: kiro_cli.telemetry.queue.depth
-    kind: observable_gauge
-    unit: "1"
-    priority: P0
-    temporality: cumulative
-    attributes: [exporter, signal]
-  - name: kiro_cli.telemetry.batch.size
-    kind: histogram
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [exporter, signal]
-  - name: kiro_cli.telemetry.emit.failures
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [subsystem, failure_kind]
-  - name: kiro_cli.telemetry.sdk.up
-    kind: observable_gauge
-    unit: "1"
-    priority: P0
-    temporality: cumulative
-    attributes: [partition, os_type, release_channel]
-  - name: kiro_cli.telemetry.flush_on_exit.dropped_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [shutdown_path]
-  - name: kiro_cli.meta_meter.up
-    kind: observable_gauge
-    unit: "1"
-    priority: P0
-    temporality: cumulative
-    attributes: [partition, os_type]
-  # §C4 / §F — cross-engine product metrics emitted by the TUI (and host).
-  - name: kiro_cli_turn_outcome_total
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [turn_outcome_reason, model, mode, engine]
-  - name: kiro_cli_subagent_delegations_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [subagent_name_class, model, engine]
-  - name: kiro_cli_mode_active_total
-    kind: counter
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [mode, engine]
-  # §E — process/perf metrics promoted from the log-only sampler.
-  - name: kiro_cli.process.memory.peak_rss
+    attributes: [version_full, os_type, agent_engine, process_role]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine, process_role]
+  - name: kiro_cli_tui_heap_used_bytes
+    description: Periodic Bun JavaScript heap usage for the TUI process.
     kind: observable_gauge
     unit: By
     priority: P1
     temporality: cumulative
-    attributes: [version_full, agent_kind, engine, process_role]
-  - name: kiro_cli.process.memory.heap_used
-    kind: observable_gauge
-    unit: By
-    priority: P1
-    temporality: cumulative
-    attributes: [version_full, engine, process_role]
-  - name: kiro_cli.tui.event_loop.delay
+    attributes: [version_full, os_type, agent_engine]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine]
+  - name: kiro_cli_tui_event_loop_delay_p99_seconds
+    description: Per-window p99 Bun event-loop delay in the TUI process.
     kind: histogram
     unit: s
     priority: P1
     temporality: delta
-    attributes: [engine, process_role]
-  - name: kiro_cli.tui.input.latency
+    attributes: [version_full, os_type, agent_engine]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine]
+  - name: kiro_cli_tui_input_to_render_p95_seconds
+    description: Per-window p95 latency from the TUI input callback through React rendering.
     kind: histogram
     unit: s
     priority: P1
     temporality: delta
-    attributes: [engine, process_role]
-  - name: kiro_cli.tui.render.duration
+    attributes: [version_full, os_type, agent_engine]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine]
+  - name: kiro_cli_tui_render_duration_seconds
+    description: In-process duration of each completed Twinki render.
     kind: histogram
     unit: s
     priority: P1
     temporality: delta
-    attributes: [render_kind, engine, process_role]
+    attributes: [version_full, os_type, agent_engine, render_kind]
+    cloudwatch_dimensions: [version_full, os_type, agent_engine, render_kind]
+  - name: kiro_cli_auth_failure_total
+    description: Explicit login or credential refresh operations that ended in an unrecovered failure.
+    kind: counter
+    unit: "1"
+    priority: P0
+    temporality: delta
+    attributes: [version_full, auth_method, auth_flow, auth_operation, auth_failure_reason]
+    cloudwatch_dimensions: [version_full, auth_method, auth_flow, auth_operation, auth_failure_reason]

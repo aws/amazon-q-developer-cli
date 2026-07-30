@@ -1,5 +1,6 @@
 import { UNICODE_GLYPHS, type Glyphs } from './glyphs';
 import { recordTuiCloudSession } from './tui-telemetry-observer.js';
+import { getCliVersion } from './version.js';
 
 /**
  * Message shown when the CLI disconnects from a cloud-sandbox session.
@@ -47,7 +48,10 @@ export function emitCloudDetachNoticeOnce(
   try {
     beforeNotice?.();
     process.stderr.write(`\n${formatCloudDetachNotice(sessionId)}\n`);
-    recordTuiCloudSession({ event: 'detached' });
+    recordTuiCloudSession({
+      event: 'detached',
+      version: getCliVersion(),
+    });
   } catch {
     // Never block shutdown on the notice.
   }
@@ -104,7 +108,10 @@ export function quitCloudSessionTurnOff(
   exit: (code: number) => void = process.exit
 ): void {
   suppressCloudDetachNotice();
-  recordTuiCloudSession({ event: 'turned_off' });
+  recordTuiCloudSession({
+    event: 'turned_off',
+    version: getCliVersion(),
+  });
   void kiro
     .cancel()
     .finally(() => {

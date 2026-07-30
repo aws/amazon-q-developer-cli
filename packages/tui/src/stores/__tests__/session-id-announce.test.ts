@@ -9,7 +9,7 @@ mock.module('../../kiro', () => ({
     sendMessageStream: mock(),
     cancel: mock(() => Promise.resolve()),
     close: mock(),
-    sendChatSlashCommandTelemetry: mock(),
+    recordSlashCommandInvocation: mock(),
     sessionId: 'sess-abc',
   })),
 }));

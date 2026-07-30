@@ -264,7 +264,7 @@ impl ChatSubcommand {
                 };
 
                 let new_state: ConversationState = tri!(serde_json::from_str(&contents), "import from", &path);
-                let chat_state = restore_active_conversation(os, session, new_state).await;
+                let chat_state = restore_active_conversation(session, new_state).await;
 
                 execute!(
                     session.stderr,
@@ -278,7 +278,7 @@ impl ChatSubcommand {
             Self::ScriptLoad { script } => {
                 match script_load(&script) {
                     Ok(new_state) => {
-                        let chat_state = restore_active_conversation(os, session, new_state).await;
+                        let chat_state = restore_active_conversation(session, new_state).await;
                         execute!(
                             session.stderr,
                             StyledText::success_fg(),
@@ -346,12 +346,9 @@ fn restore_conversation_state(session: &mut ChatSession, mut new_state: Conversa
     }
 }
 
-async fn restore_active_conversation(os: &Os, session: &mut ChatSession, new_state: ConversationState) -> ChatState {
+async fn restore_active_conversation(session: &mut ChatSession, new_state: ConversationState) -> ChatState {
     let chat_state = restore_conversation_state(session, new_state);
     session.conversation.update_state(true).await;
-    session
-        .transition_chat_telemetry(os, kiro_telemetry::metric::SessionStartKind::Resumed)
-        .await;
     chat_state
 }
 
@@ -1163,7 +1160,7 @@ async fn resume_chat_session(os: &Os, session: &mut ChatSession) -> Result<ChatS
     })();
 
     if let Some(new_state) = result {
-        return Ok(restore_active_conversation(os, session, new_state).await);
+        return Ok(restore_active_conversation(session, new_state).await);
     }
 
     Ok(ChatState::PromptUser {

@@ -207,7 +207,7 @@ impl RootSubcommand {
         }
 
         // Daily heartbeat check
-        if os.database.record_heartbeat_if_needed() {
+        if os.database.record_heartbeat_if_needed(env!("CARGO_PKG_VERSION")) {
             crate::telemetry::cli_helpers::record_daily_heartbeat(os).ok();
         }
 

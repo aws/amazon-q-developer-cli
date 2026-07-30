@@ -34,8 +34,6 @@ use crate::agent::util::error::{
 };
 
 /// Represents an agent config post-processing and ready for use in the agent loop.
-///
-/// TODO - add MCP servers as well
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LoadedAgentConfig {
     /// Where the config was sourced from
@@ -51,6 +49,8 @@ pub struct LoadedAgentConfig {
     /// Content to append to the global prompt (e.g. task context)
     #[serde(default)]
     global_prompt_suffix: Option<String>,
+    #[serde(default)]
+    mcp_server_sources: HashMap<String, McpServerConfigSource>,
 }
 
 /// Result of resolving a global prompt from an agent config.
@@ -68,12 +68,19 @@ pub enum ResolvedGlobalPrompt {
 impl LoadedAgentConfig {
     /// Creates a new LoadedAgentConfig with the given config and source.
     pub fn new(config: AgentConfig, source: ConfigSource, resolved_global_prompt: ResolvedGlobalPrompt) -> Self {
+        let mcp_server_sources = config
+            .mcp_servers()
+            .keys()
+            .cloned()
+            .map(|name| (name, McpServerConfigSource::AgentConfig))
+            .collect();
         Self {
             source,
             config,
             resolved_global_prompt,
             global_prompt_prefix: None,
             global_prompt_suffix: None,
+            mcp_server_sources,
         }
     }
 
@@ -146,7 +153,50 @@ impl LoadedAgentConfig {
         &mut self,
         servers: impl IntoIterator<Item = (String, definitions::McpServerConfig)>,
     ) -> Option<Vec<String>> {
+        self.add_mcp_servers_with_source(servers, McpServerConfigSource::AgentConfig)
+    }
+
+    pub fn add_mcp_servers_with_source(
+        &mut self,
+        servers: impl IntoIterator<Item = (String, definitions::McpServerConfig)>,
+        source: McpServerConfigSource,
+    ) -> Option<Vec<String>> {
+        let servers = servers.into_iter().collect::<Vec<_>>();
+        for (name, _) in &servers {
+            self.mcp_server_sources.insert(name.clone(), source);
+        }
         self.config.add_mcp_servers(servers)
+    }
+
+    pub fn insert_mcp_servers_with_source(
+        &mut self,
+        servers: impl IntoIterator<Item = (String, definitions::McpServerConfig)>,
+        source: McpServerConfigSource,
+    ) {
+        let servers = servers.into_iter().collect::<Vec<_>>();
+        for (name, _) in &servers {
+            self.mcp_server_sources.insert(name.clone(), source);
+        }
+        self.config.insert_mcp_servers(servers);
+    }
+
+    pub fn retain_mcp_servers(&mut self, mut predicate: impl FnMut(&str) -> bool) {
+        let mut retained = HashSet::new();
+        self.config.retain_mcp_servers(|name| {
+            let keep = predicate(name);
+            if keep {
+                retained.insert(name.to_string());
+            }
+            keep
+        });
+        self.mcp_server_sources.retain(|name, _| retained.contains(name));
+    }
+
+    pub fn mcp_server_source(&self, server_name: &str) -> McpServerConfigSource {
+        self.mcp_server_sources
+            .get(server_name)
+            .copied()
+            .unwrap_or(McpServerConfigSource::AgentConfig)
     }
 
     pub fn add_resource(&mut self, resource: types::ResourcePath) -> bool {
@@ -284,7 +334,10 @@ impl LoadedMcpServerConfigs {
             .mcp_servers()
             .clone()
             .into_iter()
-            .map(|(name, config)| LoadedMcpServerConfig::new(name, config, McpServerConfigSource::AgentConfig))
+            .map(|(name, server_config)| {
+                let source = config.mcp_server_source(&name);
+                LoadedMcpServerConfig::new(name, server_config, source)
+            })
             .collect::<Vec<_>>();
         configs.append(&mut agent_configs);
 
@@ -335,7 +388,7 @@ impl LoadedMcpServerConfigs {
 }
 
 /// Where an [McpServerConfig] originated from
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum McpServerConfigSource {
     /// Config is defined in the agent config
     AgentConfig,
@@ -343,6 +396,13 @@ pub enum McpServerConfigSource {
     GlobalMcpJson,
     /// Config is defined in the workspace mcp.json file
     WorkspaceMcpJson,
+    /// Config was materialized from an MCP registry reference
+    Registry,
+    /// Config was injected by an ACP client for this session
+    AcpInjected,
+    /// Config provenance was unavailable on a legacy or unexpected path
+    #[default]
+    Unknown,
 }
 
 async fn load_mcp_config_from_path(path: impl AsRef<Path>) -> Result<McpServers, UtilError> {
@@ -552,6 +612,51 @@ mod tests {
         );
         let _m = cfg.config_mut();
         let _am = cfg.allowed_tools_mut();
+    }
+
+    #[tokio::test]
+    async fn mcp_source_follows_overriding_config_without_changing_other_sources() {
+        let mut cfg = LoadedAgentConfig::new(
+            agent_config_with_mcp(),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+        let replacement = McpServerConfig::Local(LocalMcpServerConfig {
+            command: "/bin/replacement".into(),
+            args: vec![],
+            env: None,
+            timeout_ms: 5_000,
+            disabled: false,
+            disabled_tools: vec![],
+        });
+        cfg.add_mcp_servers_with_source(
+            [("registry".to_string(), replacement.clone())],
+            McpServerConfigSource::Registry,
+        );
+
+        cfg.add_mcp_servers_with_source([("foo".to_string(), replacement)], McpServerConfigSource::AcpInjected);
+
+        assert_eq!(cfg.mcp_server_source("foo"), McpServerConfigSource::AcpInjected);
+        assert_eq!(cfg.mcp_server_source("registry"), McpServerConfigSource::Registry);
+        let loaded = LoadedMcpServerConfigs::from_agent_config(&cfg, None, None).await;
+        assert_eq!(
+            loaded
+                .configs
+                .iter()
+                .find(|config| config.server_name == "foo")
+                .unwrap()
+                .source,
+            McpServerConfigSource::AcpInjected
+        );
+        assert_eq!(
+            loaded
+                .configs
+                .iter()
+                .find(|config| config.server_name == "registry")
+                .unwrap()
+                .source,
+            McpServerConfigSource::Registry
+        );
     }
 
     #[test]

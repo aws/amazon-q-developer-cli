@@ -322,16 +322,6 @@ pub struct ProcessHealthPayload {
     pub platform: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatSlashCommandTelemetryPayload {
-    pub session_id: Option<String>,
-    pub command: String,
-    pub subcommand: Option<String>,
-    pub success: bool,
-    pub reason: Option<String>,
-}
-
 /// How a mode change was initiated. Add a new variant when adding a new entry point —
 /// the wire format is the camelCase variant name. Keeping this as an enum (rather than a
 /// free-form string) gives us spell-check at the call site and a single documented set of

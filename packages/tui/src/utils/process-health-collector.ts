@@ -8,6 +8,8 @@
 
 import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
 import { cpus, totalmem } from 'os';
+import { spawnSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import { inputMetrics } from './inputMetrics.js';
 import { getCliVersion } from './version.js';
 
@@ -18,6 +20,9 @@ export interface ProcessHealthSnapshot {
   rssMb: number;
   heapUsedMb: number;
   peakRssMb: number;
+  openFileDescriptorCount?: number | null;
+  handleCount?: number | null;
+  threadCount?: number | null;
   cpuUserPct: number;
   cpuSystemPct: number;
   lastRenderMs: number;
@@ -38,14 +43,14 @@ export interface ProcessHealthSnapshot {
 
 type SendFn = (payload: ProcessHealthSnapshot) => void;
 type GetSessionIdFn = () => string | null;
-/** Promote a snapshot to §E SDK metrics (alongside the log). */
+/** Promote a snapshot to SDK metrics alongside the ACP notification. */
 type EmitMetricsFn = (payload: ProcessHealthSnapshot) => void;
 /** Flush batched SDK metrics before exit; best-effort, must not throw. */
 type FlushFn = () => Promise<void>;
 
 export interface ProcessHealthCollectorOpts {
   /**
-   * Promote each snapshot to §E SDK metrics (in addition to the log `sendFn`).
+   * Promote each snapshot to SDK metrics in addition to `sendFn`.
    * Called on every 60s tick AND once more on teardown with a final sample.
    */
   emitMetrics?: EmitMetricsFn;
@@ -59,12 +64,100 @@ export interface ProcessHealthCollectorOpts {
 
 const EXIT_FLUSH_TIMEOUT_MS = 2000;
 
+function openFileDescriptorCount(): number | null {
+  if (process.platform !== 'linux' && process.platform !== 'darwin') {
+    return null;
+  }
+  try {
+    return readdirSync(
+      process.platform === 'linux' ? '/proc/self/fd' : '/dev/fd'
+    ).length;
+  } catch {
+    return null;
+  }
+}
+
+function windowsHandleCount(): number | null {
+  if (process.platform !== 'win32') return null;
+  try {
+    const ffi = require('bun:ffi') as typeof import('bun:ffi');
+    const count = new Uint32Array(1);
+    const kernel32 = ffi.dlopen('kernel32.dll', {
+      GetCurrentProcess: { args: [], returns: ffi.FFIType.ptr },
+      GetProcessHandleCount: {
+        args: [ffi.FFIType.ptr, ffi.FFIType.ptr],
+        returns: ffi.FFIType.i32,
+      },
+    });
+    try {
+      const processHandle = kernel32.symbols.GetCurrentProcess();
+      const succeeded = kernel32.symbols.GetProcessHandleCount(
+        processHandle,
+        ffi.ptr(count)
+      );
+      return succeeded === 0 ? null : count[0]!;
+    } finally {
+      kernel32.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+function processThreadCount(): number | null {
+  try {
+    if (process.platform === 'linux') {
+      const match = readFileSync('/proc/self/status', 'utf8').match(
+        /^Threads:\s+(\d+)$/m
+      );
+      return match?.[1] ? Number(match[1]) : null;
+    }
+
+    const command =
+      process.platform === 'darwin'
+        ? {
+            bin: '/bin/ps',
+            args: ['-M', '-p', String(process.pid), '-o', 'tid='],
+          }
+        : process.platform === 'win32'
+          ? {
+              bin: 'powershell.exe',
+              args: [
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                `(Get-Process -Id ${process.pid}).Threads.Count`,
+              ],
+            }
+          : undefined;
+    if (!command) return null;
+
+    const result = spawnSync(command.bin, command.args, {
+      encoding: 'utf8',
+      timeout: 1000,
+      windowsHide: true,
+    });
+    if (result.status !== 0) return null;
+    if (process.platform === 'darwin') {
+      const count = result.stdout
+        .split('\n')
+        .filter((line) => line.trim().length > 0).length;
+      return count > 0 ? count : null;
+    }
+    const count = Number(result.stdout.trim());
+    return Number.isInteger(count) && count > 0 ? count : null;
+  } catch {
+    return null;
+  }
+}
+
 export function startProcessHealthCollector(
   sendFn: SendFn,
   getSessionId?: GetSessionIdFn,
   opts?: ProcessHealthCollectorOpts
 ): () => void {
   let prevCpu = process.cpuUsage();
+  let prevCpuSampleMs = performance.now();
   let prevRenderCount = 0;
   let prevFullRedrawCount = 0;
 
@@ -129,11 +222,18 @@ export function startProcessHealthCollector(
         ? Math.round(ru.maxRSS / 1024 / 1024)
         : Math.round(ru.maxRSS / 1024);
 
-    // --- CPU usage (percentage of 60s wall clock) ---
-    const cpu = process.cpuUsage(prevCpu);
-    prevCpu = process.cpuUsage();
-    const cpuUserPct = cpu.user / INTERVAL_MS / 10;
-    const cpuSystemPct = cpu.system / INTERVAL_MS / 10;
+    // --- CPU usage (percentage of elapsed wall clock) ---
+    const currentCpu = process.cpuUsage();
+    const cpuSampleMs = performance.now();
+    const elapsedCpuMs = cpuSampleMs - prevCpuSampleMs;
+    const cpu = {
+      user: currentCpu.user - prevCpu.user,
+      system: currentCpu.system - prevCpu.system,
+    };
+    prevCpu = currentCpu;
+    prevCpuSampleMs = cpuSampleMs;
+    const cpuUserPct = elapsedCpuMs > 0 ? cpu.user / elapsedCpuMs / 10 : 0;
+    const cpuSystemPct = elapsedCpuMs > 0 ? cpu.system / elapsedCpuMs / 10 : 0;
 
     // --- Event loop delay ---
     let eventLoopP99Ms: number | null = null;
@@ -154,6 +254,9 @@ export function startProcessHealthCollector(
       rssMb,
       heapUsedMb,
       peakRssMb,
+      openFileDescriptorCount: openFileDescriptorCount(),
+      handleCount: windowsHandleCount(),
+      threadCount: processThreadCount(),
       cpuUserPct,
       cpuSystemPct,
       lastRenderMs,
@@ -173,9 +276,7 @@ export function startProcessHealthCollector(
     };
   };
 
-  // Emit a snapshot on both transports: the log (sendFn) and the §E SDK metrics
-  // (emitMetrics). Both are fire-and-forget; a failure in one must not stop the
-  // other or throw.
+  // A failure in one transport must not stop the other.
   const emit = (snapshot: ProcessHealthSnapshot): void => {
     try {
       sendFn(snapshot);

@@ -16,6 +16,7 @@ import {
   type AgentStreamEvent,
 } from '../types/agent-events';
 import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
+import { UiModeSource } from '../types/generated/chat-cli';
 import {
   KAS_DEFAULT_AGENT_ID,
   KAS_DEFAULT_AGENT_NAME,
@@ -250,8 +251,13 @@ const mockRecordTuiSessionStarted = mock((_a: unknown) => {});
 const mockRecordTuiCloudSession = mock((_a: unknown) => {});
 const mockRecordTuiCloudSessionReady = mock((_a: unknown) => {});
 const mockRecordTuiAutonomousMode = mock((_a: unknown) => {});
-const mockRecordTuiUserTurn = mock((_a: unknown) => {});
 const mockRecordTuiCloudError = mock((_a: unknown) => {});
+const mockRecordTuiUserTurn = mock((_a: unknown) => {});
+const mockRecordTuiModelInvocations = mock((_a: unknown) => {});
+const mockRecordTuiTokensConsumed = mock((_a: unknown) => {});
+const mockRecordTuiCreditsConsumed = mock((_a: unknown) => {});
+const mockRecordTuiSlashCommand = mock((_a: unknown) => {});
+const mockRecordTuiUiModeSessionStarted = mock((_a: unknown) => {});
 const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
 const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 mock.module('../utils/tui-telemetry-observer', () => ({
@@ -266,15 +272,46 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   attachSizeBucket: (bytes: number) =>
     bytes < 65536 ? 'under_64k' : 'under_1m',
   recordTuiCloudRepoAttach: mock(() => {}),
-  recordTuiModeActive: mock(() => {}),
   recordTuiUserTurn: mockRecordTuiUserTurn,
-  recordTuiModelInvocation: mock(() => {}),
-  recordTuiTurnOutcome: mock(() => {}),
-  recordTuiTokensConsumed: mock(() => {}),
-  recordTuiContextUsage: mock(() => {}),
+  recordTuiModelInvocations: mockRecordTuiModelInvocations,
+  recordTuiTokensConsumed: mockRecordTuiTokensConsumed,
+  recordTuiCreditsConsumed: mockRecordTuiCreditsConsumed,
+  recordTuiSlashCommand: mockRecordTuiSlashCommand,
+  recordTuiUiModeSessionStarted: mockRecordTuiUiModeSessionStarted,
   modeFromId: (id?: string) => (id && id.length > 0 ? id : 'interactive'),
-  resultFromStatus: (s?: string) => (s === 'completed' ? 'success' : '_other_'),
+  resultFromStatus: (status?: string) => {
+    switch (status) {
+      case 'completed':
+      case 'success':
+        return 'success';
+      case 'failed':
+        return 'failed';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return status ? 'failed' : '_other_';
+    }
+  },
+  turnFailureReasonFromStatus: (status?: string) => {
+    switch (status) {
+      case undefined:
+      case 'completed':
+      case 'success':
+      case 'cancelled':
+        return undefined;
+      case 'failed':
+        return 'model_error';
+      default:
+        return 'unknown';
+    }
+  },
+  TuiFirstVisibleResponseObserver: class {
+    start() {}
+    observe() {}
+    cancel() {}
+  },
   TuiToolCallObserver: class {
+    constructor(_version: string) {}
     start(id: string, info: TuiToolCallStart) {
       toolStartCalls.push({ id, info });
     }
@@ -356,6 +393,7 @@ let kasRoutingStore = createKasRoutingStore();
 class KasAcpClient extends RawKasAcpClient {
   constructor(options: Partial<KasAcpClientOptions> = {}) {
     super({
+      version: 'test-version',
       ...options,
       kasSubagentRoutingStore: kasRoutingStore.getState().kasSubagentRouting,
       spawnProcess: mockSpawn,
@@ -378,9 +416,15 @@ function freshMocks() {
   mockKiroListSessions.mockClear();
   mockRecordTuiSessionStarted.mockClear();
   mockRecordTuiCloudSession.mockClear();
-  mockRecordTuiAutonomousMode.mockClear();
   mockRecordTuiCloudSessionReady.mockClear();
+  mockRecordTuiAutonomousMode.mockClear();
+  mockRecordTuiCloudError.mockClear();
   mockRecordTuiUserTurn.mockClear();
+  mockRecordTuiModelInvocations.mockClear();
+  mockRecordTuiTokensConsumed.mockClear();
+  mockRecordTuiCreditsConsumed.mockClear();
+  mockRecordTuiSlashCommand.mockClear();
+  mockRecordTuiUiModeSessionStarted.mockClear();
   toolStartCalls.length = 0;
   toolFinishCalls.length = 0;
   capturedSessionUpdateHandler = null;
@@ -1919,19 +1963,26 @@ describe('KasAcpClient', () => {
     );
   });
 
-  it('emits kiro_cli_chat_session_started_total exactly once per session (dedup)', async () => {
-    // Dedup guard: repeated prompts in one session must not re-emit session-started.
+  it('emits chat session start on creation and load without waiting for a prompt', async () => {
     const client = new KasAcpClient({ version: '9.9.9-test' });
     await client.newSession();
+
+    expect(mockRecordTuiSessionStarted).toHaveBeenCalledTimes(1);
+    expect(mockRecordTuiSessionStarted.mock.calls[0]![0]).toMatchObject({
+      version: '9.9.9-test',
+    });
 
     await client.prompt([{ type: 'text', text: 'hello' } as any]);
     await client.prompt([{ type: 'text', text: 'again' } as any]);
 
     expect(mockKiroPrompt).toHaveBeenCalledTimes(2);
     expect(mockRecordTuiSessionStarted).toHaveBeenCalledTimes(1);
-    expect(mockRecordTuiSessionStarted.mock.calls[0]![0]).toMatchObject({
-      version: '9.9.9-test',
-    });
+
+    await client.loadSession('kas-loaded');
+    expect(mockRecordTuiSessionStarted).toHaveBeenCalledTimes(2);
+
+    await client.loadSession('kas-loaded');
+    expect(mockRecordTuiSessionStarted).toHaveBeenCalledTimes(2);
   });
 
   it('cancel() calls kiroClient.cancel with sessionId', async () => {
@@ -1994,8 +2045,6 @@ describe('KasAcpClient', () => {
     });
   });
 
-  // The KAS OTLP-log telemetry methods are now no-ops (KAS owns server-side
-  // telemetry). Assert each still exists, accepts its payload, and never throws.
   it('sendProcessHealthMetrics() is a safe no-op (does not throw or hit the agent)', () => {
     const client = new KasAcpClient();
     const snapshot = {
@@ -2039,19 +2088,37 @@ describe('KasAcpClient', () => {
     expect(mockKiroSendExtNotification).not.toHaveBeenCalled();
   });
 
-  it('sendChatSlashCommandTelemetry() is a safe no-op (does not throw or hit the agent)', async () => {
-    const client = new KasAcpClient();
+  it('recordSlashCommandInvocation() records the typed V3 metric locally', async () => {
+    const client = new KasAcpClient({ version: '9.9.9-test' });
     await client.newSession();
     mockKiroSendExtMethod.mockClear();
     mockKiroSendExtNotification.mockClear();
 
-    expect(() =>
-      client.sendChatSlashCommandTelemetry({
-        command: '/chat',
-        subcommand: 'save',
-        success: true,
-      })
-    ).not.toThrow();
+    expect(() => client.recordSlashCommandInvocation('/chat')).not.toThrow();
+    expect(mockRecordTuiSlashCommand).toHaveBeenCalledTimes(1);
+    expect(mockRecordTuiSlashCommand).toHaveBeenCalledWith({
+      command: '/chat',
+      version: '9.9.9-test',
+      engine: 'v3',
+    });
+    expect(mockKiroSendExtMethod).not.toHaveBeenCalled();
+    expect(mockKiroSendExtNotification).not.toHaveBeenCalled();
+  });
+
+  it('sendUiModeSessionStart() records the typed UI-mode metric locally', () => {
+    const client = new KasAcpClient({ version: '9.9.9-test' });
+
+    client.sendUiModeSessionStart({
+      uiMode: 'lite',
+      uiModeSource: UiModeSource.Setting,
+      uiModeDefault: 'lite',
+    });
+
+    expect(mockRecordTuiUiModeSessionStarted).toHaveBeenCalledTimes(1);
+    expect(mockRecordTuiUiModeSessionStarted).toHaveBeenCalledWith({
+      mode: 'lite',
+      version: '9.9.9-test',
+    });
     expect(mockKiroSendExtMethod).not.toHaveBeenCalled();
     expect(mockKiroSendExtNotification).not.toHaveBeenCalled();
   });
@@ -2267,15 +2334,15 @@ describe('KasAcpClient', () => {
       "Autonomous mode was turned off — this cloud session doesn't support changing modes yet."
     );
     expect(notices[0].success).toBe(false);
+    expect(mockRecordTuiAutonomousMode).toHaveBeenCalledWith({
+      event: 'reverted',
+      version: 'test-version',
+    });
     // The chip still reflects the sandbox's truth (default), not suppressed.
     const switched = events.filter(
       (e) => e.type === AgentEventType.AgentSwitched
     );
     expect(switched.at(-1)?.agentName).toBe('default');
-    // A revert is recorded as autonomous-mode telemetry.
-    expect(mockRecordTuiAutonomousMode).toHaveBeenCalledWith({
-      event: 'reverted',
-    });
   });
 
   it('fires the revert notice only once (marker cleared after firing)', async () => {
@@ -3187,6 +3254,7 @@ describe('KasAcpClient', () => {
           name: 'query_db',
           toolOrigin: 'mcp',
           mcpServerName: 'local-server',
+          executionContext: 'main',
         },
       },
     ]);
@@ -3217,13 +3285,14 @@ describe('KasAcpClient', () => {
       name: 'query_db',
       toolOrigin: 'mcp',
       mcpServerName: 'local-server',
+      executionContext: 'main',
     });
     expect(toolFinishCalls).toHaveLength(1);
     expect(toolFinishCalls[0]!.id).toBe('tc-mcp-failed');
     expect(toolFinishCalls[0]!.args.outcome).toBe('error');
   });
 
-  it('failed-before-exec synthesized MCP subtask tool_call does not feed telemetry', async () => {
+  it('failed-before-exec synthesized MCP subtask tool_call records subagent context', async () => {
     const client = new KasAcpClient();
     const multiHandler = mock((_sessionId: string, _event: any) => {});
     client.onMultiSessionUpdate(multiHandler);
@@ -3244,8 +3313,20 @@ describe('KasAcpClient', () => {
     });
 
     expect(multiHandler).toHaveBeenCalled();
-    expect(toolStartCalls).toHaveLength(0);
-    expect(toolFinishCalls).toHaveLength(0);
+    expect(toolStartCalls).toEqual([
+      {
+        id: 'tc-sub-mcp-failed',
+        info: {
+          name: 'query_db',
+          toolOrigin: 'mcp',
+          mcpServerName: 'local-server',
+          executionContext: 'subagent',
+        },
+      },
+    ]);
+    expect(toolFinishCalls).toHaveLength(1);
+    expect(toolFinishCalls[0]!.id).toBe('tc-sub-mcp-failed');
+    expect(toolFinishCalls[0]!.args.outcome).toBe('error');
   });
 
   // ── Stub methods ──
@@ -4077,6 +4158,33 @@ describe('KasAcpClient', () => {
 
   // ── available_commands_update partitions into typed slices ──
 
+  it('preserves slash-command telemetry identities from KAS metadata', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    const events: any[] = [];
+    (client as any).broadcastStreamEvent = (event: any) => events.push(event);
+
+    (client as any).handleSessionUpdate({
+      sessionId: client.sessionId,
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          {
+            name: 'run-workflow',
+            description: 'Run a workflow recipe',
+            _meta: { kiro: { telemetryId: 'workflow-run' } },
+          },
+        ],
+      },
+    });
+
+    const commandsEvent = events.find(
+      (event) => event.type === AgentEventType.CommandsUpdate
+    );
+    expect(commandsEvent.commands[0].meta.telemetryId).toBe('workflow-run');
+  });
+
   it('filters KAS-advertised workflow commands when workflows are disabled', async () => {
     const client = new KasAcpClient();
     await client.newSession();
@@ -4397,6 +4505,33 @@ describe('KasAcpClient', () => {
       { value: 1.5, unit: 'credit', unitPlural: 'Credits' },
       { value: 500, unit: 'token', unitPlural: 'Tokens' },
     ]);
+    expect(mockRecordTuiUserTurn).toHaveBeenCalledWith({
+      result: 'success',
+      isSubagent: false,
+      mode: 'vibe',
+      version: 'test-version',
+      failureReason: undefined,
+      durationSeconds: 1.234,
+    });
+    expect(mockRecordTuiModelInvocations).toHaveBeenCalledWith({
+      version: 'test-version',
+      model: 'm1',
+      count: 2,
+    });
+    expect(mockRecordTuiTokensConsumed).toHaveBeenCalledWith({
+      version: 'test-version',
+      model: 'm1',
+      tokens: {
+        input_uncached: 10,
+        input_cache_read: 2,
+        output: 5,
+      },
+    });
+    expect(mockRecordTuiCreditsConsumed).toHaveBeenCalledWith({
+      version: 'test-version',
+      model: 'm1',
+      credits: 1.5,
+    });
   });
 
   it('session_info_update kind=turn_completion forwards telemetry context usage without a turn summary', async () => {
@@ -4427,6 +4562,54 @@ describe('KasAcpClient', () => {
         .map((c) => c[0])
         .some((e: any) => e.type === AgentEventType.TurnSummary)
     ).toBe(false);
+    expect(mockRecordTuiUserTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: '_other_',
+        failureReason: undefined,
+        durationSeconds: undefined,
+      })
+    );
+    expect(mockRecordTuiModelInvocations).toHaveBeenCalledWith(
+      expect.objectContaining({ count: 0 })
+    );
+    expect(mockRecordTuiTokensConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ tokens: {} })
+    );
+    expect(mockRecordTuiCreditsConsumed).not.toHaveBeenCalled();
+  });
+
+  it('session_info_update kind=turn_completion forwards an explicit failure status', async () => {
+    const client = new KasAcpClient();
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          kiro: {
+            kind: 'turn_completion',
+            status: 'failed',
+          },
+        },
+      },
+    });
+
+    expect(mockRecordTuiUserTurn).toHaveBeenCalledWith({
+      result: 'failed',
+      isSubagent: false,
+      mode: 'vibe',
+      version: 'test-version',
+      failureReason: 'model_error',
+      durationSeconds: undefined,
+    });
+    expect(mockRecordTuiModelInvocations).toHaveBeenCalledWith(
+      expect.objectContaining({ count: 0 })
+    );
+    expect(mockRecordTuiTokensConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ tokens: {} })
+    );
+    expect(mockRecordTuiCreditsConsumed).not.toHaveBeenCalled();
   });
 
   it('session_info_update kind=turn_completion drops entries without numeric usage', async () => {
@@ -4460,11 +4643,25 @@ describe('KasAcpClient', () => {
     expect(summary.meteringUsage).toEqual([
       { value: 2, unit: 'credit', unitPlural: 'Credits' },
     ]);
+    expect(mockRecordTuiUserTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: 'success',
+        failureReason: undefined,
+        durationSeconds: 0.1,
+      })
+    );
+    expect(mockRecordTuiModelInvocations).toHaveBeenCalledWith(
+      expect.objectContaining({ count: 2 })
+    );
+    expect(mockRecordTuiTokensConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ tokens: {} })
+    );
+    expect(mockRecordTuiCreditsConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 2 })
+    );
   });
 
-  it('session_info_update kind=turn_completion tolerates an unknown status', async () => {
-    // An unrecognized status must not crash the handler; the metered turn still
-    // surfaces a TurnSummary.
+  it('session_info_update kind=turn_completion reconciles an unknown status as failed', async () => {
     const client = new KasAcpClient();
     const handler = mock((_event: any) => {});
     client.onUpdate(handler);
@@ -4495,6 +4692,22 @@ describe('KasAcpClient', () => {
     expect(summary.meteringUsage).toEqual([
       { value: 2, unit: 'credit', unitPlural: 'Credits' },
     ]);
+    expect(mockRecordTuiUserTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: 'failed',
+        failureReason: 'unknown',
+        durationSeconds: 0.1,
+      })
+    );
+    expect(mockRecordTuiModelInvocations).toHaveBeenCalledWith(
+      expect.objectContaining({ count: 1 })
+    );
+    expect(mockRecordTuiTokensConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ tokens: {} })
+    );
+    expect(mockRecordTuiCreditsConsumed).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 2 })
+    );
   });
 
   it('session_info_update kind=turn_completion fills missing unit/unitPlural with empty string', async () => {
@@ -8861,13 +9074,13 @@ describe('cloud executionTarget', () => {
     await client.initialize();
     await client.newSession();
     expect(client.isCloudSessionActive()).toBe(true);
-    // A 'started' cloud-session metric is emitted for a cloud-sandbox placement.
     expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
-      event: 'started',
+      event: 'created',
+      version: 'test-version',
     });
   });
 
-  it('emits start_failed (not started) when a cloud session/new is rejected', async () => {
+  it('emits create_failed when a cloud session/new is rejected', async () => {
     advertiseRemoteCaps();
     mockKiroNewSession.mockRejectedValueOnce(new Error('provision boom'));
     const client = new KasAcpClient({
@@ -8876,14 +9089,21 @@ describe('cloud executionTarget', () => {
     await client.initialize();
     await expect(client.newSession()).rejects.toThrow('provision boom');
     expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
-      event: 'start_failed',
+      event: 'create_failed',
+      version: 'test-version',
     });
     expect(mockRecordTuiCloudSession).not.toHaveBeenCalledWith({
-      event: 'started',
+      event: 'created',
+      version: 'test-version',
+    });
+    expect(mockRecordTuiCloudError).toHaveBeenCalledWith({
+      op: 'session_new',
+      kind: 'other',
+      version: 'test-version',
     });
   });
 
-  it('does NOT emit start_failed when a LOCAL session/new is rejected', async () => {
+  it('does not emit create_failed when a local session/new is rejected', async () => {
     mockKiroNewSession.mockRejectedValueOnce(new Error('local boom'));
     const client = new KasAcpClient(); // local (default)
     await expect(client.newSession()).rejects.toThrow('local boom');
@@ -8906,6 +9126,7 @@ describe('cloud executionTarget', () => {
     await client.loadSession('cloud-session-1');
     expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
       event: 'reattached',
+      version: 'test-version',
     });
   });
 
@@ -8926,13 +9147,13 @@ describe('cloud executionTarget', () => {
     await client.initialize(); // default caps advertise no cloud-sandbox
     await client.newSession();
     expect(client.isCloudSessionActive()).toBe(false);
-    // Dark-safe: no 'started' metric when the session degraded to local — but a
-    // 'fell_back_local' metric records the degraded placement.
     expect(mockRecordTuiCloudSession).not.toHaveBeenCalledWith({
-      event: 'started',
+      event: 'created',
+      version: 'test-version',
     });
     expect(mockRecordTuiCloudSession).toHaveBeenCalledWith({
       event: 'fell_back_local',
+      version: 'test-version',
     });
   });
 
@@ -9387,6 +9608,9 @@ describe('KasAcpClient — _kiro/sessions/changed forwarding', () => {
   });
 
   it('emits cloud ready when a started session first reports completed', async () => {
+    const originalDateNow = Date.now;
+    let nowMs = 1_000;
+    Date.now = () => nowMs;
     mockKiroInitialize.mockResolvedValueOnce({
       protocolVersion: '1.0',
       agentCapabilities: {
@@ -9398,16 +9622,28 @@ describe('KasAcpClient — _kiro/sessions/changed forwarding', () => {
         },
       },
     });
+    mockKiroNewSession.mockImplementationOnce(async () => {
+      nowMs = 2_500;
+      return { sessionId: 'kas-session-1', configOptions: [] };
+    });
     const client = new KasAcpClient({
       executionTarget: { kind: 'cloud-sandbox' },
     });
-    await client.initialize();
-    await client.newSession();
-    const kc = (client as any).kiroClient;
-    kc._extNotifHandlers['_kiro/sessions/changed']({
-      upserted: [{ sessionId: 'kas-session-1', status: 'completed' }],
-    });
-    expect(mockRecordTuiCloudSessionReady).toHaveBeenCalledTimes(1);
+    try {
+      await client.initialize();
+      await client.newSession();
+      nowMs = 4_000;
+      const kc = (client as any).kiroClient;
+      kc._extNotifHandlers['_kiro/sessions/changed']({
+        upserted: [{ sessionId: 'kas-session-1', status: 'completed' }],
+      });
+      expect(mockRecordTuiCloudSessionReady).toHaveBeenCalledWith({
+        durationSeconds: 3,
+        version: 'test-version',
+      });
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
   it('does not emit cloud ready on a reattached session (no start baseline)', async () => {

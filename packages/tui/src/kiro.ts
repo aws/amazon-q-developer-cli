@@ -22,7 +22,6 @@ import type {
   ListSessionsResponse,
   KasContextShowResponse,
   KasContextMutationResponse,
-  ChatSlashCommandTelemetryPayload,
   CreatedReason,
 } from './types/session-client';
 import type {
@@ -523,11 +522,9 @@ export class Kiro {
     this.sessionClient.sendModeChanged?.(payload);
   }
 
-  sendChatSlashCommandTelemetry(
-    payload: ChatSlashCommandTelemetryPayload
-  ): void {
+  recordSlashCommandInvocation(command: string): void {
     if (!this.sessionClient) return;
-    this.sessionClient.sendChatSlashCommandTelemetry?.(payload);
+    this.sessionClient.recordSlashCommandInvocation?.(command);
   }
 
   sendUiModeSessionStart(payload: UiModeSessionStartNotification): void {

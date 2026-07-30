@@ -26,6 +26,8 @@ use agent::protocol::{
     PermissionOptionId,
     SendApprovalResultArgs,
     SendPromptArgs,
+    ToolCallFailureReason,
+    ToolCallResult,
     UpdateEvent,
 };
 use agent::tools::summary::Summary;
@@ -62,6 +64,7 @@ use eyre::{
     Result,
     bail,
 };
+use kiro_telemetry::metric;
 use rts::{
     RtsModel,
     RtsModelState,
@@ -86,6 +89,7 @@ use crate::os::Os;
 use crate::telemetry::core::{
     ChatConversationType,
     RecordUserTurnCompletionArgs,
+    ToolUseEventBuilder,
 };
 use crate::telemetry::{
     TelemetryResult,
@@ -272,6 +276,32 @@ fn telemetry_result(metadata: &[UserTurnMetadata], existing: Option<TelemetryRes
     } else {
         Some(TelemetryResult::Succeeded)
     }
+}
+
+fn subagent_tool_use_event(
+    conversation_id: &str,
+    tool_use_id: String,
+    tool_name: String,
+    mcp_server_name: Option<String>,
+    outcome: metric::ToolMetricOutcome,
+    is_valid: Option<bool>,
+    reason_desc: Option<String>,
+) -> ToolUseEventBuilder {
+    let mut event = ToolUseEventBuilder::new(conversation_id.to_string(), tool_use_id, None);
+    event.tool_name = Some(tool_name);
+    event.is_custom_tool = mcp_server_name.is_some();
+    event.mcp_server_name = mcp_server_name;
+    event.is_accepted = outcome != metric::ToolMetricOutcome::Denied;
+    event.is_valid = is_valid;
+    event.is_success = match outcome {
+        metric::ToolMetricOutcome::Success => Some(true),
+        metric::ToolMetricOutcome::Error => Some(false),
+        metric::ToolMetricOutcome::Denied
+        | metric::ToolMetricOutcome::Cancelled
+        | metric::ToolMetricOutcome::Unknown => None,
+    };
+    event.reason_desc = reason_desc;
+    event
 }
 
 impl<'a> Drop for TelemetrySink<'a> {
@@ -472,13 +502,12 @@ impl<'a> Subagent<'a> {
         }
 
         let agent_handle = agent.spawn();
-        let telemetry_thread = &os.telemetry;
 
         self.main_loop(
             agent_handle,
             input_rx,
             &mut control_end,
-            telemetry_thread,
+            os,
             parent_conversation_id,
             self.parent_tool_use_id,
         )
@@ -490,7 +519,7 @@ impl<'a> Subagent<'a> {
         mut agent: AgentHandle,
         mut input_rx: broadcast::Receiver<InputEvent>,
         control_end: &mut ControlEnd<D>,
-        telemetry_thread: &TelemetryThread,
+        os: &Os,
         parent_conversation_id: &str,
         parent_tool_use_id: &str,
     ) -> Result<Summary> {
@@ -498,7 +527,7 @@ impl<'a> Subagent<'a> {
             parent_conversation_id,
             parent_tool_use_id,
             self.agent_name.unwrap_or("kiro_default"),
-            telemetry_thread,
+            &os.telemetry,
         );
 
         // First, wait for agent initialization
@@ -528,7 +557,7 @@ impl<'a> Subagent<'a> {
                             let ui_mcp_event = match initialize_update_evt {
                                 InitializeUpdateEvent::Mcp(evt) => match evt {
                                     McpServerEvent::Initialized { server_name, .. } => UiMcpEvent::LoadSuccess { server_name },
-                                    McpServerEvent::InitializeError { server_name, error } => {
+                                    McpServerEvent::InitializeError { server_name, error, .. } => {
                                         UiMcpEvent::LoadFailure { server_name, error }
                                     },
                                     McpServerEvent::OauthRequest { server_name, oauth_url } => {
@@ -678,18 +707,83 @@ impl<'a> Subagent<'a> {
                                         )
                                     }));
                                 },
-                                UpdateEvent::ToolCallFinished { tool_call, result: _ } => {
-                                    let tool_name =
-                                        tool_call.tool.kind.canonical_tool_name().tool_name().to_string();
+                                UpdateEvent::ToolCallFinished { tool_call, result } => {
+                                    let tool_name = tool_call.tool.kind.canonical_tool_name().tool_name().to_string();
+                                    let mcp_server_name =
+                                        tool_call.tool.kind.mcp_server_name().map(str::to_string);
+                                    let (outcome, reason_desc) = match result {
+                                        ToolCallResult::Success(_) => (metric::ToolMetricOutcome::Success, None),
+                                        ToolCallResult::Error(error) => {
+                                            (metric::ToolMetricOutcome::Error, Some(error.to_string()))
+                                        },
+                                        ToolCallResult::Cancelled => (metric::ToolMetricOutcome::Cancelled, None),
+                                    };
+                                    let tool_use_id = tool_call.id;
+                                    let event = subagent_tool_use_event(
+                                        parent_conversation_id,
+                                        tool_use_id.clone(),
+                                        tool_name.clone(),
+                                        mcp_server_name,
+                                        outcome,
+                                        Some(true),
+                                        reason_desc,
+                                    );
+                                    os.telemetry
+                                        .send_tool_use_suggested(
+                                            &os.database,
+                                            event,
+                                            metric::ExecutionContext::Subagent,
+                                        )
+                                        .await
+                                        .ok();
                                     _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                         agent_id: self.id,
                                         kind: AgentEventKind::ToolCallEnd(
                                             ToolCallEnd {
                                                 tool_name,
-                                                tool_call_id: tool_call.id,
+                                                tool_call_id: tool_use_id,
                                             }
                                         )
                                     }));
+                                },
+                                UpdateEvent::ToolCallFailed {
+                                    tool_use_id,
+                                    tool_name,
+                                    tool_identity,
+                                    reason,
+                                    error,
+                                    ..
+                                } => {
+                                    let (tool_name, mcp_server_name) = tool_identity
+                                        .map_or((tool_name, None), |identity| {
+                                            (identity.tool_name, identity.mcp_server_name)
+                                        });
+                                    let (outcome, is_valid) = match reason {
+                                        ToolCallFailureReason::ParseError => {
+                                            (metric::ToolMetricOutcome::Error, Some(false))
+                                        },
+                                        ToolCallFailureReason::PermissionDenied
+                                        | ToolCallFailureReason::HookRejected => {
+                                            (metric::ToolMetricOutcome::Denied, Some(true))
+                                        },
+                                    };
+                                    let event = subagent_tool_use_event(
+                                        parent_conversation_id,
+                                        tool_use_id,
+                                        tool_name,
+                                        mcp_server_name,
+                                        outcome,
+                                        is_valid,
+                                        Some(error),
+                                    );
+                                    os.telemetry
+                                        .send_tool_use_suggested(
+                                            &os.database,
+                                            event,
+                                            metric::ExecutionContext::Subagent,
+                                        )
+                                        .await
+                                        .ok();
                                 },
                                 UpdateEvent::AgentContent(content) => {
                                     if let ContentChunk::Text(text) = content {
@@ -984,7 +1078,6 @@ mod tests {
     use agent::types::AgentId;
     use agent::util::providers::CwdProvider;
     use chrono::Utc;
-    use kiro_telemetry::metric;
 
     use super::*;
 
@@ -1061,20 +1154,17 @@ mod tests {
         event.set_client_application_kind(metric::ClientApplication::ChatCli);
         event.app_type = Some("V1".to_string());
         event.is_subagent = true;
-        event.metric_context.mode = Some(metric::Mode::Interactive);
+        event.set_session_interface(metric::SessionInterface::InteractiveCli);
+        event.metric_context.agent_mode = Some(metric::AgentMode::Default);
         let records = kiro_telemetry_legacy::event_to_otel_metric_records(&event);
         assert_eq!(
             records
                 .iter()
                 .filter(|record| record.name == "kiro_cli_tokens_consumed")
                 .count(),
-            4
+            3
         );
-        let attempts = records
-            .iter()
-            .find(|record| record.name == "kiro_cli_user_turn_request_attempts")
-            .unwrap();
-        assert_eq!(attempts.value, kiro_telemetry::MetricValue::Histogram(3.0));
+        assert!(records.iter().all(|record| record.name != "kiro_cli_user_turns"));
     }
 
     #[test]
@@ -1083,6 +1173,36 @@ mod tests {
             telemetry_result(&[], Some(TelemetryResult::Failed)),
             Some(TelemetryResult::Failed)
         );
+    }
+
+    #[test]
+    fn subagent_tool_events_preserve_typed_outcomes() {
+        let success = subagent_tool_use_event(
+            "conversation",
+            "tool-use".to_string(),
+            "read".to_string(),
+            None,
+            metric::ToolMetricOutcome::Success,
+            Some(true),
+            None,
+        );
+        assert!(success.is_accepted);
+        assert_eq!(success.is_success, Some(true));
+        assert!(!success.is_custom_tool);
+
+        let denied = subagent_tool_use_event(
+            "conversation",
+            "tool-use".to_string(),
+            "search".to_string(),
+            Some("server".to_string()),
+            metric::ToolMetricOutcome::Denied,
+            Some(true),
+            Some("permission denied".to_string()),
+        );
+        assert!(!denied.is_accepted);
+        assert_eq!(denied.is_success, None);
+        assert!(denied.is_custom_tool);
+        assert_eq!(denied.mcp_server_name.as_deref(), Some("server"));
     }
 
     /// Verifies that fs_read outside CWD still requires approval.

@@ -149,6 +149,8 @@ pub enum CompactionEvent {
     Started,
     /// Compaction completed successfully
     Completed,
+    /// Distinguishes automatic recovery retries from manual compaction.
+    ContextRecoveryAttempt { final_attempt: bool },
     /// Compaction failed
     Failed { error: String },
 }
@@ -759,6 +761,8 @@ mod tests {
         for ev in [
             CompactionEvent::Started,
             CompactionEvent::Completed,
+            CompactionEvent::ContextRecoveryAttempt { final_attempt: false },
+            CompactionEvent::ContextRecoveryAttempt { final_attempt: true },
             CompactionEvent::Failed { error: "x".to_string() },
         ] {
             let json = serde_json::to_string(&ev).unwrap();

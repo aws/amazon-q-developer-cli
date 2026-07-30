@@ -4,7 +4,6 @@ import { parseSessionRepositories } from '../utils/session-repositories';
 import { isUserCancelledReason } from '../constants/tool-failure-reasons';
 import type { ChildProcess } from 'node:child_process';
 import type {
-  ChatSlashCommandTelemetryPayload,
   SessionClient,
   ListSessionsResponse,
 } from '../types/session-client';
@@ -37,8 +36,12 @@ import type {
   SteeringSource,
   TuiCommand,
 } from '../types/commands';
+import {
+  TuiFirstVisibleResponseObserver,
+  type Engine,
+  type TuiToolCallStart,
+} from '../utils/tui-telemetry-observer';
 import type { SessionEvent } from '../types/multi-session';
-import type { TuiToolCallStart } from '../utils/tui-telemetry-observer';
 import {
   decodeExtSessionUpdate,
   extractKiroMeta,
@@ -122,7 +125,11 @@ export function toolTelemetryStartFromEvent(
   const kiroMeta = 'meta' in event && event.meta ? event.meta.kiro : undefined;
   const name = kiroMeta?.toolName ?? ('name' in event ? event.name : '') ?? '';
   if (kiroMeta?.pipeline) {
-    return { name, toolOrigin: 'subagent_delegate' };
+    return {
+      name,
+      toolOrigin: 'builtin',
+      builtinToolName: 'use_subagent',
+    };
   }
   if (kiroMeta?.mcpServerName) {
     return {
@@ -254,6 +261,7 @@ function isKasNotificationSteering(meta: KasSessionInfoMeta): boolean {
 type KasTurnCompletionTelemetryPayload = {
   sessionId?: string;
   modelId?: string;
+  modelInvocationCount?: number;
   meteringUsage: MeteringUsage[];
   turnDurationMs?: number;
   contextUsagePercentage?: number;
@@ -411,6 +419,7 @@ export function normalizeKasTurnCompletion(
       unit: typeof entry.unit === 'string' ? entry.unit : '',
       unitPlural: typeof entry.unitPlural === 'string' ? entry.unitPlural : '',
     }));
+  const modelInvocationCount = meta.promptTurnSummaries?.length ?? 0;
   const turnDurationMs =
     typeof meta.elapsedTime === 'number' ? meta.elapsedTime : undefined;
   const contextUsagePercentage = normalizeKasContextUsagePercentage(meta);
@@ -418,7 +427,7 @@ export function normalizeKasTurnCompletion(
   const status = normalizeKasTurnCompletionStatus(meta.status);
   const usedTools = normalizeKasUsedTools(meta);
   if (
-    meteringUsage.length === 0 &&
+    modelInvocationCount === 0 &&
     turnDurationMs == null &&
     contextUsagePercentage == null &&
     Object.keys(tokenCounts).length === 0 &&
@@ -431,6 +440,7 @@ export function normalizeKasTurnCompletion(
   return {
     ...(sessionId ? { sessionId } : {}),
     ...(modelId ? { modelId } : {}),
+    ...(modelInvocationCount > 0 ? { modelInvocationCount } : {}),
     meteringUsage,
     ...(turnDurationMs != null ? { turnDurationMs } : {}),
     ...(contextUsagePercentage != null ? { contextUsagePercentage } : {}),
@@ -676,6 +686,7 @@ export abstract class BaseAcpClient implements SessionClient {
   // Reset per-session in wireSessionListeners (a /clear mid-steer ends the
   // session with no injected/cleared event, so it can't reset itself).
   protected readonly kasSteerBuffers = new Map<string, Map<string, string>>();
+  private readonly firstVisibleResponse = new TuiFirstVisibleResponseObserver();
 
   constructor(agentProcess: AgentProcess) {
     this.agentProcess = agentProcess;
@@ -761,9 +772,7 @@ export abstract class BaseAcpClient implements SessionClient {
   }
   abstract sendProcessHealthMetrics(payload: ProcessHealthSnapshot): void;
   abstract sendModeChanged(payload: ModeChangedNotification): void;
-  abstract sendChatSlashCommandTelemetry(
-    payload: ChatSlashCommandTelemetryPayload
-  ): void;
+  abstract recordSlashCommandInvocation(command: string): void;
   abstract sendUiModeSessionStart(
     payload: UiModeSessionStartNotification
   ): void;
@@ -893,7 +902,20 @@ export abstract class BaseAcpClient implements SessionClient {
   }
 
   protected broadcastStreamEvent(event: AgentStreamEvent): void {
+    this.firstVisibleResponse.observe(event);
     this.updateHandlers.forEach((handler) => handler(event));
+  }
+
+  protected startFirstVisibleResponse(args: {
+    mode: string;
+    version: string;
+    engine: Engine;
+  }): void {
+    this.firstVisibleResponse.start(args);
+  }
+
+  protected cancelFirstVisibleResponse(): void {
+    this.firstVisibleResponse.cancel();
   }
 
   protected broadcastSynthesizedFailedToolCall(event: AgentStreamEvent): void {
@@ -1536,6 +1558,7 @@ export abstract class BaseAcpClient implements SessionClient {
               scope?: string;
               serverName?: string;
               path?: string;
+              telemetryId?: string;
             };
             arguments?: Array<{
               name: string;
@@ -1564,6 +1587,9 @@ export abstract class BaseAcpClient implements SessionClient {
               prompts.push({
                 name: cmd.name,
                 description: cmd.description,
+                ...(kiroMeta?.telemetryId
+                  ? { telemetryId: kiroMeta.telemetryId }
+                  : {}),
                 arguments: cmd._meta?.arguments ?? [],
                 source,
               });
@@ -1577,6 +1603,9 @@ export abstract class BaseAcpClient implements SessionClient {
               skills.push({
                 name: cmd.name,
                 description: cmd.description,
+                ...(kiroMeta?.telemetryId
+                  ? { telemetryId: kiroMeta.telemetryId }
+                  : {}),
                 source,
               });
               break;
@@ -1592,6 +1621,9 @@ export abstract class BaseAcpClient implements SessionClient {
               steering.push({
                 name: cmd.name,
                 description: cmd.description,
+                ...(kiroMeta?.telemetryId
+                  ? { telemetryId: kiroMeta.telemetryId }
+                  : {}),
                 source,
               });
               break;
@@ -1625,11 +1657,17 @@ export abstract class BaseAcpClient implements SessionClient {
         });
         return {
           type: AgentEventType.CommandsUpdate,
-          commands: otherCommands.map((cmd: any) => ({
-            name: cmd.name,
-            description: cmd.description,
-            meta: cmd._meta,
-          })),
+          commands: otherCommands.map((cmd) => {
+            const telemetryId = cmd._meta?.kiro?.telemetryId;
+            return {
+              name: cmd.name,
+              description: cmd.description ?? '',
+              meta: {
+                ...cmd._meta,
+                ...(telemetryId ? { telemetryId } : {}),
+              },
+            };
+          }),
         };
       }
 
@@ -1963,7 +2001,7 @@ export abstract class BaseAcpClient implements SessionClient {
   /**
    * Telemetry observation hook off {@link handleSessionUpdate}'s single shared
    * event conversion. No-op in the base; RustAcpClient overrides it to feed its
-   * `engine='v2'` tool-call observer. Kept as a hook (rather than re-converting
+   * V2 tool-call observer. Kept as a hook (rather than re-converting
    * in the subclass) because the converter has broadcast side effects for
    * failed-before-exec tools — re-running it would double-emit those.
    */

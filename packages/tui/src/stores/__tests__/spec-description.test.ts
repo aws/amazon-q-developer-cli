@@ -14,7 +14,7 @@ function makeStore() {
   const kiro = {
     setConfigOption,
     isCloudSessionActive: () => false,
-    sendChatSlashCommandTelemetry: mock(),
+    recordSlashCommandInvocation: mock(),
     close: mock(),
   } as any;
   const store = createAppStore({ kiro });

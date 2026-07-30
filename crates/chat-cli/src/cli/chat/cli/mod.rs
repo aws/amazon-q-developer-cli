@@ -365,3 +365,32 @@ impl SlashCommand {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+    use kiro_telemetry::metric::{
+        self,
+        Engine,
+    };
+
+    use super::SlashCommand;
+
+    #[test]
+    fn every_v1_slash_command_has_a_canonical_metric_name() {
+        for command in SlashCommand::command().get_subcommands() {
+            let record = metric::record_slash_command(command.get_name(), Engine::V1);
+            let value = record
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key == "command")
+                .map(|attribute| attribute.value.as_str());
+            assert_ne!(
+                value,
+                Some("/custom"),
+                "missing metric identity for {}",
+                command.get_name()
+            );
+        }
+    }
+}

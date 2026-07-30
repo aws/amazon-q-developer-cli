@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { writeSync } from 'fs';
+import { writeFileSync, writeSync } from 'fs';
 import { useEffect, useRef } from 'react';
 import { render } from './renderer.js';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
@@ -10,6 +10,7 @@ import {
   AppStoreContext,
   createAppStore,
   type AppStoreApi,
+  useAppStore,
 } from './stores/app-store';
 import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
@@ -83,8 +84,10 @@ import { LITE_HISTORY_RENDER_CAP } from './components/layout/lite/static-flush';
 import { startProcessHealthCollector } from './utils/process-health-collector';
 import {
   recordTuiProcessHealth,
+  recordTuiRender,
   forceFlushMetrics,
 } from './utils/tui-telemetry-observer';
+import { getCliVersion } from './utils/version.js';
 import {
   emitCurrentTitle,
   initTerminalTitle,
@@ -99,6 +102,43 @@ import { workflowStore } from './stores/workflow-store.js';
 // before any third-party code (notably `@agentclientprotocol/sdk`)
 // fires its hardcoded `console.error` and leaks to the user terminal.
 installConsoleInterceptor();
+
+function StartupReadyReporter() {
+  const isInitialized = useAppStore((state) => state.isInitialized);
+  const trustAllToolsRequested = useAppStore(
+    (state) => state.trustAllToolsRequested
+  );
+  const trustAllToolsConfirmed = useAppStore(
+    (state) => state.trustAllToolsConfirmed
+  );
+  const reported = useRef(false);
+
+  useEffect(() => {
+    if (
+      reported.current ||
+      !isInitialized ||
+      (trustAllToolsRequested && !trustAllToolsConfirmed)
+    ) {
+      return;
+    }
+
+    const path = process.env.KIRO_TUI_READY_FILE;
+    const token = process.env.KIRO_TUI_READY_TOKEN;
+    if (!path || !token) return;
+
+    reported.current = true;
+    try {
+      writeFileSync(path, token, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    } catch (error) {
+      logger.warn(
+        '[startup] failed to acknowledge TUI readiness',
+        String(error)
+      );
+    }
+  }, [isInitialized, trustAllToolsConfirmed, trustAllToolsRequested]);
+
+  return null;
+}
 
 // Tracks which session ID has had its title synced from disk via onTurnSummary,
 // so we only read the file once per session.
@@ -1523,6 +1563,7 @@ const startApp = async () => {
             <AppStoreContext.Provider value={appStoreRef.current}>
               <UserThemeBridge />
               <TestModeProvider>
+                <StartupReadyReporter />
                 <AppContainer />
               </TestModeProvider>
             </AppStoreContext.Provider>
@@ -1550,6 +1591,20 @@ const startApp = async () => {
       wideLines: rendererWideLinesEnabled(uiMode),
     };
   const instance = render(<App />, renderOptions);
+  const renderTelemetryEngine: 'v2' | 'v3' =
+    resolveAgentEngine() === 'kas' ? 'v3' : 'v2';
+  const renderTelemetryVersion = getCliVersion();
+  instance.onRenderComplete(({ durationMs, kind }) => {
+    recordTuiRender(
+      {
+        durationMs,
+        kind,
+        version: renderTelemetryVersion,
+        platform: process.platform,
+      },
+      renderTelemetryEngine
+    );
+  });
   // Last-resort keyboard restore for exit paths where renderer teardown is
   // skipped or throws before reaching the terminal (idempotent with it).
   // Assigned before any other post-render wiring so no exit inside this

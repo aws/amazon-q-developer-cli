@@ -3,9 +3,7 @@ use kiro_telemetry::{
     FieldClass,
     MetricRecord,
     PiiRedactor,
-    TelemetryLogRecord,
     TokenUsage,
-    log as telemetry_log,
     metric,
 };
 use kiro_telemetry_host::{
@@ -15,7 +13,6 @@ use kiro_telemetry_host::{
     Event,
     EventType,
     MessageMetaTag,
-    QProfileSwitchIntent,
     RecordUserTurnCompletionArgs,
     TangentModeSessionArgs,
     TelemetryResult,
@@ -39,6 +36,7 @@ use crate::definitions::metrics::{
     CodewhispererterminalModeChanged,
     CodewhispererterminalProcessHealthSnapshot,
     CodewhispererterminalRecordUserTurnCompletion,
+    CodewhispererterminalRefreshCredentials,
     CodewhispererterminalToolUseSuggested,
     CodewhispererterminalUiModeChanged,
     CodewhispererterminalUiModeDefaultChanged,
@@ -67,10 +65,6 @@ use crate::definitions::types::{
     KirocliVoiceBackend,
     KirocliVoiceInputMethod,
 };
-use crate::legacy::{
-    legacy_log_record,
-    legacy_metric_record,
-};
 
 pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
     let app_type_enum = event.app_type.as_deref().and_then(|s| match s {
@@ -85,6 +79,24 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
                 create_time: event.created_time,
                 value: None,
                 credential_start_url: event.credential_start_url.map(Into::into),
+                codewhispererterminal_in_cloudshell: None,
+            }
+            .into_metric_datum(),
+        ),
+        EventType::RefreshCredentials {
+            request_id,
+            result,
+            reason,
+            oauth_flow,
+        } => Some(
+            CodewhispererterminalRefreshCredentials {
+                create_time: event.created_time,
+                value: None,
+                credential_start_url: event.credential_start_url.map(Into::into),
+                request_id: Some(request_id.into()),
+                result: Some(result.to_string().into()),
+                reason: reason.map(Into::into),
+                oauth_flow: Some(oauth_flow.into()),
                 codewhispererterminal_in_cloudshell: None,
             }
             .into_metric_datum(),
@@ -239,15 +251,16 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
                     output_tokens: _,
                     cache_read_input_tokens: _,
                     cache_write_input_tokens: _,
+                    model_invocation_count: _,
                     user_turn_duration_seconds,
                     follow_up_count,
                     user_prompt_length,
                     message_meta_tags,
                     is_subagent,
                     emit_user_turn_counter: _,
-                    emit_turn_numeric_metrics: _,
                     parent_tool_use_id,
                     request_attempts,
+                    emit_turn_numeric_metrics: _,
                     model: _,
                 },
         } => Some(
@@ -415,6 +428,7 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
         EventType::McpServerInit {
             conversation_id,
             server_name,
+            mcp_server_source: _,
             init_failure_reason,
             number_of_tools,
             all_tool_names,
@@ -770,235 +784,175 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
         EventType::ContextUsagePercentage { .. }
         | EventType::MeteringEvent { .. }
         | EventType::EmptyResponseRetry { .. }
-        | EventType::RetryAttempt { .. }
-        | EventType::RetryExhausted { .. }
+        | EventType::AutomaticRetryCompleted { .. }
         | EventType::ModelInvocation { .. }
         | EventType::CliSessionStarted { .. }
         | EventType::CliSessionCompleted { .. }
+        | EventType::StartupDuration { .. }
+        | EventType::StartupFailure { .. }
         | EventType::ChatSessionStarted { .. }
         | EventType::ProcessHealth { .. } => None,
     }
 }
 
+pub fn event_to_otel_metric_record(event: &Event) -> Option<MetricRecord> {
+    event_to_otel_metric_records(event).into_iter().next()
+}
+
 pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
-    let legacy_event_type = event.ty.legacy_event_type();
     let engine = event_engine(event);
-    let records = match &event.ty {
-        EventType::UserLoggedIn {} => {
-            let client_application = metric::ClientApplication::from_name(event.client_application.as_deref());
-            if let Some(install_method) = event.metric_context.install_method {
-                vec![metric::user_logged_in_for_engine(
-                    client_application,
-                    metric::CredentialKind::from_start_url(event.credential_start_url.as_deref()),
-                    install_method,
-                    engine,
-                )]
-            } else {
-                vec![metric::user_logged_in_record(metric::UserLoggedIn::from_context(
-                    event.client_application.as_deref(),
-                    event.credential_start_url.as_deref(),
-                ))]
-            }
-        },
+    match &event.ty {
+        EventType::UserLoggedIn {} => vec![metric::record_login_success(
+            auth_method_from_start_url(event.credential_start_url.as_deref()),
+            metric::AuthFlow::Unknown,
+        )],
         EventType::AuthFailed {
             auth_method,
             oauth_flow,
             error_type,
             error_code,
-        } => vec![metric::auth_credential_failure_for_engine(
-            metric::AuthProvider::from_legacy_name(auth_method),
-            metric::AuthFlow::from_legacy_name(oauth_flow),
-            error_code.as_deref().unwrap_or("unknown"),
-            auth_operation(error_type),
-            partition_from_region(event.sso_region.as_deref()),
-            metric::ResultKind::Failed,
-            event_engine(event),
+        } => vec![metric::record_auth_failure(
+            metric::AuthMethod::from_name(auth_method),
+            metric::AuthFlow::from_name(oauth_flow),
+            metric::AuthOperation::Login,
+            auth_failure_reason(error_code.as_deref().or(Some(error_type))),
         )],
-        EventType::AgentContribution {
-            lines_by_agent,
-            lines_by_user,
+        EventType::RefreshCredentials {
+            result,
+            reason,
+            oauth_flow,
             ..
-        } => metric::agent_contribution_records(metric::AgentContributionMetrics {
-            lines_by_agent: *lines_by_agent,
-            lines_by_user: *lines_by_user,
-            engine: event_engine(event),
-        }),
-        EventType::ChatEnd { model, .. } => {
-            vec![metric::conversation_completed_total(
-                model.as_deref(),
-                event_engine(event),
-            )]
+        } => match result {
+            TelemetryResult::Succeeded => Vec::new(),
+            TelemetryResult::Failed | TelemetryResult::Cancelled => vec![metric::record_auth_failure(
+                auth_method_from_start_url(event.credential_start_url.as_deref()),
+                metric::AuthFlow::from_name(oauth_flow),
+                metric::AuthOperation::Refresh,
+                auth_failure_reason(reason.as_deref()),
+            )],
         },
-        EventType::ChatStart { model, .. } => {
-            if let (Some(mode), Some(session_start_kind)) = (
-                event.metric_context.mode.clone(),
-                event.metric_context.session_start_kind,
-            ) {
-                vec![metric::chat_session_started_for_engine(
-                    mode,
-                    metric::ClientApplication::from_name(event.client_application.as_deref()),
-                    session_start_kind,
-                    model.as_deref(),
-                    engine,
-                )]
-            } else {
-                legacy_event_type.and_then(legacy_metric_record).into_iter().collect()
-            }
-        },
-        EventType::CliSessionStarted {
-            os_type,
-            install_source,
-        } => vec![metric::cli_session_started_record(metric::CliSessionStarted::new(
+        EventType::CliSessionStarted { os_type, .. } => vec![metric::record_run_started(
+            event_session_interface(event),
+            engine,
             *os_type,
-            *install_source,
-            metric::ClientApplication::from_name(event.client_application.as_deref()),
-        ))],
-        EventType::CliSessionCompleted {
-            exit_reason,
-            agent_kind,
-        } => vec![metric::cli_session_completed_record(metric::CliSessionCompleted::new(
-            *exit_reason,
-            *agent_kind,
-        ))],
-        EventType::DailyHeartbeat { install_method } => {
-            let client_application = metric::ClientApplication::from_name(event.client_application.as_deref());
-            if let Some(install_method) = event.metric_context.install_method {
-                vec![metric::daily_heartbeat_for_engine(
-                    client_application,
-                    install_method,
-                    metric::CredentialKind::from_start_url(event.credential_start_url.as_deref()),
-                    engine,
-                )]
-            } else {
-                vec![metric::daily_heartbeat_record(metric::DailyHeartbeat::from_names(
-                    event.client_application.as_deref(),
-                    install_method.as_deref(),
-                ))]
-            }
+        )],
+        EventType::CliSessionCompleted { exit_reason, .. } => vec![metric::record_run_outcome(
+            event_session_interface(event),
+            engine,
+            current_os_type(),
+            event
+                .metric_context
+                .run_outcome
+                .unwrap_or_else(|| run_outcome(*exit_reason)),
+        )],
+        EventType::StartupDuration {
+            duration_seconds,
+            os_type,
+        } => {
+            metric::record_startup_duration_seconds(*duration_seconds, event_session_interface(event), engine, *os_type)
+                .into_iter()
+                .collect()
         },
+        EventType::StartupFailure { os_type, failure_stage } => vec![metric::record_startup_failure(
+            event_session_interface(event),
+            engine,
+            *os_type,
+            *failure_stage,
+        )],
+        EventType::DailyHeartbeat { install_method } => vec![metric::record_daily_heartbeat(
+            metric::ReleaseChannel::from_version(env!("CARGO_PKG_VERSION")),
+            current_os_type(),
+            metric::InstallSource::from_name(install_method.as_deref().unwrap_or("unknown")),
+        )],
         EventType::ChatAddedMessage { result, data, .. } => {
-            let tools_enabled = matches!(data.chat_conversation_type, Some(ChatConversationType::ToolUse));
-            let message_tags = data
-                .message_meta_tags
-                .iter()
-                .copied()
-                .map(message_tag)
-                .collect::<Vec<_>>();
-            let response = metric::ModelResponseMetrics::from_turn_context(
-                turn_metric_context(
-                    &data.model,
-                    &event.client_application,
-                    &event.app_type,
-                    event.is_subagent,
-                    &data.message_meta_tags,
-                ),
-                (*result).into(),
-                tools_enabled,
-            )
-            .legacy_event(legacy_event_type)
-            .emit_message_detail_metrics(engine == metric::Engine::V1)
-            .message_kind(message_kind(data.chat_conversation_type))
-            .context_file_length(data.context_file_length)
-            .time_to_first_chunk_ms(data.time_to_first_chunk_ms)
-            .time_between_chunks_ms(data.time_between_chunks_ms.as_deref())
-            .request_duration_seconds(data.request_duration_seconds)
-            .assistant_response_length(data.assistant_response_length)
-            .message_tags(&message_tags)
-            .token_usage(token_usage_from_chat_added_message(data));
-            let response = if engine == metric::Engine::V1 {
-                response.emit_user_turn_counter(false).emit_chat_message_counter(true)
-            } else {
-                response
-            };
-            metric::model_response_records(response)
+            let mut records = Vec::new();
+            if engine != metric::Engine::V3 {
+                records.push(metric::record_model_invocation(engine, data.model.as_deref()));
+            }
+            records.extend(data.time_to_first_chunk_ms.and_then(|milliseconds| {
+                metric::record_model_time_to_first_content_ms(milliseconds, engine, data.model.as_deref())
+            }));
+            records.extend(data.request_duration_seconds.and_then(|seconds| {
+                metric::record_model_request_duration_seconds(
+                    seconds,
+                    engine,
+                    data.model.as_deref(),
+                    model_request_outcome(*result),
+                )
+            }));
+            records.extend(canonical_token_metric_records(
+                engine,
+                data.model.as_deref(),
+                token_usage_from_chat_added_message(data),
+            ));
+            records
         },
         EventType::RecordUserTurnCompletion { result, args, .. } => {
-            let emit_turn_detail_metrics = engine == metric::Engine::V1;
-            let emit_turn_numeric_metrics = emit_turn_detail_metrics && args.emit_turn_numeric_metrics.unwrap_or(true);
-            let completion = metric::UserTurnCompletionMetrics::from_turn_context(
-                turn_metric_context(
-                    &args.model,
-                    &event.client_application,
-                    &event.app_type,
-                    args.is_subagent,
-                    &args.message_meta_tags,
-                ),
-                (*result).into(),
-            )
-            .emit_user_turn_counter(args.emit_user_turn_counter)
-            .emit_token_usage(
-                (engine == metric::Engine::V1 && args.is_subagent)
-                    || (args.emit_user_turn_counter && event.app_type.as_deref() == Some("KAS")),
-            )
-            .emit_turn_detail_metrics(emit_turn_detail_metrics)
-            .emit_turn_numeric_metrics(emit_turn_numeric_metrics)
-            .mode(event.metric_context.mode.clone().unwrap_or_else(|| {
-                turn_metric_context(
-                    &args.model,
-                    &event.client_application,
-                    &event.app_type,
-                    args.is_subagent,
-                    &args.message_meta_tags,
-                )
-                .mode()
-            }))
-            .message_kind(message_kind(args.chat_conversation_type))
-            .token_usage(token_usage_from_turn_args(args))
-            .duration_seconds(
-                (engine != metric::Engine::V1 || emit_turn_numeric_metrics)
-                    .then_some(args.user_turn_duration_seconds as f64),
-            )
-            .turn_details(
-                args.user_prompt_length,
-                args.assistant_response_length,
-                args.follow_up_count,
-                args.request_attempts
-                    .map_or(args.request_ids.len(), |attempts| attempts as usize),
-                &args.time_to_first_chunks_ms,
-                args.reason.as_deref(),
-            );
-            metric::user_turn_completion_records(completion)
+            let mut records = if engine == metric::Engine::V3 || (engine == metric::Engine::V1 && args.is_subagent) {
+                canonical_token_metric_records(engine, args.model.as_deref(), token_usage_from_turn_completion(args))
+            } else {
+                Vec::new()
+            };
+            let session_interface = event_session_interface(event);
+            if engine == metric::Engine::V3
+                && session_interface == metric::SessionInterface::NoninteractiveCli
+                && let Some(record) =
+                    metric::record_model_invocations(engine, args.model.as_deref(), args.model_invocation_count)
+            {
+                records.push(record);
+            }
+            if args.is_subagent || !host_owns_turn_metrics(event) {
+                return records;
+            }
+            let agent_mode = event
+                .metric_context
+                .agent_mode
+                .unwrap_or_else(|| turn_agent_mode(&args.message_meta_tags));
+            records.push(metric::record_user_turn(session_interface, agent_mode, engine));
+            match result {
+                TelemetryResult::Succeeded => {
+                    records.extend(metric::record_user_turn_duration_seconds(
+                        args.user_turn_duration_seconds as f64,
+                        session_interface,
+                        agent_mode,
+                        engine,
+                    ));
+                },
+                TelemetryResult::Failed => records.push(metric::record_turn_failure(
+                    session_interface,
+                    agent_mode,
+                    engine,
+                    turn_failure_reason(args.reason.as_deref(), args.status_code),
+                )),
+                TelemetryResult::Cancelled => {
+                    records.push(metric::record_turn_cancelled(session_interface, agent_mode, engine));
+                },
+            }
+            records
         },
-        EventType::TangentModeSession { result, args, .. } => {
-            metric::tangent_session_records(metric::TangentSessionMetrics {
-                result: result_kind(*result),
-                duration_seconds: args.duration_seconds,
-                is_forget: args.is_forget,
-                entries_removed: args.entries_removed,
-                engine: event_engine(event),
-            })
+        EventType::ContextUsagePercentage { .. } => Vec::new(),
+        EventType::ModelInvocation { model } => {
+            if engine == metric::Engine::V3 {
+                return Vec::new();
+            }
+            vec![metric::record_model_invocation(engine, model.as_deref())]
         },
-        EventType::ContextUsagePercentage { model, percentage } => {
-            metric::context_usage_percentage_record(metric::ContextUsageMetric::from_names(
-                *percentage,
-                model.as_deref(),
-                event.client_application.as_deref(),
-                event.is_subagent,
-            ))
-            .into_iter()
-            .collect()
-        },
-        EventType::ModelInvocation { model } => vec![metric::model_invocation_record(
-            metric::ModelInvocation::from_id(model.as_deref()),
-        )],
         EventType::ToolUseSuggested {
             tool_name,
             mcp_server_name,
             is_accepted,
-            is_trusted,
             is_success,
             is_valid,
             is_custom_tool,
-            input_token_size,
-            output_token_size,
-            custom_tool_call_latency,
-            model,
             execution_duration,
-            turn_duration,
             aws_service_name,
             ..
         } => {
-            let invocation = metric::ToolInvocation::from_tool_context(
+            if engine == metric::Engine::V3 {
+                return Vec::new();
+            }
+            let tool = canonical_tool_metric(
+                engine,
                 tool_name.as_deref(),
                 aws_service_name.as_deref(),
                 *is_custom_tool,
@@ -1006,493 +960,325 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
                 *is_accepted,
                 *is_valid,
                 *is_success,
+                event.is_subagent,
             );
-            if engine == metric::Engine::V1 {
-                let origin = invocation.origin();
-                let mut records = vec![
-                    metric::v1_tool_call_total(metric::V1ToolCall {
-                        invocation,
-                        builtin_tool_name: event.metric_context.canonical_tool_name.as_deref(),
-                        model: model.as_deref(),
-                        is_trusted: *is_trusted,
-                    }),
-                    metric::v1_tool_invocations(invocation),
-                ];
-                records.extend(execution_duration.and_then(|duration| {
-                    metric::v1_tool_execution_duration_ms(duration.as_secs_f64() * 1000.0, invocation)
-                }));
-                if let Some(value) = input_token_size {
-                    records.push(metric::tool_token_size(
-                        *value as f64,
-                        metric::ContentRole::Input,
-                        origin,
-                        engine,
-                    ));
-                }
-                if let Some(value) = output_token_size {
-                    records.push(metric::tool_token_size(
-                        *value as f64,
-                        metric::ContentRole::Output,
-                        origin,
-                        engine,
-                    ));
-                }
-                if let Some(value) = custom_tool_call_latency {
-                    records.push(metric::tool_duration(
-                        *value as f64,
-                        metric::DurationStage::ToolCall,
-                        origin,
-                        engine,
-                    ));
-                }
-                if let Some(duration) = turn_duration {
-                    records.push(metric::tool_duration(
-                        duration.as_secs_f64(),
-                        metric::DurationStage::ToolTurn,
-                        origin,
-                        engine,
-                    ));
-                }
-                records
-            } else {
-                metric::tool_use_records(
-                    metric::ToolUseMetrics::new(invocation)
-                        .engine(Some(engine))
-                        .legacy_event(legacy_event_type)
-                        .execution_duration(*execution_duration),
-                )
-            }
+            let mut records = vec![metric::record_tool_call(tool)];
+            records.extend(
+                execution_duration.and_then(|duration| {
+                    metric::record_tool_execution_duration_ms(duration.as_secs_f64() * 1000.0, tool)
+                }),
+            );
+            records
         },
         EventType::McpServerInit {
             server_name,
+            mcp_server_source,
             init_failure_reason,
-            number_of_tools,
-            all_tools_count,
             ..
-        } => {
-            let input = metric::McpServerInit::from_name(server_name, init_failure_reason.as_deref());
-            let mut records = metric::mcp_server_init_records(input);
-            if engine == metric::Engine::V1 {
-                records.push(metric::mcp_tool_count(
-                    *number_of_tools as f64,
-                    input.server_class,
-                    metric::CountKind::Loaded,
-                    engine,
-                ));
-                records.push(metric::mcp_tool_count(
-                    *all_tools_count as f64,
-                    input.server_class,
-                    metric::CountKind::Available,
-                    engine,
-                ));
-            }
-            records
-        },
-        EventType::AgentConfigInit { args, .. } => metric::agent_config_records(metric::AgentConfigMetrics {
-            agents_loaded_count: args.agents_loaded_count,
-            agents_loaded_failed_count: args.agents_loaded_failed_count,
-            migration_executed: args.legacy_profile_migration_executed,
-            migrated_count: args.legacy_profile_migrated_count,
-            engine: event_engine(event),
-        }),
-        EventType::DidSelectProfile {
-            source,
-            amazonq_profile_region,
-            result,
-            sso_region,
-            profile_count,
-        } => metric::profile_selection_records(metric::ProfileSelectionMetrics {
-            source: profile_source(*source),
-            profile_region: metric::RegionClass::from_region(Some(amazonq_profile_region)),
-            sso_region: metric::RegionClass::from_region(sso_region.as_deref()),
-            result: result_kind(*result),
-            profile_count: *profile_count,
-            engine: event_engine(event),
-        }),
-        EventType::ProfileState {
-            source,
-            amazonq_profile_region,
-            result,
-            sso_region,
-        } => vec![metric::profile_state_total(
-            profile_source(*source),
-            metric::RegionClass::from_region(Some(amazonq_profile_region)),
-            metric::RegionClass::from_region(sso_region.as_deref()),
-            result_kind(*result),
-            event_engine(event),
+        } => vec![metric::record_mcp_server_init(
+            engine,
+            *mcp_server_source,
+            if init_failure_reason.is_some() {
+                metric::McpInitOutcome::Failure
+            } else {
+                metric::McpInitOutcome::Success
+            },
+            Some(server_name),
+            init_failure_reason.as_deref().map(mcp_error_kind),
+            init_failure_reason.as_deref().map(mcp_failure_stage),
         )],
-        EventType::EmptyResponseRetry { model, outcome } => {
-            vec![metric::empty_response_retry_record(
-                metric::EmptyResponseRetry::from_id(model.as_deref(), (*outcome).into()),
-            )]
+        EventType::EmptyResponseRetry { outcome, .. } => {
+            metric::record_automatic_retries(1, engine, metric::RetryReason::EmptyResponse, match outcome {
+                kiro_telemetry_host::EmptyResponseRetryOutcome::Recovered => metric::RetryOutcome::Recovered,
+                kiro_telemetry_host::EmptyResponseRetryOutcome::StillEmpty => metric::RetryOutcome::Exhausted,
+            })
+            .into_iter()
+            .collect()
         },
-        EventType::RetryAttempt {
-            upstream,
+        EventType::AutomaticRetryCompleted {
             retry_reason,
-            attempt,
-        } => vec![metric::retry_attempt_record(metric::RetryAttempt::from_attempt(
-            *upstream,
-            *retry_reason,
-            *attempt,
-        ))],
-        EventType::RetryExhausted {
-            upstream,
-            final_error_kind,
-        } => vec![metric::retry_exhausted_record(metric::RetryExhausted::new(
-            *upstream,
-            *final_error_kind,
-        ))],
+            additional_attempts,
+            outcome,
+            ..
+        } => metric::record_automatic_retries(*additional_attempts, engine, *retry_reason, *outcome)
+            .into_iter()
+            .collect(),
         EventType::MessageResponseError {
             model,
             reason,
             status_code,
-            context_file_length,
             ..
-        } => {
-            let error_kind = metric::ErrorKind::from_reason(reason.as_deref(), *status_code);
-            let mut records = if engine == metric::Engine::V1 {
-                vec![metric::bedrock_request_error_for_engine(
-                    model.as_deref(),
-                    metric::Operation::Stream,
-                    error_kind,
-                    metric::StatusClass::from_status_code(*status_code),
-                    Some(error_kind.as_str()),
-                    engine,
-                )]
-            } else {
-                vec![metric::bedrock_request_error_record(
-                    metric::BedrockRequestError::from_stream_reason(model.as_deref(), reason.as_deref(), *status_code),
-                )]
-            };
-            if engine == metric::Engine::V1
-                && let Some(length) = context_file_length
-            {
-                records.push(metric::request_error_context_length(
-                    *length as f64,
-                    model.as_deref(),
-                    error_kind,
-                    engine,
-                ));
-            }
-            records
-        },
+        } => vec![metric::record_model_request_failure(
+            engine,
+            model.as_deref(),
+            metric::ErrorKind::from_reason(reason.as_deref(), *status_code),
+        )],
         EventType::CliSubcommandExecuted { subcommand } => {
-            let (feature, subcommand) = subcommand
-                .split_once(':')
-                .map_or((subcommand.as_str(), None), |(feature, subcommand)| {
-                    (feature, Some(subcommand))
-                });
-            if event.app_type.as_deref() == Some("V1") || subcommand.is_some() {
-                vec![metric::feature_used_for_engine(
-                    feature,
-                    subcommand,
-                    metric::ResultKind::Success,
-                    engine,
-                )]
-            } else {
-                vec![metric::feature_used_record(metric::FeatureUsed::new(feature))]
-            }
+            vec![metric::record_top_level_command(subcommand)]
         },
-        EventType::ChatSlashCommandExecuted {
-            command,
-            subcommand,
-            result,
-            ..
-        } => {
-            vec![metric::slash_command_invoked_for_engine(
-                command,
-                subcommand.as_deref(),
-                result_kind(*result),
+        EventType::ChatSlashCommandExecuted { command, .. } => {
+            vec![metric::record_slash_command(command, engine)]
+        },
+        EventType::ChatSessionStarted { mode } => {
+            if !host_owns_turn_metrics(event) {
+                return Vec::new();
+            }
+            vec![metric::record_chat_session_started(
+                event_session_interface(event),
+                event
+                    .metric_context
+                    .agent_mode
+                    .unwrap_or_else(|| metric::AgentMode::from_id(Some(mode.as_str()))),
                 engine,
             )]
         },
-        EventType::ChatSessionStarted { mode } => {
-            let mode = if event.app_type.as_deref() == Some("ACP") {
-                metric::Mode::AcpExternal
-            } else {
-                mode.clone()
-            };
-            vec![metric::chat_session_started_record(metric::ChatSessionStarted::new(
-                mode,
-                metric::ClientApplication::from_name(event.client_application.as_deref()),
+        EventType::ProcessHealthMetric { .. } => Vec::new(),
+        EventType::GoalCompleted { terminal_state, .. } => vec![metric::record_goal_outcome(
+            engine,
+            metric::GoalOutcome::from_terminal_state(terminal_state),
+        )],
+        EventType::UiModeSessionStart { ui_mode, .. } => {
+            vec![metric::record_ui_mode_session_started(metric::UiMode::from_name(
+                ui_mode,
             ))]
         },
-        EventType::ProcessHealthMetric {
-            agent_kind,
-            rss_mb,
-            cpu_user_pct,
-            cpu_system_pct,
-            version,
+        EventType::MeteringEvent {
+            model,
+            usage,
+            unit,
+            unit_plural,
             ..
-        } => metric::process_health_records(metric::ProcessHealthSnapshot::new(
-            *rss_mb,
-            *cpu_user_pct,
-            *cpu_system_pct,
-            version,
-            *agent_kind,
-            metric::ProcessState::Other,
-        )),
-        EventType::ProcessHealth {
-            rss_bytes,
-            peak_rss_bytes,
-            cpu_utilization,
-        } => {
-            let mut records = Vec::new();
-            if rss_bytes.is_finite() && *rss_bytes >= 0.0 {
-                records.push(metric::process_memory_rss_for_engine(
-                    *rss_bytes,
-                    metric::AgentKind::V1,
-                    engine,
-                    metric::ProcessRole::Host,
-                ));
-            }
-            if peak_rss_bytes.is_finite() && *peak_rss_bytes >= 0.0 {
-                records.push(metric::process_memory_peak_rss_for_agent(
-                    *peak_rss_bytes,
-                    metric::AgentKind::V1,
-                    engine,
-                    metric::ProcessRole::Host,
-                ));
-            }
-            if cpu_utilization.is_finite() && *cpu_utilization >= 0.0 {
-                records.push(metric::process_cpu_utilization_for_engine(
-                    *cpu_utilization,
-                    metric::AgentKind::V1,
-                    metric::ProcessState::Other,
-                    engine,
-                    metric::ProcessRole::Host,
-                ));
-            }
-            records
-        },
-        EventType::GoalCompleted { terminal_state, .. } => {
-            vec![metric::session_outcome_record(
-                metric::SessionOutcomeMetric::from_goal_terminal_state(terminal_state),
-            )]
-        },
-        EventType::SubagentInvocation {
-            subagent_name,
-            builtin_tool_uses,
-            mcp_tool_uses,
-            ..
-        } => vec![
-            metric::subagent_delegations_total(
-                metric::SubagentNameClass::from_name(subagent_name),
-                None,
-                event_engine(event),
-            ),
-            metric::subagent_tool_uses_total(
-                u64::from(*builtin_tool_uses),
-                metric::CountKind::Builtin,
-                event_engine(event),
-            ),
-            metric::subagent_tool_uses_total(u64::from(*mcp_tool_uses), metric::CountKind::Mcp, event_engine(event)),
-        ],
-        EventType::VoiceInput {
-            result,
-            backend,
-            input_method,
-            recording_duration_ms,
-            transcription_duration_ms,
-            text_length,
-            model_size,
-            auto_submit,
-            ..
-        } => metric::voice_input_records(metric::VoiceInputMetrics {
-            result: result_kind(*result),
-            backend: metric::VoiceBackend::from_legacy_name(backend),
-            input_method: metric::VoiceInputMethod::from_legacy_name(input_method),
-            recording_duration_ms: *recording_duration_ms,
-            transcription_duration_ms: *transcription_duration_ms,
-            text_length: *text_length,
-            model_size: metric::VoiceModelSize::from_name(model_size.as_deref().unwrap_or_default()),
-            auto_submit: *auto_submit,
-            engine: event_engine(event),
-        }),
-        EventType::ModeChanged { to_mode, .. } => vec![metric::mode_active_total(
-            metric::Mode::from_name(to_mode),
-            event_engine(event),
-        )],
-        EventType::UiModeSessionStart {
-            ui_mode,
-            ui_mode_source,
-            ui_mode_default,
-            ..
-        } => vec![metric::ui_mode_session_started_with_source(
-            ui_mode,
-            (*ui_mode_source).into(),
-            ui_mode_default,
-        )],
-        EventType::UiModeChanged { from, to, source, .. } => {
-            vec![metric::ui_mode_changed_with_source(from, to, (*source).into())]
-        },
-        EventType::UiModeDefaultChanged { from, to, .. } => {
-            vec![metric::ui_mode_default_changed_from_names(from, to)]
-        },
-        EventType::MeteringEvent { .. } => event
-            .ty
-            .legacy_event_type()
-            .and_then(legacy_metric_record)
+        } if is_credit_unit(unit, unit_plural) => metric::record_credits_consumed(*usage, model.as_deref())
             .into_iter()
             .collect(),
-    };
-    if event.engine.is_some() {
-        records
-            .into_iter()
-            .map(|record| metric::with_engine(record, engine))
-            .collect()
+        EventType::AgentContribution { .. }
+        | EventType::ChatStart { .. }
+        | EventType::ChatEnd { .. }
+        | EventType::TangentModeSession { .. }
+        | EventType::AgentConfigInit { .. }
+        | EventType::DidSelectProfile { .. }
+        | EventType::ProfileState { .. }
+        | EventType::SubagentInvocation { .. }
+        | EventType::VoiceInput { .. }
+        | EventType::ModeChanged { .. }
+        | EventType::UiModeChanged { .. }
+        | EventType::UiModeDefaultChanged { .. }
+        | EventType::ProcessHealth { .. }
+        | EventType::MeteringEvent { .. } => Vec::new(),
+    }
+}
+
+fn event_engine(event: &Event) -> metric::Engine {
+    if let Some(engine) = event.engine {
+        return engine;
+    }
+    match event.app_type.as_deref() {
+        Some("V1") => metric::Engine::V1,
+        Some("V2" | "ACP") => metric::Engine::V2,
+        Some("KAS") => metric::Engine::V3,
+        _ => event
+            .client_application
+            .as_deref()
+            .map_or(metric::Engine::Unknown, metric::Engine::from_name),
+    }
+}
+
+fn event_session_interface(event: &Event) -> metric::SessionInterface {
+    if let Some(session_interface) = event.session_interface {
+        session_interface
+    } else if event.app_type.as_deref() == Some("ACP") || event.client_application.as_deref() == Some("acp_external") {
+        metric::SessionInterface::ExternalAcp
     } else {
-        records
+        metric::SessionInterface::InteractiveCli
     }
 }
 
-pub fn event_to_otel_log_record(event: &Event) -> Option<TelemetryLogRecord> {
-    if let EventType::MeteringEvent {
-        request_id,
-        model,
-        usage,
-        unit,
-        unit_plural,
-    } = &event.ty
-    {
-        return Some(telemetry_log::metering_event_record(
-            telemetry_log::MeteringEventLog::from_names(
-                request_id.as_deref(),
-                model.as_deref(),
-                event.client_application.as_deref(),
-                *usage,
-                unit,
-                unit_plural,
-            ),
-        ));
-    }
-
-    if let EventType::ToolUseSuggested {
-        tool_use_id,
-        tool_name,
-        mcp_server_name,
-        is_success,
-        model,
-        execution_duration,
-        ..
-    } = &event.ty
-    {
-        return Some(telemetry_log::tool_invoked_record(
-            telemetry_log::ToolInvokedLog::from_names(
-                tool_use_id.as_deref(),
-                tool_name.as_deref(),
-                mcp_server_name.as_deref(),
-                *is_success,
-                model.as_deref(),
-                *execution_duration,
-            ),
-        ));
-    }
-
-    if let EventType::McpServerInit {
-        server_name,
-        init_failure_reason,
-        ..
-    } = &event.ty
-    {
-        return Some(telemetry_log::mcp_server_init_record(metric::McpServerInit::from_name(
-            server_name,
-            init_failure_reason.as_deref(),
-        )));
-    }
-
-    match &event.ty {
-        EventType::ChatEnd { conversation_id, .. } => {
-            return Some(conversation_completed_log_record(conversation_id));
-        },
-        EventType::RecordUserTurnCompletion {
-            conversation_id,
-            result,
-            args,
-        } => {
-            return Some(turn_completion_log_record(
-                conversation_id,
-                result,
-                args,
-                &event.client_application,
-            ));
-        },
-        EventType::SubagentInvocation { subagent_name, .. } => {
-            return Some(telemetry_log::subagent_invoked(subagent_name.as_str()).build());
-        },
-        _ => {},
-    }
-
-    legacy_log_record(event.ty.legacy_event_type()?)
+fn host_owns_turn_metrics(event: &Event) -> bool {
+    event_session_interface(event) != metric::SessionInterface::InteractiveCli
+        || event_engine(event) == metric::Engine::V1
 }
 
-fn conversation_completed_log_record(conversation_id: &str) -> TelemetryLogRecord {
-    telemetry_log::conversation_completed(
-        conversation_id.to_string(),
-        conversation_id.to_string(),
-        telemetry_log::CompletionReason::Stop,
+fn current_os_type() -> metric::OsType {
+    os_type_from_name(std::env::consts::OS)
+}
+
+fn os_type_from_name(value: &str) -> metric::OsType {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "darwin" | "macos" => metric::OsType::Macos,
+        "windows" | "win32" => metric::OsType::Windows,
+        "linux" => metric::OsType::Linux,
+        _ => metric::OsType::Other,
+    }
+}
+
+fn auth_method_from_start_url(start_url: Option<&str>) -> metric::AuthMethod {
+    match start_url {
+        Some("https://view.awsapps.com/start") => metric::AuthMethod::BuilderId,
+        Some(url) if !url.trim().is_empty() => metric::AuthMethod::IdentityCenter,
+        _ => metric::AuthMethod::Unknown,
+    }
+}
+
+fn auth_failure_reason(value: Option<&str>) -> metric::AuthFailureReason {
+    let value = value.unwrap_or_default().to_ascii_lowercase();
+    if value.contains("denied") || value.contains("forbidden") {
+        metric::AuthFailureReason::AuthorizationDenied
+    } else if value.contains("expired") || value.contains("invalid_token") || value.contains("credential") {
+        metric::AuthFailureReason::InvalidOrExpiredCredential
+    } else if value.contains("timeout") || value.contains("timed out") {
+        metric::AuthFailureReason::Timeout
+    } else if value.contains("network") || value.contains("connection") || value.contains("dns") {
+        metric::AuthFailureReason::Network
+    } else if value.contains("config") {
+        metric::AuthFailureReason::Configuration
+    } else if value.contains("storage") || value.contains("keychain") {
+        metric::AuthFailureReason::Storage
+    } else if value.contains("service") || value.contains("server") {
+        metric::AuthFailureReason::ServiceError
+    } else {
+        metric::AuthFailureReason::Unknown
+    }
+}
+
+fn run_outcome(exit_reason: metric::ExitReason) -> metric::RunOutcome {
+    match exit_reason {
+        metric::ExitReason::Clean => metric::RunOutcome::Success,
+        metric::ExitReason::UserInterrupt => metric::RunOutcome::UserInterrupt,
+        metric::ExitReason::Crash
+        | metric::ExitReason::Oom
+        | metric::ExitReason::HangTimeout
+        | metric::ExitReason::AuthFailure
+        | metric::ExitReason::UpstreamOutage => metric::RunOutcome::Failure,
+        metric::ExitReason::Other => metric::RunOutcome::Unknown,
+    }
+}
+
+fn model_request_outcome(result: TelemetryResult) -> metric::ModelRequestOutcome {
+    match result {
+        TelemetryResult::Succeeded => metric::ModelRequestOutcome::Success,
+        TelemetryResult::Failed => metric::ModelRequestOutcome::Failure,
+        TelemetryResult::Cancelled => metric::ModelRequestOutcome::Cancelled,
+    }
+}
+
+fn turn_agent_mode(message_meta_tags: &[MessageMetaTag]) -> metric::AgentMode {
+    if message_meta_tags.contains(&MessageMetaTag::GenerateAgent)
+        || message_meta_tags.contains(&MessageMetaTag::TangentMode)
+    {
+        metric::AgentMode::Custom
+    } else {
+        metric::AgentMode::Default
+    }
+}
+
+fn turn_failure_reason(reason: Option<&str>, status_code: Option<u16>) -> metric::TurnFailureReason {
+    match metric::ErrorKind::from_reason(reason, status_code) {
+        metric::ErrorKind::ContextLimit => metric::TurnFailureReason::ContextLimit,
+        metric::ErrorKind::Timeout => metric::TurnFailureReason::Timeout,
+        metric::ErrorKind::ModelError
+        | metric::ErrorKind::Throttling
+        | metric::ErrorKind::Validation
+        | metric::ErrorKind::ServerError
+        | metric::ErrorKind::Connection
+        | metric::ErrorKind::AccessDenied => metric::TurnFailureReason::ModelError,
+        metric::ErrorKind::Other => metric::TurnFailureReason::Unknown,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn canonical_tool_metric<'a>(
+    engine: metric::Engine,
+    tool_name: Option<&'a str>,
+    aws_service_name: Option<&str>,
+    is_custom_tool: bool,
+    mcp_server_name: Option<&str>,
+    is_accepted: bool,
+    is_valid: Option<bool>,
+    is_success: Option<bool>,
+    is_subagent: bool,
+) -> metric::ToolMetric<'a> {
+    let origin = if is_custom_tool || mcp_server_name.is_some() {
+        metric::ToolMetricOrigin::Mcp
+    } else if tool_name.is_some() || aws_service_name.is_some() {
+        metric::ToolMetricOrigin::Builtin
+    } else {
+        metric::ToolMetricOrigin::Unknown
+    };
+    let outcome = if !is_accepted {
+        metric::ToolMetricOutcome::Denied
+    } else if is_valid == Some(false) || is_success == Some(false) {
+        metric::ToolMetricOutcome::Error
+    } else if is_success == Some(true) {
+        metric::ToolMetricOutcome::Success
+    } else {
+        metric::ToolMetricOutcome::Cancelled
+    };
+    metric::ToolMetric::new(
+        engine,
+        origin,
+        outcome,
+        if is_subagent {
+            metric::ExecutionContext::Subagent
+        } else {
+            metric::ExecutionContext::Main
+        },
     )
+    .builtin_tool_name(tool_name)
 }
 
-fn turn_completion_log_record(
-    conversation_id: &str,
-    result: &TelemetryResult,
-    args: &RecordUserTurnCompletionArgs,
-    client_application: &Option<String>,
-) -> TelemetryLogRecord {
-    let failure_reason = args
-        .reason
-        .clone()
-        .map(|reason| redact_telemetry_field(FieldClass::Other, reason));
-    let reason_desc = redact_optional_telemetry_field(FieldClass::Other, args.reason_desc.clone());
-    let request_id = comma_join(args.request_ids.iter().filter_map(|id| id.as_deref()));
-    let message_id = comma_join(args.message_ids.iter().map(String::as_str));
-    let time_to_first_chunks_ms = format_optional_f64s(&args.time_to_first_chunks_ms);
-    let message_meta_tags = comma_join(args.message_meta_tags.iter().map(ToString::to_string));
-
-    let turn = telemetry_log::UserTurnCompletedLog::new(
-        conversation_id,
-        metric::TurnOutcome::from(*result).result_kind(),
-        args.is_subagent,
-        args.user_prompt_length,
-        args.assistant_response_length,
-        args.user_turn_duration_seconds,
-        args.follow_up_count,
-    )
-    .request_id(request_id.as_deref())
-    .message_id(message_id.as_deref())
-    .model_id(args.model.as_deref())
-    .client_application(client_application.as_deref())
-    .turn_failure_reason(failure_reason.as_deref())
-    .reason_desc(reason_desc.as_deref())
-    .status_code(args.status_code)
-    .time_to_first_chunks_ms(time_to_first_chunks_ms.as_deref())
-    .message_meta_tags(message_meta_tags.as_deref())
-    .parent_tool_use_id(args.parent_tool_use_id.as_deref())
-    .request_attempts(args.request_attempts)
-    .total_tokens(args.total_tokens)
-    .uncached_input_tokens(args.uncached_input_tokens)
-    .output_tokens(args.output_tokens)
-    .cache_read_input_tokens(args.cache_read_input_tokens)
-    .cache_write_input_tokens(args.cache_write_input_tokens);
-
-    telemetry_log::user_turn_completed_record(turn)
+fn canonical_token_metric_records(engine: metric::Engine, model: Option<&str>, usage: TokenUsage) -> Vec<MetricRecord> {
+    [
+        (metric::TokenType::InputUncached, usage.uncached_input_tokens),
+        (metric::TokenType::InputCacheRead, usage.cache_read_input_tokens),
+        (metric::TokenType::Output, usage.output_tokens),
+    ]
+    .into_iter()
+    .filter_map(|(token_type, value)| metric::record_tokens_consumed(value, engine, model, token_type))
+    .collect()
 }
 
-fn comma_join(values: impl IntoIterator<Item = impl AsRef<str>>) -> Option<String> {
-    let values = values
+fn mcp_error_kind(reason: &str) -> metric::McpErrorKind {
+    let reason = reason.to_ascii_lowercase();
+    if reason.contains("capabil") || reason.contains("tool") {
+        metric::McpErrorKind::Protocol
+    } else if reason.contains("timeout") || reason.contains("timed out") {
+        metric::McpErrorKind::Timeout
+    } else if reason.contains("auth") || reason.contains("unauthorized") || reason.contains("forbidden") {
+        metric::McpErrorKind::Authentication
+    } else if reason.contains("config") || reason.contains("environment") {
+        metric::McpErrorKind::Configuration
+    } else if reason.contains("spawn") || reason.contains("launch") || reason.contains("process") {
+        metric::McpErrorKind::ProcessLaunch
+    } else if reason.contains("connect") || reason.contains("network") || reason.contains("dns") {
+        metric::McpErrorKind::Connection
+    } else if reason.contains("protocol") || reason.contains("jsonrpc") || reason.contains("handshake") {
+        metric::McpErrorKind::Protocol
+    } else {
+        metric::McpErrorKind::Unknown
+    }
+}
+
+fn mcp_failure_stage(reason: &str) -> metric::McpFailureStage {
+    let reason = reason.to_ascii_lowercase();
+    if reason.contains("config") || reason.contains("environment") {
+        metric::McpFailureStage::Configuration
+    } else if reason.contains("spawn") || reason.contains("launch") || reason.contains("process") {
+        metric::McpFailureStage::ProcessLaunch
+    } else if reason.contains("connect") || reason.contains("network") || reason.contains("dns") {
+        metric::McpFailureStage::Connection
+    } else if reason.contains("protocol") || reason.contains("jsonrpc") || reason.contains("handshake") {
+        metric::McpFailureStage::Handshake
+    } else if reason.contains("capabil") || reason.contains("tool") {
+        metric::McpFailureStage::CapabilityDiscovery
+    } else {
+        metric::McpFailureStage::Unknown
+    }
+}
+
+fn is_credit_unit(unit: &str, unit_plural: &str) -> bool {
+    [unit, unit_plural]
         .into_iter()
-        .map(|value| value.as_ref().to_string())
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-    (!values.is_empty()).then(|| values.join(","))
-}
-
-fn format_optional_f64s(values: &[Option<f64>]) -> Option<String> {
-    comma_join(values.iter().map(|value| match value {
-        Some(value) => format!("{value:.3}"),
-        None => "null".to_string(),
-    }))
+        .any(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "credit" | "credits"))
 }
 
 fn token_usage_from_chat_added_message(data: &ChatAddedMessageParams) -> TokenUsage {
@@ -1504,93 +1290,13 @@ fn token_usage_from_chat_added_message(data: &ChatAddedMessageParams) -> TokenUs
     )
 }
 
-fn token_usage_from_turn_args(args: &RecordUserTurnCompletionArgs) -> TokenUsage {
+fn token_usage_from_turn_completion(args: &RecordUserTurnCompletionArgs) -> TokenUsage {
     TokenUsage::from_signed_counts(
         args.uncached_input_tokens,
         args.cache_read_input_tokens,
         args.cache_write_input_tokens,
         args.output_tokens,
     )
-}
-
-fn turn_metric_context<'a>(
-    model: &'a Option<String>,
-    client_application: &'a Option<String>,
-    app_type: &'a Option<String>,
-    is_subagent: bool,
-    tags: &[MessageMetaTag],
-) -> metric::TurnMetricContext<'a> {
-    metric::TurnMetricContext::new(model.as_deref(), client_application.as_deref())
-        .app_type(app_type.as_deref())
-        .subagent(is_subagent)
-        .tangent(tags.contains(&MessageMetaTag::TangentMode))
-        .generate_agent(tags.contains(&MessageMetaTag::GenerateAgent))
-}
-
-fn event_engine(event: &Event) -> metric::Engine {
-    if let Some(engine) = event.engine {
-        return engine;
-    }
-    if let Some(app_type) = event.app_type.as_deref() {
-        if app_type.eq_ignore_ascii_case("v1") {
-            return metric::Engine::V1;
-        }
-        if app_type.eq_ignore_ascii_case("v2") || app_type.eq_ignore_ascii_case("acp") {
-            return metric::Engine::V2;
-        }
-        if app_type.eq_ignore_ascii_case("v3") || app_type.eq_ignore_ascii_case("kas") {
-            return metric::Engine::V3;
-        }
-    }
-    metric::Engine::from_client_application(metric::ClientApplication::from_name(
-        event.client_application.as_deref(),
-    ))
-}
-
-fn auth_operation(error_type: &str) -> metric::Operation {
-    match error_type.trim().to_ascii_lowercase().as_str() {
-        "tokenrefresh" | "token_refresh" | "refresh" => metric::Operation::Refresh,
-        "newlogin" | "new_login" | "login" | "authorization" | "authentication" => metric::Operation::Login,
-        _ => metric::Operation::Other,
-    }
-}
-
-fn partition_from_region(region: Option<&str>) -> metric::Partition {
-    match region.unwrap_or_default() {
-        region if region.starts_with("us-gov-") => metric::Partition::AwsUsGov,
-        region if region.starts_with("cn-") => metric::Partition::AwsCn,
-        region if !region.is_empty() => metric::Partition::Aws,
-        _ => metric::Partition::Other,
-    }
-}
-
-fn result_kind(result: TelemetryResult) -> metric::ResultKind {
-    metric::TurnOutcome::from(result).result_kind()
-}
-
-fn message_kind(kind: Option<ChatConversationType>) -> metric::MessageKind {
-    match kind {
-        Some(ChatConversationType::NotToolUse) => metric::MessageKind::NotToolUse,
-        Some(ChatConversationType::ToolUse) => metric::MessageKind::ToolUse,
-        None => metric::MessageKind::Other,
-    }
-}
-
-fn message_tag(tag: MessageMetaTag) -> metric::MessageTag {
-    match tag {
-        MessageMetaTag::Compact => metric::MessageTag::Compact,
-        MessageMetaTag::GenerateAgent => metric::MessageTag::GenerateAgent,
-        MessageMetaTag::TangentMode => metric::MessageTag::TangentMode,
-    }
-}
-
-fn profile_source(source: QProfileSwitchIntent) -> metric::ProfileSource {
-    match source {
-        QProfileSwitchIntent::User => metric::ProfileSource::User,
-        QProfileSwitchIntent::Auth => metric::ProfileSource::Auth,
-        QProfileSwitchIntent::Update => metric::ProfileSource::Update,
-        QProfileSwitchIntent::Reload => metric::ProfileSource::Reload,
-    }
 }
 
 fn redact_telemetry_field(field_class: FieldClass, value: String) -> String {
@@ -1609,1666 +1315,305 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use kiro_telemetry::LegacyEventType;
-    use kiro_telemetry::testing::{
-        expect_log,
-        expect_metric,
-        expect_metric_attrs,
-        metric_attr,
-        metric_record,
-    };
-    use kiro_telemetry_host::{
-        AgentConfigInitArgs,
-        EmptyResponseRetryOutcome,
-        ModeChangeSource,
-        QProfileSwitchIntent,
-        UiModeSource,
-    };
-
     use super::*;
 
-    fn first_metric(event: &Event) -> Option<MetricRecord> {
-        event_to_otel_metric_records(event).into_iter().next()
-    }
-
-    fn metadata_value<'a>(datum: &'a MetricDatum, key: &str) -> Option<&'a str> {
-        datum
-            .metadata()
+    fn attribute<'a>(record: &'a MetricRecord, key: &str) -> Option<&'a str> {
+        record
+            .attributes
             .iter()
-            .find(|entry| entry.key() == Some(key))
-            .and_then(|entry| entry.value())
+            .find(|attribute| attribute.key == key)
+            .map(|attribute| attribute.value.as_str())
     }
 
-    #[test]
-    fn redacts_reason_desc_before_metric_datum() {
-        let event = Event::new(EventType::ChatAddedMessage {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Failed,
-            data: ChatAddedMessageParams {
-                reason_desc: Some("failed for dev@example.com with AKIA1234567890ABCDEF".to_string()),
-                ..Default::default()
+    fn attributed_event(ty: EventType, engine: metric::Engine, session_interface: metric::SessionInterface) -> Event {
+        let mut event = Event::new(ty);
+        event.set_engine(engine);
+        event.set_session_interface(session_interface);
+        event
+    }
+
+    fn turn_event(
+        engine: metric::Engine,
+        session_interface: metric::SessionInterface,
+        result: TelemetryResult,
+        args: RecordUserTurnCompletionArgs,
+    ) -> Event {
+        attributed_event(
+            EventType::RecordUserTurnCompletion {
+                conversation_id: "conversation".to_string(),
+                result,
+                args,
             },
-        });
+            engine,
+            session_interface,
+        )
+    }
 
-        let datum = event_to_metric_datum(event).expect("metric datum should be produced");
-        let reason_desc = metadata_value(&datum, "reasonDesc").expect("reasonDesc should be present");
-
-        assert!(!reason_desc.contains("dev@example.com"));
-        assert!(!reason_desc.contains("AKIA1234567890ABCDEF"));
-        assert!(reason_desc.contains("[REDACTED:email]"));
-        assert!(reason_desc.contains("[REDACTED:aws_access_key]"));
+    fn has_metric(records: &[MetricRecord], name: &str) -> bool {
+        records.iter().any(|record| record.name == name)
     }
 
     #[test]
-    fn redacts_mcp_free_text_before_metric_datum() {
-        let event = Event::new(EventType::McpServerInit {
-            conversation_id: "conversation".to_string(),
-            server_name: "server".to_string(),
-            init_failure_reason: Some("failed under /Users/alice/.kiro/config".to_string()),
-            number_of_tools: 2,
-            all_tool_names: Some("safe_tool, arn:aws:iam::123456789012:user/test".to_string()),
-            loaded_tool_names: Some("AKIA1234567890ABCDEF".to_string()),
-            all_tools_count: 2,
-        });
-
-        let datum = event_to_metric_datum(event).expect("metric datum should be produced");
-
-        let init_failure = metadata_value(&datum, "codewhispererterminal_mcpServerInitFailureReason")
-            .expect("init failure reason should be present");
-        assert!(!init_failure.contains("/Users/alice"));
-        assert!(init_failure.contains("[REDACTED:home_path]"));
-
-        let all_tool_names = metadata_value(&datum, "codewhispererterminal_mcpServerAllToolNames")
-            .expect("all tool names should be present");
-        assert!(!all_tool_names.contains("arn:aws:iam::123456789012:user/test"));
-        assert!(all_tool_names.contains("[REDACTED:arn]"));
-
-        let loaded_tool_names = metadata_value(&datum, "codewhispererterminal_mcpServerLoadedToolNames")
-            .expect("loaded tool names should be present");
-        assert!(!loaded_tool_names.contains("AKIA1234567890ABCDEF"));
-        assert!(loaded_tool_names.contains("[REDACTED:aws_access_key]"));
-    }
-
-    #[test]
-    fn redacts_auth_error_type_before_metric_datum() {
-        let event = Event::new(EventType::AuthFailed {
-            auth_method: "builder_id".to_string(),
-            oauth_flow: "device".to_string(),
-            error_type: "token for user@example.com was rejected".to_string(),
-            error_code: None,
-        });
-
-        let datum = event_to_metric_datum(event).expect("metric datum should be produced");
-        let error_type =
-            metadata_value(&datum, "codewhispererterminal_errorType").expect("error type should be present");
-
-        assert!(!error_type.contains("user@example.com"));
-        assert!(error_type.contains("[REDACTED:email]"));
-    }
-
-    #[test]
-    fn produces_redaction_accounting_records() {
-        let event = Event::new(EventType::ChatAddedMessage {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Failed,
-            data: ChatAddedMessageParams {
-                reason_desc: Some("failed for dev@example.com".to_string()),
-                ..Default::default()
-            },
-        });
-
-        let records = event.redaction_metric_records(metric::TelemetryChannel::LegacyToolkit);
-
-        assert!(records.iter().any(|record| {
-            record.name == "kiro_cli_pii_redaction_runs_total"
-                && record
-                    .attributes
-                    .iter()
-                    .any(|attr| attr.key == "channel" && attr.value == "legacy_toolkit")
-        }));
-        assert!(records.iter().any(|record| {
-            record.name == "kiro_cli_pii_redaction_matches_total"
-                && record
-                    .attributes
-                    .iter()
-                    .any(|attr| attr.key == "pii_type" && attr.value == "email")
-        }));
-    }
-
-    #[test]
-    fn produces_schema_backed_otel_metric_record() {
-        let event = Event::new(EventType::EmptyResponseRetry {
-            model: None,
-            outcome: EmptyResponseRetryOutcome::Recovered,
-        });
-
-        let record = first_metric(&event).expect("schema-backed metric event");
-
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::empty_response_retry(None, metric::Outcome::Recovered),
-        );
-    }
-
-    #[test]
-    fn emits_stream_timing_and_token_metrics() {
-        let mut event = Event::new(EventType::ChatAddedMessage {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Succeeded,
-            data: ChatAddedMessageParams {
-                context_file_length: Some(2_000),
-                model: Some("claude-4-sonnet".to_string()),
-                time_to_first_chunk_ms: Some(125.0),
-                time_between_chunks_ms: Some(vec![40.0, 250.0, 0.0, f64::NAN]),
-                chat_conversation_type: Some(ChatConversationType::ToolUse),
-                request_duration_seconds: Some(0.8),
-                uncached_input_tokens: Some(10),
-                cache_read_input_tokens: Some(2),
-                cache_write_input_tokens: Some(3),
-                output_tokens: Some(5),
-                ..Default::default()
-            },
-        });
-        event.app_type = Some("V2".to_string());
-        event.client_application = Some("chat_cli_v2".to_string());
-
-        let records = event_to_otel_metric_records(&event);
-        let metric_count = |name: &str| records.iter().filter(|record| record.name == name).count();
-        assert_eq!(records.len(), 13);
-        assert_eq!(metric_count("kiro_cli_chat_messages_total"), 1);
-        assert_eq!(metric_count("kiro_cli_model_invocations_total"), 1);
-        assert_eq!(metric_count("kiro_cli_time_to_first_chunk_ms"), 1);
-        assert_eq!(metric_count("kiro_cli.bedrock.stream.ttft"), 1);
-        assert_eq!(metric_count("kiro_cli.bedrock.stream.inter_token_latency"), 2);
-        assert_eq!(metric_count("kiro_cli.bedrock.stream.duration"), 1);
-        assert_eq!(metric_count("kiro_cli.bedrock.request.duration"), 1);
-        assert_eq!(metric_count("kiro_cli_tokens_consumed"), 4);
-        assert_eq!(metric_count("kiro_cli_cache_hit_ratio"), 1);
-        assert_eq!(metric_count("kiro_cli_chat_content_length"), 0);
-
-        let chat_messages = expect_metric(
-            &records,
-            metric::chat_messages_total(
-                Some("claude-4-sonnet"),
-                metric::ResultKind::Success,
-                metric::MessageKind::ToolUse,
-                metric::Engine::V2,
-            ),
-        );
-        expect_metric_attrs(chat_messages, &[
-            ("model", "claude-4-sonnet"),
-            ("result", "success"),
-            ("message_kind", "tool_use"),
-            ("engine", "v2"),
-        ]);
-        let invocation = expect_metric(&records, metric::model_invocation(Some("claude-4-sonnet")));
-        expect_metric_attrs(invocation, &[("model", "claude-4-sonnet")]);
-        let ttfc = expect_metric(
-            &records,
-            metric::time_to_first_chunk_ms(
-                125.0,
-                Some("claude-4-sonnet"),
-                metric::ClientApplication::ChatCliV2,
-                false,
-            ),
-        );
-        expect_metric_attrs(ttfc, &[
-            ("model", "claude-4-sonnet"),
-            ("client_application", "chat_cli_v2"),
-            ("is_subagent", "false"),
-        ]);
-        let alarm_ttft = expect_metric(
-            &records,
-            metric::bedrock_stream_ttft(0.125, Some("claude-4-sonnet"), metric::PromptSizeBucket::Small, true),
-        );
-        expect_metric_attrs(alarm_ttft, &[
-            ("model", "claude-4-sonnet"),
-            ("prompt_size_bucket", "small"),
-            ("tools_enabled", "true"),
-        ]);
-        expect_metric(
-            &records,
-            metric::bedrock_stream_inter_token_latency(0.04, Some("claude-4-sonnet")),
-        );
-        expect_metric(
-            &records,
-            metric::bedrock_stream_inter_token_latency(0.25, Some("claude-4-sonnet")),
-        );
-        expect_metric(
-            &records,
-            metric::bedrock_stream_duration(0.8, Some("claude-4-sonnet"), telemetry_log::CompletionReason::ToolUse),
-        );
-        expect_metric(
-            &records,
-            metric::bedrock_request_duration(
-                0.8,
-                Some("claude-4-sonnet"),
-                metric::Operation::Stream,
-                metric::Outcome::Success,
-            ),
-        );
-        let token_records = records
-            .iter()
-            .filter(|record| record.name == "kiro_cli_tokens_consumed")
-            .collect::<Vec<_>>();
-        assert_eq!(token_records.len(), 4);
-        for (token_type, value) in [
-            (metric::TokenType::InputUncached, 10),
-            (metric::TokenType::InputCacheRead, 2),
-            (metric::TokenType::InputCacheWrite, 3),
-            (metric::TokenType::Output, 5),
-        ] {
-            expect_metric(
-                &records,
-                metric::tokens_consumed(
-                    value,
-                    Some("claude-4-sonnet"),
-                    token_type,
-                    metric::ClientApplication::ChatCliV2,
-                    false,
-                ),
-            );
-        }
-
-        expect_metric(
-            &records,
-            metric::cache_hit_ratio(
-                2.0 / 12.0,
-                Some("claude-4-sonnet"),
-                metric::ChatConversationKind::Interactive,
-                metric::ClientApplication::ChatCliV2,
-            ),
-        );
-    }
-
-    #[test]
-    fn chat_added_message_metrics_use_event_subagent_flag() {
-        let mut event = Event::new(EventType::ChatAddedMessage {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Succeeded,
-            data: ChatAddedMessageParams {
-                model: Some("claude-4-sonnet".to_string()),
-                time_to_first_chunk_ms: Some(125.0),
-                uncached_input_tokens: Some(10),
-                output_tokens: Some(5),
-                ..Default::default()
-            },
-        });
-        event.client_application = Some("chat_cli_v2".to_string());
-        event.is_subagent = true;
-
-        let records = event_to_otel_metric_records(&event);
-
-        let context =
-            metric::InvocationContext::new(Some("claude-4-sonnet"), metric::ClientApplication::ChatCliV2, true);
-        expect_metric(
-            &records,
-            metric::chat_messages_total(
-                Some("claude-4-sonnet"),
-                metric::ResultKind::Success,
-                metric::MessageKind::Other,
-                metric::Engine::V2,
-            ),
-        );
-        expect_metric(&records, metric::time_to_first_chunk_ms_for_invocation(125.0, context));
-        expect_metric(
-            &records,
-            metric::tokens_consumed(
-                10,
-                Some("claude-4-sonnet"),
-                metric::TokenType::InputUncached,
-                metric::ClientApplication::ChatCliV2,
-                true,
-            ),
-        );
-        expect_metric(
-            &records,
-            metric::tokens_consumed(
-                5,
-                Some("claude-4-sonnet"),
-                metric::TokenType::Output,
-                metric::ClientApplication::ChatCliV2,
-                true,
-            ),
-        );
-    }
-
-    #[test]
-    fn failed_stream_duration_uses_error_completion_reason() {
-        let event = Event::new(EventType::ChatAddedMessage {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Failed,
-            data: ChatAddedMessageParams {
-                model: Some("claude-4-sonnet".to_string()),
-                request_duration_seconds: Some(0.8),
-                ..Default::default()
-            },
-        });
-
-        let records = event_to_otel_metric_records(&event);
-        expect_metric(
-            &records,
-            metric::bedrock_stream_duration(0.8, Some("claude-4-sonnet"), telemetry_log::CompletionReason::Error),
-        );
-    }
-
-    #[test]
-    fn emits_tool_aggregate_metrics() {
-        let mut event = Event::new(EventType::ToolUseSuggested {
-            conversation_id: "conversation".to_string(),
-            utterance_id: Some("utterance".to_string()),
-            user_input_id: None,
-            tool_use_id: Some("tool-1".to_string()),
-            tool_name: Some("fs_read".to_string()),
-            mcp_server_name: None,
-            is_accepted: true,
-            is_trusted: true,
-            is_success: Some(true),
-            reason_desc: None,
-            is_valid: Some(true),
-            is_custom_tool: false,
-            input_token_size: None,
-            output_token_size: None,
-            custom_tool_call_latency: None,
-            model: Some("claude-4-sonnet".to_string()),
-            execution_duration: Some(Duration::from_millis(25)),
-            turn_duration: None,
-            aws_service_name: None,
-            aws_operation_name: None,
-        });
-        event.set_engine(metric::Engine::V2);
-
-        let records = event_to_otel_metric_records(&event);
-
-        let invocation = metric::ToolInvocation::new(
-            Some("fs_read"),
-            metric::ToolOrigin::Builtin,
-            true,
-            Some(true),
-            Some(true),
-        );
-        expect_metric(
-            &records,
-            metric::tool_call_total_for_invocation(invocation, Some(metric::Engine::V2)),
-        );
-        expect_metric(
-            &records,
-            metric::tool_invocations_for_invocation(invocation, Some(metric::Engine::V2)),
-        );
-        expect_metric(
-            &records,
-            metric::tool_execution_duration_ms_for_invocation(25.0, invocation, Some(metric::Engine::V2))
-                .expect("duration metric"),
-        );
-
-        let log_record = event_to_otel_log_record(&event).expect("tool fact log");
-        expect_log(
-            std::slice::from_ref(&log_record),
-            telemetry_log::tool_invoked_record(telemetry_log::ToolInvokedLog::from_names(
-                Some("tool-1"),
-                Some("fs_read"),
-                None,
-                Some(true),
-                Some("claude-4-sonnet"),
-                Some(Duration::from_millis(25)),
-            )),
-        );
-    }
-
-    #[test]
-    fn emits_mcp_server_init_metric_and_fact_log() {
-        let event = Event::new(EventType::McpServerInit {
-            conversation_id: "conversation".to_string(),
-            server_name: "code".to_string(),
-            init_failure_reason: None,
-            number_of_tools: 3,
-            all_tool_names: Some("read,write,search".to_string()),
-            loaded_tool_names: Some("read,write".to_string()),
-            all_tools_count: 3,
-        });
-
-        let records = event_to_otel_metric_records(&event);
-        expect_metric(
-            &records,
-            metric::mcp_server_init_total_record(metric::McpServerInit::from_name("code", None)),
-        );
-        expect_metric(
-            &records,
-            metric::mcp_server_connected_total_record(metric::McpServerInit::from_name("code", None))
-                .expect("successful init"),
-        );
-
-        let log_record = event_to_otel_log_record(&event).expect("mcp init fact log");
-        expect_log(
-            std::slice::from_ref(&log_record),
-            telemetry_log::mcp_server_init_record(metric::McpServerInit::from_name("code", None)),
-        );
-    }
-
-    #[test]
-    fn buckets_mcp_server_init_failure_metric_dimensions() {
-        let event = Event::new(EventType::McpServerInit {
-            conversation_id: "conversation".to_string(),
-            server_name: "local-server".to_string(),
-            init_failure_reason: Some("request timed out while listing tools".to_string()),
-            number_of_tools: 0,
-            all_tool_names: None,
-            loaded_tool_names: None,
-            all_tools_count: 0,
-        });
-
-        let records = event_to_otel_metric_records(&event);
-        expect_metric(
-            &records,
-            metric::mcp_server_init_total_record(metric::McpServerInit::from_name(
-                "local-server",
-                Some("request timed out while listing tools"),
-            )),
-        );
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli_mcp_server_connected_total")
-        );
-
-        let log_record = event_to_otel_log_record(&event).expect("mcp init fact log");
-        expect_log(
-            std::slice::from_ref(&log_record),
-            telemetry_log::mcp_server_init_record(metric::McpServerInit::from_name(
-                "local-server",
-                Some("request timed out while listing tools"),
-            )),
-        );
-    }
-
-    #[test]
-    fn denied_mcp_tool_aggregate_omits_duration_metric() {
-        let mut event = Event::new(EventType::ToolUseSuggested {
-            conversation_id: "conversation".to_string(),
-            utterance_id: Some("utterance".to_string()),
-            user_input_id: None,
-            tool_use_id: Some("tool-1".to_string()),
-            tool_name: Some("custom_tool".to_string()),
-            mcp_server_name: Some("local-server".to_string()),
-            is_accepted: false,
-            is_trusted: false,
-            is_success: None,
-            reason_desc: None,
-            is_valid: None,
-            is_custom_tool: true,
-            input_token_size: None,
-            output_token_size: None,
-            custom_tool_call_latency: None,
-            model: Some("claude-4-sonnet".to_string()),
-            execution_duration: None,
-            turn_duration: None,
-            aws_service_name: None,
-            aws_operation_name: None,
-        });
-        event.set_engine(metric::Engine::V2);
-
-        let records = event_to_otel_metric_records(&event);
-        let invocation = metric::ToolInvocation::mcp(Some("custom_tool"), Some("local-server"), false, None, None);
-        expect_metric(
-            &records,
-            metric::tool_invocations_for_invocation(invocation, Some(metric::Engine::V2)),
-        );
-        let log_record = event_to_otel_log_record(&event).expect("tool fact log");
-        expect_log(
-            std::slice::from_ref(&log_record),
-            telemetry_log::tool_invoked_record(telemetry_log::ToolInvokedLog::from_names(
-                Some("tool-1"),
-                Some("custom_tool"),
-                Some("local-server"),
-                None,
-                Some("claude-4-sonnet"),
-                None,
-            )),
-        );
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli_tool_execution_duration_ms")
-        );
-    }
-
-    #[test]
-    fn aws_tool_aggregate_uses_aws_api_origin() {
-        let mut event = Event::new(EventType::ToolUseSuggested {
-            conversation_id: "conversation".to_string(),
-            utterance_id: Some("utterance".to_string()),
-            user_input_id: None,
-            tool_use_id: Some("tool-1".to_string()),
-            tool_name: Some("use_aws".to_string()),
-            mcp_server_name: None,
-            is_accepted: true,
-            is_trusted: true,
-            is_success: Some(true),
-            reason_desc: None,
-            is_valid: Some(true),
-            is_custom_tool: false,
-            input_token_size: None,
-            output_token_size: None,
-            custom_tool_call_latency: None,
-            model: Some("claude-4-sonnet".to_string()),
-            execution_duration: Some(Duration::from_millis(10)),
-            turn_duration: None,
-            aws_service_name: None,
-            aws_operation_name: None,
-        });
-        event.set_engine(metric::Engine::V2);
-
-        let records = event_to_otel_metric_records(&event);
-
-        let invocation = metric::ToolInvocation::new(
-            Some("use_aws"),
-            metric::ToolOrigin::AwsApi,
-            true,
-            Some(true),
-            Some(true),
-        );
-        expect_metric(
-            &records,
-            metric::tool_call_total_for_invocation(invocation, Some(metric::Engine::V2)),
-        );
-        expect_metric(
-            &records,
-            metric::tool_invocations_for_invocation(invocation, Some(metric::Engine::V2)),
-        );
-        expect_metric(
-            &records,
-            metric::tool_execution_duration_ms_for_invocation(10.0, invocation, Some(metric::Engine::V2))
-                .expect("duration metric"),
-        );
-    }
-
-    #[test]
-    fn mcp_tool_name_collision_uses_mcp_origin() {
-        let mut event = Event::new(EventType::ToolUseSuggested {
-            conversation_id: "conversation".to_string(),
-            utterance_id: Some("utterance".to_string()),
-            user_input_id: None,
-            tool_use_id: Some("tool-1".to_string()),
-            tool_name: Some("use_aws".to_string()),
-            mcp_server_name: Some("local-server".to_string()),
-            is_accepted: true,
-            is_trusted: true,
-            is_success: Some(true),
-            reason_desc: None,
-            is_valid: Some(true),
-            is_custom_tool: true,
-            input_token_size: None,
-            output_token_size: None,
-            custom_tool_call_latency: None,
-            model: Some("claude-4-sonnet".to_string()),
-            execution_duration: Some(Duration::from_millis(10)),
-            turn_duration: None,
-            aws_service_name: None,
-            aws_operation_name: None,
-        });
-        event.set_engine(metric::Engine::V1);
-
-        let records = event_to_otel_metric_records(&event);
-
-        let legacy_tool_call =
-            metric_record(&records, "kiro_cli_tool_call_total").expect("legacy aggregate tool metric");
-        assert_eq!(metric_attr(legacy_tool_call, "tool_origin"), Some("mcp"));
-        assert_eq!(metric_attr(legacy_tool_call, "builtin_tool_name"), None);
-        assert_eq!(metric_attr(legacy_tool_call, "mcp_server_name"), None);
-
-        let invocations = metric_record(&records, "kiro_cli_tool_invocations").expect("tool invocation metric");
-        assert_eq!(metric_attr(invocations, "tool_origin"), Some("mcp"));
-        assert_eq!(metric_attr(invocations, "mcp_server_name"), None);
-
-        let duration = metric_record(&records, "kiro_cli_tool_execution_duration_ms").expect("tool duration metric");
-        assert_eq!(metric_attr(duration, "tool_origin"), Some("mcp"));
-        assert_eq!(metric_attr(duration, "mcp_server_name"), None);
-    }
-
-    #[test]
-    fn skips_cache_hit_ratio_without_input_tokens() {
-        let event = Event::new(EventType::ChatAddedMessage {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Succeeded,
-            data: ChatAddedMessageParams {
-                model: Some("claude-4-sonnet".to_string()),
-                output_tokens: Some(5),
-                ..Default::default()
-            },
-        });
-
-        assert!(
-            event_to_otel_metric_records(&event)
-                .iter()
-                .all(|record| record.name != "kiro_cli_cache_hit_ratio")
-        );
-    }
-
-    #[test]
-    fn emits_user_turn_duration_metric() {
-        let mut event = Event::new(EventType::RecordUserTurnCompletion {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Succeeded,
-            args: RecordUserTurnCompletionArgs {
-                model: Some("claude-4-opus".to_string()),
-                uncached_input_tokens: Some(10),
-                output_tokens: Some(5),
-                user_turn_duration_seconds: 12,
-                message_meta_tags: vec![MessageMetaTag::GenerateAgent],
-                ..Default::default()
-            },
-        });
-        event.app_type = Some("V2".to_string());
-
-        let records = event_to_otel_metric_records(&event);
-        let duration = expect_metric(
-            &records,
-            metric::user_turn_duration_seconds(
-                12.0,
-                Some("claude-4-opus"),
-                metric::ChatConversationKind::Interactive,
-                false,
-                metric::Mode::GenerateAgent,
-            ),
-        );
-        expect_metric_attrs(duration, &[
-            ("model", "claude-4-opus"),
-            ("chat_conversation_type", "interactive"),
-            ("is_subagent", "false"),
-            ("mode", "generate_agent"),
-        ]);
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli_user_turns" && record.name != "kiro_cli_tokens_consumed")
-        );
-    }
-
-    #[test]
-    fn emits_user_turn_completion_counter_economics_and_duration_metric() {
-        let mut event = Event::new(EventType::RecordUserTurnCompletion {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Failed,
-            args: RecordUserTurnCompletionArgs {
-                model: Some("claude-4-sonnet".to_string()),
-                uncached_input_tokens: Some(10),
-                cache_read_input_tokens: Some(2),
-                output_tokens: Some(5),
-                user_turn_duration_seconds: 12,
-                message_meta_tags: vec![MessageMetaTag::TangentMode],
-                is_subagent: true,
-                emit_user_turn_counter: true,
-                ..Default::default()
-            },
-        });
-        event.app_type = Some("KAS".to_string());
-        event.client_application = Some("kas".to_string());
-
-        let records = event_to_otel_metric_records(&event);
-        let context =
-            metric::InvocationContext::new(Some("claude-4-sonnet"), metric::ClientApplication::ChatCliV3, true);
-
-        expect_metric(
-            &records,
-            metric::user_turns_for_invocation(context, metric::ResultKind::Failed, metric::Mode::Tangent),
-        );
-        expect_metric(
-            &records,
-            metric::tokens_consumed(
-                10,
-                Some("claude-4-sonnet"),
-                metric::TokenType::InputUncached,
-                metric::ClientApplication::ChatCliV3,
-                true,
-            ),
-        );
-        expect_metric(
-            &records,
-            metric::tokens_consumed(
-                2,
-                Some("claude-4-sonnet"),
-                metric::TokenType::InputCacheRead,
-                metric::ClientApplication::ChatCliV3,
-                true,
-            ),
-        );
-        expect_metric(
-            &records,
-            metric::tokens_consumed(
-                5,
-                Some("claude-4-sonnet"),
-                metric::TokenType::Output,
-                metric::ClientApplication::ChatCliV3,
-                true,
-            ),
-        );
-        expect_metric(
-            &records,
-            metric::user_turn_duration_seconds_for_invocation(
-                12.0,
-                context,
-                metric::ChatConversationKind::Subagent,
-                metric::Mode::Tangent,
-            ),
-        );
-    }
-
-    #[test]
-    fn emits_context_usage_metric() {
-        let mut event = Event::new(EventType::ContextUsagePercentage {
-            model: Some("claude-4-sonnet".to_string()),
-            percentage: 42.5,
-        });
-        event.client_application = Some("chat_cli_v2".to_string());
-        event.is_subagent = true;
-
-        let records = event_to_otel_metric_records(&event);
-        let context_usage = expect_metric(
-            &records,
-            metric::context_usage_percentage_record(metric::ContextUsageMetric::from_names(
-                42.5,
-                Some("claude-4-sonnet"),
-                Some("chat_cli_v2"),
-                true,
-            ))
-            .expect("valid context usage metric"),
-        );
-        expect_metric_attrs(context_usage, &[
-            ("model", "claude-4-sonnet"),
-            ("client_application", "chat_cli_v2"),
-            ("is_subagent", "true"),
-        ]);
-    }
-
-    #[test]
-    fn kas_context_usage_metric_uses_v3_client_attribution() {
-        let mut event = Event::new(EventType::ContextUsagePercentage {
-            model: Some("claude-4-sonnet".to_string()),
-            percentage: 66.0,
-        });
-        event.client_application = Some("kas".to_string());
-
-        let records = event_to_otel_metric_records(&event);
-        let context_usage = expect_metric(
-            &records,
-            metric::context_usage_percentage_record(metric::ContextUsageMetric::from_names(
-                66.0,
-                Some("claude-4-sonnet"),
-                Some("kas"),
-                false,
-            ))
-            .expect("valid context usage metric"),
-        );
-        expect_metric_attrs(context_usage, &[
-            ("model", "claude-4-sonnet"),
-            ("client_application", "chat_cli_v3"),
-            ("is_subagent", "false"),
-        ]);
-    }
-
-    #[test]
-    fn drops_invalid_context_usage_metric_values() {
-        let event = Event::new(EventType::ContextUsagePercentage {
-            model: Some("claude-4-sonnet".to_string()),
-            percentage: -1.0,
-        });
-
-        assert!(event_to_otel_metric_records(&event).is_empty());
-    }
-
-    #[test]
-    fn emits_model_invocation_otel_metric() {
-        let event = Event::new(EventType::ModelInvocation {
-            model: Some("gpt-5-codex".to_string()),
-        });
-
-        let record = first_metric(&event).expect("model invocation metric");
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::model_invocation(Some("gpt-5-codex")),
-        );
-    }
-
-    fn process_health_event_type(agent_kind: metric::AgentKind) -> EventType {
-        EventType::ProcessHealthMetric {
-            agent_kind,
-            rss_mb: 128.0,
-            heap_used_mb: 64.0,
-            peak_rss_mb: 256.0,
-            cpu_user_pct: 12.5,
-            cpu_system_pct: 7.5,
-            last_render_ms: 4.0,
-            max_render_ms: 10.0,
-            renders_per_min: 30,
-            full_redraws_per_min: 1,
-            yoga_node_count: 100,
-            event_loop_p99_ms: Some(5.0),
-            input_latency_p95_ms: Some(8.0),
-            session_duration_sec: 90,
-            cpu_cores: 8,
-            total_memory_mb: 32768,
-            terminal: "iTerm.app".to_string(),
-            session_id: Some("session".to_string()),
-            version: "2.4.0".to_string(),
-            platform: "darwin".to_string(),
-        }
-    }
-
-    #[test]
-    fn typed_process_health_agent_kind_round_trips_as_schema_string() {
-        let value = serde_json::to_value(process_health_event_type(metric::AgentKind::Kas))
-            .expect("process health event should serialize");
-        assert_eq!(value.get("agent_kind"), Some(&serde_json::json!("kas")));
-
-        let mut legacy = value;
-        legacy["agent_kind"] = serde_json::Value::Null;
-        let decoded = serde_json::from_value::<EventType>(legacy)
-            .expect("legacy process health event with null agent kind should deserialize");
-        assert!(matches!(decoded, EventType::ProcessHealthMetric {
-            agent_kind: metric::AgentKind::Unknown,
-            ..
-        }));
-
-        let mut legacy = serde_json::to_value(process_health_event_type(metric::AgentKind::Kas))
-            .expect("process health event should serialize");
-        legacy
-            .as_object_mut()
-            .expect("event should serialize to an object")
-            .remove("agent_kind");
-        let decoded = serde_json::from_value::<EventType>(legacy)
-            .expect("legacy process health event with missing agent kind should deserialize");
-        assert!(matches!(decoded, EventType::ProcessHealthMetric {
-            agent_kind: metric::AgentKind::Unknown,
-            ..
-        }));
-    }
-
-    #[test]
-    fn emits_process_health_otel_metrics() {
-        let event = Event::new(process_health_event_type(metric::AgentKind::Kas));
-
-        let records = event_to_otel_metric_records(&event);
-        let rss = expect_metric(
-            &records,
-            metric::process_memory_rss(128.0 * 1024.0 * 1024.0, "2.4.0", metric::AgentKind::Kas),
-        );
-        expect_metric_attrs(rss, &[("version_full", "2.4.0"), ("agent_kind", "kas")]);
-        let cpu = expect_metric(
-            &records,
-            metric::process_cpu_utilization(0.2, "2.4.0", metric::AgentKind::Kas, metric::ProcessState::Other),
-        );
-        expect_metric_attrs(cpu, &[
-            ("version_full", "2.4.0"),
-            ("agent_kind", "kas"),
-            ("state", "_other_"),
-        ]);
-    }
-
-    #[test]
-    fn drops_invalid_process_health_otel_values() {
-        let event = Event::new(EventType::ProcessHealthMetric {
-            agent_kind: metric::AgentKind::Unknown,
-            rss_mb: f64::NAN,
-            heap_used_mb: 0.0,
-            peak_rss_mb: 0.0,
-            cpu_user_pct: f64::INFINITY,
-            cpu_system_pct: 1.0,
-            last_render_ms: 0.0,
-            max_render_ms: 0.0,
-            renders_per_min: 0,
-            full_redraws_per_min: 0,
-            yoga_node_count: 0,
-            event_loop_p99_ms: None,
-            input_latency_p95_ms: None,
-            session_duration_sec: 0,
-            cpu_cores: 0,
-            total_memory_mb: 0,
-            terminal: "unknown".to_string(),
-            session_id: None,
-            version: String::new(),
-            platform: "linux".to_string(),
-        });
-
-        let records = event_to_otel_metric_records(&event);
-        assert!(records.iter().all(|record| {
-            record.name != "kiro_cli.process.memory.rss" && record.name != "kiro_cli.process.cpu.utilization"
-        }));
-    }
-
-    #[test]
-    fn produces_schema_backed_otel_log_record() {
-        let mut event = Event::new(EventType::RecordUserTurnCompletion {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Failed,
-            args: RecordUserTurnCompletionArgs {
-                request_ids: vec![Some("request-1".to_string())],
-                message_ids: vec!["message-1".to_string()],
-                model: Some("claude-4-sonnet".to_string()),
-                reason: Some("ServiceFailure".to_string()),
-                reason_desc: Some("failed for dev@example.com".to_string()),
-                status_code: Some(500),
-                time_to_first_chunks_ms: vec![Some(25.0), None],
-                user_prompt_length: 7,
-                assistant_response_length: 11,
-                total_tokens: Some(17),
-                uncached_input_tokens: Some(10),
-                output_tokens: Some(5),
-                cache_read_input_tokens: Some(2),
-                cache_write_input_tokens: Some(3),
-                user_turn_duration_seconds: 3,
-                follow_up_count: 1,
-                message_meta_tags: vec![MessageMetaTag::Compact],
-                parent_tool_use_id: Some("parent-tool".to_string()),
-                request_attempts: Some(2),
-                ..Default::default()
-            },
-        });
-        event.client_application = Some("chat_cli_v2".to_string());
-
-        let record = event_to_otel_log_record(&event).expect("log-backed legacy event");
-        let expected =
-            telemetry_log::UserTurnCompletedLog::new("conversation", metric::ResultKind::Failed, false, 7, 11, 3, 1)
-                .request_id(Some("request-1"))
-                .message_id(Some("message-1"))
-                .model_id(Some("claude-4-sonnet"))
-                .client_application(Some("chat_cli_v2"))
-                .turn_failure_reason(Some("ServiceFailure"))
-                .reason_desc(Some("failed for [REDACTED:email]"))
-                .status_code(Some(500))
-                .time_to_first_chunks_ms(Some("25.000,null"))
-                .message_meta_tags(Some("Compact"))
-                .parent_tool_use_id(Some("parent-tool"))
-                .request_attempts(Some(2))
-                .total_tokens(Some(17))
-                .uncached_input_tokens(Some(10))
-                .output_tokens(Some(5))
-                .cache_read_input_tokens(Some(2))
-                .cache_write_input_tokens(Some(3));
-
-        expect_log(
-            std::slice::from_ref(&record),
-            telemetry_log::user_turn_completed_record(expected),
-        );
-    }
-
-    #[test]
-    fn kas_turn_completion_log_uses_v3_client_attribution() {
-        let mut event = Event::new(EventType::RecordUserTurnCompletion {
-            conversation_id: "conversation".to_string(),
-            result: TelemetryResult::Succeeded,
-            args: RecordUserTurnCompletionArgs {
-                model: Some("claude-4-sonnet".to_string()),
-                user_prompt_length: 7,
-                assistant_response_length: 11,
-                user_turn_duration_seconds: 3,
-                follow_up_count: 1,
-                ..Default::default()
-            },
-        });
-        event.client_application = Some("kas".to_string());
-
-        let record = event_to_otel_log_record(&event).expect("turn completion fact log");
-        let expected =
-            telemetry_log::UserTurnCompletedLog::new("conversation", metric::ResultKind::Success, false, 7, 11, 3, 1);
-        let expected = expected
-            .model_id(Some("claude-4-sonnet"))
-            .client_application(Some("kas"));
-
-        expect_log(
-            std::slice::from_ref(&record),
-            telemetry_log::user_turn_completed_record(expected),
-        );
-    }
-
-    #[test]
-    fn emits_subagent_invoked_fact_log() {
-        let event = Event::new(EventType::SubagentInvocation {
-            parent_conversation_id: "parent-conversation".to_string(),
-            subagent_name: "code-review".to_string(),
-            builtin_tool_uses: 2,
-            mcp_tool_uses: 1,
-            parent_tool_use_id: "parent-tool".to_string(),
-        });
-
-        let record = event_to_otel_log_record(&event).expect("subagent fact log");
-
-        expect_log(
-            std::slice::from_ref(&record),
-            telemetry_log::subagent_invoked("code-review").build(),
-        );
-    }
-
-    #[test]
-    fn emits_bounded_request_error_metric() {
-        let event = Event::new(EventType::MessageResponseError {
-            conversation_id: "conversation".to_string(),
-            context_file_length: None,
-            result: TelemetryResult::Failed,
-            reason: Some("ServiceUnavailable".to_string()),
-            reason_desc: None,
-            status_code: Some(503),
-            request_id: Some("request".to_string()),
-            message_id: Some("message".to_string()),
-            model: Some("claude-4-opus".to_string()),
-        });
-
-        let records = event_to_otel_metric_records(&event);
-
-        expect_metric(
-            &records,
-            metric::bedrock_request_error(
-                Some("claude-4-opus"),
-                metric::Operation::Stream,
-                metric::ErrorKind::ServerError,
-                metric::StatusClass::Class5xx,
-                Some("ServiceUnavailable"),
-            ),
-        );
-    }
-
-    #[test]
-    fn emits_cli_subcommand_feature_metric() {
-        let event = Event::new(EventType::CliSubcommandExecuted {
-            subcommand: "Version".to_string(),
-        });
-
-        let record = first_metric(&event).expect("feature usage metric");
-        expect_metric(std::slice::from_ref(&record), metric::feature_used("Version"));
-    }
-
-    #[test]
-    fn external_acp_events_keep_v2_engine_independent_of_client_application() {
-        let mut event = Event::new(EventType::CliSubcommandExecuted {
-            subcommand: "Version".to_string(),
-        });
-        event.set_client_application_kind(metric::ClientApplication::ExternalAcpClient);
-        event.app_type = Some("ACP".to_string());
-        event.set_engine(metric::Engine::V2);
-
-        let record = first_metric(&event).expect("feature usage metric");
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::with_engine(metric::feature_used("Version"), metric::Engine::V2),
-        );
-        expect_metric_attrs(&record, &[("feature", "version"), ("engine", "v2")]);
-        assert!(
-            record
-                .attributes
-                .iter()
-                .all(|attribute| attribute.key != "version_minor_bucket")
-        );
-    }
-
-    #[test]
-    fn emits_chat_slash_command_metric() {
-        let mut event = Event::new(EventType::ChatSlashCommandExecuted {
-            conversation_id: "conversation".to_string(),
-            command: "/Model".to_string(),
-            subcommand: Some("list".to_string()),
-            result: TelemetryResult::Succeeded,
-            reason: None,
-        });
-        event.set_engine(metric::Engine::V2);
-
-        let record = first_metric(&event).expect("slash command metric");
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::slash_command_invoked_for_engine(
-                "/Model",
-                Some("list"),
-                metric::ResultKind::Success,
-                metric::Engine::V2,
-            ),
-        );
-    }
-
-    #[test]
-    fn emits_chat_session_started_metric() {
-        let mut event = Event::new(EventType::ChatSessionStarted {
-            mode: metric::Mode::Plan,
-        });
-        event.client_application = Some("chat_cli_v2".to_string());
-        event.set_engine(metric::Engine::V2);
-        event.app_type = Some("V2".to_string());
-
-        let record = first_metric(&event).expect("chat session start metric");
-
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::with_engine(
-                metric::chat_session_started(metric::Mode::Plan, metric::ClientApplication::ChatCliV2),
-                metric::Engine::V2,
-            ),
-        );
-    }
-
-    #[test]
-    fn emits_mode_changed_metric_with_bounded_destination_mode() {
-        let mut event = Event::new(EventType::ModeChanged {
-            from_mode: "kiro".to_string(),
-            to_mode: "kiro_planner".to_string(),
-            source: ModeChangeSource::SlashCommand,
-            session_id: Some("forbidden-session-id".to_string()),
-        });
-        event.set_engine(metric::Engine::V2);
-
-        let record = first_metric(&event).expect("mode active metric");
-
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::mode_active_total(metric::Mode::Plan, metric::Engine::V2),
-        );
-        expect_metric_attrs(&record, &[("mode", "plan"), ("engine", "v2")]);
-        assert!(record.attributes.iter().all(|attribute| attribute.key != "session_id"));
-    }
-
-    #[test]
-    fn typed_lifecycle_events_round_trip_as_schema_strings() {
-        let value = serde_json::to_value(EventType::CliSessionStarted {
-            os_type: metric::OsType::Macos,
-            install_source: metric::InstallSource::Internal,
-        })
-        .expect("session start event should serialize");
-        assert_eq!(
-            value,
-            serde_json::json!({
-                "type": "cliSessionStarted",
-                "os_type": "macos",
-                "install_source": "internal",
-            })
-        );
-
-        let decoded = serde_json::from_value::<EventType>(serde_json::json!({
-            "type": "chatSessionStarted",
-            "mode": "kiro_planner",
-        }))
-        .expect("chat session event should deserialize");
-        assert!(matches!(decoded, EventType::ChatSessionStarted {
-            mode: metric::Mode::Plan
-        }));
-
-        let decoded = serde_json::from_value::<EventType>(serde_json::json!({
-            "type": "chatSessionStarted",
-            "mode": null,
-        }))
-        .expect("legacy chat session event with null mode should deserialize");
-        assert!(matches!(decoded, EventType::ChatSessionStarted {
-            mode: metric::Mode::Interactive
-        }));
-
-        let decoded = serde_json::from_value::<EventType>(serde_json::json!({
-            "type": "cliSessionCompleted",
-            "exit_reason": "unexpected",
-            "agent_kind": "v3",
-        }))
-        .expect("CLI completion event should deserialize");
-        assert!(matches!(decoded, EventType::CliSessionCompleted {
-            exit_reason: metric::ExitReason::Other,
-            agent_kind: metric::AgentKind::Kas,
-        }));
-    }
-
-    #[test]
-    fn emits_cli_session_started_metric_with_bounded_dimensions() {
+    fn v1_run_start_preserves_noninteractive_cli_attribution() {
         let mut event = Event::new(EventType::CliSessionStarted {
-            os_type: metric::OsType::Macos,
-            install_source: metric::InstallSource::Internal,
+            os_type: metric::OsType::Linux,
+            install_source: metric::InstallSource::Unknown,
         });
-        event.client_application = Some("chat_cli_v2".to_string());
+        event.app_type = Some("V1".to_string());
+        event.set_engine(metric::Engine::V1);
+        event.set_session_interface(metric::SessionInterface::NoninteractiveCli);
+
+        let records = event_to_otel_metric_records(&event);
+        let record = records
+            .iter()
+            .find(|record| record.name == "kiro_cli_run_started_total")
+            .unwrap();
+
+        assert_eq!(attribute(record, "session_interface"), Some("noninteractive_cli"));
+        assert_eq!(attribute(record, "agent_engine"), Some("v1"));
+    }
+
+    #[test]
+    fn v1_turn_uses_explicit_bounded_agent_mode() {
+        let mut event = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id: "conversation".to_string(),
+            result: TelemetryResult::Succeeded,
+            args: RecordUserTurnCompletionArgs::default(),
+        });
+        event.app_type = Some("V1".to_string());
+        event.set_engine(metric::Engine::V1);
+        event.set_session_interface(metric::SessionInterface::InteractiveCli);
+        event.metric_context.agent_mode = Some(metric::AgentMode::Spec);
+
+        let records = event_to_otel_metric_records(&event);
+        let record = records
+            .iter()
+            .find(|record| record.name == "kiro_cli_user_turns")
+            .unwrap();
+
+        assert_eq!(attribute(record, "session_interface"), Some("interactive_cli"));
+        assert_eq!(attribute(record, "agent_mode"), Some("spec"));
+        assert_eq!(attribute(record, "agent_engine"), Some("v1"));
+    }
+
+    #[test]
+    fn explicit_engine_takes_precedence_over_legacy_app_type() {
+        let mut event = Event::new(EventType::ModelInvocation { model: None });
+        event.app_type = Some("V1".to_string());
         event.set_engine(metric::Engine::V2);
 
-        let record = first_metric(&event).expect("CLI session-start metric");
+        let record = event_to_otel_metric_record(&event).unwrap();
 
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::with_engine(
-                metric::cli_session_started(
-                    metric::OsType::Macos,
-                    metric::InstallSource::Internal,
-                    metric::ClientApplication::ChatCliV2,
-                ),
-                metric::Engine::V2,
-            ),
-        );
+        assert_eq!(attribute(&record, "agent_engine"), Some("v2"));
     }
 
     #[test]
-    fn user_login_emits_dedicated_metric_not_cli_session_start() {
-        let mut event = Event::new(EventType::UserLoggedIn {});
-        event.client_application = Some("kas".to_string());
-        event.credential_start_url = Some("https://view.awsapps.com/start".to_string());
-
-        let records = event_to_otel_metric_records(&event);
-
-        // It must emit its own dedicated metric, never kiro_cli_session_started_total.
-        assert!(
-            records
-                .iter()
-                .all(|record| record.name != "kiro_cli_session_started_total")
-        );
-        let record = records.first().expect("user login metric");
-        expect_metric(
-            std::slice::from_ref(record),
-            metric::user_logged_in(metric::ClientApplication::ChatCliV3, metric::CredentialKind::BuilderId),
-        );
-    }
-
-    #[test]
-    fn auth_failed_emits_rich_credential_failure_metric() {
-        let mut event = Event::new(EventType::AuthFailed {
-            auth_method: "builder_id".to_string(),
-            oauth_flow: "device".to_string(),
-            error_type: "NewLogin".to_string(),
-            error_code: Some("InvalidGrant".to_string()),
+    fn explicit_run_outcome_preserves_launcher_classification() {
+        let mut event = Event::new(EventType::CliSessionCompleted {
+            exit_reason: metric::ExitReason::Crash,
+            agent_kind: metric::AgentKind::V2,
         });
-        event.set_client_application_kind(metric::ClientApplication::ChatCliV2);
+        event.set_engine(metric::Engine::V2);
+        event.metric_context.run_outcome = Some(metric::RunOutcome::Failure);
 
-        let record = first_metric(&event).expect("auth credential failure metric");
+        let record = event_to_otel_metric_record(&event).unwrap();
 
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::auth_credential_failure_for_engine(
-                metric::AuthProvider::BuilderId,
-                metric::AuthFlow::Device,
-                "InvalidGrant",
-                metric::Operation::Login,
-                metric::Partition::Other,
-                metric::ResultKind::Failed,
-                metric::Engine::V2,
-            ),
-        );
+        assert_eq!(attribute(&record, "run_outcome"), Some("failure"));
     }
 
     #[test]
-    fn emits_agent_contribution_event_and_line_counters() {
-        let mut event = Event::new(EventType::AgentContribution {
-            conversation_id: "conversation".to_string(),
-            utterance_id: None,
-            tool_use_id: None,
-            tool_name: None,
-            lines_by_agent: Some(10),
-            lines_by_user: Some(-2),
-        });
-        event.client_application = Some("chat_cli".to_string());
-
-        let records = event_to_otel_metric_records(&event);
-        expect_metric(&records, metric::agent_contribution_total(metric::Engine::V1));
-        expect_metric(
-            &records,
-            metric::agent_contribution_lines_total(
-                10,
-                metric::ContributionSource::Agent,
-                metric::ContributionChange::Added,
-                metric::Engine::V1,
-            ),
-        );
-        expect_metric(
-            &records,
-            metric::agent_contribution_lines_total(
-                2,
-                metric::ContributionSource::User,
-                metric::ContributionChange::Removed,
-                metric::Engine::V1,
-            ),
-        );
-    }
-
-    #[test]
-    fn emits_cli_session_completed_metric_with_bounded_dimensions() {
-        let event = Event::new(EventType::CliSessionCompleted {
-            exit_reason: metric::ExitReason::Clean,
-            agent_kind: metric::AgentKind::Kas,
-        });
-
-        let record = first_metric(&event).expect("CLI session completion metric");
-
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::cli_session_completed(metric::ExitReason::Clean, metric::AgentKind::Kas),
-        );
-    }
-
-    #[test]
-    fn emits_daily_heartbeat_metric_with_v3_client_and_install_method() {
-        let mut event = Event::new(EventType::DailyHeartbeat {
-            install_method: Some("toolbox (2.0.0)".to_string()),
-        });
-        event.client_application = Some("kas".to_string());
-
-        let record = first_metric(&event).expect("daily heartbeat metric");
-
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::daily_heartbeat(metric::ClientApplication::ChatCliV3, metric::InstallSource::Internal),
-        );
-    }
-
-    #[test]
-    fn does_not_count_chat_end_as_cli_session_completion() {
-        let event = Event::new(EventType::ChatEnd {
-            conversation_id: "conversation".to_string(),
-            model: None,
-        });
-
-        let records = event_to_otel_metric_records(&event);
-        assert!(records.iter().all(|record| record.name != "kiro_cli.session.completed"));
-        expect_metric(
-            &records,
-            metric::conversation_completed_total(None, metric::Engine::Other),
-        );
-    }
-
-    #[test]
-    fn emits_conversation_completed_log_from_chat_end() {
-        let event = Event::new(EventType::ChatEnd {
-            conversation_id: "conversation".to_string(),
-            model: None,
-        });
-
-        let record = event_to_otel_log_record(&event).expect("conversation completion log");
-
-        expect_log(
-            std::slice::from_ref(&record),
-            telemetry_log::conversation_completed(
-                "conversation",
-                "conversation",
-                telemetry_log::CompletionReason::Stop,
-            ),
-        );
-    }
-
-    #[test]
-    fn exposes_canonical_legacy_event_type() {
-        let event = EventType::GoalCompleted {
-            conversation_id: None,
-            terminal_state: "completed".to_string(),
-            iterations: 2,
-            max_iterations: 4,
-            duration_sec: 12,
-        };
-
-        assert_eq!(event.legacy_event_type(), Some(LegacyEventType::GoalCompleted));
-    }
-
-    #[test]
-    fn emits_goal_completed_session_outcome_metric() {
-        let event = Event::new(EventType::GoalCompleted {
-            conversation_id: Some("conversation".to_string()),
-            terminal_state: "completed".to_string(),
-            iterations: 2,
-            max_iterations: 4,
-            duration_sec: 12,
-        });
-
-        let record = first_metric(&event).expect("goal outcome metric");
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::session_outcome(metric::SessionOutcome::TaskCompleted),
-        );
-    }
-
-    #[test]
-    fn buckets_goal_terminal_states_for_session_outcome_metric() {
-        for (terminal_state, expected_outcome) in [
-            ("cancelled", metric::SessionOutcome::UserQuit),
-            ("exhausted", metric::SessionOutcome::Timeout),
-            ("reinjection_failed", metric::SessionOutcome::Error),
-            ("panic", metric::SessionOutcome::Crash),
-            ("surprising_state", metric::SessionOutcome::Other),
-        ] {
-            let event = Event::new(EventType::GoalCompleted {
-                conversation_id: Some("conversation".to_string()),
-                terminal_state: terminal_state.to_string(),
-                iterations: 1,
-                max_iterations: 4,
-                duration_sec: 5,
-            });
-
-            let record = first_metric(&event).expect("goal outcome metric");
-            expect_metric(std::slice::from_ref(&record), metric::session_outcome(expected_outcome));
-        }
-    }
-
-    #[test]
-    fn emits_metering_event_as_otel_log_only() {
-        let mut event = Event::new(EventType::MeteringEvent {
-            request_id: Some("request".to_string()),
-            model: Some("claude-4-sonnet".to_string()),
-            usage: 1.25,
-            unit: "credit".to_string(),
-            unit_plural: "credits".to_string(),
-        });
-        event.client_application = Some("chat_cli_v2".to_string());
-
-        assert!(event_to_metric_datum(event).is_none());
-
-        let mut event = Event::new(EventType::MeteringEvent {
-            request_id: Some("request".to_string()),
-            model: Some("claude-4-sonnet".to_string()),
-            usage: 1.25,
-            unit: "credit".to_string(),
-            unit_plural: "credits".to_string(),
-        });
-        event.client_application = Some("chat_cli_v2".to_string());
-
-        let record = event_to_otel_log_record(&event).expect("metering event log record");
-
-        expect_log(
-            std::slice::from_ref(&record),
-            telemetry_log::metering_event_record(telemetry_log::MeteringEventLog::from_names(
-                Some("request"),
-                Some("claude-4-sonnet"),
-                Some("chat_cli_v2"),
-                1.25,
-                "credit",
-                "credits",
-            )),
-        );
-    }
-
-    #[test]
-    fn kas_metering_log_uses_v3_client_attribution() {
-        let mut event = Event::new(EventType::MeteringEvent {
-            request_id: Some("request".to_string()),
-            model: Some("claude-4-sonnet".to_string()),
-            usage: 1.25,
-            unit: "credit".to_string(),
-            unit_plural: "credits".to_string(),
-        });
-        event.client_application = Some("kas".to_string());
-
-        let record = event_to_otel_log_record(&event).expect("metering event log record");
-
-        expect_log(
-            std::slice::from_ref(&record),
-            telemetry_log::metering_event_record(telemetry_log::MeteringEventLog::from_names(
-                Some("request"),
-                Some("claude-4-sonnet"),
-                Some("kas"),
-                1.25,
-                "credit",
-                "credits",
-            )),
-        );
-    }
-
-    #[test]
-    fn emits_empty_response_retry_as_otel_metric_only() {
-        for (retry_outcome, metric_outcome) in [
-            (EmptyResponseRetryOutcome::Recovered, metric::Outcome::Recovered),
-            (EmptyResponseRetryOutcome::StillEmpty, metric::Outcome::StillEmpty),
-        ] {
-            let event = Event::new(EventType::EmptyResponseRetry {
-                model: Some("claude-4-sonnet".to_string()),
-                outcome: retry_outcome,
-            });
-
-            assert!(event_to_metric_datum(event.clone()).is_none());
-
-            let record = first_metric(&event).expect("empty-response retry metric");
-
-            expect_metric(
-                std::slice::from_ref(&record),
-                metric::empty_response_retry(Some("claude-4-sonnet"), metric_outcome),
-            );
-            assert!(event_to_otel_log_record(&event).is_none());
-        }
-    }
-
-    #[test]
-    fn emits_retry_attempt_as_otel_metric_only() {
-        let event = Event::new(EventType::RetryAttempt {
-            upstream: metric::Upstream::Rts,
-            retry_reason: metric::RetryReason::Other,
-            attempt: 3,
-        });
-
-        assert!(event_to_metric_datum(event.clone()).is_none());
-
-        let record = first_metric(&event).expect("retry attempt metric");
-
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::retry_attempt(
-                metric::Upstream::Rts,
-                metric::RetryReason::Other,
-                metric::AttemptNumberBucket::ThreePlus,
-            ),
-        );
-        assert!(event_to_otel_log_record(&event).is_none());
-    }
-
-    #[test]
-    fn emits_retry_exhausted_as_otel_metric_only() {
-        let event = Event::new(EventType::RetryExhausted {
-            upstream: metric::Upstream::Rts,
-            final_error_kind: metric::ErrorKind::Throttling,
-        });
-
-        assert!(event_to_metric_datum(event.clone()).is_none());
-
-        let record = first_metric(&event).expect("retry exhausted metric");
-
-        expect_metric(
-            std::slice::from_ref(&record),
-            metric::retry_exhausted(metric::Upstream::Rts, metric::ErrorKind::Throttling),
-        );
-        assert!(event_to_otel_log_record(&event).is_none());
-    }
-
-    /// Compile-time exhaustiveness guard for the V2/host [`EventType`].
-    ///
-    /// This `match` has NO wildcard (`_`) arm on purpose: when a new variant is
-    /// added to `EventType`, this function fails to COMPILE, forcing the author to
-    /// add the variant to [`sample_event_types`] (and to the parity allowlist below
-    /// if it is a deliberate metric drop). DO NOT add a `_ => {}` arm here — doing
-    /// so silently defeats the dark-gap regression test and future variants could
-    /// emit no OTEL metric or log without anyone noticing.
-    #[allow(dead_code)]
-    fn _exhaustiveness_guard(ty: &EventType) {
-        match ty {
-            EventType::UserLoggedIn { .. } => {},
-            EventType::CliSessionStarted { .. } => {},
-            EventType::CliSessionCompleted { .. } => {},
-            EventType::AuthFailed { .. } => {},
-            EventType::CliSubcommandExecuted { .. } => {},
-            EventType::ChatSlashCommandExecuted { .. } => {},
-            EventType::ChatStart { .. } => {},
-            EventType::ChatSessionStarted { .. } => {},
-            EventType::ChatEnd { .. } => {},
-            EventType::ChatAddedMessage { .. } => {},
-            EventType::RecordUserTurnCompletion { .. } => {},
-            EventType::TangentModeSession { .. } => {},
-            EventType::ToolUseSuggested { .. } => {},
-            EventType::AgentContribution { .. } => {},
-            EventType::McpServerInit { .. } => {},
-            EventType::AgentConfigInit { .. } => {},
-            EventType::DidSelectProfile { .. } => {},
-            EventType::ProfileState { .. } => {},
-            EventType::MessageResponseError { .. } => {},
-            EventType::DailyHeartbeat { .. } => {},
-            EventType::SubagentInvocation { .. } => {},
-            EventType::VoiceInput { .. } => {},
-            EventType::ProcessHealthMetric { .. } => {},
-            EventType::ProcessHealth { .. } => {},
-            EventType::ModeChanged { .. } => {},
-            EventType::UiModeSessionStart { .. } => {},
-            EventType::UiModeChanged { .. } => {},
-            EventType::UiModeDefaultChanged { .. } => {},
-            EventType::GoalCompleted { .. } => {},
-            EventType::MeteringEvent { .. } => {},
-            EventType::ContextUsagePercentage { .. } => {},
-            EventType::ModelInvocation { .. } => {},
-            EventType::EmptyResponseRetry { .. } => {},
-            EventType::RetryAttempt { .. } => {},
-            EventType::RetryExhausted { .. } => {},
-        }
-    }
-
-    /// One constructed instance of every V2/host [`EventType`] variant. The
-    /// `_exhaustiveness_guard` above forces this list to stay complete.
-    fn sample_event_types() -> Vec<EventType> {
-        vec![
-            EventType::UserLoggedIn {},
-            EventType::CliSessionStarted {
-                os_type: metric::OsType::Macos,
-                install_source: metric::InstallSource::Brew,
-            },
-            EventType::CliSessionCompleted {
-                exit_reason: metric::ExitReason::Clean,
-                agent_kind: metric::AgentKind::Kas,
-            },
-            EventType::AuthFailed {
-                auth_method: "builder_id".to_string(),
-                oauth_flow: "device".to_string(),
-                error_type: "rejected".to_string(),
-                error_code: Some("InvalidGrant".to_string()),
-            },
-            EventType::CliSubcommandExecuted {
-                subcommand: "chat".to_string(),
-            },
-            EventType::ChatSlashCommandExecuted {
-                conversation_id: "conversation".to_string(),
-                command: "help".to_string(),
-                subcommand: None,
-                result: TelemetryResult::Succeeded,
-                reason: None,
-            },
-            EventType::ChatStart {
-                conversation_id: "conversation".to_string(),
-                model: None,
-            },
+    fn v2_interactive_frontend_owns_session_and_turn_metrics() {
+        let session = attributed_event(
             EventType::ChatSessionStarted {
                 mode: metric::Mode::Interactive,
             },
-            EventType::ChatEnd {
-                conversation_id: "conversation".to_string(),
-                model: None,
+            metric::Engine::V2,
+            metric::SessionInterface::InteractiveCli,
+        );
+        let turn = turn_event(
+            metric::Engine::V2,
+            metric::SessionInterface::InteractiveCli,
+            TelemetryResult::Succeeded,
+            RecordUserTurnCompletionArgs {
+                user_turn_duration_seconds: 2,
+                ..Default::default()
             },
+        );
+
+        assert!(event_to_otel_metric_records(&session).is_empty());
+        assert!(event_to_otel_metric_records(&turn).is_empty());
+    }
+
+    #[test]
+    fn v2_and_v3_oneshot_sessions_use_host_owned_session_and_turn_metrics() {
+        for engine in [metric::Engine::V2, metric::Engine::V3] {
+            let session = attributed_event(
+                EventType::ChatSessionStarted {
+                    mode: metric::Mode::Oneshot,
+                },
+                engine,
+                metric::SessionInterface::NoninteractiveCli,
+            );
+            let turn = turn_event(
+                engine,
+                metric::SessionInterface::NoninteractiveCli,
+                TelemetryResult::Succeeded,
+                RecordUserTurnCompletionArgs {
+                    user_turn_duration_seconds: 2,
+                    uncached_input_tokens: Some(10),
+                    output_tokens: Some(5),
+                    model: Some("model".to_string()),
+                    ..Default::default()
+                },
+            );
+
+            let session_records = event_to_otel_metric_records(&session);
+            assert!(has_metric(&session_records, "kiro_cli_chat_session_started_total"));
+
+            let turn_records = event_to_otel_metric_records(&turn);
+            assert!(has_metric(&turn_records, "kiro_cli_user_turns"));
+            assert!(has_metric(&turn_records, "kiro_cli_user_turn_duration_seconds"));
+            if engine == metric::Engine::V3 {
+                assert!(has_metric(&turn_records, "kiro_cli_tokens_consumed"));
+            }
+        }
+    }
+
+    #[test]
+    fn v3_noninteractive_turn_emits_model_invocation_count() {
+        let event = turn_event(
+            metric::Engine::V3,
+            metric::SessionInterface::NoninteractiveCli,
+            TelemetryResult::Succeeded,
+            RecordUserTurnCompletionArgs {
+                model: Some("model".to_string()),
+                model_invocation_count: 3,
+                ..Default::default()
+            },
+        );
+
+        let records = event_to_otel_metric_records(&event);
+        let record = records
+            .iter()
+            .find(|record| record.name == "kiro_cli_model_invocations_total")
+            .unwrap();
+
+        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(3));
+        assert_eq!(attribute(record, "agent_engine"), Some("v3"));
+        assert_eq!(attribute(record, "model"), Some("model"));
+    }
+
+    #[test]
+    fn v3_interactive_turn_does_not_duplicate_model_invocations() {
+        let event = turn_event(
+            metric::Engine::V3,
+            metric::SessionInterface::InteractiveCli,
+            TelemetryResult::Succeeded,
+            RecordUserTurnCompletionArgs {
+                model: Some("model".to_string()),
+                model_invocation_count: 3,
+                ..Default::default()
+            },
+        );
+
+        assert!(!has_metric(
+            &event_to_otel_metric_records(&event),
+            "kiro_cli_model_invocations_total"
+        ));
+    }
+
+    #[test]
+    fn v2_oneshot_response_uses_host_owned_model_and_token_metrics() {
+        let event = attributed_event(
             EventType::ChatAddedMessage {
                 conversation_id: "conversation".to_string(),
                 result: TelemetryResult::Succeeded,
-                data: ChatAddedMessageParams::default(),
+                data: ChatAddedMessageParams {
+                    model: Some("model".to_string()),
+                    uncached_input_tokens: Some(10),
+                    output_tokens: Some(5),
+                    ..Default::default()
+                },
             },
-            EventType::RecordUserTurnCompletion {
-                conversation_id: "conversation".to_string(),
-                result: TelemetryResult::Succeeded,
-                args: RecordUserTurnCompletionArgs::default(),
+            metric::Engine::V2,
+            metric::SessionInterface::NoninteractiveCli,
+        );
+
+        let records = event_to_otel_metric_records(&event);
+        assert!(has_metric(&records, "kiro_cli_model_invocations_total"));
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.name == "kiro_cli_tokens_consumed")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn v3_and_v1_subagent_turns_use_host_owned_token_metrics() {
+        for (engine, is_subagent) in [(metric::Engine::V3, false), (metric::Engine::V1, true)] {
+            let args = RecordUserTurnCompletionArgs {
+                model: Some("model".to_string()),
+                uncached_input_tokens: Some(10),
+                cache_read_input_tokens: Some(4),
+                output_tokens: Some(5),
+                is_subagent,
+                ..Default::default()
+            };
+            let mut event = turn_event(
+                engine,
+                metric::SessionInterface::InteractiveCli,
+                TelemetryResult::Succeeded,
+                args,
+            );
+            event.is_subagent = is_subagent;
+
+            let records = event_to_otel_metric_records(&event);
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|record| record.name == "kiro_cli_tokens_consumed")
+                    .count(),
+                3
+            );
+            assert!(!has_metric(&records, "kiro_cli_user_turns"));
+        }
+    }
+
+    #[test]
+    fn host_owned_cancelled_turn_emits_user_turn_and_cancellation() {
+        let event = turn_event(
+            metric::Engine::V2,
+            metric::SessionInterface::NoninteractiveCli,
+            TelemetryResult::Cancelled,
+            RecordUserTurnCompletionArgs::default(),
+        );
+
+        let records = event_to_otel_metric_records(&event);
+        assert!(has_metric(&records, "kiro_cli_user_turns"));
+        assert!(has_metric(&records, "kiro_cli_turn_cancelled_total"));
+        assert!(!has_metric(&records, "kiro_cli_turn_failure_total"));
+    }
+
+    #[test]
+    fn v3_model_and_tool_events_are_suppressed() {
+        let model = attributed_event(
+            EventType::ModelInvocation {
+                model: Some("model".to_string()),
             },
-            EventType::TangentModeSession {
-                conversation_id: "conversation".to_string(),
-                result: TelemetryResult::Succeeded,
-                args: TangentModeSessionArgs::default(),
-            },
+            metric::Engine::V3,
+            metric::SessionInterface::InteractiveCli,
+        );
+        let tool = attributed_event(
             EventType::ToolUseSuggested {
                 conversation_id: "conversation".to_string(),
                 utterance_id: None,
                 user_input_id: None,
-                tool_use_id: Some("tool_use".to_string()),
+                tool_use_id: Some("tool-use".to_string()),
                 tool_name: Some("fs_read".to_string()),
                 mcp_server_name: None,
                 is_accepted: true,
@@ -3280,184 +1625,40 @@ mod tests {
                 input_token_size: None,
                 output_token_size: None,
                 custom_tool_call_latency: None,
-                model: None,
-                execution_duration: Some(Duration::from_millis(10)),
+                model: Some("model".to_string()),
+                execution_duration: None,
                 turn_duration: None,
                 aws_service_name: None,
                 aws_operation_name: None,
             },
-            EventType::AgentContribution {
-                conversation_id: "conversation".to_string(),
-                utterance_id: None,
-                tool_use_id: None,
-                tool_name: None,
-                lines_by_agent: Some(1),
-                lines_by_user: Some(1),
-            },
-            EventType::McpServerInit {
-                conversation_id: "conversation".to_string(),
-                server_name: "server".to_string(),
-                init_failure_reason: None,
-                number_of_tools: 1,
-                all_tool_names: None,
-                loaded_tool_names: None,
-                all_tools_count: 1,
-            },
-            EventType::AgentConfigInit {
-                conversation_id: "conversation".to_string(),
-                args: AgentConfigInitArgs::default(),
-            },
-            EventType::DidSelectProfile {
-                source: QProfileSwitchIntent::User,
-                amazonq_profile_region: "us-east-1".to_string(),
-                result: TelemetryResult::Succeeded,
-                sso_region: None,
-                profile_count: None,
-            },
-            EventType::ProfileState {
-                source: QProfileSwitchIntent::User,
-                amazonq_profile_region: "us-east-1".to_string(),
-                result: TelemetryResult::Succeeded,
-                sso_region: None,
-            },
-            EventType::MessageResponseError {
-                result: TelemetryResult::Failed,
-                reason: None,
-                reason_desc: None,
-                status_code: Some(500),
-                conversation_id: "conversation".to_string(),
-                request_id: None,
-                message_id: None,
-                context_file_length: None,
-                model: None,
-            },
-            EventType::DailyHeartbeat { install_method: None },
-            EventType::SubagentInvocation {
-                parent_conversation_id: "conversation".to_string(),
-                subagent_name: "agent".to_string(),
-                builtin_tool_uses: 0,
-                mcp_tool_uses: 0,
-                parent_tool_use_id: "tool_use".to_string(),
-            },
-            EventType::VoiceInput {
-                conversation_id: None,
-                result: TelemetryResult::Succeeded,
-                reason: None,
-                reason_desc: None,
-                backend: "local".to_string(),
-                input_method: "standalone".to_string(),
-                recording_duration_ms: None,
-                transcription_duration_ms: None,
-                text_length: None,
-                model_size: None,
-                auto_submit: None,
-            },
-            EventType::ProcessHealthMetric {
-                agent_kind: metric::AgentKind::Kas,
-                rss_mb: 1.0,
-                heap_used_mb: 1.0,
-                peak_rss_mb: 1.0,
-                cpu_user_pct: 1.0,
-                cpu_system_pct: 1.0,
-                last_render_ms: 1.0,
-                max_render_ms: 1.0,
-                renders_per_min: 1,
-                full_redraws_per_min: 1,
-                yoga_node_count: 1,
-                event_loop_p99_ms: None,
-                input_latency_p95_ms: None,
-                session_duration_sec: 1,
-                cpu_cores: 1,
-                total_memory_mb: 1,
-                terminal: "iterm".to_string(),
-                session_id: None,
-                version: "1.0.0".to_string(),
-                platform: "macos".to_string(),
-            },
-            EventType::ProcessHealth {
-                rss_bytes: 1.0,
-                peak_rss_bytes: 1.0,
-                cpu_utilization: 1.0,
-            },
-            EventType::ModeChanged {
-                from_mode: "kiro".to_string(),
-                to_mode: "kiro_planner".to_string(),
-                source: ModeChangeSource::SlashCommand,
-                session_id: None,
-            },
-            EventType::UiModeSessionStart {
-                ui_mode: "tui".to_string(),
-                ui_mode_source: UiModeSource::Default,
-                ui_mode_default: "unset".to_string(),
-                session_id: None,
-            },
-            EventType::UiModeChanged {
-                from: "lite".to_string(),
-                to: "tui".to_string(),
-                source: ModeChangeSource::SlashCommand,
-                session_id: None,
-            },
-            EventType::UiModeDefaultChanged {
-                from: "lite".to_string(),
-                to: "tui".to_string(),
-                session_id: None,
-            },
-            EventType::GoalCompleted {
-                conversation_id: Some("conversation".to_string()),
-                terminal_state: "completed".to_string(),
-                iterations: 1,
-                max_iterations: 4,
-                duration_sec: 1,
-            },
-            EventType::MeteringEvent {
-                request_id: None,
-                model: None,
-                usage: 1.0,
-                unit: "credit".to_string(),
-                unit_plural: "credits".to_string(),
-            },
-            EventType::ContextUsagePercentage {
-                model: None,
-                percentage: 50.0,
-            },
-            EventType::ModelInvocation { model: None },
-            EventType::EmptyResponseRetry {
-                model: None,
-                outcome: EmptyResponseRetryOutcome::Recovered,
-            },
-            EventType::RetryAttempt {
-                upstream: metric::Upstream::Rts,
-                retry_reason: metric::RetryReason::Other,
-                attempt: 1,
-            },
-            EventType::RetryExhausted {
-                upstream: metric::Upstream::Rts,
-                final_error_kind: metric::ErrorKind::Throttling,
-            },
-        ]
+            metric::Engine::V3,
+            metric::SessionInterface::InteractiveCli,
+        );
+
+        assert!(event_to_otel_metric_records(&model).is_empty());
+        assert!(event_to_otel_metric_records(&tool).is_empty());
     }
 
-    /// V2 parity regression test: every host [`EventType`] variant MUST emit at
-    /// least one OTEL metric OR one OTEL log. A new `Vec::new()`-only arm (a "dark gap") becomes a
-    /// hard test failure here, which matters because the legacy MetricDatum sink is
-    /// being removed and OTEL becomes the only emission path.
-    ///
-    /// NOTE: this test only catches *dark* gaps (zero emission). It cannot catch
-    /// *fidelity* regressions (attribute-less counters); those are covered by the
-    /// dedicated per-event attribute assertions elsewhere in this module.
     #[test]
-    fn every_event_type_emits_an_otel_metric_or_log() {
-        for ty in sample_event_types() {
-            let event = Event::new(ty);
-            let emits_metric = !event_to_otel_metric_records(&event).is_empty();
-            let emits_log = event_to_otel_log_record(&event).is_some();
-
-            assert!(
-                emits_metric || emits_log,
-                "{:?} emits no OTEL metric or log — add a constructor/wiring \
-                 or whitelist it with justification",
-                event.ty,
-            );
+    fn legacy_chat_lifecycle_reaches_toolkit_without_creating_otel_metrics() {
+        for (event, metric_name) in [
+            (
+                Event::new(EventType::ChatStart {
+                    conversation_id: "conversation".to_string(),
+                    model: Some("model".to_string()),
+                }),
+                "amazonq_startChat",
+            ),
+            (
+                Event::new(EventType::ChatEnd {
+                    conversation_id: "conversation".to_string(),
+                    model: Some("model".to_string()),
+                }),
+                "amazonq_endChat",
+            ),
+        ] {
+            assert!(event_to_otel_metric_records(&event).is_empty());
+            assert_eq!(event_to_metric_datum(event).unwrap().metric_name(), metric_name);
         }
     }
 }

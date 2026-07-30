@@ -167,6 +167,7 @@ fn mcp_initialize_update_emits_mcp_server_init_event() {
         "test-session",
         &AgentEvent::InitializeUpdate(InitializeUpdateEvent::Mcp(agent::mcp::McpServerEvent::Initialized {
             server_name: "code".to_string(),
+            source: agent::agent_config::McpServerConfigSource::Registry,
             serve_duration: Duration::from_millis(25),
             list_tools_duration: Some(Duration::from_millis(10)),
             list_prompts_duration: None,
@@ -178,6 +179,7 @@ fn mcp_initialize_update_emits_mcp_server_init_event() {
         EventType::McpServerInit {
             conversation_id,
             server_name,
+            mcp_server_source,
             init_failure_reason,
             number_of_tools,
             all_tool_names,
@@ -186,6 +188,7 @@ fn mcp_initialize_update_emits_mcp_server_init_event() {
         } => {
             assert_eq!(conversation_id, "test-session");
             assert_eq!(server_name, "code");
+            assert_eq!(*mcp_server_source, metric::McpServerSource::Registry);
             assert!(init_failure_reason.is_none());
             assert_eq!(*number_of_tools, 0);
             assert!(all_tool_names.is_none());
@@ -203,6 +206,7 @@ fn mcp_runtime_error_emits_failed_mcp_server_init_event() {
         "test-session",
         &AgentEvent::Mcp(agent::mcp::McpServerEvent::InitializeError {
             server_name: "local-server".to_string(),
+            source: agent::agent_config::McpServerConfigSource::AcpInjected,
             error: "request timed out while listing tools".to_string(),
         }),
     );
@@ -212,11 +216,13 @@ fn mcp_runtime_error_emits_failed_mcp_server_init_event() {
         EventType::McpServerInit {
             conversation_id,
             server_name,
+            mcp_server_source,
             init_failure_reason,
             ..
         } => {
             assert_eq!(conversation_id, "test-session");
             assert_eq!(server_name, "local-server");
+            assert_eq!(*mcp_server_source, metric::McpServerSource::AcpInjected);
             assert_eq!(
                 init_failure_reason.as_deref(),
                 Some("request timed out while listing tools")
@@ -227,7 +233,7 @@ fn mcp_runtime_error_emits_failed_mcp_server_init_event() {
 }
 
 #[test]
-fn retry_warning_emits_retry_attempt_event() {
+fn retry_warning_does_not_emit_per_attempt_metric() {
     let (mut obs, mut rx) = make_observer();
     obs.handle_event(
         "test-session",
@@ -241,21 +247,39 @@ fn retry_warning_emits_retry_attempt_event() {
         )))),
     );
 
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn successful_retried_request_emits_recovered_operation() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(AgentLoopEventKind::ResponseStreamEnd {
+            result: Ok(Message::new(
+                Uuid::new_v4().to_string(),
+                Role::Assistant,
+                vec![ContentBlock::Text("ok".into())],
+                None,
+            )),
+            metadata: StreamMetadata {
+                tool_uses: vec![],
+                stream: None,
+                request_attempts: Some(3),
+            },
+        }),
+    );
+
+    assert!(matches!(rx.try_recv().unwrap().ty, EventType::ChatAddedMessage { .. }));
     let event = rx.try_recv().unwrap();
-    assert_eq!(event.app_type.as_deref(), Some("V2"));
-    assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
-    match &event.ty {
-        EventType::RetryAttempt {
-            upstream,
-            retry_reason,
-            attempt,
-        } => {
-            assert_eq!(*upstream, metric::Upstream::Rts);
-            assert_eq!(*retry_reason, metric::RetryReason::Other);
-            assert_eq!(*attempt, 3);
-        },
-        other => panic!("expected RetryAttempt, got {other:?}"),
-    }
+    assert!(matches!(&event.ty, EventType::AutomaticRetryCompleted {
+        retry_reason: metric::RetryReason::Other,
+        additional_attempts: 2,
+        outcome: metric::RetryOutcome::Recovered,
+    }));
+    let records = event_to_otel_metric_records(&event);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].name, "kiro_cli_automatic_retries_per_operation");
 }
 
 #[test]
@@ -390,7 +414,7 @@ fn test_failed_request_emits_error_events() {
 }
 
 #[test]
-fn failed_retried_request_emits_retry_exhausted_event() {
+fn failed_retried_request_emits_exhausted_operation() {
     let (mut obs, mut rx) = make_observer();
     obs.handle_event(
         "test-session",
@@ -405,19 +429,109 @@ fn failed_retried_request_emits_retry_exhausted_event() {
 
     let event = rx.try_recv().unwrap();
     match &event.ty {
-        EventType::RetryExhausted {
-            upstream,
-            final_error_kind,
+        EventType::AutomaticRetryCompleted {
+            retry_reason,
+            additional_attempts,
+            outcome,
         } => {
-            assert_eq!(*upstream, metric::Upstream::Rts);
-            assert_eq!(*final_error_kind, metric::ErrorKind::Throttling);
+            assert_eq!(*retry_reason, metric::RetryReason::Throttled);
+            assert_eq!(*additional_attempts, 2);
+            assert_eq!(*outcome, metric::RetryOutcome::Exhausted);
         },
-        other => panic!("expected RetryExhausted, got {other:?}"),
+        other => panic!("expected AutomaticRetryCompleted, got {other:?}"),
     }
 }
 
 #[test]
-fn first_attempt_failure_does_not_emit_retry_exhausted_event() {
+fn cancelled_retried_request_emits_cancelled_operation() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(error_stream_end_with_attempts(StreamErrorKind::Interrupted, 3)),
+    );
+
+    assert!(matches!(rx.try_recv().unwrap().ty, EventType::ChatAddedMessage { .. }));
+    assert!(matches!(
+        rx.try_recv().unwrap().ty,
+        EventType::MessageResponseError { .. }
+    ));
+    assert!(matches!(
+        rx.try_recv().unwrap().ty,
+        EventType::AutomaticRetryCompleted {
+            retry_reason: metric::RetryReason::Other,
+            additional_attempts: 2,
+            outcome: metric::RetryOutcome::Cancelled,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn ambiguous_validation_and_model_errors_use_unknown_retry_reason() {
+    for kind in [
+        StreamErrorKind::Validation {
+            message: Some("invalid request".to_string()),
+        },
+        StreamErrorKind::ModelOverloaded {
+            message: "overloaded".to_string(),
+        },
+    ] {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event(
+            "test-session",
+            &make_loop_event(error_stream_end_with_attempts(kind, 2)),
+        );
+
+        let _ = rx.try_recv().unwrap();
+        let _ = rx.try_recv().unwrap();
+        assert!(matches!(
+            rx.try_recv().unwrap().ty,
+            EventType::AutomaticRetryCompleted {
+                retry_reason: metric::RetryReason::Other,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn context_recovery_uses_typed_attempt_lifecycle() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Compaction(agent::protocol::CompactionEvent::ContextRecoveryAttempt { final_attempt: false }),
+    );
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(error_stream_end(StreamErrorKind::ContextWindowOverflow)),
+    );
+
+    assert!(matches!(rx.try_recv().unwrap().ty, EventType::ChatAddedMessage { .. }));
+    assert!(matches!(
+        rx.try_recv().unwrap().ty,
+        EventType::MessageResponseError { .. }
+    ));
+    assert!(rx.try_recv().is_err());
+
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Compaction(agent::protocol::CompactionEvent::ContextRecoveryAttempt { final_attempt: true }),
+    );
+    obs.handle_event("test-session", &make_loop_event(success_stream_end()));
+
+    assert!(matches!(rx.try_recv().unwrap().ty, EventType::ChatAddedMessage { .. }));
+    assert!(matches!(
+        rx.try_recv().unwrap().ty,
+        EventType::AutomaticRetryCompleted {
+            retry_reason: metric::RetryReason::ContextRecovery,
+            additional_attempts: 2,
+            outcome: metric::RetryOutcome::Recovered,
+        }
+    ));
+}
+
+#[test]
+fn first_attempt_failure_does_not_emit_retry_operation() {
     let (mut obs, mut rx) = make_observer();
     obs.handle_event(
         "test-session",
@@ -762,10 +876,15 @@ fn test_turn_completion_carries_last_request_attempts() {
     );
     let _ = rx.try_recv();
     let _ = rx.try_recv();
-    assert!(matches!(rx.try_recv().unwrap().ty, EventType::RetryExhausted {
-        final_error_kind: metric::ErrorKind::Throttling,
-        ..
-    }));
+    assert!(matches!(
+        rx.try_recv().unwrap().ty,
+        EventType::AutomaticRetryCompleted {
+            retry_reason: metric::RetryReason::Throttled,
+            additional_attempts: 2,
+            outcome: metric::RetryOutcome::Exhausted,
+            ..
+        }
+    ));
 
     let metadata = UserTurnMetadata {
         loop_id: test_loop_id(),
@@ -852,10 +971,32 @@ fn test_acp_client_app_type() {
     assert_eq!(event.engine, Some(metric::Engine::V2));
     assert_eq!(event.acp_client_name.as_deref(), Some("external-client"));
     assert_eq!(event.client_application.as_deref(), Some("acp_external"));
+    assert_eq!(event.session_interface, Some(metric::SessionInterface::ExternalAcp));
 }
 
 #[test]
-fn test_use_aws_tool_call_emits_aws_origin_metadata() {
+fn test_first_party_one_shot_context() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let client_info = Some(AcpClientInfo::new(
+        crate::context::KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME.into(),
+        "1.0.0".into(),
+    ));
+    let ctx = TelemetryContext::new(model_provider("claude-4-sonnet"), client_info, false);
+    let mut obs = TelemetryObserver::new_for_test(tx, ctx);
+    obs.handle_event("test-session", &make_loop_event(success_stream_end()));
+
+    let event = rx.try_recv().unwrap();
+    assert_eq!(event.app_type.as_deref(), Some("V2"));
+    assert_eq!(event.engine, Some(metric::Engine::V2));
+    assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
+    assert_eq!(
+        event.session_interface,
+        Some(metric::SessionInterface::NoninteractiveCli)
+    );
+}
+
+#[test]
+fn test_use_aws_tool_call_uses_builtin_metric_origin() {
     let (mut obs, mut rx) = make_observer();
     let tool_call = agent::protocol::ToolCall {
         id: "tool-aws".to_string(),
@@ -912,7 +1053,13 @@ fn test_use_aws_tool_call_emits_aws_origin_metadata() {
         tool_call
             .attributes
             .iter()
-            .any(|attr| { attr.key == "tool_origin" && attr.value == "aws_api" })
+            .any(|attr| { attr.key == "tool_origin" && attr.value == "builtin" })
+    );
+    assert!(
+        tool_call
+            .attributes
+            .iter()
+            .any(|attr| { attr.key == "builtin_tool_name" && attr.value == "use_aws" })
     );
 }
 
@@ -957,8 +1104,8 @@ fn test_failed_tool_call_without_tracker_emits_denied_mcp_telemetry() {
     let records = event_to_otel_metric_records(&event);
     let invocations = records
         .iter()
-        .find(|record| record.name == "kiro_cli_tool_invocations")
-        .expect("kiro_cli_tool_invocations");
+        .find(|record| record.name == "kiro_cli_tool_call_total")
+        .expect("kiro_cli_tool_call_total");
     assert!(
         invocations
             .attributes
@@ -969,7 +1116,7 @@ fn test_failed_tool_call_without_tracker_emits_denied_mcp_telemetry() {
         invocations
             .attributes
             .iter()
-            .any(|attr| { attr.key == "outcome" && attr.value == "denied" })
+            .any(|attr| { attr.key == "tool_outcome" && attr.value == "denied" })
     );
 }
 
@@ -1000,6 +1147,18 @@ fn test_kiro_client_is_v2() {
     let info = AcpClientInfo::new(KIRO_ACP_CLIENT_NAME.into(), "1.0.0".into());
     assert_eq!(info.app_type(), AppType::V2);
     assert_eq!(info.name, ClientName::Kiro);
+    assert_eq!(info.session_interface(), metric::SessionInterface::InteractiveCli);
+}
+
+#[test]
+fn test_first_party_one_shot_client_is_v2() {
+    let info = AcpClientInfo::new(
+        crate::context::KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME.into(),
+        "1.0.0".into(),
+    );
+    assert_eq!(info.app_type(), AppType::V2);
+    assert_eq!(info.name, ClientName::KiroCliNonInteractive);
+    assert_eq!(info.session_interface(), metric::SessionInterface::NoninteractiveCli);
 }
 
 #[test]
@@ -1007,4 +1166,5 @@ fn test_external_client_is_acp() {
     let info = AcpClientInfo::new("external-editor".into(), "2.0".into());
     assert_eq!(info.app_type(), AppType::Acp);
     assert_eq!(info.name, ClientName::Other("external-editor".into()));
+    assert_eq!(info.session_interface(), metric::SessionInterface::ExternalAcp);
 }

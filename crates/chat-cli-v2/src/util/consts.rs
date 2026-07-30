@@ -130,14 +130,11 @@ pub mod env_var {
         /// OpenTelemetry telemetry mode: 0/off, 1/dual-write, or 2/OTel-only
         KIRO_TELEMETRY_OTEL = "KIRO_TELEMETRY_OTEL",
 
-        /// OpenTelemetry OTLP endpoint override for team-owned ADOT or KUTS dogfood
+        /// OpenTelemetry OTLP endpoint override for KUTS or local validation
         KIRO_TELEMETRY_OTLP_ENDPOINT = "KIRO_TELEMETRY_OTLP_ENDPOINT",
 
         /// OpenTelemetry export interval override for local development
         KIRO_TELEMETRY_EXPORT_INTERVAL_MS = "KIRO_TELEMETRY_EXPORT_INTERVAL_MS",
-
-        /// OpenTelemetry logs export switch for KUTS metrics-only testing
-        KIRO_TELEMETRY_OTLP_LOGS_ENABLED = "KIRO_TELEMETRY_OTLP_LOGS_ENABLED",
 
         /// Chat shell for Unix systems
         KIRO_CHAT_SHELL = "KIRO_CHAT_SHELL",

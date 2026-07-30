@@ -40,7 +40,7 @@ mock.module('../../kiro', () => ({
         )
     ),
     sendModeChanged: mock(),
-    sendChatSlashCommandTelemetry: mock(),
+    recordSlashCommandInvocation: mock(),
     sendUiModeSessionStart: mock(),
     sendUiModeChanged: mock(),
     sendUiModeDefaultChanged: mock(),

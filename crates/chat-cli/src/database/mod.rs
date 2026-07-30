@@ -67,7 +67,7 @@ const IDC_REGION_KEY: &str = "auth.idc.region";
 // We include this key to remove for backwards compatibility
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
-const HEARTBEAT_DATE_KEY: &str = "telemetry.lastHeartbeatDate";
+const HEARTBEAT_DATE_KEY_PREFIX: &str = "telemetry.lastHeartbeatDate";
 
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
@@ -423,9 +423,10 @@ impl Database {
 
     /// Atomically check and record daily heartbeat. Returns true if heartbeat should be sent.
     /// Uses BEGIN IMMEDIATE to prevent TOCTOU races between concurrent CLI processes.
-    pub fn record_heartbeat_if_needed(&self) -> bool {
+    pub fn record_heartbeat_if_needed(&self, version: &str) -> bool {
         use chrono::Utc;
         let today = Utc::now().format("%Y-%m-%d").to_string();
+        let heartbeat_date_key = format!("{HEARTBEAT_DATE_KEY_PREFIX}.{version}");
 
         let conn = match self.pool.get() {
             Ok(c) => c,
@@ -438,7 +439,7 @@ impl Database {
 
         let needs_send = match conn.query_row(
             &format!("SELECT value FROM {} WHERE key = ?1", Table::State),
-            [HEARTBEAT_DATE_KEY],
+            [&heartbeat_date_key],
             |row| row.get::<_, String>(0),
         ) {
             Ok(last_date) => last_date != today,
@@ -457,7 +458,7 @@ impl Database {
         let ok = conn
             .execute(
                 &format!("INSERT OR REPLACE INTO {} (key, value) VALUES (?1, ?2)", Table::State),
-                params![HEARTBEAT_DATE_KEY, &today],
+                params![heartbeat_date_key, &today],
             )
             .is_ok()
             && conn.execute_batch("COMMIT").is_ok();
@@ -1021,24 +1022,26 @@ mod tests {
     async fn test_record_heartbeat_if_needed_first_call_returns_true() {
         let db = Database::new_default().await.unwrap();
         // First call ever — no date stored, should return true
-        assert!(db.record_heartbeat_if_needed());
+        assert!(db.record_heartbeat_if_needed("1.0.0"));
     }
 
     #[tokio::test]
     async fn test_record_heartbeat_if_needed_second_call_returns_false() {
         let db = Database::new_default().await.unwrap();
-        assert!(db.record_heartbeat_if_needed());
+        assert!(db.record_heartbeat_if_needed("1.0.0"));
         // Same day, second call — should return false
-        assert!(!db.record_heartbeat_if_needed());
+        assert!(!db.record_heartbeat_if_needed("1.0.0"));
     }
 
     #[tokio::test]
     async fn test_record_heartbeat_if_needed_persists_date() {
         let db = Database::new_default().await.unwrap();
-        assert!(db.record_heartbeat_if_needed());
+        assert!(db.record_heartbeat_if_needed("1.0.0"));
 
         // Verify the date was actually written to the DB
-        let stored = db.get_entry::<String>(Table::State, HEARTBEAT_DATE_KEY).unwrap();
+        let stored = db
+            .get_entry::<String>(Table::State, "telemetry.lastHeartbeatDate.1.0.0")
+            .unwrap();
         assert!(stored.is_some());
 
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -1049,12 +1052,23 @@ mod tests {
     async fn test_record_heartbeat_if_needed_stale_date_returns_true() {
         let db = Database::new_default().await.unwrap();
         // Manually write a stale date
-        db.set_entry(Table::State, HEARTBEAT_DATE_KEY, "2020-01-01").unwrap();
+        db.set_entry(Table::State, "telemetry.lastHeartbeatDate.1.0.0", "2020-01-01")
+            .unwrap();
 
         // Should return true since stored date != today
-        assert!(db.record_heartbeat_if_needed());
+        assert!(db.record_heartbeat_if_needed("1.0.0"));
         // And now it should return false
-        assert!(!db.record_heartbeat_if_needed());
+        assert!(!db.record_heartbeat_if_needed("1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_record_heartbeat_if_needed_tracks_versions_independently() {
+        let db = Database::new_default().await.unwrap();
+
+        assert!(db.record_heartbeat_if_needed("1.0.0"));
+        assert!(db.record_heartbeat_if_needed("1.1.0-nightly.1"));
+        assert!(!db.record_heartbeat_if_needed("1.0.0"));
+        assert!(!db.record_heartbeat_if_needed("1.1.0-nightly.1"));
     }
 
     #[tokio::test]
@@ -1063,7 +1077,7 @@ mod tests {
         // Simulate rapid sequential calls (same process, same connection pool)
         let mut true_count = 0;
         for _ in 0..10 {
-            if db.record_heartbeat_if_needed() {
+            if db.record_heartbeat_if_needed("1.0.0") {
                 true_count += 1;
             }
         }

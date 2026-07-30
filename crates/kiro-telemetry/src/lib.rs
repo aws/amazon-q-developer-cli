@@ -1,9 +1,13 @@
+use std::sync::OnceLock;
+use std::time::{
+    Duration,
+    Instant,
+};
+
 mod cardinality;
 mod client;
 mod config;
-mod consent;
-mod legacy;
-pub mod log;
+mod drop_store;
 pub mod metric;
 mod otel;
 mod pricing;
@@ -14,11 +18,11 @@ pub mod testing;
 
 pub use cardinality::{
     LimitError,
-    validate_log_record,
     validate_metric_record,
 };
 pub use client::{
     EmitOutcome,
+    EventClass,
     InMemorySink,
     TelemetryClient,
     TelemetryError,
@@ -29,18 +33,11 @@ pub use config::{
     TelemetryConfig,
     resolve_otlp_endpoint,
 };
-pub use consent::{
-    consent_file_integrity_records,
-    consent_record_integrity_record,
-};
 pub use kiro_telemetry_schema::{
     LegacyEventType,
     MetricKind,
 };
 pub use metric::{
-    ConsentCheckKind,
-    ConsentIntegrityResult,
-    EventClass,
     FieldClass,
     MetricBuildError,
     MetricBuilder,
@@ -48,7 +45,6 @@ pub use metric::{
     RedactionResult,
 };
 pub use otel::{
-    OtelLogsSink,
     OtelMetricsSink,
     OtelPipelineKind,
     OtelProviders,
@@ -60,7 +56,6 @@ pub use record::{
     Attribute,
     MetricRecord,
     MetricValue,
-    TelemetryLogRecord,
 };
 pub use redaction::{
     PiiRedactor,
@@ -70,4 +65,14 @@ pub use redaction::{
 
 pub fn meter() -> opentelemetry::metrics::Meter {
     opentelemetry::global::meter("kiro-telemetry")
+}
+
+static PROCESS_STARTED_AT: OnceLock<Instant> = OnceLock::new();
+
+pub fn mark_process_started() {
+    PROCESS_STARTED_AT.get_or_init(Instant::now);
+}
+
+pub fn process_start_elapsed() -> Duration {
+    PROCESS_STARTED_AT.get_or_init(Instant::now).elapsed()
 }

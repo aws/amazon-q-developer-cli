@@ -1,56 +1,54 @@
-use kiro_telemetry::metric;
-
 use super::ChatSession;
 use crate::os::Os;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct ChatTelemetrySession {
+struct LegacyChatTelemetrySession {
     conversation_id: String,
     model: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct ChatTelemetryTransition {
-    previous: Option<ChatTelemetrySession>,
-    current: ChatTelemetrySession,
+struct LegacyChatTelemetryTransition {
+    previous: Option<LegacyChatTelemetrySession>,
+    current: LegacyChatTelemetrySession,
 }
 
 #[derive(Default)]
-pub(super) struct ChatTelemetryLifecycle {
-    active: Option<ChatTelemetrySession>,
+pub(super) struct LegacyChatTelemetryLifecycle {
+    active: Option<LegacyChatTelemetrySession>,
 }
 
-impl ChatTelemetryLifecycle {
-    fn start(&self, session: ChatTelemetrySession) -> Option<ChatTelemetrySession> {
+impl LegacyChatTelemetryLifecycle {
+    fn start(&self, session: LegacyChatTelemetrySession) -> Option<LegacyChatTelemetrySession> {
         if self.active.is_some() {
             return None;
         }
         Some(session)
     }
 
-    fn commit_start(&mut self, session: ChatTelemetrySession) {
+    fn commit_start(&mut self, session: LegacyChatTelemetrySession) {
         self.active = Some(session);
     }
 
-    fn transition(&self, session: ChatTelemetrySession) -> Option<ChatTelemetryTransition> {
+    fn transition(&self, session: LegacyChatTelemetrySession) -> Option<LegacyChatTelemetryTransition> {
         if self.active.as_ref() == Some(&session) {
             return None;
         }
-        Some(ChatTelemetryTransition {
+        Some(LegacyChatTelemetryTransition {
             previous: self.active.clone(),
             current: session,
         })
     }
 
-    fn commit_transition(&mut self, session: ChatTelemetrySession) {
+    fn commit_transition(&mut self, session: LegacyChatTelemetrySession) {
         self.active = Some(session);
     }
 
-    fn finish(&self) -> Option<ChatTelemetrySession> {
+    fn finish(&self) -> Option<LegacyChatTelemetrySession> {
         self.active.clone()
     }
 
-    fn commit_finish(&mut self, session: &ChatTelemetrySession) {
+    fn commit_finish(&mut self, session: &LegacyChatTelemetrySession) {
         if self.active.as_ref() == Some(session) {
             self.active = None;
         }
@@ -58,16 +56,8 @@ impl ChatTelemetryLifecycle {
 }
 
 impl ChatSession {
-    pub(super) fn telemetry_mode(&self) -> metric::Mode {
-        if self.interactive {
-            metric::Mode::Interactive
-        } else {
-            metric::Mode::Oneshot
-        }
-    }
-
-    fn chat_telemetry_session(&self) -> ChatTelemetrySession {
-        ChatTelemetrySession {
+    fn legacy_chat_telemetry_session(&self) -> LegacyChatTelemetrySession {
+        LegacyChatTelemetrySession {
             conversation_id: self.conversation.conversation_id().to_string(),
             model: self
                 .conversation
@@ -77,32 +67,24 @@ impl ChatSession {
         }
     }
 
-    pub(super) async fn start_chat_telemetry(&mut self, os: &Os, session_start_kind: metric::SessionStartKind) {
-        let mode = self.telemetry_mode();
-        let session = self.chat_telemetry_session();
-        let Some(session) = self.chat_telemetry.start(session) else {
+    pub(super) async fn start_legacy_chat_telemetry(&mut self, os: &Os) {
+        let session = self.legacy_chat_telemetry_session();
+        let Some(session) = self.legacy_chat_telemetry.start(session) else {
             return;
         };
         if os
             .telemetry
-            .send_chat_start(
-                &os.database,
-                session.conversation_id.clone(),
-                session.model.clone(),
-                mode,
-                session_start_kind,
-            )
+            .send_chat_start(&os.database, session.conversation_id.clone(), session.model.clone())
             .await
             .is_ok()
         {
-            self.chat_telemetry.commit_start(session);
+            self.legacy_chat_telemetry.commit_start(session);
         }
     }
 
-    pub(super) async fn transition_chat_telemetry(&mut self, os: &Os, session_start_kind: metric::SessionStartKind) {
-        let mode = self.telemetry_mode();
-        let session = self.chat_telemetry_session();
-        let Some(transition) = self.chat_telemetry.transition(session) else {
+    pub(super) async fn transition_legacy_chat_telemetry(&mut self, os: &Os) {
+        let session = self.legacy_chat_telemetry_session();
+        let Some(transition) = self.legacy_chat_telemetry.transition(session) else {
             return;
         };
         let result = os
@@ -114,17 +96,15 @@ impl ChatSession {
                     .map(|previous| (previous.conversation_id, previous.model)),
                 transition.current.conversation_id.clone(),
                 transition.current.model.clone(),
-                mode,
-                session_start_kind,
             )
             .await;
         if result.is_ok() {
-            self.chat_telemetry.commit_transition(transition.current);
+            self.legacy_chat_telemetry.commit_transition(transition.current);
         }
     }
 
-    pub(super) async fn finish_chat_telemetry(&mut self, os: &Os) {
-        let Some(session) = self.chat_telemetry.finish() else {
+    pub(super) async fn finish_legacy_chat_telemetry(&mut self, os: &Os) {
+        let Some(session) = self.legacy_chat_telemetry.finish() else {
             return;
         };
         if os
@@ -133,7 +113,7 @@ impl ChatSession {
             .await
             .is_ok()
         {
-            self.chat_telemetry.commit_finish(&session);
+            self.legacy_chat_telemetry.commit_finish(&session);
         }
     }
 }
@@ -142,16 +122,16 @@ impl ChatSession {
 mod tests {
     use super::*;
 
-    fn session(conversation_id: &str, model: Option<&str>) -> ChatTelemetrySession {
-        ChatTelemetrySession {
+    fn session(conversation_id: &str, model: Option<&str>) -> LegacyChatTelemetrySession {
+        LegacyChatTelemetrySession {
             conversation_id: conversation_id.to_string(),
             model: model.map(str::to_string),
         }
     }
 
     #[test]
-    fn compaction_keeps_the_started_telemetry_identity() {
-        let mut lifecycle = ChatTelemetryLifecycle::default();
+    fn completion_keeps_the_started_telemetry_identity() {
+        let mut lifecycle = LegacyChatTelemetryLifecycle::default();
         let started = session("original", Some("model"));
 
         assert_eq!(lifecycle.start(started.clone()), Some(started.clone()));
@@ -163,12 +143,12 @@ mod tests {
 
     #[test]
     fn conversation_transition_is_stateful_and_idempotent() {
-        let mut lifecycle = ChatTelemetryLifecycle::default();
+        let mut lifecycle = LegacyChatTelemetryLifecycle::default();
         let original = session("original", Some("model-a"));
         let resumed = session("resumed", Some("model-b"));
         lifecycle.commit_start(original.clone());
 
-        let transition = ChatTelemetryTransition {
+        let transition = LegacyChatTelemetryTransition {
             previous: Some(original.clone()),
             current: resumed.clone(),
         };
@@ -181,7 +161,7 @@ mod tests {
 
     #[test]
     fn uncommitted_start_does_not_create_an_active_session() {
-        let lifecycle = ChatTelemetryLifecycle::default();
+        let lifecycle = LegacyChatTelemetryLifecycle::default();
 
         assert!(lifecycle.start(session("new", None)).is_some());
         assert_eq!(lifecycle.finish(), None);

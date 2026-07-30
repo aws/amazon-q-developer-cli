@@ -28,7 +28,6 @@ use crate::{
     OtelProviders,
     TelemetryClient,
     TelemetryConfig,
-    TelemetryLogRecord,
     init_noop_otel,
 };
 
@@ -47,440 +46,84 @@ pub fn in_memory_telemetry(config: TelemetryConfig) -> InMemoryTelemetry {
     }
 }
 
-/// One representative record for every catalog metric that has a typed
-/// constructor. This is the single source of truth shared by the `catalog_smoke`
-/// example (live OTLP emit) and the catalog-coverage test (asserts the §5 catalog
-/// is fully emittable). Derived recording-rule metrics are intentionally absent —
-/// they are computed downstream, never emitted from the binary.
-#[allow(clippy::vec_init_then_push)] // sectioned per §5 catalog for readability + interspersed extend()
 pub fn catalog_metric_records() -> Vec<MetricRecord> {
-    use crate::TokenUsage;
     use crate::metric::*;
 
-    let invocation = InvocationContext::new(Some("claude-sonnet-4"), ClientApplication::ChatCliV3, false);
-    let mut records = Vec::new();
-
-    // §5.1 Usage & adoption
-    records.push(cli_session_started(
-        OsType::Macos,
-        InstallSource::Internal,
-        ClientApplication::ChatCliV3,
-    ));
-    records.push(user_logged_in(ClientApplication::ChatCliV3, CredentialKind::BuilderId));
-    records.push(chat_session_started(Mode::Interactive, ClientApplication::ChatCliV3));
-    records.push(cloud_session_total(CloudSessionEvent::Started, Engine::V3));
-    records.push(autonomous_mode_total(AutonomousEvent::Enabled, Engine::V3));
-    records.push(cloud_error_total(
-        CloudOp::SessionNew,
-        CloudErrorKind::VersionSkew,
-        Engine::V3,
-    ));
-    records.push(cloud_attach_total(
-        AttachKind::Image,
-        AttachSizeBucket::Under1m,
-        Engine::V3,
-    ));
-    records.push(ui_mode_session_started(
-        UiMode::Tui,
-        UiModeSource::Default,
-        UiMode::Unset,
-    ));
-    records.push(ui_mode_changed(
-        UiMode::Lite,
-        UiMode::Tui,
-        UiModeChangeSource::SlashCommand,
-    ));
-    records.push(ui_mode_default_changed(UiMode::Lite, UiMode::Tui));
-    records.push(daily_heartbeat(ClientApplication::ChatCliV3, InstallSource::Internal));
-    records.push(active_users_daily(
-        1234.0,
-        InstallSource::Brew,
-        ClientApplication::ChatCliV3,
-        false,
-    ));
-    records.push(active_users_weekly(
-        5678.0,
-        InstallSource::Internal,
-        ClientApplication::ChatCliV3,
-        true,
-    ));
-    records.push(active_users_monthly(42_000.0));
-    records.push(dau_mau_ratio(0.21));
-    records.push(new_users_daily(99.0, InstallSource::Download));
-    records.push(client_version_seen(7.0, "2.6.1", ReleaseChannel::Stable, OsType::Macos));
-    records.push(version_adoption_pct(63.5, "2.6.1", ReleaseChannel::Stable));
-    records.push(stale_version_users(12.0, StalenessBucket::from_age_days(75)));
-    records.push(mode_active_users_weekly(15.0, Mode::Plan));
-    records.push(upgrade_completed("2.5.9", "2.6.1", UpgradeTrigger::Auto));
-
-    // §5.2 Feature usage
-    records.push(slash_command_invoked("help"));
-    records.push(feature_used("catalog_smoke"));
-    records.push(feature_unique_users_weekly(8.0, "tangent"));
-    records.push(tool_call_total_for_invocation(
-        ToolInvocation::mcp(Some("query_db"), Some("postgres-mcp"), true, Some(true), Some(true)),
-        Some(Engine::V3),
-    ));
-    records.push(tool_using_sessions_pct(72.0));
-    records.push(mcp_server_connected_total(McpServerClass::BuiltinFs));
-    records.push(model_invocation(Some("claude-sonnet-4")));
-    records.push(tangent_duration_seconds(2.0, ResultKind::Success, Engine::V1));
-    records.push(tangent_entries_removed(3.0, ResultKind::Success, Engine::V1));
-
-    // §5.3 Performance
-    records.push(bedrock_stream_ttft(
-        0.25,
-        Some("claude-sonnet-4"),
-        PromptSizeBucket::Small,
-        true,
-    ));
-    records.push(bedrock_stream_duration(
-        2.0,
-        Some("claude-sonnet-4"),
-        crate::log::CompletionReason::Stop,
-    ));
-    records.push(bedrock_request_duration(
-        1.5,
-        Some("claude-sonnet-4"),
-        Operation::Stream,
-        Outcome::Success,
-    ));
-    records.push(bedrock_stream_inter_token_latency(0.05, Some("claude-sonnet-4")));
-    records.push(startup_duration(0.5, "2.6.1", true, OsType::Macos));
-    records.push(agent_loop_iteration_duration(2.0, LoopPhase::ModelCall));
-    records.push(user_turn_duration_seconds(
-        5.0,
-        Some("claude-sonnet-4"),
-        ChatConversationKind::Interactive,
-        false,
-        Mode::Interactive,
-    ));
-    records.push(time_to_first_chunk_ms(
-        250.0,
-        Some("claude-sonnet-4"),
-        ClientApplication::ChatCliV3,
-        false,
-    ));
-
-    // §5.4 Reliability
-    records.push(cli_session_completed(ExitReason::Clean, AgentKind::Kas));
-    records.push(crash_total(CrashKind::Panic, OsType::Macos, HostArch::Aarch64));
-    records.push(bedrock_request_error(
-        Some("claude-sonnet-4"),
-        Operation::Stream,
-        ErrorKind::Throttling,
-        StatusClass::Class5xx,
-        Some("QuotaBreachError"),
-    ));
-    records.push(empty_response_retry(Some("claude-sonnet-4"), Outcome::Recovered));
-    records.push(retry_attempt(
-        Upstream::Bedrock,
-        RetryReason::Throttled,
-        AttemptNumberBucket::One,
-    ));
-    records.push(retry_exhausted(Upstream::Bedrock, ErrorKind::Throttling));
-    records.push(agent_loop_stuck(StuckPhase::ModelCall, StuckDetection::Watchdog));
-    records.push(upstream_dependency_up(true, Dependency::Bedrock, Partition::Aws));
-
-    // §5.5 Health (process)
-    records.push(process_memory_rss(128.0 * 1024.0 * 1024.0, "2.6.1", AgentKind::Kas));
-    records.push(process_cpu_utilization(
-        0.25,
-        "2.6.1",
-        AgentKind::Kas,
-        ProcessState::Streaming,
-    ));
-    records.push(process_memory_growth_rate(1024.0, "2.6.1", AgentKind::Kas));
-    records.push(process_fds_open(64.0, "2.6.1", AgentKind::Kas));
-    records.push(process_threads(12.0, "2.6.1", AgentKind::Kas));
-
-    // §5.6 LLM-specific
-    records.extend(token_records(invocation, TokenUsage {
-        uncached_input_tokens: 1200,
-        cache_read_input_tokens: 300,
-        cache_write_input_tokens: 0,
-        output_tokens: 128,
-    }));
-    records.push(cache_hit_ratio(
-        0.5,
-        Some("claude-sonnet-4"),
-        ChatConversationKind::Interactive,
-        ClientApplication::ChatCliV3,
-    ));
-    records.push(context_usage_percentage(
-        50.0,
-        Some("claude-sonnet-4"),
-        ClientApplication::ChatCliV3,
-        false,
-    ));
-
-    // §5.7 Tool-use & MCP
-    let builtin_invocation = ToolInvocation::new(Some("fs_read"), ToolOrigin::Builtin, true, Some(true), Some(true));
-    records.push(tool_invocations_for_invocation(builtin_invocation, Some(Engine::V3)));
-    records.push(
-        tool_execution_duration_ms_for_invocation(42.0, builtin_invocation, Some(Engine::V3))
-            .expect("positive duration"),
-    );
-    records.push(mcp_server_init_total(McpServerClass::BuiltinFs, Outcome::Success));
-    records.push(tool_token_size(
-        64.0,
-        ContentRole::Input,
-        ToolOrigin::Builtin,
-        Engine::V1,
-    ));
-    records.push(tool_duration(
-        42.0,
-        DurationStage::ToolCall,
-        ToolOrigin::Builtin,
-        Engine::V1,
-    ));
-    records.push(mcp_tool_count(
-        3.0,
-        McpServerClass::BuiltinFs,
-        CountKind::Loaded,
-        Engine::V1,
-    ));
-
-    // §5.8 Quality / outcomes
-    records.push(user_turns(
-        Some("claude-sonnet-4"),
-        ClientApplication::ChatCliV3,
-        ResultKind::Success,
-        false,
-        Mode::Interactive,
-    ));
-    records.push(session_outcome(SessionOutcome::TaskCompleted));
-    records.push(user_feedback(Sentiment::Positive, FeedbackSurface::Chat));
-    records.push(message_regenerated(Some("claude-sonnet-4")));
-    records.push(turn_outcome_total(
-        TurnOutcomeReason::Interrupted,
-        Some("claude-sonnet-4"),
-        Mode::Interactive,
-        Engine::V3,
-    ));
-    records.push(subagent_delegations_total(
-        SubagentNameClass::CodeReview,
-        Some("claude-sonnet-4"),
-        Engine::V3,
-    ));
-    records.push(mode_active_total(Mode::Interactive, Engine::V3));
-    records.push(cloud_session_ready_seconds(42.0, Engine::V3));
-    records.push(cloud_repo_attach_total(
-        RepoAttachEvent::Submitted,
-        RepoCountBucket::Two,
-        Engine::V3,
-    ));
-    records.push(conversation_completed_total(Some("claude-sonnet-4"), Engine::V1));
-    records.push(chat_messages_total(
-        Some("claude-sonnet-4"),
-        ResultKind::Success,
-        MessageKind::NotToolUse,
-        Engine::V1,
-    ));
-    records.push(chat_content_length(
-        512.0,
-        ContentRole::Assistant,
-        Some("claude-sonnet-4"),
-        Engine::V1,
-    ));
-    records.push(chat_message_tag(MessageTag::Compact, Engine::V1));
-    records.push(user_turn_prompt_length(128.0, Some("claude-sonnet-4"), Engine::V1));
-    records.push(user_turn_response_length(512.0, Some("claude-sonnet-4"), Engine::V1));
-    records.push(user_turn_follow_up_count(1.0, Engine::V1));
-    records.push(user_turn_request_attempts(2.0, Engine::V1));
-    records.push(user_turn_time_to_first_chunk_ms(
-        250.0,
-        Some("claude-sonnet-4"),
-        Engine::V1,
-    ));
-    records.push(request_error_context_length(
-        4_096.0,
-        Some("claude-sonnet-4"),
-        ErrorKind::ServerError,
-        Engine::V1,
-    ));
-    records.push(subagent_tool_uses_total(2, CountKind::Builtin, Engine::V1));
-    records.push(agent_contribution_total(Engine::V1));
-    records.push(agent_contribution_lines_total(
-        12,
-        ContributionSource::Agent,
-        ContributionChange::Added,
-        Engine::V1,
-    ));
-    records.push(agent_config_init_total(ResultKind::Success, true, Engine::V1));
-    records.push(agent_config_count(2.0, CountKind::AgentsLoaded, Engine::V1));
-    records.push(profile_selection_total(
-        ProfileSource::User,
-        RegionClass::Commercial,
-        RegionClass::Commercial,
-        ResultKind::Success,
-        Engine::V1,
-    ));
-    records.push(profile_state_total(
-        ProfileSource::User,
-        RegionClass::Commercial,
-        RegionClass::Commercial,
-        ResultKind::Success,
-        Engine::V1,
-    ));
-    records.push(profile_count(2.0, ProfileSource::User, Engine::V1));
-    records.push(voice_input_total(
-        VoiceBackend::LocalWhisper,
-        VoiceInputMethod::SlashCommand,
-        VoiceModelSize::Base,
-        Some(false),
-        ResultKind::Success,
-        Engine::V1,
-    ));
-    records.push(voice_duration(
-        1000.0,
-        DurationStage::Recording,
-        VoiceBackend::LocalWhisper,
-        Engine::V1,
-    ));
-    records.push(voice_text_length(80.0, VoiceBackend::LocalWhisper, Engine::V1));
-
-    // §5.5b Health (process/perf — TUI-promoted)
-    records.push(process_memory_peak_rss(
-        256.0 * 1024.0 * 1024.0,
-        "2.6.1",
-        Engine::V3,
-        ProcessRole::Tui,
-    ));
-    records.push(process_memory_heap_used(
-        96.0 * 1024.0 * 1024.0,
-        "2.6.1",
-        Engine::V3,
-        ProcessRole::Tui,
-    ));
-    records.push(tui_event_loop_delay(0.012, Engine::V3, ProcessRole::Tui));
-    records.push(tui_input_latency(0.008, Engine::V3, ProcessRole::Tui));
-    records.push(tui_render_duration(
-        0.004,
-        RenderKind::Full,
-        Engine::V3,
-        ProcessRole::Tui,
-    ));
-
-    // §5.9 Security & privacy (paired posture)
-    records.push(telemetry_opt_out_respected(TelemetryChannel::Otel, EventClass::Metric));
-    records.push(telemetry_opt_out_violation(TelemetryChannel::Otel));
-    records.push(pii_redaction_run(
-        Redactor::Default,
-        EventClass::Log,
-        TelemetryChannel::Otel,
-        RedactionResult::Scrubbed,
-    ));
-    records.push(pii_redaction_match(1, PiiType::Email, FieldClass::Prompt));
-    records.push(pii_redaction_error(
-        Redactor::Default,
-        ErrorKind::Other,
-        RedactionFailAction::Dropped,
-    ));
-    records.push(consent_record_integrity(
-        ConsentCheckKind::Hash,
-        ConsentIntegrityResult::Ok,
-    ));
-    records.push(govcloud_channel_disabled(
-        TelemetryChannel::LegacyToolkit,
-        Partition::AwsUsGov,
-        PostureReason::GovcloudDisabled,
-    ));
-    records.push(govcloud_channel_leak(TelemetryChannel::Otel));
-    records.push(kuts_export_oversize(TelemetrySignal::Metrics));
-    records.push(auth_credential_failure(
-        AuthProvider::BuilderId,
-        "ExpiredToken",
-        Operation::Refresh,
-        Partition::Aws,
-    ));
-    records.push(auth_unexpected_identity(
-        Partition::Aws,
-        Partition::AwsUsGov,
-        Operation::Login,
-    ));
-    records.push(tls_validation_failure(
-        DestinationClass::PublicInternet,
-        TlsFailureReason::CertExpired,
-    ));
-    records.push(tool_egress_destinations(
-        DestinationClass::AwsEndpoint,
-        UrlScheme::Https,
-        true,
-    ));
-
-    // §5.10 Telemetry-on-telemetry
-    records.push(telemetry_export_send_attempt(
-        TelemetryExporter::Otel,
-        TelemetrySignal::Metrics,
-        ExportOutcome::Success,
-    ));
-    records.push(telemetry_export_send_duration(
-        0.1,
-        TelemetryExporter::Otel,
-        TelemetrySignal::Metrics,
-    ));
-    records.push(telemetry_exporter_dropped(
-        TelemetryExporter::Otel,
-        TelemetrySignal::Metrics,
-        DropReason::QueueFull,
-    ));
-    records.push(telemetry_queue_depth(
-        3.0,
-        TelemetryExporter::Otel,
-        TelemetrySignal::Metrics,
-    ));
-    records.push(telemetry_batch_size(
-        10.0,
-        TelemetryExporter::Otel,
-        TelemetrySignal::Metrics,
-    ));
-    records.push(telemetry_emit_failure(
-        TelemetrySubsystem::Exporter,
-        EmitFailureKind::Io,
-    ));
-    records.push(telemetry_sdk_up(Partition::Aws, OsType::Macos, ReleaseChannel::Stable));
-    records.push(telemetry_flush_on_exit_dropped(1, ShutdownPath::Clean));
-    records.push(meta_meter_up(Partition::Aws, OsType::Macos));
-
-    records
-}
-
-/// One representative record for every catalog `log_event`.
-pub fn catalog_log_records() -> Vec<TelemetryLogRecord> {
-    use crate::log;
-    use crate::metric::{
-        McpServerClass,
-        Outcome,
-    };
+    let os = OsType::Macos;
+    let engine = Engine::V3;
+    let interface = SessionInterface::InteractiveCli;
+    let mode = AgentMode::Default;
+    let role = ProcessRole::Host;
+    let model = Some("claude-sonnet-4");
+    let tool = ToolMetric::new(
+        engine,
+        ToolMetricOrigin::Builtin,
+        ToolMetricOutcome::Success,
+        ExecutionContext::Main,
+    )
+    .builtin_tool_name(Some("fs_read"));
 
     vec![
-        log::client_identity("catalog-client", "brew", 20_000, false),
-        log::feature_first_use("catalog-client", "tangent_mode", "catalog-session", "slash_command"),
-        log::metering_event(Some("req-1"), Some("claude-sonnet-4"), None, 42.0, "token", "tokens"),
-        log::user_turn_completed(
-            "catalog-conversation",
-            crate::metric::ResultKind::Success,
-            false,
-            12,
-            48,
-            5,
-            1,
-        )
-        .build(),
-        log::tool_invoked(
-            Some("tool-1"),
-            Some("fs_read"),
-            None,
-            Some(true),
-            Some("claude-sonnet-4"),
-            Some(42.0),
+        record_run_started(interface, engine, os),
+        record_login_success(AuthMethod::BuilderId, AuthFlow::Pkce),
+        record_chat_session_started(interface, mode, engine),
+        record_cloud_session_lifecycle(CloudSessionEvent::Started),
+        record_cloud_session_ready(1.0).expect("positive duration"),
+        record_autonomous_mode("enabled", engine),
+        record_cloud_repo_attach("submitted", "2", engine),
+        record_cloud_error("session_new", "version_skew", engine),
+        record_cloud_attach("image", "under_1m", engine),
+        record_ui_mode_session_started(UiMode::Tui),
+        record_daily_heartbeat(ReleaseChannel::Stable, os, InstallSource::Internal),
+        record_slash_command("/help", engine),
+        record_top_level_command("chat"),
+        record_tool_call(tool),
+        record_model_invocation(engine, model),
+        record_model_time_to_first_content_ms(250.0, engine, model).expect("positive duration"),
+        record_time_to_first_visible_response_ms(300.0, interface, mode, engine).expect("positive duration"),
+        record_model_request_duration_seconds(1.5, engine, model, ModelRequestOutcome::Success)
+            .expect("positive duration"),
+        record_user_turn_duration_seconds(2.0, interface, mode, engine).expect("positive duration"),
+        record_run_outcome(interface, engine, os, RunOutcome::Success),
+        record_crash(engine, os, role, CrashKind::Panic),
+        record_startup_duration_seconds(0.5, interface, engine, os).expect("positive duration"),
+        record_startup_failure(interface, engine, os, StartupFailureStage::AgentLaunch),
+        record_model_request_failure(engine, model, ErrorKind::Throttling),
+        record_automatic_retries(2, engine, RetryReason::Throttled, RetryOutcome::Recovered)
+            .expect("retried operation"),
+        record_process_memory_rss_bytes(128.0 * 1024.0 * 1024.0, os, engine, role).expect("non-negative value"),
+        record_process_cpu_utilization_ratio(0.25, os, engine, role).expect("non-negative value"),
+        record_process_open_file_descriptor_count(64.0, os, engine, role).expect("non-negative value"),
+        record_process_handle_count(64.0, engine, role).expect("non-negative value"),
+        record_process_thread_count(12.0, os, engine, role).expect("non-negative value"),
+        record_tokens_consumed(1200, engine, model, TokenType::InputUncached).expect("positive token count"),
+        record_credits_consumed(1.5, model).expect("positive credit count"),
+        record_tool_execution_duration_ms(42.0, tool).expect("positive duration"),
+        record_mcp_server_init(
+            engine,
+            McpServerSource::Global,
+            McpInitOutcome::Failure,
+            Some("postgres"),
+            Some(McpErrorKind::Connection),
+            Some(McpFailureStage::Connection),
         ),
-        log::mcp_server_init("fs", McpServerClass::BuiltinFs, Outcome::Success),
-        log::subagent_invoked("code-review")
-            .model(Some("claude-sonnet-4"))
-            .build(),
-        log::conversation_completed("catalog-session", "catalog-conversation", log::CompletionReason::Stop),
+        record_user_turn(interface, mode, engine),
+        record_goal_outcome(engine, GoalOutcome::Completed),
+        record_prohibited_telemetry_channel_enabled(TelemetryChannelName::LegacyToolkit),
+        record_telemetry_export_dropped(1, ExportDropReason::PermanentRejection).expect("positive drop count"),
+        record_turn_failure(interface, mode, engine, TurnFailureReason::ModelError),
+        record_turn_cancelled(interface, mode, engine),
+        record_process_peak_rss_bytes(256.0 * 1024.0 * 1024.0, os, engine, role).expect("non-negative value"),
+        record_tui_heap_used_bytes(96.0 * 1024.0 * 1024.0, os, engine).expect("non-negative value"),
+        record_tui_event_loop_delay_p99_seconds(0.012, os, engine).expect("non-negative value"),
+        record_tui_input_to_render_p95_seconds(0.008, os, engine).expect("non-negative value"),
+        record_tui_render_duration_seconds(0.004, os, engine, RenderKind::Full).expect("non-negative value"),
+        record_auth_failure(
+            AuthMethod::BuilderId,
+            AuthFlow::Pkce,
+            AuthOperation::Login,
+            AuthFailureReason::AuthorizationDenied,
+        ),
     ]
 }
 
@@ -495,10 +138,6 @@ pub struct CapturedOtlpRequest {
 impl CapturedOtlpRequest {
     pub fn is_metrics(&self) -> bool {
         self.path == "/v1/metrics"
-    }
-
-    pub fn is_logs(&self) -> bool {
-        self.path == "/v1/logs"
     }
 }
 
@@ -522,11 +161,12 @@ impl OtlpTestCollector {
 
         std::thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(10);
+            let fallback_status = statuses.last().copied().unwrap_or(200);
             let mut statuses = statuses.into_iter();
             while Instant::now() < deadline {
                 match listener.accept() {
                     Ok((stream, _)) => {
-                        let status = statuses.next().unwrap_or(200);
+                        let status = statuses.next().unwrap_or(fallback_status);
                         if let Ok(request) = read_http_request(stream, status) {
                             let _ = tx.send(request);
                         }
@@ -593,47 +233,6 @@ pub fn expect_otlp_metric(requests: &[CapturedOtlpRequest], expected: &MetricRec
     );
 }
 
-#[track_caller]
-pub fn expect_otlp_metric_attribute(requests: &[CapturedOtlpRequest], metric_name: &str, key: &str, expected: &str) {
-    for request in requests.iter().filter(|request| request.is_metrics()) {
-        let metrics = decode_metrics_request(request);
-        if metrics
-            .resource_metrics
-            .iter()
-            .flat_map(|resource_metrics| &resource_metrics.scope_metrics)
-            .flat_map(|scope_metrics| &scope_metrics.metrics)
-            .any(|metric| metric.name == metric_name && metric_data_has_attribute(metric.data.as_ref(), key, expected))
-        {
-            return;
-        }
-    }
-
-    panic!("missing OTLP metric attribute {metric_name}{{{key}={expected}}}");
-}
-
-#[track_caller]
-pub fn expect_otlp_log(requests: &[CapturedOtlpRequest], expected: &TelemetryLogRecord) {
-    for request in requests.iter().filter(|request| request.is_logs()) {
-        let logs = decode_logs_request(request);
-        if logs
-            .resource_logs
-            .iter()
-            .flat_map(|resource_logs| &resource_logs.scope_logs)
-            .flat_map(|scope_logs| &scope_logs.log_records)
-            .any(|record| log_matches(record, expected))
-        {
-            return;
-        }
-    }
-
-    panic!(
-        "expected OTLP log `{}` with attributes {:?}; exported logs: {:?}",
-        expected.name,
-        expected.attributes,
-        otlp_log_event_names(requests)
-    );
-}
-
 pub fn otlp_metric_names(requests: &[CapturedOtlpRequest]) -> Vec<String> {
     requests
         .iter()
@@ -642,17 +241,6 @@ pub fn otlp_metric_names(requests: &[CapturedOtlpRequest]) -> Vec<String> {
         .flat_map(|resource_metrics| resource_metrics.scope_metrics)
         .flat_map(|scope_metrics| scope_metrics.metrics)
         .map(|metric| metric.name)
-        .collect()
-}
-
-pub fn otlp_log_event_names(requests: &[CapturedOtlpRequest]) -> Vec<String> {
-    requests
-        .iter()
-        .filter(|request| request.is_logs())
-        .flat_map(|request| decode_logs_request(request).resource_logs)
-        .flat_map(|resource_logs| resource_logs.scope_logs)
-        .flat_map(|scope_logs| scope_logs.log_records)
-        .map(|record| record.event_name)
         .collect()
 }
 
@@ -666,19 +254,6 @@ pub fn expect_otlp_metric_resource_attribute(requests: &[CapturedOtlpRequest], k
                 .any(|resource_metrics| resource_has_attribute(resource_metrics.resource.as_ref(), key, expected))
         }),
         "missing metric resource attribute {key}={expected}"
-    );
-}
-
-#[track_caller]
-pub fn expect_otlp_log_resource_attribute(requests: &[CapturedOtlpRequest], key: &str, expected: &str) {
-    assert!(
-        requests.iter().filter(|request| request.is_logs()).any(|request| {
-            decode_logs_request(request)
-                .resource_logs
-                .iter()
-                .any(|resource_logs| resource_has_attribute(resource_logs.resource.as_ref(), key, expected))
-        }),
-        "missing log resource attribute {key}={expected}"
     );
 }
 
@@ -722,15 +297,6 @@ pub fn metric_attr<'a>(record: &'a MetricRecord, key: &str) -> Option<&'a str> {
 
 #[track_caller]
 pub fn expect_metric_attrs(record: &MetricRecord, expected: &[(&str, &str)]) {
-    expect_attributes(&record.attributes, expected);
-}
-
-pub fn log_attr<'a>(record: &'a TelemetryLogRecord, key: &str) -> Option<&'a str> {
-    attribute_value(&record.attributes, key)
-}
-
-#[track_caller]
-pub fn expect_log_attrs(record: &TelemetryLogRecord, expected: &[(&str, &str)]) {
     expect_attributes(&record.attributes, expected);
 }
 
@@ -850,67 +416,6 @@ pub fn expect_gauge_metric<'a>(
     record
 }
 
-pub fn count_log_records(records: &[TelemetryLogRecord], name: &str, attributes: &[(&str, &str)]) -> usize {
-    records
-        .iter()
-        .filter(|record| record.name == name && has_attributes(&record.attributes, attributes))
-        .count()
-}
-
-pub fn has_log_record(records: &[TelemetryLogRecord], name: &str, attributes: &[(&str, &str)]) -> bool {
-    count_log_records(records, name, attributes) > 0
-}
-
-pub fn log_record<'a>(records: &'a [TelemetryLogRecord], name: &str) -> Option<&'a TelemetryLogRecord> {
-    records.iter().find(|record| record.name == name)
-}
-
-#[track_caller]
-pub fn expect_log_record<'a>(records: &'a [TelemetryLogRecord], name: &str) -> &'a TelemetryLogRecord {
-    log_record(records, name).unwrap_or_else(|| panic!("expected log record `{name}`"))
-}
-
-pub fn log_record_with_attrs<'a>(
-    records: &'a [TelemetryLogRecord],
-    name: &str,
-    attributes: &[(&str, &str)],
-) -> Option<&'a TelemetryLogRecord> {
-    records
-        .iter()
-        .find(|record| record.name == name && has_attributes(&record.attributes, attributes))
-}
-
-pub fn log_record_like<'a>(
-    records: &'a [TelemetryLogRecord],
-    expected: &TelemetryLogRecord,
-) -> Option<&'a TelemetryLogRecord> {
-    records.iter().find(|record| {
-        record.name == expected.name
-            && attribute_records_eq(&record.attributes, &expected.attributes)
-            && attribute_records_eq(&record.resource_attributes, &expected.resource_attributes)
-    })
-}
-
-#[track_caller]
-pub fn expect_log_record_with_attrs<'a>(
-    records: &'a [TelemetryLogRecord],
-    name: &str,
-    attributes: &[(&str, &str)],
-) -> &'a TelemetryLogRecord {
-    log_record_with_attrs(records, name, attributes)
-        .unwrap_or_else(|| panic!("expected log record `{name}` with attributes {attributes:?}"))
-}
-
-#[track_caller]
-pub fn expect_log(records: &[TelemetryLogRecord], expected: TelemetryLogRecord) -> &TelemetryLogRecord {
-    log_record_like(records, &expected).unwrap_or_else(|| {
-        panic!(
-            "expected log record `{}` with attributes {:?}",
-            expected.name, expected.attributes
-        )
-    })
-}
-
 fn read_http_request(mut stream: TcpStream, status: u16) -> std::io::Result<CapturedOtlpRequest> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
@@ -1003,39 +508,8 @@ fn decode_metrics_request(
         .expect("decode OTLP metrics request")
 }
 
-fn decode_logs_request(
-    request: &CapturedOtlpRequest,
-) -> opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest {
-    opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest::decode(request.body.as_slice())
-        .expect("decode OTLP logs request")
-}
-
 fn metric_matches(metric: &opentelemetry_proto::tonic::metrics::v1::Metric, expected: &MetricRecord) -> bool {
     metric.name == expected.name && metric_data_matches(metric.data.as_ref(), expected)
-}
-
-fn metric_data_has_attribute(
-    data: Option<&opentelemetry_proto::tonic::metrics::v1::metric::Data>,
-    key: &str,
-    expected: &str,
-) -> bool {
-    use opentelemetry_proto::tonic::metrics::v1::metric::Data;
-
-    match data {
-        Some(Data::Sum(sum)) => sum
-            .data_points
-            .iter()
-            .any(|point| proto_attribute_value(&point.attributes, key) == Some(expected)),
-        Some(Data::Gauge(gauge)) => gauge
-            .data_points
-            .iter()
-            .any(|point| proto_attribute_value(&point.attributes, key) == Some(expected)),
-        Some(Data::Histogram(histogram)) => histogram
-            .data_points
-            .iter()
-            .any(|point| proto_attribute_value(&point.attributes, key) == Some(expected)),
-        _ => false,
-    }
 }
 
 fn metric_data_matches(
@@ -1090,10 +564,6 @@ fn number_data_point_matches(
     }
 }
 
-fn log_matches(record: &opentelemetry_proto::tonic::logs::v1::LogRecord, expected: &TelemetryLogRecord) -> bool {
-    record.event_name == expected.name && proto_attributes_include(&record.attributes, &expected.attributes)
-}
-
 fn proto_attributes_include(
     actual_attributes: &[opentelemetry_proto::tonic::common::v1::KeyValue],
     expected_attributes: &[Attribute],
@@ -1136,8 +606,6 @@ mod tests {
     use crate::{
         MetricRecord,
         MetricValue,
-        TelemetryLogRecord,
-        log,
         metric,
     };
 
@@ -1156,45 +624,46 @@ mod tests {
     #[test]
     fn in_memory_telemetry_captures_emitted_records() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
-        let harness = in_memory_telemetry(
-            TelemetryConfig::new(true, crate::OtelMode::DualWrite, None, tempdir.path().to_path_buf())
-                .with_otlp_logs_enabled(true),
-        );
+        let harness = in_memory_telemetry(TelemetryConfig::new(
+            true,
+            crate::OtelMode::DualWrite,
+            None,
+            tempdir.path().to_path_buf(),
+        ));
 
         harness
             .client
-            .emit(metric::model_invocation(Some("claude-sonnet-4")))
-            .expect("metric should emit");
-        harness
-            .client
-            .emit_log(log::conversation_completed(
-                "session-1",
-                "conversation-1",
-                log::CompletionReason::Stop,
+            .emit(metric::record_model_invocation(
+                metric::Engine::V2,
+                Some("claude-sonnet-4"),
             ))
-            .expect("log should emit");
+            .expect("metric should emit");
 
         expect_metric(
             &harness.sink.records(),
-            metric::model_invocation(Some("claude-sonnet-4")),
-        );
-        expect_log(
-            &harness.sink.log_records(),
-            log::conversation_completed("session-1", "conversation-1", log::CompletionReason::Stop),
+            metric::record_model_invocation(metric::Engine::V2, Some("claude-sonnet-4")),
         );
     }
 
     #[test]
     fn typed_metric_expectations_match_constructed_records() {
-        let expected = metric::chat_session_started(metric::Mode::Plan, metric::ClientApplication::ChatCliV2);
+        let expected = metric::record_chat_session_started(
+            metric::SessionInterface::InteractiveCli,
+            metric::AgentMode::Plan,
+            metric::Engine::V2,
+        );
         let records = vec![
-            metric::chat_session_started(metric::Mode::Interactive, metric::ClientApplication::ChatCliV2),
+            metric::record_chat_session_started(
+                metric::SessionInterface::InteractiveCli,
+                metric::AgentMode::Default,
+                metric::Engine::V2,
+            ),
             expected.clone(),
         ];
 
         let record = expect_metric(&records, expected);
 
-        assert_eq!(metric_attr(record, "mode"), Some("plan"));
+        assert_eq!(metric_attr(record, "agent_mode"), Some("plan"));
     }
 
     #[test]
@@ -1205,33 +674,11 @@ mod tests {
     }
 
     #[test]
-    fn log_expectations_match_attributes() {
-        let records = vec![TelemetryLogRecord::new("fact").with_attribute("kind", "target")];
-
-        let record = expect_log_record_with_attrs(&records, "fact", &[("kind", "target")]);
-
-        assert_eq!(log_attr(record, "kind"), Some("target"));
-    }
-
-    #[test]
-    fn typed_log_expectations_match_constructed_records() {
-        let expected = log::conversation_completed("session-1", "conversation-1", log::CompletionReason::Stop);
-        let records = vec![expected.clone()];
-
-        let record = expect_log(&records, expected);
-
-        assert_eq!(log_attr(record, "completion_reason"), Some("stop"));
-    }
-
-    #[test]
     fn otlp_proto_contract_types_are_available_for_test_collectors() {
-        use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
         use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 
         let metrics = ExportMetricsServiceRequest::default();
-        let logs = ExportLogsServiceRequest::default();
 
         assert!(metrics.resource_metrics.is_empty());
-        assert!(logs.resource_logs.is_empty());
     }
 }

@@ -16,6 +16,7 @@ use kiro_telemetry_host::Event;
 /// `crate::constants::KIRO_ACP_CLIENT_NAME` so the observer crate doesn't take
 /// a dep on V2's constants module.
 pub const KIRO_ACP_CLIENT_NAME: &str = "kiro-tui";
+pub const KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME: &str = "kiro-cli-non-interactive";
 
 /// Application type for telemetry — distinguishes V1, V2 (built-in TUI), and ACP (external).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,8 @@ pub struct AcpClientInfo {
 pub enum ClientName {
     /// The built-in Kiro TUI (`kiro-tui`).
     Kiro,
+    /// The first-party one-shot CLI ACP client.
+    KiroCliNonInteractive,
     /// An external ACP client.
     Other(String),
     /// No client info provided (e.g. pre-initialize).
@@ -57,6 +60,8 @@ impl ClientName {
     pub fn parse(s: &str) -> Self {
         if s == KIRO_ACP_CLIENT_NAME {
             Self::Kiro
+        } else if s == KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME {
+            Self::KiroCliNonInteractive
         } else {
             Self::Other(s.to_string())
         }
@@ -65,6 +70,7 @@ impl ClientName {
     pub fn as_str(&self) -> &str {
         match self {
             Self::Kiro => KIRO_ACP_CLIENT_NAME,
+            Self::KiroCliNonInteractive => KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME,
             Self::Other(s) => s,
             Self::Unknown => "Unknown",
         }
@@ -97,8 +103,16 @@ impl AcpClientInfo {
 
     pub fn app_type(&self) -> AppType {
         match self.name {
-            ClientName::Kiro => AppType::V2,
+            ClientName::Kiro | ClientName::KiroCliNonInteractive => AppType::V2,
             ClientName::Other(_) | ClientName::Unknown => AppType::Acp,
+        }
+    }
+
+    pub fn session_interface(&self) -> metric::SessionInterface {
+        match self.name {
+            ClientName::Kiro => metric::SessionInterface::InteractiveCli,
+            ClientName::KiroCliNonInteractive => metric::SessionInterface::NoninteractiveCli,
+            ClientName::Other(_) | ClientName::Unknown => metric::SessionInterface::ExternalAcp,
         }
     }
 }
@@ -147,7 +161,7 @@ impl TelemetryContext {
         match self.app_type {
             AppType::V1 => metric::ClientApplication::ChatCli,
             AppType::V2 => metric::ClientApplication::ChatCliV2,
-            AppType::Acp => metric::ClientApplication::ExternalAcpClient,
+            AppType::Acp => metric::ClientApplication::AcpExternal,
         }
     }
 
@@ -159,6 +173,13 @@ impl TelemetryContext {
         });
         if event.client_application.is_none() {
             event.set_client_application_kind(self.client_application());
+        }
+        if event.session_interface.is_none() {
+            event.set_session_interface(
+                self.client_info
+                    .as_ref()
+                    .map_or(metric::SessionInterface::ExternalAcp, AcpClientInfo::session_interface),
+            );
         }
         event.is_subagent = self.is_subagent;
         if let Some(ci) = &self.client_info {

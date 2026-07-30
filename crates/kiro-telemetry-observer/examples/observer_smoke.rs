@@ -52,7 +52,6 @@ use kiro_telemetry::{
     MetricRecord,
     OtelMode,
     TelemetryConfig,
-    TelemetryLogRecord,
 };
 use kiro_telemetry_host::{
     Event,
@@ -61,10 +60,7 @@ use kiro_telemetry_host::{
     OtelEventTranslator,
     TelemetryThread,
 };
-use kiro_telemetry_legacy::{
-    event_to_otel_log_record,
-    event_to_otel_metric_records,
-};
+use kiro_telemetry_legacy::event_to_otel_metric_records;
 use kiro_telemetry_observer::{
     AcpClientInfo,
     TelemetryContext,
@@ -78,10 +74,6 @@ struct ExampleOtelTranslator;
 impl OtelEventTranslator for ExampleOtelTranslator {
     fn metric_records(&self, event: &Event) -> Vec<MetricRecord> {
         event_to_otel_metric_records(event)
-    }
-
-    fn log_record(&self, event: &Event) -> Option<TelemetryLogRecord> {
-        event_to_otel_log_record(event)
     }
 }
 
@@ -169,8 +161,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         client_application: None,
         engine: Some(Engine::V2),
         host_role: HostRole::UserCli,
+        process_identity: None,
         govcloud_partition: None,
-        consent_settings_path: None,
     };
 
     let telemetry_thread = TelemetryThread::new(host_config).await?;

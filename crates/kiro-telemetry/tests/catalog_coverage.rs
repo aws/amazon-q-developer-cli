@@ -2,15 +2,12 @@
 //! every emittable metric in the canonical §5 catalog (`schema/metrics.yaml`)
 //! has a typed constructor that is exercised by the shared catalog record set.
 //!
-//! Derived recording-rule metrics (SLOs, coverage ratios) are computed downstream
-//! and intentionally never emitted from the binary, so they are excluded.
+//! CloudWatch metric-math expressions are configured downstream and are not
+//! client instruments.
 
 use std::collections::BTreeSet;
 
-use kiro_telemetry::testing::{
-    catalog_log_records,
-    catalog_metric_records,
-};
+use kiro_telemetry::testing::catalog_metric_records;
 use kiro_telemetry::validate_metric_record;
 use kiro_telemetry_schema::{
     MetricKind,
@@ -22,7 +19,6 @@ fn every_emittable_catalog_metric_has_a_constructor() {
     let emitted: BTreeSet<String> = catalog_metric_records()
         .iter()
         .map(|record| record.name.clone())
-        .chain(catalog_log_records().iter().map(|record| record.name.clone()))
         .collect();
 
     let missing: Vec<&str> = registry()
@@ -35,7 +31,7 @@ fn every_emittable_catalog_metric_has_a_constructor() {
 
     assert!(
         missing.is_empty(),
-        "these catalog metrics have no emitted constructor in catalog_metric_records/catalog_log_records:\n{}",
+        "these catalog metrics have no emitted constructor in catalog_metric_records:\n{}",
         missing.join("\n")
     );
 }
@@ -71,8 +67,7 @@ fn every_emitted_metric_record_is_schema_valid() {
 
 #[test]
 fn catalog_records_cover_every_section_kind() {
-    // Sanity: the shared record set exercises every metric instrument kind plus logs,
-    // so the smoke run proves counters, histograms, gauges, and log events all flow.
+    // Sanity: the shared record set exercises every metric instrument kind.
     let mut saw_counter = false;
     let mut saw_histogram = false;
     let mut saw_gauge = false;
@@ -87,9 +82,5 @@ fn catalog_records_cover_every_section_kind() {
     assert!(
         saw_counter && saw_histogram && saw_gauge,
         "expected counter, histogram, and gauge records"
-    );
-    assert!(
-        !catalog_log_records().is_empty(),
-        "expected at least one log_event record"
     );
 }

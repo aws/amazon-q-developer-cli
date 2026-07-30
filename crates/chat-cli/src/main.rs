@@ -42,6 +42,7 @@ use tracing::metadata::LevelFilter;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<ExitCode> {
+    kiro_telemetry::mark_process_started();
     color_eyre::install()?;
 
     // Spawn the main logic on a thread with a larger stack to prevent stack

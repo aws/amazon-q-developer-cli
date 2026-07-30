@@ -3,9 +3,9 @@
  * both the Rust/v2 (RustAcpClient) and KAS/v3 (KasAcpClient) agent wire, and
  * emits a client-experience view as metrics via the OTel SDK (`meter.ts`).
  *
- * Two load-bearing contracts: (1) every metric carries `engine` as a
- * first-class v2/v3 discriminator (see {@link Engine}); `kiro.tui` scope is a
- * secondary signal. (2) Only metric + attribute combos the schema catalog
+ * Two load-bearing contracts: (1) every engine-specific metric carries
+ * `agent_engine` as a first-class v2/v3 discriminator; `kiro.tui` scope is
+ * producer provenance only. (2) Only metric + attribute combos the schema catalog
  * (`crates/kiro-telemetry-schema/schema/{metrics,types}.yaml`) allows are
  * emitted — anything else is silently dropped by endpoint validation, and KUTS
  * is metrics-only (no logs), so high-cardinality fields like `tool_name` are
@@ -20,28 +20,32 @@ import {
   type MetricAttributes,
 } from './meter';
 import type { ProcessHealthSnapshot } from './process-health-collector';
+import {
+  AgentEventType,
+  ContentType,
+  type AgentStreamEvent,
+} from '../types/agent-events';
+import { canonicalSlashCommandName } from './slash-command-telemetry';
 
 export const TUI_SCOPE = 'kiro.tui';
 /**
- * Default `engine` when a caller omits it. Defaults to v3 so the existing
- * KAS/v3 call sites (which predate the v2 wiring and omit `engine`) stay
- * byte-for-byte unchanged; v2 call sites pass `engine: 'v2'` explicitly.
+ * Default engine when a caller omits it. Defaults to v3 so KAS call sites can
+ * stay concise while V2 call sites pass `engine: 'v2'` explicitly.
  */
 export const DEFAULT_ENGINE = 'v3';
 
-/**
- * Canonical engine discriminator threaded through every record fn as the
- * `engine` attribute. Serves both the KAS/v3 (KasAcpClient) and Rust/v2
- * (RustAcpClient) client-experience views (telemetry-metric-inventory.md
- * §H.4/§H.6); defaults to {@link DEFAULT_ENGINE} to keep v3 byte-identical.
- */
+/** Engine discriminator shared by the KAS and Rust client-experience metrics. */
 export type Engine = 'v2' | 'v3';
+const SESSION_INTERFACE = 'interactive_cli';
 
 /**
  * Bucket bounds (seconds) for kiro_cli_user_turn_duration_seconds, matching the
  * V2 buckets so both engines share shape on the same Prometheus series.
  */
 const USER_TURN_DURATION_BOUNDS = [1, 2, 5, 10, 30, 60, 120, 300, 600];
+const FIRST_VISIBLE_RESPONSE_BOUNDS_MS = [
+  50, 100, 250, 500, 1000, 2500, 5000, 10_000, 30_000, 60_000,
+];
 
 /** Transport seams; default to the real transports. Tests inject spies. */
 export interface TuiTelemetryDeps {
@@ -50,54 +54,43 @@ export interface TuiTelemetryDeps {
   histogram?: typeof meterHistogram;
 }
 
-export function modeFromId(modeId: string | undefined): string {
+export type AgentMode = 'default' | 'plan' | 'spec' | 'autonomous' | 'custom';
+
+export function modeFromId(modeId: string | undefined): AgentMode {
   const normalized = (modeId ?? '')
     .trim()
     .replace(/^\/+/, '')
     .toLowerCase()
     .replace(/-/g, '_');
   switch (normalized) {
-    case 'oneshot':
-      return 'oneshot';
-    case 'agent':
-      return 'agent';
     case 'plan':
     case 'quick_plan':
     case 'kiro_planner':
     case 'planner':
       return 'plan';
-    case 'review':
-      return 'review';
-    case 'tangent':
-    case 'tangent_mode':
-      return 'tangent';
-    case 'voice':
-      return 'voice';
-    case 'acp_external':
-      return 'acp_external';
-    case 'generate_agent':
-    case 'generateagent':
-      return 'generate_agent';
+    case 'spec':
+    case 'kiro_spec':
+      return 'spec';
+    case 'autonomous':
+      return 'autonomous';
     case '':
     case 'default':
     case 'kiro':
+    case 'kiro_default':
     case 'vibe':
     case 'interactive':
-      return 'interactive';
+      return 'default';
     default:
-      return normalized;
+      return 'custom';
   }
 }
 
-/**
- * Map a KAS turn-completion status string to the catalog `result`
- * allowed-values ({@link recordTuiUserTurn}). Unknown statuses fall back to
- * `_other_` so they still validate.
- */
+/** Map a KAS turn-completion status to the catalog turn result. */
 export function resultFromStatus(
   status: string | undefined
 ): 'success' | 'failed' | 'cancelled' | '_other_' {
-  switch ((status ?? '').toLowerCase()) {
+  const normalized = (status ?? '').trim().toLowerCase();
+  switch (normalized) {
     case 'completed':
     case 'success':
     case 'succeeded':
@@ -111,34 +104,30 @@ export function resultFromStatus(
     case 'failed':
       return 'failed';
     default:
-      return '_other_';
+      return normalized === '' ? '_other_' : 'failed';
   }
 }
 
-/** Allowed `turn_outcome_reason` enum (mirrors the Rust TurnOutcomeReason). */
-export type TurnOutcomeReason =
-  | 'interrupted'
+/** Bounded failure reasons for a terminal user turn. */
+export type TurnFailureReason =
   | 'model_error'
   | 'tool_error'
   | 'timeout'
   | 'context_limit'
-  | '_other_';
+  | 'execution_limit'
+  | 'internal_error'
+  | 'unknown';
 
 /**
- * Bucket a KAS turn-completion status into the `turn_outcome_reason` enum for
- * `kiro_cli_turn_outcome_total`. Mirrors the Rust `TurnOutcomeReason::from_name`.
+ * Bucket a KAS turn-completion status into the `turn_failure_reason` enum for
+ * `kiro_cli_turn_failure_total`.
  * Returns undefined for a success status — the outcome counter is only emitted
  * for non-success turns.
  */
-export function turnOutcomeReasonFromStatus(
+export function turnFailureReasonFromStatus(
   status: string | undefined
-): TurnOutcomeReason | undefined {
-  const normalized = (status ?? '').toLowerCase();
-  // An absent/empty status carries no outcome to report — treat it as a
-  // success (the counter only tracks known failure modes), NOT as an `_other_`
-  // failure. The V2 path relies on this: a successful `end_turn` maps to an
-  // undefined status, and without this guard the failure-only counter would
-  // fire spuriously with turn_outcome_reason=_other_ on every success.
+): TurnFailureReason | undefined {
+  const normalized = (status ?? '').trim().toLowerCase();
   if (normalized === '') return undefined;
   switch (normalized) {
     case 'completed':
@@ -148,7 +137,7 @@ export function turnOutcomeReasonFromStatus(
     case 'cancelled':
     case 'canceled':
     case 'interrupted':
-      return 'interrupted';
+      return undefined;
     case 'model_error':
     case 'errored':
     case 'error':
@@ -161,26 +150,16 @@ export function turnOutcomeReasonFromStatus(
     case 'context_limit':
     case 'context_window_exceeded':
       return 'context_limit';
+    case 'max_tokens':
+    case 'max_turn_requests':
+    case 'execution_limit':
+      return 'execution_limit';
+    case 'internal_error':
+      return 'internal_error';
     default:
-      return '_other_';
+      return 'unknown';
   }
 }
-
-export function subagentNameClassFromName(name: string | undefined): string {
-  const normalized = (name ?? '').trim().toLowerCase().replace(/-/g, '_');
-  return normalized === '' ? '_other_' : normalized;
-}
-
-/**
- * Map a `token_type` into the catalog enum. KAS reports four token kinds; the
- * schema closed enum names them `input_uncached / input_cache_read /
- * input_cache_write / output`.
- */
-export type TokenType =
-  | 'input_uncached'
-  | 'input_cache_read'
-  | 'input_cache_write'
-  | 'output';
 
 /**
  * Under `KIRO_TEST_MODE` with no injected transport, short-circuit so unit
@@ -215,59 +194,174 @@ export function recordTuiSessionStarted(
     'kiro_cli_chat_session_started_total',
     1,
     {
-      mode: args.mode,
       version_full: args.version,
-      engine: args.engine ?? DEFAULT_ENGINE,
+      session_interface: SESSION_INTERFACE,
+      agent_mode: modeFromId(args.mode),
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
     },
     TUI_SCOPE
   );
 }
 
+export function recordTuiUiModeSessionStarted(
+  args: { mode: string; version: string },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  const mode =
+    args.mode === 'tui' || args.mode === 'lite' ? args.mode : 'unknown';
+  counterFn(deps)(
+    'kiro_cli_ui_mode_session_started_total',
+    1,
+    {
+      version_full: args.version,
+      ui_mode: mode,
+    },
+    TUI_SCOPE
+  );
+}
+
+export function recordTuiSlashCommand(
+  args: { command: string; version: string; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_slash_command_invoked_total',
+    1,
+    {
+      version_full: args.version,
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
+      command: canonicalSlashCommandName(args.command),
+    },
+    TUI_SCOPE
+  );
+}
+
+export function recordTuiFirstVisibleResponse(
+  args: {
+    milliseconds: number;
+    mode: string;
+    version: string;
+    engine?: Engine;
+  },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  if (!Number.isFinite(args.milliseconds) || args.milliseconds < 0) return;
+  histogramFn(deps)(
+    'kiro_cli_time_to_first_visible_response_ms',
+    args.milliseconds,
+    {
+      version_full: args.version,
+      session_interface: SESSION_INTERFACE,
+      agent_mode: modeFromId(args.mode),
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
+    },
+    TUI_SCOPE,
+    FIRST_VISIBLE_RESPONSE_BOUNDS_MS
+  );
+}
+
+function isVisibleAgentEvent(event: AgentStreamEvent): boolean {
+  switch (event.type) {
+    case AgentEventType.Content:
+    case AgentEventType.Thought:
+      return (
+        event.content.type !== ContentType.Text ||
+        event.content.text.trim().length > 0
+      );
+    case AgentEventType.ToolCall:
+    case AgentEventType.ApprovalRequest:
+    case AgentEventType.QuestionRequest:
+    case AgentEventType.RateLimitError:
+    case AgentEventType.AuthError:
+    case AgentEventType.SessionError:
+    case AgentEventType.AgentNotFound:
+    case AgentEventType.AgentConfigError:
+    case AgentEventType.ModelRefusal:
+      return true;
+    default:
+      return false;
+  }
+}
+
+export class TuiFirstVisibleResponseObserver {
+  private pending?: {
+    startMs: number;
+    mode: string;
+    version: string;
+    engine: Engine;
+  };
+
+  constructor(private readonly deps?: TuiTelemetryDeps) {}
+
+  start(
+    args: { mode: string; version: string; engine: Engine },
+    startMs = performance.now()
+  ): void {
+    this.pending = { ...args, startMs };
+  }
+
+  observe(event: AgentStreamEvent, nowMs = performance.now()): void {
+    const pending = this.pending;
+    if (!pending || !isVisibleAgentEvent(event)) return;
+    this.pending = undefined;
+    recordTuiFirstVisibleResponse(
+      {
+        milliseconds: Math.max(0, nowMs - pending.startMs),
+        mode: pending.mode,
+        version: pending.version,
+        engine: pending.engine,
+      },
+      this.deps
+    );
+  }
+
+  cancel(): void {
+    this.pending = undefined;
+  }
+}
+
 /** Allowed `cloud_event` lifecycle enum (mirrors the schema catalog type). */
 export type CloudSessionEvent =
-  | 'started'
-  | 'start_failed'
+  | 'created'
+  | 'create_failed'
   | 'reattached'
   | 'ready'
   | 'provision_failed'
   | 'detached'
   | 'turned_off'
-  | 'fell_back_local'
-  | '_other_';
+  | 'fell_back_local';
 
 /**
  * A cloud-sandbox session lifecycle event
- * (`kiro_cli_cloud_session_total`): `started` (a cloud-sandbox session was
- * created), `start_failed` (the cloud `session/new` was rejected, so the
- * session never came up — the reliability denominator-mate for `started`),
+ * (`kiro_cli_cloud_session_lifecycle_total`): `created` (a cloud-sandbox
+ * session was created), `create_failed` (the cloud `session/new` was rejected),
  * `reattached` (the CLI resumed a still-running cloud session), `ready` (the
  * sandbox reached a live status after provisioning; paired with the
  * `kiro_cli_cloud_session_ready_seconds` latency histogram), `provision_failed`
  * (the sandbox reported a failed activity status), `detached` (the CLI
  * disconnected but left it running), `turned_off` (the user stopped it via the
  * /quit prompt), or `fell_back_local` (a cloud sandbox was requested but KAS
- * did not advertise the placement, so the session ran locally instead). ORR
- * observability for the dark-shipped cloud-sandbox path — reads zero on
- * released builds (the feature is gated + never active), and lights up only
- * when it ramps on internal/nightly. Always v3 (cloud is KAS-only) but carries
- * `engine` for a uniform label split with the rest of the catalog.
+ * did not advertise the placement, so the session ran locally instead).
  */
 export function recordTuiCloudSession(
-  args: { event: CloudSessionEvent; engine?: Engine },
+  args: { event: CloudSessionEvent; version: string },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
   counterFn(deps)(
-    'kiro_cli_cloud_session_total',
+    'kiro_cli_cloud_session_lifecycle_total',
     1,
-    { cloud_event: args.event, engine: args.engine ?? DEFAULT_ENGINE },
+    { version_full: args.version, cloud_event: args.event },
     TUI_SCOPE
   );
 }
 
 /**
  * Bucket bounds (seconds) for `kiro_cli_cloud_session_ready_seconds` — how long
- * a cloud sandbox takes to reach a live status after `started`. Wider than the
+ * a cloud sandbox takes to reach a live status after creation. Wider than the
  * turn buckets: provisioning a sandbox is a slower, cold-start operation.
  */
 const CLOUD_READY_DURATION_BOUNDS = [1, 2, 5, 10, 20, 30, 60, 120, 300];
@@ -275,69 +369,54 @@ const CLOUD_READY_DURATION_BOUNDS = [1, 2, 5, 10, 20, 30, 60, 120, 300];
 /**
  * A cloud sandbox reached a live status after provisioning. Emits both the
  * `ready` lifecycle counter and the `kiro_cli_cloud_session_ready_seconds`
- * latency histogram (`started` → first live status). Dark-safe: only the cloud
+ * latency histogram (creation to first live status). Dark-safe: only the cloud
  * roster path calls this, which never fires on released builds.
  */
 export function recordTuiCloudSessionReady(
-  args: { durationSeconds: number; engine?: Engine },
+  args: { durationSeconds: number; version: string },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
-  const engine = args.engine ?? DEFAULT_ENGINE;
   counterFn(deps)(
-    'kiro_cli_cloud_session_total',
+    'kiro_cli_cloud_session_lifecycle_total',
     1,
-    { cloud_event: 'ready', engine },
+    { version_full: args.version, cloud_event: 'ready' },
     TUI_SCOPE
   );
   if (args.durationSeconds > 0) {
     histogramFn(deps)(
       'kiro_cli_cloud_session_ready_seconds',
       args.durationSeconds,
-      { engine },
+      { version_full: args.version },
       TUI_SCOPE,
       CLOUD_READY_DURATION_BOUNDS
     );
   }
 }
 
-/**
- * Allowed `autonomous_event` enum (mirrors the schema catalog type): `enabled`
- * (a `/autonomous on` was verified and applied), `disabled` (a `/autonomous
- * off` was verified and applied), `switch_failed` (the `session/set_mode` RPC
- * or its read-back rejected, so no state changed), or `reverted` (a server
- * `config_option_update` reverted a mode the client had just set — the
- * cloud-session case where the sandbox never durably applied the switch).
- */
 export type AutonomousEvent =
   | 'enabled'
   | 'disabled'
   | 'switch_failed'
-  | 'reverted'
-  | '_other_';
+  | 'reverted';
 
-/**
- * An autonomous-mode lifecycle event (`kiro_cli_autonomous_mode_total`). ORR
- * observability for the dark-shipped, cloud-only `/autonomous` command,
- * mirroring the cloud-session counter: reads zero on released builds (the
- * command is feature-gated + cloud-only and never fires), and lights up only
- * when the cloud-sandbox path ramps on internal/nightly. Always v3 (autonomous
- * is KAS/cloud-only) but carries `engine` for a uniform label split.
- */
 export function recordTuiAutonomousMode(
-  args: { event: AutonomousEvent; engine?: Engine },
+  args: { event: AutonomousEvent; version: string; engine?: Engine },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
   counterFn(deps)(
     'kiro_cli_autonomous_mode_total',
     1,
-    { autonomous_event: args.event, engine: args.engine ?? DEFAULT_ENGINE },
+    {
+      version_full: args.version,
+      autonomous_event: args.event,
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
+    },
     TUI_SCOPE
   );
 }
 
-/** Allowed `cloud_op` enum (mirrors the schema catalog type). */
 export type CloudOpLabel =
   | 'session_new'
   | 'session_load'
@@ -345,10 +424,8 @@ export type CloudOpLabel =
   | 'source_providers_list'
   | 'source_providers_resources'
   | 'list_sessions'
-  | 'delete_session'
-  | '_other_';
+  | 'delete_session';
 
-/** Allowed `cloud_error_kind` enum (mirrors the schema catalog type). */
 export type CloudErrorKindLabel =
   | 'throttling'
   | 'auth'
@@ -358,21 +435,15 @@ export type CloudErrorKindLabel =
   | 'timeout'
   | 'stream_truncated'
   | 'server_error'
-  | 'other'
-  | '_other_';
+  | 'other';
 
-/**
- * A cloud-sandbox RPC failed (`kiro_cli_cloud_error_total`), labeled by the
- * RPC surface (`cloud_op`) and failure class (`cloud_error_kind`) so a
- * dashboard can split "backend throttling us" from "KAS↔BFF version skew"
- * from "relay stream truncation" without log access. Complements the coarse
- * `start_failed`/`provision_failed` lifecycle counter — that says *a* failure
- * happened; this says *why*. Dark-safe like the other cloud metrics: every
- * emission point is behind the cloud capability/placement gates, so released
- * builds read zero.
- */
 export function recordTuiCloudError(
-  args: { op: CloudOpLabel; kind: CloudErrorKindLabel; engine?: Engine },
+  args: {
+    op: CloudOpLabel;
+    kind: CloudErrorKindLabel;
+    version: string;
+    engine?: Engine;
+  },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
@@ -380,36 +451,36 @@ export function recordTuiCloudError(
     'kiro_cli_cloud_error_total',
     1,
     {
+      version_full: args.version,
       cloud_op: args.op,
       cloud_error_kind: args.kind,
-      engine: args.engine ?? DEFAULT_ENGINE,
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
     },
     TUI_SCOPE
   );
 }
 
-/** Allowed `attach_kind` enum (mirrors the schema catalog type). */
 export type AttachKind = 'image' | 'document' | 'text' | 'binary';
+export type AttachSizeBucket =
+  | 'under_64k'
+  | 'under_1m'
+  | 'under_5m'
+  | 'over_5m';
 
-/** Bucket an attachment byte size into the bounded `attach_size_bucket` enum. */
-export function attachSizeBucket(bytes: number): string {
+export function attachSizeBucket(bytes: number): AttachSizeBucket {
   if (bytes < 64 * 1024) return 'under_64k';
   if (bytes < 1024 * 1024) return 'under_1m';
   if (bytes < 5 * 1024 * 1024) return 'under_5m';
   return 'over_5m';
 }
 
-/**
- * A local file was attached in-band to a cloud prompt
- * (`kiro_cli_cloud_attach_total`), one count per file, labeled by the
- * collectCloudAttachments classification (image/document/text/binary) and a
- * bounded size bucket. Sizes ride the relay to the BFF, so the size
- * distribution is the early-warning signal for payload-cap rejections
- * (~1MB edge concerns) before users see hard failures. Dark-safe: only a
- * cloud prompt collects attachments.
- */
 export function recordTuiCloudAttach(
-  args: { kind: AttachKind; sizeBytes: number; engine?: Engine },
+  args: {
+    kind: AttachKind;
+    sizeBytes: number;
+    version: string;
+    engine?: Engine;
+  },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
@@ -417,22 +488,19 @@ export function recordTuiCloudAttach(
     'kiro_cli_cloud_attach_total',
     1,
     {
+      version_full: args.version,
       attach_kind: args.kind,
       attach_size_bucket: attachSizeBucket(args.sizeBytes),
-      engine: args.engine ?? DEFAULT_ENGINE,
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
     },
     TUI_SCOPE
   );
 }
 
-/** Allowed `repo_attach_event` funnel enum (mirrors the schema catalog type). */
-export type RepoAttachEvent = 'opened' | 'submitted' | '_other_';
+export type RepoAttachEvent = 'opened' | 'submitted';
+export type RepoCountBucket = 'none' | '1' | '2' | '3_5' | '6_plus';
 
-/**
- * Bucket a repo-selection count into the bounded `repo_count_bucket` enum, so
- * the raw count never lands as a high-cardinality metric attribute.
- */
-export function repoCountBucket(n: number | undefined): string {
+export function repoCountBucket(n: number | undefined): RepoCountBucket {
   if (!n || n <= 0) return 'none';
   if (n === 1) return '1';
   if (n === 2) return '2';
@@ -440,15 +508,13 @@ export function repoCountBucket(n: number | undefined): string {
   return '6_plus';
 }
 
-/**
- * A `/repo` picker funnel event (`kiro_cli_cloud_repo_attach_total`): `opened`
- * (the cloud-only repo picker was shown) or `submitted` (repos were selected
- * and bound), the latter carrying a bucketed `repo_count`. Cancel rate is
- * `opened - submitted`. Dark-safe: the `/repo` command is cloud-only + gated,
- * so a released user emits none of these.
- */
 export function recordTuiCloudRepoAttach(
-  args: { event: RepoAttachEvent; repoCount?: number; engine?: Engine },
+  args: {
+    event: RepoAttachEvent;
+    repoCount?: number;
+    version: string;
+    engine?: Engine;
+  },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
@@ -456,27 +522,27 @@ export function recordTuiCloudRepoAttach(
     'kiro_cli_cloud_repo_attach_total',
     1,
     {
+      version_full: args.version,
       repo_attach_event: args.event,
       repo_count_bucket:
         args.event === 'submitted' ? repoCountBucket(args.repoCount) : 'none',
-      engine: args.engine ?? DEFAULT_ENGINE,
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
     },
     TUI_SCOPE
   );
 }
 
 /**
- * A user turn completed: the count (`kiro_cli_user_turns`) + latency histogram
- * (`kiro_cli_user_turn_duration_seconds`). The schema allows `engine` on both
- * (it previously rejected attributes on the histogram), so both carry it.
+ * A top-level user turn completed. Failures and cancellations use dedicated
+ * counters; only successful turns contribute latency observations.
  */
 export function recordTuiUserTurn(
   args: {
-    model: string;
     result: 'success' | 'failed' | 'cancelled' | '_other_';
     isSubagent: boolean;
     mode: string;
-    chatConversationType: string;
+    version: string;
+    failureReason?: TurnFailureReason;
     /**
      * Wall-clock turn duration. Omitted when KAS did not report `elapsedTime`
      * — in that case the latency histogram point is NOT emitted (coercing a
@@ -491,96 +557,59 @@ export function recordTuiUserTurn(
 ): void {
   if (suppressedInTest(deps)) return;
   const engine = args.engine ?? DEFAULT_ENGINE;
+  if (args.isSubagent) return;
+  const attrs = {
+    version_full: args.version,
+    session_interface: SESSION_INTERFACE,
+    agent_mode: modeFromId(args.mode),
+    agent_engine: engine,
+  };
 
-  counterFn(deps)(
-    'kiro_cli_user_turns',
-    1,
-    {
-      model: args.model,
-      result: args.result,
-      is_subagent: String(args.isSubagent),
-      mode: args.mode,
-      engine,
-    },
-    TUI_SCOPE
-  );
+  counterFn(deps)('kiro_cli_user_turns', 1, attrs, TUI_SCOPE);
 
-  if (args.durationSeconds !== undefined) {
+  if (args.result === 'cancelled') {
+    counterFn(deps)('kiro_cli_turn_cancelled_total', 1, attrs, TUI_SCOPE);
+  } else if (args.result === 'failed') {
+    counterFn(deps)(
+      'kiro_cli_turn_failure_total',
+      1,
+      { ...attrs, turn_failure_reason: args.failureReason ?? 'unknown' },
+      TUI_SCOPE
+    );
+  }
+
+  if (
+    args.result === 'success' &&
+    args.durationSeconds !== undefined &&
+    Number.isFinite(args.durationSeconds) &&
+    args.durationSeconds >= 0
+  ) {
     histogramFn(deps)(
       'kiro_cli_user_turn_duration_seconds',
       args.durationSeconds,
-      {
-        model: args.model,
-        chat_conversation_type: args.chatConversationType,
-        is_subagent: String(args.isSubagent),
-        mode: args.mode,
-        engine,
-      },
+      attrs,
       TUI_SCOPE,
       USER_TURN_DURATION_BOUNDS
     );
   }
 }
 
-/**
- * A tool call finished: the count (`kiro_cli_tool_call_total`) + latency histogram
- * (`kiro_cli_tool_execution_duration_ms`) when a duration was measured (§C4).
- */
-export function recordTuiToolCall(
-  args: ToolTelemetryIdentity & {
-    outcome: 'success' | 'error' | 'cancelled' | 'denied';
-    executionDurationMs?: number;
-    engine?: Engine;
-  },
-  deps?: TuiTelemetryDeps
-): void {
-  if (suppressedInTest(deps)) return;
-  const engine = args.engine ?? DEFAULT_ENGINE;
+export type TokenType =
+  | 'input_uncached'
+  | 'input_cache_read'
+  | 'output'
+  | 'reasoning';
 
-  const isSuccess = args.outcome === 'success';
-  const countAttrs: MetricAttributes = {
-    ...toolAttrs(args, engine, true),
-    outcome: args.outcome,
-  };
-
-  counterFn(deps)('kiro_cli_tool_call_total', 1, countAttrs, TUI_SCOPE);
-
-  // Latency only for a finite positive duration (mirrors the Rust
-  // tool_execution_duration_ms_for_invocation guard).
-  if (
-    args.executionDurationMs !== undefined &&
-    Number.isFinite(args.executionDurationMs) &&
-    args.executionDurationMs > 0
-  ) {
-    const durationAttrs: MetricAttributes = {
-      ...toolAttrs(args, engine, false),
-      is_success: String(isSuccess),
-    };
-    histogramFn(deps)(
-      'kiro_cli_tool_execution_duration_ms',
-      args.executionDurationMs,
-      durationAttrs,
-      TUI_SCOPE
-    );
-  }
-}
-
-/**
- * Per-engine token economics (`kiro_cli_tokens_consumed`, §C4 backfill). One
- * point per non-zero token kind; the engine split makes V2-vs-V3 token usage a
- * clean label split.
- */
 export function recordTuiTokensConsumed(
   args: {
+    version: string;
     model: string;
-    isSubagent: boolean;
     tokens: Partial<Record<TokenType, number>>;
     engine?: Engine;
   },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
-  const engine = args.engine ?? DEFAULT_ENGINE;
   const emit = counterFn(deps);
   for (const [tokenType, value] of Object.entries(args.tokens) as Array<
     [TokenType, number | undefined]
@@ -590,151 +619,92 @@ export function recordTuiTokensConsumed(
       'kiro_cli_tokens_consumed',
       value,
       {
-        model: args.model,
+        version_full: args.version,
+        agent_engine: args.engine ?? DEFAULT_ENGINE,
+        model: args.model || 'unknown',
         token_type: tokenType,
-        is_subagent: String(args.isSubagent),
-        engine,
       },
       TUI_SCOPE
     );
   }
 }
 
-/** Per-engine model mix (`kiro_cli_model_invocations_total`, §C4). */
-export function recordTuiModelInvocation(
-  args: { model: string; engine?: Engine },
+export function recordTuiModelInvocations(
+  args: {
+    version: string;
+    model: string;
+    count: number;
+    engine?: Engine;
+  },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
+  if (!Number.isFinite(args.count) || args.count <= 0) return;
   counterFn(deps)(
     'kiro_cli_model_invocations_total',
-    1,
-    { model: args.model, engine: args.engine ?? DEFAULT_ENGINE },
+    Math.floor(args.count),
+    {
+      version_full: args.version,
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
+      model: args.model || 'unknown',
+    },
     TUI_SCOPE
   );
 }
 
-/**
- * Bucketed non-success turn outcome (`kiro_cli_turn_outcome_total`, §C4).
- * No-op for success — the counter only tracks failure modes (see
- * {@link turnOutcomeReasonFromStatus}).
- */
-export function recordTuiTurnOutcome(
-  args: {
-    status: string | undefined;
-    model: string;
-    mode: string;
-    engine?: Engine;
-  },
+export function recordTuiCreditsConsumed(
+  args: { version: string; model: string; credits: number },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
-  const reason = turnOutcomeReasonFromStatus(args.status);
-  if (reason === undefined) return;
+  if (!Number.isFinite(args.credits) || args.credits < 0) return;
   counterFn(deps)(
-    'kiro_cli_turn_outcome_total',
-    1,
+    'kiro_cli_credits_consumed',
+    args.credits,
     {
-      turn_outcome_reason: reason,
-      model: args.model,
-      mode: args.mode,
-      engine: args.engine ?? DEFAULT_ENGINE,
+      version_full: args.version,
+      model: args.model || 'unknown',
     },
     TUI_SCOPE
   );
 }
 
 /**
- * Per-engine tool latency (`kiro_cli_tool_execution_duration_ms`, §C4). Standalone
- * entry point for durations outside the {@link recordTuiToolCall} inline path.
+ * A tool call finished: the count plus a latency observation when measured.
  */
-export function recordTuiToolExecutionDuration(
+export function recordTuiToolCall(
   args: ToolTelemetryIdentity & {
-    isSuccess: boolean;
-    durationMs: number;
+    outcome: 'success' | 'error' | 'cancelled' | 'denied';
+    executionDurationMs?: number;
     engine?: Engine;
+    version: string;
+    executionContext?: 'main' | 'subagent';
   },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
-  if (!Number.isFinite(args.durationMs) || args.durationMs <= 0) return;
-  const attrs: MetricAttributes = {
-    ...toolAttrs(args, args.engine ?? DEFAULT_ENGINE, false),
-    is_success: String(args.isSuccess),
+  const engine = args.engine ?? DEFAULT_ENGINE;
+
+  const countAttrs: MetricAttributes = {
+    ...toolAttrs(args, args.version, engine, args.executionContext ?? 'main'),
+    tool_outcome: args.outcome,
   };
-  histogramFn(deps)(
-    'kiro_cli_tool_execution_duration_ms',
-    args.durationMs,
-    attrs,
-    TUI_SCOPE
-  );
-}
 
-/**
- * Per-engine context pressure (`kiro_cli_context_usage_percentage`, §C4). A
- * GAUGE (last-value); the meter wrapper re-reads it per attribute set at export
- * time, so distinct model/subagent combos report independently.
- */
-export function recordTuiContextUsage(
-  args: {
-    model: string;
-    isSubagent: boolean;
-    percentage: number;
-    engine?: Engine;
-  },
-  deps?: TuiTelemetryDeps
-): void {
-  if (suppressedInTest(deps)) return;
-  if (!Number.isFinite(args.percentage)) return;
-  gaugeFn(deps)(
-    'kiro_cli_context_usage_percentage',
-    args.percentage,
-    {
-      model: args.model,
-      is_subagent: String(args.isSubagent),
-      engine: args.engine ?? DEFAULT_ENGINE,
-    },
-    TUI_SCOPE
-  );
-}
+  counterFn(deps)('kiro_cli_tool_call_total', 1, countAttrs, TUI_SCOPE);
 
-/** Per-engine mode usage (`kiro_cli_mode_active_total`, §C4). */
-export function recordTuiModeActive(
-  args: { mode: string; engine?: Engine },
-  deps?: TuiTelemetryDeps
-): void {
-  if (suppressedInTest(deps)) return;
-  counterFn(deps)(
-    'kiro_cli_mode_active_total',
-    1,
-    { mode: args.mode, engine: args.engine ?? DEFAULT_ENGINE },
-    TUI_SCOPE
-  );
-}
-
-/**
- * Sub-agent delegation fan-out (`kiro_cli_subagent_delegations_total`, §C4).
- * Raw name is bucketed via {@link subagentNameClassFromName} for the cardinality cap.
- */
-export function recordTuiSubagentDelegation(
-  args: {
-    subagentName: string | undefined;
-    model: string;
-    engine?: Engine;
-  },
-  deps?: TuiTelemetryDeps
-): void {
-  if (suppressedInTest(deps)) return;
-  counterFn(deps)(
-    'kiro_cli_subagent_delegations_total',
-    1,
-    {
-      subagent_name_class: subagentNameClassFromName(args.subagentName),
-      model: args.model,
-      engine: args.engine ?? DEFAULT_ENGINE,
-    },
-    TUI_SCOPE
-  );
+  // Zero or invalid durations would bias latency percentiles.
+  if (
+    args.executionDurationMs !== undefined &&
+    Number.isFinite(args.executionDurationMs) &&
+    args.executionDurationMs > 0
+  ) {
+    histogramFn(deps)(
+      'kiro_cli_tool_execution_duration_ms',
+      args.executionDurationMs,
+      countAttrs,
+      TUI_SCOPE
+    );
+  }
 }
 
 export type ToolTelemetryIdentity =
@@ -747,38 +717,117 @@ export type ToolTelemetryIdentity =
       mcpServerName: string;
     }
   | {
-      toolOrigin: 'subagent_delegate';
+      toolOrigin: 'unknown';
     };
 
-function normalizeToolDimension(value: string): string {
-  return value.trim().toLowerCase() || '_other_';
+export type CanonicalBuiltinToolName =
+  | 'fs_read'
+  | 'fs_write'
+  | 'execute_bash'
+  | 'summary'
+  | 'grep'
+  | 'glob'
+  | 'use_aws'
+  | 'web_fetch'
+  | 'web_search'
+  | 'code'
+  | 'use_subagent'
+  | 'session'
+  | 'switch_to_execution'
+  | 'introspect'
+  | 'knowledge'
+  | 'tool_search'
+  | 'task'
+  | 'goal'
+  | 'unknown';
+
+export function canonicalBuiltinToolName(
+  value: string | undefined
+): CanonicalBuiltinToolName {
+  const normalized = (value ?? '').trim().toLowerCase().replace(/-/g, '_');
+  switch (normalized) {
+    case 'fs_read':
+    case 'fsread':
+    case 'read':
+      return 'fs_read';
+    case 'fs_write':
+    case 'fswrite':
+    case 'write':
+      return 'fs_write';
+    case 'execute_bash':
+    case 'execute_cmd':
+    case 'executecmd':
+    case 'shell':
+      return 'execute_bash';
+    case 'summary':
+    case 'grep':
+    case 'glob':
+    case 'code':
+    case 'introspect':
+    case 'knowledge':
+    case 'goal':
+      return normalized;
+    case 'use_aws':
+    case 'aws':
+      return 'use_aws';
+    case 'web_fetch':
+    case 'webfetch':
+      return 'web_fetch';
+    case 'web_search':
+    case 'websearch':
+      return 'web_search';
+    case 'agent_crew':
+    case 'subagent':
+    case 'use_subagent':
+      return 'use_subagent';
+    case 'session':
+    case 'session_management':
+    case 'sessionmanagement':
+    case 'sessions':
+      return 'session';
+    case 'switch_to_execution':
+    case 'switchtoexecution':
+      return 'switch_to_execution';
+    case 'tool_search':
+    case 'toolsearch':
+      return 'tool_search';
+    case 'task':
+    case 'todo':
+    case 'todo_list':
+      return 'task';
+    default:
+      return 'unknown';
+  }
 }
 
 function toolAttrs(
   identity: ToolTelemetryIdentity,
+  version: string,
   engine: Engine,
-  includeBuiltinToolName: boolean
+  executionContext: 'main' | 'subagent'
 ): MetricAttributes {
   const attrs: MetricAttributes = {
+    version_full: version,
     tool_origin: identity.toolOrigin,
-    engine,
+    agent_engine: engine,
+    execution_context: executionContext,
   };
-  if (identity.toolOrigin === 'mcp') {
-    attrs['mcp_server_name'] = normalizeToolDimension(identity.mcpServerName);
-  } else if (identity.toolOrigin === 'builtin' && includeBuiltinToolName) {
-    attrs['builtin_tool_name'] = identity.builtinToolName;
+  if (identity.toolOrigin === 'builtin') {
+    attrs['builtin_tool_name'] = canonicalBuiltinToolName(
+      identity.builtinToolName
+    );
   }
   return attrs;
 }
 
-export type TuiToolCallStart = ToolTelemetryIdentity & { name: string };
+export type TuiToolCallStart = ToolTelemetryIdentity & {
+  name: string;
+  executionContext?: 'main' | 'subagent';
+};
 
 /**
  * Correlates ToolCall → ToolCallFinished events (keyed by toolCallId) into tool
- * telemetry, deriving the start→finish duration. Both ACP clients drive an
- * instance: KasAcpClient with the default `engine='v3'`, RustAcpClient with
- * `engine='v2'` (§H.4); the construction-time `engine` is stamped on every
- * metric it emits.
+ * telemetry, deriving the start-to-finish duration.
  */
 export class TuiToolCallObserver {
   private readonly inFlight = new Map<
@@ -787,8 +836,14 @@ export class TuiToolCallObserver {
   >();
   private readonly deps?: TuiTelemetryDeps;
   private readonly engine: Engine;
+  private readonly version: string;
 
-  constructor(deps?: TuiTelemetryDeps, engine: Engine = DEFAULT_ENGINE) {
+  constructor(
+    version: string,
+    deps?: TuiTelemetryDeps,
+    engine: Engine = DEFAULT_ENGINE
+  ) {
+    this.version = version;
     this.deps = deps;
     this.engine = engine;
   }
@@ -812,10 +867,8 @@ export class TuiToolCallObserver {
   ): void {
     const started = this.inFlight.get(toolCallId);
     this.inFlight.delete(toolCallId);
-    const toolName = started?.name ?? 'unknown';
     const toolIdentity: ToolTelemetryIdentity = started ?? {
-      toolOrigin: 'builtin',
-      builtinToolName: toolName,
+      toolOrigin: 'unknown',
     };
     const executionDurationMs =
       started !== undefined
@@ -828,20 +881,11 @@ export class TuiToolCallObserver {
         outcome: args.outcome,
         ...(executionDurationMs !== undefined ? { executionDurationMs } : {}),
         engine: this.engine,
+        version: this.version,
+        executionContext: started?.executionContext ?? 'main',
       },
       this.deps
     );
-
-    if (toolIdentity.toolOrigin === 'subagent_delegate') {
-      recordTuiSubagentDelegation(
-        {
-          subagentName: toolName,
-          model: args.model,
-          engine: this.engine,
-        },
-        this.deps
-      );
-    }
   }
 
   /** Drop all in-flight state (session change / teardown). */
@@ -851,19 +895,17 @@ export class TuiToolCallObserver {
 }
 
 /**
- * Process role for TUI-sampled §E perf metrics. The bun TUI samples itself, so
- * its metrics are `process_role = tui` (vs the host's `host`/`kas_subprocess`);
- * tagging it lets one metric name reassemble the process tree downstream.
+ * Process role for TUI-sampled process metrics.
  */
 const PROCESS_ROLE_TUI = 'tui';
 
-/** MiB → bytes. The §E gauges declare unit `By`; the sampler reports MiB. */
+/** MiB to bytes. */
 const MIB = 1024 * 1024;
-/** ms → seconds. The §E TUI histograms declare unit `s`; the sampler reports ms. */
+/** Milliseconds to seconds. */
 const MS_PER_S = 1000;
 
 /**
- * Histogram bucket bounds (seconds) for the §E TUI latency histograms
+ * Histogram bucket bounds (seconds) for the TUI latency histograms
  * (event-loop delay, input latency, render duration). Sized sub-ms to
  * hundreds-of-ms so the raw histogram is re-aggregatable downstream, rather
  * than the pre-reduced p99/p95 the log shipped.
@@ -872,12 +914,53 @@ const TUI_LATENCY_BOUNDS_S = [
   0.0005, 0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
 ];
 
+function osTypeFromPlatform(platform: string): string {
+  switch (platform.toLowerCase()) {
+    case 'darwin':
+    case 'macos':
+      return 'macos';
+    case 'win32':
+    case 'windows':
+      return 'windows';
+    case 'linux':
+      return 'linux';
+    default:
+      return 'unknown';
+  }
+}
+
+export function recordTuiRender(
+  args: {
+    durationMs: number;
+    kind: 'full' | 'partial';
+    version: string;
+    platform: string;
+  },
+  engine: Engine = DEFAULT_ENGINE,
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  if (!Number.isFinite(args.durationMs) || args.durationMs < 0) return;
+
+  histogramFn(deps)(
+    'kiro_cli_tui_render_duration_seconds',
+    args.durationMs / MS_PER_S,
+    {
+      version_full: args.version,
+      os_type: osTypeFromPlatform(args.platform),
+      render_kind: args.kind,
+      agent_engine: engine,
+    },
+    TUI_SCOPE,
+    TUI_LATENCY_BOUNDS_S
+  );
+}
+
 /**
- * Promote one process-health snapshot to §E SDK metrics. Each metric carries
+ * Promote one process-health snapshot to SDK metrics. Each metric carries
  * ONLY its catalog-allowed attribute subset, else endpoint validation drops it.
- * Note `kiro_cli.process.cpu.utilization` is a HISTOGRAM, not a gauge — the host
- * declares it so, and a single-observation histogram lets the V2-host and
- * V3-TUI series merge on one Prometheus metric.
+ * CPU utilization is a histogram, not a gauge, so each sample remains
+ * re-aggregatable across clients and time windows.
  */
 export function recordTuiProcessHealth(
   snapshot: ProcessHealthSnapshot,
@@ -887,57 +970,92 @@ export function recordTuiProcessHealth(
   if (suppressedInTest(deps)) return;
 
   const version = snapshot.version;
-  // agent_kind is a 1:1 function of engine on the TUI path (v3→kas, v2→v2);
-  // catalog allowed_values are [v1, v2, subagent, kas, _other_].
-  const agentKind = engine === 'v3' ? 'kas' : 'v2';
+  const osType = osTypeFromPlatform(snapshot.platform);
   const g = gaugeFn(deps);
   const h = histogramFn(deps);
 
-  // Memory gauges (bytes): rss carries agent_kind, but peak_rss/heap_used do not
-  // list it in their catalog attr set, so they omit it.
   g(
-    'kiro_cli.process.memory.rss',
+    'kiro_cli_process_memory_rss_bytes',
     snapshot.rssMb * MIB,
     {
       version_full: version,
-      agent_kind: agentKind,
-      engine,
+      os_type: osType,
+      agent_engine: engine,
       process_role: PROCESS_ROLE_TUI,
     },
     TUI_SCOPE
   );
-  g(
-    'kiro_cli.process.memory.peak_rss',
+  h(
+    'kiro_cli_process_peak_rss_bytes',
     snapshot.peakRssMb * MIB,
     {
       version_full: version,
-      engine,
+      os_type: osType,
+      agent_engine: engine,
       process_role: PROCESS_ROLE_TUI,
     },
     TUI_SCOPE
   );
   g(
-    'kiro_cli.process.memory.heap_used',
+    'kiro_cli_tui_heap_used_bytes',
     snapshot.heapUsedMb * MIB,
     {
       version_full: version,
-      engine,
-      process_role: PROCESS_ROLE_TUI,
+      os_type: osType,
+      agent_engine: engine,
     },
     TUI_SCOPE
   );
+  if (typeof snapshot.openFileDescriptorCount === 'number') {
+    g(
+      'kiro_cli_process_open_file_descriptor_count',
+      snapshot.openFileDescriptorCount,
+      {
+        version_full: version,
+        os_type: osType,
+        agent_engine: engine,
+        process_role: PROCESS_ROLE_TUI,
+      },
+      TUI_SCOPE
+    );
+  }
+  if (typeof snapshot.handleCount === 'number') {
+    g(
+      'kiro_cli_process_handle_count',
+      snapshot.handleCount,
+      {
+        version_full: version,
+        agent_engine: engine,
+        process_role: PROCESS_ROLE_TUI,
+      },
+      TUI_SCOPE
+    );
+  }
+  if (typeof snapshot.threadCount === 'number') {
+    g(
+      'kiro_cli_process_thread_count',
+      snapshot.threadCount,
+      {
+        version_full: version,
+        os_type: osType,
+        agent_engine: engine,
+        process_role: PROCESS_ROLE_TUI,
+      },
+      TUI_SCOPE
+    );
+  }
 
-  // CPU: sampler reports user/system as PERCENT of the 60s window; the catalog
+  // CPU: sampler reports user/system as percentages of the elapsed window; the catalog
   // unit is "1" (a fraction), so combine and divide by 100.
   const cpuRatio = (snapshot.cpuUserPct + snapshot.cpuSystemPct) / 100;
   if (Number.isFinite(cpuRatio) && cpuRatio >= 0) {
     h(
-      'kiro_cli.process.cpu.utilization',
+      'kiro_cli_process_cpu_utilization_ratio',
       cpuRatio,
       {
         version_full: version,
-        agent_kind: agentKind,
-        engine,
+        os_type: osType,
+        agent_engine: engine,
         process_role: PROCESS_ROLE_TUI,
       },
       TUI_SCOPE
@@ -946,9 +1064,9 @@ export function recordTuiProcessHealth(
 
   if (snapshot.eventLoopP99Ms !== null && snapshot.eventLoopP99Ms >= 0) {
     h(
-      'kiro_cli.tui.event_loop.delay',
+      'kiro_cli_tui_event_loop_delay_p99_seconds',
       snapshot.eventLoopP99Ms / MS_PER_S,
-      { engine, process_role: PROCESS_ROLE_TUI },
+      { version_full: version, os_type: osType, agent_engine: engine },
       TUI_SCOPE,
       TUI_LATENCY_BOUNDS_S
     );
@@ -956,25 +1074,9 @@ export function recordTuiProcessHealth(
 
   if (snapshot.inputLatencyP95Ms !== null && snapshot.inputLatencyP95Ms >= 0) {
     h(
-      'kiro_cli.tui.input.latency',
+      'kiro_cli_tui_input_to_render_p95_seconds',
       snapshot.inputLatencyP95Ms / MS_PER_S,
-      { engine, process_role: PROCESS_ROLE_TUI },
-      TUI_SCOPE,
-      TUI_LATENCY_BOUNDS_S
-    );
-  }
-
-  // render_kind=full only when full redraws happened this window; otherwise the
-  // sampled lastRenderMs is a partial render.
-  if (snapshot.lastRenderMs > 0) {
-    h(
-      'kiro_cli.tui.render.duration',
-      snapshot.lastRenderMs / MS_PER_S,
-      {
-        render_kind: snapshot.fullRedrawsPerMin > 0 ? 'full' : 'partial',
-        engine,
-        process_role: PROCESS_ROLE_TUI,
-      },
+      { version_full: version, os_type: osType, agent_engine: engine },
       TUI_SCOPE,
       TUI_LATENCY_BOUNDS_S
     );

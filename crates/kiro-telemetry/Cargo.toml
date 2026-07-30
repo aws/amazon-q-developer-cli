@@ -11,18 +11,19 @@ license.workspace = true
 workspace = true
 
 [features]
-test-support = ["dep:opentelemetry-proto", "dep:prost"]
+test-support = []
 
 [dependencies]
 indexmap.workspace = true
+fd-lock.workspace = true
 kiro-telemetry-schema = { path = "../kiro-telemetry-schema" }
 libc.workspace = true
 opentelemetry.workspace = true
 opentelemetry-http.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
-opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"], optional = true }
-prost = { version = "0.14.3", optional = true }
+opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics"] }
+prost = "0.14.3"
 regex.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }
 serde.workspace = true
@@ -34,7 +35,7 @@ async-trait.workspace = true
 
 [dev-dependencies]
 futures.workspace = true
-opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics", "logs"] }
+opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "metrics"] }
 prost = "0.14.3"
 tempfile.workspace = true
 

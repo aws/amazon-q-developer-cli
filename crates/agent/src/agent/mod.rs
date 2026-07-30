@@ -1039,7 +1039,7 @@ impl Agent {
         {
             let Ok(rx) = self
                 .mcp_manager_handle
-                .launch_server(config.server_name.clone(), config.config.clone())
+                .launch_server(config.server_name.clone(), config.config.clone(), config.source)
                 .await
             else {
                 warn!(?config.server_name, "failed to launch MCP config, skipping");
@@ -1935,6 +1935,13 @@ impl Agent {
         let current = to_map(&self.cached_mcp_configs);
         let desired = to_map(&new_mcp_configs);
         let plan = mcp::reconcile::reconcile_mcp(&current, &desired);
+        let source_for = |name: &str| {
+            new_mcp_configs
+                .configs
+                .iter()
+                .find(|config| config.server_name == name)
+                .map_or(agent_config::McpServerConfigSource::Unknown, |config| config.source)
+        };
 
         // Apply surgically. Stops first, then restarts (stop + relaunch), then
         // launches. Unchanged servers are never touched. Launch init proceeds in
@@ -1949,12 +1956,20 @@ impl Agent {
             if let Err(e) = self.mcp_manager_handle.stop_server(name.clone()).await {
                 warn!(server_name = %name, error = %e, "failed to stop MCP server during reconcile restart");
             }
-            if let Err(e) = self.mcp_manager_handle.launch_server(name.clone(), cfg.clone()).await {
+            if let Err(e) = self
+                .mcp_manager_handle
+                .launch_server(name.clone(), cfg.clone(), source_for(name))
+                .await
+            {
                 warn!(server_name = %name, error = %e, "failed to relaunch MCP server during reconcile");
             }
         }
         for (name, cfg) in &plan.launch {
-            if let Err(e) = self.mcp_manager_handle.launch_server(name.clone(), cfg.clone()).await {
+            if let Err(e) = self
+                .mcp_manager_handle
+                .launch_server(name.clone(), cfg.clone(), source_for(name))
+                .await
+            {
                 warn!(server_name = %name, error = %e, "failed to launch MCP server during reconcile");
             }
         }
@@ -2041,6 +2056,12 @@ impl Agent {
         // config — it applies to this launch only, so a later reconcile/relaunch
         // won't force auth again.
         let forced_config = self.forced_auth_config(&server_name)?;
+        let source = self
+            .cached_mcp_configs
+            .configs
+            .iter()
+            .find(|config| config.server_name == server_name)
+            .map_or(agent_config::McpServerConfigSource::Unknown, |config| config.source);
 
         // A running server gets a shadow so its tools stay available during the
         // (interactive) flow; a not-loaded server is relaunched under its own name.
@@ -2064,7 +2085,7 @@ impl Agent {
 
         match self
             .mcp_manager_handle
-            .launch_server(launch_name.clone(), forced_config)
+            .launch_server(launch_name.clone(), forced_config, source)
             .await
         {
             Ok(_rx) => {
@@ -2155,8 +2176,15 @@ impl Agent {
     /// a reauth shadow (abort or shadow failure) to clear the pending-OAuth state
     /// that was shown on the still-running original during the attempt.
     fn refresh_mcp_server_in_ui(&mut self, server_name: &str) {
+        let source = self
+            .cached_mcp_configs
+            .configs
+            .iter()
+            .find(|config| config.server_name == server_name)
+            .map_or(agent_config::McpServerConfigSource::Unknown, |config| config.source);
         self.agent_event_buf.push(AgentEvent::Mcp(McpServerEvent::Initialized {
             server_name: server_name.to_string(),
+            source,
             serve_duration: std::time::Duration::ZERO,
             list_tools_duration: None,
             list_prompts_duration: None,
@@ -2170,12 +2198,12 @@ impl Agent {
     /// offers. Because forced auth is never persisted on the cached config, this
     /// tears down the failed actor and relaunches straight from the cached config.
     async fn reload_mcp_server_normally(&mut self, server_name: &str) {
-        let Some(config) = self
+        let Some((config, source)) = self
             .cached_mcp_configs
             .configs
             .iter()
             .find(|c| c.server_name == server_name)
-            .map(|c| c.config.clone())
+            .map(|c| (c.config.clone(), c.source))
         else {
             return;
         };
@@ -2186,7 +2214,7 @@ impl Agent {
         self.cached_tool_specs = None;
         if let Err(e) = self
             .mcp_manager_handle
-            .launch_server(server_name.to_string(), config)
+            .launch_server(server_name.to_string(), config, source)
             .await
         {
             error!(server_name, error = %e, "failed to relaunch server under normal flow");
@@ -2743,6 +2771,9 @@ impl Agent {
                                 pending_user_message: Some(truncated_pending),
                             })
                             .await;
+                            self.agent_event_buf.push(AgentEvent::Compaction(
+                                CompactionEvent::ContextRecoveryAttempt { final_attempt: true },
+                            ));
                             self.send_request(pending_request).await?;
                         }
                     } else {
@@ -3032,6 +3063,10 @@ impl Agent {
                             pending_user_message: Some(pending),
                         })
                         .await;
+                        self.agent_event_buf
+                            .push(AgentEvent::Compaction(CompactionEvent::ContextRecoveryAttempt {
+                                final_attempt: false,
+                            }));
                         self.send_request(pending_request).await?;
                     } else {
                         debug!("no pending user message, going to idle state");
@@ -4445,7 +4480,7 @@ impl Agent {
                 self.cached_tool_specs = None;
                 self.refresh_mcp_server_in_ui(&target);
             },
-            McpServerEvent::InitializeError { error, .. } => {
+            McpServerEvent::InitializeError { error, source, .. } => {
                 self.reauth_shadows.remove(&shadow_name);
                 if is_shadow {
                     // Loaded case: the original is still running. Drop the shadow
@@ -4463,6 +4498,7 @@ impl Agent {
                     self.agent_event_buf
                         .push(AgentEvent::Mcp(McpServerEvent::InitializeError {
                             server_name: target.clone(),
+                            source: *source,
                             error: error.clone(),
                         }));
                     self.reload_mcp_server_normally(&target).await;

@@ -43,6 +43,7 @@ use agent::agent_config::definitions::{
 use agent::agent_config::{
     ConfigSource,
     LoadedAgentConfig,
+    McpServerConfigSource,
     ResolvedGlobalPrompt,
 };
 use agent::mcp::{
@@ -186,7 +187,7 @@ async fn launch_and_wait(
     timeout: Duration,
 ) -> Result<(), String> {
     let rx = handle
-        .launch_server(server_name.to_string(), config)
+        .launch_server(server_name.to_string(), config, McpServerConfigSource::Registry)
         .await
         .map_err(|e| format!("launch dispatch failed: {e}"))?;
     tokio::time::timeout(timeout, rx)

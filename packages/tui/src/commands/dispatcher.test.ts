@@ -205,10 +205,7 @@ describe('dispatch', () => {
       );
       // executeCommand should NOT have been called
       expect((ctx.kiro.executeCommand as any).mock.calls.length).toBe(0);
-      expect(ctx.kiro.sendChatSlashCommandTelemetry).toHaveBeenCalledWith({
-        command: '/prompt',
-        success: true,
-      });
+      expect(ctx.kiro.recordSlashCommandInvocation).not.toHaveBeenCalled();
     });
 
     it('sends message without args when args is empty', async () => {

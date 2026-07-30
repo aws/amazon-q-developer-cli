@@ -8,7 +8,9 @@
 pub mod config;
 pub mod event;
 pub mod install_method;
+pub mod process;
 pub mod reason;
+pub mod run_receipt;
 pub mod thread;
 pub mod tool_event;
 
@@ -42,9 +44,18 @@ pub use install_method::{
     get_accurate_install_method,
     get_install_method,
 };
+pub use process::{
+    ProcessIdentity,
+    ProcessSampler,
+};
 pub use reason::{
     ReasonCode,
     get_error_reason,
+};
+pub use run_receipt::{
+    RunReceipt,
+    RunReceiptRecovery,
+    RunReceiptStore,
 };
 pub use thread::{
     TelemetryError,

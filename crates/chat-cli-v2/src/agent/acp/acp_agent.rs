@@ -52,7 +52,6 @@ use agent::tools::{
 };
 use agent::tui_commands::{
     CommandOptionsResponse,
-    CommandResult,
     TuiCommand,
 };
 use agent::types::{
@@ -184,7 +183,6 @@ use crate::telemetry::{
     TelemetryContext,
     TelemetryObserver,
     TelemetryObserverHandle,
-    TelemetryResult,
 };
 use crate::util::consts::env_var::KIRO_TEST_MODE;
 use crate::util::paths::PathResolver;
@@ -1061,9 +1059,10 @@ impl AcpSession {
     /// Called before every agent swap so ACP-provided servers survive mode changes.
     fn merge_session_mcp_servers(&self, config: &mut LoadedAgentConfig) {
         if !self.session_injected_mcp_servers.is_empty() {
-            config
-                .config_mut()
-                .add_mcp_servers(self.session_injected_mcp_servers.clone());
+            config.add_mcp_servers_with_source(
+                self.session_injected_mcp_servers.clone(),
+                agent::agent_config::McpServerConfigSource::AcpInjected,
+            );
         }
     }
 
@@ -1483,21 +1482,6 @@ impl AcpSession {
         );
     }
 
-    fn emit_chat_slash_command_telemetry(&self, command: String, subcommand: Option<String>, result: &CommandResult) {
-        self.telemetry_observer
-            .send_telemetry_event(Event::new(EventType::ChatSlashCommandExecuted {
-                conversation_id: self.session_id_str.clone(),
-                command,
-                subcommand,
-                result: if result.success {
-                    TelemetryResult::Succeeded
-                } else {
-                    TelemetryResult::Failed
-                },
-                reason: (!result.success).then(|| "CommandFailed".to_string()),
-            }));
-    }
-
     fn emit_chat_session_started_once(&mut self) {
         if self.chat_session_started_emitted || self.is_subagent {
             return;
@@ -1802,7 +1786,7 @@ impl AcpSession {
             reason_extractor,
         );
 
-        Ok(Self {
+        let mut session = Self {
             session_id: SessionId::new(session_id_str.clone()),
             session_id_str,
             agent,
@@ -1837,7 +1821,9 @@ impl AcpSession {
             goal_controller: restored_goal,
             self_tx,
             chat_session_started_emitted: false,
-        })
+        };
+        session.emit_chat_session_started_once();
+        Ok(session)
     }
 
     async fn initialize(&mut self) -> eyre::Result<()> {
@@ -2100,14 +2086,11 @@ impl AcpSession {
                 if let Some(route) = slash_router::parse(&request.prompt) {
                     match route {
                         slash_router::SlashRoute::Action(command) => {
-                            let telemetry_command = command.name().to_string();
-                            let telemetry_subcommand = tui_command_telemetry_subcommand(&command);
                             let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
                                 || matches!(&command, TuiCommand::Guide(_));
                             let is_agent_create = matches!(&command, TuiCommand::Agent(args) if args.agent_name.as_deref().is_some_and(|n| n == "create" || n.starts_with("create ")));
                             let ctx = self.command_context();
                             let result = super::commands::execute(command, &ctx).await;
-                            self.emit_chat_slash_command_telemetry(telemetry_command, telemetry_subcommand, &result);
 
                             // Mirror ExecuteCommand: update current_agent_name on successful swap
                             if is_agent_swap
@@ -2382,8 +2365,6 @@ impl AcpSession {
                 }
             },
             AcpSessionRequest::ExecuteCommand { command, respond_to } => {
-                let telemetry_command = command.name().to_string();
-                let telemetry_subcommand = tui_command_telemetry_subcommand(&command);
                 let is_agent_swap = matches!(&command, TuiCommand::Agent(args) if args.agent_name.is_some())
                     || matches!(&command, TuiCommand::Plan(_))
                     || matches!(&command, TuiCommand::Guide(_));
@@ -2402,7 +2383,6 @@ impl AcpSession {
                     has_data = result.data.is_some(),
                     "ExecuteCommand: result received"
                 );
-                self.emit_chat_slash_command_telemetry(telemetry_command, telemetry_subcommand, &result);
 
                 if is_agent_swap
                     && result.success
@@ -2934,6 +2914,7 @@ impl AcpSession {
                 let status = match &compaction_event {
                     CompactionEvent::Started => CompactionStatus::Started,
                     CompactionEvent::Completed => CompactionStatus::Completed,
+                    CompactionEvent::ContextRecoveryAttempt { .. } => return,
                     CompactionEvent::Failed { error } => CompactionStatus::Failed { error: error.clone() },
                 };
                 let summary = if matches!(compaction_event, CompactionEvent::Completed) {
@@ -3121,7 +3102,7 @@ impl AcpSession {
                 // Re-advertise commands + prompts now that a new MCP server is ready
                 self.advertise_commands_and_prompts().await
             },
-            McpServerEvent::InitializeError { server_name, error } => {
+            McpServerEvent::InitializeError { server_name, error, .. } => {
                 info!(?server_name, ?error, "Forwarding MCP server init failure to client");
                 self.send_ext_notification(methods::MCP_SERVER_INIT_FAILURE, McpServerInitFailureNotification {
                     session_id: self.session_id.clone(),
@@ -4503,7 +4484,6 @@ pub async fn execute(
             {
                 let session_tx = session_manager_handle.clone();
                 let telemetry_thread = Some(os.telemetry.clone());
-                let database = os.database.clone();
                 async move |message: Dispatch, _cx: ConnectionTo<sacp::Client>| {
                     let method = message.method().to_string();
 
@@ -4601,21 +4581,6 @@ pub async fn execute(
                                     },
                                     Err(e) => {
                                         debug!("Failed to deserialize processHealth payload: {e}");
-                                    },
-                                }
-                                return Ok(sacp::Handled::Yes);
-                            },
-                            "_kiro.dev/telemetry/chatSlashCommand" => {
-                                use super::schema::ChatSlashCommandTelemetryPayload;
-                                match serde_json::from_value::<ChatSlashCommandTelemetryPayload>(notif.params().clone())
-                                {
-                                    Ok(payload) => {
-                                        if let Some(ref telemetry) = telemetry_thread {
-                                            emit_v2_chat_slash_command_telemetry(telemetry, &database, payload).await;
-                                        }
-                                    },
-                                    Err(e) => {
-                                        debug!("Failed to deserialize chatSlashCommand payload: {e}");
                                     },
                                 }
                                 return Ok(sacp::Handled::Yes);
@@ -4784,77 +4749,6 @@ fn send_agent_load_notifications(
     }
 }
 
-fn tui_command_telemetry_subcommand(command: &TuiCommand) -> Option<String> {
-    let value = match command {
-        TuiCommand::Model(args) => args.model_name.as_deref(),
-        TuiCommand::Effort(args) => args.level.as_deref(),
-        TuiCommand::Agent(args) => args.agent_name.as_deref(),
-        TuiCommand::Context(args) => args.subcommand.as_deref(),
-        TuiCommand::Mcp(args) => args.subcommand.as_deref(),
-        TuiCommand::Tools(args) => args.subcommand.as_deref(),
-        TuiCommand::Knowledge(args) => args.subcommand.as_deref(),
-        TuiCommand::Chat(args) => args.subcommand.as_deref(),
-        TuiCommand::Code(args) => args.subcommand.as_deref(),
-        TuiCommand::Stats(args) => args.subcommand.as_deref(),
-        TuiCommand::Goal(args) => args.subcommand.as_deref(),
-        _ => None,
-    };
-    known_subcommand(value, &command.subcommands())
-}
-
-fn known_subcommand(value: Option<&str>, allowed: &[&str]) -> Option<String> {
-    let token = value?.split_whitespace().next()?.to_ascii_lowercase();
-    allowed.contains(&token.as_str()).then_some(token)
-}
-
-#[cfg(test)]
-mod command_usage_telemetry_tests {
-    use agent::tui_commands::{
-        AgentArgs,
-        ChatArgs,
-        EffortArgs,
-        ModelArgs,
-        TuiCommand,
-    };
-
-    use super::tui_command_telemetry_subcommand;
-
-    #[test]
-    fn subcommand_extraction_uses_tui_command_registry() {
-        let model = TuiCommand::Model(ModelArgs {
-            model_name: Some("set-current-as-default".to_string()),
-        });
-        let chat = TuiCommand::Chat(ChatArgs {
-            subcommand: Some("new hello".to_string()),
-        });
-        let agent = TuiCommand::Agent(AgentArgs {
-            agent_name: Some("swap reviewer".to_string()),
-        });
-        let model_selection = TuiCommand::Model(ModelArgs {
-            model_name: Some("claude-sonnet-4".to_string()),
-        });
-        let effort = TuiCommand::Effort(EffortArgs {
-            level: Some("set-current-as-default".to_string()),
-        });
-        let effort_selection = TuiCommand::Effort(EffortArgs {
-            level: Some("high".to_string()),
-        });
-
-        assert_eq!(
-            tui_command_telemetry_subcommand(&model).as_deref(),
-            Some("set-current-as-default")
-        );
-        assert_eq!(tui_command_telemetry_subcommand(&chat).as_deref(), Some("new"));
-        assert_eq!(tui_command_telemetry_subcommand(&agent).as_deref(), Some("swap"));
-        assert_eq!(tui_command_telemetry_subcommand(&model_selection), None);
-        assert_eq!(
-            tui_command_telemetry_subcommand(&effort).as_deref(),
-            Some("set-current-as-default")
-        );
-        assert_eq!(tui_command_telemetry_subcommand(&effort_selection), None);
-    }
-}
-
 fn to_session_mode_state(current: String, agents: Vec<AgentInfo>) -> SessionModeState {
     let modes = agents
         .into_iter()
@@ -4897,18 +4791,6 @@ pub fn emit_v2_mode_changed_telemetry(
     }
 }
 
-pub async fn emit_v2_chat_slash_command_telemetry(
-    telemetry: &crate::telemetry::TelemetryThread,
-    database: &crate::database::Database,
-    payload: super::schema::ChatSlashCommandTelemetryPayload,
-) {
-    let mut event = v2_chat_slash_command_event(payload);
-    crate::telemetry::set_event_metadata(database, &mut event).await;
-    if let Err(err) = telemetry.send_event(event) {
-        debug!("Failed to send V2 slash command telemetry: {err}");
-    }
-}
-
 pub fn emit_process_health_telemetry(
     telemetry: &crate::telemetry::TelemetryThread,
     payload: super::schema::ProcessHealthPayload,
@@ -4925,23 +4807,6 @@ pub fn v2_mode_changed_event(payload: super::schema::ModeChangedNotification) ->
             to_mode: payload.to_mode,
             source: payload.source,
             session_id: payload.session_id,
-        },
-        kiro_telemetry::metric::Engine::V2,
-    )
-}
-
-pub fn v2_chat_slash_command_event(payload: super::schema::ChatSlashCommandTelemetryPayload) -> Event {
-    telemetry_event(
-        EventType::ChatSlashCommandExecuted {
-            conversation_id: payload.session_id.unwrap_or_default(),
-            command: payload.command,
-            subcommand: payload.subcommand,
-            result: if payload.success {
-                TelemetryResult::Succeeded
-            } else {
-                TelemetryResult::Failed
-            },
-            reason: payload.reason,
         },
         kiro_telemetry::metric::Engine::V2,
     )
@@ -4986,7 +4851,7 @@ fn telemetry_event(ty: EventType, engine: kiro_telemetry::metric::Engine) -> Eve
         kiro_telemetry::metric::Engine::V1 => (kiro_telemetry::metric::ClientApplication::ChatCli, "V1"),
         kiro_telemetry::metric::Engine::V2 => (kiro_telemetry::metric::ClientApplication::ChatCliV2, "V2"),
         kiro_telemetry::metric::Engine::V3 => (kiro_telemetry::metric::ClientApplication::ChatCliV3, "KAS"),
-        kiro_telemetry::metric::Engine::Other => (kiro_telemetry::metric::ClientApplication::Unknown, "ACP"),
+        kiro_telemetry::metric::Engine::Unknown => (kiro_telemetry::metric::ClientApplication::AcpExternal, "ACP"),
     };
     event.set_client_application_kind(client_application);
     event.set_engine(engine);
@@ -5006,12 +4871,9 @@ fn mime_to_image_format(mime: &str) -> Option<ImageFormat> {
 
 #[cfg(test)]
 mod telemetry_event_tests {
-    use kiro_telemetry::metric;
-    use kiro_telemetry::testing::expect_metric;
     use kiro_telemetry_legacy::event_to_otel_metric_records;
 
     use crate::agent::acp::schema::{
-        ChatSlashCommandTelemetryPayload,
         ModeChangeSource,
         ModeChangedNotification,
         ProcessHealthPayload,
@@ -5031,24 +4893,13 @@ mod telemetry_event_tests {
         assert_eq!(event.engine, Some(kiro_telemetry::metric::Engine::V2));
     }
 
-    fn expected_kas_metric(record: kiro_telemetry::MetricRecord) -> kiro_telemetry::MetricRecord {
-        metric::with_engine(record, metric::Engine::V3)
-    }
-
     #[test]
-    fn tui_extension_events_use_v2_attribution() {
+    fn host_extension_events_use_v2_attribution() {
         let mode = super::v2_mode_changed_event(ModeChangedNotification {
             from_mode: "kiro".to_string(),
             to_mode: "kiro_planner".to_string(),
             source: ModeChangeSource::ShiftTab,
             session_id: Some("v2-session-1".to_string()),
-        });
-        let slash = super::v2_chat_slash_command_event(ChatSlashCommandTelemetryPayload {
-            session_id: Some("v2-session-1".to_string()),
-            command: "/chat".to_string(),
-            subcommand: Some("save".to_string()),
-            success: true,
-            reason: None,
         });
         let process = super::process_health_event(ProcessHealthPayload {
             agent_kind: Some("v2".to_string()),
@@ -5073,18 +4924,11 @@ mod telemetry_event_tests {
             platform: "darwin".to_string(),
         });
 
-        for event in [&mode, &slash, &process] {
+        for event in [&mode, &process] {
             assert_v2_attribution(event);
         }
 
-        let process_records = event_to_otel_metric_records(&process);
-        expect_metric(
-            &process_records,
-            metric::with_engine(
-                metric::process_memory_rss(128.0 * 1024.0 * 1024.0, "2.4.0", metric::AgentKind::V2),
-                metric::Engine::V2,
-            ),
-        );
+        assert!(event_to_otel_metric_records(&process).is_empty());
     }
 
     #[test]
@@ -5113,15 +4957,7 @@ mod telemetry_event_tests {
         });
         assert_kas_attribution(&process);
 
-        let process_records = event_to_otel_metric_records(&process);
-        expect_metric(
-            &process_records,
-            expected_kas_metric(metric::process_memory_rss(
-                128.0 * 1024.0 * 1024.0,
-                "2.4.0",
-                metric::AgentKind::Kas,
-            )),
-        );
+        assert!(event_to_otel_metric_records(&process).is_empty());
     }
 
     #[test]
@@ -5151,7 +4987,7 @@ mod telemetry_event_tests {
 
         match &process.ty {
             EventType::ProcessHealthMetric { agent_kind, .. } => {
-                assert_eq!(*agent_kind, metric::AgentKind::V2);
+                assert_eq!(*agent_kind, kiro_telemetry::metric::AgentKind::V2);
             },
             _ => panic!("expected process health event"),
         }
@@ -5640,6 +5476,28 @@ mod log_entry_to_session_updates_tests {
                 log_entry_to_session_updates(&entry).is_empty(),
                 "sentinel {sentinel:?} should not replay as an agent message"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod slash_command_metric_tests {
+    use agent::tui_commands::TuiCommand;
+    use kiro_telemetry::metric::{
+        self,
+        Engine,
+    };
+
+    #[test]
+    fn every_v2_slash_command_has_a_canonical_metric_name() {
+        for command in TuiCommand::all_commands() {
+            let record = metric::record_slash_command(command.name(), Engine::V2);
+            let value = record
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key == "command")
+                .map(|attribute| attribute.value.as_str());
+            assert_ne!(value, Some("/custom"), "missing metric identity for {}", command.name());
         }
     }
 }

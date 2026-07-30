@@ -29,6 +29,7 @@ pub use context::{
     AppType,
     ClientName,
     ClientVersion,
+    KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME,
     TelemetryContext,
 };
 pub use observer::{

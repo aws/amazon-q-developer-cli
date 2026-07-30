@@ -14,10 +14,7 @@ use kiro_telemetry_host::{
     get_install_method,
     govcloud_partition,
 };
-use kiro_telemetry_legacy::{
-    event_to_otel_log_record,
-    event_to_otel_metric_records,
-};
+use kiro_telemetry_legacy::event_to_otel_metric_records;
 
 use crate::database::Database;
 use crate::os::{
@@ -38,10 +35,6 @@ pub struct V2OtelTranslator;
 impl OtelEventTranslator for V2OtelTranslator {
     fn metric_records(&self, event: &Event) -> Vec<kiro_telemetry::MetricRecord> {
         event_to_otel_metric_records(event)
-    }
-
-    fn log_record(&self, event: &Event) -> Option<kiro_telemetry::TelemetryLogRecord> {
-        event_to_otel_log_record(event)
     }
 }
 
@@ -71,8 +64,11 @@ pub async fn build_v2_host_config(
         client_application: get_cli_client_application().map(|s| metric::ClientApplication::from_name(Some(&s))),
         engine: Some(metric::Engine::V2),
         host_role: HostRole::UserCli,
+        process_identity: Some(kiro_telemetry_host::ProcessIdentity::new(
+            metric::Engine::V2,
+            metric::ProcessRole::Host,
+        )),
         govcloud_partition,
-        consent_settings_path: GlobalPaths::settings_path().ok(),
     })
 }
 
@@ -98,8 +94,6 @@ fn otel_telemetry_config(
     use crate::util::consts::env_var::{
         KIRO_TELEMETRY_OTEL,
         KIRO_TELEMETRY_OTLP_ENDPOINT,
-        KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
-        KIRO_VERSION_OVERRIDE,
     };
     // Default to DualWrite (KUTS/OTel + legacy Toolkit) so pre-existing metrics
     // dual-hit both backends without opt-in. An explicit `KIRO_TELEMETRY_OTEL=0`
@@ -113,17 +107,8 @@ fn otel_telemetry_config(
         env.get(KIRO_TELEMETRY_OTLP_ENDPOINT).ok(),
         region,
     ));
-    let otlp_logs_enabled = env
-        .get(KIRO_TELEMETRY_OTLP_LOGS_ENABLED)
-        .is_ok_and(|value| value.trim() != "0");
-
     kiro_telemetry::TelemetryConfig::new(telemetry_enabled, otel_mode, otlp_endpoint, state_dir())
-        .with_otlp_logs_enabled(otlp_logs_enabled)
         .with_machine_id(client_id.hyphenated().to_string())
-        .with_service_version(
-            env.get(KIRO_VERSION_OVERRIDE)
-                .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string()),
-        )
 }
 
 /// Daily heartbeat send helper. Stays in V2 (rather than the observer's
@@ -138,7 +123,6 @@ pub fn send_daily_heartbeat(thread: &TelemetryThread) -> Result<(), TelemetryErr
     } else {
         event.set_client_application_kind(metric::ClientApplication::ChatCliV2);
     }
-    event.set_engine(metric::Engine::V2);
     thread.send_event(event)
 }
 
@@ -161,7 +145,7 @@ pub fn send_voice_input(
     model_size: Option<String>,
     auto_submit: Option<bool>,
 ) -> Result<(), TelemetryError> {
-    let mut event = Event::new(EventType::VoiceInput {
+    thread.send_event(Event::new(EventType::VoiceInput {
         conversation_id,
         result,
         reason,
@@ -173,17 +157,13 @@ pub fn send_voice_input(
         text_length,
         model_size,
         auto_submit,
-    });
-    event.set_engine(metric::Engine::V2);
-    thread.send_event(event)
+    }))
 }
 
 #[cfg(test)]
 mod test {
     use kiro_telemetry::testing::{
         InMemoryTelemetry,
-        expect_log,
-        expect_log_attrs,
         expect_metric,
         expect_metric_attrs,
         in_memory_telemetry,
@@ -195,13 +175,12 @@ mod test {
     };
     use kiro_telemetry_host::{
         ChatAddedMessageParams,
-        ChatConversationType,
         EmptyResponseRetryOutcome,
         Event,
         EventType,
         TelemetryResult,
     };
-    use kiro_telemetry_legacy::event_to_otel_metric_records;
+    use kiro_telemetry_legacy::event_to_otel_metric_record;
 
     use super::*;
 
@@ -234,13 +213,6 @@ mod test {
         );
     }
 
-    #[test]
-    fn otel_config_honors_version_override() {
-        let env = Env::from_slice(&[("KIRO_VERSION_OVERRIDE", "2.7.3")]);
-        let config = otel_telemetry_config(&env, true, uuid::Uuid::nil(), None);
-        assert_eq!(config.service_version, "2.7.3");
-    }
-
     #[tokio::test]
     async fn observer_emits_otel_metrics_for_chat_added_message() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
@@ -248,10 +220,12 @@ mod test {
             providers: _,
             client,
             sink,
-        } = in_memory_telemetry(
-            OtelTelemetryConfig::new(true, OtelMode::DualWrite, None, tempdir.path().to_path_buf())
-                .with_otlp_logs_enabled(true),
-        );
+        } = in_memory_telemetry(OtelTelemetryConfig::new(
+            true,
+            OtelMode::DualWrite,
+            None,
+            tempdir.path().to_path_buf(),
+        ));
         let mut event = Event::new(EventType::ChatAddedMessage {
             conversation_id: "conversation".to_string(),
             result: TelemetryResult::Succeeded,
@@ -269,30 +243,21 @@ mod test {
         for record in translator.metric_records(&event) {
             client.emit(record).unwrap();
         }
-        if let Some(log) = translator.log_record(&event) {
-            client.emit_log(log).unwrap();
-        }
-
-        let _ = ChatConversationType::ToolUse;
-
         let records = sink.records();
-        let message_record = expect_metric(
+        let invocation_record = expect_metric(
             &records,
-            metric::chat_messages_total(
-                Some("claude-4-sonnet"),
-                metric::ResultKind::Success,
-                metric::MessageKind::Other,
-                metric::Engine::V2,
-            ),
+            metric::record_model_invocation(metric::Engine::V2, Some("claude-4-sonnet")),
         );
-        expect_metric_attrs(message_record, &[
+        expect_metric_attrs(invocation_record, &[
+            ("version_full", env!("CARGO_PKG_VERSION")),
+            ("agent_engine", "v2"),
             ("model", "claude-4-sonnet"),
-            ("result", "success"),
-            ("message_kind", "_other_"),
-            ("engine", "v2"),
         ]);
-        let _ = expect_log;
-        let _ = expect_log_attrs;
+        expect_metric(
+            &records,
+            metric::record_model_time_to_first_content_ms(250.0, metric::Engine::V2, Some("claude-4-sonnet"))
+                .expect("positive duration"),
+        );
     }
 
     /// Captures every event the host thread forwards to a legacy sink, so a
@@ -348,46 +313,32 @@ mod test {
             Some(metric::ClientApplication::ChatCliV2.as_str()),
             "default fallback must be chat_cli_v2 when no env override is set",
         );
-        assert_eq!(event.engine, Some(metric::Engine::V2));
-    }
-
-    #[tokio::test]
-    async fn host_config_engine_stamps_events_without_source_metadata() {
-        let sink = std::sync::Arc::new(CapturingSink::default());
-        let host_config = HostConfig {
-            legacy_sink: Some(sink.clone()),
-            engine: Some(metric::Engine::V2),
-            ..HostConfig::default()
-        };
-        let thread = TelemetryThread::new(host_config).await.unwrap();
-        thread.send_user_logged_in().unwrap();
-        thread.finish().await.unwrap();
-
-        let events = sink.events.lock().unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].engine, Some(metric::Engine::V2));
     }
 
     #[test]
-    fn daily_heartbeat_otel_record_uses_client_application_label() {
+    fn daily_heartbeat_otel_record_uses_adoption_dimensions() {
         let mut event = Event::new(EventType::DailyHeartbeat {
             install_method: Some(get_install_method().to_string()),
         });
         event.set_client_application_kind(metric::ClientApplication::ChatCliV2);
-        let record = event_to_otel_metric_records(&event)
-            .into_iter()
-            .next()
-            .expect("daily heartbeat metric");
+        let record = event_to_otel_metric_record(&event).expect("daily heartbeat metric");
         let install_method = match &event.ty {
             EventType::DailyHeartbeat { install_method } => install_method.clone(),
             other => panic!("expected daily heartbeat, got {other:?}"),
         };
         expect_metric(
             std::slice::from_ref(&record),
-            metric::daily_heartbeat_record(metric::DailyHeartbeat::from_names(
-                Some(metric::ClientApplication::ChatCliV2.as_str()),
-                install_method.as_deref(),
-            )),
+            metric::record_daily_heartbeat(
+                metric::ReleaseChannel::from_version(env!("CARGO_PKG_VERSION")),
+                metric::OsType::from_name(std::env::consts::OS),
+                metric::InstallSource::from_name(install_method.as_deref().unwrap_or("unknown")),
+            ),
+        );
+        assert!(
+            record
+                .attributes
+                .iter()
+                .all(|attribute| attribute.key != "client_application")
         );
         let _ = EmptyResponseRetryOutcome::Recovered;
     }

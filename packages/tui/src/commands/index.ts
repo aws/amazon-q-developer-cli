@@ -10,6 +10,7 @@ import {
 } from '../kas-commands.js';
 import { dispatch } from './dispatcher.js';
 import type { CommandContext } from './types.js';
+import { commandMetricName } from '../utils/slash-command-telemetry.js';
 
 export type { CommandContext } from './types.js';
 
@@ -48,6 +49,13 @@ export function isKnownSlashCommandToken(
   return commands.some((c) => c.name.toLowerCase() === `/${lower}`);
 }
 
+export function recordSlashCommandInvocation(
+  command: AvailableCommand,
+  ctx: Pick<CommandContext, 'kiro'>
+): void {
+  ctx.kiro.recordSlashCommandInvocation(commandMetricName(command));
+}
+
 /**
  * Execute a slash command.
  */
@@ -64,6 +72,7 @@ export async function executeCommand(
   // even if the backend doesn't advertise /voice (rollout gate may block it).
   if (name === 'voice' && process.env.KIRO_VOICE_SERVER_URL) {
     const syntheticCmd = { name: '/voice', meta: {} } as any;
+    recordSlashCommandInvocation(syntheticCmd, ctx);
     await dispatch(syntheticCmd, args, ctx);
     return true;
   }
@@ -75,6 +84,8 @@ export async function executeCommand(
     // (e.g. pasted file paths like "/Users/me/file.txt")
     return false;
   }
+
+  recordSlashCommandInvocation(cmd, ctx);
 
   if (ctx.agentEngine === 'kas') {
     const aliasSubcommand = getKasWorkflowAliasSubcommand(cmd.name);

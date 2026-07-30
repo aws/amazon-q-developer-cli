@@ -1,22 +1,15 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::{
-    Duration,
-    UNIX_EPOCH,
+use std::sync::{
+    Arc,
+    Mutex,
 };
+use std::time::Duration;
 use std::{
     fmt,
     thread,
 };
 
 use async_trait::async_trait;
-use opentelemetry::logs::{
-    AnyValue,
-    LogRecord as _,
-    Logger as _,
-    LoggerProvider as _,
-    Severity,
-};
 use opentelemetry::metrics::{
     Counter,
     Gauge,
@@ -35,17 +28,14 @@ use opentelemetry_http::{
     Response,
 };
 use opentelemetry_otlp::{
-    LogExporter,
     MetricExporter,
     Protocol,
     WithExportConfig,
     WithHttpConfig,
 };
+use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::metrics::v1::metric::Data;
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::logs::{
-    SdkLogger,
-    SdkLoggerProvider,
-};
 use opentelemetry_sdk::metrics::{
     Aggregation,
     Instrument,
@@ -55,17 +45,23 @@ use opentelemetry_sdk::metrics::{
     Stream,
     Temporality,
 };
-use tracing::warn;
+use prost::Message;
+use tracing::{
+    trace,
+    warn,
+};
 
 use crate::client::TelemetryError;
 use crate::config::otel_export_interval_from_env;
-use crate::metric::TelemetrySignal;
+use crate::drop_store::{
+    ExportDropAggregate,
+    ExportDropStore,
+};
 use crate::{
     Attribute,
     MetricRecord,
     MetricValue,
     TelemetryConfig,
-    TelemetryLogRecord,
     TelemetrySink,
 };
 
@@ -74,6 +70,7 @@ const KUTS_MAX_REQUEST_BODY_BYTES: usize = 1_048_576;
 const KUTS_MAX_EXPORT_RETRIES: usize = 3;
 const KUTS_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(1);
 const KUTS_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+const TELEMETRY_EXPORT_DROPPED_METRIC: &str = "kiro_cli_telemetry_export_dropped_total";
 
 /// Explicit histogram bucket boundaries for latencies recorded in **seconds**.
 ///
@@ -87,26 +84,18 @@ const SECONDS_LATENCY_BOUNDARIES: &[f64] = &[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0
 /// ratio and CPU utilisation. Default ms buckets run to 10000, so a ratio of
 /// `0.4` lands in the same bucket as everything `>= 0.0`.
 const RATIO_BOUNDARIES: &[f64] = &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-const CPU_RATIO_BOUNDARIES: &[f64] = &[
-    0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0,
-];
 
-/// Explicit boundaries for a memory growth rate in **bytes per second**.
-/// Covers 1 KiB/s up to 100 MiB/s, where the action of interest (a leak) lives.
-const MEMORY_GROWTH_RATE_BOUNDARIES: &[f64] = &[
-    0.0,
-    1_024.0,         // 1 KiB/s
-    10_240.0,        // 10 KiB/s
-    102_400.0,       // 100 KiB/s
-    1_048_576.0,     // 1 MiB/s
-    10_485_760.0,    // 10 MiB/s
-    104_857_600.0,   // 100 MiB/s
-    1_073_741_824.0, // 1 GiB/s
+const RETRY_COUNT_BOUNDARIES: &[f64] = &[1.0, 2.0, 3.0, 5.0, 8.0, 13.0];
+const MEMORY_BYTES_BOUNDARIES: &[f64] = &[
+    67_108_864.0,
+    134_217_728.0,
+    268_435_456.0,
+    536_870_912.0,
+    1_073_741_824.0,
+    2_147_483_648.0,
+    4_294_967_296.0,
+    8_589_934_592.0,
 ];
-
-/// Explicit boundaries for telemetry export batch sizes (a small integer count
-/// of records per batch), not a millisecond latency.
-const BATCH_SIZE_BOUNDARIES: &[f64] = &[1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1_000.0];
 
 /// Maps a histogram instrument name to its explicit bucket boundaries.
 ///
@@ -116,24 +105,17 @@ const BATCH_SIZE_BOUNDARIES: &[f64] = &[1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0
 fn histogram_boundaries(name: &str) -> Option<&'static [f64]> {
     match name {
         // Latencies recorded in seconds.
-        "kiro_cli.bedrock.stream.ttft"
-        | "kiro_cli.bedrock.stream.inter_token_latency"
-        | "kiro_cli.bedrock.stream.duration"
-        | "kiro_cli.bedrock.request.duration"
-        | "kiro_cli_tangent_duration_seconds"
-        | "kiro_cli_tool_duration"
+        "kiro_cli_cloud_session_ready_seconds"
+        | "kiro_cli_model_request_duration_seconds"
         | "kiro_cli_user_turn_duration_seconds"
-        | "kiro_cli.telemetry.exporter.send.duration"
-        | "kiro_cli.startup.duration"
-        | "kiro_cli.agent.loop.iteration_duration" => Some(SECONDS_LATENCY_BOUNDARIES),
+        | "kiro_cli_startup_duration_seconds"
+        | "kiro_cli_tui_event_loop_delay_p99_seconds"
+        | "kiro_cli_tui_input_to_render_p95_seconds"
+        | "kiro_cli_tui_render_duration_seconds" => Some(SECONDS_LATENCY_BOUNDARIES),
         // Unit-interval ratios (0..=1).
-        "kiro_cli_cache_hit_ratio" => Some(RATIO_BOUNDARIES),
-        // Process CPU time divided by wall time; multi-threaded work can exceed 1.
-        "kiro_cli.process.cpu.utilization" => Some(CPU_RATIO_BOUNDARIES),
-        // Memory growth rate, bytes/second.
-        "kiro_cli.process.memory.growth_rate" => Some(MEMORY_GROWTH_RATE_BOUNDARIES),
-        // Export batch sizes (record counts).
-        "kiro_cli.telemetry.batch.size" => Some(BATCH_SIZE_BOUNDARIES),
+        "kiro_cli_process_cpu_utilization_ratio" => Some(RATIO_BOUNDARIES),
+        "kiro_cli_automatic_retries_per_operation" => Some(RETRY_COUNT_BOUNDARIES),
+        "kiro_cli_process_peak_rss_bytes" => Some(MEMORY_BYTES_BOUNDARIES),
         _ => None,
     }
 }
@@ -163,6 +145,7 @@ fn histogram_bucket_view(instrument: &Instrument) -> Option<Stream> {
 struct KutsHttpClient {
     inner: reqwest::blocking::Client,
     retry_policy: KutsRetryPolicy,
+    drop_store: Option<ExportDropStore>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -183,7 +166,7 @@ impl Default for KutsRetryPolicy {
 }
 
 impl KutsHttpClient {
-    fn new() -> Self {
+    fn new(drop_store: Option<ExportDropStore>) -> Self {
         // `reqwest::blocking::Client::builder().build()` synchronously waits on
         // its own internal tokio runtime, so dropping it inside an outer tokio
         // runtime panics ("Cannot drop a runtime in a context where blocking is
@@ -205,6 +188,7 @@ impl KutsHttpClient {
         Self {
             inner,
             retry_policy: KutsRetryPolicy::default(),
+            drop_store,
         }
     }
 
@@ -212,7 +196,7 @@ impl KutsHttpClient {
     fn with_retry_policy(retry_policy: KutsRetryPolicy) -> Self {
         Self {
             retry_policy,
-            ..Self::new()
+            ..Self::new(None)
         }
     }
 
@@ -230,20 +214,42 @@ impl KutsHttpClient {
 #[async_trait]
 impl HttpClient for KutsHttpClient {
     async fn send_bytes(&self, request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
-        let signal = telemetry_signal_from_path(request.uri().path());
         let body_len = request.body().len();
+        let point_count = droppable_metric_point_count(request.body()).unwrap_or(1);
         if body_len > KUTS_MAX_REQUEST_BODY_BYTES {
-            record_kuts_oversize(signal);
+            self.record_drop(point_count, crate::metric::ExportDropReason::Oversize);
             return Err(kuts_http_error(format!(
-                "OTLP {signal:?} payload is {body_len} bytes; KUTS limit is {KUTS_MAX_REQUEST_BODY_BYTES} bytes"
+                "OTLP metrics payload is {body_len} bytes; KUTS limit is {KUTS_MAX_REQUEST_BODY_BYTES} bytes"
             )));
         }
 
         let mut retries = 0;
         let mut backoff = self.retry_policy.initial_delay;
         loop {
-            let response = self.send_once(request.clone())?;
-            if !is_retryable_status(response.status().as_u16()) || retries >= self.retry_policy.max_retries {
+            let response = match self.send_once(request.clone()) {
+                Ok(response) => response,
+                Err(_) if retries < self.retry_policy.max_retries => {
+                    if !backoff.is_zero() {
+                        thread::sleep(backoff);
+                    }
+                    backoff = next_backoff(backoff, self.retry_policy.max_delay);
+                    retries += 1;
+                    continue;
+                },
+                Err(err) => {
+                    self.record_drop(point_count, crate::metric::ExportDropReason::RetryExhausted);
+                    return Err(err);
+                },
+            };
+            let status = response.status().as_u16();
+            if is_retryable_status(status) && retries >= self.retry_policy.max_retries {
+                self.record_drop(point_count, crate::metric::ExportDropReason::RetryExhausted);
+                return Ok(response);
+            }
+            if !is_retryable_status(status) {
+                if (400..=499).contains(&status) {
+                    self.record_drop(point_count, crate::metric::ExportDropReason::PermanentRejection);
+                }
                 return Ok(response);
             }
 
@@ -253,6 +259,14 @@ impl HttpClient for KutsHttpClient {
             }
             backoff = next_backoff(backoff, self.retry_policy.max_delay);
             retries += 1;
+        }
+    }
+}
+
+impl KutsHttpClient {
+    fn record_drop(&self, count: u64, reason: crate::metric::ExportDropReason) {
+        if let Some(store) = &self.drop_store {
+            store.record("metrics", reason.as_str(), count);
         }
     }
 }
@@ -290,30 +304,33 @@ fn next_backoff(current: Duration, max_delay: Duration) -> Duration {
     current.saturating_mul(2).min(max_delay)
 }
 
-fn telemetry_signal_from_path(path: &str) -> TelemetrySignal {
-    if path.ends_with("/v1/logs") {
-        TelemetrySignal::Logs
-    } else {
-        TelemetrySignal::Metrics
-    }
-}
-
-fn record_kuts_oversize(signal: TelemetrySignal) {
-    let record = crate::metric::kuts_export_oversize(signal);
-    let MetricValue::Counter(value) = record.value else {
-        return;
-    };
-    global::meter("kiro-telemetry")
-        .u64_counter(record.name)
-        .build()
-        .add(value, &otel_attributes(&record.attributes));
+fn droppable_metric_point_count(body: &Bytes) -> Option<u64> {
+    let request = ExportMetricsServiceRequest::decode(body.as_ref()).ok()?;
+    Some(
+        request
+            .resource_metrics
+            .iter()
+            .flat_map(|resource| &resource.scope_metrics)
+            .flat_map(|scope| &scope.metrics)
+            .filter(|metric| metric.name != TELEMETRY_EXPORT_DROPPED_METRIC)
+            .map(|metric| match metric.data.as_ref() {
+                Some(Data::Gauge(data)) => data.data_points.len(),
+                Some(Data::Sum(data)) => data.data_points.len(),
+                Some(Data::Histogram(data)) => data.data_points.len(),
+                Some(Data::ExponentialHistogram(data)) => data.data_points.len(),
+                Some(Data::Summary(data)) => data.data_points.len(),
+                None => 0,
+            })
+            .sum::<usize>() as u64,
+    )
 }
 
 #[derive(Clone, Debug)]
 pub struct OtelProviders {
     meter_provider: SdkMeterProvider,
-    logger_provider: SdkLoggerProvider,
     pipeline_kind: OtelPipelineKind,
+    drop_store: Option<ExportDropStore>,
+    replayed_drops: Arc<Mutex<Vec<ExportDropAggregate>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -327,26 +344,39 @@ impl OtelProviders {
         &self.meter_provider
     }
 
-    pub fn logger_provider(&self) -> &SdkLoggerProvider {
-        &self.logger_provider
-    }
-
     pub fn pipeline_kind(&self) -> OtelPipelineKind {
         self.pipeline_kind
     }
 
     pub fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-        self.meter_provider.force_flush()?;
-        self.logger_provider.force_flush()
+        let result = self.meter_provider.force_flush();
+        if result.is_ok() {
+            self.acknowledge_replayed_drops();
+        }
+        result
     }
 
     pub fn shutdown(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-        self.meter_provider.shutdown()?;
-        self.logger_provider.shutdown()
+        let result = self.meter_provider.shutdown();
+        if result.is_ok() {
+            self.acknowledge_replayed_drops();
+        }
+        result
+    }
+
+    fn acknowledge_replayed_drops(&self) {
+        let snapshot = std::mem::take(&mut *self.replayed_drops.lock().expect("replayed export-drop mutex poisoned"));
+        if let Some(store) = &self.drop_store {
+            store.subtract(&snapshot);
+        }
     }
 }
 
 pub fn init_otel(config: &TelemetryConfig) -> OtelProviders {
+    if !config.enabled {
+        ExportDropStore::new(config.state_dir.clone()).clear();
+        return init_noop_otel(config);
+    }
     if config.exports_enabled()
         && let Some(endpoint) = config.otlp_endpoint.as_deref()
     {
@@ -361,12 +391,12 @@ pub fn init_otel(config: &TelemetryConfig) -> OtelProviders {
 
 pub fn init_noop_otel(_config: &TelemetryConfig) -> OtelProviders {
     let meter_provider = SdkMeterProvider::builder().with_view(histogram_bucket_view).build();
-    let logger_provider = SdkLoggerProvider::builder().build();
     global::set_meter_provider(meter_provider.clone());
     OtelProviders {
         meter_provider,
-        logger_provider,
         pipeline_kind: OtelPipelineKind::Noop,
+        drop_store: None,
+        replayed_drops: Arc::new(Mutex::new(Vec::new())),
     }
 }
 
@@ -374,13 +404,15 @@ fn build_otlp_http_providers(
     config: &TelemetryConfig,
     endpoint: &str,
 ) -> Result<OtelProviders, opentelemetry_otlp::ExporterBuildError> {
+    let drop_store = ExportDropStore::new(config.state_dir.clone());
+    let replayed_drops = drop_store.snapshot();
     let resource = telemetry_resource(config);
     let metric_exporter = MetricExporter::builder()
         .with_http()
         .with_protocol(Protocol::HttpBinary)
         .with_endpoint(signal_endpoint(endpoint, "/v1/metrics"))
         .with_timeout(Duration::from_secs(30))
-        .with_http_client(otlp_http_client())
+        .with_http_client(otlp_http_client(Some(drop_store.clone())))
         .with_headers(otlp_headers(config))
         .with_temporality(Temporality::Delta)
         .build()?;
@@ -390,35 +422,58 @@ fn build_otlp_http_providers(
         .build();
     let meter_provider = SdkMeterProvider::builder()
         .with_reader(reader)
-        .with_resource(resource.clone())
+        .with_resource(resource)
         .with_view(histogram_bucket_view)
         .build();
-    let mut logger_provider_builder = SdkLoggerProvider::builder().with_resource(resource);
-    if config.otlp_logs_enabled() {
-        let log_exporter = LogExporter::builder()
-            .with_http()
-            .with_protocol(Protocol::HttpBinary)
-            .with_endpoint(signal_endpoint(endpoint, "/v1/logs"))
-            .with_timeout(Duration::from_secs(30))
-            .with_http_client(otlp_http_client())
-            .with_headers(otlp_headers(config))
-            .build()?;
-        logger_provider_builder = logger_provider_builder.with_batch_exporter(log_exporter);
-    }
-    let logger_provider = logger_provider_builder.build();
 
     global::set_meter_provider(meter_provider.clone());
+    let emitted_replayed_drops = emit_replayed_drops(&replayed_drops);
     Ok(OtelProviders {
         meter_provider,
-        logger_provider,
         pipeline_kind: OtelPipelineKind::OtlpHttp,
+        drop_store: Some(drop_store),
+        replayed_drops: Arc::new(Mutex::new(emitted_replayed_drops)),
     })
+}
+
+fn emit_replayed_drops(entries: &[ExportDropAggregate]) -> Vec<ExportDropAggregate> {
+    let mut emitted = Vec::new();
+    for entry in entries {
+        let reason = match entry.key.drop_reason.as_str() {
+            "oversize" => crate::metric::ExportDropReason::Oversize,
+            "invalid_record" => crate::metric::ExportDropReason::InvalidRecord,
+            "encoding_failure" => crate::metric::ExportDropReason::EncodingFailure,
+            "retry_exhausted" => crate::metric::ExportDropReason::RetryExhausted,
+            "permanent_rejection" => crate::metric::ExportDropReason::PermanentRejection,
+            "unknown" => crate::metric::ExportDropReason::Unknown,
+            value => {
+                trace!(drop_reason = value, "normalizing unrecognized export-drop reason");
+                crate::metric::ExportDropReason::Unknown
+            },
+        };
+        let Some(record) =
+            crate::metric::record_telemetry_export_dropped_for_version(entry.count, &entry.key.version_full, reason)
+        else {
+            trace!("retaining export-drop record that did not produce a metric");
+            continue;
+        };
+        let MetricValue::Counter(value) = record.value else {
+            trace!("retaining export-drop record with an unexpected metric kind");
+            continue;
+        };
+        global::meter("kiro-telemetry")
+            .u64_counter(record.name)
+            .build()
+            .add(value, &otel_attributes(&record.attributes));
+        emitted.push(entry.clone());
+    }
+    emitted
 }
 
 fn telemetry_resource(config: &TelemetryConfig) -> Resource {
     Resource::builder()
         .with_service_name("kiro-cli")
-        .with_attribute(KeyValue::new("service.version", config.service_version.clone()))
+        .with_attribute(KeyValue::new("service.version", env!("CARGO_PKG_VERSION")))
         .with_attribute(KeyValue::new(
             "deployment.environment",
             config.deployment_environment.clone(),
@@ -446,8 +501,8 @@ fn otlp_headers(config: &TelemetryConfig) -> HashMap<String, String> {
     HashMap::from([(KIRO_MACHINE_ID_HEADER.to_string(), config.machine_id.clone())])
 }
 
-fn otlp_http_client() -> KutsHttpClient {
-    KutsHttpClient::new()
+fn otlp_http_client(drop_store: Option<ExportDropStore>) -> KutsHttpClient {
+    KutsHttpClient::new(drop_store)
 }
 
 pub struct OtelMetricsSink {
@@ -533,39 +588,6 @@ impl TelemetrySink for OtelMetricsSink {
     }
 }
 
-pub struct OtelLogsSink {
-    logger: SdkLogger,
-}
-
-impl OtelLogsSink {
-    pub fn new(logger: SdkLogger) -> Self {
-        Self { logger }
-    }
-
-    pub fn from_providers(providers: &OtelProviders) -> Self {
-        Self::new(providers.logger_provider().logger("kiro-telemetry"))
-    }
-}
-
-impl TelemetrySink for OtelLogsSink {
-    fn emit(&self, _record: &MetricRecord) -> Result<(), TelemetryError> {
-        Ok(())
-    }
-
-    fn emit_log(&self, record: &TelemetryLogRecord) -> Result<(), TelemetryError> {
-        let mut otel_record = self.logger.create_log_record();
-        otel_record.set_event_name(static_log_event_name(&record.name)?);
-        otel_record.set_target("kiro-telemetry");
-        otel_record.set_timestamp(UNIX_EPOCH + Duration::from_millis(record.timestamp_unix_millis));
-        otel_record.set_severity_number(Severity::Info);
-        otel_record.set_severity_text("INFO");
-        otel_record.set_body(AnyValue::String(record.name.clone().into()));
-        otel_record.add_attributes(otel_log_attributes(&record.attributes));
-        self.logger.emit(otel_record);
-        Ok(())
-    }
-}
-
 enum OtelInstrument {
     Counter(Counter<u64>),
     FloatCounter(Counter<f64>),
@@ -580,50 +602,25 @@ fn otel_attributes(attributes: &[Attribute]) -> Vec<KeyValue> {
         .collect()
 }
 
-fn otel_log_attributes(attributes: &[Attribute]) -> Vec<(String, AnyValue)> {
-    attributes
-        .iter()
-        .map(|attribute| (attribute.key.clone(), AnyValue::String(attribute.value.clone().into())))
-        .collect()
-}
-
 fn instrument_kind_error(name: &str) -> TelemetryError {
     TelemetryError::Sink(format!("metric `{name}` reused with different OTel instrument kind"))
-}
-
-fn static_log_event_name(name: &str) -> Result<&'static str, TelemetryError> {
-    match name {
-        "kiro_cli_client_identity" => Ok("kiro_cli_client_identity"),
-        "kiro_cli_feature_first_use" => Ok("kiro_cli_feature_first_use"),
-        "kiro_cli_metering_event" => Ok("kiro_cli_metering_event"),
-        "kiro_cli_user_turn_completed" => Ok("kiro_cli_user_turn_completed"),
-        "kiro_cli_tool_invoked" => Ok("kiro_cli_tool_invoked"),
-        "kiro_cli_mcp_server_init" => Ok("kiro_cli_mcp_server_init"),
-        "kiro_cli_subagent_invoked" => Ok("kiro_cli_subagent_invoked"),
-        "kiro_cli_conversation_completed" => Ok("kiro_cli_conversation_completed"),
-        _ => Err(TelemetryError::Sink(format!(
-            "metric `{name}` is not a known OTel log event"
-        ))),
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use opentelemetry::KeyValue;
-    use opentelemetry::logs::LoggerProvider as _;
     use opentelemetry::metrics::MeterProvider as _;
-    use opentelemetry_sdk::error::OTelSdkResult;
-    use opentelemetry_sdk::logs::{
-        LogProcessor,
-        SdkLogRecord,
-        SdkLoggerProvider,
+    use opentelemetry_proto::tonic::metrics::v1::{
+        Metric,
+        NumberDataPoint,
+        ResourceMetrics,
+        ScopeMetrics,
+        Sum,
     };
 
     use super::*;
     use crate::testing::{
         OtlpTestCollector,
-        expect_otlp_log,
-        expect_otlp_log_resource_attribute,
         expect_otlp_metric,
         expect_otlp_metric_resource_attribute,
         expect_otlp_request,
@@ -631,73 +628,93 @@ mod tests {
     use crate::{
         OtelMode,
         TelemetryConfig,
-        log,
         metric,
     };
 
     const TEST_MACHINE_ID: &str = "ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e";
     const TEST_DEPLOYMENT_ENVIRONMENT: &str = "test";
 
-    fn test_config(
-        enabled: bool,
-        otel_mode: OtelMode,
-        otlp_endpoint: Option<String>,
-        otlp_logs_enabled: bool,
-    ) -> TelemetryConfig {
-        TelemetryConfig::new(enabled, otel_mode, otlp_endpoint, std::env::temp_dir())
-            .with_otlp_logs_enabled(otlp_logs_enabled)
-            .with_machine_id(TEST_MACHINE_ID)
-            .with_deployment_environment(TEST_DEPLOYMENT_ENVIRONMENT)
+    fn test_config(enabled: bool, otel_mode: OtelMode, otlp_endpoint: Option<String>) -> TelemetryConfig {
+        TelemetryConfig::new(
+            enabled,
+            otel_mode,
+            otlp_endpoint,
+            tempfile::tempdir().expect("temporary state").keep(),
+        )
+        .with_machine_id(TEST_MACHINE_ID)
+        .with_deployment_environment(TEST_DEPLOYMENT_ENVIRONMENT)
+    }
+
+    fn encoded_counter_request(metric_names: &[&str]) -> Bytes {
+        let metrics = metric_names
+            .iter()
+            .map(|name| Metric {
+                name: (*name).to_string(),
+                data: Some(Data::Sum(Sum {
+                    data_points: vec![NumberDataPoint::default()],
+                    is_monotonic: true,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            })
+            .collect();
+        Bytes::from(
+            ExportMetricsServiceRequest {
+                resource_metrics: vec![ResourceMetrics {
+                    scope_metrics: vec![ScopeMetrics {
+                        metrics,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+            }
+            .encode_to_vec(),
+        )
+    }
+
+    fn drop_count(store: &ExportDropStore, reason: &str) -> u64 {
+        store
+            .snapshot()
+            .iter()
+            .filter(|entry| entry.key.drop_reason == reason)
+            .map(|entry| entry.count)
+            .sum()
     }
 
     #[test]
     fn histogram_boundaries_target_non_millisecond_instruments() {
         // Second-scale latencies must not inherit the SDK's ms-scale defaults.
         assert_eq!(
-            histogram_boundaries("kiro_cli.bedrock.stream.ttft"),
+            histogram_boundaries("kiro_cli_model_request_duration_seconds"),
             Some(SECONDS_LATENCY_BOUNDARIES)
         );
         assert_eq!(
             histogram_boundaries("kiro_cli_user_turn_duration_seconds"),
             Some(SECONDS_LATENCY_BOUNDARIES)
         );
-        assert_eq!(
-            histogram_boundaries("kiro_cli_tangent_duration_seconds"),
-            Some(SECONDS_LATENCY_BOUNDARIES)
-        );
-        assert_eq!(
-            histogram_boundaries("kiro_cli_tool_duration"),
-            Some(SECONDS_LATENCY_BOUNDARIES)
-        );
         // Unit-interval ratios.
-        assert_eq!(histogram_boundaries("kiro_cli_cache_hit_ratio"), Some(RATIO_BOUNDARIES));
         assert_eq!(
-            histogram_boundaries("kiro_cli.process.cpu.utilization"),
-            Some(CPU_RATIO_BOUNDARIES)
-        );
-        // Bytes/second growth rate and record-count batch sizes.
-        assert_eq!(
-            histogram_boundaries("kiro_cli.process.memory.growth_rate"),
-            Some(MEMORY_GROWTH_RATE_BOUNDARIES)
+            histogram_boundaries("kiro_cli_process_cpu_utilization_ratio"),
+            Some(RATIO_BOUNDARIES)
         );
         assert_eq!(
-            histogram_boundaries("kiro_cli.telemetry.batch.size"),
-            Some(BATCH_SIZE_BOUNDARIES)
+            histogram_boundaries("kiro_cli_automatic_retries_per_operation"),
+            Some(RETRY_COUNT_BOUNDARIES)
+        );
+        assert_eq!(
+            histogram_boundaries("kiro_cli_process_peak_rss_bytes"),
+            Some(MEMORY_BYTES_BOUNDARIES)
         );
 
         // Genuine millisecond latencies keep the SDK default buckets (no override).
         assert_eq!(histogram_boundaries("kiro_cli_tool_execution_duration_ms"), None);
-        assert_eq!(histogram_boundaries("kiro_cli_time_to_first_chunk_ms"), None);
-        // Context usage is now a gauge, so it must not match a histogram view.
-        assert_eq!(histogram_boundaries("kiro_cli_context_usage_percentage"), None);
+        assert_eq!(histogram_boundaries("kiro_cli_model_time_to_first_content_ms"), None);
 
-        // All configured boundary sets must build into a valid ExplicitBucketHistogram
-        // Stream (sorted, finite, non-duplicate) — i.e. the View will actually apply.
         for boundaries in [
             SECONDS_LATENCY_BOUNDARIES,
             RATIO_BOUNDARIES,
-            MEMORY_GROWTH_RATE_BOUNDARIES,
-            BATCH_SIZE_BOUNDARIES,
+            RETRY_COUNT_BOUNDARIES,
+            MEMORY_BYTES_BOUNDARIES,
         ] {
             Stream::builder()
                 .with_aggregation(Aggregation::ExplicitBucketHistogram {
@@ -711,21 +728,21 @@ mod tests {
 
     #[test]
     fn noop_otel_provider_accepts_counter_adds() {
-        let config = test_config(true, OtelMode::Off, None, true);
+        let config = test_config(true, OtelMode::Off, None);
 
         let providers = init_noop_otel(&config);
         let counter = global::meter("kiro-telemetry-test")
-            .u64_counter("kiro_cli.telemetry.sdk.up")
+            .u64_counter("kiro_cli_model_invocations_total")
             .build();
 
-        counter.add(1, &[KeyValue::new("partition", "aws")]);
+        counter.add(1, &[KeyValue::new("agent_engine", "v2")]);
 
         providers.force_flush().expect("noop provider flush should succeed");
     }
 
     #[test]
     fn init_otel_stays_noop_without_endpoint() {
-        let config = test_config(true, OtelMode::DualWrite, None, true);
+        let config = test_config(true, OtelMode::DualWrite, None);
 
         let providers = init_otel(&config);
 
@@ -735,12 +752,7 @@ mod tests {
 
     #[test]
     fn init_otel_builds_otlp_http_when_endpoint_configured() {
-        let config = test_config(
-            true,
-            OtelMode::DualWrite,
-            Some("http://localhost:4318".to_string()),
-            true,
-        );
+        let config = test_config(true, OtelMode::DualWrite, Some("http://localhost:4318".to_string()));
 
         let providers = init_otel(&config);
 
@@ -762,124 +774,76 @@ mod tests {
 
     #[test]
     fn otel_metrics_sink_accepts_metric_records() {
-        let config = test_config(true, OtelMode::DualWrite, None, true);
+        let config = test_config(true, OtelMode::DualWrite, None);
 
         let providers = init_noop_otel(&config);
         let sink = std::sync::Arc::new(OtelMetricsSink::new(global::meter("kiro-telemetry-test-sink")));
         let client = crate::TelemetryClient::new(config).with_sink(sink);
 
         client
-            .emit(metric::cli_session_completed(
-                metric::ExitReason::Clean,
-                metric::AgentKind::V2,
+            .emit(metric::record_run_outcome(
+                metric::SessionInterface::InteractiveCli,
+                metric::Engine::V2,
+                metric::OsType::Macos,
+                metric::RunOutcome::Success,
             ))
             .expect("counter emit should succeed");
         client
-            .emit(metric::bedrock_stream_ttft(
-                0.25,
-                Some("claude-sonnet-4"),
-                metric::PromptSizeBucket::Small,
-                false,
-            ))
+            .emit(
+                metric::record_model_request_duration_seconds(
+                    0.25,
+                    metric::Engine::V2,
+                    Some("claude-sonnet-4"),
+                    metric::ModelRequestOutcome::Success,
+                )
+                .expect("positive duration"),
+            )
             .expect("histogram emit should succeed");
         client
-            .emit(metric::meta_meter_up(metric::Partition::Aws, metric::OsType::Macos))
+            .emit(
+                metric::record_process_memory_rss_bytes(
+                    128.0 * 1024.0 * 1024.0,
+                    metric::OsType::Macos,
+                    metric::Engine::V2,
+                    metric::ProcessRole::Host,
+                )
+                .expect("non-negative memory"),
+            )
             .expect("gauge emit should succeed");
 
         providers.force_flush().expect("noop provider flush should succeed");
     }
 
     #[test]
-    fn otel_logs_sink_accepts_log_records() {
-        let config = test_config(true, OtelMode::DualWrite, None, true);
-        let processor = CaptureLogProcessor::default();
-        let records = processor.records.clone();
-        let logger_provider = SdkLoggerProvider::builder().with_log_processor(processor).build();
-
-        let sink = std::sync::Arc::new(OtelLogsSink::new(logger_provider.logger("kiro-telemetry-test-logs")));
-        let client = crate::TelemetryClient::new(config).with_sink(sink);
-
-        client
-            .emit_log(
-                log::subagent_invoked("code-review")
-                    .model(Some("claude-sonnet-4"))
-                    .build(),
-            )
-            .expect("log emit should succeed");
-
-        let logs = records.lock().expect("capture log mutex poisoned");
-        assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].event_name(), Some("kiro_cli_subagent_invoked"));
-        assert!(sdk_log_has_string_attr(&logs[0], "model", "claude-sonnet-4"));
-    }
-
-    #[test]
-    fn otel_logs_sink_buckets_raw_legacy_log_dimensions() {
-        let config = test_config(true, OtelMode::DualWrite, None, true);
-        let processor = CaptureLogProcessor::default();
-        let records = processor.records.clone();
-        let logger_provider = SdkLoggerProvider::builder().with_log_processor(processor).build();
-
-        let sink = std::sync::Arc::new(OtelLogsSink::new(
-            logger_provider.logger("kiro-telemetry-test-raw-logs"),
-        ));
-        let client = crate::TelemetryClient::new(config).with_sink(sink);
-
-        client
-            .emit_log(
-                crate::TelemetryLogRecord::new("kiro_cli_subagent_invoked")
-                    .with_attribute("subagent_name", "code-review")
-                    .with_attribute("model", "raw-model-id"),
-            )
-            .expect("log emit should succeed");
-
-        // Closed-enum overflow bucketing (substituting unknown values with `_other_`) now
-        // happens server-side in the OTel collector via `transform`/`filter` processors.
-        // The client passes the raw attribute value through after schema validation accepts
-        // the record (a `_other_` bucket is permitted on this attribute, so the validator
-        // does not reject the unknown value).
-        let logs = records.lock().expect("capture log mutex poisoned");
-        assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].event_name(), Some("kiro_cli_subagent_invoked"));
-        assert!(
-            logs[0]
-                .attributes_iter()
-                .any(|(key, value)| { key.as_str() == "model" && value == &AnyValue::String("raw-model-id".into()) })
-        );
-    }
-
-    #[test]
     fn otlp_proto_contract_types_are_available_for_mock_collector() {
-        use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
         use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 
         let metrics = ExportMetricsServiceRequest::default();
-        let logs = ExportLogsServiceRequest::default();
 
         assert!(metrics.resource_metrics.is_empty());
-        assert!(logs.resource_logs.is_empty());
     }
 
     #[test]
-    fn otlp_http_exporter_sends_decodable_metric_and_log_payloads() {
-        let collector = OtlpTestCollector::start(2);
-        let config = test_config(true, OtelMode::DualWrite, Some(collector.endpoint()), true);
+    fn otlp_http_exporter_sends_decodable_metric_payloads() {
+        let collector = OtlpTestCollector::start(1);
+        let config = test_config(true, OtelMode::DualWrite, Some(collector.endpoint()));
         let providers = init_otel(&config);
         assert_eq!(providers.pipeline_kind(), OtelPipelineKind::OtlpHttp);
 
-        let client = crate::TelemetryClient::new(config)
-            .with_sink(std::sync::Arc::new(OtelMetricsSink::new(
-                providers.meter_provider().meter("kiro-telemetry-mock-collector-test"),
-            )))
-            .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&providers)));
+        let client = crate::TelemetryClient::new(config).with_sink(std::sync::Arc::new(OtelMetricsSink::new(
+            providers.meter_provider().meter("kiro-telemetry-mock-collector-test"),
+        )));
 
-        let expected_metric = metric::cli_session_completed(metric::ExitReason::Clean, metric::AgentKind::V2);
-        let expected_log = log::subagent_invoked("review").model(Some("claude-sonnet-4")).build();
+        let expected_metric = metric::record_run_outcome(
+            metric::SessionInterface::InteractiveCli,
+            metric::Engine::V2,
+            metric::OsType::Macos,
+            metric::RunOutcome::Success,
+        );
 
         client
             .emit(expected_metric.clone())
             .expect("metric emit should succeed");
-        client.emit_log(expected_log.clone()).expect("log emit should succeed");
 
         providers.force_flush().expect("otlp provider flush should succeed");
         let requests = collector.collect();
@@ -898,59 +862,6 @@ mod tests {
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_VALUE,
         );
         expect_otlp_metric(&requests, &expected_metric);
-
-        let logs = expect_otlp_request(&requests, "/v1/logs");
-        assert_eq!(logs.content_type.as_deref(), Some("application/x-protobuf"));
-        assert_eq!(
-            logs.headers.get(KIRO_MACHINE_ID_HEADER).map(String::as_str),
-            Some(TEST_MACHINE_ID)
-        );
-        expect_otlp_log_resource_attribute(&requests, "deployment.environment", TEST_DEPLOYMENT_ENVIRONMENT);
-        expect_otlp_log_resource_attribute(
-            &requests,
-            kiro_telemetry_schema::CLOUDWATCH_PRODUCT_DIMENSION,
-            kiro_telemetry_schema::CLOUDWATCH_PRODUCT_VALUE,
-        );
-        expect_otlp_log(&requests, &expected_log);
-    }
-
-    #[test]
-    fn otlp_http_exporter_skips_logs_when_disabled() {
-        let collector = OtlpTestCollector::start(1);
-        let config = test_config(true, OtelMode::DualWrite, Some(collector.endpoint()), false);
-        let providers = init_otel(&config);
-        assert_eq!(providers.pipeline_kind(), OtelPipelineKind::OtlpHttp);
-
-        let client = crate::TelemetryClient::new(config)
-            .with_sink(std::sync::Arc::new(OtelMetricsSink::new(
-                providers.meter_provider().meter("kiro-telemetry-metrics-only-test"),
-            )))
-            .with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&providers)));
-
-        client
-            .emit(metric::cli_session_completed(
-                metric::ExitReason::Clean,
-                metric::AgentKind::V2,
-            ))
-            .expect("metric emit should succeed");
-        let log_outcome = client
-            .emit_log(log::conversation_completed(
-                "session-1",
-                "conversation-1",
-                log::CompletionReason::Stop,
-            ))
-            .expect("log emit should not fail");
-        assert!(!log_outcome.emitted);
-
-        providers.force_flush().expect("otlp provider flush should succeed");
-        let requests = collector.collect();
-        providers.shutdown().expect("otlp provider shutdown should succeed");
-
-        expect_otlp_request(&requests, "/v1/metrics");
-        assert!(
-            requests.iter().all(|request| !request.is_logs()),
-            "logs disabled should not send /v1/logs requests"
-        );
     }
 
     #[test]
@@ -979,11 +890,16 @@ mod tests {
     #[test]
     fn kuts_http_client_rejects_oversize_payload_before_send() {
         let collector = OtlpTestCollector::start(0);
-        let client = KutsHttpClient::with_retry_policy(KutsRetryPolicy {
-            max_retries: 0,
-            initial_delay: Duration::ZERO,
-            max_delay: Duration::ZERO,
-        });
+        let state = tempfile::tempdir().unwrap();
+        let store = ExportDropStore::new(state.path().to_path_buf());
+        let client = KutsHttpClient {
+            drop_store: Some(store.clone()),
+            ..KutsHttpClient::with_retry_policy(KutsRetryPolicy {
+                max_retries: 0,
+                initial_delay: Duration::ZERO,
+                max_delay: Duration::ZERO,
+            })
+        };
         let request = Request::builder()
             .method("POST")
             .uri("http://127.0.0.1:9/v1/metrics")
@@ -995,32 +911,136 @@ mod tests {
 
         let requests = collector.collect_timeout(Duration::from_millis(50));
         assert!(requests.is_empty(), "oversize payload should not hit the collector");
+        let drops = store.snapshot();
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].key.drop_reason, "oversize");
+        assert_eq!(drops[0].count, 1);
     }
 
-    #[derive(Debug, Default, Clone)]
-    struct CaptureLogProcessor {
-        records: std::sync::Arc<std::sync::Mutex<Vec<SdkLogRecord>>>,
+    #[test]
+    fn replays_persisted_export_drops_and_removes_only_after_flush() {
+        let state = tempfile::tempdir().unwrap();
+        let store = ExportDropStore::new(state.path().to_path_buf());
+        store.record("metrics", "retry_exhausted", 3);
+        let collector = OtlpTestCollector::start(1);
+        let config = TelemetryConfig::new(
+            true,
+            OtelMode::DualWrite,
+            Some(collector.endpoint()),
+            state.path().to_path_buf(),
+        )
+        .with_machine_id(TEST_MACHINE_ID)
+        .with_deployment_environment(TEST_DEPLOYMENT_ENVIRONMENT);
+        let providers = init_otel(&config);
+
+        assert_eq!(store.snapshot()[0].count, 3);
+        providers.force_flush().expect("replayed metric should flush");
+        let requests = collector.collect();
+        let expected = crate::metric::record_telemetry_export_dropped_for_version(
+            3,
+            env!("CARGO_PKG_VERSION"),
+            crate::metric::ExportDropReason::RetryExhausted,
+        )
+        .unwrap();
+        expect_otlp_metric(&requests, &expected);
+        assert!(store.snapshot().is_empty());
+        providers.shutdown().expect("provider shutdown");
     }
 
-    fn sdk_log_has_string_attr(record: &SdkLogRecord, expected_key: &str, expected_value: &str) -> bool {
-        record.attributes_iter().any(|(key, value)| {
-            matches!(
-                (key.as_str(), value),
-                (actual_key, AnyValue::String(value)) if actual_key == expected_key && value.as_str() == expected_value
-            )
-        })
+    #[test]
+    fn failed_flush_retains_replayed_drop_aggregates() {
+        let state = tempfile::tempdir().unwrap();
+        let store = ExportDropStore::new(state.path().to_path_buf());
+        store.record("metrics", "retry_exhausted", 3);
+        let collector = OtlpTestCollector::start_with_statuses(vec![400]);
+        let config = TelemetryConfig::new(
+            true,
+            OtelMode::DualWrite,
+            Some(collector.endpoint()),
+            state.path().to_path_buf(),
+        )
+        .with_machine_id(TEST_MACHINE_ID)
+        .with_deployment_environment(TEST_DEPLOYMENT_ENVIRONMENT);
+        let providers = init_otel(&config);
+        let client = crate::TelemetryClient::new(config).with_sink(Arc::new(OtelMetricsSink::new(
+            providers.meter_provider().meter("failed-flush-retains-drops"),
+        )));
+        client
+            .emit(metric::record_run_outcome(
+                metric::SessionInterface::InteractiveCli,
+                metric::Engine::V2,
+                metric::OsType::Macos,
+                metric::RunOutcome::Failure,
+            ))
+            .unwrap();
+
+        assert!(providers.force_flush().is_err());
+        collector.collect();
+
+        assert_eq!(drop_count(&store, "retry_exhausted"), 3);
+        assert_eq!(drop_count(&store, "permanent_rejection"), 1);
     }
 
-    impl LogProcessor for CaptureLogProcessor {
-        fn emit(&self, record: &mut SdkLogRecord, _instrumentation: &opentelemetry::InstrumentationScope) {
-            self.records
-                .lock()
-                .expect("capture log mutex poisoned")
-                .push(record.clone());
+    #[test]
+    fn repeated_replay_failures_do_not_count_the_replayed_point_as_a_new_drop() {
+        let state = tempfile::tempdir().unwrap();
+        let store = ExportDropStore::new(state.path().to_path_buf());
+        store.record("metrics", "retry_exhausted", 3);
+        let original = store.snapshot();
+        let collector = OtlpTestCollector::start_with_statuses(vec![400, 400]);
+        let client = KutsHttpClient {
+            drop_store: Some(store.clone()),
+            ..KutsHttpClient::with_retry_policy(KutsRetryPolicy {
+                max_retries: 0,
+                initial_delay: Duration::ZERO,
+                max_delay: Duration::ZERO,
+            })
+        };
+        let request = Request::builder()
+            .method("POST")
+            .uri(format!("{}/v1/metrics", collector.endpoint()))
+            .body(encoded_counter_request(&[TELEMETRY_EXPORT_DROPPED_METRIC]))
+            .unwrap();
+
+        for _ in 0..2 {
+            let response = futures::executor::block_on(client.send_bytes(request.clone())).unwrap();
+            assert_eq!(response.status().as_u16(), 400);
+            assert_eq!(store.snapshot(), original);
         }
+        collector.collect();
+    }
 
-        fn force_flush(&self) -> OTelSdkResult {
-            Ok(())
-        }
+    #[test]
+    fn replay_preserves_unrecognized_export_drop_counts_under_unknown() {
+        let state = tempfile::tempdir().unwrap();
+        let store = ExportDropStore::new(state.path().to_path_buf());
+        store.record("metrics", "oversize", 1);
+        store.record("future_signal", "oversize", 2);
+        store.record("metrics", "future_reason", 3);
+        let snapshot = store.snapshot();
+
+        let emitted = emit_replayed_drops(&snapshot);
+        store.subtract(&emitted);
+
+        assert_eq!(emitted.len(), 3);
+        assert!(store.snapshot().is_empty());
+    }
+
+    #[test]
+    fn telemetry_opt_out_deletes_pending_drop_state_without_exporting() {
+        let state = tempfile::tempdir().unwrap();
+        let store = ExportDropStore::new(state.path().to_path_buf());
+        store.record("metrics", "oversize", 2);
+        let config = TelemetryConfig::new(
+            false,
+            OtelMode::DualWrite,
+            Some("http://127.0.0.1:9".to_string()),
+            state.path().to_path_buf(),
+        );
+
+        let providers = init_otel(&config);
+
+        assert!(store.snapshot().is_empty());
+        assert_eq!(providers.pipeline_kind(), OtelPipelineKind::Noop);
     }
 }

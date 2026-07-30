@@ -14,7 +14,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Count of CLI sessions started in the selected time range, split by client_application (V1/V2/V3). Uses increase() over the dashboard range so a single short dev session still shows a non-zero count.",
+      "description": "Count of CLI runs started in the selected time range, split by agent engine.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -35,9 +35,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -51,12 +49,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application) (increase(kiro_cli_session_started_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(kiro_cli_session_started_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
-          "legendFormat": "{{client_application}}",
+          "expr": "sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{agent_engine}}",
           "refId": "A"
         }
       ],
-      "title": "CLI Sessions Started",
+      "title": "CLI Runs Started",
       "type": "stat"
     },
     {
@@ -64,7 +62,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Count of chat sessions started in the selected time range, split by client_application. increase() over the dashboard range so brief dev sessions still register.",
+      "description": "Count of chat sessions created or loaded in the selected time range, split by agent engine.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -85,9 +83,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -101,8 +97,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application) (increase(kiro_cli_chat_session_started_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(kiro_cli_chat_session_started_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
-          "legendFormat": "{{client_application}}",
+          "expr": "sum by (agent_engine) (increase(kiro_cli_chat_session_started_total{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{agent_engine}}",
           "refId": "A"
         }
       ],
@@ -114,7 +110,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Count of chat CLI sessions completed in the selected time range, split by client_application. increase() over the dashboard range.",
+      "description": "Count of terminal CLI run outcomes in the selected time range, split by agent engine and outcome.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -135,9 +131,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -151,12 +145,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application) (increase(kiro_cli_session_completed_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application) (increase(kiro_cli_session_completed_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
-          "legendFormat": "{{client_application}}",
+          "expr": "sum by (agent_engine, run_outcome) (increase(kiro_cli_run_outcome_total{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{agent_engine}} {{run_outcome}}",
           "refId": "A"
         }
       ],
-      "title": "CLI Sessions Completed",
+      "title": "CLI Run Outcomes",
       "type": "stat"
     },
     {
@@ -164,7 +158,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Process RSS memory (gauge, bytes) per engine. Split by client_application and agent_kind so V2/V3 processes are distinguishable.",
+      "description": "Current resident-set size by agent engine and process role.",
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
@@ -189,9 +183,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -205,8 +197,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application, agent_kind) (kiro_cli_process_memory_rss{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"})",
-          "legendFormat": "{{client_application}} {{agent_kind}} rss",
+          "expr": "sum by (agent_engine, process_role) (kiro_cli_process_memory_rss_bytes{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"})",
+          "legendFormat": "{{agent_engine}} {{process_role}} rss",
           "refId": "A"
         }
       ],
@@ -218,18 +210,16 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Context window usage as a percentage (0-100). NOTE: the underlying kiro_cli_context_usage_percentage metric is currently a histogram with non-percent buckets; a parallel instrumentation fix will emit sane 0-100 buckets/gauge. The panel shows the histogram average and is hard-bounded to 0-100 so it does not auto-zoom to huge values.",
+      "description": "User prompts that reached a terminal state, split by agent engine.",
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
+          "unit": "short",
           "min": 0,
-          "max": 100,
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 10,
             "showPoints": "auto",
-            "axisSoftMin": 0,
-            "axisSoftMax": 100
+            "axisSoftMin": 0
           }
         },
         "overrides": []
@@ -259,12 +249,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clamp_max(sum by (client_application) (increase(kiro_cli_context_usage_percentage_sum{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__rate_interval])) / clamp_min(sum by (client_application) (increase(kiro_cli_context_usage_percentage_count{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__rate_interval])), 1), 100)",
-          "legendFormat": "{{client_application}} avg %",
+          "expr": "sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{agent_engine}}",
           "refId": "A"
         }
       ],
-      "title": "Context Usage %",
+      "title": "User Turns",
       "type": "timeseries"
     },
     {
@@ -272,7 +262,56 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Sessions completed over the range, broken out by engine (client_application), agent_kind and exit_reason. Rendered as a bar gauge so counts read as counts, not a per-second rate.",
+      "description": "Recognized slash-command invocation totals retained by the local collector, split by canonical command and agent engine.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 19,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (command, agent_engine) (kiro_cli_slash_command_invoked_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", command=~\"$command\", instance=~\"$instance\"})",
+          "legendFormat": "{{command}} {{agent_engine}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "title": "Slash Command Invocations",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Terminal CLI run outcomes over the selected range, broken out by interface, engine, and outcome.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -292,9 +331,7 @@
         "displayMode": "gradient",
         "orientation": "horizontal",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -309,13 +346,13 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application, agent_kind, exit_reason) (increase(kiro_cli_session_completed_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application, agent_kind, exit_reason) (increase(kiro_cli_session_completed_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
-          "legendFormat": "{{client_application}} {{agent_kind}} {{exit_reason}}",
+          "expr": "sum by (session_interface, agent_engine, run_outcome) (increase(kiro_cli_run_outcome_total{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{session_interface}} {{agent_engine}} {{run_outcome}}",
           "refId": "A",
           "instant": true
         }
       ],
-      "title": "Session Completions By Agent",
+      "title": "Run Outcomes By Interface",
       "type": "bargauge"
     },
     {
@@ -323,10 +360,10 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "p95 time-to-first-token for Bedrock streams, split by engine (client_application).",
+      "description": "p95 time from a logical model request to its first meaningful content, split by engine and model.",
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "ms"
         },
         "overrides": []
       },
@@ -355,12 +392,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (client_application, le) (rate(kiro_cli_bedrock_stream_ttft_bucket{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "{{client_application}} p95",
+          "expr": "histogram_quantile(0.95, sum by (agent_engine, model, le) (rate(kiro_cli_model_time_to_first_content_ms_bucket{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "{{agent_engine}} {{model}} p95",
           "refId": "A"
         }
       ],
-      "title": "Bedrock TTFT p95",
+      "title": "Model First Content p95",
       "type": "timeseries"
     },
     {
@@ -368,7 +405,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Retry attempts over the range, broken out by engine (client_application), upstream and retry_reason. Bar gauge so counts read as counts, not a per-second rate.",
+      "description": "Additional automatic attempts over the range, split by engine, reason, and terminal retry outcome.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -388,9 +425,7 @@
         "displayMode": "gradient",
         "orientation": "horizontal",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -405,13 +440,13 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (client_application, upstream, retry_reason) (increase(kiro_cli_retry_attempts_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range])) or sum by (client_application, upstream, retry_reason) (increase(kiro_cli_retry_attempts_total_total{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\"}[$__range]))",
-          "legendFormat": "{{client_application}} {{upstream}} {{retry_reason}}",
+          "expr": "sum by (agent_engine, retry_reason, retry_outcome) (increase(kiro_cli_automatic_retries_per_operation_sum{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{agent_engine}} {{retry_reason}} {{retry_outcome}}",
           "refId": "A",
           "instant": true
         }
       ],
-      "title": "Retry Attempts",
+      "title": "Additional Automatic Attempts",
       "type": "bargauge"
     },
     {
@@ -419,7 +454,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Raw sample of every kiro/chat/cli metric currently in Prometheus, filtered by the selected engine and instance. client_application and instance columns show who emitted each sample.",
+      "description": "Raw sample of every Kiro CLI metric currently in Prometheus, filtered by the selected agent engine and collector.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -436,9 +471,7 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": false
         },
         "showHeader": true
@@ -455,7 +488,7 @@
             },
             "indexByName": {
               "__name__": 0,
-              "client_application": 1,
+              "agent_engine": 1,
               "instance": 2,
               "Value": 3
             },
@@ -469,7 +502,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "{job=\"otel-collector\", client_application=~\"$client_application\", instance=~\"$instance\", __name__=~\"kiro_cli_.*\"}",
+          "expr": "{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\", __name__=~\"kiro_cli_.*\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -484,7 +517,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Distinct authenticated V1 user IDs currently retained by local Prometheus, split by installed service version.",
+      "description": "Daily heartbeat observations currently retained by local Prometheus, split by full version.",
       "fieldConfig": {
         "defaults": {
           "decimals": 0,
@@ -505,9 +538,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -521,12 +552,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count by (service_version) (count by (service_version, user_id) (kiro_cli_session_started_total{job=\"otel-collector\", engine=\"v1\", user_id!=\"\", instance=~\"$instance\"}))",
-          "legendFormat": "{{service_version}}",
+          "expr": "sum by (version_full) (kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full!=\"\", instance=~\"$instance\"})",
+          "legendFormat": "{{version_full}}",
           "refId": "A"
         }
       ],
-      "title": "V1 Authenticated Users Seen",
+      "title": "Active Installation Heartbeats",
       "type": "stat"
     },
     {
@@ -534,7 +565,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Cumulative new V1 chat sessions observed by the local collector, excluding resumed conversations.",
+      "description": "Cumulative V1 chat sessions observed by the local collector.",
       "fieldConfig": {
         "defaults": {
           "decimals": 0,
@@ -555,9 +586,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -571,12 +600,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (service_version) (kiro_cli_chat_session_started_total{job=\"otel-collector\", engine=\"v1\", session_start_kind=\"new\", instance=~\"$instance\"})",
-          "legendFormat": "{{service_version}}",
+          "expr": "sum by (version_full) (kiro_cli_chat_session_started_total{job=\"otel-collector\", agent_engine=\"v1\", instance=~\"$instance\"})",
+          "legendFormat": "{{version_full}}",
           "refId": "A"
         }
       ],
-      "title": "V1 New Chat Sessions",
+      "title": "V1 Chat Sessions",
       "type": "stat"
     },
     {
@@ -600,9 +629,7 @@
       "id": 17,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -618,8 +645,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (service_version, os_type) (kiro_cli_process_memory_rss{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"})",
-          "legendFormat": "{{service_version}} {{os_type}} rss",
+          "expr": "max by (version_full, os_type) (kiro_cli_process_memory_rss_bytes{job=\"otel-collector\", agent_engine=\"v1\", process_role=\"host\", instance=~\"$instance\"})",
+          "legendFormat": "{{version_full}} {{os_type}} rss",
           "refId": "A"
         },
         {
@@ -627,8 +654,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (service_version, os_type) (kiro_cli_process_memory_peak_rss{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"})",
-          "legendFormat": "{{service_version}} {{os_type}} peak",
+          "expr": "sum by (version_full, os_type) (increase(kiro_cli_process_peak_rss_bytes_sum{job=\"otel-collector\", agent_engine=\"v1\", process_role=\"host\", instance=~\"$instance\"}[$__range])) / clamp_min(sum by (version_full, os_type) (increase(kiro_cli_process_peak_rss_bytes_count{job=\"otel-collector\", agent_engine=\"v1\", process_role=\"host\", instance=~\"$instance\"}[$__range])), 1)",
+          "legendFormat": "{{version_full}} {{os_type}} mean peak",
           "refId": "B"
         }
       ],
@@ -673,8 +700,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (service_version, os_type) (kiro_cli_process_cpu_utilization_sum{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"}) / sum by (service_version, os_type) (kiro_cli_process_cpu_utilization_count{job=\"otel-collector\", engine=\"v1\", process_role=\"host\", instance=~\"$instance\"})",
-          "legendFormat": "{{service_version}} {{os_type}} mean",
+          "expr": "sum by (version_full, os_type) (kiro_cli_process_cpu_utilization_ratio_sum{job=\"otel-collector\", agent_engine=\"v1\", process_role=\"host\", instance=~\"$instance\"}) / clamp_min(sum by (version_full, os_type) (kiro_cli_process_cpu_utilization_ratio_count{job=\"otel-collector\", agent_engine=\"v1\", process_role=\"host\", instance=~\"$instance\"}), 1)",
+          "legendFormat": "{{version_full}} {{os_type}} mean",
           "refId": "A"
         }
       ],
@@ -684,26 +711,22 @@
   ],
   "refresh": "5s",
   "schemaVersion": 39,
-  "tags": [
-    "kiro",
-    "telemetry",
-    "local"
-  ],
+  "tags": ["kiro", "telemetry", "local"],
   "templating": {
     "list": [
       {
-        "name": "client_application",
-        "label": "Client / Engine",
-        "description": "Filter by emitting engine: chat_cli (V1), chat_cli_v2 (V2), chat_cli_v3 (KAS/V3). Series without this label still appear under an empty value.",
+        "name": "version_full",
+        "label": "CLI Version",
+        "description": "Filter slash-command usage by exact released or nightly CLI version.",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(client_application)",
+        "definition": "label_values(kiro_cli_slash_command_invoked_total, version_full)",
         "query": {
           "qryType": 1,
-          "query": "label_values(client_application)",
+          "query": "label_values(kiro_cli_slash_command_invoked_total, version_full)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "includeAll": true,
@@ -711,12 +734,62 @@
         "multi": true,
         "current": {
           "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
+          "text": ["All"],
+          "value": ["$__all"]
+        },
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "agent_engine",
+        "label": "Agent Engine",
+        "description": "Filter by agent runtime: v1, v2, v3, or unknown.",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_run_started_total, agent_engine)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_run_started_total, agent_engine)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": ["All"],
+          "value": ["$__all"]
+        },
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "command",
+        "label": "Slash Command",
+        "description": "Filter by canonical first-party command or the bounded custom command buckets.",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_slash_command_invoked_total{version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, command)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_slash_command_invoked_total{version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, command)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": ["All"],
+          "value": ["$__all"]
         },
         "refresh": 2,
         "sort": 1,
@@ -742,12 +815,8 @@
         "multi": true,
         "current": {
           "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
+          "text": ["All"],
+          "value": ["$__all"]
         },
         "refresh": 2,
         "sort": 1,

@@ -250,7 +250,7 @@ impl RootSubcommand {
 
         if !matches!(self, Self::Chat(_) | Self::Acp { .. }) {
             let telemetry_name = self.valid_for_telemetry().then(|| self.telemetry_name());
-            crate::launch::emit_cli_invocation_telemetry(&os.telemetry, &os.database, telemetry_name, Engine::Other)
+            crate::launch::emit_cli_invocation_telemetry(&os.telemetry, &os.database, telemetry_name, Engine::Unknown)
                 .await;
         }
 
@@ -583,8 +583,13 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
 
     let telemetry_name = chat_telemetry_name();
     if args.list_models {
-        crate::launch::emit_cli_invocation_telemetry(&os.telemetry, &os.database, Some(telemetry_name), Engine::Other)
-            .await;
+        crate::launch::emit_cli_invocation_telemetry(
+            &os.telemetry,
+            &os.database,
+            Some(telemetry_name),
+            Engine::Unknown,
+        )
+        .await;
         return crate::cli::chat::cli::model::print_model_list(os, args.format)
             .await
             .map_err(Into::into);
@@ -595,7 +600,7 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
             Some(chat::SessionSourceArg::V1) => Engine::V1,
             Some(chat::SessionSourceArg::V2) => Engine::V2,
             Some(chat::SessionSourceArg::V3) => Engine::V3,
-            None => Engine::Other,
+            None => Engine::Unknown,
         };
         crate::launch::emit_cli_invocation_telemetry(&os.telemetry, &os.database, Some(telemetry_name), engine).await;
         return result;
@@ -623,7 +628,7 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
                 &os.telemetry,
                 &os.database,
                 Some(telemetry_name),
-                Engine::Other,
+                Engine::Unknown,
             )
             .await;
             return Err(err);

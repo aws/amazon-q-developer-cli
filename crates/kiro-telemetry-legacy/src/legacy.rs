@@ -1,6 +1,5 @@
 use kiro_telemetry::{
     MetricRecord,
-    TelemetryLogRecord,
     metric,
 };
 use kiro_telemetry_schema::{
@@ -42,11 +41,6 @@ fn emits_legacy_user_turn_counter(event_type: LegacyEventType) -> bool {
 }
 
 #[cfg(test)]
-fn emits_legacy_chat_message_counter(event_type: LegacyEventType) -> bool {
-    matches_counter_target(event_type, "kiro_cli_chat_messages_total")
-}
-
-#[cfg(test)]
 fn emits_legacy_tool_call_total(event_type: LegacyEventType) -> bool {
     matches_counter_target(event_type, "kiro_cli_tool_call_total")
 }
@@ -57,11 +51,6 @@ fn matches_counter_target(event_type: LegacyEventType, metric_name: &str) -> boo
         .is_some_and(|target| target.metric_kind == MetricKind::Counter && target.metric_name == metric_name)
 }
 
-pub fn legacy_log_record(event_type: LegacyEventType) -> Option<TelemetryLogRecord> {
-    let target = legacy_otel_target(event_type)?;
-    (target.metric_kind == MetricKind::LogEvent).then(|| TelemetryLogRecord::new(target.metric_name))
-}
-
 #[cfg(test)]
 mod tests {
     use kiro_telemetry::MetricValue;
@@ -69,13 +58,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolves_all_legacy_events_to_schema_targets() {
+    fn resolves_only_events_with_retained_schema_targets() {
         for event_type in LegacyEventType::ALL {
-            let target = legacy_otel_target(*event_type).expect("event should have schema target");
-
-            assert_eq!(target.event_type, *event_type);
-            assert!(!target.metric_name.is_empty());
+            if let Some(target) = legacy_otel_target(*event_type) {
+                assert_eq!(target.event_type, *event_type);
+                assert!(!target.metric_name.is_empty());
+            }
         }
+
+        assert!(legacy_otel_target(LegacyEventType::ChatAddedMessage).is_some());
+        assert!(legacy_otel_target(LegacyEventType::ChatEnd).is_none());
     }
 
     #[test]
@@ -84,9 +76,7 @@ mod tests {
         assert_eq!(counter.metric_name, "kiro_cli_tool_call_total");
         assert_eq!(counter.metric_kind, MetricKind::Counter);
 
-        let turn = legacy_otel_target(LegacyEventType::RecordUserTurnCompletion).expect("turn completion target");
-        assert_eq!(turn.metric_name, "kiro_cli_user_turns");
-        assert_eq!(turn.metric_kind, MetricKind::Counter);
+        assert!(legacy_otel_target(LegacyEventType::RecordUserTurnCompletion).is_none());
     }
 
     #[test]
@@ -96,23 +86,9 @@ mod tests {
         assert_eq!(counter.value, MetricValue::Counter(1));
         assert!(emits_legacy_tool_call_total(LegacyEventType::ToolUseSuggested));
         assert!(!emits_legacy_tool_call_total(LegacyEventType::ChatAddedMessage));
-        assert!(emits_legacy_chat_message_counter(LegacyEventType::ChatAddedMessage));
-        assert!(!emits_legacy_user_turn_counter(LegacyEventType::ChatAddedMessage));
-        assert!(emits_legacy_user_turn_counter(
-            LegacyEventType::RecordUserTurnCompletion
-        ));
+        assert!(emits_legacy_user_turn_counter(LegacyEventType::ChatAddedMessage));
         assert!(!emits_legacy_user_turn_counter(LegacyEventType::ToolUseSuggested));
 
-        let mode = legacy_metric_record(LegacyEventType::ModeChanged).expect("counter target");
-        assert_eq!(mode.name, "kiro_cli_mode_active_total");
-        assert_eq!(mode.value, MetricValue::Counter(1));
-    }
-
-    #[test]
-    fn semantic_counter_mappings_do_not_create_generic_fact_logs() {
-        assert!(legacy_metric_record(LegacyEventType::RecordUserTurnCompletion).is_some());
-        assert!(legacy_metric_record(LegacyEventType::ChatEnd).is_some());
-        assert!(legacy_log_record(LegacyEventType::RecordUserTurnCompletion).is_none());
-        assert!(legacy_log_record(LegacyEventType::ChatEnd).is_none());
+        assert!(legacy_metric_record(LegacyEventType::ModeChanged).is_none());
     }
 }

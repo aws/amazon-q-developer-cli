@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Emits one record for every metric/log in the §5 catalog via the catalog_smoke
-# example, then asserts every metric instrument is observed in the local Prometheus.
+# Emits one record for every metric in the reviewed catalog, then asserts every
+# instrument is observed in the local Prometheus.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Telemetry metrics now use bounded CloudWatch dimensions consistently across V1, V2, and V3 to improve dashboard reliability"
+}

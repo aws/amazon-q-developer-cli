@@ -153,6 +153,7 @@ use super::util::request_channel::{
     RequestReceiver,
     new_request_channel,
 };
+use crate::agent::agent_config::McpServerConfigSource;
 use crate::agent::agent_config::definitions::McpServerConfig;
 use crate::agent::util::request_channel::{
     RequestSender,
@@ -164,7 +165,7 @@ use crate::agent::util::request_channel::{
 pub struct McpManagerHandle {
     /// Sender for sending requests to the tool manager task
     request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
-    mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
+    mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerEvent>,
 }
 
 impl Clone for McpManagerHandle {
@@ -179,7 +180,7 @@ impl Clone for McpManagerHandle {
 impl McpManagerHandle {
     fn new(
         request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
-        mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
+        mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerEvent>,
     ) -> Self {
         Self {
             request_tx,
@@ -191,12 +192,14 @@ impl McpManagerHandle {
         &mut self,
         name: String,
         config: McpServerConfig,
+        source: McpServerConfigSource,
     ) -> Result<oneshot::Receiver<LaunchServerResult>, McpManagerError> {
         match self
             .request_tx
             .send_recv(McpManagerRequest::LaunchServer {
                 server_name: name,
                 config,
+                source,
             })
             .await
             .unwrap_or(Err(McpManagerError::Channel))?
@@ -375,10 +378,7 @@ impl McpManagerHandle {
     }
 
     pub async fn recv(&mut self) -> Result<McpServerEvent, RecvError> {
-        self.mcp_main_loop_to_handle_server_event_rx
-            .recv()
-            .await
-            .map(|evt| evt.into())
+        self.mcp_main_loop_to_handle_server_event_rx.recv().await
     }
 
     pub fn terminate(&self) {
@@ -403,11 +403,18 @@ pub struct McpManager {
 
     cred_path: PathBuf,
 
-    initializing_servers: HashMap<String, (McpServerActorHandle, oneshot::Sender<LaunchServerResult>)>,
+    initializing_servers: HashMap<
+        String,
+        (
+            McpServerActorHandle,
+            oneshot::Sender<LaunchServerResult>,
+            McpServerConfigSource,
+        ),
+    >,
     servers: HashMap<String, McpServerActorHandle>,
     /// Names of servers that failed initialization.
     failed_servers: HashSet<String>,
-    event_buf: Vec<McpServerActorEvent>,
+    event_buf: Vec<McpServerEvent>,
 }
 
 impl McpManager {
@@ -424,14 +431,14 @@ impl McpManager {
             initializing_servers: HashMap::new(),
             servers: HashMap::new(),
             failed_servers: HashSet::new(),
-            event_buf: Vec::<McpServerActorEvent>::new(),
+            event_buf: Vec::<McpServerEvent>::new(),
         }
     }
 
     pub fn spawn(self) -> McpManagerHandle {
         let request_tx = self.request_tx.clone();
         let (mcp_main_loop_to_handle_server_event_tx, mcp_main_loop_to_handle_server_event_rx) =
-            broadcast::channel::<McpServerActorEvent>(100);
+            broadcast::channel::<McpServerEvent>(100);
 
         tokio::spawn(async move {
             self.main_loop(mcp_main_loop_to_handle_server_event_tx).await;
@@ -440,7 +447,7 @@ impl McpManager {
         McpManagerHandle::new(request_tx, mcp_main_loop_to_handle_server_event_rx)
     }
 
-    async fn main_loop(mut self, mcp_main_loop_to_handle_server_event_tx: broadcast::Sender<McpServerActorEvent>) {
+    async fn main_loop(mut self, mcp_main_loop_to_handle_server_event_tx: broadcast::Sender<McpServerEvent>) {
         loop {
             self.event_buf
                 .drain(..)
@@ -479,6 +486,7 @@ impl McpManager {
             McpManagerRequest::LaunchServer {
                 server_name: name,
                 config,
+                source,
             } => {
                 if self.initializing_servers.contains_key(&name) {
                     return Err(McpManagerError::ServerCurrentlyInitializing { name });
@@ -486,7 +494,7 @@ impl McpManager {
                     return Err(McpManagerError::ServerAlreadyLaunched { name });
                 }
 
-                self.event_buf.push(McpServerActorEvent::Initializing {
+                self.event_buf.push(McpServerEvent::Initializing {
                     server_name: name.clone(),
                 });
 
@@ -494,7 +502,7 @@ impl McpManager {
                 let handle = McpServerActor::spawn(name.clone(), config, self.cred_path.clone(), event_tx);
                 let (tx, rx) = oneshot::channel();
 
-                self.initializing_servers.insert(name, (handle, tx));
+                self.initializing_servers.insert(name, (handle, tx, source));
                 Ok(McpManagerResponse::LaunchServer(rx))
             },
             McpManagerRequest::GetToolSpecs { server_name } => match self.servers.get(&server_name) {
@@ -555,7 +563,7 @@ impl McpManager {
                         warn!(server_name = %server_name, "MCP server did not shut down within timeout, aborting");
                         handle.abort();
                     }
-                } else if let Some((handle, result_tx)) = self.initializing_servers.remove(&server_name) {
+                } else if let Some((handle, result_tx, _)) = self.initializing_servers.remove(&server_name) {
                     // Server is still initializing (e.g. blocked on an OAuth redirect).
                     // The actor's request loop isn't running yet, so abort the task to
                     // cancel the in-flight launch and tear down the OAuth loopback.
@@ -600,7 +608,7 @@ impl McpManager {
                 // channel, so dropping the handle wouldn't stop it. Without an
                 // explicit abort the task — and its OAuth redirect loopback — would
                 // leak past manager teardown (e.g. on agent swap).
-                for (name, (handle, _result_tx)) in self.initializing_servers.drain() {
+                for (name, (handle, _result_tx, _)) in self.initializing_servers.drain() {
                     debug!(server_name = %name, "aborting initializing MCP server on terminate");
                     handle.abort();
                 }
@@ -618,7 +626,7 @@ impl McpManager {
                     {
                         warn!(server_name = %server_name, "MCP server did not shut down within timeout");
                     }
-                } else if let Some((handle, _result_tx)) = self.initializing_servers.remove(&server_name) {
+                } else if let Some((handle, _result_tx, _)) = self.initializing_servers.remove(&server_name) {
                     handle.terminate();
                 }
                 Ok(McpManagerResponse::StopServerAcknowledged)
@@ -655,7 +663,7 @@ impl McpManager {
     }
 
     fn handle_mcp_actor_event(&mut self, evt: McpServerActorEvent) {
-        // TODO: keep a record of all the different server events received in this layer?
+        let mut source = McpServerConfigSource::Unknown;
         match &evt {
             McpServerActorEvent::Initializing { server_name: _ } => { /* noop */ },
             McpServerActorEvent::Initialized {
@@ -664,10 +672,11 @@ impl McpManager {
                 list_tools_duration: _,
                 list_prompts_duration: _,
             } => {
-                let Some((handle, result_tx)) = self.initializing_servers.remove(server_name) else {
+                let Some((handle, result_tx, server_source)) = self.initializing_servers.remove(server_name) else {
                     warn!(?server_name, ?evt, "event was not from an initializing MCP server");
                     return;
                 };
+                source = server_source;
 
                 if let Err(e) = result_tx.send(Ok(())) {
                     warn!(?server_name, ?e, "failed to send server initialized message");
@@ -678,10 +687,11 @@ impl McpManager {
                 }
             },
             McpServerActorEvent::InitializeError { server_name, error } => {
-                if let Some((_, result_tx)) = self.initializing_servers.remove(server_name)
-                    && let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone())))
-                {
-                    warn!(?server_name, ?e, "failed to send server initialized message");
+                if let Some((_, result_tx, server_source)) = self.initializing_servers.remove(server_name) {
+                    source = server_source;
+                    if let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone()))) {
+                        warn!(?server_name, ?e, "failed to send server initialized message");
+                    }
                 }
                 self.failed_servers.insert(server_name.clone());
             },
@@ -692,7 +702,27 @@ impl McpManager {
                 info!(?server_name, "MCP server tool list changed");
             },
         }
-        self.event_buf.push(evt);
+        let event = match evt {
+            McpServerActorEvent::Initialized {
+                server_name,
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+            } => McpServerEvent::Initialized {
+                server_name,
+                source,
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+            },
+            McpServerActorEvent::InitializeError { server_name, error } => McpServerEvent::InitializeError {
+                server_name,
+                source,
+                error,
+            },
+            other => other.into(),
+        };
+        self.event_buf.push(event);
     }
 }
 
@@ -713,6 +743,7 @@ pub enum McpManagerRequest {
         server_name: String,
         /// Config to use
         config: McpServerConfig,
+        source: McpServerConfigSource,
     },
     GetToolSpecs {
         server_name: String,
@@ -809,6 +840,8 @@ pub enum McpServerEvent {
     /// The MCP server has launched successfully
     Initialized {
         server_name: String,
+        #[serde(default)]
+        source: McpServerConfigSource,
         /// Time taken to launch the server
         serve_duration: Duration,
         /// Time taken to list all tools.
@@ -821,7 +854,12 @@ pub enum McpServerEvent {
         list_prompts_duration: Option<Duration>,
     },
     /// The MCP server failed to initialize successfully
-    InitializeError { server_name: String, error: String },
+    InitializeError {
+        server_name: String,
+        #[serde(default)]
+        source: McpServerConfigSource,
+        error: String,
+    },
     /// An OAuth authentication request from the MCP server
     OauthRequest { server_name: String, oauth_url: String },
     /// The MCP server's tool list has changed
@@ -852,11 +890,16 @@ impl From<McpServerActorEvent> for McpServerEvent {
                 list_prompts_duration,
             } => Self::Initialized {
                 server_name,
+                source: McpServerConfigSource::Unknown,
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
             },
-            McpServerActorEvent::InitializeError { server_name, error } => Self::InitializeError { server_name, error },
+            McpServerActorEvent::InitializeError { server_name, error } => Self::InitializeError {
+                server_name,
+                source: McpServerConfigSource::Unknown,
+                error,
+            },
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
                 Self::OauthRequest { server_name, oauth_url }
             },
@@ -992,6 +1035,7 @@ mod tests {
     fn test_mcp_server_event_serde_initialized() {
         let e = McpServerEvent::Initialized {
             server_name: "test".to_string(),
+            source: McpServerConfigSource::Registry,
             serve_duration: Duration::from_secs(1),
             list_tools_duration: Some(Duration::from_millis(100)),
             list_prompts_duration: None,
@@ -1017,12 +1061,13 @@ mod tests {
     fn test_mcp_server_event_serde_initialize_error() {
         let e = McpServerEvent::InitializeError {
             server_name: "x".to_string(),
+            source: McpServerConfigSource::GlobalMcpJson,
             error: "boom".to_string(),
         };
         let json = serde_json::to_string(&e).unwrap();
         let parsed: McpServerEvent = serde_json::from_str(&json).unwrap();
         match parsed {
-            McpServerEvent::InitializeError { server_name, error } => {
+            McpServerEvent::InitializeError { server_name, error, .. } => {
                 assert_eq!(server_name, "x");
                 assert_eq!(error, "boom");
             },
@@ -1095,6 +1140,7 @@ mod tests {
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
+                ..
             } => {
                 assert_eq!(server_name, "s2");
                 assert_eq!(serve_duration, Duration::from_millis(100));
@@ -1111,7 +1157,7 @@ mod tests {
         };
         let converted: McpServerEvent = evt.into();
         match converted {
-            McpServerEvent::InitializeError { server_name, error } => {
+            McpServerEvent::InitializeError { server_name, error, .. } => {
                 assert_eq!(server_name, "s3");
                 assert_eq!(error, "fail");
             },
@@ -1170,7 +1216,8 @@ mod tests {
             event_tx,
         );
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers.insert("test-server".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("test-server".to_string(), (handle, tx, McpServerConfigSource::Registry));
 
         // Handle Initialized event
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
@@ -1205,7 +1252,10 @@ mod tests {
             event_tx,
         );
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers.insert("fail-server".to_string(), (handle, tx));
+        mgr.initializing_servers.insert(
+            "fail-server".to_string(),
+            (handle, tx, McpServerConfigSource::WorkspaceMcpJson),
+        );
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
             server_name: "fail-server".to_string(),
@@ -1302,7 +1352,10 @@ mod tests {
             event_tx,
         );
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers.insert("init-server".to_string(), (handle, tx));
+        mgr.initializing_servers.insert(
+            "init-server".to_string(),
+            (handle, tx, McpServerConfigSource::AgentConfig),
+        );
 
         let result = mgr
             .handle_mcp_manager_request(McpManagerRequest::GetToolSpecs {
@@ -1367,7 +1420,11 @@ mod tests {
         let (tx, _rx) = oneshot::channel();
         mgr.initializing_servers.insert(
             "__reauth__srv".to_string(),
-            (McpServerActorHandle::new_dummy("__reauth__srv"), tx),
+            (
+                McpServerActorHandle::new_dummy("__reauth__srv"),
+                tx,
+                McpServerConfigSource::AgentConfig,
+            ),
         );
         mgr.failed_servers.insert("old".to_string());
 
@@ -1466,6 +1523,7 @@ mod tests {
         assert_eq!(
             McpServerEvent::InitializeError {
                 server_name: "c".to_string(),
+                source: McpServerConfigSource::Unknown,
                 error: "e".to_string()
             }
             .server_name(),
@@ -1518,8 +1576,14 @@ mod tests {
         // cleared so a later relaunch of the same name isn't shadowed.
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers
-            .insert("pending".to_string(), (McpServerActorHandle::new_dummy("pending"), tx));
+        mgr.initializing_servers.insert(
+            "pending".to_string(),
+            (
+                McpServerActorHandle::new_dummy("pending"),
+                tx,
+                McpServerConfigSource::Unknown,
+            ),
+        );
         mgr.failed_servers.insert("pending".to_string());
 
         let result = mgr
@@ -1552,12 +1616,14 @@ mod tests {
             event_tx,
         );
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers.insert("dup-server".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("dup-server".to_string(), (handle, tx, McpServerConfigSource::Unknown));
 
         let result = mgr
             .handle_mcp_manager_request(McpManagerRequest::LaunchServer {
                 server_name: "dup-server".to_string(),
                 config,
+                source: McpServerConfigSource::Unknown,
             })
             .await;
         assert!(matches!(
@@ -1634,7 +1700,9 @@ mod tests {
             disabled_tools: vec![],
         });
         // Launch returns a oneshot receiver for the result
-        let result = handle.launch_server("echo-server".to_string(), config).await;
+        let result = handle
+            .launch_server("echo-server".to_string(), config, McpServerConfigSource::AgentConfig)
+            .await;
         assert!(result.is_ok());
         handle.shutdown().await;
     }
@@ -1672,7 +1740,8 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let handle = McpServerActorHandle::new_dummy("srv");
         let (tx, mut rx) = oneshot::channel();
-        mgr.initializing_servers.insert("srv".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("srv".to_string(), (handle, tx, McpServerConfigSource::Registry));
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
             server_name: "srv".to_string(),
@@ -1684,6 +1753,13 @@ mod tests {
         assert!(mgr.servers.contains_key("srv"));
         assert!(!mgr.initializing_servers.contains_key("srv"));
         assert_eq!(mgr.event_buf.len(), 1);
+        assert!(matches!(
+            mgr.event_buf.first(),
+            Some(McpServerEvent::Initialized {
+                source: McpServerConfigSource::Registry,
+                ..
+            })
+        ));
         // The oneshot should have received Ok(())
         assert!(rx.try_recv().unwrap().is_ok());
     }
@@ -1693,7 +1769,8 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let handle = McpServerActorHandle::new_dummy("bad");
         let (tx, mut rx) = oneshot::channel();
-        mgr.initializing_servers.insert("bad".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("bad".to_string(), (handle, tx, McpServerConfigSource::AcpInjected));
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
             server_name: "bad".to_string(),
@@ -1703,6 +1780,13 @@ mod tests {
         assert!(!mgr.initializing_servers.contains_key("bad"));
         assert!(mgr.failed_servers.contains("bad"));
         assert_eq!(mgr.event_buf.len(), 1);
+        assert!(matches!(
+            mgr.event_buf.first(),
+            Some(McpServerEvent::InitializeError {
+                source: McpServerConfigSource::AcpInjected,
+                ..
+            })
+        ));
         // The oneshot should have received an error
         let result = rx.try_recv().unwrap();
         assert!(result.is_err());
@@ -1740,7 +1824,8 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let handle = McpServerActorHandle::new_dummy("init");
         let (tx, mut rx) = oneshot::channel();
-        mgr.initializing_servers.insert("init".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("init".to_string(), (handle, tx, McpServerConfigSource::Unknown));
         let res = mgr
             .handle_mcp_manager_request(McpManagerRequest::ShutdownServer {
                 server_name: "init".to_string(),
@@ -1782,7 +1867,8 @@ mod tests {
         // Also put in initializing
         let handle = McpServerActorHandle::new_dummy("dup");
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers.insert("dup".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("dup".to_string(), (handle, tx, McpServerConfigSource::Unknown));
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
             server_name: "dup".to_string(),
@@ -1802,7 +1888,8 @@ mod tests {
         let handle = McpServerActorHandle::new_dummy("dropped");
         let (tx, rx) = oneshot::channel();
         drop(rx); // Drop receiver before sending
-        mgr.initializing_servers.insert("dropped".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("dropped".to_string(), (handle, tx, McpServerConfigSource::Unknown));
 
         // Should not panic even though receiver is dropped
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
@@ -1822,7 +1909,8 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let handle = McpServerActorHandle::new_dummy("init-srv");
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers.insert("init-srv".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("init-srv".to_string(), (handle, tx, McpServerConfigSource::Unknown));
 
         let result = mgr
             .handle_mcp_manager_request(McpManagerRequest::GetToolSpecs {
@@ -1853,6 +1941,7 @@ mod tests {
             .handle_mcp_manager_request(McpManagerRequest::LaunchServer {
                 server_name: "existing".to_string(),
                 config,
+                source: McpServerConfigSource::Unknown,
             })
             .await;
         assert!(matches!(result, Err(McpManagerError::ServerAlreadyLaunched { .. })));
@@ -1863,7 +1952,8 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let handle = McpServerActorHandle::new_dummy("dup");
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers.insert("dup".to_string(), (handle, tx));
+        mgr.initializing_servers
+            .insert("dup".to_string(), (handle, tx, McpServerConfigSource::Unknown));
 
         let config = McpServerConfig::Local(LocalMcpServerConfig {
             command: "echo".to_string(),
@@ -1877,6 +1967,7 @@ mod tests {
             .handle_mcp_manager_request(McpManagerRequest::LaunchServer {
                 server_name: "dup".to_string(),
                 config,
+                source: McpServerConfigSource::Unknown,
             })
             .await;
         assert!(matches!(
@@ -1918,10 +2009,10 @@ mod tests {
     #[test]
     fn test_event_buf_drain() {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
-        mgr.event_buf.push(McpServerActorEvent::Initializing {
+        mgr.event_buf.push(McpServerEvent::Initializing {
             server_name: "x".to_string(),
         });
-        mgr.event_buf.push(McpServerActorEvent::ToolListChanged {
+        mgr.event_buf.push(McpServerEvent::ToolListChanged {
             server_name: "y".to_string(),
         });
 
@@ -2082,6 +2173,7 @@ mod tests {
         let requests: Vec<McpManagerRequest> = vec![
             McpManagerRequest::LaunchServer {
                 server_name: "s".to_string(),
+                source: McpServerConfigSource::AgentConfig,
                 config: McpServerConfig::Local(LocalMcpServerConfig {
                     command: "x".to_string(),
                     args: vec![],

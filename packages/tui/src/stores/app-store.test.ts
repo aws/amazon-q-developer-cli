@@ -18,7 +18,7 @@ import { Feature, features } from '../features';
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),
-    sendChatSlashCommandTelemetry: mock(),
+    recordSlashCommandInvocation: mock(),
     cancel: mock(),
     close: mock(),
   })),

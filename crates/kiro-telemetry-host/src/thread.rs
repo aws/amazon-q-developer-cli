@@ -8,15 +8,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use kiro_telemetry::{
-    OtelLogsSink,
     OtelMetricsSink,
     OtelProviders,
     TelemetryClient as OtelTelemetryClient,
-    consent_file_integrity_records,
     init_otel,
     metric,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{
+    mpsc,
+    oneshot,
+};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tracing::trace;
@@ -35,6 +36,12 @@ use crate::event::{
     RecordUserTurnCompletionArgs,
     TangentModeSessionArgs,
     TelemetryResult,
+};
+use crate::process::ProcessSampler;
+use crate::run_receipt::{
+    DeferredRunReceiptAcknowledgement,
+    RunReceipt,
+    RunReceiptStore,
 };
 use crate::tool_event::ToolUseEventBuilder;
 
@@ -96,6 +103,7 @@ impl Clone for TelemetrySender {
 pub struct TelemetryThread {
     handle: Option<JoinHandle<()>>,
     tx: TelemetrySender,
+    run_receipt: Option<RunReceipt>,
 }
 
 impl Clone for TelemetryThread {
@@ -103,6 +111,7 @@ impl Clone for TelemetryThread {
         Self {
             handle: None,
             tx: self.tx.clone(),
+            run_receipt: None,
         }
     }
 }
@@ -110,7 +119,7 @@ impl Clone for TelemetryThread {
 /// Internal helper that owns the OTel client + providers and applies
 /// metric/log emission to each event. Translation from `Event` into OTel
 /// records is delegated to the caller-supplied [`OtelEventTranslator`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct OtelEmitter {
     providers: OtelProviders,
     client: Arc<OtelTelemetryClient>,
@@ -120,11 +129,8 @@ struct OtelEmitter {
 impl OtelEmitter {
     fn from_config(config: &kiro_telemetry::TelemetryConfig, translator: Option<Arc<dyn OtelEventTranslator>>) -> Self {
         let providers = init_otel(config);
-        let mut client =
+        let client =
             OtelTelemetryClient::new(config.clone()).with_sink(Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
-        if config.otlp_logs_enabled() {
-            client = client.with_sink(Arc::new(OtelLogsSink::from_providers(&providers)));
-        }
         Self {
             providers,
             client: Arc::new(client),
@@ -136,9 +142,13 @@ impl OtelEmitter {
         self.client.config().exports_enabled()
     }
 
-    fn flush(&self) {
-        if let Err(err) = self.providers.force_flush() {
-            trace!(%err, "failed to flush OTel provider");
+    fn flush(&self) -> bool {
+        match self.providers.force_flush() {
+            Ok(()) => true,
+            Err(err) => {
+                trace!(%err, "failed to flush OTel provider");
+                false
+            },
         }
     }
 
@@ -159,45 +169,39 @@ impl OtelEmitter {
             }
             return;
         }
+        self.emit_records(records);
+    }
+
+    fn emit_records(&self, records: impl IntoIterator<Item = kiro_telemetry::MetricRecord>) {
+        if !self.exports_enabled() {
+            return;
+        }
         for record in records {
             if let Err(err) = self.client.emit(record) {
                 trace!(%err, "failed to emit OTel metric record");
             }
         }
     }
+}
 
-    fn emit_log_record(&self, event: &Event) {
-        if !self.exports_enabled() {
-            return;
-        }
-        let Some(translator) = self.translator.as_ref() else {
-            return;
-        };
-        let Some(record) = translator.log_record(event) else {
-            return;
-        };
-        if let Err(err) = self.client.emit_log(record) {
-            trace!(%err, "failed to emit OTel log record");
-        }
-    }
-
-    fn emit_govcloud_channel_disabled(&self, channel: &str, partition: &str) {
-        if let Err(err) = self.client.emit(metric::govcloud_channel_disabled_record(
-            metric::GovcloudChannelDisabled::from_names(channel, partition),
-        )) {
-            trace!(%err, channel, partition, "failed to emit GovCloud disabled-channel counter");
-        }
-    }
-
-    fn emit_consent_integrity(&self, settings_path: &std::path::Path) {
-        if !self.exports_enabled() {
-            return;
-        }
-        for record in consent_file_integrity_records(settings_path) {
-            if let Err(err) = self.client.emit(record) {
-                trace!(%err, "failed to emit consent integrity accounting");
+fn spawn_recovery_flush(
+    otel: OtelEmitter,
+    acknowledgement: DeferredRunReceiptAcknowledgement,
+) -> Option<oneshot::Receiver<()>> {
+    let (complete_tx, complete_rx) = oneshot::channel();
+    match std::thread::Builder::new()
+        .name("kiro-telemetry-recovery".to_string())
+        .spawn(move || {
+            if otel.flush() {
+                acknowledgement.acknowledge();
             }
-        }
+            let _ = complete_tx.send(());
+        }) {
+        Ok(_) => Some(complete_rx),
+        Err(err) => {
+            trace!(%err, "failed to start recovered telemetry flush");
+            None
+        },
     }
 }
 
@@ -205,55 +209,102 @@ impl TelemetryThread {
     pub async fn new(config: HostConfig) -> Result<Self, TelemetryError> {
         let HostConfig {
             otel_config,
+            telemetry_enabled,
             legacy_sink,
             otel_translator,
-            govcloud_partition,
-            consent_settings_path,
-            engine,
             client_application,
+            engine,
+            process_identity,
+            govcloud_partition,
             ..
         } = config;
 
         let otel = OtelEmitter::from_config(&otel_config, otel_translator);
-        if let Some(path) = consent_settings_path.as_deref() {
-            otel.emit_consent_integrity(path);
-        }
+        let receipt_store = RunReceiptStore::new(otel_config.state_dir.clone());
+        let (run_receipt, recovery_acknowledgement) = if telemetry_enabled && otel.exports_enabled() {
+            let recovery = receipt_store.recover();
+            let recovered_records = recovery.records().collect::<Vec<_>>();
+            otel.emit_records(recovered_records.iter().cloned());
+            let recovery_acknowledgement = if recovered_records.is_empty() {
+                recovery.acknowledge();
+                None
+            } else {
+                Some(recovery.defer_acknowledgement())
+            };
+            (
+                process_identity.and_then(|identity| receipt_store.start(identity).ok()),
+                recovery_acknowledgement,
+            )
+        } else {
+            receipt_store.clear_unlocked();
+            (None, None)
+        };
+        let mut process_sampler = process_identity
+            .filter(|_| otel.exports_enabled())
+            .and_then(|identity| ProcessSampler::new().map(|sampler| (identity, sampler)));
+        let mut process_interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + Duration::from_secs(60),
+            Duration::from_secs(60),
+        );
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
 
-        let handle = if let Some(partition) = govcloud_partition {
-            tokio::spawn(async move {
-                while let Some(mut event) = rx.recv().await {
-                    apply_event_defaults(&mut event, engine, client_application);
-                    trace!("TelemetryThread received new telemetry event: {:?}", event);
-                    otel.emit_govcloud_channel_disabled("legacy_toolkit", partition);
-                    otel.emit_metric_records(&event);
-                    otel.emit_log_record(&event);
-                    if let Some(sink) = legacy_sink.as_ref() {
-                        sink.send_event_govcloud(event, partition).await;
-                    }
-                }
-                otel.flush();
-            })
-        } else {
-            tokio::spawn(async move {
-                while let Some(mut event) = rx.recv().await {
-                    apply_event_defaults(&mut event, engine, client_application);
-                    trace!("TelemetryThread received new telemetry event: {:?}", event);
-                    otel.emit_metric_records(&event);
-                    otel.emit_log_record(&event);
-                    if let Some(sink) = legacy_sink.as_ref() {
-                        sink.send_event(event).await;
-                    }
-                }
-                otel.flush();
-            })
+        let recovery_flush =
+            recovery_acknowledgement.and_then(|acknowledgement| spawn_recovery_flush(otel.clone(), acknowledgement));
+        let has_recovery = recovery_flush.is_some();
+        let recovery_monitor = async move {
+            if let Some(recovery_flush) = recovery_flush
+                && recovery_flush.await.is_err()
+            {
+                trace!("recovered telemetry flush exited without reporting completion");
+            }
         };
+
+        let handle = tokio::spawn(async move {
+            tokio::pin!(recovery_monitor);
+            let mut recovery_complete = !has_recovery;
+            loop {
+                tokio::select! {
+                    () = &mut recovery_monitor, if !recovery_complete => {
+                        recovery_complete = true;
+                    },
+                    event = rx.recv() => {
+                        let Some(mut event) = event else {
+                            break;
+                        };
+                        apply_event_defaults(&mut event, engine, client_application);
+                        trace!("TelemetryThread received new telemetry event: {:?}", event);
+                        otel.emit_metric_records(&event);
+                        if let Some(partition) = govcloud_partition {
+                            if let Some(sink) = legacy_sink.as_ref() {
+                                sink.send_event_govcloud(event, partition).await;
+                            }
+                        } else if let Some(sink) = legacy_sink.as_ref() {
+                            sink.send_event(event).await;
+                        }
+                    },
+                    _ = process_interval.tick(), if process_sampler.is_some() => {
+                        if let Some((identity, sampler)) = process_sampler.as_mut() {
+                            otel.emit_records(sampler.sample(*identity));
+                        }
+                    },
+                }
+            }
+
+            if !recovery_complete {
+                recovery_monitor.await;
+            }
+            if let Some((identity, sampler)) = process_sampler.as_mut() {
+                otel.emit_records(sampler.final_sample(*identity));
+            }
+            otel.flush();
+        });
 
         Ok(Self {
             handle: Some(handle),
             tx,
+            run_receipt,
         })
     }
 
@@ -261,21 +312,25 @@ impl TelemetryThread {
         self.finish_with_timeout(Duration::from_millis(1000)).await
     }
 
-    pub async fn finish_with_timeout(self, timeout: Duration) -> Result<(), TelemetryError> {
+    pub async fn finish_with_timeout(mut self, timeout: Duration) -> Result<(), TelemetryError> {
         drop(self.tx);
-        if let Some(handle) = self.handle {
-            match tokio::time::timeout(timeout, handle).await {
-                Ok(result) => {
-                    if let Err(e) = result {
-                        return Err(TelemetryError::Join(e));
-                    }
-                },
+        let result = if let Some(handle) = self.handle.take() {
+            let mut handle = handle;
+            match tokio::time::timeout(timeout, &mut handle).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(err)) => Err(TelemetryError::Join(err)),
                 Err(_) => {
-                    // Ignore timeout errors
+                    handle.abort();
+                    Ok(())
                 },
             }
+        } else {
+            Ok(())
+        };
+        if let Some(receipt) = self.run_receipt.take() {
+            receipt.complete();
         }
-        Ok(())
+        result
     }
 
     /// Send a pre-built telemetry event directly.
@@ -631,6 +686,7 @@ impl TelemetryThread {
         enricher: Option<&EventEnricher>,
         conversation_id: String,
         server_name: String,
+        mcp_server_source: metric::McpServerSource,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
         all_tool_names: Option<String>,
@@ -640,6 +696,7 @@ impl TelemetryThread {
         let mut event = Event::new(EventType::McpServerInit {
             conversation_id,
             server_name,
+            mcp_server_source,
             init_failure_reason,
             number_of_tools,
             all_tool_names,
@@ -737,8 +794,10 @@ fn apply_event_defaults(
     engine: Option<metric::Engine>,
     client_application: Option<metric::ClientApplication>,
 ) {
-    if event.engine.is_none() {
-        event.engine = engine;
+    if event.engine.is_none()
+        && let Some(engine) = engine
+    {
+        event.set_engine(engine);
     }
     if event.client_application.is_none()
         && let Some(client_application) = client_application
@@ -756,6 +815,16 @@ async fn enrich(enricher: Option<&EventEnricher>, event: &mut Event) {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::sync::mpsc as std_mpsc;
+    use std::time::Instant;
+
+    use kiro_telemetry::{
+        OtelMode,
+        TelemetryConfig,
+    };
+
     use super::*;
     use crate::config::govcloud_partition;
 
@@ -775,7 +844,159 @@ mod tests {
     }
 
     #[test]
-    fn v2_host_defaults_attribute_login_events() {
+    fn recovered_receipt_flush_does_not_block_thread_startup() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let store = RunReceiptStore::new(state.path());
+        drop(store.start(identity).unwrap());
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let (respond_tx, respond_rx) = std_mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            respond_rx.recv().unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
+            ..HostConfig::default()
+        };
+        let (started_tx, started_rx) = std_mpsc::channel();
+        let runtime = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async move {
+                    let thread = TelemetryThread::new(config).await.unwrap();
+                    started_tx.send(()).unwrap();
+                    thread.finish().await.unwrap();
+                });
+        });
+
+        let startup_result = started_rx.recv_timeout(Duration::from_secs(2));
+        respond_tx.send(()).unwrap();
+        server.join().unwrap();
+        runtime.join().unwrap();
+
+        assert!(startup_result.is_ok(), "recovery export blocked telemetry startup");
+    }
+
+    #[test]
+    fn blocked_recovery_flush_does_not_hold_runtime_shutdown() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let store = RunReceiptStore::new(state.path());
+        drop(store.start(identity).unwrap());
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let (accepted_tx, accepted_rx) = std_mpsc::channel();
+        let (release_tx, release_rx) = std_mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            accepted_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
+            process_identity: Some(identity),
+            ..HostConfig::default()
+        };
+        let (finished_tx, finished_rx) = std_mpsc::channel();
+        let runtime_thread = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let result = runtime.block_on(async move {
+                let thread = TelemetryThread::new(config).await.unwrap();
+                thread.finish_with_timeout(Duration::from_millis(100)).await
+            });
+            drop(runtime);
+            finished_tx.send(result).unwrap();
+        });
+
+        accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let started_waiting = Instant::now();
+        let result = finished_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        assert!(result.is_ok());
+        assert!(started_waiting.elapsed() < Duration::from_secs(1));
+
+        release_tx.send(()).unwrap();
+        server.join().unwrap();
+        runtime_thread.join().unwrap();
+
+        let receipt_directory = state.path().join("run-receipts");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline
+            && std::fs::read_dir(&receipt_directory)
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .any(|entry| entry.path().extension().is_some_and(|extension| extension == "json"))
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            std::fs::read_dir(receipt_directory)
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .all(|entry| entry.path().extension().is_none_or(|extension| extension != "json"))
+        );
+    }
+
+    #[tokio::test]
+    async fn join_failure_still_completes_run_receipt() {
+        let state = tempfile::tempdir().unwrap();
+        let store = RunReceiptStore::new(state.path());
+        let receipt = store
+            .start(crate::process::ProcessIdentity::new(
+                metric::Engine::V2,
+                metric::ProcessRole::Host,
+            ))
+            .unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let thread = TelemetryThread {
+            handle: Some(tokio::spawn(async { panic!("test worker failure") })),
+            tx: TelemetrySender::Strong(tx),
+            run_receipt: Some(receipt),
+        };
+
+        let result = thread.finish().await;
+
+        assert!(matches!(result, Err(TelemetryError::Join(_))));
+        assert_eq!(store.recover().records().count(), 0);
+    }
+
+    #[test]
+    fn host_defaults_do_not_override_event_attribution() {
+        let mut event = Event::new(EventType::UserLoggedIn {});
+        event.set_engine(metric::Engine::V3);
+        event.set_client_application_kind(metric::ClientApplication::ChatCliV3);
+
+        apply_event_defaults(
+            &mut event,
+            Some(metric::Engine::V2),
+            Some(metric::ClientApplication::ChatCliV2),
+        );
+
+        assert_eq!(event.engine, Some(metric::Engine::V3));
+        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v3"));
+    }
+
+    #[test]
+    fn host_defaults_fill_missing_event_attribution() {
         let mut event = Event::new(EventType::UserLoggedIn {});
 
         apply_event_defaults(

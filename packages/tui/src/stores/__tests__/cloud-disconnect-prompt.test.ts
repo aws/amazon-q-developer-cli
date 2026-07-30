@@ -38,13 +38,20 @@ describe('handleUserInput /disconnect (mid-turn prompt path)', () => {
     const order: string[] = [];
     const close = mock(() => order.push('close'));
     const onExit = mock(() => order.push('onExit'));
+    const recordSlashCommandInvocation = mock(() => {});
     const kiro = {
       sessionId: 'sess-mid',
       close,
+      recordSlashCommandInvocation,
       isCloudSessionActive: () => true,
     };
     const store = createAppStore({ kiro: kiro as any, agentEngine: 'kas' });
-    store.setState({ isProcessing: true, isInitialized: true, onExit });
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      cloudSessionActive: true,
+      onExit,
+    });
 
     try {
       await store.getState().handleUserInput('/disconnect');
@@ -55,6 +62,7 @@ describe('handleUserInput /disconnect (mid-turn prompt path)', () => {
     expect(written.some((w) => w.includes('Quit session sess-mid'))).toBe(true);
     expect(order).toEqual(['close', 'onExit']);
     expect(exitCalls).toEqual([0]);
+    expect(recordSlashCommandInvocation).toHaveBeenCalledWith('/disconnect');
   });
 
   it('not cloud-active: /disconnect does not detach mid-turn', async () => {

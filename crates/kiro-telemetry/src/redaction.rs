@@ -2,15 +2,10 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::MetricRecord;
 use crate::metric::{
-    self,
-    EventClass,
     FieldClass,
     PiiType,
     RedactionResult,
-    Redactor,
-    TelemetryChannel,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,25 +20,6 @@ pub struct RedactionOutcome {
     pub text: String,
     pub result: RedactionResult,
     pub findings: Vec<RedactionFinding>,
-}
-
-impl RedactionOutcome {
-    pub fn metric_records(&self, event_class: EventClass, channel: TelemetryChannel) -> Vec<MetricRecord> {
-        let mut records = Vec::with_capacity(self.findings.len() + 1);
-        records.push(metric::pii_redaction_run(
-            Redactor::Default,
-            event_class,
-            channel,
-            self.result,
-        ));
-
-        records.extend(
-            self.findings
-                .iter()
-                .map(|finding| metric::pii_redaction_match(finding.count, finding.pii_type, finding.field_class)),
-        );
-        records
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -140,7 +116,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scrubs_known_pii_and_reports_match_metrics() {
+    fn scrubs_known_pii() {
         let outcome = PiiRedactor.redact(
             FieldClass::Prompt,
             "email dev@example.com key AKIA1234567890ABCDEF arn arn:aws:iam::123456789012:user/test",
@@ -154,54 +130,21 @@ mod tests {
         assert!(outcome.text.contains("[REDACTED:aws_access_key]"));
         assert!(outcome.text.contains("[REDACTED:arn]"));
 
-        let records = outcome.metric_records(EventClass::Log, TelemetryChannel::Otel);
-        assert_eq!(records[0].name, "kiro_cli_pii_redaction_runs_total");
+        assert_eq!(outcome.findings.len(), 3);
         assert!(
-            records[0]
-                .attributes
+            outcome
+                .findings
                 .iter()
-                .any(|attr| attr.key == "redaction_result" && attr.value == "scrubbed")
-        );
-        assert!(records.iter().any(|record| {
-            record.name == "kiro_cli_pii_redaction_matches_total"
-                && record
-                    .attributes
-                    .iter()
-                    .any(|attr| attr.key == "pii_type" && attr.value == "aws_access_key")
-        }));
-        assert!(
-            records
-                .iter()
-                .filter(|record| record.name == "kiro_cli_pii_redaction_matches_total")
-                .all(|record| record
-                    .attributes
-                    .iter()
-                    .any(|attr| attr.key == "field_class" && attr.value == "prompt"))
+                .all(|finding| finding.field_class == FieldClass::Prompt)
         );
     }
 
     #[test]
-    fn passthrough_still_counts_redaction_run() {
+    fn leaves_ordinary_values_unchanged() {
         let outcome = PiiRedactor.redact(FieldClass::Context, "ordinary bounded telemetry value");
 
         assert_eq!(outcome.result, RedactionResult::Passthrough);
         assert_eq!(outcome.text, "ordinary bounded telemetry value");
         assert!(outcome.findings.is_empty());
-
-        let records = outcome.metric_records(EventClass::Metric, TelemetryChannel::Otel);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].name, "kiro_cli_pii_redaction_runs_total");
-        assert!(
-            records[0]
-                .attributes
-                .iter()
-                .any(|attr| attr.key == "redaction_result" && attr.value == "passthrough")
-        );
-        assert!(
-            records[0]
-                .attributes
-                .iter()
-                .any(|attr| attr.key == "event_class" && attr.value == "metric")
-        );
     }
 }

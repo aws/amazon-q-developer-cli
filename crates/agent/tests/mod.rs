@@ -534,6 +534,16 @@ async fn test_auto_compaction_on_context_overflow() {
             .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
         "expected CompactionEvent::Completed"
     );
+    assert_eq!(
+        compaction_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                AgentEvent::Compaction(CompactionEvent::ContextRecoveryAttempt { final_attempt: false })
+            ))
+            .count(),
+        1
+    );
 
     // Verify the retry request (last one) has the ls tool result
     let retry_request = test.requests().last().unwrap();
@@ -1261,6 +1271,20 @@ async fn test_overflow_after_compaction_retry_truncates_user_message() {
 
     assert_eq!(started_count, 1, "expected 1 CompactionEvent::Started");
     assert_eq!(completed_count, 1, "expected 1 CompactionEvent::Completed");
+    assert_eq!(
+        compaction_events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                AgentEvent::Compaction(CompactionEvent::ContextRecoveryAttempt { .. })
+            ))
+            .count(),
+        2
+    );
+    assert!(compaction_events.iter().any(|event| matches!(
+        event,
+        AgentEvent::Compaction(CompactionEvent::ContextRecoveryAttempt { final_attempt: true })
+    )));
 
     // Verify agent ended in idle state (success)
     let snapshot = test.create_snapshot().await;

@@ -12,9 +12,7 @@ use std::path::{
 use std::sync::Arc;
 
 use agent::agent_config::{
-    ConfigSource,
     LoadedAgentConfig,
-    ResolvedGlobalPrompt,
     load_agents,
 };
 use agent::consts::DEFAULT_AGENT_NAME;
@@ -1070,18 +1068,15 @@ impl SessionManager {
                 };
 
                 let agent_config_to_use: LoadedAgentConfig = if !converted_mcp_servers.is_empty() {
-                    let mut ephemeral = base_agent_config.config().clone();
-
-                    if let Some(overridden) = ephemeral.add_mcp_servers(converted_mcp_servers.clone()) {
+                    let mut ephemeral = base_agent_config.clone();
+                    if let Some(overridden) = ephemeral.add_mcp_servers_with_source(
+                        converted_mcp_servers.clone(),
+                        agent::agent_config::McpServerConfigSource::AcpInjected,
+                    ) {
                         warn!(?overridden, "ACP MCP servers override existing servers in agent config");
                     }
 
-                    // Preserve the resolved global prompt from the base config
-                    let resolved_prompt = base_agent_config
-                        .global_prompt()
-                        .map_or(ResolvedGlobalPrompt::None, ResolvedGlobalPrompt::Resolved);
-
-                    LoadedAgentConfig::new(ephemeral, ConfigSource::BuiltIn, resolved_prompt)
+                    ephemeral
                 } else {
                     base_agent_config.clone()
                 };

@@ -1,4 +1,5 @@
 use eyre::Result;
+use kiro_telemetry::metric::McpServerSource;
 use serde::{
     Deserialize,
     Serialize,
@@ -551,6 +552,7 @@ pub fn convert_registry_to_config(
         disabled: false,
         disabled_tools: Vec::new(),
         is_from_legacy_mcp_json: false,
+        source: McpServerSource::Registry,
     };
 
     // Check if it's a remote or local server
@@ -854,11 +856,12 @@ mod tests {
             disabled: false,
             disabled_tools: vec![],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Agent,
         });
 
         let result = process_mcp_servers(&agent_servers, Some(&registry)).unwrap();
         assert_eq!(result.servers.len(), 1);
-        assert!(result.servers.contains_key("test-server"));
+        assert_eq!(result.servers["test-server"].source, McpServerSource::Registry);
     }
 
     #[test]
@@ -877,11 +880,12 @@ mod tests {
             disabled: false,
             disabled_tools: vec![],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Workspace,
         });
 
         let result = process_mcp_servers(&agent_servers, None).unwrap();
         assert_eq!(result.servers.len(), 1);
-        assert!(result.servers.contains_key("stdio-server"));
+        assert_eq!(result.servers["stdio-server"].source, McpServerSource::Workspace);
     }
 
     #[test]
@@ -920,12 +924,14 @@ mod tests {
             disabled: false,
             disabled_tools: vec![],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Agent,
         });
 
         let result = process_mcp_servers(&agent_servers, Some(&registry)).unwrap();
         let config = result.servers.get("npm-server").unwrap();
 
         assert_eq!(config.command, "npx");
+        assert_eq!(config.source, McpServerSource::Registry);
         assert_eq!(config.args, vec!["-y", "--quiet", "@acme/server@1.0.2", "--readonly"]);
         assert_eq!(
             config.env.as_ref().unwrap().get("NPM_CONFIG_REGISTRY").unwrap(),
@@ -983,6 +989,7 @@ mod tests {
             disabled: false,
             disabled_tools: vec![],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Agent,
         });
 
         let result = process_mcp_servers(&agent_servers, Some(&registry)).unwrap();
@@ -1079,6 +1086,7 @@ mod tests {
             disabled: false,
             disabled_tools: vec![],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Agent,
         });
 
         let result = process_mcp_servers(&agent_servers, Some(&registry));
@@ -1117,6 +1125,7 @@ mod tests {
             disabled: false,
             disabled_tools: vec![],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Agent,
         });
 
         agent_servers.insert("stdio-server".to_string(), CustomToolConfig {
@@ -1132,6 +1141,7 @@ mod tests {
             disabled: false,
             disabled_tools: vec![],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Agent,
         });
 
         // In registry mode, only registry server should be loaded
@@ -1193,6 +1203,7 @@ mod tests {
             disabled: false,
             disabled_tools: vec!["tool1".to_string()], // Agent disabled tools
             is_from_legacy_mcp_json: true,             // Agent setting
+            source: McpServerSource::Agent,
         };
 
         let mut agent_servers = std::collections::HashMap::new();
@@ -1271,6 +1282,7 @@ mod tests {
             disabled: true, // Agent disabled
             disabled_tools: vec!["dangerous-tool".to_string()],
             is_from_legacy_mcp_json: false,
+            source: McpServerSource::Agent,
         };
 
         let mut agent_servers = std::collections::HashMap::new();
@@ -1464,6 +1476,7 @@ async fn test_registry_sync_behavior() {
         disabled: false,
         disabled_tools: vec![],
         is_from_legacy_mcp_json: false,
+        source: McpServerSource::Agent,
     };
     agent_servers.insert("test-server".to_string(), initial_config);
 
@@ -1672,6 +1685,7 @@ fn test_npm_registry_conversion_with_versioned_identifier() {
         disabled: false,
         disabled_tools: vec![],
         is_from_legacy_mcp_json: false,
+        source: McpServerSource::Agent,
     });
 
     let result = process_mcp_servers(&agent_servers, Some(&registry)).unwrap();

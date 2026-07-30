@@ -15,4 +15,4 @@ export type {
 	SizeValue,
 } from './component.js';
 export { TUI } from './tui.js';
-export type { TUIOptions } from './tui.js';
+export type { RenderCompletedEvent, RenderKind, TUIOptions } from './tui.js';

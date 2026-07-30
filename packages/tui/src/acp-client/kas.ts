@@ -33,7 +33,6 @@ import { createSecretStorageCapabilities } from '../capabilities/secret-storage'
 import { createUserInputCapability } from '../capabilities/user-input';
 import { spawn } from 'node:child_process';
 import type {
-  ChatSlashCommandTelemetryPayload,
   ListSessionsResponse,
   ExecutionTarget,
   KiroAgentCapabilities,
@@ -82,18 +81,19 @@ import { Feature, features } from '../features';
 import { readClipboardImage } from '../utils/clipboard-image';
 import {
   modeFromId,
-  recordTuiContextUsage,
-  recordTuiModeActive,
+  recordTuiAutonomousMode,
   recordTuiCloudError,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
-  recordTuiAutonomousMode,
-  recordTuiModelInvocation,
+  recordTuiCreditsConsumed,
+  recordTuiModelInvocations,
   recordTuiSessionStarted,
+  recordTuiSlashCommand,
   recordTuiTokensConsumed,
-  recordTuiTurnOutcome,
+  recordTuiUiModeSessionStarted,
   recordTuiUserTurn,
   resultFromStatus,
+  turnFailureReasonFromStatus,
   TuiToolCallObserver,
 } from '../utils/tui-telemetry-observer';
 import {
@@ -312,7 +312,7 @@ export class KasAcpClient extends BaseAcpClient {
   private pendingOAuthServerNames: Set<string> = new Set();
   private chatSessionStartedSessions = new Set<string>();
   /** Correlates V3 ToolCall → ToolCallFinished into tool telemetry (KAS-only). */
-  private readonly v3ToolCalls = new TuiToolCallObserver();
+  private readonly v3ToolCalls: TuiToolCallObserver;
   private readonly workflowsEnabled = features.isEnabled(Feature.Workflows);
   private extensionRuntimeInstance?: KasExtensionRuntime;
   private workflowExtensionInstance?: KasWorkflowExtension;
@@ -499,6 +499,7 @@ export class KasAcpClient extends BaseAcpClient {
       this.initialEffort = options.initialEffort;
       this.kasSettings = kasSettings;
       this.version = options.version ?? getCliVersion();
+      this.v3ToolCalls = new TuiToolCallObserver(this.version);
       this.executionTarget = options.executionTarget;
       this.repos = options.repos;
       const finalStream = maybeWrapStreamWithRecorder(options.stream);
@@ -586,6 +587,7 @@ export class KasAcpClient extends BaseAcpClient {
     this.initialModel = options.initialModel;
     this.initialEffort = options.initialEffort;
     this.version = version;
+    this.v3ToolCalls = new TuiToolCallObserver(this.version);
     this.executionTarget = options.executionTarget;
     this.repos = options.repos;
     const stream = buildStdioStreams(proc);
@@ -889,9 +891,9 @@ export class KasAcpClient extends BaseAcpClient {
       this.sessionId
     );
     this.kasSubagentRoutingStore.forgetFinishedKasToolCallSnapshot(event);
+    this.observeV3ToolCall(event, routedToSubtask ? 'subagent' : 'main');
     if (routedToSubtask) return;
 
-    this.observeV3ToolCall(event);
     this.broadcastStreamEvent(event);
   }
 
@@ -899,9 +901,15 @@ export class KasAcpClient extends BaseAcpClient {
    * Translate ToolCall / ToolCallFinished events into V3 tool telemetry
    * (tool_call_total + execution-duration histogram). KAS-only; never throws.
    */
-  private observeV3ToolCall(event: AgentStreamEvent | null): void {
+  private observeV3ToolCall(
+    event: AgentStreamEvent | null,
+    executionContext: 'main' | 'subagent'
+  ): void {
     if (event?.type === AgentEventType.ToolCall) {
-      this.v3ToolCalls.start(event.id, toolTelemetryStartFromEvent(event));
+      this.v3ToolCalls.start(event.id, {
+        ...toolTelemetryStartFromEvent(event),
+        executionContext,
+      });
       return;
     }
     if (event?.type !== AgentEventType.ToolCallFinished) return;
@@ -974,8 +982,8 @@ export class KasAcpClient extends BaseAcpClient {
       this.kasSubagentRoutingEmitter,
       this.sessionId
     );
+    this.observeV3ToolCall(event, routedToSubtask ? 'subagent' : 'main');
     if (routedToSubtask) return;
-    this.observeV3ToolCall(event);
     this.broadcastStreamEvent(event);
   }
 
@@ -1215,7 +1223,10 @@ export class KasAcpClient extends BaseAcpClient {
           if (up.status === 'failed') {
             if (!this.cloudProvisionFailedEmitted) {
               this.cloudProvisionFailedEmitted = true;
-              recordTuiCloudSession({ event: 'provision_failed' });
+              recordTuiCloudSession({
+                event: 'provision_failed',
+                version: this.version,
+              });
             }
           } else if (
             !this.cloudReadyEmitted &&
@@ -1233,6 +1244,7 @@ export class KasAcpClient extends BaseAcpClient {
               durationSeconds: this.cloudSessionStartMs
                 ? (Date.now() - this.cloudSessionStartMs) / 1000
                 : 0,
+              version: this.version,
             });
           }
         }
@@ -1327,7 +1339,10 @@ export class KasAcpClient extends BaseAcpClient {
           )}); starting a local session instead.`
       );
       if (target.kind === 'cloud-sandbox') {
-        recordTuiCloudSession({ event: 'fell_back_local' });
+        recordTuiCloudSession({
+          event: 'fell_back_local',
+          version: this.version,
+        });
       }
     }
     // A `cloud-sandbox` placement is a cloud session, so send `sessionSource:
@@ -1357,6 +1372,7 @@ export class KasAcpClient extends BaseAcpClient {
         kiroMeta.isEmptyWorkspace = true;
       }
     }
+    const cloudSessionStartMs = intendedCloudSandbox ? Date.now() : undefined;
     this.createInFlight = true;
     const r = await this.kiroClient
       .newSession({
@@ -1367,10 +1383,14 @@ export class KasAcpClient extends BaseAcpClient {
       .catch((err) => {
         this.createInFlight = false;
         if (intendedCloudSandbox) {
-          recordTuiCloudSession({ event: 'start_failed' });
+          recordTuiCloudSession({
+            event: 'create_failed',
+            version: this.version,
+          });
           recordTuiCloudError({
             op: 'session_new',
             kind: classifyCloudError(err),
+            version: this.version,
           });
         }
         throw err;
@@ -1386,10 +1406,10 @@ export class KasAcpClient extends BaseAcpClient {
         process.env.KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION === '1'
     );
     if (intendedCloudSandbox) {
-      this.cloudSessionStartMs = Date.now();
+      this.cloudSessionStartMs = cloudSessionStartMs;
       this.cloudReadyEmitted = false;
       this.cloudProvisionFailedEmitted = false;
-      recordTuiCloudSession({ event: 'started' });
+      recordTuiCloudSession({ event: 'created', version: this.version });
     }
     const sid = r.sessionId;
     this.sessionId = sid;
@@ -1487,6 +1507,7 @@ export class KasAcpClient extends BaseAcpClient {
       this.clearStaleConfigSurface('newSession');
     }
     const selections = deriveCurrentSelections(configOptions);
+    this.emitChatSessionStartedOnce(sid);
     return { sessionId: sid, ...selections };
   }
 
@@ -1563,6 +1584,7 @@ export class KasAcpClient extends BaseAcpClient {
         recordTuiCloudError({
           op: 'session_load',
           kind: classifyCloudError(error),
+          version: this.version,
         });
       }
       replayUpdateSubscription.dispose();
@@ -1621,7 +1643,10 @@ export class KasAcpClient extends BaseAcpClient {
       // A resumed cloud session lights the cloud footer/commands
       // (isCloudSessionActive), just as a fresh cloud `newSession` does.
       this.startedCloudSession = true;
-      recordTuiCloudSession({ event: 'reattached' });
+      recordTuiCloudSession({
+        event: 'reattached',
+        version: this.version,
+      });
     } else {
       // The active session IS local: the whole surface must read local (footer,
       // cloud-only commands), even when the process was launched `--cloud` or
@@ -1696,6 +1721,7 @@ export class KasAcpClient extends BaseAcpClient {
         });
     }
     const selections = deriveCurrentSelections(configOptions);
+    this.emitChatSessionStartedOnce(sessionId);
     // Tangent/fork metadata rides flat on the load-response `_meta` (like
     // `_meta.source` above). Present only on forked sessions and only when the
     // agent is new enough to populate them (KAS >= 0.19.4).
@@ -1719,7 +1745,11 @@ export class KasAcpClient extends BaseAcpClient {
     if (!this.sessionId)
       throw new Error('cannot send prompt without an active session');
 
-    this.emitChatSessionStartedOnce(this.sessionId);
+    this.startFirstVisibleResponse({
+      mode: this.telemetryCurrentModeId ?? 'interactive',
+      version: this.version,
+      engine: 'v3',
+    });
 
     this.invokeSubagentAdapter.beginTurn();
     // Race prompt against process exit to detect KAS crashes
@@ -1743,10 +1773,12 @@ export class KasAcpClient extends BaseAcpClient {
         recordTuiCloudError({
           op: 'turn_stream',
           kind: classifyCloudError(err),
+          version: this.version,
         });
       }
       throw err;
     } finally {
+      this.cancelFirstVisibleResponse();
       unsubscribe();
       this.invokeSubagentAdapter.endTurn();
     }
@@ -2683,7 +2715,10 @@ export class KasAcpClient extends BaseAcpClient {
     const revertedAutonomousOn = setModeId === autonomousWire;
     const revertedAutonomousOff = pushedWireModeId === autonomousWire;
     if (revertedAutonomousOn) {
-      recordTuiAutonomousMode({ event: 'reverted' });
+      recordTuiAutonomousMode({
+        event: 'reverted',
+        version: this.version,
+      });
       this.broadcastStreamEvent({
         type: AgentEventType.SystemNotice,
         message:
@@ -2691,7 +2726,10 @@ export class KasAcpClient extends BaseAcpClient {
         success: false,
       });
     } else if (revertedAutonomousOff) {
-      recordTuiAutonomousMode({ event: 'reverted' });
+      recordTuiAutonomousMode({
+        event: 'reverted',
+        version: this.version,
+      });
       this.broadcastStreamEvent({
         type: AgentEventType.SystemNotice,
         message:
@@ -2894,6 +2932,7 @@ export class KasAcpClient extends BaseAcpClient {
           recordTuiCloudError({
             op: 'source_providers_list',
             kind: classifyCloudError(e),
+            version: this.version,
           });
         }
       }
@@ -2926,6 +2965,7 @@ export class KasAcpClient extends BaseAcpClient {
       recordTuiCloudError({
         op: 'source_providers_resources',
         kind: classifyCloudError(e),
+        version: this.version,
       });
       return undefined;
     }
@@ -2963,17 +3003,17 @@ export class KasAcpClient extends BaseAcpClient {
     return (await this.kiroClient.sendExtMethod(method, params)) as T;
   }
 
-  // KAS host-side telemetry logs used the OTLP /v1/logs path KUTS doesn't
-  // support; KAS owns its own server-side telemetry now. These methods stay to
-  // satisfy the SessionClient contract but no-op — Prometheus metrics come from
-  // the recordTui* calls in emitChatSessionStartedOnce / forwardKasTurnCompletion.
   sendProcessHealthMetrics(_payload: ProcessHealthSnapshot): void {}
 
   sendModeChanged(_payload: ModeChangedNotification): void {}
 
-  sendChatSlashCommandTelemetry(
-    _payload: ChatSlashCommandTelemetryPayload
-  ): void {}
+  recordSlashCommandInvocation(command: string): void {
+    recordTuiSlashCommand({
+      command,
+      version: this.version,
+      engine: 'v3',
+    });
+  }
 
   private emitChatSessionStartedOnce(sessionId: string): void {
     if (this.chatSessionStartedSessions.has(sessionId)) return;
@@ -2983,7 +3023,6 @@ export class KasAcpClient extends BaseAcpClient {
       mode,
       version: this.version,
     });
-    recordTuiModeActive({ mode });
   }
 
   private forwardKasTurnCompletionTelemetry(
@@ -3003,44 +3042,50 @@ export class KasAcpClient extends BaseAcpClient {
     // Missing duration stays undefined (not 0) so it doesn't pollute the
     // histogram. is_subagent is false: main session only.
     const mode = modeFromId(this.telemetryCurrentModeId);
-    const model = payload.modelId ?? '';
+    const model = payload.modelId ?? 'unknown';
     const isSubagent = false;
     recordTuiUserTurn({
-      model,
       result: resultFromStatus(payload.status),
       isSubagent,
       mode,
-      chatConversationType: 'acp',
+      version: this.version,
+      failureReason: turnFailureReasonFromStatus(payload.status),
       durationSeconds:
         payload.turnDurationMs != null
           ? payload.turnDurationMs / 1000
           : undefined,
     });
 
-    // §C4 backfill — emit the product metrics on the V3 path too (clean v2-vs-v3 split).
-    recordTuiModelInvocation({ model });
-    recordTuiTokensConsumed({
+    recordTuiModelInvocations({
+      version: this.version,
       model,
-      isSubagent,
+      count: payload.modelInvocationCount ?? 0,
+    });
+    recordTuiTokensConsumed({
+      version: this.version,
+      model,
       tokens: {
         input_uncached: payload.uncachedInputTokens,
         input_cache_read: payload.cacheReadInputTokens,
-        input_cache_write: payload.cacheWriteInputTokens,
         output: payload.outputTokens,
       },
     });
-    if (payload.contextUsagePercentage != null) {
-      recordTuiContextUsage({
+    for (const usage of payload.meteringUsage) {
+      const unit = (usage.unitPlural || usage.unit).trim().toLowerCase();
+      if (unit !== 'credit' && unit !== 'credits') continue;
+      recordTuiCreditsConsumed({
+        version: this.version,
         model,
-        isSubagent,
-        percentage: payload.contextUsagePercentage,
+        credits: usage.value,
       });
     }
-    recordTuiTurnOutcome({ status: payload.status, model, mode });
   }
 
-  sendUiModeSessionStart(_payload: UiModeSessionStartNotification): void {
-    // TODO: implement KAS-side telemetry when KAS supports ext notifications
+  sendUiModeSessionStart(payload: UiModeSessionStartNotification): void {
+    recordTuiUiModeSessionStarted({
+      mode: payload.uiMode,
+      version: this.version,
+    });
   }
 
   sendUiModeChanged(_payload: UiModeChangedNotification): void {

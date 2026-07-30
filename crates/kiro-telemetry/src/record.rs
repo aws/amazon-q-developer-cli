@@ -85,41 +85,6 @@ impl MetricRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct TelemetryLogRecord {
-    pub name: String,
-    pub timestamp_unix_millis: u64,
-    pub attributes: Vec<Attribute>,
-    pub resource_attributes: Vec<Attribute>,
-}
-
-impl TelemetryLogRecord {
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            timestamp_unix_millis: now_unix_millis(),
-            attributes: Vec::new(),
-            resource_attributes: Vec::new(),
-        }
-    }
-
-    pub fn with_attribute(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.attributes.push(Attribute {
-            key: key.into(),
-            value: value.into(),
-        });
-        self
-    }
-
-    pub fn with_resource_attribute(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.resource_attributes.push(Attribute {
-            key: key.into(),
-            value: value.into(),
-        });
-        self
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum MetricValue {
     Counter(u64),
     FloatCounter(f64),

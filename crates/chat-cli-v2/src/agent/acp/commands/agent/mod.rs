@@ -147,9 +147,10 @@ async fn do_switch_agent(index: usize, agent_info: &AgentInfo, ctx: &CommandCont
 
     let mut config = agent_config.clone();
     if !ctx.session_injected_mcp_servers.is_empty() {
-        config
-            .config_mut()
-            .add_mcp_servers(ctx.session_injected_mcp_servers.to_vec());
+        config.add_mcp_servers_with_source(
+            ctx.session_injected_mcp_servers.to_vec(),
+            agent::agent_config::McpServerConfigSource::AcpInjected,
+        );
     }
 
     // The agent re-applies its stored MCP registry to this config inside

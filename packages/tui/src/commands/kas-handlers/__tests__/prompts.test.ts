@@ -138,10 +138,7 @@ describe('handlePrompts (KAS-mode dispatch)', () => {
       await handlePrompts(PROMPTS_CMD, 'prompt:summarize', ctx);
       const sendMessage = ctx._spies.sendMessage as any;
       expect(sendMessage).toHaveBeenCalledWith('/summarize');
-      expect(ctx.kiro.sendChatSlashCommandTelemetry).toHaveBeenCalledWith({
-        command: '/prompt',
-        success: true,
-      });
+      expect(ctx.kiro.recordSlashCommandInvocation).not.toHaveBeenCalled();
       expect(ctx._spies.setActiveCommand).not.toHaveBeenCalled();
     });
 
@@ -152,10 +149,7 @@ describe('handlePrompts (KAS-mode dispatch)', () => {
       await handlePrompts(PROMPTS_CMD, 'skill:tdd', ctx);
 
       expect(ctx._spies.sendMessage).toHaveBeenCalledWith('/tdd');
-      expect(ctx.kiro.sendChatSlashCommandTelemetry).toHaveBeenCalledWith({
-        command: '/skill',
-        success: true,
-      });
+      expect(ctx.kiro.recordSlashCommandInvocation).not.toHaveBeenCalled();
     });
   });
 });

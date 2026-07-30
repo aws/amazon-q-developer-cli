@@ -1,9 +1,6 @@
 pub mod cognito;
 pub mod core;
 pub mod endpoint;
-#[cfg(test)]
-mod v1_metrics;
-pub(crate) mod v1_process_monitor;
 
 use core::{
     AgentConfigInitArgs,
@@ -14,6 +11,10 @@ use core::{
 };
 use std::future::Future;
 use std::str::FromStr;
+use std::sync::atomic::{
+    AtomicU8,
+    Ordering,
+};
 use std::sync::{
     Arc,
     Mutex,
@@ -50,13 +51,11 @@ use cognito::CognitoProvider;
 use endpoint::StaticEndpoint;
 use kiro_telemetry::{
     MetricRecord,
-    OtelLogsSink,
     OtelMetricsSink,
     OtelMode,
     OtelProviders,
     TelemetryClient as OtelTelemetryClient,
     TelemetryConfig as OtelTelemetryConfig,
-    consent_file_integrity_records,
     init_otel,
     metric,
 };
@@ -67,7 +66,6 @@ pub use kiro_telemetry_host::{
 };
 use kiro_telemetry_legacy::{
     event_to_metric_datum,
-    event_to_otel_log_record,
     event_to_otel_metric_records,
 };
 use tokio::sync::mpsc;
@@ -109,8 +107,6 @@ pub use crate::telemetry::core::{
 use crate::util::consts::env_var::{
     KIRO_TELEMETRY_OTEL,
     KIRO_TELEMETRY_OTLP_ENDPOINT,
-    KIRO_TELEMETRY_OTLP_LOGS_ENABLED,
-    KIRO_VERSION_OVERRIDE,
 };
 use crate::util::env_var::get_cli_client_application;
 use crate::util::paths::GlobalPaths;
@@ -121,6 +117,9 @@ use crate::util::{
 };
 
 const KIRO_TELEMETRY_TOOLKIT_ENDPOINT: &str = "KIRO_TELEMETRY_TOOLKIT_ENDPOINT";
+const STARTUP_PENDING: u8 = 0;
+const STARTUP_SUCCEEDED: u8 = 1;
+const STARTUP_FAILED: u8 = 2;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TelemetryError {
@@ -205,9 +204,14 @@ struct TelemetryRuntime {
 
 #[derive(Clone, Debug)]
 pub struct TelemetryThread {
+    #[cfg_attr(not(test), allow(dead_code))]
     enabled: bool,
     runtime: Arc<Mutex<TelemetryRuntime>>,
     client_id: Uuid,
+    process_identity: Arc<Mutex<Option<kiro_telemetry_host::ProcessIdentity>>>,
+    run_receipt_store: Option<kiro_telemetry_host::RunReceiptStore>,
+    run_receipt: Arc<Mutex<Option<kiro_telemetry_host::RunReceipt>>>,
+    startup_state: Arc<AtomicU8>,
 }
 
 async fn await_shutdown_branches<OtelShutdown, LegacyShutdown>(
@@ -278,9 +282,32 @@ impl TelemetryThread {
         let govcloud_partition = region.and_then(govcloud_partition);
         let telemetry_client = Arc::new(TelemetryClient::new(env, fs, database, region, telemetry_enabled).await?);
         let client_id = telemetry_client.client_id;
-        let otel_providers = telemetry_client.otel_providers.clone();
+        let receipt_store = kiro_telemetry_host::RunReceiptStore::new(telemetry_client.otel_state_dir());
+        let run_receipt_store = telemetry_client.otel_exports_enabled().then_some(receipt_store.clone());
+        if telemetry_client.otel_exports_enabled() {
+            let recovery = receipt_store.recover();
+            let records = recovery.records().collect::<Vec<_>>();
+            telemetry_client.emit_otel_records(records.iter().cloned());
+            if records.is_empty() || telemetry_client.flush_otel() {
+                recovery.acknowledge();
+            }
+        } else {
+            receipt_store.clear_unlocked();
+        }
+        let run_receipt = Arc::new(Mutex::new(None));
+        let process_identity = Arc::new(Mutex::new(None));
+        let worker_process_identity = Arc::clone(&process_identity);
+        let mut process_sampler = telemetry_client
+            .otel_exports_enabled()
+            .then(kiro_telemetry_host::ProcessSampler::new)
+            .flatten();
+        let mut process_interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + Duration::from_secs(60),
+            Duration::from_secs(60),
+        );
         let (tx, mut rx) = mpsc::unbounded_channel();
         let (legacy_tx, mut legacy_rx) = mpsc::unbounded_channel();
+        let otel_providers = telemetry_client.otel_providers.clone();
 
         let legacy_client = Arc::clone(&telemetry_client);
         let legacy_handle = tokio::spawn(async move {
@@ -289,12 +316,31 @@ impl TelemetryThread {
             }
         });
         let otel_handle = tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                trace!("TelemetryThread received new telemetry event: {:?}", event);
-                telemetry_client.emit_otel_event(&event, govcloud_partition);
-                if legacy_tx.send(event).is_err() {
-                    trace!("legacy telemetry worker stopped before event delivery");
+            loop {
+                tokio::select! {
+                    event = rx.recv() => {
+                        let Some(event) = event else {
+                            break;
+                        };
+                        trace!("TelemetryThread received new telemetry event: {:?}", event);
+                        telemetry_client.emit_otel_event(&event);
+                        if legacy_tx.send(event).is_err() {
+                            trace!("legacy telemetry worker stopped before event delivery");
+                        }
+                    },
+                    _ = process_interval.tick(), if process_sampler.is_some() => {
+                        let identity = *worker_process_identity
+                            .lock()
+                            .expect("process identity mutex poisoned");
+                        if let (Some(identity), Some(sampler)) = (identity, process_sampler.as_mut()) {
+                            telemetry_client.emit_otel_records(sampler.sample(identity));
+                        }
+                    },
                 }
+            }
+            let identity = *worker_process_identity.lock().expect("process identity mutex poisoned");
+            if let (Some(identity), Some(sampler)) = (identity, process_sampler.as_mut()) {
+                telemetry_client.emit_otel_records(sampler.final_sample(identity));
             }
         });
 
@@ -307,6 +353,10 @@ impl TelemetryThread {
                 tx: Some(tx),
             })),
             client_id,
+            process_identity,
+            run_receipt_store,
+            run_receipt,
+            startup_state: Arc::new(AtomicU8::new(STARTUP_PENDING)),
         })
     }
 
@@ -314,6 +364,7 @@ impl TelemetryThread {
         self.client_id
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn is_enabled(&self) -> bool {
         self.enabled
     }
@@ -322,6 +373,21 @@ impl TelemetryThread {
         prepare_v1_event(&mut event);
         let sender = self.runtime.lock().unwrap().tx.clone().ok_or(TelemetryError::Send)?;
         sender.send(event).map_err(|_error| TelemetryError::Send)
+    }
+
+    pub(crate) fn set_process_identity(&self, engine: metric::Engine, role: metric::ProcessRole) {
+        let identity = kiro_telemetry_host::ProcessIdentity::new(engine, role);
+        *self.process_identity.lock().expect("process identity mutex poisoned") = Some(identity);
+        if let Some(store) = self.run_receipt_store.as_ref() {
+            let mut receipt = self.run_receipt.lock().expect("run receipt mutex poisoned");
+            if receipt.is_none() {
+                *receipt = store.start(identity).ok();
+            }
+        }
+    }
+
+    pub(crate) fn startup_succeeded(&self) -> bool {
+        self.startup_state.load(Ordering::Acquire) == STARTUP_SUCCEEDED
     }
 
     pub async fn finish(&self) -> Result<(), TelemetryError> {
@@ -339,25 +405,31 @@ impl TelemetryThread {
                 runtime.otel_providers.take(),
             )
         };
-        await_shutdown_branches(
+        let result = await_shutdown_branches(
             finish_otel_until(otel_handle, otel_providers, deadline),
             await_worker_until(legacy_handle, deadline, "draining V1 legacy telemetry queue"),
         )
-        .await
+        .await;
+        if let Some(receipt) = self.run_receipt.lock().expect("run receipt mutex poisoned").take() {
+            receipt.complete();
+        }
+        result
     }
 
     pub async fn send_user_logged_in(&self, database: &Database) -> Result<(), TelemetryError> {
-        let mut telemetry_event = Event::new(EventType::UserLoggedIn {});
-        set_event_metadata(database, &mut telemetry_event).await;
-        self.send(telemetry_event)
+        let mut event = Event::new(EventType::UserLoggedIn {});
+        set_event_metadata(database, &mut event).await;
+        self.send(event)
     }
 
     pub async fn send_cli_session_started(
         &self,
         database: &Database,
         client_application: metric::ClientApplication,
+        session_interface: metric::SessionInterface,
+        engine: metric::Engine,
     ) -> Result<(), TelemetryError> {
-        let mut telemetry_event = cli_session_started_event(client_application);
+        let mut telemetry_event = cli_session_started_event(client_application, session_interface, engine);
         set_event_metadata(database, &mut telemetry_event).await;
         telemetry_event.set_client_application_kind(client_application);
 
@@ -369,11 +441,59 @@ impl TelemetryThread {
         database: &Database,
         exit_reason: metric::ExitReason,
         agent_kind: metric::AgentKind,
+        session_interface: metric::SessionInterface,
+        engine: metric::Engine,
+        run_outcome: metric::RunOutcome,
     ) -> Result<(), TelemetryError> {
-        let mut telemetry_event = cli_session_completed_event(exit_reason, agent_kind);
+        let mut telemetry_event =
+            cli_session_completed_event(exit_reason, agent_kind, session_interface, engine, run_outcome);
         set_event_metadata(database, &mut telemetry_event).await;
 
         self.send(telemetry_event)
+    }
+
+    pub fn send_startup_duration(
+        &self,
+        duration_seconds: f64,
+        session_interface: metric::SessionInterface,
+        engine: metric::Engine,
+    ) -> Result<(), TelemetryError> {
+        if self
+            .startup_state
+            .compare_exchange(STARTUP_PENDING, STARTUP_SUCCEEDED, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Ok(());
+        }
+        let mut event = Event::new(EventType::StartupDuration {
+            duration_seconds,
+            os_type: metric::OsType::from_name(cli_os_type()),
+        });
+        event.set_session_interface(session_interface);
+        event.set_engine(engine);
+        self.send(event)
+    }
+
+    pub fn send_startup_failure(
+        &self,
+        session_interface: metric::SessionInterface,
+        engine: metric::Engine,
+        failure_stage: metric::StartupFailureStage,
+    ) -> Result<(), TelemetryError> {
+        if self
+            .startup_state
+            .compare_exchange(STARTUP_PENDING, STARTUP_FAILED, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Ok(());
+        }
+        let mut event = Event::new(EventType::StartupFailure {
+            os_type: metric::OsType::from_name(cli_os_type()),
+            failure_stage,
+        });
+        event.set_session_interface(session_interface);
+        event.set_engine(engine);
+        self.send(event)
     }
 
     pub fn send_auth_failed(
@@ -391,48 +511,35 @@ impl TelemetryThread {
         }))
     }
 
-    pub async fn send_daily_heartbeat(
-        &self,
-        database: &Database,
-        engine: metric::Engine,
-    ) -> Result<(), TelemetryError> {
-        let mut telemetry_event = Event::new(EventType::DailyHeartbeat {
+    pub fn send_daily_heartbeat(&self) -> Result<(), TelemetryError> {
+        self.send(Event::new(EventType::DailyHeartbeat {
             install_method: Some(install_source().to_string()),
-        });
-        telemetry_event.set_engine(engine);
-        set_event_metadata(database, &mut telemetry_event).await;
-        if telemetry_event.client_application.is_none() {
-            telemetry_event.set_client_application_kind(match engine {
-                metric::Engine::V1 => metric::ClientApplication::ChatCli,
-                metric::Engine::V2 => metric::ClientApplication::ChatCliV2,
-                metric::Engine::V3 => metric::ClientApplication::ChatCliV3,
-                metric::Engine::Other => metric::ClientApplication::Unknown,
-            });
-        }
-        self.send(telemetry_event)
+        }))
     }
 
-    pub(crate) fn send_process_health(
+    pub fn send_chat_session_started(
         &self,
-        rss_bytes: f64,
-        peak_rss_bytes: f64,
-        cpu_utilization: f64,
+        session_interface: metric::SessionInterface,
+        agent_mode: metric::AgentMode,
     ) -> Result<(), TelemetryError> {
-        self.send(Event::new(EventType::ProcessHealth {
-            rss_bytes,
-            peak_rss_bytes,
-            cpu_utilization,
-        }))
+        self.send_chat_session_started_for_engine(session_interface, agent_mode, metric::Engine::V1)
+    }
+
+    pub(crate) fn send_chat_session_started_for_engine(
+        &self,
+        session_interface: metric::SessionInterface,
+        agent_mode: metric::AgentMode,
+        engine: metric::Engine,
+    ) -> Result<(), TelemetryError> {
+        self.send(chat_session_started_event(session_interface, agent_mode, engine))
     }
 
     pub async fn send_cli_subcommand_executed(
         &self,
         database: &Database,
         subcommand: String,
-        engine: metric::Engine,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::CliSubcommandExecuted { subcommand });
-        telemetry_event.set_engine(engine);
         set_event_metadata(database, &mut telemetry_event).await;
 
         self.send(telemetry_event)
@@ -463,12 +570,8 @@ impl TelemetryThread {
         database: &Database,
         conversation_id: String,
         model: Option<String>,
-        mode: metric::Mode,
-        session_start_kind: metric::SessionStartKind,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::ChatStart { conversation_id, model });
-        telemetry_event.metric_context.mode = Some(mode);
-        telemetry_event.metric_context.session_start_kind = Some(session_start_kind);
         set_event_metadata(database, &mut telemetry_event).await;
         self.send(telemetry_event)
     }
@@ -490,18 +593,14 @@ impl TelemetryThread {
         previous: Option<(String, Option<String>)>,
         conversation_id: String,
         model: Option<String>,
-        mode: metric::Mode,
-        session_start_kind: metric::SessionStartKind,
     ) -> Result<(), TelemetryError> {
         let mut previous =
             previous.map(|(conversation_id, model)| Event::new(EventType::ChatEnd { conversation_id, model }));
         let mut current = Event::new(EventType::ChatStart { conversation_id, model });
-        current.metric_context.mode = Some(mode);
-        current.metric_context.session_start_kind = Some(session_start_kind);
-        match previous.as_mut() {
-            Some(previous) => set_event_metadata_all(database, &mut [previous, &mut current]).await,
-            None => set_event_metadata(database, &mut current).await,
+        if let Some(previous) = previous.as_mut() {
+            set_event_metadata(database, previous).await;
         }
+        set_event_metadata(database, &mut current).await;
         if let Some(previous) = previous {
             self.send(previous)?;
         }
@@ -554,7 +653,31 @@ impl TelemetryThread {
         database: &Database,
         conversation_id: String,
         result: TelemetryResult,
-        mode: metric::Mode,
+        session_interface: metric::SessionInterface,
+        agent_mode: metric::AgentMode,
+        args: RecordUserTurnCompletionArgs,
+    ) -> Result<(), TelemetryError> {
+        self.send_record_user_turn_completion_for_engine(
+            database,
+            conversation_id,
+            result,
+            session_interface,
+            agent_mode,
+            metric::Engine::V1,
+            args,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn send_record_user_turn_completion_for_engine(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        result: TelemetryResult,
+        session_interface: metric::SessionInterface,
+        agent_mode: metric::AgentMode,
+        engine: metric::Engine,
         args: RecordUserTurnCompletionArgs,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::RecordUserTurnCompletion {
@@ -562,7 +685,9 @@ impl TelemetryThread {
             result,
             args,
         });
-        telemetry_event.metric_context.mode = Some(mode);
+        telemetry_event.set_session_interface(session_interface);
+        telemetry_event.set_engine(engine);
+        telemetry_event.metric_context.agent_mode = Some(agent_mode);
         set_event_metadata(database, &mut telemetry_event).await;
         self.send(telemetry_event)
     }
@@ -576,6 +701,29 @@ impl TelemetryThread {
         unit: String,
         unit_plural: String,
     ) -> Result<(), TelemetryError> {
+        self.send_metering_event_for_engine(
+            database,
+            request_id,
+            model,
+            usage,
+            unit,
+            unit_plural,
+            metric::Engine::V1,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn send_metering_event_for_engine(
+        &self,
+        database: &Database,
+        request_id: Option<String>,
+        model: Option<String>,
+        usage: f64,
+        unit: String,
+        unit_plural: String,
+        engine: metric::Engine,
+    ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::MeteringEvent {
             request_id,
             model,
@@ -583,6 +731,7 @@ impl TelemetryThread {
             unit,
             unit_plural,
         });
+        telemetry_event.set_engine(engine);
         set_event_metadata(database, &mut telemetry_event).await;
         self.send(telemetry_event)
     }
@@ -609,7 +758,8 @@ impl TelemetryThread {
             result,
             args,
         });
-        telemetry_event.metric_context.mode = Some(metric::Mode::Interactive);
+        telemetry_event.set_session_interface(metric::SessionInterface::InteractiveCli);
+        telemetry_event.metric_context.agent_mode = Some(metric::AgentMode::Default);
         self.send(telemetry_event)
     }
 
@@ -633,29 +783,9 @@ impl TelemetryThread {
         &self,
         database: &Database,
         event: ToolUseEventBuilder,
+        execution_context: metric::ExecutionContext,
     ) -> Result<(), TelemetryError> {
-        let mut telemetry_event = Event::new(EventType::ToolUseSuggested {
-            conversation_id: event.conversation_id,
-            utterance_id: event.utterance_id,
-            user_input_id: event.user_input_id,
-            tool_use_id: event.tool_use_id,
-            tool_name: event.tool_name,
-            mcp_server_name: event.mcp_server_name,
-            is_accepted: event.is_accepted,
-            is_trusted: event.is_trusted,
-            is_success: event.is_success,
-            reason_desc: event.reason_desc,
-            is_valid: event.is_valid,
-            is_custom_tool: event.is_custom_tool,
-            input_token_size: event.input_token_size,
-            output_token_size: event.output_token_size,
-            custom_tool_call_latency: event.custom_tool_call_latency,
-            model: event.model,
-            execution_duration: event.execution_duration,
-            turn_duration: event.turn_duration,
-            aws_service_name: event.aws_service_name,
-            aws_operation_name: event.aws_operation_name,
-        });
+        let mut telemetry_event = tool_use_suggested_event(event, execution_context);
         set_event_metadata(database, &mut telemetry_event).await;
 
         self.send(telemetry_event)
@@ -667,6 +797,7 @@ impl TelemetryThread {
         database: &Database,
         conversation_id: String,
         server_name: String,
+        mcp_server_source: metric::McpServerSource,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
         all_tool_names: Option<String>,
@@ -676,6 +807,7 @@ impl TelemetryThread {
         let mut telemetry_event = Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
             server_name,
+            mcp_server_source,
             init_failure_reason,
             number_of_tools,
             all_tool_names,
@@ -820,41 +952,46 @@ pub(crate) fn telemetry_enabled(database: &Database) -> bool {
 }
 
 async fn set_event_metadata(database: &Database, event: &mut Event) {
-    set_event_metadata_all(database, &mut [event]).await;
-}
-
-async fn set_event_metadata_all(database: &Database, events: &mut [&mut Event]) {
     let (start_url, region) = get_start_url_and_region(database).await;
-    let client_application = get_cli_client_application();
-    for event in events {
-        if let Some(start_url) = start_url.as_ref() {
-            event.set_start_url(start_url.clone());
-        }
-        if let Some(region) = region.as_ref() {
-            event.set_sso_region(region.clone());
-        }
-        if let Some(client_application) = client_application.as_ref() {
-            event.set_client_application(client_application.clone());
-        }
+    if let Some(start_url) = start_url {
+        event.set_start_url(start_url);
+    }
+    if let Some(region) = region {
+        event.set_sso_region(region);
+    }
+
+    // Set the client application from environment variable
+    if let Some(client_app) = get_cli_client_application() {
+        event.set_client_application(client_app);
     }
 }
 
 fn prepare_v1_event(event: &mut Event) {
+    let engine = event.engine.unwrap_or(metric::Engine::V1);
+    if event.engine.is_none() {
+        event.set_engine(engine);
+    }
     if event.client_application.is_none() {
-        event.set_client_application_kind(metric::ClientApplication::ChatCli);
+        event.set_client_application_kind(match engine {
+            metric::Engine::V1 => metric::ClientApplication::ChatCli,
+            metric::Engine::V2 => metric::ClientApplication::ChatCliV2,
+            metric::Engine::V3 => metric::ClientApplication::ChatCliV3,
+            metric::Engine::Unknown => metric::ClientApplication::AcpExternal,
+        });
     }
     if event.app_type.is_none() {
-        event.app_type = Some("V1".to_string());
+        event.app_type = Some(
+            match engine {
+                metric::Engine::V1 => "V1",
+                metric::Engine::V2 => "V2",
+                metric::Engine::V3 => "KAS",
+                metric::Engine::Unknown => "ACP",
+            }
+            .to_string(),
+        );
     }
-    if event.engine.is_none() {
-        let engine = match &event.ty {
-            EventType::CliSessionStarted { .. } => metric::Engine::from_client_application(
-                metric::ClientApplication::from_name(event.client_application.as_deref()),
-            ),
-            EventType::CliSessionCompleted { agent_kind, .. } => metric::Engine::from_agent_kind(*agent_kind),
-            _ => metric::Engine::V1,
-        };
-        event.set_engine(engine);
+    if event.session_interface.is_none() {
+        event.set_session_interface(metric::SessionInterface::InteractiveCli);
     }
     if event.metric_context.install_method.is_none() {
         event.metric_context.install_method = Some(metric::InstallSource::from_name(install_source()));
@@ -874,22 +1011,76 @@ fn prepare_v1_event(event: &mut Event) {
     }
 }
 
-fn cli_session_started_event(client_application: metric::ClientApplication) -> Event {
+fn tool_use_suggested_event(event: ToolUseEventBuilder, execution_context: metric::ExecutionContext) -> Event {
+    let mut telemetry_event = Event::new(EventType::ToolUseSuggested {
+        conversation_id: event.conversation_id,
+        utterance_id: event.utterance_id,
+        user_input_id: event.user_input_id,
+        tool_use_id: event.tool_use_id,
+        tool_name: event.tool_name,
+        mcp_server_name: event.mcp_server_name,
+        is_accepted: event.is_accepted,
+        is_trusted: event.is_trusted,
+        is_success: event.is_success,
+        reason_desc: event.reason_desc,
+        is_valid: event.is_valid,
+        is_custom_tool: event.is_custom_tool,
+        input_token_size: event.input_token_size,
+        output_token_size: event.output_token_size,
+        custom_tool_call_latency: event.custom_tool_call_latency,
+        model: event.model,
+        execution_duration: event.execution_duration,
+        turn_duration: event.turn_duration,
+        aws_service_name: event.aws_service_name,
+        aws_operation_name: event.aws_operation_name,
+    });
+    telemetry_event.is_subagent = execution_context == metric::ExecutionContext::Subagent;
+    telemetry_event
+}
+
+fn cli_session_started_event(
+    client_application: metric::ClientApplication,
+    session_interface: metric::SessionInterface,
+    engine: metric::Engine,
+) -> Event {
     let mut event = Event::new(EventType::CliSessionStarted {
         os_type: metric::OsType::from_name(cli_os_type()),
         install_source: metric::InstallSource::from_name(install_source()),
     });
     event.set_client_application_kind(client_application);
-    event.set_engine(metric::Engine::from_client_application(client_application));
+    event.set_session_interface(session_interface);
+    event.set_engine(engine);
     event
 }
 
-fn cli_session_completed_event(exit_reason: metric::ExitReason, agent_kind: metric::AgentKind) -> Event {
+fn chat_session_started_event(
+    session_interface: metric::SessionInterface,
+    agent_mode: metric::AgentMode,
+    engine: metric::Engine,
+) -> Event {
+    let mut event = Event::new(EventType::ChatSessionStarted {
+        mode: metric::Mode::from_name(agent_mode.as_str()),
+    });
+    event.set_session_interface(session_interface);
+    event.set_engine(engine);
+    event.metric_context.agent_mode = Some(agent_mode);
+    event
+}
+
+fn cli_session_completed_event(
+    exit_reason: metric::ExitReason,
+    agent_kind: metric::AgentKind,
+    session_interface: metric::SessionInterface,
+    engine: metric::Engine,
+    run_outcome: metric::RunOutcome,
+) -> Event {
     let mut event = Event::new(EventType::CliSessionCompleted {
         exit_reason,
         agent_kind,
     });
-    event.set_engine(metric::Engine::from_agent_kind(agent_kind));
+    event.set_session_interface(session_interface);
+    event.set_engine(engine);
+    event.metric_context.run_outcome = Some(run_outcome);
     event
 }
 
@@ -917,16 +1108,15 @@ fn govcloud_partition(region: &str) -> Option<&'static str> {
     }
 }
 
-fn govcloud_channel_disabled_record(channel: &str, partition: &str) -> MetricRecord {
-    metric::govcloud_channel_disabled(
-        metric::TelemetryChannel::from_name(channel),
-        metric::Partition::from_name(partition),
-        metric::PostureReason::GovcloudDisabled,
-    )
-}
-
 fn govcloud_channel_leak_record(channel: &str) -> MetricRecord {
-    metric::govcloud_channel_leak(metric::TelemetryChannel::from_name(channel))
+    let channel = match channel {
+        "legacy_toolkit" => metric::TelemetryChannelName::LegacyToolkit,
+        "legacy_codewhisperer" => metric::TelemetryChannelName::LegacyCodewhisperer,
+        "otel" => metric::TelemetryChannelName::Otel,
+        "kuts" => metric::TelemetryChannelName::Kuts,
+        _ => metric::TelemetryChannelName::Unknown,
+    };
+    metric::record_prohibited_telemetry_channel_enabled(channel)
 }
 
 fn should_build_toolkit_telemetry_client(telemetry_enabled: bool, govcloud_partition: Option<&str>) -> bool {
@@ -959,6 +1149,7 @@ impl TelemetryClient {
         telemetry_enabled: bool,
     ) -> Result<Self, TelemetryError> {
         let govcloud_partition = region.and_then(govcloud_partition);
+
         // GovCloud must not construct the legacy commercial Toolkit telemetry client.
         let toolkit_telemetry_client = if should_build_toolkit_telemetry_client(telemetry_enabled, govcloud_partition) {
             let config = Config::builder()
@@ -1017,11 +1208,13 @@ impl TelemetryClient {
         let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id, region)
             .with_user_id(database.get_telemetry_user_id().ok().flatten());
         let otel_providers = init_otel(&otel_config);
-        let mut otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
+        let otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
             .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
-        if otel_config.otlp_logs_enabled() {
-            otel_telemetry_client =
-                otel_telemetry_client.with_sink(std::sync::Arc::new(OtelLogsSink::from_providers(&otel_providers)));
+        if govcloud_partition.is_some()
+            && toolkit_telemetry_client.is_some()
+            && let Err(err) = otel_telemetry_client.emit(govcloud_channel_leak_record("legacy_toolkit"))
+        {
+            trace!(%err, "failed to emit prohibited GovCloud telemetry-channel counter");
         }
         let otel_telemetry_client = Arc::new(otel_telemetry_client);
 
@@ -1033,11 +1226,10 @@ impl TelemetryClient {
             toolkit_telemetry_client,
             codewhisperer_client,
         };
-        client.emit_consent_record_integrity();
         Ok(client)
     }
 
-    fn emit_otel_event(&self, event: &Event, govcloud_partition: Option<&str>) {
+    fn emit_otel_event(&self, event: &Event) {
         let legacy_event_type = event.ty.legacy_event_type();
         if self.otel_exports_enabled() {
             if let Some(legacy_event_type) = legacy_event_type {
@@ -1049,20 +1241,7 @@ impl TelemetryClient {
                 trace!("OTel telemetry configured for native event");
             }
         }
-
-        if let Some(partition) = govcloud_partition {
-            if self.toolkit_telemetry_client.is_some() {
-                self.emit_govcloud_channel_leak("legacy_toolkit");
-            }
-            self.emit_govcloud_channel_disabled("legacy_toolkit", partition);
-        }
-
         self.emit_otel_metric_record(event);
-        self.emit_otel_log_record(event);
-        #[cfg(feature = "legacy_toolkit_sink")]
-        if govcloud_partition.is_none() && self.toolkit_telemetry_client.is_some() {
-            self.emit_redaction_metric_records(event);
-        }
     }
 
     async fn send_legacy_event(&self, event: Event, govcloud_partition: Option<&str>) {
@@ -1089,6 +1268,20 @@ impl TelemetryClient {
         self.otel_telemetry_client.config().exports_enabled()
     }
 
+    fn flush_otel(&self) -> bool {
+        match self.otel_providers.force_flush() {
+            Ok(()) => true,
+            Err(err) => {
+                trace!(%err, "failed to flush OTel provider");
+                false
+            },
+        }
+    }
+
+    fn otel_state_dir(&self) -> std::path::PathBuf {
+        self.otel_telemetry_client.config().state_dir.clone()
+    }
+
     fn emit_otel_metric_record(&self, event: &Event) {
         if !self.otel_exports_enabled() {
             return;
@@ -1107,55 +1300,16 @@ impl TelemetryClient {
             return;
         }
 
+        self.emit_otel_records(records);
+    }
+
+    fn emit_otel_records(&self, records: impl IntoIterator<Item = MetricRecord>) {
+        if !self.otel_exports_enabled() {
+            return;
+        }
         for record in records {
             if let Err(err) = self.otel_telemetry_client.emit(record) {
                 trace!(%err, "failed to emit OTel legacy metric record");
-            }
-        }
-    }
-
-    fn emit_otel_log_record(&self, event: &Event) {
-        if !self.otel_exports_enabled() {
-            return;
-        }
-
-        let Some(record) = event_to_otel_log_record(event) else {
-            return;
-        };
-
-        if let Err(err) = self.otel_telemetry_client.emit_log(record) {
-            trace!(%err, "failed to emit OTel legacy log record");
-        }
-    }
-
-    fn emit_govcloud_channel_disabled(&self, channel: &str, partition: &str) {
-        if let Err(err) = self
-            .otel_telemetry_client
-            .emit(govcloud_channel_disabled_record(channel, partition))
-        {
-            trace!(%err, channel, partition, "failed to emit GovCloud disabled-channel counter");
-        }
-    }
-
-    fn emit_govcloud_channel_leak(&self, channel: &str) {
-        if let Err(err) = self.otel_telemetry_client.emit(govcloud_channel_leak_record(channel)) {
-            trace!(%err, channel, "failed to emit GovCloud channel leak counter");
-        }
-    }
-
-    fn emit_consent_record_integrity(&self) {
-        if !self.otel_exports_enabled() {
-            return;
-        }
-
-        let Ok(settings_path) = GlobalPaths::settings_path() else {
-            trace!("failed to resolve settings path for consent integrity telemetry");
-            return;
-        };
-
-        for record in consent_file_integrity_records(settings_path) {
-            if let Err(err) = self.otel_telemetry_client.emit(record) {
-                trace!(%err, "failed to emit consent integrity accounting");
             }
         }
     }
@@ -1292,19 +1446,6 @@ impl TelemetryClient {
         }
     }
 
-    #[cfg_attr(not(feature = "legacy_toolkit_sink"), allow(dead_code))]
-    fn emit_redaction_metric_records(&self, event: &Event) {
-        if !self.otel_exports_enabled() {
-            return;
-        }
-
-        for record in event.redaction_metric_records(kiro_telemetry::metric::TelemetryChannel::LegacyToolkit) {
-            if let Err(err) = self.otel_telemetry_client.emit(record) {
-                trace!(%err, "failed to emit telemetry redaction accounting");
-            }
-        }
-    }
-
     #[cfg_attr(not(feature = "legacy_codewhisperer_sink"), allow(dead_code))]
     fn user_context(&self) -> Option<UserContext> {
         let operating_system = match std::env::consts::OS {
@@ -1355,17 +1496,8 @@ fn otel_telemetry_config(
         .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
         .unwrap_or_else(|| std::env::temp_dir().join("kiro-cli"));
 
-    let otlp_logs_enabled = env
-        .get(KIRO_TELEMETRY_OTLP_LOGS_ENABLED)
-        .is_ok_and(|value| value.trim() != "0");
-
     OtelTelemetryConfig::new(telemetry_enabled, otel_mode, otlp_endpoint, state_dir)
-        .with_otlp_logs_enabled(otlp_logs_enabled)
         .with_machine_id(client_id.hyphenated().to_string())
-        .with_service_version(
-            env.get(KIRO_VERSION_OVERRIDE)
-                .unwrap_or_else(|_| PRODUCT_VERSION.to_string()),
-        )
 }
 
 pub trait ReasonCode: std::error::Error {
@@ -1393,13 +1525,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use kiro_telemetry::testing::{
-        OtlpTestCollector,
-        expect_otlp_metric,
-        expect_otlp_metric_attribute,
-        expect_otlp_metric_resource_attribute,
-        expect_otlp_request,
-    };
     use uuid::uuid;
 
     use super::*;
@@ -1429,21 +1554,19 @@ mod test {
     }
 
     #[test]
-    fn otel_config_parses_new_env_controls() {
+    fn otel_config_parses_env_controls() {
         let env = Env::from_slice(&[
             (KIRO_TELEMETRY_OTEL, "1"),
             (
                 KIRO_TELEMETRY_OTLP_ENDPOINT,
                 "https://prod.us-east-1.telemetry-v2.kiro.dev",
             ),
-            (KIRO_TELEMETRY_OTLP_LOGS_ENABLED, "0"),
         ]);
         let client_id = uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e");
         let config = otel_telemetry_config(&env, true, client_id, Some("eu-central-1"));
 
         assert_eq!(config.otel_mode, OtelMode::DualWrite);
         assert!(config.exports_enabled());
-        assert!(!config.otlp_logs_enabled());
         assert_eq!(config.machine_id, client_id.hyphenated().to_string());
         assert_eq!(config.deployment_environment, "prod");
         assert_eq!(
@@ -1453,7 +1576,7 @@ mod test {
     }
 
     #[test]
-    fn otel_config_defaults_kuts_logs_off() {
+    fn otel_config_defaults_to_regional_kuts_endpoint() {
         let env = Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "2")]);
         let config = otel_telemetry_config(
             &env,
@@ -1463,7 +1586,6 @@ mod test {
         );
 
         assert!(config.exports_enabled());
-        assert!(!config.otlp_logs_enabled());
         assert_eq!(
             config.otlp_endpoint.as_deref(),
             Some("https://prod.eu-central-1.telemetry-v2.kiro.dev")
@@ -1471,94 +1593,16 @@ mod test {
     }
 
     #[test]
-    fn otel_config_honors_version_override() {
-        let env = Env::from_slice(&[(KIRO_VERSION_OVERRIDE, "2.7.3")]);
-        let config = otel_telemetry_config(&env, true, uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"), None);
-
-        assert_eq!(config.service_version, "2.7.3");
-    }
-
-    #[test]
-    fn v1_metrics_export_to_metrics_only_otlp_with_identity_and_version() {
-        let collector = OtlpTestCollector::start(1);
-        let config = OtelTelemetryConfig::new(
-            true,
-            OtelMode::OtelOnly,
-            Some(collector.endpoint()),
-            std::env::temp_dir(),
-        )
-        .with_machine_id("v1-machine")
-        .with_user_id("v1-user".to_string())
-        .with_service_version("2.7.3");
-        let providers = init_otel(&config);
-        let client =
-            OtelTelemetryClient::new(config).with_sink(Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
-
-        let mut events = [
-            Event::new(EventType::CliSessionStarted {
-                os_type: metric::OsType::Macos,
-                install_source: metric::InstallSource::Brew,
-            }),
-            Event::new(EventType::ChatStart {
-                conversation_id: "conversation".to_string(),
-                model: Some("claude-sonnet-4".to_string()),
-            }),
-            Event::new(EventType::ProcessHealth {
-                rss_bytes: 1024.0,
-                peak_rss_bytes: 2048.0,
-                cpu_utilization: 0.5,
-            }),
-            Event::new(EventType::ChatEnd {
-                conversation_id: "conversation".to_string(),
-                model: Some("claude-sonnet-4".to_string()),
-            }),
-            Event::new(EventType::CliSessionCompleted {
-                exit_reason: metric::ExitReason::Clean,
-                agent_kind: metric::AgentKind::V1,
-            }),
-        ];
-        events[1].metric_context.mode = Some(metric::Mode::Interactive);
-        events[1].metric_context.session_start_kind = Some(metric::SessionStartKind::New);
-        for event in &mut events {
-            prepare_v1_event(event);
-        }
-        let records = events.iter().flat_map(event_to_otel_metric_records).collect::<Vec<_>>();
-        for record in &records {
-            client.emit(record.clone()).unwrap();
-        }
-
-        providers.force_flush().unwrap();
-        let requests = collector.collect();
-        providers.shutdown().unwrap();
-
-        let request = expect_otlp_request(&requests, "/v1/metrics");
-        assert_eq!(
-            request.headers.get("x-kiro-machineid").map(String::as_str),
-            Some("v1-machine")
-        );
-        assert!(requests.iter().all(|request| !request.is_logs()));
-        expect_otlp_metric_resource_attribute(&requests, "service.version", "2.7.3");
-
-        for name in [
-            "kiro_cli_session_started_total",
-            "kiro_cli_chat_session_started_total",
-            "kiro_cli.process.memory.rss",
-            "kiro_cli.process.memory.peak_rss",
-            "kiro_cli.process.cpu.utilization",
-            "kiro_cli_conversation_completed_total",
-            "kiro_cli.session.completed",
-        ] {
-            let expected = records.iter().find(|record| record.name == name).unwrap().clone();
-            expect_otlp_metric(&requests, &expected);
-            expect_otlp_metric_attribute(&requests, name, "user_id", "v1-user");
-        }
-    }
-
-    #[test]
     fn cli_session_started_event_sets_launch_dimensions() {
-        let event = cli_session_started_event(metric::ClientApplication::ChatCliV3);
+        let event = cli_session_started_event(
+            metric::ClientApplication::ChatCliV3,
+            metric::SessionInterface::InteractiveCli,
+            metric::Engine::V3,
+        );
 
         assert_eq!(event.client_application.as_deref(), Some("chat_cli_v3"));
+        assert_eq!(event.session_interface, Some(metric::SessionInterface::InteractiveCli));
+        assert_eq!(event.engine, Some(metric::Engine::V3));
         match event.ty {
             EventType::CliSessionStarted {
                 os_type,
@@ -1579,8 +1623,17 @@ mod test {
 
     #[test]
     fn cli_session_completed_event_sets_exit_dimensions() {
-        let event = cli_session_completed_event(metric::ExitReason::Clean, metric::AgentKind::Kas);
+        let event = cli_session_completed_event(
+            metric::ExitReason::Clean,
+            metric::AgentKind::Kas,
+            metric::SessionInterface::InteractiveCli,
+            metric::Engine::V3,
+            metric::RunOutcome::Success,
+        );
 
+        assert_eq!(event.session_interface, Some(metric::SessionInterface::InteractiveCli));
+        assert_eq!(event.engine, Some(metric::Engine::V3));
+        assert_eq!(event.metric_context.run_outcome, Some(metric::RunOutcome::Success));
         match event.ty {
             EventType::CliSessionCompleted {
                 exit_reason,
@@ -1594,6 +1647,44 @@ mod test {
     }
 
     #[test]
+    fn chat_session_started_round_trips_typed_agent_modes() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread = TelemetryThread {
+            enabled: true,
+            runtime: Arc::new(Mutex::new(TelemetryRuntime {
+                otel_handle: None,
+                legacy_handle: None,
+                otel_providers: None,
+                tx: Some(tx),
+            })),
+            client_id: uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            process_identity: Arc::new(Mutex::new(None)),
+            run_receipt_store: None,
+            run_receipt: Arc::new(Mutex::new(None)),
+            startup_state: Arc::new(AtomicU8::new(STARTUP_PENDING)),
+        };
+
+        for agent_mode in [metric::AgentMode::Spec, metric::AgentMode::Autonomous] {
+            thread
+                .send_chat_session_started_for_engine(
+                    metric::SessionInterface::NoninteractiveCli,
+                    agent_mode,
+                    metric::Engine::V3,
+                )
+                .unwrap();
+            let event = rx.try_recv().unwrap();
+            let record = kiro_telemetry_legacy::event_to_otel_metric_record(&event).unwrap();
+            let recorded_agent_mode = record
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key == "agent_mode")
+                .map(|attribute| attribute.value.as_str());
+
+            assert_eq!(recorded_agent_mode, Some(agent_mode.as_str()));
+        }
+    }
+
+    #[test]
     fn govcloud_partition_detects_gov_regions() {
         assert_eq!(govcloud_partition(US_GOV_EAST), Some("aws-us-gov"));
         assert_eq!(govcloud_partition(US_GOV_WEST), Some("aws-us-gov"));
@@ -1601,42 +1692,20 @@ mod test {
     }
 
     #[test]
-    fn govcloud_disabled_record_shape() {
-        let record = govcloud_channel_disabled_record("legacy_toolkit", "aws-us-gov");
-
-        assert_eq!(record.name, "kiro_cli_govcloud_channel_disabled_total");
-        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key == "channel" && attribute.value == "legacy_toolkit")
-        );
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key == "partition" && attribute.value == "aws-us-gov")
-        );
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key == "reason" && attribute.value == "govcloud_disabled")
-        );
-    }
-
-    #[test]
-    fn govcloud_leak_record_shape() {
+    fn prohibited_govcloud_channel_record_shape() {
         let record = govcloud_channel_leak_record("legacy_toolkit");
 
-        assert_eq!(record.name, "kiro_cli_govcloud_channel_leak_total");
+        assert_eq!(record.name, "kiro_cli_prohibited_telemetry_channel_enabled_total");
         assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
         assert!(
             record
                 .attributes
                 .iter()
-                .any(|attribute| attribute.key == "channel" && attribute.value == "legacy_toolkit")
+                .any(|attribute| { attribute.key == "telemetry_channel" && attribute.value == "legacy_toolkit" })
+        );
+        assert!(
+            record.attributes.iter().all(|attribute| attribute.key != "partition"),
+            "prohibited-channel metrics must not create a partition dimension"
         );
     }
 
@@ -1655,7 +1724,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn telemetry_shutdown_is_shared_and_idempotent_across_clones() {
+    async fn cloned_telemetry_thread_can_finish_before_original() {
         let mut database = Database::new_default().await.unwrap();
         let env = Env::from_slice(&[(KIRO_TELEMETRY_OTEL, "0")]);
         let thread = TelemetryThread::new(&env, &Fs::new(), &mut database, None, false)
@@ -1669,169 +1738,111 @@ mod test {
     }
 
     #[tokio::test]
-    async fn telemetry_thread_finish_drains_otel_with_stuck_legacy_delivery() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let (drained_tx, drained_rx) = tokio::sync::oneshot::channel();
-        let thread = TelemetryThread {
-            enabled: false,
-            runtime: Arc::new(Mutex::new(TelemetryRuntime {
-                otel_handle: Some(tokio::spawn(async move {
-                    while rx.recv().await.is_some() {}
-                    let _ = drained_tx.send(());
-                })),
-                legacy_handle: Some(tokio::spawn(std::future::pending())),
-                otel_providers: None,
-                tx: Some(tx),
-            })),
-            client_id: uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
-        };
-
-        thread.finish_with_timeout(Duration::from_millis(100)).await.unwrap();
-        assert!(drained_rx.await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn telemetry_shutdown_polls_otel_and_legacy_branches_concurrently() {
-        use std::sync::atomic::{
-            AtomicBool,
-            Ordering,
-        };
-
-        let otel_polled = Arc::new(AtomicBool::new(false));
-        let legacy_polled = Arc::new(AtomicBool::new(false));
-        let shutdown = await_shutdown_branches(
-            {
-                let otel_polled = Arc::clone(&otel_polled);
-                async move {
-                    otel_polled.store(true, Ordering::SeqCst);
-                    std::future::pending().await
-                }
-            },
-            {
-                let legacy_polled = Arc::clone(&legacy_polled);
-                async move {
-                    legacy_polled.store(true, Ordering::SeqCst);
-                    std::future::pending().await
-                }
-            },
-        );
-        tokio::pin!(shutdown);
-
-        assert!(futures::poll!(shutdown.as_mut()).is_pending());
-        assert!(otel_polled.load(Ordering::SeqCst));
-        assert!(legacy_polled.load(Ordering::SeqCst));
-    }
-
-    #[tokio::test]
-    async fn telemetry_thread_finish_bounds_a_stuck_worker() {
+    async fn telemetry_thread_finish_returns_after_timeout_when_worker_is_stuck() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let thread = TelemetryThread {
             enabled: false,
             runtime: Arc::new(Mutex::new(TelemetryRuntime {
-                otel_handle: Some(tokio::spawn(std::future::pending())),
+                otel_handle: Some(tokio::spawn(async {
+                    std::future::pending::<()>().await;
+                })),
                 legacy_handle: None,
                 otel_providers: None,
                 tx: Some(tx),
             })),
             client_id: uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            process_identity: Arc::new(Mutex::new(None)),
+            run_receipt_store: None,
+            run_receipt: Arc::new(Mutex::new(None)),
+            startup_state: Arc::new(AtomicU8::new(STARTUP_PENDING)),
         };
 
-        tokio::time::timeout(
-            Duration::from_secs(1),
-            thread.finish_with_timeout(Duration::from_millis(10)),
-        )
-        .await
-        .expect("worker drain should be bounded")
-        .unwrap();
+        thread.finish_with_timeout(Duration::from_millis(1)).await.unwrap();
     }
 
-    #[tokio::test]
-    async fn v1_conversation_lifecycle_emits_explicit_start_and_completion_pair() {
-        let database = Database::new_default().await.unwrap();
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let thread = TelemetryThread {
-            enabled: true,
-            runtime: Arc::new(Mutex::new(TelemetryRuntime {
-                otel_handle: None,
-                legacy_handle: None,
-                otel_providers: None,
-                tx: Some(tx),
-            })),
-            client_id: uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
-        };
+    #[test]
+    fn startup_terminal_events_are_mutually_exclusive() {
+        fn thread() -> (TelemetryThread, mpsc::UnboundedReceiver<Event>) {
+            let (tx, rx) = mpsc::unbounded_channel();
+            (
+                TelemetryThread {
+                    enabled: true,
+                    runtime: Arc::new(Mutex::new(TelemetryRuntime {
+                        otel_handle: None,
+                        legacy_handle: None,
+                        otel_providers: None,
+                        tx: Some(tx),
+                    })),
+                    client_id: uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+                    process_identity: Arc::new(Mutex::new(None)),
+                    run_receipt_store: None,
+                    run_receipt: Arc::new(Mutex::new(None)),
+                    startup_state: Arc::new(AtomicU8::new(STARTUP_PENDING)),
+                },
+                rx,
+            )
+        }
 
-        thread
-            .send_chat_start(
-                &database,
-                "first".to_string(),
+        let (successful, mut successful_rx) = thread();
+        successful
+            .send_startup_duration(1.0, metric::SessionInterface::InteractiveCli, metric::Engine::V2)
+            .unwrap();
+        successful
+            .send_startup_failure(
+                metric::SessionInterface::InteractiveCli,
+                metric::Engine::V2,
+                metric::StartupFailureStage::InterfaceInit,
+            )
+            .unwrap();
+        assert!(matches!(
+            successful_rx.try_recv().unwrap().ty,
+            EventType::StartupDuration { .. }
+        ));
+        assert!(successful_rx.try_recv().is_err());
+
+        let (failed, mut failed_rx) = thread();
+        failed
+            .send_startup_failure(
+                metric::SessionInterface::NoninteractiveCli,
+                metric::Engine::V1,
+                metric::StartupFailureStage::RuntimeSetup,
+            )
+            .unwrap();
+        failed
+            .send_startup_duration(1.0, metric::SessionInterface::NoninteractiveCli, metric::Engine::V1)
+            .unwrap();
+        assert!(matches!(
+            failed_rx.try_recv().unwrap().ty,
+            EventType::StartupFailure { .. }
+        ));
+        assert!(failed_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn tool_use_event_normalizes_delegation_and_execution_context() {
+        let mut event = tool_use_suggested_event(
+            ToolUseEventBuilder::new(
+                "conversation".to_string(),
+                "tool-use".to_string(),
                 Some("model".to_string()),
-                metric::Mode::Interactive,
-                metric::SessionStartKind::New,
             )
-            .await
-            .unwrap();
-        thread
-            .send_chat_end(&database, "first".to_string(), Some("model".to_string()))
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            rx.recv().await.unwrap().ty,
-            EventType::ChatStart { conversation_id, .. } if conversation_id == "first"
-        ));
-        assert!(matches!(
-            rx.recv().await.unwrap().ty,
-            EventType::ChatEnd { conversation_id, model }
-                if conversation_id == "first" && model.as_deref() == Some("model")
-        ));
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn v1_conversation_transition_enqueues_end_and_start_together() {
-        let database = Database::new_default().await.unwrap();
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let thread = TelemetryThread {
-            enabled: true,
-            runtime: Arc::new(Mutex::new(TelemetryRuntime {
-                otel_handle: None,
-                legacy_handle: None,
-                otel_providers: None,
-                tx: Some(tx),
-            })),
-            client_id: uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
-        };
-
-        thread
-            .send_chat_transition(
-                &database,
-                Some(("first".to_string(), Some("model-a".to_string()))),
-                "second".to_string(),
-                Some("model-b".to_string()),
-                metric::Mode::Interactive,
-                metric::SessionStartKind::Resumed,
-            )
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            rx.recv().await.unwrap().ty,
-            EventType::ChatEnd { conversation_id, model }
-                if conversation_id == "first" && model.as_deref() == Some("model-a")
-        ));
-        let current = rx.recv().await.unwrap();
-        assert!(matches!(
-            current.ty,
-            EventType::ChatStart {
-                conversation_id,
-                model,
-            } if conversation_id == "second" && model.as_deref() == Some("model-b")
-        ));
-        assert_eq!(
-            current.metric_context.session_start_kind,
-            Some(metric::SessionStartKind::Resumed)
+            .set_tool_name("subagent".to_string()),
+            metric::ExecutionContext::Subagent,
         );
-        assert!(rx.try_recv().is_err());
+
+        prepare_v1_event(&mut event);
+
+        assert!(event.is_subagent);
+        assert_eq!(
+            event.metric_context.canonical_tool_name.as_deref(),
+            Some("use_subagent")
+        );
+
+        let event = tool_use_suggested_event(
+            ToolUseEventBuilder::new("conversation".to_string(), "tool-use".to_string(), None),
+            metric::ExecutionContext::Main,
+        );
+        assert!(!event.is_subagent);
     }
 
     #[tracing_test::traced_test]
@@ -1865,7 +1876,7 @@ mod test {
 
         thread.send_user_logged_in(&database).await.ok();
         thread
-            .send_cli_subcommand_executed(&database, "version".to_string(), metric::Engine::V1)
+            .send_cli_subcommand_executed(&database, "version".to_string())
             .await
             .ok();
         thread
