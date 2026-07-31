@@ -30,7 +30,7 @@ import type {
 import type { AvailableCommand } from '../types/commands.js';
 import { isCommandVisibleInUiMode } from '../components/ui/command-menu-utils.js';
 import { openEditorSync } from '../utils/editor.js';
-import { executeShellEscapeTTY } from '../utils/shell-escape.js';
+import { openFileInEditor } from '../utils/editor.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { runSessionLoad } from './session-load.js';
 import { Kiro } from '../kiro.js';
@@ -240,11 +240,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
     // If the result contains a path, it's an agent create/edit — open editor then validate
     if (data?.path) {
       const filePath = data.path;
-      const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
-      const quotedPath = `'${filePath.replace(/'/g, "'\\''")}'`;
-      const { exitCode, error } = executeShellEscapeTTY(
-        `${editor} ${quotedPath}`
-      );
+      const { exitCode, error } = openFileInEditor(filePath);
 
       if (exitCode !== 0) {
         ctx.showAlert(

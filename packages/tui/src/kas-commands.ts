@@ -109,7 +109,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'selection',
       hint: '',
       subcommands: ['create', 'edit', 'swap'],
-      subcommandHints: { create: '<name>', edit: '[name]', swap: '<name>' },
+      subcommandHints: {
+        create: '<name> [--from <agent>] [--directory <path>]',
+        edit: '[name]',
+        swap: '<name>',
+      },
     },
   },
   {

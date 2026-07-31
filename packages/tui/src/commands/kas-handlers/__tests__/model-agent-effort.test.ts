@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { handleModel } from '../model';
-import { handleAgent } from '../agent';
+import { handleAgent, createAgent, editAgent } from '../agent';
 import { handleEffort } from '../effort';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
 import type { KasCommand } from '../../../kas-commands';
@@ -205,12 +205,325 @@ describe('handleAgent', () => {
       3000
     );
   });
+});
 
-  it('reports create/edit as not implemented', async () => {
+describe('handleAgent create', () => {
+  // The real editor launch (spawn + TTY handoff) is bypassed through the
+  // injectable OpenEditor seam; routing-level cases go through handleAgent.
+  let originalKiroHome: string | undefined;
+
+  beforeEach(() => {
+    originalKiroHome = process.env.KIRO_HOME;
+    delete process.env.KIRO_HOME; // the temp $HOME must be authoritative
+  });
+
+  afterEach(() => {
+    if (originalKiroHome !== undefined)
+      process.env.KIRO_HOME = originalKiroHome;
+  });
+
+  const editorOk = () => ({ exitCode: 0 });
+
+  function agentsDir() {
+    return join(testHome, '.kiro', 'agents');
+  }
+
+  function createParsed(
+    overrides: Partial<{
+      name: string;
+      from: string;
+      directory: string;
+    }> = {}
+  ) {
+    return {
+      kind: 'create' as const,
+      name: undefined,
+      from: undefined,
+      directory: undefined,
+      ...overrides,
+    };
+  }
+
+  it('requires a name (routed via handleAgent)', async () => {
     const ctx = createMockCommandContext();
-    await handleAgent(AGENT_CMD, 'create foo', ctx);
+    await handleAgent(AGENT_CMD, 'create', ctx);
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      '/agent create is not yet implemented in KAS mode',
+      'Agent name is required. Usage: /agent create <name> [--from <agent>] [--directory <path>]',
+      'error',
+      5000
+    );
+  });
+
+  it('scaffolds a profile in the global agents dir and confirms', async () => {
+    const ctx = createMockCommandContext();
+    await createAgent(ctx, createParsed({ name: 'my-agent' }), editorOk);
+    const filePath = join(agentsDir(), 'my-agent.json');
+    const written = JSON.parse(readFileSync(filePath, 'utf-8'));
+    expect(written).toEqual({
+      name: 'my-agent',
+      description: '',
+      prompt: '',
+      tools: [],
+    });
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      `Agent 'my-agent' created at ${filePath}`,
+      'success',
+      5000
+    );
+  });
+
+  it('honors --directory with a custom path', async () => {
+    const dir = join(testHome, 'custom agents');
+    const ctx = createMockCommandContext();
+    await createAgent(
+      ctx,
+      createParsed({ name: 'custom', directory: dir }),
+      editorOk
+    );
+    expect(
+      JSON.parse(readFileSync(join(dir, 'custom.json'), 'utf-8')).name
+    ).toBe('custom');
+  });
+
+  it('aborts when the profile file already exists', async () => {
+    mkdirSync(agentsDir(), { recursive: true });
+    const existing = join(agentsDir(), 'dupe.json');
+    writeFileSync(existing, '{}', 'utf-8');
+    const ctx = createMockCommandContext();
+    await createAgent(ctx, createParsed({ name: 'dupe' }), editorOk);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      `File already exists at ${existing}. Aborting`,
+      'error',
+      5000
+    );
+    expect(readFileSync(existing, 'utf-8')).toBe('{}');
+  });
+
+  it('copies an existing profile with --from, renaming it', async () => {
+    mkdirSync(agentsDir(), { recursive: true });
+    writeFileSync(
+      join(agentsDir(), 'base.json'),
+      JSON.stringify({ name: 'base', description: 'base agent', tools: '*' }),
+      'utf-8'
+    );
+    const ctx = createMockCommandContext();
+    await createAgent(
+      ctx,
+      createParsed({ name: 'copy', from: 'base' }),
+      editorOk
+    );
+    const written = JSON.parse(
+      readFileSync(join(agentsDir(), 'copy.json'), 'utf-8')
+    );
+    expect(written).toEqual({
+      name: 'copy',
+      description: 'base agent',
+      tools: '*',
+    });
+  });
+
+  it('copies a markdown profile with --from, rewriting its name pin', async () => {
+    mkdirSync(agentsDir(), { recursive: true });
+    writeFileSync(
+      join(agentsDir(), 'base.md'),
+      '---\nname: base\ndescription: reviews code\n---\n\nPrompt body\n',
+      'utf-8'
+    );
+    const ctx = createMockCommandContext();
+    await createAgent(
+      ctx,
+      createParsed({ name: 'copy', from: 'base' }),
+      editorOk
+    );
+    const written = readFileSync(join(agentsDir(), 'copy.md'), 'utf-8');
+    expect(written).toContain('name: copy');
+    expect(written).toContain('Prompt body');
+    expect(written).not.toContain('name: base');
+  });
+
+  it('errors when the --from agent does not exist', async () => {
+    const ctx = createMockCommandContext();
+    await createAgent(
+      ctx,
+      createParsed({ name: 'copy', from: 'missing-agent' }),
+      editorOk
+    );
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "No agent with name 'missing-agent' found",
+      'error',
+      5000
+    );
+  });
+
+  it('surfaces a failed editor without a success alert', async () => {
+    const ctx = createMockCommandContext();
+    await createAgent(ctx, createParsed({ name: 'ed-fail' }), () => ({
+      exitCode: 1,
+    }));
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Editor exited with code 1',
+      'error',
+      3000
+    );
+  });
+
+  it('reports malformed JSON after editing', async () => {
+    const ctx = createMockCommandContext();
+    const corruptingEditor = (filePath: string) => {
+      writeFileSync(filePath, 'not-json', 'utf-8');
+      return { exitCode: 0 };
+    };
+    await createAgent(
+      ctx,
+      createParsed({ name: 'bad-json' }),
+      corruptingEditor
+    );
+    const [message, status] = (ctx._spies.showAlert as any).mock.calls.at(-1);
+    expect(status).toBe('error');
+    expect(message).toContain('Malformed agent config at');
+  });
+
+  it('rejects an emptied name field after editing', async () => {
+    const ctx = createMockCommandContext();
+    const blankingEditor = (filePath: string) => {
+      writeFileSync(filePath, JSON.stringify({ name: ' ' }), 'utf-8');
+      return { exitCode: 0 };
+    };
+    await createAgent(ctx, createParsed({ name: 'blank' }), blankingEditor);
+    const [message, status] = (ctx._spies.showAlert as any).mock.calls.at(-1);
+    expect(status).toBe('error');
+    expect(message).toContain('"name" must be a non-empty string');
+  });
+
+  it('is blocked in cloud sessions', async () => {
+    const ctx = createMockCommandContext({ cloudSessionActive: true });
+    await handleAgent(AGENT_CMD, 'create cloudy', ctx);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      '/agent create is not available in cloud sessions',
+      'error',
+      5000
+    );
+  });
+});
+
+describe('handleAgent edit', () => {
+  let originalKiroHome: string | undefined;
+
+  beforeEach(() => {
+    originalKiroHome = process.env.KIRO_HOME;
+    delete process.env.KIRO_HOME; // the temp $HOME must be authoritative
+  });
+
+  afterEach(() => {
+    if (originalKiroHome !== undefined)
+      process.env.KIRO_HOME = originalKiroHome;
+  });
+
+  const editorOk = () => ({ exitCode: 0 });
+
+  function agentsDir() {
+    return join(testHome, '.kiro', 'agents');
+  }
+
+  function writeProfile(name: string) {
+    mkdirSync(agentsDir(), { recursive: true });
+    const filePath = join(agentsDir(), `${name}.json`);
+    writeFileSync(filePath, JSON.stringify({ name }), 'utf-8');
+    return filePath;
+  }
+
+  it('opens the profile of the named agent and confirms', async () => {
+    const filePath = writeProfile('my-agent');
+    const opened: string[] = [];
+    const ctx = createMockCommandContext();
+    await editAgent(ctx, 'my-agent', (p) => {
+      opened.push(p);
+      return { exitCode: 0 };
+    });
+    expect(opened).toEqual([filePath]);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      `Edited agent 'my-agent' at ${filePath}`,
+      'success',
+      5000
+    );
+  });
+
+  it('defaults to the active agent when no name is given', async () => {
+    const filePath = writeProfile('current-agent');
+    const ctx = createMockCommandContext({
+      currentAgent: { name: 'current-agent' },
+    });
+    await editAgent(ctx, undefined, editorOk);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      `Edited agent 'current-agent' at ${filePath}`,
+      'success',
+      5000
+    );
+  });
+
+  it('rejects built-in agents', async () => {
+    const ctx = createMockCommandContext({
+      kasAvailableAgents: [{ id: 'vibe', name: 'Vibe', source: 'bundled' }],
+    });
+    await editAgent(ctx, 'vibe', editorOk);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "Cannot edit built-in agent 'vibe'. Create a new agent with '/agent create'",
+      'error',
+      5000
+    );
+  });
+
+  it('errors when the agent does not exist', async () => {
+    const ctx = createMockCommandContext();
+    await editAgent(ctx, 'missing-agent', editorOk);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "Agent 'missing-agent' not found",
+      'error',
+      5000
+    );
+  });
+
+  it('distinguishes a listed agent with no file on disk', async () => {
+    const ctx = createMockCommandContext({
+      kasAvailableAgents: [{ id: 'ghost', name: 'Ghost', source: 'workspace' }],
+    });
+    await editAgent(ctx, 'ghost', editorOk);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "Agent 'ghost' has no config file on disk",
+      'error',
+      5000
+    );
+  });
+
+  it('reports malformed JSON after editing', async () => {
+    writeProfile('bad-edit');
+    const ctx = createMockCommandContext();
+    const corruptingEditor = (filePath: string) => {
+      writeFileSync(filePath, '{oops', 'utf-8');
+      return { exitCode: 0 };
+    };
+    await editAgent(ctx, 'bad-edit', corruptingEditor);
+    const [message, status] = (ctx._spies.showAlert as any).mock.calls.at(-1);
+    expect(status).toBe('error');
+    expect(message).toContain('Malformed agent config at');
+  });
+
+  it('surfaces a failed editor without a success alert', async () => {
+    writeProfile('ed-fail');
+    const ctx = createMockCommandContext();
+    await editAgent(ctx, 'ed-fail', () => ({ exitCode: 1 }));
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Editor exited with code 1',
+      'error',
+      3000
+    );
+  });
+
+  it('is blocked in cloud sessions', async () => {
+    const ctx = createMockCommandContext({ cloudSessionActive: true });
+    await handleAgent(AGENT_CMD, 'edit foo', ctx);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      '/agent edit is not available in cloud sessions',
       'error',
       5000
     );

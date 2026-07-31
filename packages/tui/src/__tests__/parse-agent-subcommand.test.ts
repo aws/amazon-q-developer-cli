@@ -50,10 +50,51 @@ describe('parseAgentSubcommand', () => {
     expect(parseAgentSubcommand({ value: 'create' })).toEqual({
       kind: 'create',
       name: undefined,
+      from: undefined,
+      directory: undefined,
     });
     expect(parseAgentSubcommand({ value: 'create my-agent' })).toEqual({
       kind: 'create',
       name: 'my-agent',
+      from: undefined,
+      directory: undefined,
+    });
+  });
+
+  it('parses create flags: --from/-f and --directory/-d', () => {
+    expect(parseAgentSubcommand({ value: 'create copy --from base' })).toEqual({
+      kind: 'create',
+      name: 'copy',
+      from: 'base',
+      directory: undefined,
+    });
+    expect(
+      parseAgentSubcommand({ value: 'create copy -f base -d /tmp' })
+    ).toEqual({
+      kind: 'create',
+      name: 'copy',
+      from: 'base',
+      directory: '/tmp',
+    });
+    // Flags may precede the name; quoted values keep their spaces.
+    expect(
+      parseAgentSubcommand({
+        value: 'create -d "/path/with spaces/agents" my-agent',
+      })
+    ).toEqual({
+      kind: 'create',
+      name: 'my-agent',
+      from: undefined,
+      directory: '/path/with spaces/agents',
+    });
+  });
+
+  it('ignores a create flag missing its value', () => {
+    expect(parseAgentSubcommand({ value: 'create my-agent --from' })).toEqual({
+      kind: 'create',
+      name: 'my-agent',
+      from: undefined,
+      directory: undefined,
     });
   });
 
@@ -72,6 +113,8 @@ describe('parseAgentSubcommand', () => {
     expect(parseAgentSubcommand({ value: 'CREATE foo' })).toEqual({
       kind: 'create',
       name: 'foo',
+      from: undefined,
+      directory: undefined,
     });
     expect(parseAgentSubcommand({ value: 'Edit bar' })).toEqual({
       kind: 'edit',

@@ -24,6 +24,7 @@ import {
 import { buildKasSettings, type KasSettings } from '../utils/kas-settings';
 import { webToolsGovernanceFromState } from '../utils/governance-state';
 import { readCliSettings, updateCliSetting } from '../utils/cli-settings';
+import { shellSplit } from '../utils/shell-split';
 import { Settings } from '../constants/settings';
 import type { InterruptMode } from '../constants/interrupt-mode';
 import { maybeWrapStreamWithRecorder } from '../acp-recorder';
@@ -3145,8 +3146,37 @@ export class KasAcpClient extends BaseAcpClient {
 export type ParsedAgentCommand =
   | { kind: 'list' }
   | { kind: 'swap'; name: string }
-  | { kind: 'create'; name: string | undefined }
+  | {
+      kind: 'create';
+      name: string | undefined;
+      from: string | undefined;
+      directory: string | undefined;
+    }
   | { kind: 'edit'; name: string | undefined };
+
+/** Parse `create` arguments: `<name> [--from|-f <agent>] [--directory|-d <path>]`.
+ *  Quoted values are handled by shellSplit; a flag missing its value is ignored. */
+function parseCreateArgs(rest: string): ParsedAgentCommand {
+  let name: string | undefined;
+  let from: string | undefined;
+  let directory: string | undefined;
+  const parts = shellSplit(rest);
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i]!;
+    if (part === '--from' || part === '-f') {
+      if (i + 1 < parts.length) from = parts[i + 1];
+      i += 2;
+    } else if (part === '--directory' || part === '-d') {
+      if (i + 1 < parts.length) directory = parts[i + 1];
+      i += 2;
+    } else {
+      name ??= part;
+      i += 1;
+    }
+  }
+  return { kind: 'create', name, from, directory };
+}
 
 /** Parse the `args` payload passed to `executeCommand({ command: 'agent' })`
  *  into a structured subcommand.
@@ -3154,7 +3184,8 @@ export type ParsedAgentCommand =
  *  Grammar:
  *    ""                           → { kind: 'list' }
  *    "swap <name>"                → { kind: 'swap',   name: '<name>' }
- *    "create" | "create <name>"   → { kind: 'create', name: '<name>' | undefined }
+ *    "create [<name>] [--from <agent>] [--directory <path>]"
+ *                                 → { kind: 'create', name, from, directory }
  *    "edit"   | "edit <name>"     → { kind: 'edit',   name: '<name>' | undefined }
  *    "<name>"                     → { kind: 'swap',   name: '<name>' }  (menu shorthand)
  *
@@ -3174,7 +3205,7 @@ export function parseAgentSubcommand(
 
   switch (verb) {
     case 'create':
-      return { kind: 'create', name: rest || undefined };
+      return parseCreateArgs(rest);
     case 'edit':
       return { kind: 'edit', name: rest || undefined };
     case 'swap':

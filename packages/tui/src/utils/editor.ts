@@ -15,6 +15,20 @@ export type EditorResult =
   | { ok: true; content: string }
   | { ok: false; error: string };
 
+/**
+ * Open the user's editor on an existing file, in place, blocking until it
+ * exits. Unlike {@link openEditorSync} the file is the caller's to keep;
+ * nothing is cleaned up and the caller validates the result.
+ */
+export function openFileInEditor(filePath: string): {
+  exitCode: number;
+  error?: string;
+} {
+  const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
+  const quotedPath = `'${filePath.replace(/'/g, "'\\''")}'`;
+  return executeShellEscapeTTY(`${editor} ${quotedPath}`);
+}
+
 export function openEditorSync(opts: EditorOptions): EditorResult {
   const tempDir = mkdtempSync(join(tmpdir(), opts.prefix));
   const tempFile = join(tempDir, opts.filename);
