@@ -8,9 +8,50 @@ import type { Terminal } from '../terminal/terminal.js';
 import { TUI } from '../renderer/tui.js';
 import type { RenderCompletedEvent } from '../renderer/tui.js';
 import type { Component } from '../renderer/component.js';
+import type {
+	ComponentMouseEvent,
+	MouseEvent,
+	MouseTargetBounds,
+} from '../input/mouse.js';
 import { matchesKey } from '../input/keys.js';
 import { TwinkiCtx } from '../hooks/context.js';
 import { NODE_TYPES, FlexDirection, CONSTANTS } from '../text/constants.js';
+
+function absoluteBounds(node: TwinkiNode): MouseTargetBounds | null {
+	let x = 0;
+	let y = 0;
+	let current: TwinkiNode | null = node;
+
+	while (current) {
+		if (!current.yogaNode) return null;
+		x += Math.floor(current.yogaNode.getComputedLeft());
+		y += Math.floor(current.yogaNode.getComputedTop());
+		current = current.parent;
+	}
+
+	return {
+		x,
+		y,
+		width: Math.floor(node.yogaNode!.getComputedWidth()),
+		height: Math.floor(node.yogaNode!.getComputedHeight()),
+	};
+}
+
+function localizeMouseEvent(
+	event: MouseEvent,
+	node: TwinkiNode,
+	contentYOffset: number,
+): ComponentMouseEvent | null {
+	const bounds = absoluteBounds(node);
+	if (!bounds) return null;
+	const targetBounds = { ...bounds, y: bounds.y + contentYOffset };
+	return {
+		...event,
+		localX: event.x - targetBounds.x,
+		localY: event.y - targetBounds.y,
+		targetBounds,
+	};
+}
 
 /**
  * Configuration options for rendering a Twinki application.
@@ -315,8 +356,6 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		return React.createElement(TwinkiCtx.Provider, { value: ctxValue }, el);
 	}
 
-	reconciler.updateContainer(wrap(element), container, null, noop);
-
 	// Ctrl+C handler
 	if (exitOnCtrlC) {
 		tui.addInputListener((data) => {
@@ -327,37 +366,52 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		});
 	}
 
-	tui.start();
-
 	// Mouse hit-testing: dispatch onClick/onMouseEnter/onMouseLeave to components
 	if (options.mouse === true) {
-	let hoveredNode: TwinkiNode | null = null;
-	tui.addMouseListener((event) => {
-		const rootContainer = bridge.getContainer();
-		const adjustedY = event.y - tui.getContentYOffset();
-		if (adjustedY < 0) return;
-		const node = hitTest(rootContainer, event.x, adjustedY);
+		let hoveredNode: TwinkiNode | null = null;
+		let pressedClickNode: TwinkiNode | null = null;
+		tui.addMouseListener((event) => {
+			const rootContainer = bridge.getContainer();
+			const contentYOffset = tui.getContentYOffset();
+			const adjustedY = event.y - contentYOffset;
+			if (adjustedY < 0) return;
+			const node = hitTest(rootContainer, event.x, adjustedY);
 
-		// onMouseEnter / onMouseLeave
-		const enterNode = findAncestorWithProp(node, 'onMouseEnter') ?? findAncestorWithProp(node, 'onMouseLeave');
-		if (enterNode !== hoveredNode) {
-			if (hoveredNode?.props.onMouseLeave) hoveredNode.props.onMouseLeave();
-			hoveredNode = enterNode;
-			if (enterNode?.props.onMouseEnter) enterNode.props.onMouseEnter();
-		}
+			const enterNode = findAncestorWithProp(node, 'onMouseEnter') ?? findAncestorWithProp(node, 'onMouseLeave');
+			if (enterNode !== hoveredNode) {
+				if (hoveredNode?.props.onMouseLeave) hoveredNode.props.onMouseLeave();
+				hoveredNode = enterNode;
+				if (enterNode?.props.onMouseEnter) enterNode.props.onMouseEnter();
+			}
 
-		// onMouseDown on press — handler receives the event (drags need coords)
-		if (event.type === 'mousedown' && event.button === 'left') {
-			const downNode = findAncestorWithProp(node, 'onMouseDown');
-			if (downNode && downNode.props.onMouseDown) downNode.props.onMouseDown(event);
-		}
+			if (event.type === 'mousedown') {
+				pressedClickNode = event.button === 'left'
+					? findAncestorWithProp(node, 'onClick')
+					: null;
+				const downNode = findAncestorWithProp(node, 'onMouseDown');
+				const localEvent = downNode
+					? localizeMouseEvent(event, downNode, contentYOffset)
+					: null;
+				if (downNode?.props.onMouseDown && localEvent) {
+					downNode.props.onMouseDown(localEvent);
+				}
+			}
 
-		// onClick on mouseup
-		if (event.type === 'mouseup' && event.button === 'left') {
-			const clickNode = findAncestorWithProp(node, 'onClick');
-			if (clickNode && clickNode.props.onClick) clickNode.props.onClick();
-		}
-	});
+			if (event.type === 'mouseup' && event.button === 'left') {
+				const pressedNode = pressedClickNode;
+				pressedClickNode = null;
+				const clickNode = findAncestorWithProp(node, 'onClick');
+				if (!pressedNode || clickNode !== pressedNode) return;
+				const localEvent = localizeMouseEvent(
+					event,
+					clickNode,
+					contentYOffset,
+				);
+				if (clickNode.props.onClick && localEvent) {
+					clickNode.props.onClick(localEvent);
+				}
+			}
+		});
 	}
 
 	// Patch console methods to route through static lines
@@ -375,8 +429,11 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		restoreConsole = () => { console.log = orig.log; console.warn = orig.warn; console.error = orig.error; };
 	}
 
+	let unmounted = false;
 	const instance: Instance = {
 		unmount() {
+			if (unmounted) return;
+			unmounted = true;
 			restoreConsole?.();
 			reconciler.updateContainer(null, container, null, () => {
 				// Free root yoga node after React cleanup is complete
@@ -449,6 +506,10 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 			return tui.isMouseEnabled();
 		},
 	};
+
+	reconciler.updateContainer(wrap(element), container, null, () => {
+		if (!unmounted) tui.start();
+	});
 
 	return instance;
 }

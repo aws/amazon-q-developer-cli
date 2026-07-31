@@ -3,7 +3,12 @@ export type { Terminal } from './terminal/index.js';
 export { ProcessTerminal } from './terminal/index.js';
 export type { KeyId, KeyEventType } from './input/index.js';
 export { Key, matchesKey, parseKey } from './input/index.js';
-export type { MouseEvent, MouseButton, MouseEventType } from './input/index.js';
+export type {
+  ComponentMouseEvent,
+  MouseEvent,
+  MouseButton,
+  MouseEventType,
+} from './input/index.js';
 
 // Utilities
 export { visibleWidth } from './utils/index.js';

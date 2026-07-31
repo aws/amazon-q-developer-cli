@@ -89,7 +89,7 @@ function isCompleteCsiSequence(data: string): "complete" | "incomplete" {
 	if (lastCharCode >= 0x40 && lastCharCode <= 0x7e) {
 		// Special handling for SGR mouse sequences
 		if (payload.startsWith("<")) {
-			const mouseMatch = /^<\d+;\d+;\d+[Mm]$/.test(payload);
+			const mouseMatch = /^<\d+;\d+;\d+;?[Mm]$/.test(payload);
 			if (mouseMatch) {
 				return "complete";
 			}

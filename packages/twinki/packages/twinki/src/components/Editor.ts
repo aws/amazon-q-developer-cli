@@ -84,6 +84,8 @@ export class Editor implements Component, Focusable {
 	private theme: EditorTheme;
 	private paddingX: number = 0;
 	private lastWidth: number = 80;
+	private lastPadding: number = 0;
+	private lastGutterWidth: number = 0;
 	private scrollOffset: number = 0;
 	private lastLayoutLineCount: number = 0;
 	private terminalRows: number = 24;
@@ -114,6 +116,7 @@ export class Editor implements Component, Focusable {
 	public disableSubmit: boolean = false;
 	public borderColor: (str: string) => string;
 	public lineNumbers: boolean = false;
+	public placeholder: string = '';
 
 	private highlightedLines: Map<number, string> = new Map();
 
@@ -157,6 +160,8 @@ export class Editor implements Component, Focusable {
 		this.lastAction = null;
 		this.historyIndex = -1;
 		if (this.getText() !== text) this.pushUndoSnapshot();
+		this.pastes.clear();
+		this.pasteCounter = 0;
 		this.setTextInternal(text);
 	}
 
@@ -176,6 +181,41 @@ export class Editor implements Component, Focusable {
 		this.insertTextAtCursorInternal(text);
 	}
 
+	setCursorFromViewport(row: number, column: number): void {
+		const visualLines = this.buildVisualLineMap(this.lastWidth);
+		const contentRow = Math.max(0, Math.floor(row) - 1);
+		const visualLine = visualLines[
+			Math.min(
+				visualLines.length - 1,
+				this.scrollOffset + contentRow,
+			)
+		];
+		if (!visualLine) return;
+		const line = this.state.lines[visualLine.logicalLine] ?? '';
+		const chunk = line.slice(
+			visualLine.startCol,
+			visualLine.startCol + visualLine.length,
+		);
+		const contentColumn = Math.max(
+			0,
+			Math.floor(column) - this.lastPadding - this.lastGutterWidth,
+		);
+		let offset = chunk.length;
+		let visibleColumn = 0;
+		for (const part of segmenter.segment(chunk)) {
+			const nextColumn = visibleColumn + visibleWidth(part.segment);
+			if (contentColumn < nextColumn) {
+				offset = part.index;
+				break;
+			}
+			visibleColumn = nextColumn;
+		}
+		this.state.cursorLine = visualLine.logicalLine;
+		this.setCursorCol(
+			Math.min(line.length, visualLine.startCol + offset),
+		);
+	}
+
 	invalidate(): void {}
 
 	render(width: number): string[] {
@@ -185,6 +225,8 @@ export class Editor implements Component, Focusable {
 		// Line number gutter: " N │ "
 		const totalLines = this.state.lines.length;
 		const gutterWidth = this.lineNumbers ? String(totalLines).length + 3 : 0;
+		this.lastPadding = px;
+		this.lastGutterWidth = gutterWidth;
 
 		const contentWidth = Math.max(1, width - px * 2 - gutterWidth);
 		const layoutWidth = Math.max(1, contentWidth - (px ? 0 : 1));
@@ -245,12 +287,26 @@ export class Editor implements Component, Focusable {
 				if (plainAfter.length > 0) {
 					const fg = [...segmenter.segment(plainAfter)][0]?.segment || '';
 					const fgWidth = visibleWidth(fg);
-					displayText = before + marker + `\x1b[7m${fg}\x1b[0m` + sliceByColumn(displayText, visCol + fgWidth, contentWidth);
+					displayText = before + marker + `\x1b[7m${fg}\x1b[27m` + sliceByColumn(displayText, visCol + fgWidth, contentWidth);
 				} else {
-					displayText = before + marker + '\x1b[7m \x1b[0m';
+					displayText = before + marker + '\x1b[7m \x1b[27m';
 					lineVW += 1;
 					if (lineVW > contentWidth && px > 0) cursorInPadding = true;
 				}
+			}
+			if (
+				ll.hasCursor &&
+				this.isEditorEmpty() &&
+				this.placeholder.length > 0
+			) {
+				const available = Math.max(0, contentWidth - lineVW);
+				const placeholder = sliceByColumn(
+					this.placeholder.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' '),
+					0,
+					available,
+				);
+				displayText += `\x1b[2m${placeholder}\x1b[22m`;
+				lineVW += visibleWidth(placeholder);
 			}
 
 			// Build gutter prefix
@@ -260,7 +316,7 @@ export class Editor implements Component, Focusable {
 				const isFirstChunk = logLine !== lastLogicalLine;
 				lastLogicalLine = logLine;
 				const numStr = isFirstChunk ? String(logLine + 1).padStart(digits) : ' '.repeat(digits);
-				gutter = `\x1b[2m${numStr} │ \x1b[0m`;
+				gutter = `\x1b[2m${numStr} │ \x1b[22m`;
 			}
 
 			const padding = ' '.repeat(Math.max(0, contentWidth - lineVW));
@@ -339,7 +395,7 @@ export class Editor implements Component, Focusable {
 					this.state.cursorLine = result.cursorLine;
 					this.setCursorCol(result.cursorCol);
 					this.cancelAutocomplete();
-					this.onChange?.(this.getText());
+					this.emitChange();
 				}
 				return;
 			}
@@ -460,7 +516,7 @@ export class Editor implements Component, Focusable {
 		this.setCursorCol(this.state.lines[this.state.cursorLine]?.length || 0);
 		this.scrollOffset = 0;
 		this.highlightedLines.clear();
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	private insertTextAtCursorInternal(text: string): void {
@@ -484,7 +540,7 @@ export class Editor implements Component, Focusable {
 			this.state.cursorLine += insertedLines.length - 1;
 			this.setCursorCol((insertedLines[insertedLines.length - 1] || '').length);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	private insertCharacter(char: string, skipUndoCoalescing?: boolean): void {
@@ -496,7 +552,7 @@ export class Editor implements Component, Focusable {
 		const line = this.state.lines[this.state.cursorLine] || '';
 		this.state.lines[this.state.cursorLine] = line.slice(0, this.state.cursorCol) + char + line.slice(this.state.cursorCol);
 		this.setCursorCol(this.state.cursorCol + char.length);
-		this.onChange?.(this.getText());
+		this.emitChange();
 		if (this.autocompleteState) this.updateAutocomplete();
 	}
 
@@ -531,7 +587,7 @@ export class Editor implements Component, Focusable {
 		this.state.lines.splice(this.state.cursorLine + 1, 0, line.slice(this.state.cursorCol));
 		this.state.cursorLine++;
 		this.setCursorCol(0);
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	private submitValue(): void {
@@ -546,7 +602,7 @@ export class Editor implements Component, Focusable {
 		this.scrollOffset = 0;
 		this.undoStack.clear();
 		this.lastAction = null;
-		this.onChange?.('');
+		this.emitChange();
 		this.onSubmit?.(result);
 	}
 
@@ -572,7 +628,7 @@ export class Editor implements Component, Focusable {
 			this.state.cursorLine--;
 			this.setCursorCol(prev.length);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 		if (this.autocompleteState) this.updateAutocomplete();
 	}
 
@@ -591,7 +647,7 @@ export class Editor implements Component, Focusable {
 			this.state.lines[this.state.cursorLine] = line + next;
 			this.state.lines.splice(this.state.cursorLine + 1, 1);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 		if (this.autocompleteState) this.updateAutocomplete();
 	}
 
@@ -614,7 +670,7 @@ export class Editor implements Component, Focusable {
 			this.state.cursorLine--;
 			this.setCursorCol(prev.length);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	private deleteToEndOfLine(): void {
@@ -633,7 +689,7 @@ export class Editor implements Component, Focusable {
 			this.state.lines[this.state.cursorLine] = line + next;
 			this.state.lines.splice(this.state.cursorLine + 1, 1);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	private deleteWordBackwards(): void {
@@ -660,7 +716,7 @@ export class Editor implements Component, Focusable {
 			this.lastAction = 'kill';
 			this.state.lines[this.state.cursorLine] = line.slice(0, this.state.cursorCol) + line.slice(oldCol);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	private deleteWordForward(): void {
@@ -686,7 +742,7 @@ export class Editor implements Component, Focusable {
 			this.state.lines[this.state.cursorLine] = line.slice(0, oldCol) + line.slice(this.state.cursorCol);
 			this.setCursorCol(oldCol);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	// --- Private: cursor movement ---
@@ -905,7 +961,7 @@ export class Editor implements Component, Focusable {
 			this.state.cursorLine = lastIdx;
 			this.setCursorCol((lines[lines.length - 1] || '').length);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	private deleteYankedText(): void {
@@ -925,7 +981,7 @@ export class Editor implements Component, Focusable {
 			this.state.cursorLine = startLine;
 			this.setCursorCol(startCol);
 		}
-		this.onChange?.(this.getText());
+		this.emitChange();
 	}
 
 	// --- Private: undo ---
@@ -939,7 +995,11 @@ export class Editor implements Component, Focusable {
 		Object.assign(this.state, snapshot);
 		this.lastAction = null;
 		this.preferredVisualCol = null;
-		this.onChange?.(this.getText());
+		this.emitChange();
+	}
+
+	private emitChange(): void {
+		this.onChange?.(this.getExpandedText());
 	}
 
 	// --- Private: autocomplete ---

@@ -1,5 +1,5 @@
 import type { WrapMode, FlexDirection } from '../text/constants.js';
-import type { MouseEvent } from '../input/mouse.js';
+import type { ComponentMouseEvent } from '../input/mouse.js';
 
 /**
  * Base props that all components can accept.
@@ -160,9 +160,9 @@ export interface TransformProps extends BaseProps {
  */
 export interface MouseProps {
 	/** Click handler */
-	onClick?: () => void;
-	/** Mouse press handler — receives the raw event (drag initiation). */
-	onMouseDown?: (event: MouseEvent) => void;
+	onClick?: (event: ComponentMouseEvent) => void;
+	/** Mouse press handler with terminal and component-local coordinates. */
+	onMouseDown?: (event: ComponentMouseEvent) => void;
 	/** Mouse enter handler */
 	onMouseEnter?: () => void;
 	/** Mouse leave handler */

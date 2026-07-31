@@ -1,5 +1,5 @@
 import React from 'react';
-import type { MouseEvent } from '../input/mouse.js';
+import type { ComponentMouseEvent } from '../input/mouse.js';
 
 /**
  * Props for the Box component.
@@ -113,9 +113,9 @@ export interface BoxProps {
 
 	// Mouse events
 	/** Called on mouse click (mousedown + mouseup on same element) */
-	onClick?: () => void;
-	/** Called on mouse press with the raw event (drag initiation needs coords) */
-	onMouseDown?: (event: MouseEvent) => void;
+	onClick?: (event: ComponentMouseEvent) => void;
+	/** Called on mouse press with terminal and box-local coordinates */
+	onMouseDown?: (event: ComponentMouseEvent) => void;
 	/** Called when mouse enters the element */
 	onMouseEnter?: () => void;
 	/** Called when mouse leaves the element */

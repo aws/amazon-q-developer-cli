@@ -26,7 +26,21 @@ export interface MouseEvent {
 	ctrl: boolean;
 }
 
-const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
+export interface MouseTargetBounds {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export interface ComponentMouseEvent extends MouseEvent {
+	localX: number;
+	localY: number;
+	targetBounds: MouseTargetBounds;
+}
+
+const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+);?([Mm])$/;
+const SGR_MOUSE_CHUNK_RE = /\x1b\[<\d+;\d+;\d+;?[Mm]/y;
 
 export function parseSGRMouse(data: string): MouseEvent | null {
 	const m = SGR_MOUSE_RE.exec(data);
@@ -60,4 +74,21 @@ export function parseSGRMouse(data: string): MouseEvent | null {
 
 export function isSGRMouse(data: string): boolean {
 	return SGR_MOUSE_RE.test(data);
+}
+
+export function parseSGRMouseEvents(data: string): MouseEvent[] | null {
+	const events: MouseEvent[] = [];
+	let offset = 0;
+
+	while (offset < data.length) {
+		SGR_MOUSE_CHUNK_RE.lastIndex = offset;
+		const match = SGR_MOUSE_CHUNK_RE.exec(data);
+		if (!match) return null;
+		const event = parseSGRMouse(match[0]);
+		if (!event) return null;
+		events.push(event);
+		offset = SGR_MOUSE_CHUNK_RE.lastIndex;
+	}
+
+	return events.length > 0 ? events : null;
 }

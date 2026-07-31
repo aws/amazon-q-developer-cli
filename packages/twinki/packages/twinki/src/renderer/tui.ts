@@ -14,7 +14,7 @@ import type {
 import type { Terminal } from '../terminal/terminal.js';
 import { isKeyRelease, isKeyRepeat, matchesKey } from '../input/keys.js';
 import { throttle } from 'es-toolkit/compat';
-import { parseSGRMouse, isSGRMouse } from '../input/mouse.js';
+import { parseSGRMouseEvents } from '../input/mouse.js';
 import type { MouseEvent } from '../input/mouse.js';
 import { visibleWidth } from '../utils/visible-width.js';
 import { StaticBuffer } from './static-buffer.js';
@@ -648,10 +648,12 @@ export class TUI extends Container {
       }
     }
 
-    // Mouse events: parse and dispatch to mouse listeners
-    if (this.mouseEnabled && isSGRMouse(data)) {
-      const event = parseSGRMouse(data);
-      if (event) {
+    // Mouse events may arrive batched by the terminal adapter.
+    const mouseEvents = this.mouseEnabled
+      ? parseSGRMouseEvents(data)
+      : null;
+    if (mouseEvents) {
+      for (const event of mouseEvents) {
         for (const listener of this.mouseListeners) listener(event);
       }
       return;

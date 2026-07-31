@@ -26,6 +26,8 @@ export interface Key {
 	alt: boolean;
 	/** Whether the tab key is pressed */
 	tab: boolean;
+	/** Whether F1 is pressed */
+	f1: boolean;
 	/** Whether the backspace key is pressed */
 	backspace: boolean;
 	/** Whether the delete key is pressed */
@@ -115,6 +117,7 @@ export function parseInputData(data: string): { input: string; key: Key } {
 		shift: keyId.includes('shift+'),
 		alt: keyId.includes('alt+'),
 		tab: keyId === 'tab' || keyId.endsWith('+tab'),
+		f1: keyId === 'f1' || keyId.endsWith('+f1'),
 		backspace: keyId === 'backspace' || keyId.endsWith('+backspace'),
 		delete: keyId === 'delete' || keyId.endsWith('+delete'),
 		pageUp: keyId === 'pageUp' || keyId.endsWith('+pageUp'),
@@ -137,10 +140,17 @@ export function parseInputData(data: string): { input: string; key: Key } {
 		else if (code === 0x1f) input = '_';
 	} else if (parsed) {
 		// Kitty protocol: CSI u sequences are multi-byte, extract printable text from keyId
-		const m = parsed.match(/(?:ctrl|alt|shift)\+([a-z])$/);
+		const modifiedKey = parsed.match(/^(?:(?:shift|ctrl|alt)\+)+(.*)$/)?.[1] ?? '';
+		const modifiedCodePoint = modifiedKey.codePointAt(0);
+		const isModifiedPrintable =
+			modifiedKey.length === 1 &&
+			modifiedCodePoint !== undefined &&
+			modifiedCodePoint >= 0x20 &&
+			modifiedCodePoint !== 0x7f &&
+			(modifiedCodePoint < 0x80 || modifiedCodePoint > 0x9f);
 		const isSpecialKey = Object.values(key).some(v => v === true);
-		if (m) {
-			input = m[1]!;
+		if (isModifiedPrintable) {
+			input = modifiedKey;
 		} else if (!isSpecialKey) {
 			// Printable character from Kitty CSI u (e.g. numpad digits, CJK, Cyrillic).
 			// Use parsed directly when it's a single character to avoid split('+')

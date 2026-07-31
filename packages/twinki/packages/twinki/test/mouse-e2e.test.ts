@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import React, { useState } from 'react';
 import { render, Text, Box } from '../src/index.js';
+import type { ComponentMouseEvent } from '../src/index.js';
 import { TestTerminal, wait } from './helpers.js';
 
 describe('Mouse E2E', () => {
@@ -42,6 +43,68 @@ describe('Mouse E2E', () => {
 		await wait();
 
 		expect(clicked).toBe(false);
+		inst.unmount();
+	});
+
+	it('requires press and release on the same element', async () => {
+		const term = new TestTerminal(40, 5);
+		let clicked = false;
+		const inst = render(
+			React.createElement(
+				Box,
+				{ flexDirection: 'column' },
+				React.createElement(
+					Box,
+					{ onClick: () => { clicked = true; }, width: 10, height: 1 },
+					React.createElement(Text, null, 'Button'),
+				),
+				React.createElement(Text, null, 'Other'),
+			),
+			{ terminal: term, exitOnCtrlC: false, mouse: true },
+		);
+		await wait();
+		await term.flush();
+
+		term.sendInput('\x1b[<0;5;1M');
+		term.sendInput('\x1b[<0;5;2m');
+		await wait();
+
+		expect(clicked).toBe(false);
+		inst.unmount();
+	});
+
+	it('localizes right-click mouse-down events', async () => {
+		const term = new TestTerminal(20, 5);
+		let received: ComponentMouseEvent | undefined;
+		const inst = render(
+			React.createElement(
+				Box,
+				{ flexDirection: 'row', width: 20, height: 2 },
+				React.createElement(Box, { width: 4, height: 2 }),
+				React.createElement(
+					Box,
+					{
+						width: 6,
+						height: 2,
+						onMouseDown: (event) => { received = event; },
+					},
+					React.createElement(Text, null, 'target'),
+				),
+			),
+			{ terminal: term, exitOnCtrlC: false, mouse: true },
+		);
+		await wait();
+		await term.flush();
+
+		term.sendInput('\x1b[<2;7;2;M');
+		await wait();
+
+		expect(received).toMatchObject({
+			button: 'right',
+			localX: 2,
+			localY: 1,
+			targetBounds: { x: 4, y: 0, width: 6, height: 2 },
+		});
 		inst.unmount();
 	});
 

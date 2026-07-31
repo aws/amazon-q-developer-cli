@@ -299,6 +299,38 @@ describe('parseInputData - non-Latin characters (Kitty)', () => {
 		expect(input).toBe('a');
 		expect(key.ctrl).toBe(true);
 	});
+
+	it('extracts modified printable punctuation', () => {
+		const { input, key } = parseInputData('\x1b[47;3u');
+		expect(input).toBe('/');
+		expect(key.alt).toBe(true);
+	});
+
+	it('extracts Alt+Plus', () => {
+		const { input, key } = parseInputData('\x1b[43;3u');
+		expect(input).toBe('+');
+		expect(key.alt).toBe(true);
+	});
+
+	it('extracts multi-modifier Plus', () => {
+		const { input, key } = parseInputData('\x1b[43;8u');
+		expect(input).toBe('+');
+		expect(key.shift).toBe(true);
+		expect(key.ctrl).toBe(true);
+		expect(key.alt).toBe(true);
+	});
+
+	it('does not extract modified C1 control characters', () => {
+		const { input, key } = parseInputData('\x1b[128;3u');
+		expect(input).toBe('');
+		expect(key.alt).toBe(true);
+	});
+
+	it('reports F1 through the Ink-compatible key object', () => {
+		const { input, key } = parseInputData('\x1bOP');
+		expect(input).toBe('');
+		expect(key.f1).toBe(true);
+	});
 });
 
 /**

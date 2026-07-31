@@ -26,6 +26,13 @@ describe('StdinBuffer', () => {
 		expect(handler).toHaveBeenCalledWith('\x1b[A');
 	});
 
+	it('emits iTerm SGR mouse sequences with a trailing separator', () => {
+		const handler = vi.fn();
+		buffer.on('data', handler);
+		buffer.process('\x1b[<2;10;5;M');
+		expect(handler).toHaveBeenCalledWith('\x1b[<2;10;5;M');
+	});
+
 	it('emits complete SS3 sequences', () => {
 		const handler = vi.fn();
 		buffer.on('data', handler);

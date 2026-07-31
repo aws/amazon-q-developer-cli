@@ -12,4 +12,10 @@ export {
 	NUMPAD_CODEPOINT_TO_PRINTABLE,
 } from './keys.js';
 export { parseSGRMouse, isSGRMouse } from './mouse.js';
-export type { MouseEvent, MouseButton, MouseEventType } from './mouse.js';
+export type {
+	ComponentMouseEvent,
+	MouseButton,
+	MouseEvent,
+	MouseEventType,
+	MouseTargetBounds,
+} from './mouse.js';

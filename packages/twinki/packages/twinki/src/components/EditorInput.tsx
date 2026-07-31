@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTwinkiContext } from '../hooks/context.js';
 import { Editor, type AutocompleteProvider } from './Editor.js';
 import { getHighlighter } from '../utils/shiki.js';
+import type { ComponentMouseEvent } from '../input/mouse.js';
 
 const RESET = '\x1b[0m';
 
@@ -42,6 +43,12 @@ export interface EditorInputProps {
 	paddingX?: number;
 	/** Whether input is active (default: true) */
 	isActive?: boolean;
+	/** Explicit text color instead of relying on the terminal default. */
+	color?: string;
+	/** Explicit line background color. */
+	backgroundColor?: string;
+	/** Dimmed guidance rendered when the editor is empty. */
+	placeholder?: string;
 	/** Language for syntax highlighting (e.g. 'tsx', 'python'). Requires shiki. */
 	syntaxHighlight?: string;
 	/** Viewport height in lines — fills a fixed-height pane instead of the 30%-of-terminal default. */
@@ -57,6 +64,8 @@ export interface EditorInputProps {
 	syntaxTheme?: string;
 	/** Show line numbers */
 	lineNumbers?: boolean;
+	/** Place the editor cursor from left mouse clicks. */
+	mouseCursor?: boolean;
 }
 
 /**
@@ -72,9 +81,13 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 	autocompleteMaxVisible,
 	paddingX,
 	isActive = true,
+	color,
+	backgroundColor,
+	placeholder,
 	syntaxHighlight,
 	syntaxTheme = 'monokai',
 	lineNumbers = false,
+	mouseCursor = false,
 	visibleLines,
 	width: widthProp,
 	onScrollInfo,
@@ -82,9 +95,9 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 }) => {
 	const { tui } = useTwinkiContext();
 	const editorRef = useRef<Editor>(null!);
-	const [renderedLines, setRenderedLines] = useState<string[]>([]);
+	const created = !editorRef.current;
 
-	if (!editorRef.current) {
+	if (created) {
 		editorRef.current = new Editor({
 			paddingX,
 			autocompleteMaxVisible,
@@ -93,6 +106,18 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 	}
 
 	const editor = editorRef.current;
+	if (created) {
+		editor.disableSubmit = disableSubmit ?? false;
+		editor.lineNumbers = lineNumbers;
+		editor.placeholder = placeholder ?? '';
+		editor.focused = isActive;
+		editor.setVisibleLines(visibleLines ?? null);
+		if (autocompleteProvider) editor.setAutocompleteProvider(autocompleteProvider);
+		if (value !== undefined) editor.setText(value);
+	}
+	const [renderedLines, setRenderedLines] = useState<string[]>(
+		() => editor.render(widthProp ?? tui.terminal.columns),
+	);
 	const widthRef = useRef(widthProp);
 	widthRef.current = widthProp;
 	const visibleLinesRef = useRef(visibleLines);
@@ -107,13 +132,18 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 			rerender();
 		};
 		editor.disableSubmit = disableSubmit ?? false;
-		editor.lineNumbers = lineNumbers;
-		editor.setVisibleLines(visibleLines ?? null);
 		if (autocompleteProvider) editor.setAutocompleteProvider(autocompleteProvider);
 	});
 
 	useEffect(() => {
-		if (value !== undefined && value !== editor.getText()) {
+		editor.lineNumbers = lineNumbers;
+		editor.placeholder = placeholder ?? '';
+		editor.setVisibleLines(visibleLines ?? null);
+		rerender();
+	}, [lineNumbers, placeholder, visibleLines, widthProp]);
+
+	useEffect(() => {
+		if (value !== undefined && value !== editor.getExpandedText()) {
 			editor.setText(value);
 			scheduleHighlight();
 			rerender();
@@ -184,9 +214,22 @@ export const EditorInput: React.FC<EditorInputProps> = ({
 
 	return React.createElement(
 		'twinki-box',
-		{ flexDirection: 'column' },
+		{
+			flexDirection: 'column',
+			onMouseDown: mouseCursor
+				? (event: ComponentMouseEvent) => {
+					if (event.button !== 'left') return;
+					editor.setCursorFromViewport(event.localY, event.localX);
+					rerender();
+				}
+				: undefined,
+		},
 		...renderedLines.map((line, i) =>
-			React.createElement('twinki-text', { key: i, wrap: 'truncate' }, line),
+			React.createElement(
+				'twinki-text',
+				{ key: i, wrap: 'truncate', color, backgroundColor },
+				line,
+			),
 		),
 	);
 };

@@ -99,6 +99,27 @@ describe('Editor', () => {
 		expect(editor.getExpandedText()).toBe(longText);
 	});
 
+	it('reports expanded text for collapsed large pastes', () => {
+		const changes: string[] = [];
+		const longText = Array.from({ length: 15 }, (_, i) => `line ${i}`).join('\n');
+		editor.onChange = (value) => changes.push(value);
+		editor.handleInput(`\x1b[200~${longText}\x1b[201~`);
+		expect(changes.at(-1)).toBe(longText);
+	});
+
+	it('renders a sanitized placeholder', () => {
+		editor.placeholder = 'Ask\x1b[2J here';
+		const lines = editor.render(40);
+		expect(lines[1]).toContain('Ask [2J here');
+	});
+
+	it('places the cursor from viewport coordinates', () => {
+		editor.setText('first\nsecond');
+		editor.render(20);
+		editor.setCursorFromViewport(2, 2);
+		expect(editor.getCursor()).toEqual({ line: 1, col: 2 });
+	});
+
 	it('should handle history navigation', () => {
 		editor.addToHistory('first');
 		editor.addToHistory('second');
