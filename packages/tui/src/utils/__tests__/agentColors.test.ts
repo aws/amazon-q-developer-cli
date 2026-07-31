@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'bun:test';
+import stripAnsi from 'strip-ansi';
 import {
   KAS_DEFAULT_AGENT_ID,
   KAS_DEFAULT_AGENT_NAME,
 } from '../../constants/agents';
-import { getAgentColor, getAgentDisplayName } from '../agentColors';
+import {
+  getAgentColor,
+  getAgentDisplayName,
+  renderPendingAgent,
+} from '../agentColors';
 
 describe('agentColors', () => {
   const mockGetColor = (path: string) => {
@@ -94,5 +99,17 @@ describe('agentColors', () => {
       expect(getAgentDisplayName('my-agent')).toBe('my-agent');
       expect(getAgentDisplayName('my-agent', 'My Agent')).toBe('My Agent');
     });
+  });
+});
+
+describe('renderPendingAgent', () => {
+  const passthrough = (s: string) => s;
+
+  it('uses the canonical KAS default agent display label', () => {
+    const out = stripAnsi(
+      renderPendingAgent(KAS_DEFAULT_AGENT_ID, 0, () => passthrough, ['*'])
+    );
+
+    expect(out).toBe(`* ${KAS_DEFAULT_AGENT_NAME}`);
   });
 });

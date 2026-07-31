@@ -20,6 +20,12 @@ export interface StatusSurfaceProps {
   dimmed?: boolean;
   pendingAgentName?: string | null;
   animationFrame?: number;
+  /** Pins the clock for the date/time segments; the surface derives one otherwise. */
+  now?: Date | null;
+  /** Percentage of the billing period's included credits already consumed. */
+  usagePercent?: number | null;
+  /** Included credits left in the billing period. */
+  creditsRemaining?: number | null;
 }
 
 export type StatusSurface = ComponentType<StatusSurfaceProps>;

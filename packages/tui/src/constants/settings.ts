@@ -46,6 +46,11 @@ export const Settings = {
   CHAT_SUBAGENT_SHOW_DEPS: 'chat.subagent.showDeps',
   CHAT_SUBAGENT_SHOW_RESPONSES: 'chat.subagent.showResponses',
   CHAT_TERMINAL_TITLE: 'chat.terminalTitle',
+  // Per-surface `{ segmentId: boolean }` overrides for status-line visibility,
+  // holding only the ids that differ from the default. Read and written by the
+  // TUI alone.
+  CHAT_STATUS_LINE_TUI: 'chat.statusLine.tui',
+  CHAT_STATUS_LINE_LITE: 'chat.statusLine.lite',
   CHAT_DEFAULT_INTERRUPT_BEHAVIOR: 'chat.defaultInterruptBehavior',
   CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR:
     'chat.keybindings.toggleInterruptBehavior',

@@ -1,17 +1,23 @@
 import React from 'react';
-import { Region, Text } from '../../renderer.js';
 import { useRenderMetrics, isDevMode } from '../../hooks/useRenderMetrics.js';
-import { useAllowIcons, useGlyphs } from '../../hooks/useGlyphs.js';
+import {
+  useAllowIcons,
+  useGlyphs,
+  useSpinners,
+} from '../../hooks/useGlyphs.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
-import { formatCloudFooter } from '../../utils/cloud-status.js';
-import { getAgentColor, getAgentDisplayName } from '../../utils/agentColors.js';
-import { formatEffort, shortenPath } from '../../utils/string.js';
-import { chalk } from '../../utils/color.js';
-import type { Glyphs } from '../../utils/glyphs.js';
-import type { AppState } from '../../stores/app-store.js';
 import { ContextBar } from '../chat/prompt-bar/ContextBar.js';
-import { Chip, ChipColor, ProgressChip } from '../ui/chip/index.js';
-import { goalElapsed, type StatusSurfaceProps } from './status-surface.js';
+import { Chip, ChipColor } from '../ui/chip/index.js';
+import type { StatusSurfaceProps } from './status-surface.js';
+import {
+  STATUS_SEGMENTS,
+  statusSegmentIdsFor,
+} from './status-line/registry.js';
+import { Region } from '../../renderer.js';
+import { useStatusSegments } from './status-line/useStatusSegments.js';
+import { useStatusClock } from './status-line/useStatusClock.js';
+import { statusSegmentsNeedClock } from './status-line/config.js';
+import type { SegmentRenderContext } from './status-line/segments.js';
 
 const RenderMetricsChip: React.FC<{
   color?: ChipColor | ((text: string) => string);
@@ -27,161 +33,46 @@ const RenderMetricsChip: React.FC<{
   );
 };
 
-// Region confines the dev-only metrics tick to this status-bar subtree.
-export const TuiStatusSurface: React.FC<StatusSurfaceProps> = ({
-  agentName,
-  autonomousModeActive = false,
-  modelName,
-  effort,
-  contextUsagePercent,
-  workspacePath,
-  gitBranch,
-  goalStatus,
-  tangentName = null,
-  cloudSessionActive = false,
-  cloudRepo = null,
-  cloudBranch = null,
-  cloudExtraRepos = 0,
-  codeIntelligenceActive = false,
-  dimmed = false,
-}) => {
+export const TuiStatusSurface: React.FC<StatusSurfaceProps> = (props) => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
+  const spinners = useSpinners();
   const { allowIcons } = useAllowIcons();
+  const visible = useStatusSegments('tui');
+  const clock = useStatusClock(statusSegmentsNeedClock(visible));
 
-  if (dimmed) {
-    const mutedColor = getColor('muted');
-    const primaryItems = [
-      agentName !== null && (
-        <Chip value={getAgentDisplayName(agentName)} color={mutedColor} />
-      ),
-      autonomousModeActive && <Chip value="Autonomous" color={mutedColor} />,
-      modelName !== null && <Chip value={modelName} color={mutedColor} />,
-      effort && <Chip value={formatEffort(effort)} color={mutedColor} />,
-      contextUsagePercent != null && (
-        <ProgressChip
-          value={contextUsagePercent}
-          warningThreshold={60}
-          colorOverride={mutedColor}
-        />
-      ),
-      tangentName && <Text>{mutedColor(`↯ ${tangentName}`)}</Text>,
-      codeIntelligenceActive && allowIcons && (
-        <Text>{mutedColor(glyphs.codeIntelligence)}</Text>
-      ),
-    ];
-    const secondaryItems = [
-      isDevMode() ? (
-        <Region id="metrics">
-          <RenderMetricsChip color={mutedColor} />
-        </Region>
-      ) : null,
-      cloudSessionActive ? (
-        <Chip
-          value={formatCloudFooter(
-            cloudRepo,
-            cloudBranch,
-            allowIcons ? glyphs.cloud : undefined,
-            cloudExtraRepos,
-            glyphs
-          )}
-          color={mutedColor}
-        />
-      ) : (
-        <Chip value={shortenPath(workspacePath)} color={mutedColor} />
-      ),
-      !cloudSessionActive && gitBranch && (
-        <Chip value={gitBranch} color={mutedColor} wrap={true} />
-      ),
-    ];
-    return (
-      <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
-    );
-  }
+  const ctx: SegmentRenderContext = {
+    props,
+    getColor,
+    glyphs,
+    allowIcons,
+    spinners,
+    muted: props.dimmed ? getColor('muted') : null,
+    now: props.now ?? clock,
+  };
 
-  const primaryItems = [
-    agentName !== null && (
-      <Chip
-        value={getAgentDisplayName(agentName)}
-        color={getAgentColor(agentName, getColor)}
-      />
-    ),
-    autonomousModeActive && (
-      <Chip value="Autonomous" color={ChipColor.WARNING} />
-    ),
-    modelName !== null && <Chip value={modelName} color={ChipColor.PRIMARY} />,
-    effort && <Chip value={formatEffort(effort)} color={ChipColor.SECONDARY} />,
-    contextUsagePercent != null && (
-      <ProgressChip value={contextUsagePercent} warningThreshold={60} />
-    ),
-    tangentName && <Text>{chalk.yellow(`↯ ${tangentName}`)}</Text>,
-    codeIntelligenceActive && allowIcons && (
-      <Text>{getColor('primary')(glyphs.codeIntelligence)}</Text>
-    ),
-    goalStatus && (
-      <Chip
-        value={formatGoal(goalStatus, glyphs, allowIcons)}
-        color={
-          goalStatus.state === 'completed'
-            ? ChipColor.SUCCESS
-            : goalStatus.state === 'exhausted'
-              ? ChipColor.ERROR
-              : ChipColor.SECONDARY
-        }
-      />
-    ),
-  ];
+  // Partitioning the one fixed order by side is what keeps location and branch
+  // right-aligned regardless of where they sit in the id list.
+  const nodesOn = (side: 'left' | 'right') =>
+    statusSegmentIdsFor('tui')
+      .filter((id) => visible[id] && STATUS_SEGMENTS[id].side === side)
+      .map((id) => STATUS_SEGMENTS[id].tui(ctx));
+
+  // The metrics chip leads the right group, which is where it sat before the bar
+  // became configurable.
   const secondaryItems = [
     isDevMode() ? (
       <Region id="metrics">
-        <RenderMetricsChip />
+        <RenderMetricsChip {...(ctx.muted ? { color: ctx.muted } : {})} />
       </Region>
     ) : null,
-    cloudSessionActive ? (
-      <Chip
-        value={formatCloudFooter(
-          cloudRepo,
-          cloudBranch,
-          allowIcons ? glyphs.cloud : undefined,
-          cloudExtraRepos,
-          glyphs
-        )}
-        color={ChipColor.BRAND}
-      />
-    ) : (
-      <Chip value={shortenPath(workspacePath)} color={ChipColor.BRAND} />
-    ),
-    !cloudSessionActive && gitBranch && (
-      <Chip value={gitBranch} color={ChipColor.PRIMARY} wrap={true} />
-    ),
+    ...nodesOn('right'),
   ];
+
   return (
-    <ContextBar primaryItems={primaryItems} secondaryItems={secondaryItems} />
+    <ContextBar
+      primaryItems={nodesOn('left')}
+      secondaryItems={secondaryItems}
+    />
   );
 };
-
-function formatGoal(
-  goalStatus: NonNullable<AppState['goalStatus']>,
-  glyphs: Glyphs,
-  allowIcons: boolean
-): string {
-  const icon = allowIcons
-    ? goalStatus.state === 'paused'
-      ? glyphs.pause
-      : goalStatus.state === 'completed'
-        ? glyphs.checkmark
-        : goalStatus.state === 'exhausted'
-          ? glyphs.cross
-          : glyphs.refresh
-    : '';
-  const label =
-    goalStatus.state === 'paused'
-      ? 'Paused'
-      : goalStatus.state === 'completed'
-        ? 'Done'
-        : goalStatus.state === 'exhausted'
-          ? 'Exhausted'
-          : `Active [${goalStatus.iteration + 1}/${goalStatus.maxIterations}]`;
-  const elapsed = goalElapsed(goalStatus);
-  return `${icon ? `${icon} ` : ''}Goal ${label}${elapsed ? ` ${glyphs.smallDot} ${elapsed}` : ''}`;
-}

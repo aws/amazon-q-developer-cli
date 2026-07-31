@@ -1,3 +1,4 @@
+import { chalk } from './color.js';
 import { getTerminalChalkColor } from './colorUtils.js';
 import {
   KAS_AUTONOMOUS_AGENT_ID,
@@ -101,4 +102,24 @@ export function getAgentColor(
   }
   const color = AGENT_COLORS[hashString(name) % AGENT_COLORS.length]!;
   return getTerminalChalkColor(color);
+}
+
+/**
+ * Spinner-prefixed agent name for the window between requesting an agent swap
+ * and the new agent being live, returned as a plain string so surfaces that
+ * paint ANSI runs can use it.
+ *
+ * `spinnerFrames` is required rather than defaulted: callers thread the active
+ * set so the indicator honours ASCII mode, and a hardcoded default would
+ * silently reintroduce Unicode for a caller that forgot to pass frames.
+ */
+export function renderPendingAgent(
+  pendingName: string,
+  frame: number,
+  getColor: (path: string) => (text: string) => string,
+  spinnerFrames: readonly string[]
+): string {
+  const color = getAgentColor(pendingName, getColor);
+  const spin = spinnerFrames[frame % spinnerFrames.length];
+  return `${chalk.dim(spin)} ${color(getAgentDisplayName(pendingName))}`;
 }

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`/settings` can show or hide individual status line segments, including date, time, usage, and credits"
+}

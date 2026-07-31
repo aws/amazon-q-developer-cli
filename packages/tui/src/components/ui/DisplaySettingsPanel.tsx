@@ -27,10 +27,13 @@ interface ToggleItem {
   key: string;
   label: string;
   description: string;
-  defaultValue: boolean | string;
+  /** Absent on rows that open a panel instead of holding a value. */
+  defaultValue?: boolean | string;
   inverted?: boolean;
   /** When set, the item cycles through these string values instead of on/off. */
   cycle?: string[];
+  /** When set, the row opens a sub-panel instead of holding a value. */
+  opensPanel?: 'statusLine';
 }
 
 const THINKING_MODES: ThinkingMode[] = ['collapsed', 'expanded', 'off'];
@@ -94,6 +97,17 @@ const ALL_ITEMS: ToggleItem[] = [
 ];
 
 /**
+ * Status-line row. Holds no value of its own: the segment list is long and
+ * per-surface, so it lives in its own panel rather than as rows here.
+ */
+const STATUS_LINE_ITEM: ToggleItem = {
+  key: 'statusLine',
+  label: 'Status line',
+  description: 'Choose which segments the status line shows',
+  opensPanel: 'statusLine',
+};
+
+/**
  * The Display rows for the current rollout cohort. In-cohort: the full
  * ALL_ITEMS set (thinking lives in /verbosity). Off-cohort: drop the "Default
  * UI" (tui/lite) row — resolveUiMode() forces 'tui' there, so the toggle would
@@ -101,24 +115,35 @@ const ALL_ITEMS: ToggleItem[] = [
  * "Show thinking" row (mainline had it here; /verbosity is gated away).
  */
 export function selectDisplayItems(rolloutEnabled: boolean): ToggleItem[] {
-  if (rolloutEnabled) return ALL_ITEMS;
-  const items = ALL_ITEMS.filter((item) => item.key !== Settings.CHAT_UI_MODE);
-  // Restore the mainline row order: Show thinking sat before Terminal title.
-  const titleIdx = items.findIndex(
-    (i) => i.key === Settings.CHAT_TERMINAL_TITLE
-  );
-  const at = titleIdx === -1 ? items.length : titleIdx;
-  return [...items.slice(0, at), THINKING_ITEM, ...items.slice(at)];
+  // Status line is appended once, after whichever set the cohort gets, so its
+  // placement cannot drift between the two branches.
+  const cohort = rolloutEnabled
+    ? ALL_ITEMS
+    : (() => {
+        const items = ALL_ITEMS.filter(
+          (item) => item.key !== Settings.CHAT_UI_MODE
+        );
+        // Restore the mainline row order: Show thinking sat before Terminal title.
+        const titleIdx = items.findIndex(
+          (i) => i.key === Settings.CHAT_TERMINAL_TITLE
+        );
+        const at = titleIdx === -1 ? items.length : titleIdx;
+        return [...items.slice(0, at), THINKING_ITEM, ...items.slice(at)];
+      })();
+  return [...cohort, STATUS_LINE_ITEM];
 }
 
 interface DisplaySettingsPanelProps {
   onClose: () => void;
   onDismiss?: () => void;
+  /** Hands off to the status-line panel, which replaces this one. */
+  onOpenStatusLine?: () => void;
 }
 
 export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   onClose,
   onDismiss,
+  onOpenStatusLine,
 }) => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
@@ -148,7 +173,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   const [index, setIndex] = useState(0);
   const [values, setValues] = useState<Record<string, boolean | string>>(() =>
     Object.fromEntries(
-      ITEMS.map((item) => [
+      ITEMS.filter((item) => !item.opensPanel).map((item) => [
         item.key,
         item.cycle
           ? item.key === Settings.CHAT_SHOW_THINKING
@@ -233,13 +258,17 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
   );
 
   useInput((input, key) => {
+    const item = ITEMS[index]!;
     if (key.upArrow) setIndex((i) => Math.max(0, i - 1));
     else if (key.downArrow) setIndex((i) => Math.min(ITEMS.length - 1, i + 1));
-    else if (key.leftArrow || key.rightArrow) toggle(ITEMS[index]!.key);
+    else if (item.opensPanel) {
+      // A navigating row holds no value, so both toggle keys and Enter open it.
+      if (key.leftArrow || key.rightArrow || key.return) onOpenStatusLine?.();
+    } else if (key.leftArrow || key.rightArrow) toggle(item.key);
     else if (key.return) {
       // Enter applies the highlighted row then closes; #2634 dropped the
       // toggle so Enter silently closed without switching the value.
-      toggle(ITEMS[index]!.key);
+      toggle(item.key);
       (onDismiss ?? onClose)();
     }
   });
@@ -269,11 +298,13 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
         {ITEMS.map((item, i) => {
           const active = i === index;
           const rawVal = values[item.key];
-          const val = item.cycle
-            ? String(rawVal)
-            : (item.inverted ? !rawVal : rawVal)
-              ? 'on'
-              : 'off';
+          const val = item.opensPanel
+            ? ''
+            : item.cycle
+              ? String(rawVal)
+              : (item.inverted ? !rawVal : rawVal)
+                ? 'on'
+                : 'off';
           return (
             <Box key={item.key} flexDirection="row">
               {active ? (

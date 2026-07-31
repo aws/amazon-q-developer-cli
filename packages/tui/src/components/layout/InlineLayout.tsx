@@ -65,6 +65,7 @@ import {
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getPlaceholder } from './getPlaceholder.js';
 import { getGitBranch } from '../../utils/git';
+import { useStatusBilling } from './status-line/useStatusBilling.js';
 import { getAgentColor, isAutonomousAgent } from '../../utils/agentColors.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import {
@@ -186,6 +187,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     showHooksPanel,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
+    showStatusLinePanel,
     showThemePanel,
     showSettingsPanel,
     showKnowledgePanel,
@@ -305,6 +307,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   // ApprovalRequest (drill-in → dropdown, trust → default, dropdown → cancel).
 
   const [gitBranch, _setGitBranch] = useState(() => getGitBranch());
+  const statusBilling = useStatusBilling('tui');
 
   // Handle Ctrl+O to toggle tool output expansion
   const announcement = useAppStore((s) => s.announcement);
@@ -413,10 +416,13 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
         cloudBranch={cloudBranch}
         cloudExtraRepos={cloudExtraRepos}
         codeIntelligenceActive={codeIntelligenceActive}
+        usagePercent={statusBilling.usagePercent}
+        creditsRemaining={statusBilling.creditsRemaining}
       />
     ) as PromptBarHeader;
   }, [
     StatusLine,
+    statusBilling,
     pendingApproval,
     messages,
     isCrewApproval,
@@ -456,10 +462,13 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
         cloudExtraRepos={cloudExtraRepos}
         codeIntelligenceActive={codeIntelligenceActive}
         dimmed
+        usagePercent={statusBilling.usagePercent}
+        creditsRemaining={statusBilling.creditsRemaining}
       />
     ) as PromptBarHeader;
   }, [
     StatusLine,
+    statusBilling,
     toolOutputsExpanded,
     tangentName,
     currentAgent,
@@ -911,6 +920,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   showHooksPanel ||
                   showKeybindingsPanel ||
                   showDisplaySettingsPanel ||
+                  showStatusLinePanel ||
                   showThemePanel ||
                   showSettingsPanel ||
                   showKnowledgePanel ||
@@ -964,7 +974,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               />
             )}
             {!pendingQuestion && (
-              <BackendPanels handlers={backendPanelHandlers} />
+              <BackendPanels handlers={backendPanelHandlers} surface="tui" />
             )}
             <ActionHint
               text={`Showing detailed output ${glyphs.smallDot} ctrl+o to toggle`}
@@ -994,6 +1004,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 !showHooksPanel &&
                 !showKeybindingsPanel &&
                 !showDisplaySettingsPanel &&
+                !showStatusLinePanel &&
                 !showThemePanel &&
                 !showSettingsPanel &&
                 !showKnowledgePanel &&

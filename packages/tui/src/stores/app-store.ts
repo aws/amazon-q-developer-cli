@@ -1392,6 +1392,7 @@ interface BaseAppActions {
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
   setShowThemePanel: (show: boolean) => void;
+  setShowStatusLinePanel: (show: boolean) => void;
   /** Open/close the cloud-session `/quit` prompt (keep-running vs turn-off). */
   setShowCloudQuitPrompt: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
@@ -1914,6 +1915,14 @@ export interface AppState {
   /** Restore a stashed display snapshot; returns whether one was applied. */
   restoreDisplaySnapshotFor: (sessionId: string | null | undefined) => boolean;
   lastTurnTokens: LastTurnTokens | null;
+  /**
+   * Increments once per completed turn.
+   *
+   * `isProcessing` is a UI-busy flag: a shell escape, a cancel and the observer
+   * watchdog all clear it, and a run spanning several internal turns clears it
+   * more than once. Anything that must act exactly per turn watches this instead.
+   */
+  turnsCompleted: number;
   turnSummaries: Map<string, string>; // turnId (user message id) → formatted summary text
 
   // Usage panel state
@@ -2040,6 +2049,7 @@ export interface AppState {
   showKeybindingsPanel: boolean;
   showDisplaySettingsPanel: boolean;
   showThemePanel: boolean;
+  showStatusLinePanel: boolean;
   /** Whether the cloud-session `/quit` prompt (keep-running vs turn-off) is open. */
   showCloudQuitPrompt: boolean;
   showSettingsPanel: boolean;
@@ -2659,6 +2669,7 @@ export function buildCommandContext(
         showSourceProviderGate: false,
         showKeybindingsPanel: false,
         showThemePanel: false,
+        showStatusLinePanel: false,
         showCloudQuitPrompt: false,
         settingsReturnOnEscape: false,
         verboseReturnOnEscape: null,
@@ -2981,6 +2992,7 @@ export const createAppStore = (props: AppStoreProps) => {
     cloudScopeBySession: new Map(),
     displaySnapshotBySession: new Map(),
     lastTurnTokens: null,
+    turnsCompleted: 0,
     turnSummaries: new Map(),
     showContextBreakdown: false,
     contextBreakdown: null,
@@ -3048,6 +3060,7 @@ export const createAppStore = (props: AppStoreProps) => {
     showKeybindingsPanel: false,
     showDisplaySettingsPanel: false,
     showThemePanel: false,
+    showStatusLinePanel: false,
     showCloudQuitPrompt: false,
     showSettingsPanel: false,
     themePreview: null,
@@ -4862,6 +4875,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 return { messages, liveOutputs: newLiveOutputs };
               });
             }
+            set((state) => ({ turnsCompleted: state.turnsCompleted + 1 }));
             if (get().isProcessing) {
               set({ isProcessing: false });
             }
@@ -7734,6 +7748,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowThemePanel: (show) => {
       set({ showThemePanel: show });
+    },
+
+    setShowStatusLinePanel: (show: boolean) => {
+      set({ showStatusLinePanel: show });
     },
     setShowCloudQuitPrompt: (show) => {
       set({ showCloudQuitPrompt: show });

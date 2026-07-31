@@ -23,6 +23,7 @@ import { Explorer } from '../../ui/Explorer.js';
 import { KeybindingsPanel } from '../../ui/KeybindingsPanel.js';
 import { DisplaySettingsPanel } from '../../ui/DisplaySettingsPanel.js';
 import { ThemePanel } from '../../ui/ThemePanel.js';
+import { StatusLineSettingsPanel } from '../../ui/StatusLineSettingsPanel.js';
 import { SettingsPanel } from '../../ui/SettingsPanel.js';
 import { ArtifactView } from '../../ui/ArtifactView/index.js';
 import { SurveyPanel } from '../../ui/SurveyPanel.js';
@@ -48,12 +49,18 @@ import type { BackendPanelHandlers } from './useBackendPanelHandlers.js';
 import { runMcpPanelAction } from './mcp-panel-actions.js';
 import { workflowStore } from '../../../stores/workflow-store.js';
 import { WorkflowHistoryPanel } from '../workflow-monitor/WorkflowHistoryPanel.js';
+import type { UiMode } from '../../../types/ui-mode.js';
 
 interface BackendPanelsProps {
   handlers: BackendPanelHandlers;
+  /** The surface the mounting layout paints, for panels that edit per-surface state. */
+  surface: UiMode;
 }
 
-export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
+export const BackendPanels: React.FC<BackendPanelsProps> = ({
+  handlers,
+  surface,
+}) => {
   const glyphs = useGlyphs();
   const {
     showContextBreakdown,
@@ -88,6 +95,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
     showKeybindingsPanel,
     showDisplaySettingsPanel,
     showThemePanel,
+    showStatusLinePanel,
     showSettingsPanel,
     showKnowledgePanel,
     knowledgeEntries,
@@ -347,10 +355,18 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({ handlers }) => {
         <DisplaySettingsPanel
           onClose={handlers.handleCloseDisplaySettingsPanel}
           onDismiss={handlers.handleDismissDisplaySettingsPanel}
+          onOpenStatusLine={handlers.handleOpenStatusLinePanel}
         />
       )}
       {showThemePanel && (
         <ThemePanel onClose={handlers.handleCloseThemePanel} />
+      )}
+      {showStatusLinePanel && (
+        <StatusLineSettingsPanel
+          surface={surface}
+          onClose={handlers.handleCloseStatusLinePanel}
+          onDismiss={handlers.handleDismissStatusLinePanel}
+        />
       )}
       {showSettingsPanel && (
         <SettingsPanel onClose={handlers.handleCloseSettingsPanel} />

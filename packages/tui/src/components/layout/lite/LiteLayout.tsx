@@ -111,6 +111,7 @@ import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
 import { ArtifactGenerationCard } from '../../ui/ArtifactView/ArtifactGenerationCard.js';
 import { SurveyPromptBar } from '../../ui/SurveyPromptBar.js';
 import { useUIState } from '../../../stores/selectors.js';
+import { useStatusBilling } from '../status-line/useStatusBilling.js';
 import {
   selectActiveSubagentToolScopes,
   selectSubagentToolMessagesForScope,
@@ -240,6 +241,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     tangentName,
     showKeybindingsPanel,
     showDisplaySettingsPanel,
+    showStatusLinePanel,
     showThemePanel,
     showSettingsPanel,
     artifactViewOpen,
@@ -294,6 +296,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     showTangentExplorer ||
     showKeybindingsPanel ||
     showDisplaySettingsPanel ||
+    showStatusLinePanel ||
     showThemePanel ||
     showSettingsPanel ||
     !!artifactViewOpen ||
@@ -1134,6 +1137,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     s.isProcessing ? s.streamingContent : ''
   );
 
+  const statusBilling = useStatusBilling('lite');
   const ctxPct = useMemo(() => {
     const base =
       contextUsagePercent != null ? Math.round(contextUsagePercent) : 0;
@@ -1784,6 +1788,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
           cloudExtraRepos={cloudExtraRepos}
           pendingAgentName={pendingAgentName}
           animationFrame={bootFrame}
+          usagePercent={statusBilling.usagePercent}
+          creditsRemaining={statusBilling.creditsRemaining}
         />
       )}
 
@@ -1881,7 +1887,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
           short-circuits Esc when anyPanelOpen so it doesn't also cancel. */}
       {!showInteraction && anyPanelOpen && (
         <Box flexDirection="column">
-          <BackendPanels handlers={handlers} />
+          <BackendPanels handlers={handlers} surface="lite" />
         </Box>
       )}
 

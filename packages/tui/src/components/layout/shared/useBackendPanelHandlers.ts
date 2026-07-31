@@ -41,6 +41,7 @@ export function useBackendPanelHandlers() {
     setShowKeybindingsPanel,
     setShowDisplaySettingsPanel,
     setShowThemePanel,
+    setShowStatusLinePanel,
     setShowSettingsPanel,
     setSettingsReturnOnEscape,
     reopenSettingsMenu,
@@ -57,7 +58,7 @@ export function useBackendPanelHandlers() {
   // order each render, so React hook ordering holds (hence the suppression).
   const makeClose = (
     setShow: (open: boolean) => void,
-    opts?: { returnToSettings?: boolean }
+    opts?: { returnToSettings?: boolean; clearReturnFlag?: boolean }
   ) =>
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useCallback(() => {
@@ -67,6 +68,8 @@ export function useBackendPanelHandlers() {
       if (opts?.returnToSettings && settingsReturnOnEscape) {
         setSettingsReturnOnEscape(false);
         reopenSettingsMenu();
+      } else if (opts?.clearReturnFlag) {
+        setSettingsReturnOnEscape(false);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
@@ -107,6 +110,20 @@ export function useBackendPanelHandlers() {
     handleDismissDisplaySettingsPanel: makeClose(setShowDisplaySettingsPanel),
     handleCloseThemePanel: makeClose(setShowThemePanel, {
       returnToSettings: true,
+    }),
+    // Display steps aside rather than stacking, so ESC out of the status-line
+    // panel returns to /settings the same way any other sub-panel does.
+    handleOpenStatusLinePanel: useCallback(() => {
+      setShowDisplaySettingsPanel(false);
+      setShowStatusLinePanel(true);
+    }, [setShowDisplaySettingsPanel, setShowStatusLinePanel]),
+    handleCloseStatusLinePanel: makeClose(setShowStatusLinePanel, {
+      returnToSettings: true,
+    }),
+    // Enter confirms and leaves for the chat, so the back-flag has to go with it.
+    // Left set, the next unrelated panel would bounce into /settings on ESC.
+    handleDismissStatusLinePanel: makeClose(setShowStatusLinePanel, {
+      clearReturnFlag: true,
     }),
   };
 
