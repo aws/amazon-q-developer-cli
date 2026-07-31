@@ -43,6 +43,7 @@ Tiers:
 | Multiple concurrent sessions listed, one attached                                                | e2e              | cloud-resume-concurrent t3/t4                               |
 | Delete sessions (full id + unique prefix, ambiguity)                                             | rust-integ       | cloud_sessions_gating.rs delete tests                       |
 | Opt-in: same env without --cloud stays local                                                     | e2e              | cloud-sessions.test.ts t7                                   |
+| /autonomous on/off: picker + [current] tag, verified mode switch (#3653 CLI; KAS 0.27.8 relay)   | e2e + smoke      | cloud-autonomous.test.ts; smoke "autonomous"; KR S15        |
 
 ## Dark-ship boundary (release safety)
 

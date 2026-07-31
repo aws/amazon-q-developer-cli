@@ -366,6 +366,44 @@ echo "$LIST_OUT" | grep -q "Chat SessionId" && pass "listing runs" || fail "list
 echo "$LIST_OUT" | grep -q "| cloud |" && pass "cloud rows tagged" || fail "cloud rows tagged"
 note "headless output saved as frames-listing.txt (no PTY frame)"
 
+# ── S15 /autonomous on|off (verified mode switch over the relay) ─────────────
+# KAS 0.27.8 relays session/set_mode + the read-back set_config_option to the
+# sandbox (SendAcpMessage); the mock BFF applies the mode and answers the
+# read-back, so the success lines here prove the VERIFIED switch — the CLI
+# only prints them after the read-back confirms the sandbox applied the mode.
+scenario "S15" "/autonomous picker + verified on/off switch" "#3653 CLI; KAS 0.27.8 relay; mock sandbox applies set_mode"
+start_bff
+# The BFF log is appended across scenarios; mark where S15 begins so the wire
+# grep below can't be satisfied by an earlier scenario's traffic.
+echo "=== S15-WIRE-MARK ===" >> "$OUT/mock-bff.log"
+if start_kr "--cloud"; then
+  wait_scr "Cloud session created" 60
+  wait_scr "ask a question" 20
+  # Bare /autonomous: picker with the current state tagged. Fresh session is
+  # off, so [current] must sit on the off row.
+  type_text "/autonomous"; enter
+  if wait_scr "\[current\]" 15; then pass "picker opens with [current] tag"; else fail "picker opens with [current] tag"; fi
+  if scr_dump | grep -qE "off +\[current\]"; then pass "[current] tags the off row on a fresh session"; else fail "[current] tags the off row on a fresh session"; fi
+  frame "picker"
+  esc
+  # ON: printed only after the read-back verification confirms the sandbox
+  # applied the mode. The not-supported fallback would be a relay regression.
+  type_text "/autonomous on"; enter
+  if wait_scr "Autonomous mode on" 15; then pass "on: verified switch confirmed"; else fail "on: verified switch confirmed"; fi
+  if grepscr "not supported on this session yet"; then fail "no not-supported fallback"; else pass "no not-supported fallback"; fi
+  if awk '/=== S15-WIRE-MARK ===/{f=1} f' "$OUT/mock-bff.log" | grep -q '"modeId":"autonomous"'; then pass "set_mode crossed the BFF wire"; else fail "set_mode crossed the BFF wire"; fi
+  frame "on"
+  # Idempotent ON.
+  type_text "/autonomous on"; enter
+  if wait_scr "Autonomous mode is already on" 15; then pass "on-when-on says already on"; else fail "on-when-on says already on"; fi
+  # OFF: same verified path back to the default agent.
+  type_text "/autonomous off"; enter
+  if wait_scr "Autonomous mode off" 15; then pass "off: verified switch back"; else fail "off: verified switch back"; fi
+  no_error_check
+  frame "off"
+fi
+stop_kr
+
 # ════════════════════════════════════════════════════════════════════════════
 say ""
 if [ "$FAILS" -eq 0 ]; then say "ALL SCENARIOS PASS"; else say "$FAILS CHECK(S) FAILED"; fi

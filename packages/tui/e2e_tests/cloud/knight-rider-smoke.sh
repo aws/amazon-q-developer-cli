@@ -198,6 +198,26 @@ if [ "$MODE" = "mock" ]; then
   stop_kr
 fi
 
+# ── /autonomous verified mode switch (mock only) ────────────────────────────
+# KAS 0.27.8 relays session/set_mode for cloud sessions; the mock BFF plays
+# the sandbox core (applies the mode, answers the read-back), so the success
+# lines prove the VERIFIED switch — the CLI prints them only after the
+# read-back confirms the sandbox applied the mode. Prod-mode runs skip this:
+# whether the production sandbox applies set_mode durably is prod-scope.
+if [ "$MODE" = "mock" ]; then
+  if start_kr "--cloud"; then
+    wait_scr "Cloud session created" 60
+    wait_scr "ask a question" 20
+    type_text "/autonomous on"; enter
+    if wait_scr "Autonomous mode on" 15; then pass "autonomous on (verified)"; else fail "autonomous on (verified)"; fi
+    if grepscr "not supported on this session yet"; then fail "no not-supported fallback"; else pass "no not-supported fallback"; fi
+    type_text "/autonomous off"; enter
+    if wait_scr "Autonomous mode off" 15; then pass "autonomous off (verified)"; else fail "autonomous off (verified)"; fi
+    frame "autonomous"
+  fi
+  stop_kr
+fi
+
 # ── headless listing (no PTY needed) ────────────────────────────────────────
 # KIRO_KAS_SERVER_PATH/NODE_PATH are inherited (dev binaries have no embedded
 # KAS bundle); only the TUI-path override is dropped for a headless run.

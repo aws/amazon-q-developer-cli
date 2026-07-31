@@ -194,6 +194,71 @@ function sessionStatusFor(sessionId) {
   return { status: 'IDLE', isExecuting: false, pendingQuestions: [] };
 }
 
+// ── Relayed ACP verbs (SendAcpMessage) ──────────────────────────────────────
+//
+// KAS 0.27.8+ forwards session-scoped core verbs for relayed (cloud) sessions
+// to the sandbox over the BFF's SendAcpMessage op: the request carries the raw
+// JSON-RPC envelope in `message` and the response returns the matching
+// JSON-RPC response envelope in `response` (unwrapped by KAS's unframeResult,
+// which throws on `error` and requires a `result` object). This mock plays the
+// sandbox's core: it APPLIES `session/set_mode` to a per-session mode register
+// and answers `session/set_config_option` with configOptions whose mode select
+// reflects the applied mode — the exact read-back the CLI's setSessionMode
+// verification performs, so `/autonomous on|off` round-trips for real.
+//
+// The mode register survives across boots within one BFF process (spaceId is
+// the key); each E2E test spawns a fresh BFF, so tests stay isolated.
+const sessionModes = new Map(); // spaceId -> KAS wire mode id ('vibe'|'autonomous'|...)
+
+// The sandbox's config surface: a mode select shaped like KAS's own
+// buildSessionConfigOptions output. Both modes are marked bundled (matching
+// prod, where `autonomous` is hidden from the /agent picker by the CLI's
+// allowlist); `currentValue` is the register's mode, defaulting to the
+// default agent's wire id 'vibe'.
+function configOptionsFor(sessionId) {
+  return [
+    {
+      type: 'select',
+      id: 'mode',
+      category: 'mode',
+      name: 'Mode',
+      currentValue: sessionModes.get(sessionId) ?? 'vibe',
+      options: [
+        {
+          value: 'vibe',
+          name: 'Kiro Default',
+          _meta: { kiro: { source: 'bundled' } },
+        },
+        {
+          value: 'autonomous',
+          name: 'Autonomous',
+          _meta: { kiro: { source: 'bundled' } },
+        },
+      ],
+    },
+  ];
+}
+
+// Handles one forwarded JSON-RPC request and returns its `result`. Unknown
+// verbs answer `{}` rather than an error: KAS treats an `error` member as a
+// hard sandbox rejection ("rejected by sandbox: …"), which would surface a
+// raw error in flows this mock simply doesn't model.
+function handleForwardedAcp(sessionId, method, params) {
+  if (method === 'session/set_mode') {
+    if (typeof params?.modeId === 'string') {
+      sessionModes.set(sessionId, params.modeId);
+    }
+    return {}; // SetSessionModeResponse is empty
+  }
+  if (method === 'session/set_config_option') {
+    if (params?.configId === 'mode' && typeof params?.value === 'string') {
+      sessionModes.set(sessionId, params.value);
+    }
+    return { configOptions: configOptionsFor(sessionId) };
+  }
+  return {};
+}
+
 // Per-operation output structs. Keys are the wire member names the adapters read.
 const responders = {
   // IRemoteSessionSource.new() -> CreateSpace; adapter reads response.spaceId.
@@ -276,6 +341,26 @@ const responders = {
       ? undefined
       : 'https://kiro.dev/settings/source-providers',
   }),
+  // Relayed core verbs -> SendAcpMessage. Input carries the JSON-RPC request
+  // envelope as a smithy document in `message`; the output's `response`
+  // document is the JSON-RPC response envelope KAS unframes (`result`
+  // required, `error` = sandbox rejection). Applies set_mode / answers the
+  // set_config_option read-back so `/autonomous on|off` verifies for real
+  // (see handleForwardedAcp above).
+  SendAcpMessage: (input) => {
+    const sessionId =
+      (input && (input.sessionId || input.spaceId)) || SPACE_BANANA;
+    const envelope = input?.message ?? {};
+    const result = handleForwardedAcp(
+      sessionId,
+      envelope.method,
+      envelope.params
+    );
+    // A notification envelope has no id; the unary op still wants a frame.
+    return {
+      response: { jsonrpc: '2.0', id: envelope.id ?? null, result },
+    };
+  },
   // loadSession() -> LoadSession; a @streaming op whose response.events is an AWS
   // event stream (handled on the event-stream path below; this entry only marks
   // the op as known). KAS folds the frames per bff-remote-session-source:
