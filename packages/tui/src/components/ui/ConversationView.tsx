@@ -156,6 +156,7 @@ const StaticMessage = React.memo(function StaticMessage({
           purpose={message.purpose}
           startTime={message.startTime}
           finishTime={message.finishTime}
+          denial={message.denial}
         />
       </HideToolArgsContext.Provider>
     );
@@ -319,6 +320,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
                 purpose={message.purpose}
                 startTime={message.startTime}
                 finishTime={message.finishTime}
+                denial={message.denial}
               />
               {isSessionTool && !message.isFinished && (
                 <SubagentToolPanel pipelineGroupId={message.pipelineGroupId} />

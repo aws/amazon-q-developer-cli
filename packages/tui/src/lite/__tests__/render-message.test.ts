@@ -329,6 +329,49 @@ describe('renderMessageToText (tool_use)', () => {
       );
     }
   );
+
+  // Lite-mode parity with the full TUI's ToolDenialDetails card: when the store
+  // populates `denial` (infra-safety override or policy deny), the tool render
+  // gets a "Blocked by <source>" block with Rule + Tool rows.
+  test('renders the Blocked-by denial card in lite mode', () => {
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-denial',
+          role: 'tool_use',
+          name: 'str_replace',
+          content: JSON.stringify({ command: 'str_replace', path: 'infra.ts' }),
+          isFinished: true,
+          status: 'rejected',
+          denial: {
+            source: 'infrastructure safety',
+            rule: 'Never delete S3 buckets',
+            tool: 'str_replace',
+          },
+        },
+        'kiro_default'
+      )
+    );
+    expect(out).toContain('Blocked by infrastructure safety');
+    expect(out).toContain('Rule Never delete S3 buckets');
+    expect(out).toContain('Tool str_replace');
+  });
+
+  test('omits the denial card when denial is absent', () => {
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-no-denial',
+          role: 'tool_use',
+          name: 'str_replace',
+          content: JSON.stringify({ command: 'str_replace', path: 'infra.ts' }),
+          isFinished: true,
+        },
+        'kiro_default'
+      )
+    );
+    expect(out).not.toContain('Blocked by');
+  });
 });
 
 describe('renderMessageToText for task tools', () => {

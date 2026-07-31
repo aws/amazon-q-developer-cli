@@ -5,6 +5,8 @@ import { StatusInfo } from './status/StatusInfo.js';
 import type { StatusType } from '../../types/componentTypes.js';
 import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
+import { ToolDenialDetails } from './ToolDenialDetails.js';
+import type { ToolDenial } from '../../utils/tool-denial.js';
 import { Write } from '../chat/tools/Write.js';
 import { Read } from '../chat/tools/Read.js';
 import { Shell } from '../chat/tools/Shell.js';
@@ -93,6 +95,8 @@ export interface ToolUseMessageProps {
   purpose?: string;
   startTime?: number;
   finishTime?: number;
+  /** Denial detail for a blocked tool call (infra-safety or permission policy). */
+  denial?: ToolDenial;
 }
 
 export const ToolUseMessage = React.memo<ToolUseMessageProps>(
@@ -114,6 +118,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     purpose,
     startTime,
     finishTime,
+    denial,
   }) {
     const { getColor, wrapDisabled } = useTheme();
     const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
@@ -194,6 +199,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
           isStatic={isStatic}
           locations={locations}
         />
+        {denial && <ToolDenialDetails denial={denial} />}
         {showEscHint && (
           <Text>
             {getColor('muted')(

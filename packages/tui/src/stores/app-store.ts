@@ -17,6 +17,7 @@ import {
 } from '../utils/session-roster';
 import type { SessionRepositoryEntry } from '../utils/session-repositories';
 import { features } from '../features';
+import { deriveToolDenial, type ToolDenial } from '../utils/tool-denial';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import type { SessionPickerRow } from '../components/ui/SessionPickerPanel';
 import {
@@ -574,6 +575,12 @@ export type MessageType =
       isSubagentTool?: boolean;
       startTime?: number;
       finishTime?: number;
+      /**
+       * Denial detail for a blocked tool call, harvested from
+       * `event.meta.kiro.{safetyOverride|policyDenial}`. Rendered by
+       * ToolDenialDetails (parity with the IDE's Safety/Policy denial cards).
+       */
+      denial?: ToolDenial;
     }
   | {
       id: string;
@@ -4053,7 +4060,8 @@ export const createAppStore = (props: AppStoreProps) => {
                 if (existingMsg && existingMsg.role === MessageRole.ToolUse) {
                   const hasNewContent =
                     Object.keys(event.args).length > 0 || event.toolContent;
-                  if (hasNewContent || isQuestion) {
+                  const denial = deriveToolDenial(event.meta?.kiro);
+                  if (hasNewContent || isQuestion || denial) {
                     const messages = [...state.messages];
                     messages[existingIndex] = {
                       ...existingMsg,
@@ -4067,6 +4075,7 @@ export const createAppStore = (props: AppStoreProps) => {
                       kind: event.kind || existingMsg.kind,
                       locations: event.locations || existingMsg.locations,
                       diff: diff ?? existingMsg.diff,
+                      denial: denial ?? existingMsg.denial,
                     };
                     return { messages };
                   }
@@ -4183,6 +4192,9 @@ export const createAppStore = (props: AppStoreProps) => {
                     diff,
                     locations: event.locations,
                     agentName,
+                    ...(deriveToolDenial(event.meta?.kiro) && {
+                      denial: deriveToolDenial(event.meta?.kiro),
+                    }),
                     ...(event.sessionId && { isSubagentTool: true }),
                     ...(fromHistory ? {} : { startTime: Date.now() }),
                     ...(isNotReady && {
@@ -4280,6 +4292,7 @@ export const createAppStore = (props: AppStoreProps) => {
                       : toolMsg.status,
                     result: event.result,
                     ...(fromHistory ? {} : { finishTime: Date.now() }),
+                    denial: deriveToolDenial(event.meta?.kiro) ?? toolMsg.denial,
                   };
                 }
               } else {

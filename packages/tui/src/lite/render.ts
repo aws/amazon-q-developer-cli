@@ -49,6 +49,7 @@ import {
   orderSubagentStageItems,
 } from '../utils/subagent-display.js';
 import { unescapeJsonNewlines } from '../utils/tool-result.js';
+import type { ToolDenial } from '../utils/tool-denial.js';
 
 // Number-column width shared by read/write + diff renderers so they line up.
 const LINE_NUM_WIDTH = 4;
@@ -1078,6 +1079,25 @@ export interface ToolCallRenderInfo {
 export function toolDisplayName(name: string): string {
   const id = resolveToolId(name);
   return id ? getToolLabel(id) : name;
+}
+
+/**
+ * Lite-mode render of a {@link ToolDenial} — parity with the full TUI's
+ * ToolDenialDetails card. A red "Blocked by <source>" line plus dim-labeled
+ * Rule and (when known) Tool rows, indented to sit under the tool call. Returns
+ * a `\n`-joined block WITHOUT a leading newline; the caller adds the separator.
+ */
+export function renderToolDenial(
+  denial: ToolDenial,
+  theme?: RenderTheme
+): string {
+  const secondary = theme?.secondary ?? chalk.dim;
+  const lines = [
+    `  ${chalk.red('Blocked')} by ${denial.source}`,
+    `  ${secondary('Rule')} ${denial.rule}`,
+  ];
+  if (denial.tool) lines.push(`  ${secondary('Tool')} ${denial.tool}`);
+  return lines.join('\n');
 }
 
 export function renderToolCall(
@@ -2949,6 +2969,11 @@ export interface MessageLike {
    *  inference — routes to renderShellOutputBlock (`! ` gutter) and bypasses
    *  markdown so shell `*`/`_` aren't styled. */
   shellOutput?: boolean;
+  /** Normalized denial detail for a blocked tool call (infra-safety override or
+   *  permission-policy deny), derived by deriveToolDenial in the store. When
+   *  set, the tool renderer appends a "Blocked by …" line — lite-mode parity
+   *  with the full TUI's ToolDenialDetails card. */
+  denial?: ToolDenial;
 }
 
 export interface SubagentStageSummary {
@@ -3065,6 +3090,14 @@ export function renderMessageToText(
     }
 
     case 'tool_use': {
+      // Append the "Blocked by …" denial block to whatever this branch renders
+      // (it has many return points). Applied at each return via withDenial so a
+      // denied/cancelled/errored override or policy deny surfaces its rule +
+      // tool under the call — lite parity with the full TUI's ToolDenialDetails.
+      const withDenial = (text: string): string =>
+        msg.denial
+          ? text + '\n' + renderToolDenial(msg.denial, ctx.theme)
+          : text;
       const isRejected = msg.status === 'rejected';
       const status: ToolCallRenderInfo['status'] = isRejected
         ? 'error'
@@ -3217,8 +3250,8 @@ export function renderMessageToText(
           termCols: ctx.termCols,
           theme: ctx.theme,
         });
-        if (msg.result?.status !== 'error') return writeRender;
-        return writeRender + verboseOutputSuffix(msg, display, ctx);
+        if (msg.result?.status !== 'error') return withDenial(writeRender);
+        return withDenial(writeRender + verboseOutputSuffix(msg, display, ctx));
       }
       // Read tools render a structured body (path header + numbered,
       // highlighted lines); the output bar is skipped (body shows content).
@@ -3229,13 +3262,15 @@ export function renderMessageToText(
         !isRejected &&
         shouldShowToolOutput(msg.name || '', ctx.filtersOverride)
       ) {
-        return renderReadToolCall(info, msg.content, msg.result, {
-          termCols: ctx.termCols,
-          maxLines: display.outputMaxLines,
-          maxCharsPerLine: display.outputMaxChars,
-          theme: ctx.theme,
-          glyphs: ctx.glyphs,
-        });
+        return withDenial(
+          renderReadToolCall(info, msg.content, msg.result, {
+            termCols: ctx.termCols,
+            maxLines: display.outputMaxLines,
+            maxCharsPerLine: display.outputMaxChars,
+            theme: ctx.theme,
+            glyphs: ctx.glyphs,
+          })
+        );
       }
       const toolLine = renderToolCall(info, ctx.theme);
       // Block mode: full key:value tree under the name. Inline/off: nothing
@@ -3255,15 +3290,15 @@ export function renderMessageToText(
           const capped = applyLineCap(argsLines, display.argsMaxLines, (n) =>
             chalk.dim(`  ... (truncated; +${n} more lines)`)
           );
-          return (
+          return withDenial(
             toolLine +
-            '\n' +
-            capped.join('\n') +
-            verboseOutputSuffix(msg, display, ctx)
+              '\n' +
+              capped.join('\n') +
+              verboseOutputSuffix(msg, display, ctx)
           );
         }
       }
-      return toolLine + verboseOutputSuffix(msg, display, ctx);
+      return withDenial(toolLine + verboseOutputSuffix(msg, display, ctx));
     }
 
     case 'system':

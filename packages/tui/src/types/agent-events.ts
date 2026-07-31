@@ -19,6 +19,7 @@ import type { SessionRepositoryEntry } from '../utils/session-repositories.js';
 import type {
   UserInputRequest,
   UserInputResponse,
+  PolicyDenialInfo,
 } from '@kiro/acp-type-covenant';
 import type { WorkflowProgressEvent } from './workflow.js';
 
@@ -467,6 +468,35 @@ export interface KiroMeta {
   messageId?: string;
   timestamp?: string;
   steeringClearedIds?: readonly string[];
+  /**
+   * Permission-policy denial surfaced on a rejected tool call's
+   * `_meta.kiro.policyDenial` (KAS trust v2). Mirrors the IDE's
+   * `PolicyDenialDetails` card: which rule blocked the call and where it is
+   * defined. The canonical shape is defined once in `@kiro/acp-type-covenant`
+   * (capabilities/trust/types.ts) and imported here for unmarshalling rather
+   * than redefined.
+   */
+  policyDenial?: PolicyDenialInfo;
+  /**
+   * Infrastructure-safety block surfaced on a gated tool call's
+   * `_meta.kiro.safetyOverride`. Mirrors the IDE's `SafetyDenialDetails` card:
+   * the violated rule(s) and the tool.
+   *
+   * This shape has no covenant type to import — the agent defines it inline in
+   * `acp-safety-override-permission.ts` (it is not promoted to
+   * `@kiro/acp-type-covenant`), so the source of truth for these fields is that
+   * file's `safetyOverrideBase` + `SafetyOverrideDecision`. `decision` is stamped
+   * ONLY on the terminal `tool_call_update`; the pending card carries the base
+   * fields without it. `deriveToolDenial` gates the "Blocked" card on `decision`
+   * so it neither shows while pending nor persists after an `allowed` override.
+   */
+  safetyOverride?: {
+    kind?: 'infra-safety';
+    toolName: string;
+    reason: string;
+    blockedProperties?: readonly string[];
+    decision?: 'allowed' | 'denied' | 'cancelled' | 'error';
+  };
 }
 
 export interface AgentContentEvent {
