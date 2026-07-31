@@ -228,6 +228,29 @@ function kasConsentRecordFromRequest(
     : undefined;
 }
 
+/**
+ * Whether a session-tagged push belongs to the session being switched AWAY
+ * from while a session/load is in flight. In that window the client's active
+ * session id still holds the outgoing id (ownership flips only when the RPC
+ * resolves), so the departing session's own traffic — e.g. its local MCP pool
+ * settling after a local load — passes the active-id equality guard and would
+ * be cached, flip the panel readiness bit, and defeat the incoming session's
+ * stash restore ("live push wins" assumes a mid-load push is the incoming
+ * session's). A push tagged with the load's TARGET id is never dropped by
+ * THIS guard (the pre-existing equality guard governs it until ownership
+ * flips); with no load in flight nothing is dropped.
+ */
+export function isOutgoingSessionPush(
+  loadTargetSessionId: string | null,
+  sessionId: string | undefined
+): boolean {
+  return (
+    loadTargetSessionId !== null &&
+    !!sessionId &&
+    sessionId !== loadTargetSessionId
+  );
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
@@ -397,6 +420,11 @@ export class KasAcpClient extends BaseAcpClient {
   /** A session/new RPC is in flight: the created session's pushes arrive
    *  tagged with an id the response hasn't reported yet. */
   private createInFlight = false;
+  /** The session id a session/load RPC is switching TO, while that RPC is in
+   *  flight; null otherwise. See {@link isOutgoingSessionPush} for why the
+   *  equality guard alone cannot catch the outgoing session's own pushes in
+   *  this window. */
+  private loadTargetSessionId: string | null = null;
 
   /**
    * Advisory warnings from the last `session/new` (`_meta.kiro.warnings`),
@@ -1068,6 +1096,9 @@ export class KasAcpClient extends BaseAcpClient {
         ) {
           return;
         }
+        // Mid-switch, the outgoing session's own push must not become the
+        // incoming session's panel state.
+        if (this.isOutgoingSessionPush(sessionId)) return;
         const rawHooks = Array.isArray(params.hooks) ? params.hooks : [];
         const hooks = this.projectHooks(rawHooks);
         this.broadcastStreamEvent({
@@ -1096,6 +1127,7 @@ export class KasAcpClient extends BaseAcpClient {
         ) {
           return;
         }
+        if (this.isOutgoingSessionPush(sessionId)) return;
         const tools = parseToolsDidChange(params);
         // Any tagged push that survived the guard is this surface's own;
         // mid-create the new id is not yet known, so equality would miss it.
@@ -1122,6 +1154,7 @@ export class KasAcpClient extends BaseAcpClient {
       if (!sessionId && this.startedCloudSession) {
         return;
       }
+      if (this.isOutgoingSessionPush(sessionId)) return;
       this.handleMcpStatusNotification(params, !!sessionId);
     });
 
@@ -1276,6 +1309,10 @@ export class KasAcpClient extends BaseAcpClient {
    */
   isCloudSessionActive(): boolean {
     return this.startedCloudSession;
+  }
+
+  private isOutgoingSessionPush(sessionId: string | undefined): boolean {
+    return isOutgoingSessionPush(this.loadTargetSessionId, sessionId);
   }
 
   override close(): void {
@@ -1518,6 +1555,9 @@ export class KasAcpClient extends BaseAcpClient {
   ): Promise<SessionResult> {
     this.assertActive('session load');
     const previousSessionId = this.sessionId;
+    // While the switch RPC is in flight, pushes tagged with the OUTGOING id are
+    // the departing session's own traffic, not the incoming session's.
+    this.loadTargetSessionId = sessionId;
     // Invalidate any in-flight self-heal from the previous (or same-id) load.
     this.configEpoch++;
     // A loaded session has no create-time bind warnings.
@@ -1581,6 +1621,7 @@ export class KasAcpClient extends BaseAcpClient {
         return loadFrom('remote');
       });
     } catch (error) {
+      this.loadTargetSessionId = null;
       if (hitRemoteStore) {
         recordTuiCloudError({
           op: 'session_load',
@@ -1599,6 +1640,7 @@ export class KasAcpClient extends BaseAcpClient {
 
     replayUpdateSubscription.dispose();
     replayPermissionSubscription.dispose();
+    this.loadTargetSessionId = null;
     this.sessionId = sessionId;
     this.wireSessionListeners(sessionId);
     for (const notification of replayedNotifications) {
