@@ -1754,7 +1754,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
               </Text>
             );
           })}
-          <Text>{chalk.dim(`  (${unifiedQueueEntries.length} queued)`)}</Text>
         </Box>
       )}
 
