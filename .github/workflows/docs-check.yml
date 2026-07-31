@@ -1,4 +1,4 @@
-name: "PR: Documentation & Changelog"
+name: "PR: Changelog"
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ jobs:
        !contains(github.event.pull_request.labels.*.name, 'no-changelog')) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       (startsWith(github.event.comment.body, '/docs') || startsWith(github.event.comment.body, '/changelog')) &&
+       startsWith(github.event.comment.body, '/changelog') &&
        (github.event.comment.author_association == 'OWNER' ||
         github.event.comment.author_association == 'MEMBER' ||
         github.event.comment.author_association == 'COLLABORATOR'))
@@ -55,8 +55,8 @@ jobs:
         id: check
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Log context
           echo "=== PR Context ==="
           echo "Event: ${{ github.event_name }}"
           echo "Actor: ${{ github.actor }}"
@@ -67,12 +67,63 @@ jobs:
           # Check for code changes (three-dot: only this branch's changes)
           echo "=== Code changes in this branch ==="
           CODE_CHANGES=$(git diff --name-only origin/main...HEAD -- crates/ packages/tui/src/ | grep -v test || true)
-          if [ -z "$CODE_CHANGES" ]; then
+          if [ -n "$CODE_CHANGES" ]; then
+            echo "$CODE_CHANGES"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Detect @kiro/agent version bump
+          echo ""
+          echo "=== KAS version bump check ==="
+          OLD_VER=$(git show origin/main:packages/tui/package.json | jq -r '.dependencies["@kiro/agent"] // empty')
+          NEW_VER=$(jq -r '.dependencies["@kiro/agent"] // empty' packages/tui/package.json)
+          if [ -n "$OLD_VER" ] && [ -n "$NEW_VER" ] && [ "$OLD_VER" != "$NEW_VER" ]; then
+            echo "KAS bump detected: $OLD_VER -> $NEW_VER"
+            echo "kas_bump=true" >> "$GITHUB_OUTPUT"
+            echo "kas_old_ver=$OLD_VER" >> "$GITHUB_OUTPUT"
+            echo "kas_new_ver=$NEW_VER" >> "$GITHUB_OUTPUT"
+
+            # Fetch release notes for all versions in the range (OLD_VER, NEW_VER]
+            echo ""
+            echo "=== Fetching KAS release notes ($OLD_VER -> $NEW_VER) ==="
+            RELEASE_NOTES=""
+
+            # Helper: returns 0 if $1 > $2 using semver numeric comparison
+            ver_gt() { [ "$(printf '%s\n%s' "$1" "$2" | sort -V | head -1)" = "$2" ] && [ "$1" != "$2" ]; }
+            # Helper: returns 0 if $1 <= $2
+            ver_lte() { [ "$(printf '%s\n%s' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
+
+            for tag in $(gh release list --repo kiro-team/kiro-agent --limit 50 --json tagName --jq '.[].tagName'); do
+              VER=${tag#agent-v-}
+              # Include versions where VER > OLD_VER AND VER <= NEW_VER
+              if ver_gt "$VER" "$OLD_VER" && ver_lte "$VER" "$NEW_VER"; then
+                BODY=$(gh release view "$tag" --repo kiro-team/kiro-agent --json body --jq .body 2>/dev/null || true)
+                if [ -n "$BODY" ]; then
+                  RELEASE_NOTES="$RELEASE_NOTES
+          --- Release $VER ---
+          $BODY"
+                fi
+              fi
+            done
+
+            if [ -n "$RELEASE_NOTES" ]; then
+              printf '%s' "$RELEASE_NOTES" > /tmp/kas_release_notes.txt
+              echo "Collected release notes ($(wc -l < /tmp/kas_release_notes.txt) lines)"
+            else
+              echo "No release notes found in range"
+              echo "kas_bump=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No KAS version change (current: ${NEW_VER:-none})"
+            echo "kas_bump=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # If neither code changes nor KAS bump, skip
+          if [ -z "$CODE_CHANGES" ] && [ "${OLD_VER:-}" = "${NEW_VER:-}" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No user-facing code changes detected."
+            echo "No user-facing code changes or KAS bump detected."
             exit 0
           fi
-          echo "$CODE_CHANGES"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
           # Check if changelog already exists
@@ -89,9 +140,7 @@ jobs:
 
           # Determine trigger type for comment commands
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
-            if echo "$COMMENT_BODY" | grep -q "^/docs"; then
-              echo "trigger=docs" >> "$GITHUB_OUTPUT"
-            elif echo "$COMMENT_BODY" | grep -q "^/changelog"; then
+            if echo "$COMMENT_BODY" | grep -q "^/changelog"; then
               echo "trigger=changelog" >> "$GITHUB_OUTPUT"
             fi
             printf '%s' "$COMMENT_BODY" > /tmp/user_comment.txt
@@ -105,9 +154,36 @@ jobs:
           curl -fsSL https://cli.kiro.dev/install | bash
           kiro-cli --version
 
+      - name: Generate changelog for KAS bump
+        if: |
+          steps.check.outputs.skip != 'true' &&
+          steps.check.outputs.kas_bump == 'true' &&
+          (steps.check.outputs.has_changelog == 'false' || steps.check.outputs.trigger == 'changelog')
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+        run: |
+          PROMPT="You are generating changelog fragments for a @kiro/agent version bump (${{ steps.check.outputs.kas_old_ver }} -> ${{ steps.check.outputs.kas_new_ver }}).
+
+          Read .changes/GUIDELINES.md for format rules.
+          Read .changes/VISIBILITY.md for what counts as user-facing.
+
+          Below are the kiro-agent release notes for versions in this bump. Create changelog fragments ONLY for changes that are user-facing in Kiro CLI (things users would notice). Skip internal refactors, CI changes, test-only changes, and backend-only features that don't surface in the CLI.
+
+          Prefix each V3/KAS-engine-only entry with [V3].
+          Use ./scripts/new-change.sh <type> \"<description>\" to create entries.
+
+          Release notes:
+          $(cat /tmp/kas_release_notes.txt)"
+
+          kiro-cli chat --no-interactive --trust-all-tools --model auto "$PROMPT" 2>&1 | tee /tmp/kas-changelog-output.txt
+          echo ""
+          echo "=== KAS changelog agent output ==="
+          cat /tmp/kas-changelog-output.txt
+
       - name: Generate changelog
         if: |
           steps.check.outputs.skip != 'true' &&
+          steps.check.outputs.kas_bump != 'true' &&
           (steps.check.outputs.has_changelog == 'false' || steps.check.outputs.trigger == 'changelog')
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
@@ -148,51 +224,18 @@ jobs:
             fi
           fi
 
-      - name: Generate docs
-        if: |
-          steps.check.outputs.skip != 'true' &&
-          (steps.check.outputs.trigger == 'auto' || steps.check.outputs.trigger == 'docs')
-        env:
-          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
-        run: |
-          PROMPT="Read .changes/VISIBILITY.md FIRST — if the STOP CHECK applies, say 'Skipping' and STOP.
-
-          Otherwise, review the code changes in this branch against origin/main and update documentation in autodocs-v2/docs/ if needed. Use 'git diff origin/main...HEAD' (three-dot) to see only this branch's changes."
-
-          if [ -f /tmp/user_comment.txt ] && grep -q "^/docs" /tmp/user_comment.txt; then
-            EXTRA=$(sed 's|^/docs||' /tmp/user_comment.txt)
-            PROMPT="$PROMPT
-
-          Additional instructions: $EXTRA"
-          fi
-
-          kiro-cli chat --no-interactive --trust-all-tools --model auto --agent docs-v2 "$PROMPT" 2>&1 | tee /tmp/docs-agent-output.txt
-          echo ""
-          echo "=== Docs agent output ==="
-          cat /tmp/docs-agent-output.txt
-
       - name: Check for changes
         if: steps.check.outputs.skip != 'true'
         id: generated
         run: |
           echo "=== Files modified by agents ==="
-          git add autodocs-v2/ .changes/ 2>/dev/null || true
+          git add .changes/ 2>/dev/null || true
           git diff --cached --name-only || true
           echo ""
-          CHANGES=""
-          if git diff --cached --name-only | grep -q "autodocs-v2/"; then
-            CHANGES="docs"
-            echo "Docs changes detected:"
-            git diff --cached --name-only -- autodocs-v2/
-          fi
           if git diff --cached --name-only | grep -qE '\.changes/[^/]+\.json$'; then
-            CHANGES="${CHANGES:+$CHANGES }changelog"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
             echo "Changelog changes detected:"
             git diff --cached --name-only -- '.changes/*.json'
-          fi
-          if [ -n "$CHANGES" ]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            echo "what=$CHANGES" >> "$GITHUB_OUTPUT"
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "No changes generated by agents."
@@ -203,8 +246,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add autodocs-v2/ .changes/
-          git commit -m "docs: auto-generated for PR #${{ steps.pr.outputs.number }}"
+          git add .changes/
+          git commit -m "chore: auto-generate changelog for PR #${{ steps.pr.outputs.number }}"
           git push origin HEAD:${{ steps.pr.outputs.ref }}
 
       - name: Post comment
@@ -212,10 +255,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FILES=$(git diff --name-only HEAD~1 -- autodocs-v2/ .changes/ 2>/dev/null || true)
-          BODY="🤖 Updated docs/changelog artifacts:
+          FILES=$(git diff --name-only HEAD~1 -- .changes/ 2>/dev/null || true)
+          BODY="🤖 Generated changelog fragment:
           $(echo "$FILES" | sed 's/^/- /')
 
-          Please review. To regenerate: \`/docs <instructions>\` or \`/changelog <instructions>\`"
+          Please review. To regenerate: \`/changelog <instructions>\`"
 
           gh pr comment "${{ steps.pr.outputs.number }}" --body "$BODY"
