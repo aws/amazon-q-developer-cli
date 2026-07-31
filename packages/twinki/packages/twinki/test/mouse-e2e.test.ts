@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import React, { useState } from 'react';
-import { render, Text, Box } from '../src/index.js';
+import { render, Text, Box, Static } from '../src/index.js';
 import type { ComponentMouseEvent } from '../src/index.js';
 import { TestTerminal, wait } from './helpers.js';
 
@@ -105,6 +105,53 @@ describe('Mouse E2E', () => {
 			localY: 1,
 			targetBounds: { x: 4, y: 0, width: 6, height: 2 },
 		});
+		inst.unmount();
+	});
+
+	it('localizes clicks to live content below static scrollback', async () => {
+		const term = new TestTerminal(20, 6);
+		let received: ComponentMouseEvent | undefined;
+		let clicks = 0;
+		const inst = render(
+			React.createElement(
+				React.Fragment,
+				null,
+				React.createElement(
+					Static,
+					{ items: ['older one', 'older two'] },
+					(item) => React.createElement(Text, null, item),
+				),
+				React.createElement(
+					Box,
+					{ flexDirection: 'row', width: 20, height: 2 },
+					React.createElement(Box, { width: 4, height: 2 }),
+					React.createElement(
+						Box,
+						{
+							width: 6,
+							height: 2,
+							onMouseDown: (event) => { received = event; },
+							onClick: () => { clicks++; },
+						},
+						React.createElement(Text, null, 'target'),
+					),
+				),
+			),
+			{ terminal: term, exitOnCtrlC: false, mouse: true },
+		);
+		await wait();
+		await term.flush();
+
+		term.sendInput('\x1b[<0;7;4M');
+		term.sendInput('\x1b[<0;7;4m');
+		await wait();
+
+		expect(received).toMatchObject({
+			localX: 2,
+			localY: 1,
+			targetBounds: { x: 4, y: 2, width: 6, height: 2 },
+		});
+		expect(clicks).toBe(1);
 		inst.unmount();
 	});
 

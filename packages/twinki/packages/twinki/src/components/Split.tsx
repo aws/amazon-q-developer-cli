@@ -13,6 +13,7 @@ import React, { useRef, useState } from 'react';
 import { Box } from './Box.js';
 import { Text } from './Text.js';
 import { useMouse } from '../hooks/useMouse.js';
+import { useTwinkiContext } from '../hooks/context.js';
 
 /** Props for the {@link Split} two-pane layout: direction, split `ratio`,
  * available size, which pane is active, and the drag/keyboard resize callback. */
@@ -63,6 +64,7 @@ export const Split: React.FC<SplitProps> = ({
 	onResize,
 }) => {
 	const [paneA, paneB] = children;
+	const { tui } = useTwinkiContext();
 
 	// Drag-to-resize: ref tracks armed state (avoids a race where fast
 	// press+release in one tick misses the disarming mouseup).
@@ -71,6 +73,7 @@ export const Split: React.FC<SplitProps> = ({
 	const dragOrigin = useRef(0);
 	const startDrag = (e: { x: number; y: number }) => {
 		if (!onResize) return;
+		tui.cancelTextSelection();
 		const usable = Math.max(1, (direction === 'row' ? width : height) - 1);
 		dragOrigin.current = (direction === 'row' ? e.x : e.y) - Math.max(1, Math.round(usable * ratio));
 		draggingRef.current = true;

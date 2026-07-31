@@ -20,6 +20,20 @@ import { visibleWidth } from '../utils/visible-width.js';
 import { StaticBuffer } from './static-buffer.js';
 import { sliceByColumn, sliceWithWidth } from '../utils/slice.js';
 import { extractSegments } from '../utils/extract-segments.js';
+import {
+  clampTextSelectionPoint,
+  extractSelectedText,
+  highlightTextSelection,
+} from './text-selection.js';
+import type {
+  TextSelectionBounds,
+  TextSelectionPoint,
+} from './text-selection.js';
+import { osc52ClipboardSequence } from '../terminal/osc52.js';
+
+type TextSelectionScopeResolver = (
+  point: TextSelectionPoint
+) => TextSelectionBounds | null;
 
 /**
  * Internal overlay entry structure for managing overlay stack.
@@ -46,6 +60,11 @@ export interface TUIOptions {
   fullscreen?: boolean;
   /** Allow mouse tracking to be enabled (default: false). */
   mouse?: boolean;
+  /**
+   * Enable renderer-level mouse text selection and clipboard copy on release.
+   * Implies mouse tracking. Default: false.
+   */
+  textSelection?: boolean;
   /**
    * Max lines to keep in the static scrollback buffer (default: 10_000).
    * When exceeded by 10%, the buffer is pruned back to 75% of the cap.
@@ -237,10 +256,25 @@ export class TUI extends Container {
   private mouseListeners = new Set<(event: MouseEvent) => void>();
   private mouseEnabled = false;
   private mouseAllowed = false;
+  private textSelectionEnabled = false;
+  private textSelectionLines: string[] = [];
+  private textSelectionRenderWidth = 0;
+  private textSelectionAnchor: TextSelectionPoint | null = null;
+  private textSelectionFocus: TextSelectionPoint | null = null;
+  private textSelectionRawAnchor: { x: number; y: number } | null = null;
+  private textSelectionScope: TextSelectionBounds | null = null;
+  private textSelectionScopeResolver: TextSelectionScopeResolver | null = null;
+  private textSelectionLiveStartRow = 0;
+  private textSelectionActive = false;
+  private textSelectionDragged = false;
+  private textSelectionVisible = false;
+  private selectionCopyListeners = new Set<(text: string) => void>();
+  private suppressedClickEvents = new WeakSet<MouseEvent>();
   private pasteListeners = new Set<(content: string) => void>();
   private keyReleaseListeners = new Set<(data: string) => void>();
   private keyRepeatListeners = new Set<(data: string) => void>();
   private contentStartRow = -1;
+  private liveContentPhysicalRow = 0;
   private dsrPending = false;
   private altScreen = false;
   private frameBudgetMs = 0;
@@ -280,8 +314,11 @@ export class TUI extends Container {
     if (opts.fullscreen) {
       this.altScreen = true;
     }
-    if (opts.mouse) {
+    if (opts.mouse || opts.textSelection) {
       this.mouseAllowed = true;
+    }
+    if (opts.textSelection) {
+      this.textSelectionEnabled = true;
     }
     if (opts.staticScrollbackCap != null && opts.staticScrollbackCap > 0) {
       this.staticScrollbackCap = opts.staticScrollbackCap;
@@ -574,7 +611,48 @@ export class TUI extends Container {
     if (this.mouseListeners.size === 1) this.enableMouse();
     return () => {
       this.mouseListeners.delete(listener);
-      if (this.mouseListeners.size === 0) this.disableMouse();
+      if (
+        this.mouseListeners.size === 0 &&
+        !this.textSelectionEnabled
+      ) {
+        this.disableMouse();
+      }
+    };
+  }
+
+  /** Returns whether text selection consumed this mouseup as a drag. */
+  isClickSuppressed(event: MouseEvent): boolean {
+    return this.suppressedClickEvents.has(event);
+  }
+
+  /** Cancels an armed or visible text selection without disabling selection. */
+  cancelTextSelection(): void {
+    const hadSelection = this.textSelectionVisible;
+    this.textSelectionAnchor = null;
+    this.textSelectionFocus = null;
+    this.textSelectionRawAnchor = null;
+    this.textSelectionScope = null;
+    this.textSelectionActive = false;
+    this.textSelectionDragged = false;
+    this.textSelectionVisible = false;
+    if (hadSelection) this.requestRender();
+  }
+
+  /**
+   * Sets the layout resolver for declarative selection scopes. Points and
+   * returned bounds are relative to live content, excluding static scrollback.
+   */
+  setTextSelectionScopeResolver(
+    resolver: TextSelectionScopeResolver | null
+  ): void {
+    this.textSelectionScopeResolver = resolver;
+  }
+
+  /** Subscribes to non-empty selections copied on mouse release. */
+  addSelectionCopyListener(listener: (text: string) => void): () => void {
+    this.selectionCopyListeners.add(listener);
+    return () => {
+      this.selectionCopyListeners.delete(listener);
     };
   }
 
@@ -624,6 +702,167 @@ export class TUI extends Container {
     return this.contentStartRow - scrolled;
   }
 
+  /** Viewport row at which the live React layout starts. */
+  getLiveContentYOffset(): number {
+    return this.getContentYOffset() + this.liveContentPhysicalRow;
+  }
+
+  private resolveTextSelectionScope(
+    point: TextSelectionPoint
+  ): TextSelectionBounds | null {
+    const resolver = this.textSelectionScopeResolver;
+    const liveRow = point.row - this.textSelectionLiveStartRow;
+    if (!resolver || liveRow < 0) return null;
+
+    const bounds = resolver({ row: liveRow, column: point.column });
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) return null;
+    return {
+      ...bounds,
+      y: bounds.y + this.textSelectionLiveStartRow,
+    };
+  }
+
+  private getTextSelectionPoint(event: MouseEvent): TextSelectionPoint | null {
+    if (this.textSelectionLines.length === 0) return null;
+
+    let physicalRow = event.y - this.getContentYOffset();
+    if (physicalRow < 0) return null;
+
+    const renderWidth = Math.max(this.textSelectionRenderWidth, 1);
+    if (!this.wideLinesEnabled) {
+      const row = Math.floor(physicalRow);
+      const line = this.textSelectionLines[row];
+      if (line === undefined) return null;
+      return {
+        row,
+        column: Math.min(
+          Math.max(0, Math.min(event.x, renderWidth - 1)),
+          visibleWidth(line)
+        ),
+      };
+    }
+
+    for (let row = 0; row < this.textSelectionLines.length; row++) {
+      const line = this.textSelectionLines[row] ?? '';
+      const lineWidth = visibleWidth(line);
+      const physicalRows = Math.max(1, Math.ceil(lineWidth / renderWidth));
+
+      if (physicalRow < physicalRows) {
+        const screenColumn = Math.max(
+          0,
+          Math.min(event.x, renderWidth - 1)
+        );
+        const column = physicalRow * renderWidth + screenColumn;
+        return { row, column: Math.min(column, lineWidth) };
+      }
+      physicalRow -= physicalRows;
+    }
+
+    return null;
+  }
+
+  private hasTextSelectionRange(): boolean {
+    const anchor = this.textSelectionAnchor;
+    const focus = this.textSelectionFocus;
+    return (
+      anchor !== null &&
+      focus !== null &&
+      (anchor.row !== focus.row || anchor.column !== focus.column)
+    );
+  }
+
+  private handleTextSelectionMouse(event: MouseEvent): void {
+    if (event.button !== 'left') return;
+
+    if (event.type === 'mousedown') {
+      const hadVisibleSelection = this.textSelectionVisible;
+      const rawPoint = this.getTextSelectionPoint(event);
+      const scope = rawPoint
+        ? this.resolveTextSelectionScope(rawPoint)
+        : null;
+      const point =
+        rawPoint && scope
+          ? clampTextSelectionPoint(rawPoint, scope)
+          : rawPoint;
+      this.textSelectionAnchor = point;
+      this.textSelectionFocus = point;
+      this.textSelectionScope = scope;
+      this.textSelectionRawAnchor = point
+        ? { x: event.x, y: event.y }
+        : null;
+      this.textSelectionActive = point !== null;
+      this.textSelectionDragged = false;
+      this.textSelectionVisible = false;
+      if (hadVisibleSelection) this.requestRender();
+      return;
+    }
+
+    if (
+      !this.textSelectionActive ||
+      (event.type !== 'mousemove' && event.type !== 'mouseup')
+    ) {
+      return;
+    }
+
+    const rawAnchor = this.textSelectionRawAnchor;
+    if (
+      rawAnchor &&
+      (event.x !== rawAnchor.x || event.y !== rawAnchor.y)
+    ) {
+      this.textSelectionDragged = true;
+    }
+
+    const rawPoint = this.getTextSelectionPoint(event);
+    const point =
+      rawPoint && this.textSelectionScope
+        ? clampTextSelectionPoint(rawPoint, this.textSelectionScope)
+        : rawPoint;
+    const focusChanged =
+      point !== null &&
+      (this.textSelectionFocus === null ||
+        point.row !== this.textSelectionFocus.row ||
+        point.column !== this.textSelectionFocus.column);
+    if (point) this.textSelectionFocus = point;
+
+    const wasVisible = this.textSelectionVisible;
+    this.textSelectionVisible =
+      this.textSelectionDragged && this.hasTextSelectionRange();
+
+    if (event.type === 'mousemove') {
+      if (focusChanged || wasVisible !== this.textSelectionVisible) {
+        this.requestRender();
+      }
+      return;
+    }
+
+    this.textSelectionActive = false;
+    if (this.textSelectionDragged) {
+      this.suppressedClickEvents.add(event);
+      if (
+        this.textSelectionAnchor &&
+        this.textSelectionFocus &&
+        this.hasTextSelectionRange()
+      ) {
+        const selectedText = extractSelectedText(
+          this.textSelectionLines,
+          this.textSelectionAnchor,
+          this.textSelectionFocus,
+          this.textSelectionScope ?? undefined
+        );
+        if (selectedText.length > 0) {
+          this.terminal.write(osc52ClipboardSequence(selectedText));
+          for (const listener of this.selectionCopyListeners) {
+            listener(selectedText);
+          }
+        }
+      }
+    }
+
+    if (focusChanged || wasVisible !== this.textSelectionVisible) {
+      this.requestRender();
+    }
+  }
+
   /**
    * Handles raw input data from the terminal.
    *
@@ -654,6 +893,9 @@ export class TUI extends Container {
       : null;
     if (mouseEvents) {
       for (const event of mouseEvents) {
+        if (this.textSelectionEnabled) {
+          this.handleTextSelectionMouse(event);
+        }
         for (const listener of this.mouseListeners) listener(event);
       }
       return;
@@ -809,6 +1051,9 @@ export class TUI extends Container {
       (data) => this.handleInput(data),
       throttledResize
     );
+    if (this.textSelectionEnabled) {
+      this.enableMouse();
+    }
     if (this.altScreen) {
       this.terminal.write('\x1b[?1049h');
     }
@@ -904,6 +1149,20 @@ export class TUI extends Container {
     this.renderCompleteListeners.clear();
     this.inputListeners.clear();
     this.mouseListeners.clear();
+    this.textSelectionLines = [];
+    this.textSelectionAnchor = null;
+    this.textSelectionFocus = null;
+    this.textSelectionRawAnchor = null;
+    this.textSelectionScope = null;
+    this.textSelectionScopeResolver = null;
+    this.textSelectionLiveStartRow = 0;
+    this.textSelectionActive = false;
+    this.textSelectionDragged = false;
+    this.textSelectionVisible = false;
+    this.textSelectionRenderWidth = 0;
+    this.liveContentPhysicalRow = 0;
+    this.suppressedClickEvents = new WeakSet<MouseEvent>();
+    this.selectionCopyListeners.clear();
     this.pasteListeners.clear();
     this.keyReleaseListeners.clear();
     this.keyRepeatListeners.clear();
@@ -1770,6 +2029,7 @@ export class TUI extends Container {
         ? this.staticBuffer.length
         : 0;
     const hasVisibleOverlay = this.hasOverlay();
+    this.textSelectionLiveStartRow = staticPrefixLen;
 
     // OPTIMIZED: Combine accumulated static output with live content
     // Skip in alt screen — no scrollback buffer to display static content in.
@@ -1807,6 +2067,11 @@ export class TUI extends Container {
       this.staticHasWide = anyWide;
       this.staticHasWideWidth = width;
     }
+    this.liveContentPhysicalRow = this.altScreen
+      ? 0
+      : this.wideLinesEnabled
+        ? Math.max(0, this.staticPhysRowsCache)
+        : staticPrefixLen;
 
     const cursorPos = this.extractCursorPosition(
       newLines,
@@ -1848,14 +2113,42 @@ export class TUI extends Container {
         cursorPos.row = physRowOf(newLines, cursorPos.row);
       }
     }
+    if (this.textSelectionEnabled) {
+      this.textSelectionLines = [...newLines];
+      this.textSelectionRenderWidth = width;
+      if (
+        this.textSelectionVisible &&
+        this.textSelectionAnchor &&
+        this.textSelectionFocus
+      ) {
+        newLines = highlightTextSelection(
+          newLines,
+          this.textSelectionAnchor,
+          this.textSelectionFocus,
+          this.textSelectionScope ?? undefined
+        );
+      }
+    }
+
     // The accumulated-static prefix already carries its reset suffix (applied
     // in writeStaticLines), so only the live suffix needs resetting. Skipping
     // it keeps the prefix strings reference-identical to `previousLines`,
     // which is what lets the diff below skip them.
     //
-    // Overlays are the exception: compositeOverlays rebuilds the lines it
-    // covers, which can include prefix rows, so fall back to resetting all.
-    const prefixIsPristine = staticPrefixLen > 0 && !hasVisibleOverlay;
+    // Overlays and selections that touch static rows rebuild prefix lines, so
+    // fall back to resetting and diffing the complete frame.
+    const selectionTouchesStaticPrefix =
+      this.textSelectionVisible &&
+      this.textSelectionAnchor !== null &&
+      this.textSelectionFocus !== null &&
+      Math.min(
+        this.textSelectionAnchor.row,
+        this.textSelectionFocus.row
+      ) < staticPrefixLen;
+    const prefixIsPristine =
+      staticPrefixLen > 0 &&
+      !hasVisibleOverlay &&
+      !selectionTouchesStaticPrefix;
     newLines = this.applyLineResets(
       newLines,
       prefixIsPristine ? staticPrefixLen : 0

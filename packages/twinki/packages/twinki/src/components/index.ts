@@ -9,7 +9,11 @@ export { Static } from './Static.js';
 export type { StaticProps } from './Static.js';
 export { Transform } from './Transform.js';
 export type { TransformProps } from './Transform.js';
-export { Markdown, markdownToAnsi } from './Markdown.js';
+export {
+	Markdown,
+	markdownToAnsi,
+	useMarkdownHighlighting,
+} from './Markdown.js';
 export type { MarkdownProps } from './Markdown.js';
 export { Typewriter } from './Typewriter.js';
 export type { TypewriterProps } from './Typewriter.js';

@@ -77,6 +77,11 @@ export interface TwinkiRenderOptions {
 	fullscreen?: boolean;
 	/** Enable mouse event tracking (default: false) */
 	mouse?: boolean;
+	/**
+	 * Enable mouse text selection with automatic clipboard copy.
+	 * Implies mouse tracking. Default: false.
+	 */
+	textSelection?: boolean;
 	/** Max lines to keep in static scrollback buffer (default: 10_000). */
 	staticScrollbackCap?: number;
 	/**
@@ -317,7 +322,14 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		terminal = new ProcessTerminal();
 	}
 
-	const tui = new TUI(terminal, { targetFps: options.targetFps, fullscreen: options.fullscreen, mouse: options.mouse, staticScrollbackCap: options.staticScrollbackCap, wideLines: options.wideLines });
+	const tui = new TUI(terminal, {
+		targetFps: options.targetFps,
+		fullscreen: options.fullscreen,
+		mouse: options.mouse,
+		textSelection: options.textSelection,
+		staticScrollbackCap: options.staticScrollbackCap,
+		wideLines: options.wideLines,
+	});
 
 	const bridge = new ReactBridge(() => tui.requestRender());
 	bridge.setTUI(tui);
@@ -356,6 +368,18 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		return React.createElement(TwinkiCtx.Provider, { value: ctxValue }, el);
 	}
 
+	if (options.textSelection === true) {
+		tui.setTextSelectionScopeResolver((point) => {
+			const node = hitTest(
+				bridge.getContainer(),
+				point.column,
+				point.row,
+			);
+			const scope = findAncestorWithProp(node, 'selectionScope');
+			return scope ? absoluteBounds(scope) : null;
+		});
+	}
+
 	// Ctrl+C handler
 	if (exitOnCtrlC) {
 		tui.addInputListener((data) => {
@@ -367,12 +391,12 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 	}
 
 	// Mouse hit-testing: dispatch onClick/onMouseEnter/onMouseLeave to components
-	if (options.mouse === true) {
+	if (options.mouse === true || options.textSelection === true) {
 		let hoveredNode: TwinkiNode | null = null;
 		let pressedClickNode: TwinkiNode | null = null;
 		tui.addMouseListener((event) => {
 			const rootContainer = bridge.getContainer();
-			const contentYOffset = tui.getContentYOffset();
+			const contentYOffset = tui.getLiveContentYOffset();
 			const adjustedY = event.y - contentYOffset;
 			if (adjustedY < 0) return;
 			const node = hitTest(rootContainer, event.x, adjustedY);
@@ -400,14 +424,13 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 			if (event.type === 'mouseup' && event.button === 'left') {
 				const pressedNode = pressedClickNode;
 				pressedClickNode = null;
+				if (tui.isClickSuppressed(event)) return;
 				const clickNode = findAncestorWithProp(node, 'onClick');
 				if (!pressedNode || clickNode !== pressedNode) return;
-				const localEvent = localizeMouseEvent(
-					event,
-					clickNode,
-					contentYOffset,
-				);
-				if (clickNode.props.onClick && localEvent) {
+				const localEvent = clickNode
+					? localizeMouseEvent(event, clickNode, contentYOffset)
+					: null;
+				if (clickNode?.props.onClick && localEvent) {
 					clickNode.props.onClick(localEvent);
 				}
 			}

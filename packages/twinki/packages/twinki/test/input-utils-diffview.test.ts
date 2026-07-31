@@ -610,6 +610,43 @@ describe('Markdown coverage', () => {
 		expect(vp.join('\n')).toContain('Heading');
 		inst.unmount();
 	});
+
+	it('sanitizes terminal commands from markdown input', async () => {
+		const {
+			markdownToAnsi,
+		} = await import('../src/components/Markdown.js');
+		const {
+			sanitizeTerminalText,
+		} = await import('../src/utils/sanitize-terminal.js');
+		const value = 'hello 界\x1b[2J\x1b]52;c;SGVsbG8=\x07\nworld';
+
+		expect(sanitizeTerminalText(value)).toBe('hello 界\nworld');
+		expect(sanitizeTerminalText(markdownToAnsi(value))).toBe(
+			'hello 界\nworld',
+		);
+	});
+
+	it('renders preloaded language aliases with synchronous Shiki colors', async () => {
+		const {
+			markdownToAnsi,
+		} = await import('../src/components/Markdown.js');
+		const {
+			getHighlighter,
+		} = await import('../src/utils/shiki.js');
+		const {
+			sanitizeTerminalText,
+		} = await import('../src/utils/sanitize-terminal.js');
+		const markdown = '```ts\nconst value = 1;\n```';
+
+		await getHighlighter('github-dark', 'ts');
+		const rendered = markdownToAnsi(markdown, {
+			theme: 'github-dark',
+			baseColor: '#ffffff',
+		});
+
+		expect(rendered).toContain('\x1b[38;2;');
+		expect(sanitizeTerminalText(rendered)).toContain('const value = 1;');
+	});
 });
 
 // ============================================================

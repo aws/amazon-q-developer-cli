@@ -129,6 +129,8 @@ export interface TextProps extends BaseProps, LayoutProps, StyleProps {
 export interface BoxProps extends BaseProps, LayoutProps, StyleProps {
 	/** Overflow behavior */
 	overflow?: 'visible' | 'hidden';
+	/** Clamp renderer text selection to this box's rendered rectangle. */
+	selectionScope?: boolean;
 }
 
 /**

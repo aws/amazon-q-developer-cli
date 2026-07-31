@@ -11,7 +11,12 @@ export type {
 } from './input/index.js';
 
 // Utilities
-export { visibleWidth } from './utils/index.js';
+export {
+  getSegmenter,
+  visibleWidth,
+  wrapTextWithAnsi,
+} from './utils/index.js';
+export { sanitizeTerminalText } from './utils/sanitize-terminal.js';
 export { KillRing } from './utils/kill-ring.js';
 export { getHighlighter } from './utils/shiki.js';
 import { visibleWidth as _visibleWidth } from './utils/index.js';
@@ -46,6 +51,7 @@ export {
   Transform,
   Markdown,
   markdownToAnsi,
+  useMarkdownHighlighting,
   Typewriter,
   DiffView,
   TextInput,
@@ -107,6 +113,8 @@ export type { UseTypewriterOptions, TypewriterSpeed } from './hooks/index.js';
 export { useFrames } from './hooks/index.js';
 export { useMouse } from './hooks/index.js';
 export type { UseMouseOptions } from './hooks/index.js';
+export { useSelectionCopy } from './hooks/index.js';
+export type { UseSelectionCopyOptions } from './hooks/index.js';
 export { useTabs } from './hooks/index.js';
 export type { UseTabsOpts, TabsModel } from './hooks/index.js';
 export { usePaste } from './hooks/index.js';

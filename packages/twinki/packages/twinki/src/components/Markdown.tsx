@@ -25,10 +25,11 @@
  * <Markdown highlight theme="dracula">{text}</Markdown>
  * ```
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { marked, type Token, type Tokens } from 'marked';
 import { Text } from './Text.js';
 import { Box } from './Box.js';
+import { sanitizeTerminalText } from '../utils/sanitize-terminal.js';
 
 /**
  * Supported themes for syntax highlighting in code blocks.
@@ -68,12 +69,18 @@ const HEADING_COLORS = [CYAN, GREEN, YELLOW, BLUE, MAGENTA, ''] as const;
 
 // --- Shiki (lazy, shared singleton) ---
 export { getHighlighter } from '../utils/shiki.js';
-import { getHighlighter } from '../utils/shiki.js';
+import {
+	canonicalShikiLanguage,
+	getHighlighter,
+	getHighlighterSync,
+	loadedLangs,
+	loadedThemes,
+} from '../utils/shiki.js';
 
 // --- Main component ---
 
 export const Markdown: React.FC<MarkdownProps> = ({ children, highlight = false, theme = 'monokai' }) => {
-	const tokens = marked.lexer(children);
+	const tokens = marked.lexer(sanitizeTerminalText(children));
 
 	// Render each token: with `highlight`, code blocks with a language get
 	// shiki; everything else (and the default) renders as fast ANSI strings.
@@ -88,22 +95,77 @@ export const Markdown: React.FC<MarkdownProps> = ({ children, highlight = false,
 	);
 };
 
+function codeLanguage(token: Tokens.Code): string | undefined {
+	const language = token.lang?.trim().split(/\s+/, 1)[0];
+	return language ? canonicalShikiLanguage(language) : undefined;
+}
+
+function markdownLanguages(markdown: string): string[] {
+	const languages = new Set<string>();
+	marked.walkTokens(marked.lexer(sanitizeTerminalText(markdown)), (token) => {
+		if (token.type !== 'code') return;
+		const language = codeLanguage(token as Tokens.Code);
+		if (language) languages.add(language);
+	});
+	return [...languages];
+}
+
+/** Returns a revision when fenced-code languages are ready for synchronous rendering. */
+export function useMarkdownHighlighting(
+	markdown: string,
+	theme = 'monokai',
+): number {
+	const [revision, setRevision] = useState(0);
+	const languages = useMemo(
+		() => markdownLanguages(markdown).join('\0'),
+		[markdown],
+	);
+
+	useEffect(() => {
+		if (!languages) return;
+		let cancelled = false;
+		void Promise.all(
+			languages.split('\0').map((language) => getHighlighter(theme, language)),
+		).then(() => {
+			if (!cancelled) setRevision((value) => value + 1);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [languages, theme]);
+
+	return revision;
+}
+
 // --- Block rendering to ANSI strings ---
 
 /**
  * Renders markdown to a plain ANSI string (no React) — for hosts that manage
  * their own line windowing/scrolling (e.g. transcript viewports) and only
- * want the styled text. Code blocks use the fast gray path, not shiki.
+ * want the styled text. Code blocks use a synchronously available Shiki
+ * theme/language when supplied, then fall back to the fast gray path.
  */
-export function markdownToAnsi(markdown: string): string {
-	const tokens = marked.lexer(markdown);
-	return tokens
-		.map((token) => blockToString(token))
+export function markdownToAnsi(
+	markdown: string,
+	options?: { theme?: string; baseColor?: string },
+): string {
+	const tokens = marked.lexer(sanitizeTerminalText(markdown));
+	const rendered = tokens
+		.map((token) => blockToString(token, options?.theme))
 		.filter((s): s is string => s !== null)
 		.join('\n');
+	const match = options?.baseColor?.match(
+		/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i,
+	);
+	if (!match) return rendered;
+
+	const foreground =
+		`\x1b[38;2;${Number.parseInt(match[1]!, 16)};` +
+		`${Number.parseInt(match[2]!, 16)};${Number.parseInt(match[3]!, 16)}m`;
+	return rendered.replaceAll(RESET, `${RESET}${foreground}`);
 }
 
-function blockToString(token: Token): string | null {
+function blockToString(token: Token, theme?: string): string | null {
 	switch (token.type) {
 		case 'heading': {
 			const t = token as Tokens.Heading;
@@ -114,6 +176,40 @@ function blockToString(token: Token): string | null {
 			return inlineToString((token as Tokens.Paragraph).tokens);
 		case 'code': {
 			const t = token as Tokens.Code;
+			const language = codeLanguage(t);
+			if (theme && language) {
+				try {
+					const highlighter = getHighlighterSync();
+					if (
+						highlighter &&
+						loadedThemes.has(theme) &&
+						loadedLangs.has(language)
+					) {
+						const result = highlighter.codeToTokens(t.text, {
+							lang: language,
+							theme,
+						});
+						return result.tokens
+							.map((line: Array<{ content: string; color?: string }>) =>
+								'  ' +
+								line
+									.map((token: { content: string; color?: string }) => {
+										if (!token.color) return token.content;
+										const [r, g, b] = [
+											token.color.slice(1, 3),
+											token.color.slice(3, 5),
+											token.color.slice(5, 7),
+										].map((hex) => Number.parseInt(hex, 16));
+										return `\x1b[38;2;${r};${g};${b}m${token.content}${RESET}`;
+									})
+									.join(''),
+							)
+							.join('\n');
+					}
+				} catch {
+					// Shiki is not ready or the language is unknown; use gray below.
+				}
+			}
 			const code = t.text.split('\n').map(l => `${GRAY}  ${l}${RESET}`).join('\n');
 			return code;
 		}
@@ -213,10 +309,12 @@ const HighlightedCodeBlock: React.FC<{ token: Tokens.Code; theme: string }> = ({
 	useEffect(() => {
 		if (!token.lang) return;
 		let cancelled = false;
-		getHighlighter(theme, token.lang).then(highlighter => {
+		const language = codeLanguage(token);
+		if (!language) return;
+		getHighlighter(theme, language).then(highlighter => {
 			if (cancelled) return;
 			try {
-				const result = highlighter.codeToTokens(token.text, { lang: token.lang, theme });
+				const result = highlighter.codeToTokens(token.text, { lang: language, theme });
 				const lines = result.tokens.map((line: any[]) =>
 					'  ' + line.map((t: any) => {
 						const color = t.color ? `\x1b[38;2;${parseInt(t.color.slice(1, 3), 16)};${parseInt(t.color.slice(3, 5), 16)};${parseInt(t.color.slice(5, 7), 16)}m` : '';

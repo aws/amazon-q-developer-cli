@@ -98,6 +98,11 @@ export interface BoxProps {
 	scrollTop?: number;
 	/** Display mode */
 	display?: 'flex' | 'none';
+	/**
+	 * Clamp renderer-level drag selection and copied text to this box.
+	 * Nested scopes use the nearest box at the gesture's starting point.
+	 */
+	selectionScope?: boolean;
 
 	// Positioning
 	/** Position type — 'absolute' overlays the parent (dialogs, popovers) */
