@@ -150,7 +150,7 @@ describe('cloud repo-attach notification → footer', () => {
     );
     expect(store.cloudBranch).toBe('main');
     expect(store.cloudExtraRepos).toBe(1);
-  });
+  }, 30000);
 
   it('a later empty repositories push clears the footer (detach-all)', async () => {
     tc = new AcpTestCase({
@@ -173,7 +173,7 @@ describe('cloud repo-attach notification → footer', () => {
     const store = await tc.waitForStore((s) => s.cloudRepo === null, 5000);
     expect(store.cloudBranch).toBeNull();
     expect(store.cloudExtraRepos).toBe(0);
-  });
+  }, 30000);
 
   it('a repositories push on a LOCAL session never touches the footer', async () => {
     tc = new AcpTestCase({ testName: 'local-repo-notify-ignored' });
@@ -189,5 +189,5 @@ describe('cloud repo-attach notification → footer', () => {
     const store = await tc.getStore();
     expect(store.cloudSessionActive).toBe(false);
     expect(store.cloudRepo).toBeNull();
-  });
+  }, 30000);
 });

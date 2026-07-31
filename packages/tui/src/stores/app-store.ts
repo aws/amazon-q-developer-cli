@@ -4292,7 +4292,8 @@ export const createAppStore = (props: AppStoreProps) => {
                       : toolMsg.status,
                     result: event.result,
                     ...(fromHistory ? {} : { finishTime: Date.now() }),
-                    denial: deriveToolDenial(event.meta?.kiro) ?? toolMsg.denial,
+                    denial:
+                      deriveToolDenial(event.meta?.kiro) ?? toolMsg.denial,
                   };
                 }
               } else {
