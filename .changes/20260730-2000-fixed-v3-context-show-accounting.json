@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] `/context show` no longer miscounts framing content as your prompts or shows an unreconciled breakdown"
+}

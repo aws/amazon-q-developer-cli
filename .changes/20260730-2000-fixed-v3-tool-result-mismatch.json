@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Close remaining tool-use and tool-result mismatch paths that could reject a conversation turn"
+}

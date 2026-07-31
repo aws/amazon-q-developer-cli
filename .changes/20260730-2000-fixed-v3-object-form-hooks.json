@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Agent profiles using the legacy object-form `hooks` format are now selectable via `/agent`"
+}
