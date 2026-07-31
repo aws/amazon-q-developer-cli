@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Bun JIT entitlements are preserved on macOS for faster rendering and input"
+}

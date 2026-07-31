@@ -4,10 +4,12 @@ import hashlib
 import json
 import pathlib
 import platform
+import plistlib
 from functools import cache
 import os
 import requests
 import shutil
+import tempfile
 import time
 import zipfile
 from typing import Any, Mapping, Sequence, List, Optional
@@ -714,6 +716,43 @@ def manifest(
     }
 
 
+def verify_macos_entitlements(
+    exe_path: pathlib.Path,
+    entitlements_path: pathlib.Path,
+) -> None:
+    """Verify that a signed executable contains every requested entitlement."""
+    with entitlements_path.open("rb") as entitlements_file:
+        expected = plistlib.load(entitlements_file)
+
+    if not isinstance(expected, dict):
+        raise ValueError(f"Entitlements plist must contain a dictionary: {entitlements_path}")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        actual_path = pathlib.Path(temp_dir) / "entitlements.plist"
+        run_cmd(
+            ["codesign", "--display", "--xml", "--entitlements", actual_path, exe_path]
+        )
+        if not actual_path.exists() or actual_path.stat().st_size == 0:
+            raise RuntimeError(f"Signed executable has no entitlements: {exe_path}")
+        with actual_path.open("rb") as entitlements_file:
+            actual = plistlib.load(entitlements_file)
+
+    if not isinstance(actual, dict):
+        raise RuntimeError(f"Signed executable has invalid entitlements: {exe_path}")
+
+    mismatches = {
+        key: {"expected": value, "actual": actual.get(key)}
+        for key, value in expected.items()
+        if actual.get(key) != value
+    }
+    if mismatches:
+        raise RuntimeError(
+            f"Signed executable is missing requested entitlements: {json.dumps(mismatches, sort_keys=True)}"
+        )
+
+    info(f"Verified {len(expected)} entitlements on {exe_path.name}")
+
+
 def sign_executable(
     signing_data: CdSigningData,
     exe_path: pathlib.Path,
@@ -786,6 +825,8 @@ def sign_executable(
     signed_exe_path = BUILD_DIR / "signed" / "Payload" / "EXECUTABLES_TO_SIGN" / name
     # Verify that the exe is signed
     run_cmd(["codesign", "--verify", "--verbose=4", signed_exe_path])
+    if entitlements_path:
+        verify_macos_entitlements(signed_exe_path, entitlements_path)
     return signed_exe_path
 
 
@@ -1119,6 +1160,9 @@ def sign_bun_per_arch(branch_name: str, commit_sha: str):
     bun_dir = BUILD_DIR / "bun"
     shutil.rmtree(bun_dir, ignore_errors=True)
     bun_dir.mkdir(exist_ok=True)
+    bun_entitlements = pathlib.Path(
+        "build-config/signing/app/artifact/SIGNING_METADATA/bun-entitlements.plist"
+    )
 
     for arch in ["x64", "aarch64"]:
         fname = f"bun-darwin-{arch}.zip"
@@ -1154,7 +1198,11 @@ def sign_bun_per_arch(branch_name: str, commit_sha: str):
             raise FileNotFoundError(f"Bun executable not found in {extract_dir}")
 
         info(f"Signing and notarizing bun-darwin-{arch}")
-        notarized_bun = sign_and_notarize(signing_data, bun_exe)
+        notarized_bun = sign_and_notarize(
+            signing_data,
+            bun_exe,
+            entitlements_path=bun_entitlements,
+        )
 
         s3_path = f"{branch_name}/notarized-bun/{commit_sha}/bun-{arch}"
         info(f"Uploading notarized bun-{arch} to s3://{signing_bucket_name}/{s3_path}")

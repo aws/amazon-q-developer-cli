@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "capturedAt": "2026-07-30T23:53:51-07:00",
+  "experiment": {
+    "name": "macOS Bun JIT entitlement causality",
+    "control": "same Bun source bytes, ad-hoc hardened signature, no entitlements",
+    "treatment": "same Bun source bytes, ad-hoc hardened signature, allow-jit only",
+    "microbenchmarkMinimumRatio": 10,
+    "kiroFrameMinimumRatio": 5
+  },
+  "runtime": {
+    "version": "1.3.13",
+    "revision": "bf2e2cecf27e800962b1e7f03d66278f9d5d2e79",
+    "javascriptCoreRevision": "4d5e75ebd84a14edbc7ae264245dcd77fe597c10",
+    "sourceBunSha256": "fc0b4cae13a911098f0c61d13b7d9fd6b640bdb9f6b6a0b78bdb9d778c12bc3f"
+  },
+  "inputs": {
+    "bundleSha256": "577403a6efb9014d80ab4eb32c173e6ce8807c85de6dd6a2848d5ed794d93c97",
+    "payloadSha256": "53a03025a178aaa1346c9efb2109715aab0f34120adf0d28aa9923e632d4c3ef",
+    "payloadBytes": 153685,
+    "payloadLines": 1118,
+    "payloadWords": 3993,
+    "keystrokes": "ABCDEFGHIJKLMNOPQRST",
+    "keystrokeCount": 20
+  },
+  "microbenchmark": {
+    "noJit": {
+      "samplesMs": [
+        1698.4546249999999,
+        1699.4165409999998,
+        1700.2429580000003
+      ],
+      "results": [
+        -732243845,
+        749311996,
+        1922615677
+      ],
+      "averageMs": 1699.3713746666665
+    },
+    "allowJit": {
+      "samplesMs": [
+        67.863125,
+        76.972666,
+        65.01945900000001
+      ],
+      "results": [
+        -732243845,
+        749311996,
+        1922615677
+      ],
+      "averageMs": 69.95175
+    },
+    "ratio": 24.293479071884068,
+    "resultsIdentical": true
+  },
+  "kiroReplay": {
+    "noJit": {
+      "launchMs": 582.90625,
+      "replayMs": 3586.9633750000003,
+      "frameAverageMs": 116.4259523809524,
+      "frameP95Ms": 128.71,
+      "repaintAverageMs": 156.92300004999993,
+      "repaintP95Ms": 276.8809169999995,
+      "stateAverageMs": 253.48987945000007,
+      "stateP95Ms": 380.2428340000006,
+      "rssBytes": 132759552
+    },
+    "allowJit": {
+      "launchMs": 595.353166,
+      "replayMs": 1213.096333,
+      "frameAverageMs": 9.996585365853658,
+      "frameP95Ms": 13.62,
+      "repaintAverageMs": 22.625541599999963,
+      "repaintP95Ms": 35.403167000000394,
+      "stateAverageMs": 27.185629099999915,
+      "stateP95Ms": 40.85908300000028,
+      "rssBytes": 378585088
+    },
+    "improvement": {
+      "frameRatio": 11.646572116378882,
+      "frameReductionPercent": 91.41378261339511,
+      "repaintRatio": 6.935657180025259,
+      "repaintReductionPercent": 85.58175564270958,
+      "stateRatio": 9.324407337331063,
+      "stateReductionPercent": 89.27545779776894
+    },
+    "memory": {
+      "noJitRssMiB": 126.609375,
+      "allowJitRssMiB": 361.046875,
+      "rssRatio": 2.8516598790571392,
+      "interpretation": "single end-of-run synthetic sample; validate steady-state and peak RSS on a release candidate"
+    },
+    "correctness": {
+      "finalInput": "ABCDEFGHIJKLMNOPQRST",
+      "canaryPreserved": true,
+      "noJitExitCode": 0,
+      "allowJitExitCode": 0
+    }
+  },
+  "cpuProfiles": {
+    "noJit": {
+      "durationSeconds": 10.9,
+      "samples": 11201,
+      "hotFunctionSelfTimeMs": 3663
+    },
+    "allowJit": {
+      "durationSeconds": 3.7,
+      "samples": 1826,
+      "hotFunctionSelfTimeMs": 393
+    }
+  },
+  "validationRuns": [
+    {
+      "capturedAt": "2026-07-31T00:13:46-07:00",
+      "profile": "allow-jit only",
+      "status": "PASS",
+      "sourceBunSha256": "fc0b4cae13a911098f0c61d13b7d9fd6b640bdb9f6b6a0b78bdb9d778c12bc3f",
+      "bundleSha256": "577403a6efb9014d80ab4eb32c173e6ce8807c85de6dd6a2848d5ed794d93c97",
+      "payloadSha256": "53a03025a178aaa1346c9efb2109715aab0f34120adf0d28aa9923e632d4c3ef",
+      "microbenchmark": {
+        "noJitAverageMs": 1712.6017913333335,
+        "allowJitAverageMs": 66.10554166666667,
+        "ratio": 25.90708355388763,
+        "resultsIdentical": true
+      },
+      "kiroReplay": {
+        "noJitFrameAverageMs": 111.829,
+        "allowJitFrameAverageMs": 10.05829268292683,
+        "frameRatio": 11.118089672397486,
+        "noJitRepaintAverageMs": 141.24216669999979,
+        "allowJitRepaintAverageMs": 23.094518799999957,
+        "repaintRatio": 6.115830683599264
+      }
+    },
+    {
+      "capturedDate": "2026-07-31",
+      "profile": "Bun documented five-key profile",
+      "status": "PASS",
+      "microbenchmark": {
+        "noEntitlementsSamplesMs": [
+          1727.741625,
+          1715.6615,
+          1712.5592089999996
+        ],
+        "fullProfileSamplesMs": [
+          67.91220799999999,
+          65.10575,
+          64.869958
+        ],
+        "noEntitlementsAverageMs": 1718.6541113333333,
+        "fullProfileAverageMs": 65.96263866666666,
+        "ratio": 26.05496302260316,
+        "resultsIdentical": true
+      }
+    }
+  ],
+  "expectedReleaseEntitlements": [
+    "com.apple.security.cs.allow-jit",
+    "com.apple.security.cs.allow-unsigned-executable-memory",
+    "com.apple.security.cs.disable-executable-page-protection",
+    "com.apple.security.cs.allow-dyld-environment-variables",
+    "com.apple.security.cs.disable-library-validation"
+  ],
+  "references": [
+    "https://bun.com/docs/bundler/executables#code-signing-on-macos"
+  ]
+}
