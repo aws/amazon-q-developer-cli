@@ -30,6 +30,10 @@ Resolver Group: `Amazon Q for CLI`
 
 See [Metrics and Telemetry](metrics_and_telemetry.md) for dashboards, telemetry events, and error codes.
 
+### Cloud Sessions
+
+See [Cloud Sessions Runbook](cloud_sessions_runbook.md) for triage, alarms, dashboards, and the kill switch for remote-sandbox sessions (`kiro chat --cloud`). Design: [docs/design/cloud-sessions.md](../design/cloud-sessions.md).
+
 ### CloudWatch Alarms (Client-Side)
 
 See [CloudWatch Alarms](cloudwatch_alarms_and_dashboard.md) for alarm definitions, metric pipeline, thresholds, and investigation guide. These are our client-side alarms in account `421629052180`.
