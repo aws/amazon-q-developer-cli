@@ -73,6 +73,7 @@
       "name": "twinki-monorepo",
       "version": "0.1.0",
       "dependencies": {
+        "@agentclientprotocol/sdk": "0.19.2",
         "@types/diff": "^7.0.2",
         "chalk": "^5.6.2",
         "diff": "^8.0.3",

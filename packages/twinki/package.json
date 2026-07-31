@@ -8,11 +8,13 @@
   ],
   "scripts": {
     "build": "bun --filter='./packages/*' run build",
+    "example:acp-showcase": "bun run build && bun ./examples/32-acp-showcase/index.tsx",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "0.19.2",
     "@types/diff": "^7.0.2",
     "chalk": "^5.6.2",
     "diff": "^8.0.3",
