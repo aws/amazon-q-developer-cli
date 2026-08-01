@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Classify relay-flattened `UnknownError` responses as version skew instead of showing a generic error"
+}

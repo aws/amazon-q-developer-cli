@@ -16,6 +16,17 @@ describe('classifyCloudError', () => {
     ).toBe('version_skew');
   });
 
+  it('classifies the relay-flattened UnknownOperationException as version_skew', () => {
+    // An un-routed operation arrives flattened to `<op>: UnknownError` —
+    // the exception class name is dropped in transit.
+    expect(classifyCloudError(new Error('createSession: UnknownError'))).toBe(
+      'version_skew'
+    );
+    expect(classifyCloudError(new Error('listSessions: UnknownError'))).toBe(
+      'version_skew'
+    );
+  });
+
   it('classifies the observed relay truncation as stream_truncated', () => {
     expect(
       classifyCloudError(

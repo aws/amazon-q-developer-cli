@@ -46,7 +46,10 @@ export function classifyCloudError(error: unknown): CloudErrorKind {
     msg.includes('unknownoperation') ||
     msg.includes('unknown operation') ||
     msg.includes('unknown ext method') ||
-    msg.includes('unsupported operation')
+    msg.includes('unsupported operation') ||
+    // An un-routed operation reaches us flattened to just "UnknownError" —
+    // the exception class name is dropped in transit.
+    msg.includes('unknownerror')
   ) {
     return 'version_skew';
   }
