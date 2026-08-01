@@ -436,6 +436,7 @@ export function App({
           selectedPath={selectedPath}
           width={railWidth}
           height={contentHeight}
+          top={1}
           theme={theme}
           onOpen={openPreview}
           onContext={openContext}

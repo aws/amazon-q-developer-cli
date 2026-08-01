@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "title": "Multi-session",
+  "layout": {
+    "type": "split",
+    "id": "multi-shell",
+    "direction": "row",
+    "ratio": 0.24,
+    "children": [
+      {
+        "type": "tabs",
+        "id": "multi-manager",
+        "defaultTab": "sessions",
+        "tabs": [
+          {
+            "id": "files",
+            "title": "Files",
+            "child": { "type": "widget", "widget": "files" }
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "child": { "type": "widget", "widget": "git" }
+          },
+          {
+            "id": "sessions",
+            "title": "Sessions",
+            "child": { "type": "widget", "widget": "session" }
+          },
+          {
+            "id": "settings",
+            "title": "Settings",
+            "child": { "type": "widget", "widget": "settings" }
+          }
+        ]
+      },
+      {
+        "type": "split",
+        "id": "multi-chats",
+        "direction": "row",
+        "ratio": 0.5,
+        "children": [
+          {
+            "type": "widget",
+            "widget": "chat",
+            "title": "Primary"
+          },
+          {
+            "type": "widget",
+            "id": "chat-2",
+            "widget": "chat",
+            "title": "Second"
+          }
+        ]
+      }
+    ]
+  }
+}

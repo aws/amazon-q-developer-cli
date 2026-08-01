@@ -74,12 +74,21 @@ export interface FileViewerProps {
   width: number;
   height: number;
   theme: ShowcaseTheme;
+  showHeader?: boolean;
   onScroll: (value: number) => void;
 }
 
-export function FileViewer({ file, scrollTop, width, height, theme, onScroll }: FileViewerProps): React.ReactElement {
+export function FileViewer({
+  file,
+  scrollTop,
+  width,
+  height,
+  theme,
+  showHeader = true,
+  onScroll,
+}: FileViewerProps): React.ReactElement {
   const lines = useHighlightedLines(file, theme);
-  const bodyHeight = Math.max(1, height - 1);
+  const bodyHeight = Math.max(1, height - (showHeader ? 1 : 0));
   const maxScroll = Math.max(0, lines.length - bodyHeight);
   const top = Math.min(scrollTop, maxScroll);
   const gutterWidth = Math.max(2, String(lines.length).length);
@@ -87,11 +96,13 @@ export function FileViewer({ file, scrollTop, width, height, theme, onScroll }: 
 
   return (
     <Box flexDirection="column" width={width} height={height} backgroundColor={theme.bg}>
-      <Box height={1} paddingX={1} backgroundColor={theme.raised} selectionScope>
-        <Text color={theme.accent} bold wrap="truncate-middle">
-          {file?.relativePath ?? "Select a file"}
-        </Text>
-      </Box>
+      {showHeader ? (
+        <Box height={1} paddingX={1} backgroundColor={theme.raised} selectionScope>
+          <Text color={theme.accent} bold wrap="truncate-middle">
+            {file?.relativePath ?? "Select a file"}
+          </Text>
+        </Box>
+      ) : null}
       {file?.error ? (
         <Box paddingX={1} selectionScope>
           <Text color={theme.danger}>{file.error}</Text>

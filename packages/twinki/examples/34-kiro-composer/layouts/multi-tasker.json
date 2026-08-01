@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "title": "Multi-Tasker",
+  "layout": {
+    "type": "split",
+    "id": "mt-shell",
+    "direction": "row",
+    "ratio": 0.25,
+    "children": [
+      {
+        "type": "split",
+        "id": "mt-left",
+        "direction": "column",
+        "ratio": 0.5,
+        "children": [
+          {
+            "type": "tabs",
+            "id": "mt-nav",
+            "defaultTab": "files",
+            "tabs": [
+              {
+                "id": "files",
+                "title": "Files",
+                "child": { "type": "widget", "widget": "files" }
+              },
+              {
+                "id": "git",
+                "title": "Git",
+                "child": { "type": "widget", "widget": "git" }
+              }
+            ]
+          },
+          { "type": "widget", "widget": "session" }
+        ]
+      },
+      { "type": "widget", "widget": "chat" }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "title": "Developer",
+  "layout": {
+    "type": "split",
+    "id": "workbench",
+    "direction": "row",
+    "ratio": 0.6,
+    "children": [
+      {
+        "type": "split",
+        "id": "workspace",
+        "direction": "row",
+        "ratio": 0.34,
+        "children": [
+          {
+            "type": "tabs",
+            "id": "navigator",
+            "defaultTab": "files",
+            "tabs": [
+              {
+                "id": "files",
+                "title": "Files",
+                "child": { "type": "widget", "widget": "files" }
+              },
+              {
+                "id": "git",
+                "title": "Git",
+                "child": { "type": "widget", "widget": "git" }
+              },
+              {
+                "id": "session",
+                "title": "Session",
+                "child": { "type": "widget", "widget": "session" }
+              }
+            ]
+          },
+          { "type": "widget", "widget": "editor" }
+        ]
+      },
+      { "type": "widget", "widget": "chat" }
+    ]
+  }
+}

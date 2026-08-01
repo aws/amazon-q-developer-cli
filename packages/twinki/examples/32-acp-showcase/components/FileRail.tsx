@@ -56,6 +56,8 @@ export interface FileRailProps {
   selectedPath?: string;
   width: number;
   height: number;
+  left?: number;
+  top?: number;
   theme: ShowcaseTheme;
   onOpen: (file: FileEntry) => void;
   onContext: (file: FileEntry, event: ComponentMouseEvent) => void;
@@ -66,6 +68,8 @@ export function FileRail({
   selectedPath,
   width,
   height,
+  left = 0,
+  top = 0,
   theme,
   onOpen,
   onContext,
@@ -89,7 +93,9 @@ export function FileRail({
 
   useEffect(() => setStart((value) => Math.min(value, maxStart)), [maxStart]);
   useMouse((event) => {
-    if (event.x >= width) return;
+    if (event.x < left || event.x >= left + width || event.y < top || event.y >= top + height) {
+      return;
+    }
     if (event.type !== "scrollup" && event.type !== "scrolldown") return;
     const delta = event.type === "scrollup" ? -3 : 3;
     setStart((value) => Math.max(0, Math.min(maxStart, value + delta)));
@@ -137,7 +143,7 @@ export function FileRail({
                 onMouseLeave={() => setHovered(null)}
               >
                 <Text
-                  color={selected ? theme.accent : node.file ? theme.fg : theme.warning}
+                  color={selected ? theme.accent : node.file ? theme.fg : theme.muted}
                   bold={selected || !node.file}
                   wrap="truncate"
                 >

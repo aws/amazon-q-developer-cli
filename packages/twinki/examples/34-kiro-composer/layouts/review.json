@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "title": "Review",
+  "layout": {
+    "type": "split",
+    "id": "review-shell",
+    "direction": "row",
+    "ratio": 0.25,
+    "children": [
+      {
+        "type": "tabs",
+        "id": "review-navigator",
+        "defaultTab": "git",
+        "tabs": [
+          {
+            "id": "git",
+            "title": "Git",
+            "child": { "type": "widget", "widget": "git" }
+          },
+          {
+            "id": "files",
+            "title": "Files",
+            "child": { "type": "widget", "widget": "files" }
+          },
+          {
+            "id": "session",
+            "title": "Session",
+            "child": { "type": "widget", "widget": "session" }
+          }
+        ]
+      },
+      {
+        "type": "split",
+        "id": "review-main",
+        "direction": "row",
+        "ratio": 0.62,
+        "children": [
+          { "type": "widget", "widget": "editor" },
+          { "type": "widget", "widget": "chat" }
+        ]
+      }
+    ]
+  }
+}

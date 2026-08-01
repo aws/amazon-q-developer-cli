@@ -9,6 +9,7 @@
   "scripts": {
     "build": "bun --filter='./packages/*' run build",
     "example:acp-showcase": "bun run build && bun ./examples/32-acp-showcase/index.tsx",
+    "example:kiro-composer": "bun --filter='twinki' run build && bun ./examples/34-kiro-composer/index.tsx",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit"

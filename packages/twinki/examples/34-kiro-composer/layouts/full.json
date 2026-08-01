@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "title": "Full",
+  "layout": {
+    "type": "split",
+    "id": "full-shell",
+    "direction": "row",
+    "ratio": 0.62,
+    "children": [
+      {
+        "type": "split",
+        "id": "full-workspace",
+        "direction": "row",
+        "ratio": 0.3,
+        "children": [
+          {
+            "type": "tabs",
+            "id": "full-navigator",
+            "defaultTab": "files",
+            "tabs": [
+              {
+                "id": "files",
+                "title": "Files",
+                "child": { "type": "widget", "widget": "files" }
+              },
+              {
+                "id": "git",
+                "title": "Git",
+                "child": { "type": "widget", "widget": "git" }
+              },
+              {
+                "id": "sessions",
+                "title": "Sessions",
+                "child": { "type": "widget", "widget": "session" }
+              },
+              {
+                "id": "settings",
+                "title": "Settings",
+                "child": { "type": "widget", "widget": "settings" }
+              }
+            ]
+          },
+          { "type": "widget", "widget": "editor" }
+        ]
+      },
+      { "type": "widget", "widget": "chat" }
+    ]
+  }
+}
