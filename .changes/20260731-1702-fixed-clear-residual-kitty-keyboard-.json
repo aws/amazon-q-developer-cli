@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Clear residual Kitty keyboard protocol flags on exit after terminal resize (iTerm2)"
+}

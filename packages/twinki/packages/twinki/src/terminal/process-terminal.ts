@@ -290,8 +290,18 @@ export class ProcessTerminal implements Terminal {
 	 * the shared parser flag. Pops exactly {@link kittyPushDepth} entries,
 	 * never touching entries a host process pushed below ours. Safe to call
 	 * repeatedly; subsequent calls write nothing.
+	 *
+	 * Before popping, writes `CSI = 0 u` to zero out any residual flags
+	 * left by `reassertModeEnables`'s SET form (`CSI = 1 ; 1 u`). Some
+	 * terminals (notably iTerm2) persist SET-form flags even after the
+	 * stack entry is popped, leaving the enhanced keyboard protocol active
+	 * in the parent shell. Clearing while the entry still exists on the
+	 * stack avoids writing to an empty stack on well-behaved terminals.
 	 */
 	private popKittyProtocol(): void {
+		if (this.kittyPushDepth > 0) {
+			process.stdout.write("\x1b[=0u");
+		}
 		while (this.kittyPushDepth > 0) {
 			process.stdout.write("\x1b[<u");
 			this.kittyPushDepth--;

@@ -17,6 +17,7 @@ import { setKittyProtocolActive, isKittyProtocolActive } from '../src/input/keys
 const KITTY_PUSH = '\x1b[>1u';
 const KITTY_POP = '\x1b[<u';
 const KITTY_SET = '\x1b[=1;1u';
+const KITTY_CLEAR = '\x1b[=0u';
 
 /** Replays kitty stack operations from a raw write stream. */
 function replayKittyStack(raw: string): { pushes: number; pops: number; depth: number } {
@@ -170,5 +171,23 @@ describe('ProcessTerminal kitty keyboard stack balance', () => {
 		const { pushes, depth } = replayKittyStack(written());
 		expect(pushes).toBe(0);
 		expect(depth).toBe(0);
+	});
+
+	it('stop after resize writes CSI = 0 u to clear residual SET-form flags', async () => {
+		process.env.TERM_PROGRAM = 'iTerm.app';
+		const term = await newTerminal();
+		term.start(
+			() => {},
+			() => {},
+		);
+		// Trigger a resize so reassertModeEnables writes the SET form
+		process.stdout.emit('resize');
+		writeSpy.mockClear();
+		term.stop();
+
+		// The POP alone may not clear residual SET-form flags on some terminals
+		// (e.g. iTerm2), so popKittyProtocol must also write CSI = 0 u.
+		expect(written()).toContain(KITTY_POP);
+		expect(written()).toContain(KITTY_CLEAR);
 	});
 });
