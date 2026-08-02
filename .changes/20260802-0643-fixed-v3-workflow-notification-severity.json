@@ -1,0 +1,4 @@
+{
+    "type": "fixed",
+    "description": "[V3] Workflow completion notifications now render as notifications instead of user messages"
+}

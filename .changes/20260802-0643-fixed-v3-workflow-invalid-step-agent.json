@@ -1,0 +1,4 @@
+{
+    "type": "fixed",
+    "description": "[V3] Workflow steps naming an invalid agent now fail loudly instead of silently running as the default agent"
+}

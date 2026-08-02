@@ -1,0 +1,4 @@
+{
+    "type": "changed",
+    "description": "[V3] Workflow step nodes require prompt; the legacy step-level input field is rejected with a migration message"
+}

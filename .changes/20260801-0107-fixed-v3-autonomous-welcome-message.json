@@ -1,0 +1,4 @@
+{
+    "type": "fixed",
+    "description": "[V3] Autonomous orchestrator agents no longer emit a spurious welcome message"
+}
