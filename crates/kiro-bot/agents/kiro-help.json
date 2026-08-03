@@ -52,6 +52,18 @@
     "read"
   ],
   "toolsSettings": {
+    "read": {
+      "deniedPaths": [
+        "~/.kiro/bots",
+        "~/.aws",
+        "~/.ssh",
+        "~/.netrc",
+        "~/.git-credentials",
+        "/proc",
+        "/sys",
+        "/**/secrets.toml"
+      ]
+    },
     "shell": {
       "denyByDefault": true,
       "allowedCommands": [
@@ -84,7 +96,9 @@
         ".*\\b(npm|bun|yarn|pnpm|cargo)\\s+install\\b.*",
         ".*\\b(bash|sh|zsh)\\s+-c\\b.*",
         ".*\\beval\\b.*",
-        ".*\\bsource\\b.*"
+        ".*\\bsource\\b.*",
+        ".*(secrets\\.toml|\\.kiro/bots|/proc/|/sys/|\\.aws/|\\.ssh/|\\.netrc|\\.git-credentials).*",
+        "(env|printenv|set)( .*)?"
       ]
     }
   },
@@ -92,5 +106,5 @@
     "skill://~/.kiro/agents/SKILL.md"
   ],
   "includeMcpJson": false,
-  "welcomeMessage": "Ask me anything about Kiro CLI."
+  "welcomeMessage": "Ask me anything about Kiro CLI. I use generative AI — answers may be incorrect or incomplete, so verify before acting on them."
 }

@@ -42,6 +42,7 @@ cron = "0.16"
 jsonschema = { version = "0.44", default-features = false }
 rpassword = "7"
 slack-morphism = { version = "2", features = ["hyper"] }
+subtle = "2.6"
 
 [dev-dependencies]
 tempfile.workspace = true

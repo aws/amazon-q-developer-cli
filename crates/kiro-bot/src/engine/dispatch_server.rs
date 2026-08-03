@@ -6,8 +6,19 @@
 //! `POST /dispatch` and the receiving task processes it as if Slack had
 //! delivered it directly. The dedup table prevents double-processing if
 //! both tasks somehow saw the same event.
+//!
+//! `/dispatch` is the only path by which a non-Slack caller can inject an
+//! event into the bot, so it requires a shared secret: a request whose
+//! `x-kiro-bot-dispatch-token` doesn't match `KIRO_BOT_DISPATCH_TOKEN` is
+//! rejected before the payload is parsed. When the token is unset the route
+//! is not mounted at all — an unauthenticated forwarding endpoint is never
+//! the safer default, even in dev.
 
-use std::net::SocketAddr;
+use std::net::{
+    IpAddr,
+    Ipv4Addr,
+    SocketAddr,
+};
 use std::sync::Arc;
 
 use axum::Router;
@@ -15,14 +26,27 @@ use axum::extract::{
     Json,
     State,
 };
-use axum::http::StatusCode;
+use axum::http::{
+    HeaderMap,
+    StatusCode,
+};
 use axum::routing::{
     get,
     post,
 };
 use serde_json::Value;
+use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{
+    info,
+    warn,
+};
+
+/// Env var carrying the shared secret peers present on `POST /dispatch`.
+pub const ENV_DISPATCH_TOKEN: &str = "KIRO_BOT_DISPATCH_TOKEN";
+
+/// Header peers use to present the shared secret.
+pub const DISPATCH_TOKEN_HEADER: &str = "x-kiro-bot-dispatch-token";
 
 /// Trait the dispatch server calls into. The bot's `engine::core` provides an
 /// implementation that re-enters the normal Slack-event dispatch path.
@@ -34,6 +58,7 @@ pub trait Dispatcher: Send + Sync + 'static {
 #[derive(Clone)]
 pub struct DispatchState {
     pub dispatcher: Arc<dyn Dispatcher>,
+    pub token: Arc<String>,
 }
 
 /// Build the dispatch router. Exposed so tests can assemble an `axum::Server`
@@ -45,19 +70,56 @@ pub fn router(state: DispatchState) -> Router {
         .with_state(state)
 }
 
-async fn handle_dispatch(State(state): State<DispatchState>, Json(event): Json<Value>) -> StatusCode {
-    state.dispatcher.process_as_if_from_slack(event).await;
-    StatusCode::OK
-}
-
+/// `/healthz` stays unauthenticated for the ALB, so it must not be mounted on a
+/// router that carries a dispatcher secret check bypass — it returns a bare 200
+/// and reads no state.
 async fn handle_health() -> StatusCode {
     StatusCode::OK
 }
 
-/// Bind to `port` on all interfaces and serve forever.
+async fn handle_dispatch(
+    State(state): State<DispatchState>,
+    headers: HeaderMap,
+    Json(event): Json<Value>,
+) -> StatusCode {
+    let presented = headers.get(DISPATCH_TOKEN_HEADER).and_then(|v| v.to_str().ok());
+    let Some(presented) = presented else {
+        warn!("rejected /dispatch: missing token header");
+        return StatusCode::UNAUTHORIZED;
+    };
+    if !bool::from(presented.as_bytes().ct_eq(state.token.as_bytes())) {
+        warn!("rejected /dispatch: token mismatch");
+        return StatusCode::UNAUTHORIZED;
+    }
+    state.dispatcher.process_as_if_from_slack(event).await;
+    StatusCode::OK
+}
+
+/// Serve the dispatch endpoint. Binds `0.0.0.0` only when a peer token is
+/// configured — without one there is nothing to authenticate forwarded events
+/// against, so we bind loopback and refuse to expose `/dispatch` to the subnet.
 pub async fn run_dispatch_server(port: u16, dispatcher: Arc<dyn Dispatcher>) -> anyhow::Result<()> {
-    let app = router(DispatchState { dispatcher });
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let token = std::env::var(ENV_DISPATCH_TOKEN).ok().filter(|t| !t.is_empty());
+    let (bind_ip, app) = match token {
+        Some(token) => (
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            router(DispatchState {
+                dispatcher,
+                token: Arc::new(token),
+            }),
+        ),
+        None => {
+            warn!(
+                "{ENV_DISPATCH_TOKEN} unset — binding loopback and serving /healthz only; \
+                 cross-task event forwarding is disabled"
+            );
+            (
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                Router::new().route("/healthz", get(handle_health)),
+            )
+        },
+    };
+    let addr = SocketAddr::new(bind_ip, port);
     let listener = TcpListener::bind(addr).await?;
     info!(%addr, "dispatch server listening");
     axum::serve(listener, app).await?;
@@ -82,14 +144,14 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn dispatch_endpoint_records_payloads() {
-        let rec = Recorder::default();
-        let state = DispatchState {
-            dispatcher: Arc::new(rec.clone()),
-        };
-        let app = router(state);
+    const TEST_TOKEN: &str = "test-shared-secret";
 
+    async fn serve() -> (Recorder, SocketAddr) {
+        let rec = Recorder::default();
+        let app = router(DispatchState {
+            dispatcher: Arc::new(rec.clone()),
+            token: Arc::new(TEST_TOKEN.to_string()),
+        });
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -97,10 +159,15 @@ mod tests {
         });
         // Give axum a moment to start.
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        (rec, addr)
+    }
 
-        let client = reqwest::Client::new();
-        let resp = client
+    #[tokio::test]
+    async fn dispatch_endpoint_records_payloads_with_valid_token() {
+        let (rec, addr) = serve().await;
+        let resp = reqwest::Client::new()
             .post(format!("http://{addr}/dispatch"))
+            .header(DISPATCH_TOKEN_HEADER, TEST_TOKEN)
             .json(&serde_json::json!({"event_id": "evt-1", "text": "hi"}))
             .send()
             .await
@@ -112,21 +179,40 @@ mod tests {
         assert_eq!(seen[0]["event_id"], "evt-1");
     }
 
+    /// A forged event must not reach the dispatcher: anyone who can route to the
+    /// task's port could otherwise impersonate Slack and drive the agent.
     #[tokio::test]
-    async fn healthz_returns_200() {
-        let rec = Recorder::default();
-        let state = DispatchState {
-            dispatcher: Arc::new(rec),
-        };
-        let app = router(state);
+    async fn dispatch_rejects_missing_and_wrong_token() {
+        let (rec, addr) = serve().await;
+        let client = reqwest::Client::new();
+        let body = serde_json::json!({"event_id": "forged", "text": "hi"});
 
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        let no_header = client
+            .post(format!("http://{addr}/dispatch"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(no_header.status(), 401);
 
+        let wrong = client
+            .post(format!("http://{addr}/dispatch"))
+            .header(DISPATCH_TOKEN_HEADER, "not-the-secret")
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(wrong.status(), 401);
+
+        assert!(
+            rec.seen.lock().unwrap().is_empty(),
+            "unauthenticated events must never reach the dispatcher"
+        );
+    }
+
+    #[tokio::test]
+    async fn healthz_returns_200_without_token() {
+        let (_rec, addr) = serve().await;
         let resp = reqwest::get(format!("http://{addr}/healthz")).await.unwrap();
         assert_eq!(resp.status(), 200);
     }

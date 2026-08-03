@@ -51,6 +51,25 @@ pub struct PendingApproval {
     pub tool_name: String,
     pub options: Vec<(String, String)>,
     pub reply_tx: Option<oneshot::Sender<ApprovalResponse>>,
+    /// Slack user whose prompt triggered the tool call. Only this user's
+    /// reaction decides the approval — otherwise anyone who can see the
+    /// message in a shared channel could grant another user's tool call.
+    pub requester: String,
+}
+
+/// Returns the registered requester when `reactor` is *not* them, i.e. when the
+/// reaction must be ignored. `None` means "proceed" — either the reactor is the
+/// requester, or there's no local approval under this ts (a peer may own it).
+///
+/// Peeks rather than removes so a bystander's reaction can't consume the
+/// approval and leave the real requester with a dead prompt.
+fn wrong_requester(pending: &PendingApprovals, ts: &str, reactor: &str) -> Option<String> {
+    pending
+        .lock()
+        .unwrap()
+        .get(ts)
+        .map(|a| a.requester.clone())
+        .filter(|requester| requester != reactor)
 }
 
 // ---------------------------------------------------------------------------
@@ -556,6 +575,16 @@ async fn handle_reaction(
         }
     }
 
+    if let Some(requester) = wrong_requester(&state.pending_approvals, &ts, &reactor) {
+        tracing::info!(
+            reactor,
+            requester,
+            msg_ts = %ts,
+            "ignoring approval reaction from a user who didn't make the request"
+        );
+        return Ok(());
+    }
+
     let approval = state.pending_approvals.lock().unwrap().remove(&ts);
     let Some(mut approval) = approval else {
         // Local miss: maybe a peer task posted this approval. Look up the
@@ -699,7 +728,7 @@ pub fn spawn_approval_listener(
                 .collect::<Vec<_>>()
                 .join(" / ");
             let text = format!(
-                "🔐 *Permission request*\n`{}`\nOptions: {options_text}\n\nReact: ✅ allow · ❌ deny · 🔓 trust\ncc: <@{}>",
+                "🔐 *Permission request*\n`{}`\nOptions: {options_text}\n\nOnly <@{}> can approve this — React: ✅ allow · ❌ deny · 🔓 trust",
                 req.tool_name, req.slack_user_id
             );
 
@@ -746,6 +775,7 @@ pub fn spawn_approval_listener(
                 tool_name: req.tool_name,
                 options: req.options,
                 reply_tx: Some(req.reply_tx),
+                requester: req.slack_user_id,
             });
             tracing::info!(
                 msg_ts,
@@ -801,6 +831,45 @@ mod tests {
     #[test]
     fn thinking_tags_stripped() {
         assert_eq!(markdown_to_slack("<thinking>internal</thinking>\nvisible"), "visible");
+    }
+
+    fn pending_with_requester(ts: &str, requester: &str) -> PendingApprovals {
+        let (tx, _rx) = oneshot::channel();
+        let map = HashMap::from([(ts.to_string(), PendingApproval {
+            tool_name: "execute_bash".to_string(),
+            options: vec![("allow_once".to_string(), "Allow once".to_string())],
+            reply_tx: Some(tx),
+            requester: requester.to_string(),
+        })]);
+        Arc::new(Mutex::new(map))
+    }
+
+    /// A tool call is only approved by the user who triggered it. Anyone else in
+    /// a shared channel can see the prompt, so without this an onlooker could
+    /// authorize someone else's write.
+    #[test]
+    fn only_the_requester_can_approve() {
+        let pending = pending_with_requester("1700000000.1", "U_REQUESTER");
+
+        assert_eq!(
+            wrong_requester(&pending, "1700000000.1", "U_BYSTANDER"),
+            Some("U_REQUESTER".to_string()),
+            "a bystander's reaction must be rejected"
+        );
+        assert!(
+            pending.lock().unwrap().contains_key("1700000000.1"),
+            "rejecting a bystander must leave the approval pending for the real requester"
+        );
+        assert_eq!(
+            wrong_requester(&pending, "1700000000.1", "U_REQUESTER"),
+            None,
+            "the requester's own reaction must be accepted"
+        );
+        assert_eq!(
+            wrong_requester(&pending, "9999999999.9", "U_ANYONE"),
+            None,
+            "unknown ts falls through to the cross-task peer lookup"
+        );
     }
 
     #[test]

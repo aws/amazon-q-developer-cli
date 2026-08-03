@@ -302,14 +302,22 @@ impl Coordinator for DynamoCoordinator {
 
     async fn forward(&self, peer: &str, payload: ForwardEvent) -> anyhow::Result<()> {
         let url = self.peer_url(peer);
-        let resp = self
+        let mut req = self
             .http
             .post(&url)
             .json(&payload.slack_event_json)
-            .timeout(std::time::Duration::from_secs(5))
-            .send()
-            .await
-            .with_context(|| format!("POST {url}"))?;
+            .timeout(std::time::Duration::from_secs(5));
+        match std::env::var(crate::engine::dispatch_server::ENV_DISPATCH_TOKEN) {
+            Ok(token) => {
+                req = req.header(crate::engine::dispatch_server::DISPATCH_TOKEN_HEADER, token);
+            },
+            Err(_) => warn!(
+                peer,
+                env = crate::engine::dispatch_server::ENV_DISPATCH_TOKEN,
+                "forwarding without dispatch token; peer will reject with 401 if it requires auth"
+            ),
+        }
+        let resp = req.send().await.with_context(|| format!("POST {url}"))?;
         if !resp.status().is_success() {
             anyhow::bail!("peer {peer} returned status {}", resp.status());
         }

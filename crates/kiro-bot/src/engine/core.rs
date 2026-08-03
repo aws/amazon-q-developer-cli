@@ -28,6 +28,19 @@ use crate::engine::response_policy::{
     ResponsePolicyConfig,
 };
 
+/// Appended to every model-generated answer. Slack users can't see which
+/// replies came from an LLM, so the disclaimer travels with the answer rather
+/// than living only in the app description.
+pub const GENAI_DISCLAIMER: &str = "_AI-generated — may be incorrect or incomplete. Verify before acting on it._";
+
+/// Attach [`GENAI_DISCLAIMER`] unless it's already the tail of the text.
+pub fn with_genai_disclaimer(text: &str) -> String {
+    if text.trim_end().ends_with(GENAI_DISCLAIMER) {
+        return text.to_string();
+    }
+    format!("{}\n\n{GENAI_DISCLAIMER}", text.trim_end())
+}
+
 // ---------------------------------------------------------------------------
 // Conversation types
 // ---------------------------------------------------------------------------
@@ -601,7 +614,7 @@ async fn run_action(
                 .send(Reply::Send {
                     conversation: platform_id,
                     reply_to,
-                    text: final_reply_text,
+                    text: with_genai_disclaimer(&final_reply_text),
                 })
                 .await;
         },
@@ -640,6 +653,7 @@ async fn run_action(
                 Action::Help => {
                     send(
                         concat!(
+                            "I answer questions about Kiro CLI using generative AI.\n\n",
                             "*Commands:*\n",
                             "`!help` — show this message\n",
                             "`!new` — new session\n",
@@ -647,7 +661,8 @@ async fn run_action(
                             "`!model <name>` — switch model\n",
                             "`!status` — current agent/model/session\n",
                             "`!agents` — list available agents\n",
-                            "`!cancel` — cancel current request",
+                            "`!cancel` — cancel current request\n\n",
+                            "_AI-generated — may be incorrect or incomplete. Verify before acting on it._",
                         )
                         .into(),
                     )
@@ -742,6 +757,22 @@ mod tests {
     #[test]
     fn plain_text_is_prompt() {
         assert_eq!(resolve_action("hello"), Action::Prompt { text: "hello".into() });
+    }
+
+    #[test]
+    fn genai_disclaimer_is_appended_once() {
+        let once = with_genai_disclaimer("The answer is 42.");
+        assert!(once.starts_with("The answer is 42."));
+        assert!(once.ends_with(GENAI_DISCLAIMER));
+        assert_eq!(
+            with_genai_disclaimer(&once),
+            once,
+            "re-wrapping must not stack duplicate disclaimers"
+        );
+        assert!(
+            with_genai_disclaimer("  trailing space  ").ends_with(GENAI_DISCLAIMER),
+            "trailing whitespace must not defeat the already-present check"
+        );
     }
 
     #[test]

@@ -192,10 +192,22 @@ pub enum Secrets {
     Slack(SlackSecrets),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct SlackSecrets {
     pub bot_token: String,
     pub app_token: String,
+}
+
+/// Hand-written so no `{:?}` anywhere — including on the enclosing [`Secrets`]
+/// or a `?`-propagated error that captures it — can put a Slack token in a log
+/// line or a crash dump.
+impl std::fmt::Debug for SlackSecrets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SlackSecrets")
+            .field("bot_token", &"[redacted]")
+            .field("app_token", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Deserialize)]
@@ -279,5 +291,25 @@ bot_name = "Bot"
     fn working_directory_absent() {
         let cfg = parse(BASE);
         assert_eq!(cfg.working_directory, None);
+    }
+
+    #[test]
+    fn debug_never_prints_slack_tokens() {
+        let secrets = Secrets::Slack(SlackSecrets {
+            bot_token: "xoxb-real-bot-token".into(),
+            app_token: "xapp-real-app-token".into(),
+        });
+        let rendered = format!("{secrets:?}");
+        // Don't interpolate `rendered` into the failure message: it trips
+        // CodeQL's cleartext-logging sink even though the values are fake and
+        // already redacted. The condition is the assertion; the message is not.
+        assert!(
+            !rendered.contains("xoxb-real-bot-token"),
+            "bot_token appeared in Debug output"
+        );
+        assert!(
+            !rendered.contains("xapp-real-app-token"),
+            "app_token appeared in Debug output"
+        );
     }
 }

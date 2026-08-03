@@ -136,6 +136,53 @@ mod tests {
         }
     }
 
+    /// `read` is auto-approved, so `deniedPaths` is the only thing standing
+    /// between a prompt-injected model and the bot's own Slack/GitHub
+    /// credentials. Deny beats allow before the auto-approve check, but only
+    /// for patterns that survive canonicalization — relative globs get joined
+    /// onto cwd and silently stop matching, so every entry must be absolute
+    /// or `~`-rooted.
+    #[test]
+    fn kiro_help_read_cannot_reach_credentials() {
+        let raw = include_str!("../agents/kiro-help.json");
+        let v: serde_json::Value = serde_json::from_str(raw).expect("valid JSON");
+        let denied: Vec<&str> = v["toolsSettings"]["read"]["deniedPaths"]
+            .as_array()
+            .expect("read.deniedPaths must be declared — `read` is in allowedTools")
+            .iter()
+            .filter_map(|p| p.as_str())
+            .collect();
+
+        for pattern in &denied {
+            assert!(
+                pattern.starts_with('/') || pattern.starts_with('~'),
+                "deniedPaths entry `{pattern}` is relative — it will be resolved against cwd and never match the real target"
+            );
+        }
+        for required in ["~/.kiro/bots", "~/.aws", "~/.ssh", "/proc"] {
+            assert!(denied.contains(&required), "read.deniedPaths must block {required}");
+        }
+
+        // Same targets, second layer: the shell allowlist admits bare `cat`
+        // and `find`, so the denylist is what keeps them off the secrets.
+        let shell_denylist: Vec<&str> = v["toolsSettings"]["shell"]["deniedCommands"]
+            .as_array()
+            .expect("deniedCommands array")
+            .iter()
+            .filter_map(|p| p.as_str())
+            .collect();
+        for target in ["secrets\\.toml", "/proc/", "\\.aws/", "\\.ssh/"] {
+            assert!(
+                shell_denylist.iter().any(|p| p.contains(target)),
+                "shell deniedCommands must block {target} — `cat( .*)?` is allowlisted and would otherwise read it"
+            );
+        }
+        assert!(
+            shell_denylist.iter().any(|p| p.contains("printenv")),
+            "shell deniedCommands must block env dumps — the process env carries GH_PAT"
+        );
+    }
+
     /// The agent must not advertise tools that don't exist in this binary.
     /// `kiro_cli_help` was deleted from chat-cli; the bot prompt and JSON
     /// must not reference it, otherwise the model will try to call a tool
