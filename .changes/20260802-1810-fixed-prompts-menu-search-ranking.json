@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Searchable menus (`/prompts`, `/model`, `/agent`) now rank name matches above description-only matches"
+}

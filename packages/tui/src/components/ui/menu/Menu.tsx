@@ -65,7 +65,7 @@ export interface MenuProps {
   liteOnly?: boolean;
 }
 
-import { fuzzyScore } from '../../../utils/fuzzyScore.js';
+import { rankMenuItems } from './menu-search.js';
 
 export const Menu = React.memo(function Menu({
   items,
@@ -106,19 +106,11 @@ export const Menu = React.memo(function Menu({
   const dimText = getColor('secondary');
   const brandText = getColor('primary');
 
-  // Filter items when searchable using fuzzy subsequence matching + scoring
+  // Filter items when searchable: label matches rank above description-only
+  // matches, fuzzy score breaks ties within each tier.
   const displayItems = useMemo(() => {
     if (!searchable || !searchText) return items;
-    const query = searchText.toLowerCase();
-    const scored: { item: MenuItem; score: number }[] = [];
-    for (const item of items) {
-      const labelScore = fuzzyScore(query, item.label.toLowerCase());
-      const descScore = fuzzyScore(query, item.description.toLowerCase());
-      const best = Math.max(labelScore, descScore);
-      if (best > 0) scored.push({ item, score: best });
-    }
-    scored.sort((a, b) => b.score - a.score);
-    return scored.map((s) => s.item);
+    return rankMenuItems(items, searchText);
   }, [items, searchText, searchable]);
 
   // Reset selection when filter changes. Skip the first run so initialIndex
