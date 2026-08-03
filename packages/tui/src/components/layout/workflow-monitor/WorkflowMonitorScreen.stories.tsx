@@ -677,7 +677,7 @@ export const Running = {
 export const RunningSteerOpen = {
   args: { scenario: 'running' satisfies WorkflowMonitorScenario },
   parameters: certification({
-    visible: ['Steer', 'workflow-ux', 'send', 'esc cancel'],
+    visible: ['Steer', 'workflow-ux', 'send', 'esc close'],
   }),
   play: openComposer('Steer'),
 };

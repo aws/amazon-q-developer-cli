@@ -28,6 +28,10 @@ import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js
 import { useAllowAnimations } from '../../hooks/useGlyphs.js';
 import { UI_VARIANTS } from './ui-variants.js';
 import { workflowStore } from '../../stores/workflow-store.js';
+import {
+  useActivityTrayInputGateReader,
+  useActivityTrayVisibility,
+} from '../ui/activity-tray/useActivityTrayModel.js';
 
 /**
  * Enhanced-keyboard controls published on globalThis by index.tsx (the
@@ -84,9 +88,8 @@ export const AppContainer: React.FC = () => {
     workflowStore,
     (state) => state.history.isOpen
   );
-  const activityTrayExpanded = useAppStore(
-    (state) => state.activityTrayExpanded
-  );
+  const { open: activityTrayOpen } = useActivityTrayVisibility();
+  const readActivityTrayInputGate = useActivityTrayInputGateReader();
   const toggleActivityTray = useAppStore((state) => state.toggleActivityTray);
   const uiMode = useAppStore((state) => state.uiMode);
   const trustAllToolsRequested = useAppStore(
@@ -187,7 +190,8 @@ export const AppContainer: React.FC = () => {
       hasWorkflow,
       workflowInputActive,
       workflowHistoryOpen,
-      activityTrayExpanded,
+      activityTrayOpen,
+      promptMenuOpen: readActivityTrayInputGate().promptMenuOpen,
       isProcessing,
       isShellEscape,
       hasCommandInput,

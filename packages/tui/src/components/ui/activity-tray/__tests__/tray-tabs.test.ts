@@ -3,6 +3,7 @@ import {
   availableActivityTrayTabs,
   isWorkflowTrayActive,
   nextActivityTrayTab,
+  resolveActivityTrayTab,
 } from '../tray-tabs.js';
 
 describe('activity tray workflow tabs', () => {
@@ -32,5 +33,16 @@ describe('activity tray workflow tabs', () => {
     expect(nextActivityTrayTab(tabs, 'queue')).toBe('workflow');
     expect(nextActivityTrayTab(tabs, 'workflow')).toBe('queue');
     expect(nextActivityTrayTab(tabs, 'tasks')).toBe('queue');
+  });
+
+  it('honors an available request and otherwise prefers workflow', () => {
+    const tabs = ['tasks', 'queue', 'workflow'] as const;
+
+    expect(resolveActivityTrayTab(tabs, 'queue')).toBe('queue');
+    expect(resolveActivityTrayTab(tabs, null)).toBe('workflow');
+    expect(resolveActivityTrayTab(['tasks', 'queue'], 'workflow')).toBe(
+      'tasks'
+    );
+    expect(resolveActivityTrayTab([], null)).toBeNull();
   });
 });

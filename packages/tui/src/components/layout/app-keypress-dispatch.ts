@@ -17,7 +17,8 @@ export interface AppKeypressState {
   hasWorkflow: boolean;
   workflowInputActive: boolean;
   workflowHistoryOpen: boolean;
-  activityTrayExpanded: boolean;
+  activityTrayOpen: boolean;
+  promptMenuOpen: boolean;
   isProcessing: boolean;
   isShellEscape: boolean;
   hasCommandInput: boolean;
@@ -82,8 +83,9 @@ export function dispatchAppKeypress(
   bindings: AppKeypressBindings
 ): boolean {
   if (state.workflowHistoryOpen) return true;
+  if (state.promptMenuOpen && key.escape) return true;
 
-  if (state.mode === 'inline' && state.activityTrayExpanded && key.escape) {
+  if (state.mode === 'inline' && state.activityTrayOpen && key.escape) {
     actions.collapseActivityTray();
     return true;
   }

@@ -891,6 +891,11 @@ export function parseKey(data: string): KeyId | undefined {
 	if (data === "\x7f" || data === "\x08") return "backspace";
 	if (data === "\x1b\x7f" || data === "\x1b\x08") return "alt+backspace" as KeyId;
 	if (data === "\x1b[Z") return "shift+tab";
+	for (const key of ["up", "down", "right", "left"] as const) {
+		if (matchesLegacySequence(data, LEGACY_SHIFT_SEQUENCES[key])) {
+			return `shift+${key}` as KeyId;
+		}
+	}
 
 	// xterm modifyOtherKeys format: CSI 27 ; modifier ; keycode ~
 	const mokMatch = data.match(/^\x1b\[27;(\d+);(\d+)~$/);

@@ -4,6 +4,7 @@ import {
   buildAtMenuItems,
   findPromptByMenuLabel,
   atMenuShowsPrompts,
+  isPromptMenuOpen,
 } from './command-menu-utils';
 import type { SlashCommand } from '../../stores/app-store';
 
@@ -179,5 +180,59 @@ describe('atMenuShowsPrompts', () => {
     expect(atMenuShowsPrompts(commands, 'hello @research', atTrigger(6))).toBe(
       false
     );
+  });
+});
+
+describe('isPromptMenuOpen', () => {
+  const base = {
+    activeCommandOpen: false,
+    activeTrigger: null,
+    commandInputValue: '',
+    filePickerHasResults: false,
+    slashCommands: commands,
+    uiMode: 'tui' as const,
+  };
+
+  it('tracks slash, prompt, file, and active-command menus', () => {
+    expect(
+      isPromptMenuOpen({
+        ...base,
+        activeTrigger: { key: '/', position: 0 },
+        commandInputValue: '/re',
+      })
+    ).toBe(true);
+    expect(
+      isPromptMenuOpen({
+        ...base,
+        activeTrigger: { key: '@', position: 0 },
+        commandInputValue: '@rese',
+      })
+    ).toBe(true);
+    expect(
+      isPromptMenuOpen({
+        ...base,
+        activeTrigger: { key: '@', position: 4 },
+        commandInputValue: 'see @file',
+        filePickerHasResults: true,
+      })
+    ).toBe(true);
+    expect(isPromptMenuOpen({ ...base, activeCommandOpen: true })).toBe(true);
+  });
+
+  it('is false when a trigger has no visible menu items', () => {
+    expect(
+      isPromptMenuOpen({
+        ...base,
+        activeTrigger: { key: '/', position: 0 },
+        commandInputValue: '/missing',
+      })
+    ).toBe(false);
+    expect(
+      isPromptMenuOpen({
+        ...base,
+        activeTrigger: { key: '@', position: 0 },
+        commandInputValue: '@missing',
+      })
+    ).toBe(false);
   });
 });

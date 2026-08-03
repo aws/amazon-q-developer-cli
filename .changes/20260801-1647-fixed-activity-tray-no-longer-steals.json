@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Activity tray no longer steals keyboard input from the prompt when viewing Messages or Tasks tabs"
+}

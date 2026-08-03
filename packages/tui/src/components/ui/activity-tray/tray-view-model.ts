@@ -3,6 +3,29 @@ import type { WorkflowRunView } from '../../../types/workflow-monitor.js';
 import type { WorkflowStatus } from '../../../types/workflow.js';
 import { workflowProgress } from '../../../stores/workflow-view-model.js';
 
+export interface ActivityTrayVisibility {
+  hasTasks: boolean;
+  hasMessages: boolean;
+  liveWorkflowCount: number;
+  workflowCount: number;
+  expanded: boolean;
+}
+
+export function isActivityTrayVisible({
+  hasTasks,
+  hasMessages,
+  liveWorkflowCount,
+  workflowCount,
+  expanded,
+}: ActivityTrayVisibility): boolean {
+  return (
+    hasTasks ||
+    hasMessages ||
+    liveWorkflowCount > 0 ||
+    (expanded && workflowCount > 0)
+  );
+}
+
 export interface CollapsedWorkflowEntry {
   workflowId: string;
   name: string;
@@ -47,7 +70,7 @@ export function workflowActivityLabel(
 }
 
 export interface TrayScrollInput {
-  activeTab: ActivityTrayTab;
+  activeTab: ActivityTrayTab | null;
   itemCount: number;
   taskStatuses: readonly string[];
   selectedIndex: number;
@@ -76,7 +99,7 @@ export function activityTrayScrollOffset({
 }
 
 export interface TrayHintInput {
-  activeTab: ActivityTrayTab;
+  activeTab: ActivityTrayTab | null;
   queueCount: number;
   hasSteer: boolean;
   editing: boolean;
@@ -108,10 +131,10 @@ export function activityTrayHints({
     hints.push('del remove');
   }
   if (activeTab === 'workflow' && workflowNodeCount > 1) {
-    hints.push(`${arrows} select`, 'ctrl+g monitor');
+    hints.push(`shift+${arrows} select`, 'ctrl+g monitor');
   }
   if (activeTab === 'workflow' && workflowCount > 1) {
-    hints.push('left/right workflows', '1-9 jump');
+    hints.push('shift+left/right workflows');
   }
   if (tabCount > 1) hints.push('tab switch');
   hints.push('ctrl+x collapse');

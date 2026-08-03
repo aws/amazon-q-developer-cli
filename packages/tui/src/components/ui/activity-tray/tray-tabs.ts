@@ -1,7 +1,8 @@
 import type { WorkflowStatus } from '../../../types/workflow.js';
 import { isLiveWorkflowStatus } from '../../../types/workflow-status.js';
+import type { ActivityTrayTab } from '../../../types/activity-tray.js';
 
-export type ActivityTrayTab = 'tasks' | 'queue' | 'workflow';
+export type { ActivityTrayTab } from '../../../types/activity-tray.js';
 
 export function isWorkflowTrayActive(
   status: WorkflowStatus | null | undefined
@@ -37,4 +38,13 @@ export function nextActivityTrayTab(
   const activeIndex = tabs.indexOf(activeTab);
   if (activeIndex === -1) return tabs[0] ?? activeTab;
   return tabs[(activeIndex + 1) % tabs.length] ?? activeTab;
+}
+
+export function resolveActivityTrayTab(
+  tabs: readonly ActivityTrayTab[],
+  requestedTab: ActivityTrayTab | null
+): ActivityTrayTab | null {
+  if (requestedTab && tabs.includes(requestedTab)) return requestedTab;
+  if (tabs.includes('workflow')) return 'workflow';
+  return tabs[0] ?? null;
 }

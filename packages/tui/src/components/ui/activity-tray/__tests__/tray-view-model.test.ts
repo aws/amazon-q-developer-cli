@@ -3,6 +3,7 @@ import {
   activityTrayHints,
   activityTrayScrollOffset,
   collapsedWorkflowSummary,
+  isActivityTrayVisible,
   workflowActivityLabel,
 } from '../tray-view-model.js';
 import type { WorkflowRunView } from '../../../../types/workflow-monitor.js';
@@ -41,6 +42,31 @@ function workflow(
 }
 
 describe('activity tray view model', () => {
+  it('tracks visibility across tasks, messages, and workflow retention', () => {
+    const hidden = {
+      hasTasks: false,
+      hasMessages: false,
+      liveWorkflowCount: 0,
+      workflowCount: 0,
+      expanded: false,
+    };
+
+    expect(isActivityTrayVisible(hidden)).toBe(false);
+    expect(isActivityTrayVisible({ ...hidden, hasTasks: true })).toBe(true);
+    expect(isActivityTrayVisible({ ...hidden, hasMessages: true })).toBe(true);
+    expect(isActivityTrayVisible({ ...hidden, liveWorkflowCount: 1 })).toBe(
+      true
+    );
+    expect(isActivityTrayVisible({ ...hidden, workflowCount: 1 })).toBe(false);
+    expect(
+      isActivityTrayVisible({
+        ...hidden,
+        workflowCount: 1,
+        expanded: true,
+      })
+    ).toBe(true);
+  });
+
   it('summarizes concurrent workflow states', () => {
     expect(workflowActivityLabel(2, 0)).toBe('2 workflows running');
     expect(workflowActivityLabel(1, 1)).toBe('1 workflow running, 1 paused');
@@ -127,10 +153,9 @@ describe('activity tray view model', () => {
         arrows: 'up/down',
       })
     ).toEqual([
-      'up/down select',
+      'shift+up/down select',
       'ctrl+g monitor',
-      'left/right workflows',
-      '1-9 jump',
+      'shift+left/right workflows',
       'tab switch',
       'ctrl+x collapse',
     ]);

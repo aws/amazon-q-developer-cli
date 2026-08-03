@@ -2,6 +2,7 @@ import { describe, it, expect, mock } from 'bun:test';
 import { AgentEventType } from '../types/agent-events';
 import { createAppStore, MessageRole } from '../stores/app-store';
 import { buildUnifiedQueueEntries } from '../utils/queue-navigation';
+import { InterruptMode } from '../constants/interrupt-mode';
 
 /**
  * Unit tests for TUI steering integration.
@@ -267,7 +268,11 @@ describe('TUI Steering Integration', () => {
       };
 
       const store = createAppStore({ kiro: mockKiro as any });
-      store.setState({ sessionId: 'session-abc', isInitialized: true });
+      store.setState({
+        sessionId: 'session-abc',
+        isInitialized: true,
+        activeInterruptMode: InterruptMode.STEER,
+      });
 
       store.getState().queueMessage('Steer the agent');
 
@@ -306,7 +311,11 @@ describe('TUI Steering Integration', () => {
       const store = createAppStore({ kiro: mockKiro as any });
 
       // Set sessionId so queueMessage can call kiro.steerMessage
-      store.setState({ sessionId: 'session-1', isInitialized: true });
+      store.setState({
+        sessionId: 'session-1',
+        isInitialized: true,
+        activeInterruptMode: InterruptMode.STEER,
+      });
 
       // Call queueMessage (simulates user typing while agent is busy)
       store.getState().queueMessage('My follow-up instruction');

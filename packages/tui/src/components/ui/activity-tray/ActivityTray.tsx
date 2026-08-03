@@ -1,55 +1,45 @@
 import React, { useEffect } from 'react';
 import { useStore } from 'zustand';
 import { Box, useInput } from '../../../renderer.js';
-import {
-  useTaskState,
-  useTaskActions,
-  useQueueState,
-} from '../../../stores/selectors.js';
-import {
-  selectLiveWorkflowCount,
-  workflowStore,
-} from '../../../stores/workflow-store.js';
-import { buildUnifiedQueueEntries } from '../../../utils/queue-navigation.js';
+import { useTaskActions } from '../../../stores/selectors.js';
+import { workflowStore } from '../../../stores/workflow-store.js';
 import { ActivityTrayCollapsed } from './ActivityTrayCollapsed.js';
 import { ActivityTrayExpanded } from './ActivityTrayExpanded.js';
+import {
+  useActivityTrayInputGateReader,
+  useActivityTrayModel,
+} from './useActivityTrayModel.js';
 
 export const ActivityTray = React.memo(function ActivityTray() {
-  const { tasks, activityTrayExpanded } = useTaskState();
-  const { pendingSteerContent, queuedMessages } = useQueueState();
+  const {
+    activeTab,
+    expanded,
+    hasTasks,
+    historyOpen,
+    inputOwnership,
+    navigationActive,
+    open,
+    queuedMessageCount,
+    tabs,
+    visible,
+  } = useActivityTrayModel();
   const toggleActivityTray = useTaskActions();
-  const historyOpen = useStore(workflowStore, (state) => state.history.isOpen);
-  const workflowCount = useStore(
-    workflowStore,
-    (state) => state.workflows.size
-  );
-  const liveWorkflowCount = useStore(workflowStore, selectLiveWorkflowCount);
   const setWorkflowSurfaceOpen = useStore(
     workflowStore,
     (state) => state.setWorkflowSurfaceOpen
   );
-
-  const hasTasks = tasks.length > 0;
-  const queuedMessageCount = buildUnifiedQueueEntries(
-    pendingSteerContent,
-    queuedMessages
-  ).length;
-  const visible =
-    hasTasks ||
-    queuedMessageCount > 0 ||
-    liveWorkflowCount > 0 ||
-    (activityTrayExpanded && workflowCount > 0);
-  const traySurfaceOpen = visible && activityTrayExpanded;
+  const readInputGate = useActivityTrayInputGateReader();
 
   useEffect(() => {
-    setWorkflowSurfaceOpen('tray', traySurfaceOpen);
+    setWorkflowSurfaceOpen('tray', open);
     return () => {
-      if (traySurfaceOpen) setWorkflowSurfaceOpen('tray', false);
+      if (open) setWorkflowSurfaceOpen('tray', false);
     };
-  }, [setWorkflowSurfaceOpen, traySurfaceOpen]);
+  }, [setWorkflowSurfaceOpen, open]);
 
   useInput(
     (input, key) => {
+      if (!readInputGate().inputEnabled) return;
       if (key.ctrl && input === 'x') {
         toggleActivityTray();
       }
@@ -59,10 +49,16 @@ export const ActivityTray = React.memo(function ActivityTray() {
 
   if (!visible) return null;
 
-  if (activityTrayExpanded) {
+  if (expanded) {
     return (
       <Box flexDirection="column">
-        <ActivityTrayExpanded hasTasks={hasTasks} />
+        <ActivityTrayExpanded
+          activeTab={activeTab}
+          hasTasks={hasTasks}
+          inputOwnership={inputOwnership}
+          navigationActive={navigationActive}
+          tabs={tabs}
+        />
       </Box>
     );
   }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from './../../../renderer.js';
 import { ContextBar } from './ContextBar.js';
-import { PromptInput } from './PromptInput.js';
+import { PromptInput, type PromptInputProps } from './PromptInput.js';
 import { Divider } from '../../ui/divider/Divider.js';
 import { SnackBar } from './SnackBar.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
@@ -31,6 +31,7 @@ interface PromptBarProps {
   value?: string;
   hint?: string;
   hideInput?: boolean;
+  isInputOwnedExternally?: PromptInputProps['isInputOwnedExternally'];
 }
 
 export const PromptBar = React.memo(function PromptBar({
@@ -44,6 +45,7 @@ export const PromptBar = React.memo(function PromptBar({
   placeholder,
   hint,
   hideInput = false,
+  isInputOwnedExternally,
 }: PromptBarProps) {
   const glyphs = useGlyphs();
   const resolvedPlaceholder =
@@ -66,6 +68,7 @@ export const PromptBar = React.memo(function PromptBar({
               triggerRules={triggerRules}
               onTriggerDetected={onTriggerDetected}
               placeholder={resolvedPlaceholder}
+              isInputOwnedExternally={isInputOwnedExternally}
             />
             {hint && <Text dimColor> {hint}</Text>}
           </Box>

@@ -133,6 +133,13 @@ export const TestModeProvider: React.FC<TestModeProviderProps> = ({
           return { kind: 'MOCK_SESSION_UPDATE' };
         }
 
+        case 'MOCK_SET_EXPANDABLE_TOOL_OUTPUTS': {
+          appStore
+            .getState()
+            .setHasExpandableToolOutputs(command.hasExpandableToolOutputs);
+          return { kind: 'MOCK_SET_EXPANDABLE_TOOL_OUTPUTS' };
+        }
+
         case 'MOCK_ADD_SESSION': {
           // Test-only sideband to seed the lite subagent layout's
           // `sessions` map without orchestrating a real subagent_list_update

@@ -36,7 +36,8 @@ const baseState = (
   hasWorkflow: false,
   workflowInputActive: false,
   workflowHistoryOpen: false,
-  activityTrayExpanded: false,
+  activityTrayOpen: false,
+  promptMenuOpen: false,
   isProcessing: false,
   isShellEscape: false,
   hasCommandInput: false,
@@ -95,6 +96,37 @@ const DEFAULT_BINDINGS = {
 // ---- cancelStream (esc) ----
 
 describe('dispatchAppKeypress: cancelStream binding', () => {
+  it('leaves global actions idle while a prompt menu owns input', () => {
+    const actions = makeActions();
+    const handled = dispatchAppKeypress(
+      '',
+      blankKey({ escape: true }),
+      baseState({
+        activityTrayOpen: true,
+        isProcessing: true,
+        promptMenuOpen: true,
+      }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(handled).toBe(true);
+    expect(actions._calls.collapseActivityTray).toBeUndefined();
+    expect(actions._calls.cancelMessage).toBeUndefined();
+  });
+
+  it('keeps non-escape global shortcuts active while a prompt menu is open', () => {
+    const actions = makeActions();
+    const handled = dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ hasCommandInput: true, promptMenuOpen: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(handled).toBe(true);
+    expect(actions._calls.clearCommandInput).toBe(1);
+  });
+
   it('esc while streaming cancels the message', () => {
     const actions = makeActions();
     const handled = dispatchAppKeypress(
@@ -554,7 +586,7 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
       '',
       blankKey({ escape: true }),
       baseState({
-        activityTrayExpanded: true,
+        activityTrayOpen: true,
         isProcessing: true,
       }),
       actions,
@@ -565,19 +597,20 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
     expect(actions._calls.cancelMessage).toBeUndefined();
   });
 
-  it('a hidden expanded tray does not claim Esc from the workflow monitor', () => {
+  it('a retained expansion for a hidden tray does not claim Esc', () => {
     const actions = makeActions();
     dispatchAppKeypress(
       '',
       blankKey({ escape: true }),
       baseState({
-        mode: 'workflow-monitor',
-        activityTrayExpanded: true,
+        activityTrayOpen: false,
+        isProcessing: true,
       }),
       actions,
       DEFAULT_BINDINGS
     );
     expect(actions._calls.collapseActivityTray).toBeUndefined();
+    expect(actions._calls.cancelMessage).toBe(1);
   });
 
   it('Ctrl+G from crew-monitor returns to inline', () => {

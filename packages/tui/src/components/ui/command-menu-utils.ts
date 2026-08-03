@@ -6,6 +6,26 @@ export interface AtMenuItem {
   group?: string;
 }
 
+export interface PromptMenuVisibilityInput {
+  activeCommandOpen: boolean;
+  activeTrigger:
+    | { key: string; position: number; type?: 'start' | 'inline' }
+    | null
+    | undefined;
+  commandInputValue: string;
+  filePickerHasResults: boolean;
+  slashCommands: readonly AvailableCommand[];
+  uiMode: 'lite' | 'tui' | undefined;
+}
+
+export interface PromptMenuState {
+  activeCommand: unknown | null;
+  activeTrigger: PromptMenuVisibilityInput['activeTrigger'];
+  commandInputValue: string;
+  filePickerHasResults: boolean;
+  uiMode: PromptMenuVisibilityInput['uiMode'];
+}
+
 /**
  * Whether a slash command should surface for the current UI mode. Hidden
  * compatibility commands never surface; liteOnly commands stay out of TUI.
@@ -60,6 +80,52 @@ export function atMenuShowsPrompts(
     filterPromptsByQuery(slashCommands, atMenuPromptQuery(text, trigger))
       .length > 0
   );
+}
+
+export function isPromptMenuOpen({
+  activeCommandOpen,
+  activeTrigger,
+  commandInputValue,
+  filePickerHasResults,
+  slashCommands,
+  uiMode,
+}: PromptMenuVisibilityInput): boolean {
+  if (activeCommandOpen) return true;
+
+  if (
+    activeTrigger?.key === '/' &&
+    !commandInputValue.includes(' ') &&
+    slashCommands.some(
+      (cmd) =>
+        isCommandVisibleInUiMode(cmd, uiMode) &&
+        cmd.name
+          .slice(1)
+          .toLowerCase()
+          .startsWith(commandInputValue.slice(1).toLowerCase())
+    )
+  ) {
+    return true;
+  }
+
+  return (
+    activeTrigger?.key === '@' &&
+    (filePickerHasResults ||
+      atMenuShowsPrompts(slashCommands, commandInputValue, activeTrigger))
+  );
+}
+
+export function isPromptMenuOpenForState(
+  state: PromptMenuState,
+  slashCommands: readonly AvailableCommand[]
+): boolean {
+  return isPromptMenuOpen({
+    activeCommandOpen: state.activeCommand != null,
+    activeTrigger: state.activeTrigger,
+    commandInputValue: state.commandInputValue,
+    filePickerHasResults: state.filePickerHasResults,
+    slashCommands,
+    uiMode: state.uiMode,
+  });
 }
 
 export function buildAtMenuItems(

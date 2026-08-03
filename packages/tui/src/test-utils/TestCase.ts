@@ -367,6 +367,19 @@ export class TestCase {
     }
   }
 
+  async mockSetExpandableToolOutputs(
+    hasExpandableToolOutputs: boolean
+  ): Promise<void> {
+    if (!this.tuiConnection) throw new Error('TUI not connected');
+    const response = await this.tuiConnection.sendCommand({
+      kind: 'MOCK_SET_EXPANDABLE_TOOL_OUTPUTS',
+      hasExpandableToolOutputs,
+    });
+    if (response.data.kind === 'ERROR') {
+      throw new Error(response.data.error);
+    }
+  }
+
   /**
    * Test-only: drive `startEditingQueue` directly. The user-facing path
    * goes through the activity tray (Ctrl+X), which is gated on

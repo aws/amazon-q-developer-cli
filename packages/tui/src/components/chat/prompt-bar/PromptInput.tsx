@@ -139,6 +139,11 @@ export interface PromptInputProps {
    * mounted for typing.
    */
   suppressArrows?: boolean;
+  isInputOwnedExternally?: (
+    input: string,
+    key: Key,
+    promptIsEmpty: boolean
+  ) => boolean;
 }
 
 // buildContent is defined and exported here in PromptInput.tsx so tests
@@ -188,6 +193,7 @@ export const PromptInput = React.memo(function PromptInput({
   onTriggerDetected,
   placeholder,
   suppressArrows = false,
+  isInputOwnedExternally,
 }: PromptInputProps) {
   const {
     activeTrigger,
@@ -210,11 +216,7 @@ export const PromptInput = React.memo(function PromptInput({
   // consume keystrokes, or typing (e.g. the picker's type-to-search) echoes in
   // both places at once.
   const appInputPanelOpen = useAppStore(
-    (s) =>
-      s.showRepoPicker ||
-      s.showSessionPicker ||
-      s.showSourceProviderGate ||
-      s.activityTrayExpanded
+    (s) => s.showRepoPicker || s.showSessionPicker || s.showSourceProviderGate
   );
   const specDescriptionPending = useAppStore(
     (s) => s.pendingSpecDescription !== null
@@ -921,6 +923,9 @@ export const PromptInput = React.memo(function PromptInput({
       // picker, source-provider gate) — it handles its own keystrokes.
       if (inputPanelOpen) return;
 
+      if (isInputOwnedExternally?.(userInput, key, totalWidth(segments) === 0))
+        return;
+
       // Toggle interrupt behavior (Ctrl+S by default) — works in all states
       if (keybindings.matches('toggleInterruptMode', userInput, key)) {
         toggleInterruptMode();
@@ -1285,7 +1290,6 @@ export const PromptInput = React.memo(function PromptInput({
         }
       } else if (key.upArrow) {
         if (suppressArrows) return;
-        // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
         if (
@@ -1336,7 +1340,6 @@ export const PromptInput = React.memo(function PromptInput({
         }
       } else if (key.downArrow) {
         if (suppressArrows) return;
-        // shift+arrow is used by ActivityTray for queue navigation — don't handle here
         if (key.shift) return;
         // Skip if any menu is visible - let menu handle it
         if (

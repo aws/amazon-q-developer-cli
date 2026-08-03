@@ -109,7 +109,18 @@ function ActivityTrayStory({
             store={stores.workflowStore}
           />
         ) : (
-          <ActivityTrayExpanded hasTasks={false} store={stores.workflowStore} />
+          <ActivityTrayExpanded
+            activeTab="workflow"
+            hasTasks={false}
+            inputOwnership={{
+              rowNavigationActive: false,
+              tabNavigationActive: true,
+              workflowNavigationActive: true,
+            }}
+            navigationActive
+            store={stores.workflowStore}
+            tabs={['queue', 'workflow']}
+          />
         )}
       </Box>
     </AppStoreContext.Provider>
@@ -161,10 +172,10 @@ export const ExpandedWorkflow = {
           'release-hardening',
           'Workflow (1/2)',
           'left/right workflows',
-          '1-9 jump',
+          'tab switch',
           'ctrl+x collapse',
         ],
-        hidden: ['ctrl+x to collapse', 'undefined'],
+        hidden: ['1-9 jump', 'ctrl+x to collapse', 'undefined'],
       },
     },
   },

@@ -105,6 +105,7 @@ import type { TaskItem, RawTask } from '../types/tasks';
 import type { ContextBreakdownData } from '../types/context';
 import type { UiMode } from '../types/ui-mode.js';
 import type { AppMode } from '../types/app-mode.js';
+import type { ActivityTrayTab } from '../types/activity-tray.js';
 import {
   createInitialKasSubagentRoutingState,
   createKasSubagentRoutingActions,
@@ -1538,6 +1539,8 @@ interface BaseAppActions {
   // Task management actions
   setTasks: (tasks: TaskItem[]) => void;
   toggleActivityTray: () => void;
+  setActivityTrayTab: (tab: ActivityTrayTab) => void;
+  setActivityTraySelectedIndex: (index: number) => void;
 
   // Announcement actions
   setAnnouncement: (msg: { id: string; maxLines: number } | null) => void;
@@ -2140,6 +2143,8 @@ export interface AppState {
   // Task management state
   tasks: TaskItem[];
   activityTrayExpanded: boolean;
+  activityTrayTab: ActivityTrayTab | null;
+  activityTraySelectedIndex: number;
 
   // Voice state
   voiceStop: (() => void) | null;
@@ -3114,6 +3119,8 @@ export const createAppStore = (props: AppStoreProps) => {
     // Task management
     tasks: [],
     activityTrayExpanded: false,
+    activityTrayTab: null,
+    activityTraySelectedIndex: 0,
 
     // Announcement
     announcement: null,
@@ -6149,6 +6156,7 @@ export const createAppStore = (props: AppStoreProps) => {
         },
         tasks: [],
         activityTrayExpanded: false,
+        activityTrayTab: null,
       }));
     },
 
@@ -8151,11 +8159,21 @@ export const createAppStore = (props: AppStoreProps) => {
     toggleActivityTray: () => {
       set((state) => ({
         activityTrayExpanded: !state.activityTrayExpanded,
+        activityTrayTab: null,
+        activityTraySelectedIndex: 0,
         // Clear editing state when collapsing
         editingQueueIndex: !state.activityTrayExpanded
           ? state.editingQueueIndex
           : null,
       }));
+    },
+
+    setActivityTrayTab: (activityTrayTab) => {
+      set({ activityTrayTab, activityTraySelectedIndex: 0 });
+    },
+
+    setActivityTraySelectedIndex: (activityTraySelectedIndex) => {
+      set({ activityTraySelectedIndex });
     },
 
     // Dual-mode interrupt behavior toggle

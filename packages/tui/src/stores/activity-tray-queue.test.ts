@@ -174,15 +174,25 @@ describe('Queue state (simplified)', () => {
   });
 
   describe('toggleActivityTray', () => {
-    it('toggles activityTrayExpanded', () => {
+    it('toggles activityTrayExpanded and resets tray selection', () => {
       const store = createTestStore();
-      store.setState({ activityTrayExpanded: false });
+      store.setState({
+        activityTrayExpanded: false,
+        activityTrayTab: 'queue',
+        activityTraySelectedIndex: 2,
+      });
 
       store.getState().toggleActivityTray();
       expect(store.getState().activityTrayExpanded).toBe(true);
+      expect(store.getState().activityTrayTab).toBeNull();
+      expect(store.getState().activityTraySelectedIndex).toBe(0);
 
+      store.getState().setActivityTraySelectedIndex(3);
+      store.getState().setActivityTrayTab('tasks');
+      expect(store.getState().activityTraySelectedIndex).toBe(0);
       store.getState().toggleActivityTray();
       expect(store.getState().activityTrayExpanded).toBe(false);
+      expect(store.getState().activityTrayTab).toBeNull();
     });
   });
 

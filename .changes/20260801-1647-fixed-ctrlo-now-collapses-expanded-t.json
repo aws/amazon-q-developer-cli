@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Ctrl+O now collapses expanded tool output even after the expandable content disappears"
+}

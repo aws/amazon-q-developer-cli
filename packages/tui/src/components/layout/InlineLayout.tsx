@@ -48,6 +48,7 @@ import {
   useConversationState,
   useApprovalState,
   useQueueState,
+  useQueueActions,
 } from '../../stores/selectors.js';
 import {
   useAppStore,
@@ -56,7 +57,7 @@ import {
 } from '../../stores/app-store.js';
 import { workflowStore } from '../../stores/workflow-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
-import { useKeypress } from '../../hooks/useKeypress';
+import { useKeypress, type Key } from '../../hooks/useKeypress';
 import { useInteractionReady } from '../../hooks/useInteractionReady.js';
 import {
   resolveKeybinding,
@@ -73,11 +74,79 @@ import {
   useSpinners,
   useAllowAnimations,
 } from '../../hooks/useGlyphs.js';
+import {
+  activityTrayOwnsInput,
+  resolveActivityTrayQueueInputAction,
+} from '../ui/activity-tray/input-ownership.js';
+import {
+  useActivityTrayInputGateReader,
+  useActivityTrayModel,
+} from '../ui/activity-tray/useActivityTrayModel.js';
 
 const TRIGGER_RULES = [
   { key: '/', type: 'start' as const },
   { key: '@', type: 'inline' as const },
 ];
+
+const ActivityTrayAwarePromptBar = React.memo(
+  function ActivityTrayAwarePromptBar(
+    props: React.ComponentProps<typeof PromptBar>
+  ) {
+    const { activeTab, inputOwnership, navigationActive } =
+      useActivityTrayModel();
+    const { pendingSteerContent, queuedMessages } = useQueueState();
+    const { removeQueuedMessage, startEditingQueue } = useQueueActions();
+    const clearSteerMessage = useAppStore((state) => state.clearSteerMessage);
+    const selectedIndex = useAppStore(
+      (state) => state.activityTraySelectedIndex
+    );
+    const readInputGate = useActivityTrayInputGateReader();
+    const isInputOwnedExternally = useCallback(
+      (input: string, key: Key, promptIsEmpty: boolean) => {
+        if (!readInputGate().inputEnabled) return false;
+        if (activityTrayOwnsInput(input, key, inputOwnership)) return true;
+
+        const action = resolveActivityTrayQueueInputAction(
+          key,
+          navigationActive && activeTab === 'queue',
+          promptIsEmpty
+        );
+        if (!action) return false;
+
+        const queueIndex = Math.max(
+          0,
+          Math.min(selectedIndex, queuedMessages.length - 1)
+        );
+        if (action === 'remove-queue-entry') {
+          if (queuedMessages.length > 0) {
+            removeQueuedMessage(queueIndex);
+          } else if (pendingSteerContent != null) {
+            clearSteerMessage();
+          }
+        } else if (queuedMessages.length > 0) {
+          startEditingQueue(queueIndex);
+        }
+        return true;
+      },
+      [
+        activeTab,
+        clearSteerMessage,
+        inputOwnership,
+        navigationActive,
+        pendingSteerContent,
+        queuedMessages.length,
+        readInputGate,
+        removeQueuedMessage,
+        selectedIndex,
+        startEditingQueue,
+      ]
+    );
+
+    return (
+      <PromptBar {...props} isInputOwnedExternally={isInputOwnedExternally} />
+    );
+  }
+);
 
 function triggerEasterEgg() {
   const cols = process.stdout.columns || 60;
@@ -315,18 +384,21 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     (s) => s.toggleAnnouncementExpanded
   );
   const announcementTruncated = !!announcement;
+  const canToggleToolOutputs = toolOutputsExpanded || hasExpandableToolOutputs;
 
   useKeypress(
     (input, key) => {
       if (key.ctrl && input.toLowerCase() === 'o') {
-        if (hasExpandableToolOutputs) {
+        if (canToggleToolOutputs) {
           toggleToolOutputsExpanded();
         } else if (announcementTruncated) {
           toggleAnnouncementExpanded();
         }
       }
     },
-    { isActive: hasExpandableToolOutputs || announcementTruncated }
+    {
+      isActive: canToggleToolOutputs || announcementTruncated,
+    }
   );
 
   // Handle Esc to collapse expanded outputs
@@ -828,7 +900,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
 
         {trustAllToolsAccepted && <TrustAllToolsBanner />}
         <Box marginBottom={1}>
-          <PromptBar
+          <ActivityTrayAwarePromptBar
             header={
               showContextBreakdown ||
               showHelpPanel ||
@@ -1021,7 +1093,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               }
             />
             <ExitHint />
-          </PromptBar>
+          </ActivityTrayAwarePromptBar>
         </Box>
       </Box>
     </AnimationPausedContext.Provider>

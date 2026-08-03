@@ -38,6 +38,10 @@ export type TestCommand =
     }
   | { kind: 'MOCK_SESSION_UPDATE'; event: AgentStreamEvent }
   | {
+      kind: 'MOCK_SET_EXPANDABLE_TOOL_OUTPUTS';
+      hasExpandableToolOutputs: boolean;
+    }
+  | {
       kind: 'MOCK_ADD_SESSION';
       session: Partial<AgentSession> & { id: string; name: string };
     }
@@ -61,6 +65,7 @@ export type TestResponse =
   | { kind: 'GET_AGENT_STATE'; data: AgentSnapshot }
   | { kind: 'PUSH_SEND_MESSAGE_RESPONSE' }
   | { kind: 'MOCK_SESSION_UPDATE' }
+  | { kind: 'MOCK_SET_EXPANDABLE_TOOL_OUTPUTS' }
   | { kind: 'MOCK_ADD_SESSION' }
   | { kind: 'MOCK_START_EDITING_QUEUE' }
   | { kind: 'MOCK_SET_PROMPT_DETAIL_OPEN' }

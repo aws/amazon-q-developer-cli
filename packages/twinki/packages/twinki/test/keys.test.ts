@@ -333,6 +333,20 @@ describe('parseInputData - non-Latin characters (Kitty)', () => {
 	});
 });
 
+describe('parseInputData - legacy shifted arrows', () => {
+	it.each([
+		['\x1b[a', 'upArrow'],
+		['\x1b[b', 'downArrow'],
+		['\x1b[c', 'rightArrow'],
+		['\x1b[d', 'leftArrow'],
+	] as const)('normalizes %j to shift+%s', (sequence, direction) => {
+		const { input, key } = parseInputData(sequence);
+		expect(input).toBe('');
+		expect(key.shift).toBe(true);
+		expect(key[direction]).toBe(true);
+	});
+});
+
 /**
  * Numpad key mapping tests.
  *

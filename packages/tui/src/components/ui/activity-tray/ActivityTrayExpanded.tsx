@@ -1,13 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useStore, type StoreApi } from 'zustand';
 import { Box, Tabs, Text, useInput } from '../../../renderer.js';
-import {
-  useTaskState,
-  useQueueState,
-  useQueueActions,
-  useCommandState,
-  useProcessingState,
-} from '../../../stores/selectors.js';
+import { useTaskState, useQueueState } from '../../../stores/selectors.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import {
   selectActiveWorkflow,
@@ -24,37 +18,41 @@ import { WorkflowDagView } from '../../layout/workflow-monitor/WorkflowDagView.j
 import {
   adjacentWorkflowId,
   buildWorkflowTabs,
-  workflowDigitToIndex,
 } from '../../layout/workflow-monitor/workflow-tabs.js';
 import { Icon, IconType } from '../icon/Icon.js';
-import {
-  availableActivityTrayTabs,
-  nextActivityTrayTab,
-  type ActivityTrayTab,
-} from './tray-tabs.js';
+import { nextActivityTrayTab, type ActivityTrayTab } from './tray-tabs.js';
 import {
   activityTrayHints,
   activityTrayScrollOffset,
 } from './tray-view-model.js';
+import {
+  resolveActivityTrayInputAction,
+  type ActivityTrayInputOwnership,
+} from './input-ownership.js';
+import { useActivityTrayInputGateReader } from './useActivityTrayModel.js';
 
 const MAX_VISIBLE_LINES = 6;
 
 export interface ActivityTrayExpandedProps {
+  activeTab: ActivityTrayTab | null;
   hasTasks: boolean;
+  inputOwnership: ActivityTrayInputOwnership;
+  navigationActive: boolean;
   store?: StoreApi<WorkflowStoreState>;
+  tabs: readonly ActivityTrayTab[];
 }
 
 export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
+  activeTab,
   hasTasks,
+  inputOwnership,
+  navigationActive,
   store = workflowStore,
+  tabs,
 }: ActivityTrayExpandedProps) {
   const { tasks } = useTaskState();
   const { pendingSteerContent, queuedMessages, editingQueueIndex } =
     useQueueState();
-  const { removeQueuedMessage, startEditingQueue } = useQueueActions();
-  const { commandInputValue } = useCommandState();
-  const { pendingApproval } = useProcessingState();
-  const clearSteerMessage = useAppStore((s) => s.clearSteerMessage);
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const { allowIcons } = useAllowIcons();
@@ -63,12 +61,17 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   const workflowSelectedIndex = useStore(store, selectWorkflowNodeIndex);
   const workflows = useStore(store, (state) => state.workflows);
   const activeWorkflowId = useStore(store, (state) => state.activeWorkflowId);
-  const historyOpen = useStore(store, (state) => state.history.isOpen);
+  const setActivityTrayTab = useAppStore((state) => state.setActivityTrayTab);
+  const selectedIndex = useAppStore((state) => state.activityTraySelectedIndex);
+  const setSelectedIndex = useAppStore(
+    (state) => state.setActivityTraySelectedIndex
+  );
   const setActiveWorkflow = useStore(store, (state) => state.setActiveWorkflow);
   const setWorkflowSelectedNode = useStore(
     store,
     (state) => state.setSelectedNode
   );
+  const readInputGate = useActivityTrayInputGateReader();
 
   const hasSteer = pendingSteerContent != null;
   const hasQueue = queuedMessages.length > 0;
@@ -77,27 +80,13 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
     pendingSteerContent,
     queuedMessages
   ).length;
-  const hasMessages = queuedMessageCount > 0;
-  const hasWorkflow = workflow !== null;
+  const hasMessages = tabs.includes('queue');
+  const hasWorkflow = tabs.includes('workflow');
   const workflowList = useMemo(() => [...workflows.values()], [workflows]);
   const workflowIds = useMemo(
     () => workflowList.map((item) => item.workflowId),
     [workflowList]
   );
-  const tabs = useMemo(
-    () => availableActivityTrayTabs({ hasTasks, hasMessages, hasWorkflow }),
-    [hasMessages, hasTasks, hasWorkflow]
-  );
-  const [requestedTab, setActiveTab] = useState<ActivityTrayTab>(
-    hasWorkflow ? 'workflow' : (tabs[0] ?? 'tasks')
-  );
-  const activeTab = tabs.includes(requestedTab)
-    ? requestedTab
-    : hasWorkflow
-      ? 'workflow'
-      : (tabs[0] ?? 'tasks');
-  const [selectedIndex, setSelectedIndex] = useState(0);
-
   const itemCount =
     activeTab === 'tasks'
       ? tasks.length
@@ -107,87 +96,43 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   const maxItemIndex = Math.max(0, itemCount - 1);
   const clampedIndex = Math.max(0, Math.min(selectedIndex, maxItemIndex));
 
-  const handleRemoveQueued = useCallback(() => {
-    if (activeTab !== 'queue') return;
-    if (queuedMessages.length > 0) {
-      removeQueuedMessage(clampedIndex);
-    } else if (hasSteer) {
-      clearSteerMessage();
-    }
-  }, [
-    activeTab,
-    queuedMessages.length,
-    clampedIndex,
-    removeQueuedMessage,
-    hasSteer,
-    clearSteerMessage,
-  ]);
-
-  const handleEditQueued = useCallback(() => {
-    if (activeTab !== 'queue' || queuedMessages.length === 0) return;
-    if (editingQueueIndex != null) return;
-    startEditingQueue(clampedIndex);
-  }, [
-    activeTab,
-    queuedMessages.length,
-    editingQueueIndex,
-    clampedIndex,
-    startEditingQueue,
-  ]);
-
-  const isNavigable =
-    editingQueueIndex == null && !pendingApproval && !historyOpen;
-
   useInput(
     (input, key) => {
-      if (activeTab === 'workflow' && workflow) {
-        if (key.leftArrow || key.rightArrow) {
+      if (!readInputGate().inputEnabled) return;
+
+      const action = resolveActivityTrayInputAction(input, key, inputOwnership);
+      switch (action) {
+        case 'previous-workflow':
+        case 'next-workflow': {
           const adjacentId = adjacentWorkflowId(
             workflowIds,
             activeWorkflowId,
-            key.rightArrow ? 1 : -1
+            action === 'next-workflow' ? 1 : -1
           );
           if (adjacentId) setActiveWorkflow(adjacentId);
           return;
         }
-        const workflowIndex = workflowDigitToIndex(input, workflowIds.length);
-        if (!key.ctrl && !key.meta && workflowIndex !== null) {
-          const workflowId = workflowIds[workflowIndex];
-          if (workflowId) setActiveWorkflow(workflowId);
-          return;
-        }
-        if (key.upArrow || (!key.ctrl && !key.meta && input === 'k')) {
+        case 'previous-workflow-node':
           setWorkflowSelectedNode(workflowSelectedIndex - 1);
           return;
-        }
-        if (key.downArrow || (!key.ctrl && !key.meta && input === 'j')) {
+        case 'next-workflow-node':
           setWorkflowSelectedNode(workflowSelectedIndex + 1);
           return;
-        }
-      }
-
-      if ((key.shift || key.meta) && key.upArrow) {
-        setSelectedIndex(Math.max(0, clampedIndex - 1));
-      } else if ((key.shift || key.meta) && key.downArrow) {
-        setSelectedIndex(Math.min(maxItemIndex, clampedIndex + 1));
-      } else if (input === 'p' && key.ctrl) {
-        setSelectedIndex(Math.max(0, clampedIndex - 1));
-      } else if (input === 'n' && key.ctrl) {
-        setSelectedIndex(Math.min(maxItemIndex, clampedIndex + 1));
-      } else if (key.tab && !key.shift && !key.ctrl) {
-        if (tabs.length > 1) {
-          setActiveTab(nextActivityTrayTab(tabs, activeTab));
+        case 'previous-row':
+          setSelectedIndex(Math.max(0, clampedIndex - 1));
+          return;
+        case 'next-row':
+          setSelectedIndex(Math.min(maxItemIndex, clampedIndex + 1));
+          return;
+        case 'next-tab':
+          if (activeTab) {
+            setActivityTrayTab(nextActivityTrayTab(tabs, activeTab));
+          }
           setSelectedIndex(0);
-        }
-      } else if (activeTab === 'queue' && !commandInputValue) {
-        if (key.delete || key.backspace) {
-          handleRemoveQueued();
-        } else if (key.return) {
-          handleEditQueued();
-        }
+          return;
       }
     },
-    { isActive: isNavigable }
+    { isActive: navigationActive }
   );
 
   const rawBg = getColor('surface').hex;
@@ -235,7 +180,6 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
             tabs={workflowTabDescriptors}
             activeId={activeWorkflowId}
             onActivate={setActiveWorkflow}
-            showIndexes
             width={termWidth}
             activeColor={getColor('brand').hex}
             inactiveColor={getColor('secondary').hex}
