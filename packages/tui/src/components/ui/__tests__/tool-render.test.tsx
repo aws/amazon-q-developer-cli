@@ -119,6 +119,23 @@ function cohort(enabled: boolean): void {
   resetVerboseCache();
 }
 
+function outputRows(text: string): string[] {
+  const rows = text.split('\n');
+  const label = rows.findIndex((row) => row.includes('output:'));
+  expect(label).toBeGreaterThanOrEqual(0);
+  const afterLabel = rows.slice(label + 1);
+  const footer = afterLabel.findIndex((row) => row.includes('to cancel'));
+  return (footer < 0 ? afterLabel : afterLabel.slice(0, footer)).filter(
+    (row) => row.trim().length > 0
+  );
+}
+
+function expectCappedOutput(text: string, cap: number): void {
+  const rows = outputRows(text);
+  expect(rows.filter((row) => !row.includes('ctrl+o'))).toHaveLength(cap);
+  expect(rows.filter((row) => row.includes('ctrl+o'))).toHaveLength(1);
+}
+
 async function offCohort<T>(run: () => Promise<T>): Promise<T> {
   cohort(false);
   try {
@@ -252,6 +269,11 @@ const CASES: RenderCase[] = [
   row('code-intel mega-line cap', CODE_INTEL(MEGA), { has: ['ctrl+o'], lacks: ['x'.repeat(200)], matches: [/\+\d+ lines above/] }, { ...INLINE, outputMaxLines: 4 }),
   row('in-cohort read error section', message('fs_read', { operations: [{ path: 'src/x.ts' }] }, undefined, { kind: 'read', status: ToolUseStatus.Approved, result: err('IN_READ_ERR_MARKER') }), { has: ['output:', 'IN_READ_ERR_MARKER'] }, INLINE),
   row('in-cohort blank task placeholder', message('task', { command: 'list' }, { text: '\r\n  \r\n' }), { has: ['(no output)'] }, INLINE),
+  // MCP tools reach the TUI under their BARE name (no `mcp__`); mcpServerName is
+  // the "is MCP" signal. Output caps + the `mcp` filter category must honor it.
+  row('bare-named MCP output caps by line', message('InternalCodeSearch', { query: 'q' }, texts(TWELVE), { mcpServerName: 'builder-mcp' }), { has: ['output:', 'readline 1', 'ctrl+o'], lacks: ['readline 12'], matches: [/\+7 lines/] }, { ...INLINE, outputMaxLines: 5 }),
+  row('bare-named MCP output hidden when mcp filter off', message('InternalCodeSearch', { query: 'q' }, texts(`MCP_BODY_HIDDEN\n${READ}`), { mcpServerName: 'builder-mcp' }), { lacks: ['MCP_BODY_HIDDEN', 'output:'] }, INLINE, ['all', '-mcp']),
+  row('bare-named MCP output shown when only mcp filter on', message('InternalCodeSearch', { query: 'q' }, texts('MCP_BODY_SHOWN'), { mcpServerName: 'builder-mcp' }), { has: ['output:', 'MCP_BODY_SHOWN'] }, INLINE, ['mcp']),
 ];
 
 test.each(CASES)(
@@ -266,6 +288,120 @@ test.each(CASES)(
   }
 );
 
+// Regression (window overflow): a wide MCP result is a FEW logical lines but
+// thousands of chars. The collapsed preview must cap VISUAL rows (wrap then
+// slice), not logical lines — else outputMaxLines:5 wraps into a windowful.
+// builder-mcp returns large minified JSON like this.
+test('wide single-line generic output is capped to visual rows', async () => {
+  const wide = `GENERIC_HEAD_${'g'.repeat(800)}_GENERIC_TAIL`;
+  config({ outputMaxLines: 5, persistOutput: true }, ['all']);
+  const out = await render(
+    message('InternalCodeSearch', { query: 'handler' }, texts(wide), {
+      mcpServerName: 'builder-mcp',
+    }),
+    false,
+    80
+  );
+  expectCappedOutput(out, 5);
+  expect(out).toContain('GENERIC_HEAD');
+  expect(out).not.toContain('GENERIC_TAIL');
+});
+
+test('wide single-line numbered read is capped to visual rows', async () => {
+  const wide = `READ_HEAD_${'r'.repeat(800)}_READ_TAIL`;
+  config({ outputMaxLines: 5, persistOutput: true }, ['all']);
+  const out = await render(
+    read(texts(wide), {
+      args: { operations: [{ mode: 'Line', path: 'src/wide.json' }] },
+      isStatic: false,
+    }),
+    false,
+    80
+  );
+  expectCappedOutput(out, 5);
+  expect(out).toContain('READ_TAIL');
+  expect(out).not.toContain('READ_HEAD');
+});
+
+test('pathological numbered read is bounded before highlighting and wrapping', async () => {
+  const wide = `READ_HEAD_${'r'.repeat(1_000_000)}_READ_TAIL`;
+  config({ outputMaxLines: 5, persistOutput: true }, ['all']);
+  const msg = read(texts(wide), {
+    args: { operations: [{ mode: 'Line', path: 'src/wide.json' }] },
+    isStatic: false,
+  });
+
+  const collapsed = await render(msg, false, 80);
+  expectCappedOutput(collapsed, 5);
+  expect(collapsed).toContain('READ_TAIL');
+  expect(collapsed).not.toContain('READ_HEAD');
+
+  const expanded = await render(msg, true, 80);
+  expect(expanded).toMatch(/line clipped; \+\d+ chars before/);
+  expect(expanded).toContain('READ_TAIL');
+  expect(expanded).not.toContain('READ_HEAD');
+}, 30_000);
+
+test('wide single-line introspect output is capped to visual rows', async () => {
+  const wide = `INTROSPECT_HEAD_${'i'.repeat(800)}_INTROSPECT_TAIL`;
+  config({ outputMaxLines: 5, persistOutput: true }, ['all']);
+  const out = await render(
+    message(
+      'introspect',
+      { query: 'tool docs' },
+      { documentation: wide, query_context: 'tool docs' },
+      { kind: 'read' }
+    ),
+    false,
+    80
+  );
+  expectCappedOutput(out, 5);
+  expect(out).toContain('INTROSPECT_HEAD');
+  expect(out).not.toContain('INTROSPECT_TAIL');
+});
+
+test('wide finished shell output is capped at its visual-row head', async () => {
+  const wide = `SHELL_HEAD_${'f'.repeat(800)}_SHELL_TAIL`;
+  config({ outputMaxLines: 5, persistOutput: true }, ['all']);
+  const out = await render(
+    message(
+      'execute_bash',
+      { command: 'wide-finished-output' },
+      { stdout: wide, exit_status: 'exit status: 0' },
+      { status: ToolUseStatus.Approved }
+    ),
+    false,
+    80
+  );
+  expectCappedOutput(out, 5);
+  expect(out).toContain('SHELL_HEAD');
+  expect(out).not.toContain('SHELL_TAIL');
+});
+
+test('wide streaming shell output is capped at its visual-row tail', async () => {
+  const wide = `STREAM_HEAD_${'s'.repeat(800)}_STREAM_TAIL`;
+  config({ outputMaxLines: 5, persistOutput: true }, ['all']);
+  const out = await wrap(
+    <ToolUseMessage
+      id="streaming-shell"
+      name="execute_bash"
+      content={JSON.stringify({ command: 'wide-streaming-output' })}
+      isFinished={false}
+      status={ToolUseStatus.Approved}
+    />,
+    {
+      columns: 80,
+      configureStore: (store) =>
+        store.setState({
+          liveOutputs: new Map([['streaming-shell', [[wide]]]]),
+        }),
+    }
+  );
+  expectCappedOutput(out, 5);
+  expect(out).toContain('STREAM_TAIL');
+  expect(out).not.toContain('STREAM_HEAD');
+});
+
 test('dispatcher caps output, Ctrl+O expands it, and errors bypass caps', async () => {
   // prettier-ignore
   const capped = message('mcp__demo__ping', {}, { text: 'FIRST_ABCDEFGHIJ\nSECOND_KLMNOPQRST' });
@@ -277,6 +413,7 @@ test('dispatcher caps output, Ctrl+O expands it, and errors bypass caps', async 
       outputMaxChars: 8,
       persistOutput: true,
     });
+    // Generic output keeps the head in its collapsed view.
     check(await render(capped), {
       has: ['FIRST_A…', 'ctrl+o'],
       lacks: ['SECOND_…'],
@@ -562,6 +699,25 @@ test('read collapses to header-only when static + persistOutput off', async () =
   config({ toolArgsMode: 'inline', persistOutput: false });
   try {
     check(await render(read(texts(READ))), { lacks: [READ] });
+  } finally {
+    setVerboseConfig({ display: { persistOutput: true } }, 'tui');
+  }
+});
+
+test('static errors remain visible when persistOutput is off', async () => {
+  config({ persistOutput: false });
+  try {
+    const shellError = message(
+      'execute_bash',
+      { command: 'false' },
+      undefined,
+      {
+        isStatic: true,
+        status: ToolUseStatus.Approved,
+        result: err('STATIC_SHELL_ERROR'),
+      }
+    );
+    check(await render(shellError), { has: ['STATIC_SHELL_ERROR'] });
   } finally {
     setVerboseConfig({ display: { persistOutput: true } }, 'tui');
   }

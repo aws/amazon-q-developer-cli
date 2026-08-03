@@ -664,12 +664,21 @@ export function resetVerboseCache(): void {
   notifyVerboseChanged();
 }
 
+export function isMcpMessage(
+  message: unknown
+): message is { mcpServerName: string } {
+  if (message == null || typeof message !== 'object') return false;
+  const value = (message as { mcpServerName?: unknown }).mcpServerName;
+  return typeof value === 'string' && value.length > 0;
+}
+
 export function shouldShowToolOutput(
   toolName: string,
-  filtersOverride?: readonly string[]
+  filtersOverride?: readonly string[],
+  isMcp = false
 ): boolean {
   const filters = filtersOverride ?? getVerboseFilters();
-  const category = categorize(toolName);
+  const category = categorize(toolName, isMcp);
   if (
     filters.some((token) => {
       const excluded = excludedFilter(token);
@@ -685,8 +694,16 @@ export function shouldShowToolOutput(
   return category != null && filters.includes(category);
 }
 
-export function categorize(toolName: string): VerboseCategory | null {
-  if (toolName.startsWith('mcp__')) return 'mcp';
+// `isMcp` is the authoritative MCP signal carried in the tool call's
+// `_meta.kiro.mcpServerName` (both v2 and KAS). The regular TUI stores MCP
+// tools under their BARE name (e.g. `InternalSearch`, not `mcp__…`), so the
+// prefix check alone can't recognize them — without this flag the `mcp`
+// filter category would never match a real TUI MCP tool.
+export function categorize(
+  toolName: string,
+  isMcp = false
+): VerboseCategory | null {
+  if (isMcp || toolName.startsWith('mcp__')) return 'mcp';
   // KAS shell-process tools (titles on the wire) ride the shell category for
   // verbosity, but stay out of SHELL_TOOL_NAMES so they keep their own labels.
   if (SHELL_TOOL_NAMES.has(toolName) || SHELL_PROCESS_TOOL_NAMES.has(toolName))

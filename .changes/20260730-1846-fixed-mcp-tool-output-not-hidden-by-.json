@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP tool output not hidden by `-mcp` verbosity filter when tools arrive under bare names"
+}

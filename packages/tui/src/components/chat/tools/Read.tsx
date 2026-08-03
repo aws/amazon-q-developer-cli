@@ -6,13 +6,19 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
-import { ToolOutputHeader, ToolOutputSection } from './ToolOutput.js';
+import { ToolOutput, ToolOutputHeader } from './ToolOutput.js';
 import { FileList } from './FileList.js';
 import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useSyntaxHighlight } from '../../../utils/syntax-highlight.js';
 import { expandTabs, normalizeLineEndings } from '../../../utils/string.js';
-import { maxVisibleWidth, truncateToWidth } from '../../../utils/text-width.js';
+import { maxVisibleWidth, visibleWidth } from '../../../utils/text-width.js';
+import {
+  boundToolOutputLine,
+  clipVisibleWidth,
+  wrapAnsiLine,
+} from '../../../lite/render.js';
 import {
   extractResultBodyItems,
   extractResultBodyText,
@@ -22,6 +28,7 @@ import {
 import type { StatusType } from '../../../types/componentTypes.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel, formatLineRange } from '../../../types/tool-status.js';
+import { chalk } from '../../../utils/color.js';
 
 const PREVIEW_FILES = 5;
 const PREVIEW_READ_LINES = 20;
@@ -178,21 +185,19 @@ export const Read = React.memo(function Read({
   const plainOutputBody =
     parseToolArg(content, 'operation') ||
     (ops.length > 0 && ops.every((op) => op.mode === 'Directory')) ? (
-      <ToolOutputSection
+      <ToolOutput
         lines={splitBodyLines(extractResultBodyText(result))}
         isStatic={isStatic}
-        previewCount={PREVIEW_READ_LINES}
         emptyPlaceholder
       />
     ) : null;
   const mixedOutputBody = mixedRead
     ? ops.map((op, index) =>
         op.mode === 'Directory' ? (
-          <ToolOutputSection
+          <ToolOutput
             key={`${op.path}-${index}`}
             lines={splitBodyLines(bodyItems[index] ?? null)}
             isStatic={isStatic}
-            previewCount={PREVIEW_READ_LINES}
             emptyPlaceholder
           />
         ) : (
@@ -276,6 +281,8 @@ export const Read = React.memo(function Read({
 });
 
 const LINE_NUM_WIDTH = 4;
+const READ_BODY_INDENT = 8;
+const LINE_NUM_GAP = 2;
 
 /** Renders the bounded, expandable body of an in-cohort file read. */
 const ReadBody = React.memo(function ReadBody({
@@ -292,6 +299,7 @@ const ReadBody = React.memo(function ReadBody({
   isStatic: boolean;
 }) {
   const { getColor } = useTheme();
+  const { width: termWidth } = useTerminalSize();
   const highlightCode = useSyntaxHighlight();
 
   const text = useMemo(
@@ -308,6 +316,45 @@ const ReadBody = React.memo(function ReadBody({
         : [],
     [text]
   );
+  const language = path?.split('.').pop()?.toLowerCase();
+  const visualRows = useMemo(() => {
+    const codeWidth = Math.max(
+      1,
+      termWidth - READ_BODY_INDENT - LINE_NUM_WIDTH - LINE_NUM_GAP
+    );
+    const rows: Array<{
+      text: string;
+      lineNumber: number | null;
+    }> = [];
+    let maxWidth = 0;
+
+    lines.forEach((line, index) => {
+      const bounded = boundToolOutputLine(line, 'end');
+      if (bounded.droppedChars > 0) {
+        rows.push({
+          text: chalk.dim(
+            `... (line clipped; +${bounded.droppedChars} chars before)`
+          ),
+          lineNumber: null,
+        });
+      }
+      const highlighted = highlightCode(bounded.text, language);
+      const lineWidth = visibleWidth(highlighted);
+      const wrapped =
+        lineWidth <= codeWidth
+          ? [highlighted]
+          : wrapAnsiLine(highlighted, codeWidth, codeWidth);
+      wrapped.forEach((row, rowIndex) => {
+        rows.push({
+          text: row,
+          lineNumber: rowIndex === 0 ? startLine + index : null,
+        });
+        maxWidth = Math.max(maxWidth, visibleWidth(row));
+      });
+    });
+
+    return { rows, maxWidth };
+  }, [highlightCode, language, lines, startLine, termWidth]);
 
   const {
     expanded,
@@ -316,9 +363,9 @@ const ReadBody = React.memo(function ReadBody({
     outputMaxChars,
     persistOutput,
   } = useExpandableOutput({
-    totalItems: lines.length,
+    totalItems: visualRows.rows.length,
     previewCount: PREVIEW_READ_LINES,
-    maxContentWidth: maxVisibleWidth(lines),
+    maxContentWidth: visualRows.maxWidth,
     isStatic,
     unit: 'lines',
     applyVerbosityOutputCap: true,
@@ -338,15 +385,15 @@ const ReadBody = React.memo(function ReadBody({
   }
   if (lines.length === 0) return null;
 
-  const language = path?.split('.').pop()?.toLowerCase();
-  const shown = expanded ? lines : lines.slice(-effectivePreviewCount);
-  const hidden = lines.length - shown.length;
-  // Clip before highlighting so truncation cannot sever ANSI escapes.
+  const shown = expanded
+    ? visualRows.rows
+    : visualRows.rows.slice(-effectivePreviewCount);
+  const hidden = visualRows.rows.length - shown.length;
+  // Clip the already-highlighted row without severing ANSI escapes.
   const clip = (s: string) =>
     outputMaxChars != null && outputMaxChars > 0
-      ? truncateToWidth(s, outputMaxChars)
+      ? clipVisibleWidth(s, outputMaxChars)
       : s;
-  const firstNum = startLine + (expanded ? 0 : lines.length - shown.length);
   const truncMarker =
     hidden > 0
       ? isStatic
@@ -359,12 +406,14 @@ const ReadBody = React.memo(function ReadBody({
       <ToolOutputHeader />
       <Box marginLeft={4} flexDirection="column">
         {truncMarker && <Text>{getColor('secondary')(truncMarker)}</Text>}
-        {shown.map((line, i) => (
+        {shown.map((row, i) => (
           <Text key={i}>
             {getColor('secondary')(
-              String(firstNum + i).padStart(LINE_NUM_WIDTH)
+              row.lineNumber == null
+                ? ' '.repeat(LINE_NUM_WIDTH)
+                : String(row.lineNumber).padStart(LINE_NUM_WIDTH)
             )}
-            {`  ${highlightCode(clip(line), language)}`}
+            {`  ${clip(row.text)}`}
           </Text>
         ))}
       </Box>

@@ -6,9 +6,9 @@
  * column. These helpers use twinki's `visibleWidth` (backed by `string-width`)
  * and `Intl.Segmenter` to measure and truncate strings correctly.
  */
-import { visibleWidth } from 'twinki';
+import { AnsiCodeTracker, visibleWidth } from 'twinki';
 
-export { visibleWidth };
+export { AnsiCodeTracker, visibleWidth };
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 

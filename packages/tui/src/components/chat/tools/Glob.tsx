@@ -10,7 +10,7 @@ import {
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
-import { ToolOutputSection } from './ToolOutput.js';
+import { ToolOutput } from './ToolOutput.js';
 import { FileList } from './FileList.js';
 import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
@@ -212,11 +212,7 @@ export const Glob = React.memo(function Glob({
         <Box flexDirection="column">
           {head}
           {lines && (
-            <ToolOutputSection
-              lines={lines}
-              isError={isError}
-              isStatic={isStatic}
-            />
+            <ToolOutput lines={lines} isError={isError} isStatic={isStatic} />
           )}
         </Box>
       );

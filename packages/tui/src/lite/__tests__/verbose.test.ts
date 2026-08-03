@@ -390,6 +390,21 @@ describe('shouldShowToolOutput', () => {
       expect(shouldShowToolOutput(tool)).toBe(want);
     }
   });
+
+  // A bare-named MCP tool (the TUI shape) is gated by the `mcp` category ONLY
+  // when the isMcp signal is passed — the reported "disable mcp output does
+  // nothing" bug was this flag being unavailable to the filter.
+  test('isMcp routes a bare-named MCP tool through the mcp category', () => {
+    setVerboseConfig({ filters: ['all', '-mcp'] });
+    expect(shouldShowToolOutput('InternalCodeSearch')).toBe(true); // missed
+    expect(shouldShowToolOutput('InternalCodeSearch', undefined, true)).toBe(
+      false
+    ); // hidden
+    setVerboseConfig({ filters: ['mcp'] });
+    expect(shouldShowToolOutput('InternalCodeSearch', undefined, true)).toBe(
+      true
+    );
+  });
 });
 
 describe('categorize', () => {
@@ -408,6 +423,14 @@ describe('categorize', () => {
     ['totally_made_up_tool', null],
   ] as const)('categorize(%p) → %p', (tool, expected) => {
     expect(categorize(tool)).toBe(expected);
+  });
+
+  // TUI MCP tools arrive under their BARE name (no mcp__), so the prefix check
+  // alone misses them; the isMcp flag (from _meta.kiro.mcpServerName) is what
+  // makes them the `mcp` category.
+  test('isMcp flag categorizes a bare-named MCP tool', () => {
+    expect(categorize('InternalCodeSearch')).toBe(null);
+    expect(categorize('InternalCodeSearch', true)).toBe('mcp');
   });
 });
 

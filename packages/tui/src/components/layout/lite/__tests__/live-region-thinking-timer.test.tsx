@@ -7,6 +7,7 @@
 import { describe, test, expect, afterEach } from 'vitest';
 import React from 'react';
 import { render, type Instance, type Terminal } from 'twinki';
+import stripAnsi from 'strip-ansi';
 import {
   AppStoreContext,
   createAppStore,
@@ -15,7 +16,13 @@ import {
 } from '../../../../stores/app-store.js';
 import { Kiro } from '../../../../kiro.js';
 import { LiteLiveRegion } from '../LiteLiveRegion.js';
+import {
+  resetVerboseCache,
+  setVerboseConfig,
+} from '../../../../lite/verbose.js';
+import { useTempKiroHome as prepareTempKiroHome } from '../../../../lite/__tests__/temp-kiro-home.js';
 
+prepareTempKiroHome();
 let out = '';
 const noop = () => {};
 const terminal = {
@@ -40,13 +47,15 @@ const terminal = {
 } as unknown as Terminal;
 
 let instance: Instance | null = null;
-let realNow: () => number;
+let realNow: () => number = Date.now;
 let now = 1_000_000;
 
 afterEach(() => {
   instance?.unmount();
   instance = null;
   Date.now = realNow;
+  setVerboseConfig({ filters: [] });
+  resetVerboseCache();
 });
 
 /** Settle render + effects + a few 150ms spinner ticks. */
@@ -77,6 +86,40 @@ function mount(): ReturnType<typeof createAppStore> {
     { terminal, exitOnCtrlC: false }
   );
   return store;
+}
+
+async function renderBareMcpLiveOutput(filters: string[]): Promise<string> {
+  instance?.unmount();
+  instance = null;
+  out = '';
+  setVerboseConfig({ filters });
+  resetVerboseCache();
+  const store = createAppStore({
+    kiro: new Kiro(),
+    agentEngine: 'v2',
+    uiMode: 'lite',
+  });
+  const tool: MessageType = {
+    id: 'bare-mcp-live',
+    role: MessageRole.ToolUse,
+    name: 'InternalCodeSearch',
+    mcpServerName: 'builder-mcp',
+    content: JSON.stringify({ query: 'handler' }),
+    isFinished: false,
+  };
+  store.setState({
+    isProcessing: true,
+    messages: [tool],
+    liveOutputs: new Map([['bare-mcp-live', [['MCP_LIVE_OUTPUT_MARKER']]]]),
+  } as never);
+  instance = render(
+    <AppStoreContext.Provider value={store}>
+      <LiteLiveRegion />
+    </AppStoreContext.Provider>,
+    { terminal, exitOnCtrlC: false }
+  );
+  await flush();
+  return stripAnsi(out);
 }
 
 describe('LiteLiveRegion thinking timer', () => {
@@ -126,5 +169,13 @@ describe('LiteLiveRegion thinking timer', () => {
     await flush();
 
     expect(await displayedSecs()).toBeLessThan(before);
+  });
+
+  test('bare MCP live output obeys the mcp filter', async () => {
+    const hidden = await renderBareMcpLiveOutput(['all', '-mcp']);
+    expect(hidden).not.toContain('MCP_LIVE_OUTPUT_MARKER');
+
+    const shown = await renderBareMcpLiveOutput(['mcp']);
+    expect(shown).toContain('MCP_LIVE_OUTPUT_MARKER');
   });
 });

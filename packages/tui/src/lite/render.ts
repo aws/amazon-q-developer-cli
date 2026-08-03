@@ -5,7 +5,7 @@
 import { chalk } from '../utils/color.js';
 import { highlight } from 'cli-highlight';
 import { diffLines } from 'diff';
-import { visibleWidth } from '../utils/text-width.js';
+import { AnsiCodeTracker, visibleWidth } from '../utils/text-width.js';
 import { resolveHighlightLanguage } from '../utils/highlight-languages.js';
 import { getAgentDisplayName } from '../utils/agentColors.js';
 import {
@@ -41,6 +41,7 @@ import {
   getVerboseDisplay,
   shouldShowToolOutput,
   categorize,
+  isMcpMessage,
   type VerboseDisplayConfig,
 } from './verbose.js';
 import { needsLeadingBlankByRole } from './blank-rules.js';
@@ -157,6 +158,11 @@ export function wrapAnsiLine(
   if (!line) return [''];
   const w0 = firstWidth > 0 ? firstWidth : line.length;
   const wR = restWidth > 0 ? restWidth : line.length;
+  // Tool output and prose are usually plain text. Avoid allocating one Cell
+  // object per code point when no ANSI state needs to cross a wrap boundary.
+  if (!line.includes('\x1b')) {
+    return wrapAtWords(line, w0, wR).map((row) => row.trimEnd());
+  }
   const out: string[] = [];
   // eslint-disable-next-line no-control-regex
   const ansiRe = /\x1b\[[0-9;]*m/g;
@@ -169,12 +175,14 @@ export function wrapAnsiLine(
   let pendingAnsi = '';
   let i = 0;
   while (i < line.length) {
-    ansiRe.lastIndex = i;
-    const m = ansiRe.exec(line);
-    if (m && m.index === i) {
-      pendingAnsi += m[0];
-      i = m.index + m[0].length;
-      continue;
+    if (line.charCodeAt(i) === 0x1b) {
+      ansiRe.lastIndex = i;
+      const m = ansiRe.exec(line);
+      if (m && m.index === i) {
+        pendingAnsi += m[0];
+        i = m.index + m[0].length;
+        continue;
+      }
     }
     const cp = line.codePointAt(i)!;
     const charLen = cp > 0xffff ? 2 : 1;
@@ -1314,7 +1322,15 @@ export function renderReadToolCall(
     const numStr = String(startLine + i).padStart(LINE_NUM_WIDTH);
     const dimNum = chalk.dim(`  ${numStr} `);
     const blankNum = chalk.dim('  ' + ' '.repeat(LINE_NUM_WIDTH) + ' ');
-    const styled = highlightLineSafe(line, language);
+    const bounded = boundToolOutputLine(line, 'end');
+    if (bounded.droppedChars > 0) {
+      visualRows.push(
+        `${blankNum}${chalk.dim(
+          `... (line clipped; +${bounded.droppedChars} chars before)`
+        )}`
+      );
+    }
+    const styled = highlightLineSafe(bounded.text, language);
     const chunks = wrapAnsiLine(styled, codeCols, codeCols);
     if (chunks.length === 0) {
       visualRows.push(dimNum);
@@ -1388,12 +1404,14 @@ export function renderVerboseOutput(
   filtersOverride?: readonly string[],
   maxCharsPerLine?: number | null,
   termCols?: number,
-  glyphs?: Glyphs
+  glyphs?: Glyphs,
+  isMcp = false
 ): string {
   if (!result) return '';
   // Errors always surface; the filter only gates successful output.
   const isError = result.status === 'error';
-  if (!isError && !shouldShowToolOutput(toolName, filtersOverride)) return '';
+  if (!isError && !shouldShowToolOutput(toolName, filtersOverride, isMcp))
+    return '';
   // termCols is threaded from RenderContext so all renderers agree on width
   // (and resizes don't re-flow already-flushed rows differently).
   const cols = Math.max(40, termCols ?? 120);
@@ -1485,19 +1503,80 @@ export function renderVerboseOutput(
  * per-chunk ToolCallUpdate text, which some backends don't emit for shell —
  * the static finalizer uses the same cap, so scrollback stays consistent.)
  */
+interface LiveOutputChunk {
+  rows: string[];
+  hasContent: boolean;
+}
+
+const liveOutputChunkCache = new WeakMap<
+  readonly string[],
+  Map<string, LiveOutputChunk>
+>();
+
+function formatLiveOutputChunk(
+  sourceLines: readonly string[],
+  avail: number,
+  barPrefix: string,
+  maxChars: number | null
+): LiveOutputChunk {
+  const cacheKey = `${avail}\0${barPrefix}\0${maxChars ?? ''}\0${chalk.level}`;
+  let byFormat = liveOutputChunkCache.get(sourceLines);
+  const cached = byFormat?.get(cacheKey);
+  if (cached) return cached;
+
+  const formatted = formatBarBlock(
+    sourceLines.join('\n'),
+    avail,
+    barPrefix,
+    chalk.dim,
+    softSuccessOutput
+  );
+  const rows =
+    maxChars != null && maxChars > 0
+      ? formatted.map((line) => clipVisibleWidth(line, maxChars))
+      : formatted;
+  const result = {
+    rows,
+    hasContent: sourceLines.some((line) => line.trim().length > 0),
+  };
+  if (!byFormat) {
+    byFormat = new Map();
+    liveOutputChunkCache.set(sourceLines, byFormat);
+  }
+  byFormat.set(cacheKey, result);
+  return result;
+}
+
+export function takeTailRows(
+  chunks: readonly { rows: readonly string[] }[],
+  count: number
+): string[] {
+  const reversed: string[] = [];
+  for (let ci = chunks.length - 1; ci >= 0 && reversed.length < count; ci--) {
+    const rows = chunks[ci]!.rows;
+    for (let ri = rows.length - 1; ri >= 0 && reversed.length < count; ri--) {
+      reversed.push(rows[ri]!);
+    }
+  }
+  return reversed.reverse();
+}
+
 export function renderLiveStreamingOutputBar(
   toolName: string,
-  sourceLines: readonly string[],
+  sourceChunks: readonly (readonly string[])[],
   opts: {
     outputMaxLines: number | null;
     outputMaxChars: number | null;
     termCols: number;
     filtersOverride?: readonly string[];
     glyphs?: Glyphs;
+    isMcp?: boolean;
   }
 ): string[] {
-  if (!shouldShowToolOutput(toolName, opts.filtersOverride)) return [];
-  if (sourceLines.length === 0) return [];
+  if (!shouldShowToolOutput(toolName, opts.filtersOverride, opts.isMcp)) {
+    return [];
+  }
+  if (sourceChunks.length === 0) return [];
 
   const cols = Math.max(40, opts.termCols);
   const indent = '    ';
@@ -1506,33 +1585,28 @@ export function renderLiveStreamingOutputBar(
   const barCols = visibleWidth(barPrefix);
   const avail = Math.max(20, cols - barCols);
 
-  // Skip whitespace-only buffers so the region doesn't flash empty `│` rows.
-  const joined = sourceLines.join('\n');
-  if (!joined.trim()) return [];
-
-  // Dim glyph + green body, same split as the static finalizer so the live
-  // preview and eventual scrollback row match.
-  const lines = formatBarBlock(
-    joined,
-    avail,
-    barPrefix,
-    chalk.dim,
-    softSuccessOutput
+  const chunks = sourceChunks.map((chunk) =>
+    formatLiveOutputChunk(chunk, avail, barPrefix, opts.outputMaxChars ?? null)
   );
-  if (lines.length === 0) return [];
-
-  const clipped =
-    opts.outputMaxChars != null && opts.outputMaxChars > 0
-      ? lines.map((l) => clipVisibleWidth(l, opts.outputMaxChars!))
-      : lines;
+  if (!chunks.some((chunk) => chunk.hasContent)) return [];
+  const totalRows = chunks.reduce((sum, chunk) => sum + chunk.rows.length, 0);
+  if (totalRows === 0) return [];
 
   // Tail-window in visual rows; "streaming" distinguishes it from the
   // finalized "truncated" marker.
-  const tailCapped = applyTailLineCap(
-    clipped,
-    opts.outputMaxLines ?? null,
-    (n) => chalk.dim(`${barPrefix}... (streaming; +${n} more lines above)`)
-  );
+  const cap = opts.outputMaxLines ?? null;
+  const isCapped = cap != null && cap > 0 && totalRows > cap;
+  const shown = isCapped
+    ? takeTailRows(chunks, cap)
+    : chunks.flatMap((chunk) => chunk.rows);
+  const tailCapped = isCapped
+    ? [
+        chalk.dim(
+          `${barPrefix}... (streaming; +${totalRows - shown.length} more lines above)`
+        ),
+        ...shown,
+      ]
+    : shown;
   return [chalk.dim('  output:'), ...tailCapped];
 }
 
@@ -1756,13 +1830,79 @@ function formatShellEnvelope(obj: Record<string, unknown>): string | null {
 }
 
 /**
- * Pre-wrap cap on a single source line. wrapAnsiLine allocates a cell object
- * per code point, so one multi-MB line (minified bundle, no-newline JSON blob,
- * giant base64) is tens of millions of objects and OOMs the renderer — and the
- * downstream cap runs AFTER the wrap, too late. 200K is far above any
- * legitimate single line (~2500 rows at 80 cols, ~16MB cells).
+ * Pre-wrap cap on a single tool-output source line. The visual-row cap runs
+ * after wrapping, so it cannot protect the wrapper from a multi-MB minified
+ * JSON/base64 line. 50K still preserves hundreds of terminal rows while
+ * bounding the expensive ANSI/Unicode path.
  */
-const MAX_INPUT_LINE_CHARS = 200_000;
+export const MAX_TOOL_OUTPUT_LINE_CHARS = 50_000;
+
+export interface BoundedToolOutputLine {
+  text: string;
+  droppedChars: number;
+}
+
+/**
+ * Keep one bounded edge of a tool-output line without cutting a surrogate pair
+ * or SGR escape. Tail retention also reapplies SGR state active at the cut.
+ */
+export function boundToolOutputLine(
+  source: string,
+  keep: 'start' | 'end'
+): BoundedToolOutputLine {
+  if (source.length <= MAX_TOOL_OUTPUT_LINE_CHARS) {
+    return { text: source, droppedChars: 0 };
+  }
+
+  if (keep === 'start') {
+    let end = MAX_TOOL_OUTPUT_LINE_CHARS;
+    const before = source.charCodeAt(end - 1);
+    const after = source.charCodeAt(end);
+    if (
+      before >= 0xd800 &&
+      before <= 0xdbff &&
+      after >= 0xdc00 &&
+      after <= 0xdfff
+    ) {
+      end -= 1;
+    }
+    const openEscape = source.lastIndexOf('\x1b', end - 1);
+    const closedEscape = source.lastIndexOf('m', end - 1);
+    if (openEscape > closedEscape) end = openEscape;
+    const retained = source.slice(0, end);
+    return {
+      text: retained.includes('\x1b') ? `${retained}\x1b[0m` : retained,
+      droppedChars: source.length - end,
+    };
+  }
+
+  let start = source.length - MAX_TOOL_OUTPUT_LINE_CHARS;
+  const at = source.charCodeAt(start);
+  const before = source.charCodeAt(start - 1);
+  if (at >= 0xdc00 && at <= 0xdfff && before >= 0xd800 && before <= 0xdbff) {
+    start += 1;
+  }
+  const openEscape = source.lastIndexOf('\x1b', start);
+  if (openEscape >= 0) {
+    const escapeEnd = source.indexOf('m', openEscape);
+    if (escapeEnd >= start) start = escapeEnd + 1;
+  }
+
+  // Recreate the net SGR state at the retained tail's boundary. The tracker
+  // keeps this prefix constant-size even if the dropped input changes color
+  // thousands of times.
+  const sgrState = new AnsiCodeTracker();
+  // eslint-disable-next-line no-control-regex
+  const sgrRe = /\x1b\[[0-9;]*m/g;
+  let match: RegExpExecArray | null;
+  while ((match = sgrRe.exec(source)) !== null && match.index < start) {
+    sgrState.process(match[0]);
+  }
+  return {
+    text: sgrState.getActiveCodes() + source.slice(start),
+    droppedChars: start,
+  };
+}
 
 /**
  * Hard-wrap each line of `text` to `availCols`, prefixing every visual row
@@ -1787,19 +1927,17 @@ function formatBarBlock(
       out.push(glyphColor(barPrefix.trimEnd()));
       continue;
     }
-    // Pre-clip very long lines (see MAX_INPUT_LINE_CHARS), keeping the TAIL to
+    // Pre-clip very long lines, keeping the TAIL to
     // match downstream applyTailLineCap; marker before the clipped content.
-    let line = rawLine;
-    if (rawLine.length > MAX_INPUT_LINE_CHARS) {
-      const dropped = rawLine.length - MAX_INPUT_LINE_CHARS;
+    const bounded = boundToolOutputLine(rawLine, 'end');
+    if (bounded.droppedChars > 0) {
       out.push(
         `${glyphColor(barPrefix)}${chalk.dim(
-          `... (line clipped; +${dropped} chars before)`
+          `... (line clipped; +${bounded.droppedChars} chars before)`
         )}`
       );
-      line = rawLine.slice(rawLine.length - MAX_INPUT_LINE_CHARS);
     }
-    const body = bodyColor ? bodyColor(line) : line;
+    const body = bodyColor ? bodyColor(bounded.text) : bounded.text;
     const chunks = wrapAnsiLine(body, w, w);
     for (const chunk of chunks) {
       if (chunk.length === 0) {
@@ -2953,6 +3091,10 @@ export interface MessageLike {
   /** ACP tool kind; write/read detection falls back to this for engines (v3/KAS)
    *  that send friendly titles absent from WRITE_TOOLS/READ_TOOL_NAMES. */
   kind?: string;
+  /** MCP server hosting this tool (`_meta.kiro.mcpServerName`); the sole reliable
+   *  "is MCP" signal for the `mcp` verbosity category, since the tool `name` is
+   *  the bare (server-prefix-stripped) tool name. */
+  mcpServerName?: string;
   success?: boolean;
   standalone?: boolean;
   agentName?: string;
@@ -3039,7 +3181,8 @@ function verboseOutputSuffix(
     ctx.filtersOverride,
     display.outputMaxChars,
     ctx.termCols,
-    ctx.glyphs
+    ctx.glyphs,
+    isMcpMessage(msg)
   );
 }
 
@@ -3260,7 +3403,11 @@ export function renderMessageToText(
         isRead &&
         msg.content &&
         !isRejected &&
-        shouldShowToolOutput(msg.name || '', ctx.filtersOverride)
+        shouldShowToolOutput(
+          msg.name || '',
+          ctx.filtersOverride,
+          isMcpMessage(msg)
+        )
       ) {
         return withDenial(
           renderReadToolCall(info, msg.content, msg.result, {

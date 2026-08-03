@@ -15,7 +15,11 @@ import {
   computeActiveToolBatchIds,
   selectStaticEligible,
 } from './static-flush.js';
-import { getVerboseFilters, getVerboseDisplay } from '../../../lite/verbose.js';
+import {
+  getVerboseFilters,
+  getVerboseDisplay,
+  isMcpMessage,
+} from '../../../lite/verbose.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
   buildRenderTheme,
@@ -309,15 +313,14 @@ export const LiteLiveRegion: React.FC = () => {
       if (tool.isFinished) continue;
       const sourceChunks = liveOutputs.get(tool.id);
       if (!sourceChunks || sourceChunks.length === 0) continue;
-      // liveOutputs is chunks (string[][]) for O(1) append; flatten at the
-      // boundary (the formatter's tail-window cap bounds the work).
-      const sourceLines = sourceChunks.flat();
-      const bar = renderLiveStreamingOutputBar(tool.name, sourceLines, {
+      // Keep immutable chunks intact so the formatter can reuse prior wraps.
+      const bar = renderLiveStreamingOutputBar(tool.name, sourceChunks, {
         outputMaxLines: display.outputMaxLines,
         outputMaxChars: display.outputMaxChars,
         termCols,
         filtersOverride,
         glyphs,
+        isMcp: isMcpMessage(tool.msg),
       });
       if (bar.length > 0) out.set(tool.id, bar);
     }

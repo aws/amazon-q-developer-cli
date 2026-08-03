@@ -4,6 +4,7 @@ import { describe, test, it, expect, beforeEach, afterAll } from 'vitest';
 import {
   renderToolCall,
   renderMessageToText,
+  renderLiveStreamingOutputBar,
   formatToolArgLines,
   formatTaskToolBody,
   renderReadToolCall,
@@ -726,6 +727,24 @@ describe('verbose tool output rendering', () => {
       contains: ['hi from stdout', 'second line', '│', 'output:'],
     },
     {
+      name: 'bare MCP metadata obeys the mcp exclusion',
+      filters: ['all', '-mcp'],
+      msgOverride: {
+        name: 'InternalCodeSearch',
+        mcpServerName: 'builder-mcp',
+      },
+      absent: ['hi from stdout', 'second line', '│', 'output:'],
+    },
+    {
+      name: 'bare MCP metadata obeys the mcp inclusion',
+      filters: ['mcp'],
+      msgOverride: {
+        name: 'InternalCodeSearch',
+        mcpServerName: 'builder-mcp',
+      },
+      contains: ['hi from stdout', 'second line', '│', 'output:'],
+    },
+    {
       name: 'error result renders the error text + output: header',
       filters: ['all'],
       msgOverride: {
@@ -761,6 +780,28 @@ describe('verbose tool output rendering', () => {
     const firstBarIdx = out.indexOf('│');
     expect(headerIdx).toBeGreaterThan(-1);
     expect(firstBarIdx).toBeGreaterThan(headerIdx);
+  });
+});
+
+describe('live tool output rendering', () => {
+  test('wide append-only chunks keep a visual-row-bounded tail', () => {
+    const out = stripAnsi(
+      renderLiveStreamingOutputBar(
+        'execute_bash',
+        [[`HEAD_${'h'.repeat(80)}`], ['MIDDLE'], [`${'t'.repeat(80)}_TAIL`]],
+        {
+          outputMaxLines: 2,
+          outputMaxChars: null,
+          termCols: 40,
+          filtersOverride: ['all'],
+        }
+      ).join('\n')
+    );
+
+    expect(out).toContain('streaming; +5 more lines above');
+    expect(out).toContain('TAIL');
+    expect(out).not.toContain('HEAD');
+    expect(out).not.toContain('MIDDLE');
   });
 });
 
@@ -1165,7 +1206,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     // Regression: a multi-MB single line (e.g. grep matching a minified bundle)
     // made formatBarBlock allocate a cell object per code point → OOM, since
     // applyTailLineCap only runs after it returns. Fix: clip each input line to
-    // MAX_INPUT_LINE_CHARS (200_000), keeping the TAIL so it composes with the
+    // MAX_TOOL_OUTPUT_LINE_CHARS (50_000), keeping the TAIL so it composes with the
     // downstream tail-keep cap.
     setDisplay({ outputMaxLines: null }); // unbounded: prove it doesn't OOM regardless
     const huge = 'x'.repeat(1_000_000);
@@ -1175,22 +1216,22 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
       })
     );
     // Clip marker is emitted before the wrapped tail. 1_000_000 -
-    // 200_000 = 800_000 chars hidden.
-    expect(out).toMatch(/\.\.\. \(line clipped; \+800000 chars before\)/);
-    // Surviving bar rows are bounded (~2500 for 200K chars at 80 cols).
+    // 50_000 = 950_000 chars hidden.
+    expect(out).toMatch(/\.\.\. \(line clipped; \+950000 chars before\)/);
+    // Surviving bar rows are bounded (~625 for 50K chars at 80 cols).
     // Tripwire against silent regression toward O(input size) memory growth.
     const barLines = out.split('\n').filter((l) => l.includes('│'));
-    expect(barLines.length).toBeLessThan(3000);
+    expect(barLines.length).toBeLessThan(700);
     // Tail is preserved — last char of the input is the last char of the
     // last bar row (modulo the trailing tool-call newline).
     const lastBar = barLines[barLines.length - 1] ?? '';
     expect(lastBar.endsWith('x')).toBe(true);
   }, 30_000);
 
-  test('lines under MAX_INPUT_LINE_CHARS are not clipped', () => {
+  test('lines at MAX_TOOL_OUTPUT_LINE_CHARS are not clipped', () => {
     // Companion to the OOM test: a long-but-plausible 50K single line (JSON
     // blob, stack trace) renders without a "(line clipped)" marker, so a
-    // future tightening of MAX_INPUT_LINE_CHARS can't clip legit output.
+    // future tightening of MAX_TOOL_OUTPUT_LINE_CHARS can't clip legit output.
     setDisplay({ outputMaxLines: null });
     const long = 'y'.repeat(50_000);
     const out = stripAnsi(
@@ -1200,6 +1241,27 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     );
     expect(out).not.toContain('(line clipped');
   });
+
+  test('pathological numbered read is clipped before highlighting and wrapping', () => {
+    const out = stripAnsi(
+      renderReadToolCall(
+        { name: 'fs_read', status: 'done' },
+        JSON.stringify({
+          operations: [{ path: 'src/wide.json', offset: 0 }],
+        }),
+        {
+          status: 'success',
+          output: `READ_HEAD_${'r'.repeat(1_000_000)}_READ_TAIL`,
+        },
+        { termCols: 80, maxLines: null }
+      )
+    );
+
+    expect(out).toMatch(/line clipped; \+\d+ chars before/);
+    expect(out).toContain('READ_TAIL');
+    expect(out).not.toContain('READ_HEAD');
+    expect(out.split('\n').length).toBeLessThan(700);
+  }, 30_000);
 
   // Write diffs OPT OUT of outputMaxLines: the whole change is the payload the
   // user reviews, so the diff body renders in full whether a cap is set or null

@@ -99,6 +99,7 @@ const ConversationTurnCard = React.memo(
                 locations={message.locations}
                 barColor={agentBarColor}
                 isStatic={!turn.isActive || message.isFinished}
+                mcpServerName={message.mcpServerName}
                 denial={message.denial}
               />
             );
@@ -189,6 +190,7 @@ const _StaticTurnCard = React.memo(function _StaticTurnCard({
                 result={message.result}
                 locations={message.locations}
                 barColor={agentBarColor}
+                mcpServerName={message.mcpServerName}
                 denial={message.denial}
               />
             );

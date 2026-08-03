@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Wide single-line tool results (e.g. minified MCP JSON) overflowing the terminal by capping visual rows instead of logical lines"
+}

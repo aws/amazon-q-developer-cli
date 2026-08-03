@@ -12,6 +12,7 @@ export type {
 
 // Utilities
 export {
+  AnsiCodeTracker,
   getSegmenter,
   visibleWidth,
   wrapTextWithAnsi,

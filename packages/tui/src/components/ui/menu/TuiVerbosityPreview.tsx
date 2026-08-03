@@ -37,6 +37,7 @@ function toolProps(msg: MessageLike) {
     purpose: msg.purpose,
     startTime: msg.startTime,
     finishTime: msg.finishTime,
+    mcpServerName: msg.mcpServerName,
   };
 }
 

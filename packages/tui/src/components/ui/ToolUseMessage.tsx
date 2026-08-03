@@ -22,10 +22,7 @@ import { SessionTool } from '../chat/tools/SessionTool.js';
 import { WorkflowTool } from '../chat/tools/WorkflowTool.js';
 import { Tool } from '../chat/tools/Tool.js';
 import { ToolMeta } from '../chat/tools/ToolMeta.js';
-import {
-  ToolOutput as ToolOutputBar,
-  ToolOutputSection,
-} from '../chat/tools/ToolOutput.js';
+import { ToolOutput } from '../chat/tools/ToolOutput.js';
 import { formatToolParams } from '../../utils/tool-params.js';
 import {
   parseToolArg,
@@ -71,6 +68,7 @@ import {
   useShouldShowToolOutput,
 } from '../../hooks/useVerbose.js';
 import { extractToolReasoning } from '../../lite/render.js';
+import { isMcpMessage } from '../../lite/verbose.js';
 import {
   VerbosityToolContext,
   useToolOutputVisible,
@@ -95,6 +93,9 @@ export interface ToolUseMessageProps {
   purpose?: string;
   startTime?: number;
   finishTime?: number;
+  /** MCP server hosting this tool (from `_meta.kiro.mcpServerName`); drives the
+   *  `mcp` verbosity category since the TUI stores MCP tools under a bare name. */
+  mcpServerName?: string;
   /** Denial detail for a blocked tool call (infra-safety or permission policy). */
   denial?: ToolDenial;
 }
@@ -118,13 +119,17 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     purpose,
     startTime,
     finishTime,
+    mcpServerName,
     denial,
   }) {
     const { getColor, wrapDisabled } = useTheme();
     const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
     const keybindings = useKeybindings();
     const display = useVerboseDisplay();
-    const outputVisible = useShouldShowToolOutput(name);
+    const outputVisible = useShouldShowToolOutput(
+      name,
+      isMcpMessage({ mcpServerName })
+    );
     const toolOutputsExpanded = useAppStore((s) => s.toolOutputsExpanded);
     const frozenArgsExpanded = useRef(toolOutputsExpanded);
     if (!isStatic) frozenArgsExpanded.current = toolOutputsExpanded;
@@ -639,14 +644,7 @@ const ResultTextBody = React.memo(function ResultTextBody({
 
   if (!isFinished || !outputVisible || result?.status !== 'success')
     return null;
-  return (
-    <ToolOutputSection
-      lines={lines}
-      isStatic={isStatic}
-      previewCount={5}
-      emptyPlaceholder
-    />
-  );
+  return <ToolOutput lines={lines} isStatic={isStatic} emptyPlaceholder />;
 });
 
 const FallbackError = React.memo(function FallbackError({
@@ -700,7 +698,7 @@ const FallbackError = React.memo(function FallbackError({
       <StatusInfo title={name} target={target} />
       <ToolMeta params={params} />
       {process.env.KIRO_LITE_ROLLOUT_ENABLED === '1' ? (
-        <ToolOutputBar lines={error.split('\n')} isError />
+        <ToolOutput lines={error.split('\n')} isError />
       ) : (
         <Box marginLeft={2}>
           <Text>{getColor('error')(error)}</Text>

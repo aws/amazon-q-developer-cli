@@ -9,6 +9,7 @@ import {
 import { ThemeProvider } from '../../../../theme/ThemeProvider.js';
 import { GlyphsProvider } from '../../../../hooks/useGlyphs.js';
 import { Kiro } from '../../../../kiro.js';
+import { setTerminalSizeForTests } from '../../../../hooks/useTerminalSize.js';
 
 /**
  * Shared Twinki render harness for the inline tool-verbosity render tests.
@@ -42,10 +43,29 @@ class MockTerminal implements Terminal {
 }
 
 let activeInstance: Instance | null = null;
+const originalColumns = Object.getOwnPropertyDescriptor(
+  process.stdout,
+  'columns'
+);
+const originalRows = Object.getOwnPropertyDescriptor(process.stdout, 'rows');
 
 afterEach(() => {
   activeInstance?.unmount();
   activeInstance = null;
+  if (originalColumns) {
+    Object.defineProperty(process.stdout, 'columns', originalColumns);
+  } else {
+    delete (process.stdout as { columns?: number }).columns;
+  }
+  if (originalRows) {
+    Object.defineProperty(process.stdout, 'rows', originalRows);
+  } else {
+    delete (process.stdout as { rows?: number }).rows;
+  }
+  setTerminalSizeForTests(
+    process.stdout.columns || 60,
+    process.stdout.rows || 20
+  );
 });
 
 async function flush(): Promise<void> {
@@ -62,6 +82,15 @@ export async function renderRaw(
   element: React.ReactElement,
   { columns = 100, rows = 40 }: { columns?: number; rows?: number } = {}
 ): Promise<string> {
+  Object.defineProperty(process.stdout, 'columns', {
+    configurable: true,
+    value: columns,
+  });
+  Object.defineProperty(process.stdout, 'rows', {
+    configurable: true,
+    value: rows,
+  });
+  setTerminalSizeForTests(columns, rows);
   const terminal = new MockTerminal(columns, rows);
   activeInstance = render(element, { terminal, exitOnCtrlC: false });
   await flush();
@@ -92,9 +121,29 @@ export function renderWithProviders(
     configureStore?: (store: ReturnType<typeof createAppStore>) => void;
   } = { columns: 120, rows: 40 }
 ): Promise<string> {
+  return renderRawWithProviders(node, {
+    store,
+    configureStore,
+    ...opts,
+  }).then(stripAnsi);
+}
+
+export function renderRawWithProviders(
+  node: React.ReactElement,
+  {
+    store,
+    configureStore,
+    ...opts
+  }: {
+    columns?: number;
+    rows?: number;
+    store?: Omit<Parameters<typeof createAppStore>[0], 'kiro'>;
+    configureStore?: (store: ReturnType<typeof createAppStore>) => void;
+  } = { columns: 120, rows: 40 }
+): Promise<string> {
   const appStore = createAppStore({ kiro: new Kiro(), ...store });
   configureStore?.(appStore);
-  return renderPlain(
+  return renderRaw(
     <AppStoreContext.Provider value={appStore}>
       <ThemeProvider>
         <GlyphsProvider>{node}</GlyphsProvider>

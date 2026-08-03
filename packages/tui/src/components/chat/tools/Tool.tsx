@@ -12,7 +12,6 @@ import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
-import { maxVisibleWidth } from '../../../utils/text-width.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
@@ -129,20 +128,13 @@ export const Tool = React.memo(function Tool({
   const hasOutput = output && output.trim().length > 0;
   const outputVisible = useToolOutputVisible();
 
-  const {
-    expanded,
-    expandHint,
-    effectivePreviewCount,
-    outputMaxChars,
-    persistOutput,
-  } = useExpandableOutput({
-    totalItems: !PORT_ACTIVE() || outputVisible ? outputLines.length : 0,
+  // In-cohort output owns its wrap and cap, so this hook only serves the
+  // legacy off-cohort preview.
+  const { expanded, expandHint } = useExpandableOutput({
+    totalItems: PORT_ACTIVE() ? 0 : outputLines.length,
     previewCount: PREVIEW_LINES,
-    maxContentWidth:
-      !PORT_ACTIVE() || outputVisible ? maxVisibleWidth(outputLines) : 0,
     isStatic,
     unit: 'lines',
-    applyVerbosityOutputCap: PORT_ACTIVE(),
   });
 
   // In spec mode, render all tool titles via MarkdownRenderer (questions get
@@ -234,37 +226,18 @@ export const Tool = React.memo(function Tool({
       );
     }
 
-    if ((isStatic && !persistOutput) || !hasOutput || !outputVisible) {
-      return (
-        <Box flexDirection="column">
-          {renderTitle()}
-          {renderMeta()}
-          {renderLocations()}
-        </Box>
-      );
-    }
-
-    if (expanded) {
-      return (
-        <Box flexDirection="column">
-          {renderTitle()}
-          {renderMeta()}
-          {renderLocations()}
-          <ToolOutput lines={outputLines} maxChars={outputMaxChars} />
-        </Box>
-      );
-    }
-
     return (
       <Box flexDirection="column">
         {renderTitle()}
         {renderMeta()}
         {renderLocations()}
-        <ToolOutput
-          lines={outputLines.slice(0, effectivePreviewCount)}
-          maxChars={outputMaxChars}
-          expandHint={expandHint}
-        />
+        {hasOutput && outputVisible && (
+          <ToolOutput
+            lines={outputLines}
+            isStatic={isStatic}
+            previewPosition="start"
+          />
+        )}
       </Box>
     );
   };

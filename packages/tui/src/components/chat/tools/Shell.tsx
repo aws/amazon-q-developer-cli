@@ -9,7 +9,6 @@ import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
-import { maxVisibleWidth } from '../../../utils/text-width.js';
 import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import { useAppStore, type ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
@@ -196,33 +195,22 @@ export const Shell = React.memo(function Shell({
     return { outputChunks: [], exitCode: null };
   }, [result, liveOutput]);
 
-  const { totalLines, maxOutputWidth } = useMemo(() => {
+  const totalLines = useMemo(() => {
     let count = 0;
-    let width = 0;
     for (const chunk of outputChunks) {
       count += chunk.length;
-      width = Math.max(width, maxVisibleWidth(chunk));
     }
-    return { totalLines: count, maxOutputWidth: width };
+    return count;
   }, [outputChunks]);
 
   const hasOutput = totalLines > 0;
   const outputVisible = useToolOutputVisible();
 
-  const {
-    expanded,
-    expandHint,
-    hiddenCount,
-    effectivePreviewCount,
-    outputMaxChars,
-    persistOutput,
-  } = useExpandableOutput({
-    totalItems: !PORT_ACTIVE() || outputVisible ? totalLines : 0,
+  const { expanded, expandHint, hiddenCount } = useExpandableOutput({
+    totalItems: PORT_ACTIVE() ? 0 : totalLines,
     previewCount: PREVIEW_LINES,
-    maxContentWidth: !PORT_ACTIVE() || outputVisible ? maxOutputWidth : 0,
     isStatic,
     unit: 'lines',
-    applyVerbosityOutputCap: PORT_ACTIVE(),
   });
 
   useEffect(() => {
@@ -271,7 +259,7 @@ export const Shell = React.memo(function Shell({
     return <StatusBar status={status}>{simpleContent}</StatusBar>;
   }
 
-  if ((isStatic && !persistOutput) || (!hasOutput && !errorMessage)) {
+  if (!hasOutput && !errorMessage) {
     return (
       <Box flexDirection="column">
         <StatusInfo
@@ -312,41 +300,14 @@ export const Shell = React.memo(function Shell({
     );
   }
 
-  if (expanded) {
-    return (
-      <Box flexDirection="column">
-        <StatusInfo
-          title={name}
-          target={displayCommand}
-          shimmer={!isFinished}
-        />
-        <ToolMeta params={params} />
-        <ToolOutput
-          lines={firstLines(outputChunks, totalLines)}
-          maxChars={outputMaxChars}
-        />
-      </Box>
-    );
-  }
-
-  const previewLines = isFinished
-    ? firstLines(outputChunks, effectivePreviewCount)
-    : lastLines(outputChunks, effectivePreviewCount);
-
-  const hint = isFinished
-    ? expandHint
-    : hiddenCount > 0
-      ? `...+${hiddenCount} lines above (ctrl+o to toggle)`
-      : expandHint || undefined;
-
   return (
     <Box flexDirection="column">
       <StatusInfo title={name} target={displayCommand} shimmer={!isFinished} />
       <ToolMeta params={params} />
       <ToolOutput
-        lines={previewLines}
-        maxChars={outputMaxChars}
-        expandHint={hint}
+        chunks={outputChunks}
+        isStatic={isStatic}
+        previewPosition={isFinished ? 'start' : 'end'}
       />
     </Box>
   );

@@ -58,11 +58,18 @@ export function useThinkingDisplay(): VerboseDisplayConfig['thinkingDisplay'] {
   return override?.display?.thinkingDisplay ?? value;
 }
 
-export function useShouldShowToolOutput(toolName: string): boolean {
+export function useShouldShowToolOutput(
+  toolName: string,
+  isMcp = false
+): boolean {
   const override = useContext(VerbosityOverrideContext);
   const surfaceFilters = useSurfaceValue(
     getTuiFiltersSnapshot,
     getFiltersSnapshot
   );
-  return shouldShowToolOutput(toolName, override?.filters ?? surfaceFilters);
+  return shouldShowToolOutput(
+    toolName,
+    override?.filters ?? surfaceFilters,
+    isMcp
+  );
 }

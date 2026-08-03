@@ -47,6 +47,7 @@ import {
   isKasShellCapability,
   KAS_WHOLE_CAPABILITY_RESOURCE,
 } from '../utils/shell-trust-options.js';
+import { isMcpMessage } from '../lite/verbose.js';
 import {
   AgentEventType,
   ApprovalOptionId,
@@ -574,6 +575,10 @@ export type MessageType =
       liveOutput?: string[];
       /** True when this tool call originated from a subagent session (event.sessionId set). */
       isSubagentTool?: boolean;
+      /** MCP server that hosts this tool, from `_meta.kiro.mcpServerName`. Present
+       *  iff the tool is an MCP tool; the regular TUI stores the BARE tool name so
+       *  this is the only reliable "is MCP" signal for verbosity categorization. */
+      mcpServerName?: string;
       startTime?: number;
       finishTime?: number;
       /**
@@ -4185,6 +4190,7 @@ export const createAppStore = (props: AppStoreProps) => {
               } else {
                 agentName = state.currentAgent?.name;
               }
+              const kiroMeta = event.meta?.kiro;
               return {
                 sessions: clearedSessions,
                 sessionEventBuffer: clearedEventBuffer,
@@ -4197,6 +4203,9 @@ export const createAppStore = (props: AppStoreProps) => {
                     ...(isQuestion && { isQuestion: true }),
                     sessionId: event.sessionId,
                     pipelineGroupId: event.meta?.kiro?.pipeline?.groupId,
+                    ...(isMcpMessage(kiroMeta) && {
+                      mcpServerName: kiroMeta.mcpServerName,
+                    }),
                     kind: event.kind,
                     content,
                     purpose,

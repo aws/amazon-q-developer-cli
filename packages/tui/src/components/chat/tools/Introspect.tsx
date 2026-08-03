@@ -11,13 +11,9 @@ import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
 import { getToolLabel } from '../../../types/tool-status.js';
-import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
-import { maxVisibleWidth } from '../../../utils/text-width.js';
 import type { ToolResult } from '../../../stores/app-store.js';
-
-const PREVIEW_LINES = 5;
 
 export interface IntrospectProps {
   /** Whether the introspection has finished */
@@ -80,22 +76,6 @@ export const Introspect = React.memo(function Introspect({
   const outputVisible = useToolOutputVisible();
   const portEnabled = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
 
-  const {
-    expanded,
-    expandHint,
-    effectivePreviewCount,
-    outputMaxChars,
-    persistOutput,
-  } = useExpandableOutput({
-    totalItems: portEnabled && outputVisible ? docLines.length : 0,
-    previewCount: PREVIEW_LINES,
-    maxContentWidth:
-      portEnabled && outputVisible ? maxVisibleWidth(docLines) : 0,
-    isStatic,
-    unit: 'lines',
-    applyVerbosityOutputCap: true,
-  });
-
   const title = getToolLabel('introspect');
 
   if (result?.status === 'error') {
@@ -114,14 +94,7 @@ export const Introspect = React.memo(function Introspect({
     );
   }
 
-  // Header + args only when: off-rollout, output filtered off, no doc body, or
-  // a static past turn with persistOutput off (collapse to keep history compact
-  // — parity with Shell/Grep/Glob).
-  const showDoc =
-    portEnabled &&
-    outputVisible &&
-    docLines.length > 0 &&
-    !(isStatic && !persistOutput);
+  const showDoc = portEnabled && outputVisible && docLines.length > 0;
 
   if (!showDoc) {
     return (
@@ -132,18 +105,14 @@ export const Introspect = React.memo(function Introspect({
     );
   }
 
-  const visible = expanded
-    ? docLines
-    : docLines.slice(0, effectivePreviewCount);
-
   return (
     <Box flexDirection="column">
       <StatusInfo title={title} target={target} shimmer={!isFinished} />
       <ToolMeta params={params} />
       <ToolOutput
-        lines={visible}
-        maxChars={outputMaxChars}
-        expandHint={!expanded ? expandHint : undefined}
+        lines={docLines}
+        isStatic={isStatic}
+        previewPosition="start"
       />
     </Box>
   );

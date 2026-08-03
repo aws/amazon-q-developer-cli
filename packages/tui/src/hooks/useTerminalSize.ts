@@ -12,9 +12,7 @@ let currentSize = {
 const listeners = new Set<() => void>();
 let registered = false;
 
-function updateSize() {
-  const newWidth = process.stdout.columns || 60;
-  const newHeight = process.stdout.rows || 20;
+function setSize(newWidth: number, newHeight: number) {
   if (newWidth < 1 || newHeight < 1) return;
   if (newWidth === currentSize.width && newHeight === currentSize.height)
     return;
@@ -23,6 +21,15 @@ function updateSize() {
   for (const listener of listeners) {
     listener();
   }
+}
+
+function updateSize() {
+  setSize(process.stdout.columns || 60, process.stdout.rows || 20);
+}
+
+/** Keep render harness dimensions aligned with its mock terminal. */
+export function setTerminalSizeForTests(width: number, height: number): void {
+  setSize(width, height);
 }
 
 /**
