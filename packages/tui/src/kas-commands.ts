@@ -32,6 +32,7 @@ export enum KasCommandName {
   Autonomous = '/autonomous',
   Feedback = '/feedback',
   Rewind = '/rewind',
+  Voice = '/voice',
   UpgradeAgent = '/upgrade-agent',
   Repo = '/repo',
   Tangent = '/tangent',
@@ -277,6 +278,14 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     name: KasCommandName.Rewind,
     description: 'Fork the session at an earlier turn',
     meta: { inputType: 'panel' },
+  },
+  {
+    // Rollout-gated via the FeatureManager singleton (Feature.Voice, resolved
+    // from rollout.json → KIRO_ENABLED_FEATURES). The dispatcher owns the
+    // capture flow once invoked.
+    name: KasCommandName.Voice,
+    description: 'Record voice input',
+    feature: Feature.Voice,
   },
   {
     name: KasCommandName.Goal,

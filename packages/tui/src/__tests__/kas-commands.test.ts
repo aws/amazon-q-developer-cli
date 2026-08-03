@@ -234,6 +234,28 @@ describe('kas-commands', () => {
     });
   });
 
+  describe('/voice V3 (KAS) gating', () => {
+    it('is registered and gated behind the voice feature', async () => {
+      const { KAS_COMMANDS, KasCommandName } = await import('../kas-commands');
+      const voiceCmd = KAS_COMMANDS.find(
+        (cmd: KasCommand) => cmd.name === KasCommandName.Voice
+      );
+      expect(voiceCmd).toBeDefined();
+      expect(voiceCmd!.feature).toBe(Feature.Voice);
+      expect(voiceCmd!.description).toContain('voice');
+    });
+
+    it('is dropped by getKasCommands unless the voice feature is enabled', async () => {
+      const { getKasCommands } = await import('../kas-commands');
+      await withEnabledFeatures([], () => {
+        expect(getKasCommands().some((c) => c.name === '/voice')).toBe(false);
+      });
+      await withEnabledFeatures([Feature.Voice], () => {
+        expect(getKasCommands().some((c) => c.name === '/voice')).toBe(true);
+      });
+    });
+  });
+
   describe('Conditional /spec command visibility', () => {
     it('/spec is NOT in app-store static slashCommands (V2 engine)', async () => {
       const { createAppStore } = await import('../stores/app-store');
