@@ -44,8 +44,18 @@ function getPinnedBun(): string {
 const PINNED_BUN = getPinnedBun();
 
 // Separate dev-script flags from flags to forward to the TUI
-const devFlags = new Set(['--skip-rust-build', '--local-kas']);
+const devFlags = new Set(['--skip-rust-build', '--local-kas', '--v2']);
 const skipRustBuild = process.argv.includes('--skip-rust-build');
+
+// Dev defaults to the KAS (V3) engine. Opt out with --v2 or KIRO_AGENT_ENGINE=v2.
+if (process.argv.includes('--v2')) {
+  process.env.KIRO_AGENT_ENGINE = 'v2';
+} else if (!process.env.KIRO_AGENT_ENGINE) {
+  process.env.KIRO_AGENT_ENGINE = 'kas';
+}
+console.log(
+  `Agent engine: ${process.env.KIRO_AGENT_ENGINE} (override with --v2 or KIRO_AGENT_ENGINE)`
+);
 
 // Optional: --local-kas uses a local kiro-agent checkout at local/kiro-agent/
 // Skips CodeArtifact login and bun install, sets KIRO_KAS_SERVER_PATH.
