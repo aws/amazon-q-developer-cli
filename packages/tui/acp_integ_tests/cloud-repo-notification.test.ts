@@ -132,7 +132,13 @@ describe('cloud repo-attach notification → footer', () => {
 
     await tc.launch();
     await tc.mock.awaitConnection();
-    await tc.waitForStore((s) => s.cloudSessionActive === true, 5000);
+    // Wait for the CONFIRMED session, not cloudSessionActive: the latter is
+    // set optimistically from --cloud before session/new even starts, so a
+    // push gated on it can arrive before the client knows the session id and
+    // be dropped (flaked on slow Windows runners). The store's sessionId is
+    // stamped only after createSession resolves, which guarantees the client
+    // will match this session's update notifications.
+    await tc.waitForStore((s) => s.sessionId === SESSION_ID, 15000);
 
     pushRepositories(tc, [
       {
@@ -164,7 +170,9 @@ describe('cloud repo-attach notification → footer', () => {
 
     await tc.launch();
     await tc.mock.awaitConnection();
-    await tc.waitForStore((s) => s.cloudSessionActive === true, 5000);
+    // Confirmed-session barrier; see the first test for why cloudSessionActive
+    // is not a safe gate to push against.
+    await tc.waitForStore((s) => s.sessionId === SESSION_ID, 15000);
 
     pushRepositories(tc, [{ providerType: 'GITHUB', name: 'acme/app' }]);
     await tc.waitForStore((s) => s.cloudRepo === 'acme/app', 5000);
