@@ -29,6 +29,7 @@ export const SLASH_COMMAND_METRIC_NAMES = [
   '/load',
   '/logdump',
   '/mcp',
+  '/memories',
   '/model',
   '/paste',
   '/plan',

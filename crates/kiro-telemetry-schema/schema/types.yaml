@@ -84,6 +84,7 @@ attributes:
       - /load
       - /logdump
       - /mcp
+      - /memories
       - /model
       - /paste
       - /plan
