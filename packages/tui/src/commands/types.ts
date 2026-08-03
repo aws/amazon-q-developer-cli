@@ -158,6 +158,8 @@ export interface CommandContext {
   setShowTuiPanel: (show: boolean) => void;
   /** Show/hide changelog panel */
   setShowChangelogPanel: (show: boolean) => void;
+  /** Show/hide memories panel */
+  setShowMemoriesPanel: (show: boolean) => void;
   /** Show/hide usage panel */
   setShowUsagePanel: (show: boolean, data?: any) => void;
   setShowRewindExplorer: (show: boolean, rows?: any[]) => void;

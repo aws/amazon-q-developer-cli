@@ -244,6 +244,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     showContextBreakdown,
     showTuiPanel,
     showChangelogPanel,
+    showMemoriesPanel,
     showHelpPanel,
     showUsagePanel,
     showRewindExplorer,
@@ -906,6 +907,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               showHelpPanel ||
               showTuiPanel ||
               showChangelogPanel ||
+              showMemoriesPanel ||
               showUsagePanel ||
               showRewindExplorer ||
               showTangentExplorer ||
@@ -983,6 +985,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   showHelpPanel ||
                   showTuiPanel ||
                   showChangelogPanel ||
+                  showMemoriesPanel ||
                   showUsagePanel ||
                   showRewindExplorer ||
                   showTangentExplorer ||
@@ -1068,6 +1071,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 !showHelpPanel &&
                 !showTuiPanel &&
                 !showChangelogPanel &&
+                !showMemoriesPanel &&
                 !showUsagePanel &&
                 !showRewindExplorer &&
                 !showTangentExplorer &&

@@ -236,6 +236,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     showKnowledgePanel,
     showCodePanel,
     showChangelogPanel,
+    showMemoriesPanel,
     showRewindExplorer,
     showTangentExplorer,
     tangentName,
@@ -292,6 +293,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     showKnowledgePanel ||
     showCodePanel ||
     showChangelogPanel ||
+    showMemoriesPanel ||
     showRewindExplorer ||
     showTangentExplorer ||
     showKeybindingsPanel ||

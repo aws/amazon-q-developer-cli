@@ -8,6 +8,7 @@ import { handleCompact } from './compact';
 import { handleContext } from './context';
 import { handleHelp } from './help';
 import { handleHooks } from './hooks';
+import { handleMemories } from './memories';
 import { handlePrompts } from './prompts';
 import { handleRewind } from './rewind';
 import { handleTangent } from './tangent';
@@ -46,6 +47,7 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Help]: handleHelp,
   [KasCommandName.Hooks]: handleHooks,
   [KasCommandName.Mcp]: handleMcp,
+  [KasCommandName.Memories]: handleMemories,
   [KasCommandName.Prompts]: handlePrompts,
   [KasCommandName.Rewind]: handleRewind,
   [KasCommandName.Tangent]: handleTangent,

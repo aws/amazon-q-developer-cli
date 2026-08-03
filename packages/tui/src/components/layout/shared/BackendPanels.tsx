@@ -19,6 +19,7 @@ import { KnowledgePanel } from '../../ui/KnowledgePanel.js';
 import { CodePanel } from '../../ui/CodePanel.js';
 import { UsagePanel } from '../../ui/UsagePanel.js';
 import { ChangelogPanel } from '../../ui/ChangelogPanel.js';
+import { MemoriesPanel } from '../../ui/MemoriesPanel.js';
 import { Explorer } from '../../ui/Explorer.js';
 import { KeybindingsPanel } from '../../ui/KeybindingsPanel.js';
 import { DisplaySettingsPanel } from '../../ui/DisplaySettingsPanel.js';
@@ -103,6 +104,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     showCodePanel,
     codeData,
     showChangelogPanel,
+    showMemoriesPanel,
     artifactViewOpen,
     showCloudQuitPrompt,
   } = useUIState();
@@ -255,6 +257,9 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
       )}
       {showChangelogPanel && (
         <ChangelogPanel onClose={handlers.handleCloseChangelogPanel} />
+      )}
+      {showMemoriesPanel && (
+        <MemoriesPanel onClose={handlers.handleCloseMemoriesPanel} />
       )}
       {showMcpPanel && (
         <McpPanel

@@ -36,6 +36,7 @@ export function useBackendPanelHandlers() {
     setShowKnowledgePanel,
     setShowCodePanel,
     setShowChangelogPanel,
+    setShowMemoriesPanel,
     setShowRewindExplorer,
     setShowTangentExplorer,
     setShowKeybindingsPanel,
@@ -98,6 +99,7 @@ export function useBackendPanelHandlers() {
     handleCloseKnowledgePanel: makeClose(setShowKnowledgePanel),
     handleCloseCodePanel: makeClose(setShowCodePanel),
     handleCloseChangelogPanel: makeClose(setShowChangelogPanel),
+    handleCloseMemoriesPanel: makeClose(setShowMemoriesPanel),
     handleCloseRewindExplorer: makeClose(setShowRewindExplorer),
     handleCloseTangentExplorer: makeClose(setShowTangentExplorer),
     handleCloseKeybindingsPanel: makeClose(setShowKeybindingsPanel, {

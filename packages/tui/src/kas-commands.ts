@@ -42,6 +42,7 @@ export enum KasCommandName {
   WorkflowResume = '/workflow-resume',
   WorkflowStatus = '/workflow-status',
   WorkflowCancel = '/workflow-cancel',
+  Memories = '/memories',
 }
 
 export type KasWorkflowAliasSubcommand =
@@ -366,6 +367,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       subcommands: ['ls'],
       subcommandsOptional: true,
     },
+  },
+  {
+    name: KasCommandName.Memories,
+    description: 'Manage repo-scoped memories from previous sessions',
+    meta: { inputType: 'panel' },
   },
 ];
 

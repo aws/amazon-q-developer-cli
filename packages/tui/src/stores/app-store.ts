@@ -1325,6 +1325,7 @@ interface BaseAppActions {
   ) => void;
   setShowTuiPanel: (show: boolean) => void;
   setShowChangelogPanel: (show: boolean) => void;
+  setShowMemoriesPanel: (show: boolean) => void;
   setShowHelpPanel: (
     show: boolean,
     commands?: Array<{
@@ -1977,6 +1978,7 @@ export interface AppState {
   contextBreakdownCache: ContextBreakdownData | null;
   showTuiPanel: boolean;
   showChangelogPanel: boolean;
+  showMemoriesPanel: boolean;
   showHelpPanel: boolean;
   helpCommands: Array<{
     name: string;
@@ -2590,6 +2592,7 @@ export function buildCommandContext(
     setShowHelpPanel: state.setShowHelpPanel,
     setShowTuiPanel: state.setShowTuiPanel,
     setShowChangelogPanel: state.setShowChangelogPanel,
+    setShowMemoriesPanel: state.setShowMemoriesPanel,
     setShowUsagePanel: state.setShowUsagePanel,
     setShowRewindExplorer: state.setShowRewindExplorer,
     setShowTangentExplorer: state.setShowTangentExplorer,
@@ -3011,6 +3014,7 @@ export const createAppStore = (props: AppStoreProps) => {
     contextBreakdownCache: null,
     showTuiPanel: false,
     showChangelogPanel: false,
+    showMemoriesPanel: false,
     showHelpPanel: false,
     helpCommands: [],
     showUsagePanel: false,
@@ -6270,6 +6274,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const ctx: CommandContext = buildCommandContext(state, set, get, {
         showTuiPanel: false,
         showChangelogPanel: false,
+        showMemoriesPanel: false,
         showCodePanel: false,
         codeData: null,
       });
@@ -6293,6 +6298,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const ctx: CommandContext = buildCommandContext(state, set, get, {
         showTuiPanel: false,
         showChangelogPanel: false,
+        showMemoriesPanel: false,
         showCodePanel: false,
         codeData: null,
       });
@@ -7422,6 +7428,10 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowChangelogPanel: (show) => {
       set({ showChangelogPanel: show });
+    },
+
+    setShowMemoriesPanel: (show) => {
+      set({ showMemoriesPanel: show });
     },
 
     setShowHelpPanel: (show, commands = []) => {
