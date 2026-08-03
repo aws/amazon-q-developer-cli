@@ -216,28 +216,19 @@ export const Question: React.FC<QuestionProps> = ({
     if (activePage) {
       const option = options[activePage.optionIndex];
       const subOptions = option?.subOptions ?? [];
-      if (key.paste && pastedInput) {
-        subOptionPageRef.current = null;
-        setSubOptionPage(null);
-        openFreeText(pastedInput, true);
-      } else if (plainInput && input !== ' ') {
-        subOptionPageRef.current = null;
-        setSubOptionPage(null);
-        openFreeText(input);
+      if (key.ctrl && input === 'c') {
+        onCancel();
       } else if (key.upArrow || key.downArrow) {
         const delta = key.upArrow ? -1 : 1;
         const next = {
           ...activePage,
           focused:
-            (activePage.focused + delta + subOptions.length + 1) %
-            (subOptions.length + 1),
+            (activePage.focused + delta + subOptions.length) %
+            subOptions.length,
         };
         subOptionPageRef.current = next;
         setSubOptionPage(next);
-      } else if (
-        (input === ' ' || key.return) &&
-        activePage.focused < subOptions.length
-      ) {
+      } else if (input === ' ' && activePage.focused < subOptions.length) {
         const selected = new Set(activePage.selected);
         if (selected.has(activePage.focused)) {
           selected.delete(activePage.focused);
@@ -252,8 +243,6 @@ export const Question: React.FC<QuestionProps> = ({
           .filter((_, index) => activePage.selected.has(index))
           .map((subOption) => subOption.title);
         submitAnswer(`${option.title} [${selected.join(', ')}]`);
-      } else if (key.ctrl && input === 'c') {
-        onCancel();
       }
       return;
     }
@@ -305,7 +294,7 @@ export const Question: React.FC<QuestionProps> = ({
       if (option.subOptions?.length) {
         const next = {
           optionIndex: focusedRef.current,
-          focused: option.subOptions.length,
+          focused: 0,
           selected: new Set(option.subOptions.map((_, index) => index)),
         };
         subOptionPageRef.current = next;
@@ -352,7 +341,7 @@ export const Question: React.FC<QuestionProps> = ({
           {primary(glyphs.enter)} {secondary('to submit')}
         </Text>
       }
-      closeHintLabel={subOptionPage ? 'to pick a choice' : 'to cancel'}
+      closeHintLabel={subOptionPage ? 'to go back' : 'to cancel'}
     >
       <Box flexDirection="column">
         {question && (
@@ -381,13 +370,6 @@ export const Question: React.FC<QuestionProps> = ({
                 )}
               </React.Fragment>
             ))}
-            <Text>
-              {row(
-                'Submit answer',
-                activeSubOptions.length,
-                subOptionPage.focused
-              )}
-            </Text>
           </>
         ) : (
           options.map((option, index) => (
