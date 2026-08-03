@@ -37,4 +37,7 @@ coveragePathIgnorePatterns = [
 # e2e_tests/preload.ts rebuilds dist/tui.js before E2E test runs.
 # For comprehensive coverage with zero-coverage visibility, run with:
 #   bun test --preload ./src/test-utils/coverage-preload.ts
-preload = ["./e2e_tests/preload.ts"]
+preload = [
+  "./e2e_tests/preload.ts",
+  "./src/test-utils/multiplexer-env-preload.ts",
+]

@@ -30,6 +30,7 @@ export {
   render,
   measureElement,
   CURSOR_MARKER,
+  useHardwareCursor,
 } from 'twinki';
 
 export type {

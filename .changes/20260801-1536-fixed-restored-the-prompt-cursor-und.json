@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Restored the prompt cursor under tmux and Zellij in terminals that draw their cursor by inverting the cell, such as Alacritty and kitty"
+}

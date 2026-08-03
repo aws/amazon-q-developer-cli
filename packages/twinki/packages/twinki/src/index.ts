@@ -22,7 +22,11 @@ export { getHighlighter } from './utils/shiki.js';
 import { visibleWidth as _visibleWidth } from './utils/index.js';
 
 // Renderer
-export { TUI, CURSOR_MARKER } from './renderer/index.js';
+export {
+  TUI,
+  CURSOR_MARKER,
+  isHardwareCursorEnabled,
+} from './renderer/index.js';
 export type {
   Component,
   InputListener,
@@ -113,6 +117,7 @@ export type { UseTypewriterOptions, TypewriterSpeed } from './hooks/index.js';
 export { useFrames } from './hooks/index.js';
 export { useMouse } from './hooks/index.js';
 export type { UseMouseOptions } from './hooks/index.js';
+export { useHardwareCursor } from './hooks/index.js';
 export { useSelectionCopy } from './hooks/index.js';
 export type { UseSelectionCopyOptions } from './hooks/index.js';
 export { useTabs } from './hooks/index.js';

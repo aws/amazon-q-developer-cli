@@ -14,5 +14,6 @@ export type {
 	OverlayOptions,
 	SizeValue,
 } from './component.js';
+export { isHardwareCursorEnabled } from './hardware-cursor.js';
 export { TUI } from './tui.js';
 export type { RenderCompletedEvent, RenderKind, TUIOptions } from './tui.js';

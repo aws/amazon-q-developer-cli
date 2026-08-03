@@ -1,8 +1,17 @@
 /**
  * Vitest setup: auto-dump last frame after every test that used a TestTerminal.
  */
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 import { _getActiveTerminals, _clearActiveTerminals, dumpLastFrame, testDir } from './helpers.js';
+
+// The renderer shows the terminal's own cursor under a multiplexer, so a suite
+// run from inside tmux would emit different bytes than CI. Tests that want that
+// path set these vars themselves.
+beforeEach(() => {
+	for (const key of ['TMUX', 'ZELLIJ', 'TWINKI_HARDWARE_CURSOR']) {
+		delete process.env[key];
+	}
+});
 
 afterEach((ctx) => {
 	const terminals = _getActiveTerminals();

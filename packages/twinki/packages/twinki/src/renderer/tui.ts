@@ -11,6 +11,7 @@ import type {
   OverlayHandle,
   OverlayOptions,
 } from './component.js';
+import { isHardwareCursorEnabled } from './hardware-cursor.js';
 import type { Terminal } from '../terminal/terminal.js';
 import { isKeyRelease, isKeyRepeat, matchesKey } from '../input/keys.js';
 import { throttle } from 'es-toolkit/compat';
@@ -211,10 +212,8 @@ export class TUI extends Container {
   private hardwareCursorRow = 0;
   private inputBuffer = '';
   private cellSizeQueryPending = false;
-  private readonly isMultiplexer =
-    'ZELLIJ' in process.env || 'TMUX' in process.env;
-  private showHardwareCursor =
-    process.env.TWINKI_HARDWARE_CURSOR === '1' || this.isMultiplexer;
+  private showHardwareCursor = isHardwareCursorEnabled();
+  private hardwareCursorListeners = new Set<() => void>();
   private clearOnShrink = process.env.TWINKI_CLEAR_ON_SHRINK === '1';
   private maxLinesRendered = 0;
   private previousViewportTop = 0;
@@ -389,7 +388,24 @@ export class TUI extends Container {
     if (this.showHardwareCursor === enabled) return;
     this.showHardwareCursor = enabled;
     if (!enabled) this.terminal.hideCursor();
+    for (const listener of this.hardwareCursorListeners) listener();
     this.requestRender();
+  }
+
+  /**
+   * Whether the terminal's own cursor is currently visible.
+   *
+   * Components that draw a cursor by inverting a cell must not invert the cell
+   * this cursor sits on, so they need the resolved state rather than the
+   * environment default it started from.
+   */
+  get hardwareCursorVisible(): boolean {
+    return this.showHardwareCursor;
+  }
+
+  onHardwareCursorChange(listener: () => void): () => void {
+    this.hardwareCursorListeners.add(listener);
+    return () => this.hardwareCursorListeners.delete(listener);
   }
 
   /**
