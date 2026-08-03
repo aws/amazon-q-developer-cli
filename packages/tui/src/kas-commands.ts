@@ -380,6 +380,7 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   {
     name: KasCommandName.Memories,
     description: 'Manage repo-scoped memories from previous sessions',
+    feature: Feature.Memory,
     meta: { inputType: 'panel' },
   },
 ];
