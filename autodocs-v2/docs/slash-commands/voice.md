@@ -3,10 +3,10 @@ doc_meta:
   title: /voice
   description: Start voice input using local Whisper speech-to-text transcription
   category: slash_command
-  keywords: [voice, speech, whisper, microphone, dictation, ptt, push-to-talk, recording]
+  keywords: [voice, speech, whisper, microphone, dictation, ptt, push-to-talk, recording, integrity, sha256]
   related: [settings]
-  validated: 2026-07-22
-  commit: d544002bf
+  validated: 2026-07-30
+  commit: 6395639f9
   status: validated
   testable_headless: false
 ---
@@ -84,6 +84,24 @@ Voice behavior is configured via `/settings`:
 | `voice.autoSubmit` | Send transcription immediately vs. place in input |
 | `voice.serverUrl` | Use a remote voice server instead of local Whisper |
 
+## Model Integrity Verification
+
+Kiro cryptographically verifies the Whisper model file against a pinned SHA-256 digest — both after downloading and before every use. This prevents loading a corrupt, tampered, or attacker-planted file from the local model cache.
+
+**What this means in practice:**
+
+- A freshly downloaded model is verified before being promoted into the cache. If the download is corrupt or altered in transit, it is discarded and the download fails cleanly.
+- Each time voice starts, the cached model is re-verified before loading. A file modified after download (e.g. by another process) is rejected.
+- On Unix, the model directory is restricted to owner-only access (mode 0700) as additional defense-in-depth.
+
+If verification fails on a previously-cached model, Kiro automatically deletes the invalid file and re-downloads from the official CDN. You may see:
+
+```
+Cached model at ~/.cache/kiro/models/ggml-base.bin failed integrity check (...); re-downloading...
+```
+
+No action is needed — the re-download and verification happen automatically.
+
 ## How It Works
 
 1. Kiro spawns the CLI binary in voice-only mode (`kiro-cli voice`)
@@ -98,6 +116,10 @@ Voice behavior is configured via `/settings`:
 When `KIRO_VOICE_SERVER_URL` is set (or the `voice.serverUrl` setting is configured), the local binary is skipped entirely. Audio streams to the remote server's SSE endpoint for transcription — useful for cloud desktops without local GPU.
 
 ## Troubleshooting
+
+### Model integrity check failed
+
+If you see "Model integrity check failed", the cached model file doesn't match the expected SHA-256 digest. This can happen if the file was corrupted on disk or modified by another process. Kiro automatically removes the invalid file and re-downloads. If the error persists after re-download, check your network connection (the download may be interrupted or altered by a proxy) and try again.
 
 ### "Voice binary not found"
 

@@ -33,6 +33,23 @@ use crate::streaming::{
 const DEFAULT_MODEL_SIZE: &str = "base";
 const CDN_BASE: &str = "https://prod.download.cli.kiro.dev/stable/models";
 
+/// Pinned SHA-256 of each supported model's extracted `.bin`, lowercase hex.
+///
+/// The model is a native artifact loaded and executed by whisper.cpp, from a
+/// predictable, user-writable cache directory. Verifying it against a pinned
+/// digest before every load (not just after download) closes the local
+/// cache-poisoning / model-substitution vector: a file planted or tampered with
+/// by another same-UID process is rejected instead of being loaded. These digests
+/// are the canonical whisper.cpp weights mirrored on the Kiro CDN — verified
+/// against the actual `ggml-{base,small}.bin.zip` artifacts.
+fn model_sha256(size: &str) -> &'static str {
+    match normalize_model_size(size) {
+        "small" => "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        // "base"
+        _ => "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+    }
+}
+
 /// Normalize an arbitrary model-size string to a supported value, falling back
 /// to the default for anything unknown. Single source of truth so the filename,
 /// download size, and readiness check never disagree for a bogus setting.
@@ -116,10 +133,79 @@ impl LocalWhisperProvider {
             .join("models")
     }
 
-    /// Check if the model file exists and is plausible (>1MB).
-    pub fn model_ready(size: &str) -> bool {
+    /// Best-effort: restrict the model directory to owner-only (0700) on Unix.
+    /// No-op on other platforms and on any error — integrity is enforced by the
+    /// SHA-256 check, not by permissions.
+    #[cfg(unix)]
+    fn harden_dir_permissions(dir: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)) {
+            debug!("Could not restrict model dir permissions on {}: {}", dir.display(), e);
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn harden_dir_permissions(_dir: &std::path::Path) {}
+
+    /// Check if the model file exists and passes its pinned-SHA-256 integrity
+    /// check. This is intentionally the full cryptographic check (not a size
+    /// heuristic): callers use it to decide whether a usable model is present,
+    /// and a tampered/planted file must not count as "ready".
+    ///
+    /// Async because hashing a 148-487MB model takes long enough to stall the
+    /// async runtime; the digest runs on a blocking task, as in `ensure_model`.
+    pub async fn model_ready(size: &str) -> bool {
         let path = Self::model_dir().join(model_filename(size));
-        path.exists() && std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false)
+        if !path.exists() {
+            return false;
+        }
+        let size = size.to_string();
+        tokio::task::spawn_blocking(move || Self::verify_model_integrity(&path, &size).is_ok())
+            .await
+            .unwrap_or(false)
+    }
+
+    /// Compute the SHA-256 of a file, streaming it in chunks so a large model
+    /// isn't read fully into memory.
+    fn file_sha256(path: &std::path::Path) -> std::io::Result<String> {
+        use std::io::Read;
+
+        use sha2::{
+            Digest,
+            Sha256,
+        };
+        let mut file = std::fs::File::open(path)?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hex::encode(hasher.finalize()))
+    }
+
+    /// Verify a model file matches its pinned SHA-256. Called after download AND
+    /// before every load from cache, so an attacker-controlled file planted in
+    /// the predictable, user-writable model directory is rejected rather than
+    /// loaded and executed by the native whisper.cpp runtime.
+    fn verify_model_integrity(path: &std::path::Path, size: &str) -> VoiceResult<()> {
+        let expected = model_sha256(size);
+        let actual = Self::file_sha256(path)
+            .map_err(|e| VoiceError::ProviderInitFailed(format!("Failed to read model for integrity check: {}", e)))?;
+        if actual.eq_ignore_ascii_case(expected) {
+            Ok(())
+        } else {
+            Err(VoiceError::ProviderInitFailed(format!(
+                "Model integrity check failed for {}: expected SHA-256 {}, got {}. The cached model may be corrupt or \
+                 tampered with; delete it and let the voice feature re-download.",
+                path.display(),
+                expected,
+                actual
+            )))
+        }
     }
 
     pub async fn ensure_model(size: &str) -> VoiceResult<PathBuf> {
@@ -127,20 +213,32 @@ impl LocalWhisperProvider {
         let filename = model_filename(size);
         let path = dir.join(&filename);
 
-        // Check if model exists and is plausible (>1MB — real models are 140MB+)
-        if path.exists()
-            && let Ok(m) = tokio::fs::metadata(&path).await
-        {
-            if m.len() > 1_000_000 {
-                debug!("Whisper model found at {}", path.display());
-                return Ok(path);
+        // Reuse the cached model ONLY if it passes its pinned-SHA-256 check. A
+        // size heuristic can't tell a genuine model from a planted/tampered one
+        // in this predictable, user-writable directory, so verify cryptographically
+        // before trusting (and later loading + executing) the cached file.
+        if path.exists() {
+            let vp = path.clone();
+            let vsize = size.to_string();
+            let verified = tokio::task::spawn_blocking(move || Self::verify_model_integrity(&vp, &vsize))
+                .await
+                .map_err(|e| VoiceError::ProviderInitFailed(format!("Integrity check task failed: {}", e)))?;
+            match verified {
+                Ok(()) => {
+                    debug!("Whisper model found and verified at {}", path.display());
+                    return Ok(path);
+                },
+                Err(e) => {
+                    // Don't load a file that failed verification. Drop it and
+                    // re-download from the pinned HTTPS source.
+                    eprintln!(
+                        "Cached model at {} failed integrity check ({}); re-downloading...",
+                        path.display(),
+                        e
+                    );
+                    let _ = tokio::fs::remove_file(&path).await;
+                },
             }
-            eprintln!(
-                "Model file at {} appears incomplete ({} bytes), re-downloading...",
-                path.display(),
-                m.len()
-            );
-            let _ = tokio::fs::remove_file(&path).await;
         }
 
         let url = model_url(size);
@@ -155,6 +253,11 @@ impl LocalWhisperProvider {
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|e| VoiceError::ProviderInitFailed(format!("Failed to create model dir: {}", e)))?;
+        // Defense-in-depth: restrict the model dir to owner-only (0700) on Unix so
+        // a different local user can't drop files into it. Same-UID tampering is
+        // still handled by the SHA-256 verification above — this is not the primary
+        // control. Best-effort: a failure here must not block the download.
+        Self::harden_dir_permissions(&dir);
 
         let response = reqwest::get(&url)
             .await
@@ -266,7 +369,21 @@ impl LocalWhisperProvider {
         .map_err(|e| VoiceError::ProviderInitFailed(format!("Extract task failed: {}", e)))?
         .map_err(|e: VoiceError| e)?;
 
-        // Atomic rename: only a complete extraction becomes the final model file
+        // Verify the freshly-extracted artifact against its pinned SHA-256 BEFORE
+        // it becomes the final model file. A download that doesn't match the
+        // pinned digest (corrupt, MITM despite TLS, or a compromised mirror) is
+        // discarded rather than promoted into the cache.
+        let verify_tmp = tmp_path.clone();
+        let verify_size = size.to_string();
+        let verified = tokio::task::spawn_blocking(move || Self::verify_model_integrity(&verify_tmp, &verify_size))
+            .await
+            .map_err(|e| VoiceError::ProviderInitFailed(format!("Integrity check task failed: {}", e)))?;
+        if let Err(e) = verified {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err(e);
+        }
+
+        // Atomic rename: only a complete, verified extraction becomes the final model file
         tokio::fs::rename(&tmp_path, &path)
             .await
             .map_err(|e| VoiceError::ProviderInitFailed(format!("Failed to finalize model file: {}", e)))?;
@@ -544,5 +661,52 @@ mod tests {
         assert_eq!(model_filename("small"), "ggml-small.bin");
         assert_eq!(model_download_size_mb("small"), 466);
         assert_eq!(model_download_size_mb("base"), 148);
+    }
+
+    #[test]
+    fn model_sha256_is_pinned_and_normalized() {
+        // Digests are pinned per size and unknown sizes fall back to base's.
+        assert_eq!(
+            model_sha256("base"),
+            "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"
+        );
+        assert_eq!(
+            model_sha256("small"),
+            "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"
+        );
+        assert_eq!(model_sha256("large"), model_sha256("base"));
+        assert_ne!(model_sha256("small"), model_sha256("base"));
+    }
+
+    #[test]
+    fn file_sha256_matches_known_vector() {
+        // SHA-256("abc") — the canonical NIST test vector.
+        let dir = std::env::temp_dir().join(format!("kvs-sha-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("abc.txt");
+        std::fs::write(&f, b"abc").unwrap();
+        let got = LocalWhisperProvider::file_sha256(&f).unwrap();
+        assert_eq!(got, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_model_integrity_rejects_tampered_file() {
+        // A planted/tampered file whose bytes don't match the pinned digest must
+        // be rejected — this is the core cache-poisoning defense.
+        let dir = std::env::temp_dir().join(format!("kvs-tamper-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let planted = dir.join(model_filename("base"));
+        std::fs::write(&planted, b"totally not a whisper model").unwrap();
+
+        let result = LocalWhisperProvider::verify_model_integrity(&planted, "base");
+        assert!(result.is_err(), "tampered model must fail integrity verification");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("integrity check failed"),
+            "error should name the integrity failure: {msg}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

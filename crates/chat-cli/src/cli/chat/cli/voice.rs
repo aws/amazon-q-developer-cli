@@ -118,7 +118,7 @@ impl VoiceArgs {
         // If model needs downloading, download it and return — don't auto-start recording.
         if matches!(backend, TranscriptionBackend::LocalWhisper) {
             let size = model_size.as_deref().unwrap_or("base");
-            if !LocalWhisperProvider::model_ready(size) {
+            if !LocalWhisperProvider::model_ready(size).await {
                 LocalWhisperProvider::ensure_model(size)
                     .await
                     .map_err(|e| ChatError::Custom(format!("Model download failed: {e}").into()))?;

@@ -113,7 +113,7 @@ pub async fn voice_only_mode(
     // Normalize once so the filename, size, and readiness checks all agree even
     // for an unknown model_size (see local_whisper::normalize_model_size).
     let effective_model_size = local_whisper::normalize_model_size(model_size.as_deref().unwrap_or("base"));
-    if is_piped && !LocalWhisperProvider::model_ready(effective_model_size) {
+    if is_piped && !LocalWhisperProvider::model_ready(effective_model_size).await {
         if !confirm_download {
             emit_voice_event(
                 "needs_download",
