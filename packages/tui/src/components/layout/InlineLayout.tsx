@@ -65,6 +65,7 @@ import {
 } from '../../utils/keybindings.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { getPlaceholder } from './getPlaceholder.js';
+import { useStatusSurfaceProps } from './useStatusSurfaceProps.js';
 import { getGitBranch } from '../../utils/git';
 import { useStatusBilling } from './status-line/useStatusBilling.js';
 import { getAgentColor, isAutonomousAgent } from '../../utils/agentColors.js';
@@ -274,14 +275,11 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     sessionId,
     contextUsagePercent,
     currentModel,
-    currentEffort,
     currentAgent,
-    codeIntelligenceActive,
     goalStatus,
   } = useContextState();
+  const statusSurface = useStatusSurfaceProps();
   const activeCommand = useAppStore((state) => state.activeCommand);
-  const cloudRepo = useAppStore((state) => state.cloudRepo);
-  const cloudBranch = useAppStore((state) => state.cloudBranch);
   const cloudSessionActive = useAppStore((state) => state.cloudSessionActive);
   // MCP OAuth prompts come from LOCAL MCP servers; a cloud session runs its
   // tools in the sandbox, so the local auth nag doesn't apply there and would
@@ -302,7 +300,6 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const cloudSessionResumed = useAppStore(
     (state) => state.kas.sessionOrigin === 'resumed'
   );
-  const cloudExtraRepos = useAppStore((state) => state.cloudExtraRepos);
   const bootProgress = useAppStore((state) => state.bootProgress);
   const inlineSpinners = useSpinners();
   const promptHint = useAppStore((state) => state.promptHint);
@@ -475,20 +472,12 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
 
     return (
       <StatusLine
+        {...statusSurface}
         agentName={currentAgent?.name ?? null}
         autonomousModeActive={isAutonomousAgent(currentAgent?.name ?? null)}
         modelName={currentModel?.name ?? null}
-        effort={currentEffort}
         contextUsagePercent={contextUsagePercent}
-        workspacePath={process.cwd()}
         gitBranch={gitBranch}
-        goalStatus={goalStatus}
-        tangentName={tangentName}
-        cloudSessionActive={cloudSessionActive}
-        cloudRepo={cloudRepo}
-        cloudBranch={cloudBranch}
-        cloudExtraRepos={cloudExtraRepos}
-        codeIntelligenceActive={codeIntelligenceActive}
         usagePercent={statusBilling.usagePercent}
         creditsRemaining={statusBilling.creditsRemaining}
       />
@@ -502,16 +491,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     approvalSessionMessages,
     currentAgent,
     contextUsagePercent,
-    codeIntelligenceActive,
     gitBranch,
     currentModel,
-    currentEffort,
-    goalStatus,
-    tangentName,
-    cloudSessionActive,
-    cloudRepo,
-    cloudBranch,
-    cloudExtraRepos,
+    statusSurface,
     glyphs,
   ]);
 
@@ -520,20 +502,13 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     if (!toolOutputsExpanded) return null;
     return (
       <StatusLine
+        {...statusSurface}
         agentName={currentAgent?.name ?? null}
         autonomousModeActive={isAutonomousAgent(currentAgent?.name ?? null)}
         modelName={currentModel?.name ?? null}
-        effort={currentEffort}
         contextUsagePercent={contextUsagePercent}
-        workspacePath={process.cwd()}
         gitBranch={gitBranch}
         goalStatus={null}
-        tangentName={tangentName}
-        cloudSessionActive={cloudSessionActive}
-        cloudRepo={cloudRepo}
-        cloudBranch={cloudBranch}
-        cloudExtraRepos={cloudExtraRepos}
-        codeIntelligenceActive={codeIntelligenceActive}
         dimmed
         usagePercent={statusBilling.usagePercent}
         creditsRemaining={statusBilling.creditsRemaining}
@@ -543,17 +518,11 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     StatusLine,
     statusBilling,
     toolOutputsExpanded,
-    tangentName,
     currentAgent,
     currentModel,
-    currentEffort,
     contextUsagePercent,
-    codeIntelligenceActive,
     gitBranch,
-    cloudSessionActive,
-    cloudRepo,
-    cloudBranch,
-    cloudExtraRepos,
+    statusSurface,
   ]);
 
   const handleSubmit = useCallback(

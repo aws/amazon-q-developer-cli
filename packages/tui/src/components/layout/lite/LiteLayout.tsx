@@ -107,6 +107,7 @@ import { SourceProviderGate } from '../../ui/SourceProviderGate.js';
 import { openUrlInBrowser } from '../../../utils/browser.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../../utils/cloud-urls.js';
 import { getPlaceholder } from '../getPlaceholder.js';
+import { useStatusSurfaceProps } from '../useStatusSurfaceProps.js';
 import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
 import { ArtifactGenerationCard } from '../../ui/ArtifactView/ArtifactGenerationCard.js';
 import { SurveyPromptBar } from '../../ui/SurveyPromptBar.js';
@@ -194,6 +195,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const mcpInitStatus = useAppStore((s) => s.mcpInitStatus);
   const bootProgress = useAppStore((s) => s.bootProgress);
   const cloudSessionActive = useAppStore((s) => s.cloudSessionActive);
+  const statusSurface = useStatusSurfaceProps();
   const cloudProviderChecked = useAppStore((s) => s.cloudProviderChecked);
   const cloudProvider = useAppStore((s) => s.cloudProvider);
   const cloudRepoCount = useAppStore((s) => s.cloudRepoCount);
@@ -202,9 +204,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const cloudSessionResumed = useAppStore(
     (s) => s.kas.sessionOrigin === 'resumed'
   );
-  const cloudExtraRepos = useAppStore((s) => s.cloudExtraRepos);
-  const cloudRepo = useAppStore((s) => s.cloudRepo);
-  const cloudBranch = useAppStore((s) => s.cloudBranch);
   const cancelMessage = useAppStore((s) => s.cancelMessage);
   const resetExitSequence = useAppStore((s) => s.resetExitSequence);
   const wasCancelled = useAppStore((s) => s.wasCancelled);
@@ -254,7 +253,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
   const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
-  const currentEffort = useAppStore((s) => s.currentEffort);
   // Goal-loop state (set by `/goal`). Lite surfaces it as a status-line segment
   // and a one-time scrollback confirmation; the panel is shared via BackendPanels.
   const goalStatus = useAppStore((s) => s.goalStatus);
@@ -1774,19 +1772,12 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
           renders the requested name with a spinner. */}
       {isInitialized && !isShellEscape && (
         <StatusLine
+          {...statusSurface}
           agentName={agentName}
           autonomousModeActive={isAutonomousAgent(agentName)}
           modelName={modelName}
-          effort={currentEffort}
           contextUsagePercent={ctxPct}
-          workspacePath={process.cwd()}
           gitBranch={gitBranch}
-          goalStatus={goalStatus}
-          tangentName={tangentName}
-          cloudSessionActive={cloudSessionActive}
-          cloudRepo={cloudRepo}
-          cloudBranch={cloudBranch}
-          cloudExtraRepos={cloudExtraRepos}
           pendingAgentName={pendingAgentName}
           animationFrame={bootFrame}
           usagePercent={statusBilling.usagePercent}
