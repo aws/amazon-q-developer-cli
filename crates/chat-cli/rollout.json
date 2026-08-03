@@ -72,5 +72,11 @@
     "description": "/tangent named side-conversations. Generally available; the launcher includes tangent in KIRO_ENABLED_FEATURES and the TUI registers the /tangent command only when enabled. Dial treatment_percent to 0 to kill-switch.",
     "treatment_percent": 100,
     "segment": "all"
+  },
+  "remote_changelog": {
+    "description": "Remote changelog feed fetch on stable builds (prod CloudFront). Nightly always fetches from gamma unconditionally; this gate extends remote-fetch to stable builds reading the prod feed. Ramp: internal first, then widen segment/percent for general availability.",
+    "treatment_percent": 100,
+    "segment": "internal",
+    "channel": "stable"
   }
 }

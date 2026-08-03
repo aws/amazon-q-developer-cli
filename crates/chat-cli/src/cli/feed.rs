@@ -17,6 +17,7 @@ use crate::util::consts::env_var::{
 const EMBEDDED_FEED: &str = include_str!("./feed.json");
 
 const GAMMA_FEED_URL: &str = "https://download.gamma.cli.kiro.dev/stable/changelog/feed.json";
+const PROD_FEED_URL: &str = "https://prod.download.cli.kiro.dev/stable/changelog/feed.json";
 
 /// Total request budget for fetching the remote feed. Kept short because any
 /// failure falls back to the cached/bundled feed.
@@ -133,43 +134,74 @@ impl Feed {
     }
 
     /// URL of the remotely published changelog feed, if this build should
-    /// read one. Only nightly builds fetch remotely (from the gamma
-    /// distribution, published by the stable release workflow); all other
-    /// channels read the bundled feed and return `None` here.
-    /// KIRO_FEED_URL redirects the fetch but does not bypass the channel
-    /// gate; use KIRO_VERSION_OVERRIDE to test channel-gated behavior.
+    /// read one. Nightly, rc, and feature builds read the gamma distribution
+    /// (all three ship to gamma only); stable builds read prod only when the
+    /// `remote_changelog` rollout gate is on, so the stable ramp is
+    /// controlled centrally. Local dev builds never fetch.
+    /// KIRO_FEED_URL redirects the fetch but does not bypass the channel or
+    /// rollout gate; use KIRO_VERSION_OVERRIDE to test channel-gated behavior.
     pub fn remote_url() -> Option<String> {
+        Self::resolve_remote_url(
+            std::env::var_os(KIRO_NO_REMOTE_CHANGELOG).is_some_and(|v| !v.is_empty()),
+            &crate::util::channel::channel(),
+            crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteChangelog),
+            std::env::var(KIRO_FEED_URL)
+                .ok()
+                .filter(|url| !url.is_empty())
+                .as_deref(),
+        )
+    }
+
+    /// Pure resolution of the feed URL from its inputs, so the full matrix
+    /// (channel x gate x override x kill switch) is testable without touching
+    /// process env or the global rollout.
+    fn resolve_remote_url(
+        kill_switch: bool,
+        channel: &crate::util::channel::Channel,
+        stable_gate_enabled: bool,
+        url_override: Option<&str>,
+    ) -> Option<String> {
         // Kill switch: turn off remote fetching without a binary release.
-        if std::env::var_os(KIRO_NO_REMOTE_CHANGELOG).is_some_and(|v| !v.is_empty()) {
+        if kill_switch {
             return None;
         }
-        if crate::util::channel::channel() != crate::util::channel::Channel::Nightly {
-            return None;
-        }
-        if let Ok(url) = std::env::var(KIRO_FEED_URL)
-            && !url.is_empty()
-        {
+        let cdn_url = match channel {
+            // Nightly, rc, and feature builds all ship to gamma only, so they
+            // read the gamma feed. Version capping keeps a pre-release build
+            // from advertising the release it precedes.
+            crate::util::channel::Channel::Nightly
+            | crate::util::channel::Channel::Rc
+            | crate::util::channel::Channel::Other(_) => GAMMA_FEED_URL,
+            // Stable remote fetch is gated behind the rollout system so it can
+            // be ramped (internal -> percentage -> 100%).
+            crate::util::channel::Channel::Stable if stable_gate_enabled => PROD_FEED_URL,
+            // Local dev builds stay hermetic: no network on launch or
+            // /changelog. KIRO_FEED_URL cannot override this -- it only
+            // redirects fetches the channel/gate already authorized.
+            crate::util::channel::Channel::Stable | crate::util::channel::Channel::Dev => return None,
+        };
+        match url_override {
             // Feed content is rendered to the user's terminal, so never allow
             // it over plaintext transport (loopback excepted, for tests).
-            if is_allowed_feed_url(&url) {
-                return Some(url);
-            }
-            warn!(%url, "ignoring non-https KIRO_FEED_URL");
-            return None;
+            Some(url) if is_allowed_feed_url(url) => Some(url.to_string()),
+            Some(url) => {
+                warn!(%url, "ignoring non-https KIRO_FEED_URL");
+                None
+            },
+            None => Some(cdn_url.to_string()),
         }
-        Some(GAMMA_FEED_URL.to_string())
     }
 
     /// Fetches the published feed for builds with a remote feed URL, caching
     /// the raw body + ETag on success and returning the validated, sanitized,
     /// version-capped JSON. Uses a conditional GET so an unchanged feed costs
-    /// a 304 with no body (served from the cache). Returns `None` for
-    /// non-nightly builds and on any network/parse failure so callers fall
-    /// back to the cached or bundled feed.
+    /// a 304 with no body (served from the cache). Returns `None` when this
+    /// build does not fetch remotely and on any network/parse failure, so
+    /// callers fall back to the cached or bundled feed.
     pub async fn fetch_remote_json() -> Option<String> {
         let url = Self::remote_url()?;
         let client = crate::request::new_client_no_redirects().ok()?;
-        let cached_raw = Self::read_cache_raw();
+        let cached_raw = Self::read_cache_raw_for(&url);
         let mut request = client.get(&url).timeout(FETCH_TIMEOUT);
         // Only revalidate an ETag whose cached body is still present.
         if cached_raw.is_some()
@@ -236,7 +268,7 @@ impl Feed {
         // + version cap) is re-applied on every read, so a cache written by
         // one binary version is never served with another version's cap, and
         // the ETag always corresponds to the server's representation.
-        Self::write_cache(&body, etag.as_deref());
+        Self::write_cache(&body, etag.as_deref(), &url);
         Some(processed)
     }
 
@@ -285,7 +317,8 @@ impl Feed {
     /// Loads the feed from the on-disk cache written by a previous remote
     /// fetch, without touching the network. Entries are re-capped at the
     /// running binary's version in case the cache was written by a newer
-    /// binary. Non-nightly builds and cache misses get the bundled feed.
+    /// binary. Builds that do not fetch remotely, and cache misses, get the
+    /// bundled feed.
     pub fn load_cached() -> Self {
         serde_json::from_str(&Self::load_cached_json()).unwrap_or_else(|_| Self::load())
     }
@@ -295,8 +328,8 @@ impl Feed {
     pub fn load_cached_json() -> String {
         let bundled = Self::bundled_json();
         let cached = || {
-            Self::remote_url()?;
-            let raw = Self::read_cache_raw()?;
+            let url = Self::remote_url()?;
+            let raw = Self::read_cache_raw_for(&url)?;
             let processed = Self::postprocess_remote_feed(&raw, &crate::util::channel::cli_version_string())?;
             // Embedded floor: after a binary upgrade the freshly bundled feed
             // can be newer than a stale cache from the previous binary; never
@@ -312,8 +345,8 @@ impl Feed {
     }
 
     /// Spawns a background task refreshing the on-disk cache from the remote
-    /// feed. No-op on non-nightly builds or outside a tokio runtime. Never
-    /// blocks the caller.
+    /// feed. No-op when this build does not fetch remotely or outside a tokio
+    /// runtime. Never blocks the caller.
     pub fn refresh_cache_in_background() {
         if Self::remote_url().is_none() {
             return;
@@ -333,9 +366,22 @@ impl Feed {
         });
     }
 
-    fn read_cache_raw() -> Option<String> {
+    /// Cached body, but only when it was fetched from `url`. The cache lives in
+    /// a shared data dir, so a channel switch (gamma <-> prod) must not serve
+    /// another distribution's content.
+    fn read_cache_raw_for(url: &str) -> Option<String> {
+        if Self::read_cache_source().as_deref() != Some(url) {
+            return None;
+        }
         let path = crate::util::paths::feed_cache_json_path().ok()?;
         std::fs::read_to_string(path).ok()
+    }
+
+    fn read_cache_source() -> Option<String> {
+        let path = crate::util::paths::feed_cache_source_path().ok()?;
+        let source = std::fs::read_to_string(path).ok()?;
+        let source = source.trim();
+        (!source.is_empty()).then(|| source.to_string())
     }
 
     fn read_cache_etag() -> Option<String> {
@@ -346,22 +392,31 @@ impl Feed {
     }
 
     fn remove_cache() {
-        if let Ok(path) = crate::util::paths::feed_cache_json_path() {
-            let _ = std::fs::remove_file(path);
-        }
-        if let Ok(path) = crate::util::paths::feed_cache_etag_path() {
+        for path in [
+            crate::util::paths::feed_cache_json_path(),
+            crate::util::paths::feed_cache_etag_path(),
+            crate::util::paths::feed_cache_source_path(),
+        ]
+        .into_iter()
+        .flatten()
+        {
             let _ = std::fs::remove_file(path);
         }
     }
 
     /// Best-effort atomic write of the feed cache and its ETag (unique temp
     /// file + rename, so concurrent writers cannot tear each other's writes).
-    fn write_cache(raw_json: &str, etag: Option<&str>) {
+    fn write_cache(raw_json: &str, etag: Option<&str>, source_url: &str) {
         let Ok(path) = crate::util::paths::feed_cache_json_path() else {
             return;
         };
         if atomic_write(&path, raw_json).is_err() {
             return;
+        }
+        // Record the source before the ETag: a body with no recorded source is
+        // treated as a miss, which is the safe direction.
+        if let Ok(source_path) = crate::util::paths::feed_cache_source_path() {
+            let _ = atomic_write(&source_path, source_url);
         }
         if let Ok(etag_path) = crate::util::paths::feed_cache_etag_path() {
             match etag {
@@ -407,6 +462,68 @@ mod tests {
                 }
             ]
         }"#
+    }
+
+    /// Full URL-resolution matrix without touching process env or the global
+    /// rollout: channel x stable gate x override x kill switch.
+    #[test]
+    fn test_resolve_remote_url_matrix() {
+        use crate::util::channel::Channel;
+
+        let resolve = |kill, ch: &Channel, gate, over| Feed::resolve_remote_url(kill, ch, gate, over);
+        let feature = Channel::Other("fix-foo".to_string());
+
+        // Nightly, rc, and feature builds all read gamma; the stable gate is
+        // irrelevant to them.
+        for gate in [false, true] {
+            for ch in [Channel::Nightly, Channel::Rc, feature.clone()] {
+                assert_eq!(
+                    resolve(false, &ch, gate, None).as_deref(),
+                    Some(GAMMA_FEED_URL),
+                    "{ch:?} should read gamma"
+                );
+            }
+        }
+
+        // Stable fetches prod only when the rollout gate is on.
+        assert_eq!(
+            resolve(false, &Channel::Stable, true, None).as_deref(),
+            Some(PROD_FEED_URL)
+        );
+        assert_eq!(resolve(false, &Channel::Stable, false, None), None);
+
+        // Local dev builds never fetch, gate on or off.
+        for gate in [false, true] {
+            assert_eq!(resolve(false, &Channel::Dev, gate, None), None);
+        }
+
+        // Kill switch beats every other input, including an explicit override.
+        for ch in [Channel::Nightly, Channel::Stable] {
+            assert_eq!(resolve(true, &ch, true, None), None);
+            assert_eq!(resolve(true, &ch, true, Some("https://example.com/f.json")), None);
+        }
+
+        // The override only redirects a fetch the gates already authorized, and
+        // must still be https (loopback excepted).
+        assert_eq!(
+            resolve(false, &Channel::Nightly, false, Some("https://example.com/f.json")).as_deref(),
+            Some("https://example.com/f.json")
+        );
+        assert_eq!(
+            resolve(false, &Channel::Stable, false, Some("https://example.com/f.json")),
+            None,
+            "override must not bypass the stable rollout gate"
+        );
+        assert_eq!(
+            resolve(false, &Channel::Nightly, true, Some("http://example.com/f.json")),
+            None,
+            "plaintext override is rejected"
+        );
+        assert_eq!(
+            resolve(false, &Channel::Nightly, true, Some("http://127.0.0.1:1/f.json")).as_deref(),
+            Some("http://127.0.0.1:1/f.json"),
+            "loopback http is allowed for tests"
+        );
     }
 
     #[test]
@@ -477,10 +594,11 @@ mod tests {
         unsafe { std::env::set_var(KIRO_VERSION_OVERRIDE, "9.9.9-nightly.1") };
 
         // Nightly gets the gamma URL by default; KIRO_FEED_URL only
-        // redirects it, and non-nightly channels never fetch even with the
-        // URL override set.
+        // redirects it. A dev build never fetches regardless of rollout state,
+        // so it is the order-independent choice here (the stable gate depends
+        // on the process-global rollout, covered by resolve_remote_url tests).
         assert_eq!(Feed::remote_url().as_deref(), Some(GAMMA_FEED_URL));
-        unsafe { std::env::set_var(KIRO_VERSION_OVERRIDE, "9.9.9") };
+        unsafe { std::env::set_var(KIRO_VERSION_OVERRIDE, "9.9.9-dev") };
         unsafe { std::env::set_var(KIRO_FEED_URL, "https://example.com/feed.json") };
         assert_eq!(Feed::remote_url(), None);
         assert_eq!(Feed::fetch_remote_json().await, None);
@@ -591,16 +709,19 @@ mod tests {
         .unwrap();
         unsafe { std::env::set_var(KIRO_BUNDLED_FEED_FILE, &bundled_fixture) };
 
+        // The cache is scoped to its source URL, so seed it with whatever
+        // remote_url() currently resolves to (the mock server here).
+        let active_url = Feed::remote_url().expect("nightly + override resolves a URL");
         let older =
             r#"{ "entries": [ { "type": "release", "date": "2026-01-01", "version": "1.0.0", "changes": [] } ] }"#;
-        Feed::write_cache(older, None);
+        Feed::write_cache(older, None, &active_url);
         // cache 1.0.0 < bundled 2.0.0 -> floor fires, bundled served.
         assert_eq!(Feed::load_cached().get_version_changelog("2.0.0").is_some(), true);
         assert!(Feed::load_cached().get_version_changelog("1.0.0").is_none());
 
         let newer =
             r#"{ "entries": [ { "type": "release", "date": "2026-01-03", "version": "3.0.0", "changes": [] } ] }"#;
-        Feed::write_cache(newer, None);
+        Feed::write_cache(newer, None, &active_url);
         // cache 3.0.0 >= bundled 2.0.0 -> cache served.
         assert!(Feed::load_cached().get_version_changelog("3.0.0").is_some());
         unsafe { std::env::remove_var(KIRO_BUNDLED_FEED_FILE) };
@@ -625,6 +746,11 @@ mod tests {
         assert_eq!(Feed::remote_url(), None);
         unsafe { std::env::set_var(KIRO_FEED_URL, "http://localhost.evil.com/feed.json") };
         assert_eq!(Feed::remote_url(), None);
+
+        // A cache written by another distribution (channel switch) is not
+        // served: the recorded source must match the active URL.
+        Feed::write_cache(sample_feed_json(), None, "https://elsewhere.example/feed.json");
+        assert_eq!(Feed::load_cached_json(), include_str!("./feed.json"));
 
         unsafe { std::env::remove_var(KIRO_FEED_URL) };
         unsafe { std::env::remove_var(KIRO_VERSION_OVERRIDE) };

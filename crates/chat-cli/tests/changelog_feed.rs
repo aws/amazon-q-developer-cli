@@ -9,6 +9,7 @@ use chat_cli::util::consts::env_var::{
     KIRO_BUNDLED_FEED_FILE,
     KIRO_FEED_URL,
     KIRO_NO_REMOTE_CHANGELOG,
+    KIRO_ROLLOUT_FORCE_INTERNAL,
     KIRO_VERSION_OVERRIDE,
 };
 use predicates::prelude::*;
@@ -36,9 +37,12 @@ fn refresh_feed_subcommand_snapshots_fresh_feed() {
         cmd
     };
 
-    // Stable channel: no fetch, updated=false, no snapshot written.
+    // Kill switch: no fetch, updated=false, no snapshot written. The switch
+    // returns before any channel or rollout check, so this is profile- and
+    // gate-independent.
     let never = server.mock("GET", "/feed.json").expect(0).create();
     refresh_cmd("9.9.9")
+        .env(KIRO_NO_REMOTE_CHANGELOG, "1")
         .assert()
         .success()
         .stdout(contains(r#""updated":false"#));
@@ -163,19 +167,148 @@ fn nightly_fetches_remote_feed_and_caps_at_binary_version() {
     mock.assert();
 }
 
+/// rc and feature builds ship to gamma only, so they read the gamma feed the
+/// same way nightly does (the URL is redirected to a fixture here).
 #[test]
-fn non_nightly_channels_never_fetch() {
+fn rc_and_feature_channels_fetch() {
+    for version in ["1.5.0-rc.1", "1.5.0-fix-foo.1"] {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/feed.json")
+            .with_status(200)
+            .with_body(FIXTURE_FEED)
+            .create();
+
+        changelog_cmd(version, &format!("{}/feed.json", server.url()), data_dir.path())
+            .assert()
+            .success()
+            .stdout(contains("Remote fixture entry"));
+        mock.assert();
+    }
+}
+
+/// The dark direction, and the ramp-safety guarantee this gate provides: a
+/// stable build that is NOT in the rollout (no internal sign-in, no
+/// force-internal override) makes zero fetch requests even with a feed URL
+/// configured. Release-profile only: debug builds enable every gate, so the
+/// gate-off shape is only observable on a --release binary.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "real rollout gate only exists in release builds")]
+fn stable_stays_dark_without_gate() {
     let data_dir = tempfile::tempdir().unwrap();
     let mut server = mockito::Server::new();
     let mock = server.mock("GET", "/feed.json").expect(0).create();
 
-    for version in ["1.5.0", "1.5.0-rc.1", "1.5.0-fix-foo.1"] {
-        changelog_cmd(version, &format!("{}/feed.json", server.url()), data_dir.path())
-            .assert()
-            .success()
-            .stdout(contains("Remote fixture entry").not());
-    }
-    // No request ever hit the server.
+    changelog_cmd("1.5.0", &format!("{}/feed.json", server.url()), data_dir.path())
+        .assert()
+        .success()
+        .stdout(contains("Remote fixture entry").not());
+    mock.assert();
+}
+
+/// A gated stable build that cannot reach the feed still renders the embedded
+/// copy. This matters more on stable than nightly: stable binaries are built
+/// from release branches, whose bundled feed carries real entries, so the
+/// worst case is last-release content rather than an empty changelog.
+/// Release-profile only, same reason as stable_fetches_when_rollout_enabled.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "real rollout gate only exists in release builds")]
+fn stable_falls_back_to_bundled_then_cache() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let url = format!("{}/feed.json", server.url());
+
+    let bundled = data_dir.path().join("bundled.json");
+    std::fs::write(
+        &bundled,
+        r#"{ "entries": [ { "type": "release", "date": "2026-05-01", "version": "0.9.0",
+            "changes": [{ "type": "added", "description": "Embedded stable entry" }] } ] }"#,
+    )
+    .unwrap();
+
+    let stable_cmd = || {
+        let mut cmd = changelog_cmd("1.5.0", &url, data_dir.path());
+        cmd.env(KIRO_ROLLOUT_FORCE_INTERNAL, "1")
+            .env(KIRO_BUNDLED_FEED_FILE, &bundled);
+        cmd
+    };
+
+    // Fetch fails with no cache yet -> embedded copy is served.
+    let err = server.mock("GET", "/feed.json").with_status(500).create();
+    stable_cmd()
+        .assert()
+        .success()
+        .stdout(contains("Embedded stable entry").and(contains("Remote fixture entry").not()));
+    err.assert();
+
+    // Seed the cache from a successful fetch.
+    let ok = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .create();
+    stable_cmd().assert().success().stdout(contains("Remote fixture entry"));
+    ok.assert();
+
+    // Fetch fails again -> the cache is preferred over the embedded copy
+    // (cache 1.0.0 outranks bundled 0.9.0 under the embedded floor).
+    let err = server.mock("GET", "/feed.json").with_status(500).create();
+    stable_cmd().assert().success().stdout(contains("Remote fixture entry"));
+    err.assert();
+}
+
+/// Local dev builds stay hermetic: no fetch even with a feed URL configured.
+#[test]
+fn dev_builds_never_fetch() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let mock = server.mock("GET", "/feed.json").expect(0).create();
+
+    changelog_cmd("99.99.99-dev", &format!("{}/feed.json", server.url()), data_dir.path())
+        .assert()
+        .success()
+        .stdout(contains("Remote fixture entry").not());
+    mock.assert();
+}
+
+/// The kill switch stops the fetch before any channel or gate check.
+#[test]
+fn stable_does_not_fetch_when_kill_switch_set() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let mock = server.mock("GET", "/feed.json").expect(0).create();
+
+    changelog_cmd("1.5.0", &format!("{}/feed.json", server.url()), data_dir.path())
+        .env(KIRO_NO_REMOTE_CHANGELOG, "1")
+        .assert()
+        .success()
+        .stdout(contains("Remote fixture entry").not());
+    mock.assert();
+}
+
+/// Stable builds fetch and render once the remote_changelog rollout gate is
+/// on. Release-profile only: debug builds short-circuit Rollout::init to
+/// enable-all before KIRO_ROLLOUT_FORCE_INTERNAL is read, so only a
+/// --release binary exercises the real gate (the env var satisfies the
+/// `segment: internal` requirement; rollout.json's channel and percentage
+/// still decide).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "real rollout gate only exists in release builds")]
+fn stable_fetches_when_rollout_enabled() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let mock = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .create();
+
+    changelog_cmd("1.5.0", &format!("{}/feed.json", server.url()), data_dir.path())
+        .env(KIRO_ROLLOUT_FORCE_INTERNAL, "1")
+        .assert()
+        .success()
+        .stdout(contains("Remote fixture entry"));
     mock.assert();
 }
 

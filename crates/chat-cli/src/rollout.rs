@@ -15,6 +15,8 @@ use sha2::{
 use typeshare::typeshare;
 use uuid::Uuid;
 
+use crate::util::consts::env_var::KIRO_ROLLOUT_FORCE_INTERNAL;
+
 const AMZN_START_URL: &str = "https://amzn.awsapps.com/start";
 
 pub const TREATMENT: &str = "TREATMENT";
@@ -51,6 +53,13 @@ pub enum Feature {
     /// `KIRO_ENABLED_FEATURES` and the TUI registers the `/tangent` command
     /// only when enabled (treatment_percent is the kill-switch).
     Tangent,
+    /// Remote changelog feed fetch on stable builds (prod URL). Nightly
+    /// builds always fetch from gamma (unconditional); this gate extends
+    /// the same fetch behavior to stable builds reading the prod feed.
+    /// Note the rollout `channel: stable` only excludes nightly, so this
+    /// gate also reports enabled on rc/feature builds — the feed code's own
+    /// channel match is what keeps those from fetching.
+    RemoteChangelog,
     #[cfg(test)]
     #[typeshare(skip)]
     Test,
@@ -159,7 +168,14 @@ impl Rollout {
         }
 
         let features = serde_json::from_str::<HashMap<String, FeatureRollout>>(EMBEDDED_CONFIG).unwrap_or_default();
-        let is_internal = is_amzn_start_url(start_url.as_deref());
+        // Test/dev eligibility override: makes this process internal-eligible
+        // for EVERY internal-segment feature (and supplies a deterministic
+        // bucketing identity when the store has no telemetry id). Narrower
+        // than KIRO_TEST_MODE only in that rollout.json's channel and
+        // treatment_percent still apply per feature.
+        let force_internal = std::env::var(KIRO_ROLLOUT_FORCE_INTERNAL).is_ok();
+        let is_internal = is_amzn_start_url(start_url.as_deref()) || force_internal;
+        let client_id = client_id.or_else(|| force_internal.then(Uuid::nil));
         let is_nightly = crate::util::channel::channel() == crate::util::channel::Channel::Nightly;
         let _ = INSTANCE.set(Rollout {
             features,
@@ -388,6 +404,32 @@ mod tests {
                 r.is_enabled(Feature::RemoteSandbox),
                 expected,
                 "remote_sandbox enabled={expected} for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_remote_changelog_enabled_only_for_internal_stable() {
+        let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            features.contains_key(<&str>::from(Feature::RemoteChangelog)),
+            "remote_changelog must be declared in rollout.json"
+        );
+
+        // Gated to internal stable only for the first ramp stage. Nightly does
+        // not need the gate (it fetches gamma unconditionally), and external
+        // stable users stay dark until the segment/percent is widened.
+        for (is_internal, is_nightly, expected) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, true),
+            (true, true, false),
+        ] {
+            let r = Rollout::new_for_test(is_internal, is_nightly);
+            assert_eq!(
+                r.is_enabled(Feature::RemoteChangelog),
+                expected,
+                "remote_changelog enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

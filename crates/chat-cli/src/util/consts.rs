@@ -282,8 +282,8 @@ pub mod env_var {
         Q_DESKTOP_RELEASE_URL = "Q_DESKTOP_RELEASE_URL",
         /// Override the URL used to fetch the remote changelog feed
         /// (feed.json). Must be https (or http on localhost, for tests).
-        /// Redirects the fetch but does not bypass the nightly channel gate;
-        /// combine with KIRO_VERSION_OVERRIDE to test on other channels.
+        /// Redirects the fetch but does not bypass the channel or rollout
+        /// gate; combine with KIRO_VERSION_OVERRIDE to test other channels.
         KIRO_FEED_URL = "KIRO_FEED_URL",
 
         /// Path to a feed.json that replaces the binary's embedded changelog
@@ -297,6 +297,14 @@ pub mod env_var {
         /// changelog then renders from the bundled feed, as before the
         /// remote feed existed.
         KIRO_NO_REMOTE_CHANGELOG = "KIRO_NO_REMOTE_CHANGELOG",
+
+        /// Make this process internal-eligible for every internal-segment
+        /// rollout feature without an internal sign-in (also supplies a
+        /// deterministic bucketing identity when no telemetry client id is
+        /// stored). Per-feature channel and treatment_percent from
+        /// rollout.json still apply -- unlike KIRO_TEST_MODE, which enables
+        /// every feature outright regardless of its rollout config.
+        KIRO_ROLLOUT_FORCE_INTERNAL = "KIRO_ROLLOUT_FORCE_INTERNAL",
 
         /// Comma-separated MCP server names (matching entries in mcp.json) that must
         /// always be loaded and their tools always available, regardless of agent profile.

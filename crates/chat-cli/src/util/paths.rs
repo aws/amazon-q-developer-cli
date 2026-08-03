@@ -134,8 +134,8 @@ pub fn feed_json_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("feed.json"))
 }
 
-/// Path to the cached remote changelog feed, refreshed in the background on
-/// nightly builds and snapshotted into feed.json at the next launch
+/// Path to the cached remote changelog feed, refreshed in the background by
+/// builds that fetch remotely and snapshotted into feed.json at the next launch
 pub fn feed_cache_json_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("feed-cache.json"))
 }
@@ -144,6 +144,13 @@ pub fn feed_cache_json_path() -> Result<PathBuf> {
 /// conditional GETs when refreshing
 pub fn feed_cache_etag_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("feed-cache.etag"))
+}
+
+/// Path to the source URL the cached feed was fetched from. The cache is
+/// shared across installs, so a channel switch (gamma <-> prod) must not
+/// serve another distribution's body or revalidate against its ETag.
+pub fn feed_cache_source_path() -> Result<PathBuf> {
+    Ok(data_dir()?.join("feed-cache.source"))
 }
 
 /// Path to extracted Node.js executable (for KAS agent)

@@ -9,12 +9,18 @@ use crate::util::consts::env_var::KIRO_VERSION_OVERRIDE;
 
 /// Release channel, derived from the effective version's prerelease
 /// component (`2.13.2` → Stable, `2.13.2-nightly.3` → Nightly,
-/// `2.13.2-rc.1` → Rc, `2.13.2-fix-foo.1` → Other("fix-foo")).
+/// `2.13.2-rc.1` → Rc, `2.13.2-fix-foo.1` → Other("fix-foo"),
+/// `99.99.99-dev` → Dev).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Channel {
     Stable,
     Nightly,
     Rc,
+    /// Local developer build (`-dev` prerelease). Kept distinct from
+    /// `Other` so local builds do not inherit released-channel behavior
+    /// such as remote feed fetching.
+    Dev,
+    /// Feature-branch build (`-<feature-name>.N` prerelease).
     Other(String),
 }
 
@@ -46,13 +52,16 @@ pub fn channel() -> Channel {
     };
     let pre = version.pre.as_str();
     if pre.is_empty() {
-        Channel::Stable
-    } else if pre.starts_with("nightly") {
-        Channel::Nightly
-    } else if pre.starts_with("rc") {
-        Channel::Rc
-    } else {
-        Channel::Other(pre.split('.').next().unwrap_or(pre).to_string())
+        return Channel::Stable;
+    }
+    // Exact match on the first dot-separated prerelease identifier
+    // ("nightly.3" -> "nightly"), so a feature branch named e.g. `dev-tools`
+    // or `rc-tweak` classifies as Other rather than Dev/Rc.
+    match pre.split('.').next().unwrap_or(pre) {
+        "nightly" => Channel::Nightly,
+        "rc" => Channel::Rc,
+        "dev" => Channel::Dev,
+        other => Channel::Other(other.to_string()),
     }
 }
 
@@ -72,7 +81,13 @@ mod tests {
             ("2.13.2-nightly.3", Channel::Nightly),
             ("2.13.2-rc.1", Channel::Rc),
             ("2.13.1-fix-foo.3", Channel::Other("fix-foo".to_string())),
-            ("99.99.99-dev", Channel::Other("dev".to_string())),
+            ("99.99.99-dev", Channel::Dev),
+            ("0.0.0-dev", Channel::Dev),
+            // Feature branches whose name shares a released-channel prefix
+            // must not inherit that channel's behavior.
+            ("2.13.1-dev-tools.1", Channel::Other("dev-tools".to_string())),
+            ("2.13.1-rc-tweak.1", Channel::Other("rc-tweak".to_string())),
+            ("2.13.1-nightly-fix.1", Channel::Other("nightly-fix".to_string())),
         ];
         for (version, expected) in cases {
             unsafe { std::env::set_var(KIRO_VERSION_OVERRIDE, version) };

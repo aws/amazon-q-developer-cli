@@ -104,6 +104,15 @@ export enum Feature {
 	 * only when enabled (treatment_percent is the kill-switch).
 	 */
 	Tangent = "tangent",
+	/**
+	 * Remote changelog feed fetch on stable builds (prod URL). Nightly
+	 * builds always fetch from gamma (unconditional); this gate extends
+	 * the same fetch behavior to stable builds reading the prod feed.
+	 * Note the rollout `channel: stable` only excludes nightly, so this
+	 * gate also reports enabled on rc/feature builds — the feed code's own
+	 * channel match is what keeps those from fetching.
+	 */
+	RemoteChangelog = "remote_changelog",
 }
 
 /**

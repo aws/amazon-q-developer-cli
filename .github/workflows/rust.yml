@@ -138,9 +138,9 @@ jobs:
       - name: Run tests
         if: needs.check-paths.outputs.rust-changed == 'true'
         run: cargo test --locked --workspace --lib --bins --test '*'
-      - name: Run release-profile cloud gating tests
+      - name: Run release-profile gating tests
         if: needs.check-paths.outputs.rust-changed == 'true' && runner.os == 'Linux'
-        run: cargo test --locked --release -p chat_cli --test cloud_sessions_gating
+        run: cargo test --locked --release -p chat_cli --test cloud_sessions_gating --test changelog_feed
 
   # Windows clippy — disabled until dead_code warnings in platform-gated code are resolved
   # cargo-clippy-windows:
