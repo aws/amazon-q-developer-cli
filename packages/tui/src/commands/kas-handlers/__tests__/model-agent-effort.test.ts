@@ -145,7 +145,67 @@ describe('handleEffort', () => {
     );
   });
 
-  it('switches and confirms with display-cased label without persisting', async () => {
+  it('marks the current level as [active] and the model default as [default]', async () => {
+    const ctx = createMockCommandContext({
+      kasAvailableEfforts: [
+        { value: 'low', name: 'Low' },
+        { value: 'medium', name: 'Medium' },
+        { value: 'high', name: 'High' },
+      ],
+      kasAvailableModels: [
+        { id: 'opus', name: 'Opus', defaultEffortLevel: 'medium' },
+      ],
+      currentModel: { id: 'opus', name: 'Opus' },
+      currentEffort: 'high',
+    });
+    await handleEffort(EFFORT_CMD, '', ctx);
+    const call = (ctx._spies.setActiveCommand as any).mock.calls[0][0];
+    expect(call.options).toEqual([
+      { value: 'low', label: 'low', description: '' },
+      { value: 'medium', label: 'medium', description: '[default]' },
+      { value: 'high', label: 'high', description: '[active]' },
+    ]);
+  });
+
+  it('[active] takes precedence over [default] when current equals model default', async () => {
+    const ctx = createMockCommandContext({
+      kasAvailableEfforts: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+      ],
+      kasAvailableModels: [
+        { id: 'opus', name: 'Opus', defaultEffortLevel: 'high' },
+      ],
+      currentModel: { id: 'opus', name: 'Opus' },
+      currentEffort: 'high',
+    });
+    await handleEffort(EFFORT_CMD, '', ctx);
+    const call = (ctx._spies.setActiveCommand as any).mock.calls[0][0];
+    expect(call.options).toEqual([
+      { value: 'low', label: 'low', description: '' },
+      { value: 'high', label: 'high', description: '[active]' },
+    ]);
+  });
+
+  it('shows no [default] when model has no defaultEffortLevel', async () => {
+    const ctx = createMockCommandContext({
+      kasAvailableEfforts: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+      ],
+      kasAvailableModels: [{ id: 'opus', name: 'Opus' }],
+      currentModel: { id: 'opus', name: 'Opus' },
+      currentEffort: 'high',
+    });
+    await handleEffort(EFFORT_CMD, '', ctx);
+    const call = (ctx._spies.setActiveCommand as any).mock.calls[0][0];
+    expect(call.options).toEqual([
+      { value: 'low', label: 'low', description: '' },
+      { value: 'high', label: 'high', description: '[active]' },
+    ]);
+  });
+
+  it('switches and confirms with lowercased label without persisting', async () => {
     const setConfigOption = mock(() => Promise.resolve());
     const ctx = createMockCommandContext({
       kasAvailableEfforts: [{ value: 'xhigh', name: 'xHigh' }],
@@ -160,7 +220,7 @@ describe('handleEffort', () => {
     expect(setConfigOption).toHaveBeenCalledWith('effortLevel', 'xhigh');
     expect(readCliJson()['chat.modelDefaults']).toBeUndefined();
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Effort set to xHigh',
+      'Effort set to xhigh',
       'success',
       3000
     );
@@ -585,7 +645,7 @@ describe('set-current-as-default persistence', () => {
       | undefined;
     expect(defaults?.opus?.output_config?.effort).toBe('high');
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Set High as default effort for Opus',
+      'Set high as default effort for Opus',
       'success',
       3000
     );
@@ -646,7 +706,7 @@ describe('set-current-as-default persistence', () => {
     });
     await handleEffort(EFFORT_CMD, 'set-current-as-default', ctx);
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      'Failed to save High as default effort for Opus',
+      'Failed to save high as default effort for Opus',
       'error',
       5000
     );

@@ -43,11 +43,22 @@ function showEffortPicker(ctx: CommandContext, cmd: KasCommand): void {
     return;
   }
   const currentLevel = ctx.getCurrentEffort?.();
-  const options = ctx.kasAvailableEfforts.map((o) => ({
-    value: o.value,
-    label: o.name,
-    description: o.value === currentLevel ? '[active]' : '',
-  }));
+  const currentModel = ctx.getCurrentModel?.();
+  const modelEntry = currentModel
+    ? ctx.kasAvailableModels.find((m) => m.id === currentModel.id)
+    : undefined;
+  const defaultLevel = modelEntry?.defaultEffortLevel;
+
+  const options = ctx.kasAvailableEfforts.map((o) => {
+    const isActive = o.value === currentLevel;
+    const isDefault = o.value === defaultLevel;
+    const description = isActive ? '[active]' : isDefault ? '[default]' : '';
+    return {
+      value: o.value,
+      label: formatEffort(o.value),
+      description,
+    };
+  });
   ctx.setActiveCommand({ command: cmd, options });
 }
 

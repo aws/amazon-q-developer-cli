@@ -61,8 +61,8 @@ describe('Effort Status Bar', () => {
     expect(hintLine!).toContain('/effort');
 
     // Verify selection menu shows effort options with [active] marker
-    await testCase.waitForText('xHigh  [active]', 5000);
-    await testCase.waitForText('Low', 5000);
+    await testCase.waitForText('xhigh  [active]', 5000);
+    await testCase.waitForText('low', 5000);
 
     // Select "low" (first in the list)
     await testCase.pressEnter();

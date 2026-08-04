@@ -20,6 +20,13 @@ export interface ModelEntry {
    * vs `reasoning.effort`). Absent when KAS does not advertise it.
    */
   effortSchemaPath?: EffortSchemaPath;
+  /**
+   * The effort level the agent applies when no override is given, advertised
+   * by KAS via `_meta.kiro.defaultEffortLevel`. Present only for
+   * effort-capable models; drives the `[default]` marker in the `/effort`
+   * picker.
+   */
+  defaultEffortLevel?: string;
 }
 
 /** A reasoning effort level advertised by the active model. */
@@ -107,6 +114,10 @@ export function parseModelsFromConfigOptions(
         kiro?.effortSchemaPath === 'output_config' ||
         kiro?.effortSchemaPath === 'reasoning'
           ? kiro.effortSchemaPath
+          : undefined,
+      defaultEffortLevel:
+        typeof kiro?.defaultEffortLevel === 'string'
+          ? kiro.defaultEffortLevel
           : undefined,
     };
   });

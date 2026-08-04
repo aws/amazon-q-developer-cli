@@ -116,13 +116,13 @@ describe('workflow monitor view model', () => {
     };
 
     expect(fitWorkflowNodeMetadata(node, 23, UNICODE_GLYPHS.smallDot)).toBe(
-      '  claude-fable-5 · High'
+      '  claude-fable-5 · high'
     );
     expect(fitWorkflowNodeMetadata(node, 22, UNICODE_GLYPHS.smallDot)).toBe(
       '  claude-fable-5'
     );
     expect(fitWorkflowNodeMetadata(node, 15, UNICODE_GLYPHS.smallDot)).toBe(
-      '  High'
+      '  high'
     );
     expect(fitWorkflowNodeMetadata(node, 5, UNICODE_GLYPHS.smallDot)).toBe('');
   });

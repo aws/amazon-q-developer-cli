@@ -366,6 +366,46 @@ describe('parseModelsFromConfigOptions effortSchemaPath', () => {
   });
 });
 
+describe('parseModelsFromConfigOptions defaultEffortLevel', () => {
+  it('surfaces the advertised defaultEffortLevel when present', () => {
+    const parsed = parseModelsFromConfigOptions([
+      {
+        id: 'model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'a',
+        options: [
+          {
+            value: 'a',
+            name: 'A',
+            _meta: { kiro: { defaultEffortLevel: 'high' } },
+          },
+          {
+            value: 'b',
+            name: 'B',
+            _meta: { kiro: { defaultEffortLevel: 'medium' } },
+          },
+          { value: 'c', name: 'C' },
+          {
+            value: 'd',
+            name: 'D',
+            _meta: { kiro: { defaultEffortLevel: 123 } },
+          },
+        ],
+      },
+    ]);
+    const byId = Object.fromEntries(
+      (parsed?.models ?? []).map((m) => [m.id, m.defaultEffortLevel])
+    );
+    expect(byId).toEqual({
+      a: 'high',
+      b: 'medium',
+      c: undefined,
+      d: undefined,
+    });
+  });
+});
+
 describe('shouldApplyEffortDefault', () => {
   it('applies in a new session when the model changed', () => {
     expect(

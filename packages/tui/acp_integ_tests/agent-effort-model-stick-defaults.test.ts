@@ -572,7 +572,7 @@ describe.skipIf(process.platform === 'win32')(
       await tc.sendKeys('/effort low');
       await tc.pressEnter();
       await tc.waitForStore((s) => s.currentEffort === 'low', 6000);
-      await tc.waitForVisibleText('Effort set to Low', 3000);
+      await tc.waitForVisibleText('Effort set to low', 3000);
       expect(tc.getSnapshotFormatted()).not.toContain('saved for');
 
       await tc.sleepMs(500);
@@ -653,7 +653,7 @@ describe.skipIf(process.platform === 'win32')(
       await tc.sendKeys('/effort set-current-as-default');
       await tc.pressEnter();
       await tc.waitForVisibleText(
-        'Set Low as default effort for Claude Opus 4.8',
+        'Set low as default effort for Claude Opus 4.8',
         3000
       );
       const cli = await waitForCliJson(

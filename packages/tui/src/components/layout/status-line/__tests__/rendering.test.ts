@@ -137,7 +137,7 @@ describe('status-line segment rendering', () => {
     for (const out of [tui, lite]) {
       expect(out).toContain('kiro-dev');
       expect(out).toContain('Claude Fable 5');
-      expect(out).toContain('High');
+      expect(out).toContain('high');
       expect(out).toContain('22%');
       expect(out).toContain('my-branch');
       // New segments stay off even though their data is present.
@@ -185,7 +185,7 @@ describe('status-line segment rendering', () => {
   it('hides a default segment on both surfaces when turned off', async () => {
     const { tui, lite } = await paintBoth({ effort: false, branch: false });
     for (const out of [tui, lite]) {
-      expect(out).not.toContain('High');
+      expect(out).not.toContain('high');
       expect(out).not.toContain('my-branch');
       // Neighbours survive.
       expect(out).toContain('Claude Fable 5');

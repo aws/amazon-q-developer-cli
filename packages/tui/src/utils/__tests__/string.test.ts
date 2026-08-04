@@ -7,6 +7,7 @@ import {
   isPrintable,
   shortenPath,
   stripNonPrintable,
+  formatEffort,
 } from '../string';
 
 describe('expandTabs', () => {
@@ -287,5 +288,29 @@ describe('normalizeLineEndings (CRLF/CR conversion)', () => {
 
   it('also expands tabs', () => {
     expect(normalizeLineEndings('a\r\n\tb')).toBe('a\n  b');
+  });
+});
+
+describe('formatEffort', () => {
+  it('lowercases a capitalized effort value', () => {
+    expect(formatEffort('High')).toBe('high');
+  });
+
+  it('keeps an already-lowercase value unchanged', () => {
+    expect(formatEffort('low')).toBe('low');
+  });
+
+  it('lowercases mixed-case values like xhigh', () => {
+    expect(formatEffort('xhigh')).toBe('xhigh');
+    expect(formatEffort('xHigh')).toBe('xhigh');
+    expect(formatEffort('XHIGH')).toBe('xhigh');
+  });
+
+  it('handles single-character values', () => {
+    expect(formatEffort('H')).toBe('h');
+  });
+
+  it('handles empty string', () => {
+    expect(formatEffort('')).toBe('');
   });
 });

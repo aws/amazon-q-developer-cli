@@ -110,8 +110,8 @@ describe('/effort command (KAS)', () => {
     });
     await tc.waitForStore((s) => s.currentEffort === 'high', 3000);
 
-    // Chip shows the display-cased level in the prompt bar.
-    await tc.waitForVisibleText('High', 2000);
+    // Chip shows the lowercased level in the prompt bar.
+    await tc.waitForVisibleText('high', 2000);
   });
 
   it('/effort lists levels from the client cache without a wire request', async () => {
@@ -142,12 +142,12 @@ describe('/effort command (KAS)', () => {
     await tc.pressEnter();
     await tc.sleepMs(400);
 
-    await tc.waitForVisibleText('xHigh', 2000);
+    await tc.waitForVisibleText('xhigh', 2000);
     const snap = tc.getSnapshotFormatted();
-    expect(snap).toContain('Low');
-    expect(snap).toContain('Medium');
-    expect(snap).toContain('High');
-    expect(snap).toContain('xHigh');
+    expect(snap).toContain('low');
+    expect(snap).toContain('medium');
+    expect(snap).toContain('high');
+    expect(snap).toContain('xhigh');
 
     // Options are served from the cache populated on session/new — opening
     // the menu must NOT have triggered an effortLevel set_config_option.
@@ -208,8 +208,8 @@ describe('/effort command (KAS)', () => {
     expect(params.sessionId).toBe('test-1');
     expect(params.value).toBe('xhigh');
 
-    // Message locked to the plain "Effort set to xHigh" confirmation.
-    await tc.waitForVisibleText('Effort set to xHigh', 2000);
+    // Message locked to the plain "Effort set to xhigh" confirmation.
+    await tc.waitForVisibleText('Effort set to xhigh', 2000);
 
     // Scenario 4: store + chip reflect the new level.
     await tc.waitForStore((s) => s.currentEffort === 'xhigh', 3000);
@@ -248,7 +248,7 @@ describe('/effort command (KAS)', () => {
     });
 
     await tc.waitForStore((s) => s.currentEffort === 'medium', 3000);
-    await tc.waitForVisibleText('Medium', 2000);
+    await tc.waitForVisibleText('medium', 2000);
 
     // Re-open /effort: the cached menu must reflect the new level without
     // any extra wire round-trip (no effortLevel set_config_option fired).
@@ -258,10 +258,10 @@ describe('/effort command (KAS)', () => {
     await tc.sleepMs(400);
     await tc.waitForVisibleText('[active]', 2000);
     const menuSnap = tc.getSnapshotFormatted();
-    // The active marker sits on the Medium row now.
+    // The active marker sits on the medium row now.
     const mediumLine = menuSnap
       .split('\n')
-      .find((l) => l.includes('Medium') && l.includes('[active]'));
+      .find((l) => l.includes('medium') && l.includes('[active]'));
     expect(mediumLine).toBeDefined();
 
     const effortSets = tc.mock

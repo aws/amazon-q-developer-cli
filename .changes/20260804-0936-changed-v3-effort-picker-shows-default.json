@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "[v3] `/effort` picker shows `[default]` marker and displays effort levels in lowercase"
+}

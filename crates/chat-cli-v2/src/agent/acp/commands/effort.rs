@@ -180,16 +180,5 @@ async fn set_current_as_default(ctx: &CommandContext<'_>) -> CommandResult {
 }
 
 fn format_effort(s: &str) -> String {
-    if s == "xhigh" {
-        return "xHigh".to_string();
-    }
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => {
-            let mut result = f.to_uppercase().collect::<String>();
-            result.push_str(c.as_str());
-            result
-        },
-    }
+    s.to_lowercase()
 }

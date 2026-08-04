@@ -4315,7 +4315,7 @@ async fn effort_set_current_as_default_prunes_stale_sibling_leaf() {
         .await
         .expect("set-current-as-default failed");
     assert!(result.success, "should succeed: {}", result.message);
-    assert_eq!(result.message, "Set Low as default effort for Claude Opus 4.7");
+    assert_eq!(result.message, "Set low as default effort for Claude Opus 4.7");
 
     let settings_content = std::fs::read_to_string(&harness.paths.settings_path).expect("failed to read settings file");
     let settings: serde_json::Value = serde_json::from_str(&settings_content).expect("failed to parse settings");
