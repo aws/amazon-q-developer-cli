@@ -291,7 +291,7 @@ These errors come from the generated Q API client:
 
 | Error Code | Description |
 |------------|-------------|
-| `dispatch failure` | Request failed during dispatch. No HTTP response received. Request MAY have been sent. Usually due to user's local environment (e.g., VPN blocking requests). |
+| `dispatch failure` | Request failed during dispatch. No HTTP response received. Request MAY have been sent. Transient transport failures, including a peer resetting or closing a pooled connection, are retried automatically; reaching the user means retries were exhausted or the failure was not transient. Do not assume the user's local environment. |
 | `service error` | Error response received from the service |
 | `request has timed out` | Request failed due to timeout. Request MAY have been sent and received. |
 | `InternalServerException` | Internal server error |

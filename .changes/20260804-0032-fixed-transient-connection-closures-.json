@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Requests whose connection drops before any response headers arrive are now retried"
+}
