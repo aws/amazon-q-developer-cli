@@ -98,7 +98,9 @@ pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> 
     let non_interactive = matches!(&interactivity, Interactivity::NonInteractive { .. });
     run_kas_gc_on_startup(os, agent_engine, !non_interactive).await;
 
-    if agent_engine == AgentEngine::Kas {
+    if agent_engine == AgentEngine::Kas
+        && crate::rollout::rollout().is_enabled(crate::rollout::Feature::AutoAgentUpgrade)
+    {
         let target_agent = agent.clone().or_else(|| {
             os.database
                 .settings

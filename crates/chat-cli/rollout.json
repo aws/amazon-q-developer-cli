@@ -78,5 +78,11 @@
     "treatment_percent": 100,
     "segment": "internal",
     "channel": "stable"
+  },
+  "auto_agent_upgrade": {
+    "description": "Auto-upgrade V2-only agent configs to the universal format on V3 engine launch. Internal nightly only for now; widen segment/channel once the migration has soaked.",
+    "treatment_percent": 100,
+    "segment": "internal",
+    "channel": "nightly"
   }
 }

@@ -60,6 +60,10 @@ pub enum Feature {
     /// gate also reports enabled on rc/feature builds — the feed code's own
     /// channel match is what keeps those from fetching.
     RemoteChangelog,
+    /// Auto-upgrade of V2-only agent configs to the universal format when
+    /// launching the V3/KAS engine. Internal nightly only for now; the launcher
+    /// only runs the migration prompt/scan when this is enabled.
+    AutoAgentUpgrade,
     #[cfg(test)]
     #[typeshare(skip)]
     Test,
@@ -470,6 +474,31 @@ mod tests {
                 r.is_enabled(Feature::Memory),
                 expected,
                 "memory enabled={expected} for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_auto_agent_upgrade_enabled_only_for_internal_nightly() {
+        let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            features.contains_key(<&str>::from(Feature::AutoAgentUpgrade)),
+            "auto_agent_upgrade must be declared in rollout.json"
+        );
+
+        // segment=internal, channel=nightly: only internal nightly users get it;
+        // external (any channel) and stable builds stay dark.
+        for (is_internal, is_nightly, expected) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, false),
+            (true, true, true),
+        ] {
+            let r = Rollout::new_for_test(is_internal, is_nightly);
+            assert_eq!(
+                r.is_enabled(Feature::AutoAgentUpgrade),
+                expected,
+                "auto_agent_upgrade enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }
