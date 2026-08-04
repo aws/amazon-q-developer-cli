@@ -15,6 +15,7 @@ use opentelemetry::metrics::{
     Gauge,
     Histogram,
     Meter,
+    MeterProvider,
 };
 use opentelemetry::{
     KeyValue,
@@ -427,7 +428,11 @@ fn build_otlp_http_providers(
         .build();
 
     global::set_meter_provider(meter_provider.clone());
-    let emitted_replayed_drops = emit_replayed_drops(&replayed_drops);
+    // Record replayed drops through the provider we just built rather than
+    // `global::meter(...)`: the global provider is a process-wide singleton that
+    // concurrent initializations can swap, which would misroute these metrics to a
+    // different provider and leave this provider's reader empty at force_flush.
+    let emitted_replayed_drops = emit_replayed_drops(&meter_provider.meter("kiro-telemetry"), &replayed_drops);
     Ok(OtelProviders {
         meter_provider,
         pipeline_kind: OtelPipelineKind::OtlpHttp,
@@ -436,7 +441,7 @@ fn build_otlp_http_providers(
     })
 }
 
-fn emit_replayed_drops(entries: &[ExportDropAggregate]) -> Vec<ExportDropAggregate> {
+fn emit_replayed_drops(meter: &Meter, entries: &[ExportDropAggregate]) -> Vec<ExportDropAggregate> {
     let mut emitted = Vec::new();
     for entry in entries {
         let reason = match entry.key.drop_reason.as_str() {
@@ -461,7 +466,7 @@ fn emit_replayed_drops(entries: &[ExportDropAggregate]) -> Vec<ExportDropAggrega
             trace!("retaining export-drop record with an unexpected metric kind");
             continue;
         };
-        global::meter("kiro-telemetry")
+        meter
             .u64_counter(record.name)
             .build()
             .add(value, &otel_attributes(&record.attributes));
@@ -1019,7 +1024,10 @@ mod tests {
         store.record("metrics", "future_reason", 3);
         let snapshot = store.snapshot();
 
-        let emitted = emit_replayed_drops(&snapshot);
+        // A standalone provider keeps this test independent of the process-global
+        // meter provider; it asserts only on the returned emitted set, not on export.
+        let provider = SdkMeterProvider::builder().build();
+        let emitted = emit_replayed_drops(&provider.meter("kiro-telemetry-test-replay"), &snapshot);
         store.subtract(&emitted);
 
         assert_eq!(emitted.len(), 3);
