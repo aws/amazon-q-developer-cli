@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`kiro crew` subcommand to launch Kiro Crew CLI, with automatic installation if not already present"
+}

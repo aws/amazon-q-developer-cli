@@ -6,6 +6,7 @@ use crate::util::consts::env_var::{
 use crate::util::env_var::is_log_stdout_enabled;
 pub mod agent;
 pub mod chat;
+mod crew;
 mod debug;
 mod diagnostics;
 pub mod experiment;
@@ -124,6 +125,8 @@ pub enum RootSubcommand {
         #[arg(long, num_args = 0..=1, default_missing_value = "")]
         changelog: Option<String>,
     },
+    /// Launch Kiro Crew, installing it if it is not already installed
+    Crew(crew::CrewArgs),
     /// Model Context Protocol (MCP)
     #[command(subcommand)]
     Mcp(McpSubcommand),
@@ -308,6 +311,7 @@ impl RootSubcommand {
                 Self::Whoami(args) => args.execute(os).await,
                 Self::Profile => user::profile(os).await,
                 Self::Settings(settings_args) => settings_args.execute(os).await,
+                Self::Crew(args) => args.execute(os).await,
                 Self::Issue(args) => args.execute(os).await,
                 Self::Version { changelog } => Cli::print_version(changelog).await,
                 Self::Chat(args) => execute_chat(args, os).await,
@@ -443,6 +447,7 @@ impl RootSubcommand {
             Self::Whoami(args) => args.execute(os).await,
             Self::Profile => user::profile(os).await,
             Self::Settings(settings_args) => settings_args.execute(os).await,
+            Self::Crew(args) => args.execute(os).await,
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog).await,
             Self::Chat(args) => execute_chat(args, os).await,
@@ -983,6 +988,7 @@ impl Display for RootSubcommand {
             Self::Whoami(_) => "whoami",
             Self::Profile => "profile",
             Self::Settings(_) => "settings",
+            Self::Crew(_) => "crew",
             Self::Diagnostic(_) => "diagnostic",
             Self::Issue(_) => "issue",
             Self::Version { .. } => "version",
