@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="205" viewBox="0 0 560 205">
+<!-- Generated from stable git tags matching the plain semver pattern.
+     Method: fetch all tags, read tag creatordate, bucket by calendar month.
+     Reliable window starts 2026-05-01. Earlier months used chat-prefixed tagging and are not comparable. -->
+  <rect width="560" height="205" rx="8" fill="#19161D"/>
+  <text x="16" y="30" font-family="Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#ffffff">Stable release rate, per week</text>
+  <text x="16" y="48" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#938f9b">Reliable tag data from May 2026 onward</text>
+  <text x="16" y="78" font-family="Helvetica,Arial,sans-serif" font-size="14" fill="#cfc9d9">May</text>
+  <rect x="56" y="62" width="77" height="22" rx="4" fill="#9046ff"/>
+  <text x="143" y="78" font-family="Helvetica,Arial,sans-serif" font-size="13" fill="#ffffff">0.9/wk (4 releases)</text>
+  <text x="16" y="118" font-family="Helvetica,Arial,sans-serif" font-size="14" fill="#cfc9d9">Jun</text>
+  <rect x="56" y="102" width="160" height="22" rx="4" fill="#9046ff"/>
+  <text x="226" y="118" font-family="Helvetica,Arial,sans-serif" font-size="13" fill="#ffffff">1.9/wk (8 releases)</text>
+  <text x="16" y="158" font-family="Helvetica,Arial,sans-serif" font-size="14" fill="#cfc9d9">Jul</text>
+  <rect x="56" y="142" width="271" height="22" rx="4" fill="#9046ff"/>
+  <text x="337" y="158" font-family="Helvetica,Arial,sans-serif" font-size="13" fill="#ffffff">3.2/wk (14 releases)</text>
+  <text x="16" y="191" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#938f9b">Median gap between releases: 11.0d to 3.0d to 1.8d</text>
+</svg>
