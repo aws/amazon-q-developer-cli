@@ -14,11 +14,16 @@ pub fn glibc_version() -> Option<(u32, u32)> {
     None
 }
 
-/// Minimum glibc version required by the embedded Node binary (Node 22).
-#[cfg(target_os = "linux")]
+/// Minimum glibc version required by the embedded Node binary. musl builds
+/// embed the AL2-built Node (glibc floor 2.26); gnu builds embed the nodejs.org
+/// release, which requires 2.28.
+#[cfg(all(target_os = "linux", target_env = "musl"))]
+pub const MIN_GLIBC_FOR_KAS: (u32, u32) = (2, 26);
+#[cfg(all(target_os = "linux", not(target_env = "musl")))]
 pub const MIN_GLIBC_FOR_KAS: (u32, u32) = (2, 28);
 
-/// Returns true if the current system can run KAS (has glibc >= 2.28).
+/// Returns true if the current system can run KAS (glibc new enough for the
+/// embedded Node binary).
 #[cfg(target_os = "linux")]
 pub fn can_run_kas() -> bool {
     match glibc_version() {

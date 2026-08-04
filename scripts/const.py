@@ -36,6 +36,16 @@ BUN_ZIP_HASHES = {
     "bun-windows-x64.zip": "85b14f3e0584218e9b63407b3aa6b90c4835ec5c32435c1f12cb6fc13667c7c9",
 }
 
+# S3 buckets holding the AL2-built native artifacts (standalone node and
+# onnxruntime-node binaries with a glibc 2.26 floor), published by the
+# Node22Al2StandalonePublish pipeline. musl builds embed these instead of the
+# upstream prebuilt binaries, which require a newer glibc than AL2 provides.
+AL2_NATIVES_BUCKETS = {
+    "gamma": "kiro-cli-al2-natives-265613951504",
+    "prod": "kiro-cli-al2-natives-194704208190",
+}
+AL2_NATIVES_BUCKET_REGION = "us-west-2"
+
 # version of node to bundle (for KAS agent engine)
 NODE_VERSION = "22.22.2"
 

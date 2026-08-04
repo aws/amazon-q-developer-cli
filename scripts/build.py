@@ -13,8 +13,18 @@ import tempfile
 import time
 import zipfile
 from typing import Any, Mapping, Sequence, List, Optional
-from const import APPLE_TEAM_ID, BUN_VERSION, BUN_ZIP_HASHES, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME, NODE_VERSION, NODE_ARCHIVE_HASHES
-from util import debug, info, isDarwin, isLinux, isWindows, run_cmd, run_cmd_output, warn
+from const import (
+    APPLE_TEAM_ID,
+    AL2_NATIVES_BUCKETS,
+    AL2_NATIVES_BUCKET_REGION,
+    BUN_VERSION,
+    BUN_ZIP_HASHES,
+    CHAT_BINARY_NAME,
+    CHAT_PACKAGE_NAME,
+    NODE_VERSION,
+    NODE_ARCHIVE_HASHES,
+)
+from util import debug, info, isDarwin, isLinux, isMusl, isWindows, run_cmd, run_cmd_output, warn
 from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
 
@@ -253,6 +263,115 @@ def download_node() -> NodePaths:
     return result
 
 
+def _al2_dist_arch() -> str:
+    """Map the build's target triple to the al2 natives bucket arch naming."""
+    from rust import get_target_triple
+
+    return "arm64" if get_target_triple().startswith(("aarch64", "arm64")) else "x64"
+
+
+def _al2_natives_s3_client():
+    import boto3
+
+    return boto3.client("s3", region_name=AL2_NATIVES_BUCKET_REGION)
+
+
+def _al2_natives_bucket(stage_name: str | None) -> str:
+    return AL2_NATIVES_BUCKETS["gamma" if stage_name == "gamma" else "prod"]
+
+
+def _download_al2_native(stage_name: str | None, key: str, dest: pathlib.Path) -> None:
+    """Download s3://<al2-natives-bucket>/<key> to dest, verifying it against the
+    .sha256 object published alongside."""
+    bucket = _al2_natives_bucket(stage_name)
+    s3 = _al2_natives_s3_client()
+    info(f"Downloading s3://{bucket}/{key}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    s3.download_file(bucket, key, str(dest))
+
+    expected_hash = s3.get_object(Bucket=bucket, Key=f"{key}.sha256")["Body"].read().decode().split()[0]
+    actual_hash = calculate_sha256(dest)
+    if actual_hash != expected_hash:
+        raise ValueError(f"SHA256 mismatch for s3://{bucket}/{key}: expected {expected_hash}, got {actual_hash}")
+    info(f"Verified {dest.name} (SHA256: {actual_hash})")
+
+
+def download_node_al2(stage_name: str | None) -> NodePaths:
+    """Download the AL2-built standalone Node.js for the current musl target.
+
+    The VERSION object under the arch prefix names the latest published release
+    (a `node --version` string, e.g. `v22.23.1`); prior releases stay
+    downloadable but only the latest is consumed."""
+    import tarfile
+
+    dist_arch = _al2_dist_arch()
+    prefix = f"node22/al2-{dist_arch}"
+
+    bucket = _al2_natives_bucket(stage_name)
+    version = _al2_natives_s3_client().get_object(Bucket=bucket, Key=f"{prefix}/VERSION")["Body"].read().decode().strip()
+    info(f"AL2 node version: {version}")
+
+    node_dir = BUILD_DIR / "node"
+    shutil.rmtree(node_dir, ignore_errors=True)
+    node_dir.mkdir(exist_ok=True)
+
+    fname = f"node-{version}-al2-{dist_arch}.tar.xz"
+    archive_path = node_dir / fname
+    _download_al2_native(stage_name, f"{prefix}/{fname}", archive_path)
+
+    with tarfile.open(archive_path, "r:xz") as tar:
+        tar.extractall(node_dir)
+
+    exe = node_dir / fname.removesuffix(".tar.xz") / "bin" / "node"
+    if not exe.exists():
+        raise FileNotFoundError(f"Node.js not found at {exe}")
+    os.chmod(exe, 0o755)
+
+    result = NodePaths()
+    if dist_arch == "x64":
+        result.x86_64 = exe.absolute()
+    else:
+        result.aarch64 = exe.absolute()
+    info(f"Downloaded AL2 node: x86_64={result.x86_64}, aarch64={result.aarch64}")
+    return result
+
+
+def _swap_onnxruntime_al2(nm_root: pathlib.Path, stage_name: str | None) -> None:
+    """Overwrite onnxruntime-node's prebuilt linux binaries with the AL2-built
+    ones (glibc 2.26 floor) so KAS loads on AL2. The dist tarball version must
+    match the installed package: the binding and libonnxruntime.so are a pair."""
+    import tarfile
+
+    pkg_dir = nm_root / "onnxruntime-node"
+    if not (pkg_dir / "package.json").exists():
+        info("onnxruntime-node not present in KAS tree; skipping AL2 binary swap")
+        return
+
+    with open(pkg_dir / "package.json") as f:
+        ort_version = json.load(f)["version"]
+
+    dist_arch = _al2_dist_arch()
+    fname = f"onnxruntime-node-{ort_version}-al2-{dist_arch}.tar.xz"
+    archive_path = BUILD_DIR / fname
+    _download_al2_native(stage_name, f"onnxruntime-node/al2-{dist_arch}/{fname}", archive_path)
+
+    dest = pkg_dir / "bin" / "napi-v3" / "linux" / dist_arch
+    dest.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive_path, "r:xz") as tar:
+        # Equivalent of --strip-components=1: drop the top-level dist dir.
+        members = []
+        for m in tar.getmembers():
+            parts = pathlib.PurePosixPath(m.name).parts
+            if len(parts) <= 1:
+                continue
+            m.name = str(pathlib.PurePosixPath(*parts[1:]))
+            members.append(m)
+        tar.extractall(dest, members=members)
+    archive_path.unlink()
+
+    info(f"Swapped onnxruntime-node {ort_version} linux/{dist_arch} binaries with AL2 build")
+
+
 def _resolve_pkg_dir(name: str, from_dir: pathlib.Path, nm_root: pathlib.Path) -> pathlib.Path | None:
     """Resolve a package directory using node's node_modules resolution: walk up
     from `from_dir` checking each `node_modules/<name>`, then fall back to the
@@ -329,7 +448,7 @@ def _stage_trimmed_kas_tree(nm_root: pathlib.Path, manifest_path: pathlib.Path, 
     info(f"Trimmed KAS tree to {len(closure)} runtime-external packages (from manifest)")
 
 
-def build_kas_bundle() -> pathlib.Path:
+def build_kas_bundle(stage_name: str | None = None) -> pathlib.Path:
     """Install @kiro/agent and create a tar.gz bundle for embedding in the CLI.
 
     The @kiro/agent version is read from packages/tui/package.json's @kiro/client
@@ -406,6 +525,9 @@ def build_kas_bundle() -> pathlib.Path:
                 "runtime-externals manifest to enable trimming."
             )
             tar_source = nm_root
+
+    if isLinux() and isMusl():
+        _swap_onnxruntime_al2(tar_source, stage_name)
 
     bundle_path = BUILD_DIR / "kas-bundle.tar.gz"
     info(f"Creating KAS bundle at {bundle_path}")
@@ -1310,15 +1432,19 @@ def build(
                 "The notarize-node job should set these before the build step."
             )
         else:
-            info(f"Downloading Node.js v{NODE_VERSION}")
-            node_paths = download_node()
+            if isLinux() and isMusl():
+                info("Downloading AL2-built Node.js (musl build)")
+                node_paths = download_node_al2(stage_name)
+            else:
+                info(f"Downloading Node.js v{NODE_VERSION}")
+                node_paths = download_node()
     else:
         info("Skipping Node.js download (INCLUDE_KAS_BUNDLE not set)")
 
     kas_bundle_path = None
     if include_kas:
         info("Building KAS bundle")
-        kas_bundle_path = build_kas_bundle()
+        kas_bundle_path = build_kas_bundle(stage_name)
     else:
         info("Skipping KAS bundle (INCLUDE_KAS_BUNDLE not set)")
 
