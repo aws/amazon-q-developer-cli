@@ -140,4 +140,61 @@ describe('cloud sessions — /autonomous mode switch (mock BFF)', () => {
     },
     180_000
   );
+
+  it.skipIf(skip)(
+    'toggle notice renders below an idle turn body, in wall-clock order',
+    async () => {
+      // Regression (#3821): a system notice emitted while the previous turn
+      // was idle-but-uncommitted used to commit straight to scrollback ABOVE
+      // the turn body still rendering in the dynamic region — "Autonomous
+      // mode on" appeared folded into past conversation. Pin the true order:
+      // turn body first, then the later notice, surviving the next turn's
+      // commit, with the notice on screen exactly once.
+      harness = await CloudHarness.launch({ testName: 'cloud-autonomous-order' });
+      const tc = harness.testCase!;
+      await tc.waitForText('Cloud session created', BOOT_TIMEOUT);
+      await tc.waitForText('ask a question', 20_000);
+
+      // A prompt whose turn goes idle without committing: the mock BFF acks
+      // the submit but never streams a done frame down the tail, so cancel
+      // (Esc) leaves the turn idle-but-uncommitted — the bug's precondition.
+      await typeCommand(tc, 'MARKER_TURN_BODY please respond');
+      await tc.sleepMs(3_000);
+      await tc.pressEscape();
+      await tc.waitForText('ask a question', 15_000);
+
+      await typeCommand(tc, '/autonomous on');
+      await tc.waitForText('Autonomous mode on', 15_000);
+
+      // Screen-row order: the notice must sit BELOW the turn body.
+      const rowOf = (rows: string[], text: string): number =>
+        rows.findIndex((row) => row.includes(text));
+      let rows = tc.getSnapshot();
+      let bodyRow = rowOf(rows, 'MARKER_TURN_BODY');
+      let noticeRow = rowOf(rows, 'Autonomous mode on');
+      expect(bodyRow).toBeGreaterThanOrEqual(0);
+      expect(noticeRow).toBeGreaterThan(bodyRow);
+
+      // Order must hold after the next turn commits everything to scrollback.
+      await typeCommand(tc, 'MARKER_SECOND_TURN follow-up');
+      await tc.sleepMs(3_000);
+      await tc.pressEscape();
+      await tc.waitForText('MARKER_SECOND_TURN', 15_000);
+
+      rows = tc.getSnapshot();
+      bodyRow = rowOf(rows, 'MARKER_TURN_BODY');
+      noticeRow = rowOf(rows, 'Autonomous mode on');
+      const secondRow = rowOf(rows, 'MARKER_SECOND_TURN');
+      expect(bodyRow).toBeGreaterThanOrEqual(0);
+      expect(noticeRow).toBeGreaterThan(bodyRow);
+      expect(secondRow).toBeGreaterThan(noticeRow);
+      // Exactly once on the real screen grid (xterm rendering, so unlike the
+      // unit harness there is no dynamic/static double paint to discount).
+      const noticeCount = rows.filter((row) =>
+        row.includes('Autonomous mode on')
+      ).length;
+      expect(noticeCount).toBe(1);
+    },
+    180_000
+  );
 });

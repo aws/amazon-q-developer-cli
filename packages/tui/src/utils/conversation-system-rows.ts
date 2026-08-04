@@ -2,6 +2,24 @@ import type { ConversationTurn, MessageType } from '../stores/app-store.js';
 import { MessageRole } from '../types/message-role.js';
 
 /**
+ * Whether a system row's placement is governed by the workflow rules below
+ * (explicit `workflowTurnId` ownership; unowned lifecycle/completion rows stay
+ * standalone) rather than by the inter-turn notice handling in
+ * ConversationView. The single classification shared by both call sites, so a
+ * workflow row can never be re-routed through the notice deferral path.
+ */
+export function isWorkflowPlacedRow(message: {
+  kind?: string;
+  workflowTurnId?: string;
+}): boolean {
+  return (
+    message.workflowTurnId !== undefined ||
+    message.kind === 'workflow-lifecycle' ||
+    message.kind === 'workflow-completion'
+  );
+}
+
+/**
  * Restore system rows after turn grouping filters them out. Workflow terminal
  * rows use their explicit launch-turn id; unowned workflow rows stay
  * standalone rather than attaching to an unrelated prompt.
@@ -53,15 +71,10 @@ export function includeInterleavedSystemRows(
       if (!message) continue;
       if (message.role === MessageRole.System) {
         const explicitlyOwned = message.workflowTurnId === turn.userMessage.id;
-        const ownedByAnotherTurn =
-          message.workflowTurnId !== undefined && !explicitlyOwned;
-        const isUnownedWorkflowRow =
-          message.workflowTurnId === undefined &&
-          (message.kind === 'workflow-lifecycle' ||
-            message.kind === 'workflow-completion');
+        // Workflow-placed rows (see isWorkflowPlacedRow) fold into a turn only
+        // via explicit ownership; every other workflow row stays standalone.
         if (
-          !ownedByAnotherTurn &&
-          !isUnownedWorkflowRow &&
+          !(isWorkflowPlacedRow(message) && !explicitlyOwned) &&
           (message.turnOwned === true || hasLaterTurnBody(index))
         ) {
           addedSystemRow = true;

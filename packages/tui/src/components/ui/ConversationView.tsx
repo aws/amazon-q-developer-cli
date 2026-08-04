@@ -37,7 +37,10 @@ import {
   groupMessagesIntoTurns,
   hasTurnOutcome,
 } from '../../utils/group-turns.js';
-import { includeInterleavedSystemRows } from '../../utils/conversation-system-rows.js';
+import {
+  includeInterleavedSystemRows,
+  isWorkflowPlacedRow,
+} from '../../utils/conversation-system-rows.js';
 import { leadingGap } from '../../utils/message-spacing.js';
 import { CLEAR_SCREEN } from '../../utils/terminal-sequences.js';
 import { WorkflowLifecycleRow } from './WorkflowLifecycleRow.js';
@@ -846,8 +849,41 @@ export const ConversationView = React.memo(function ConversationView({
     resetStaticThisRender &&
     !isProcessing &&
     groupedActiveTurnWithSystems !== undefined;
+  // A standalone system notice (e.g. the /autonomous toggle line) arriving
+  // after an IDLE turn closes the turn: the turn commits as a card and the
+  // notice follows it through the ordered static path. Without this, the
+  // notice would either jump above the still-dynamic turn body (committed
+  // immediately) or accumulate in a parallel dynamic queue that never drains
+  // while the session idles (no next prompt). Workflow rows are excluded —
+  // their placement is owned by includeInterleavedSystemRows. Mid-turn
+  // (isProcessing) the turn cannot close; those notices defer below the tail
+  // instead (see deferredSystemRows), bounded by the turn's lifetime.
+  const idleTurnClosedByNotice =
+    !isProcessing &&
+    groupedActiveTurnWithSystems !== undefined &&
+    (() => {
+      const bodyIds = new Set(
+        groupedActiveTurnWithSystems.aiMessages.map((m) => m.id)
+      );
+      const anchorIdx = messages.findIndex(
+        (m) => m.id === groupedActiveTurnWithSystems.userMessage.id
+      );
+      if (anchorIdx < 0) return false;
+      for (let i = anchorIdx + 1; i < messages.length; i += 1) {
+        const m = messages[i]!;
+        if (
+          m.role === MessageRole.System &&
+          !bodyIds.has(m.id) &&
+          !isWorkflowPlacedRow(m)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    })();
   const completedTurns =
-    replayIdleActiveTurn && groupedActiveTurnWithSystems
+    (replayIdleActiveTurn || idleTurnClosedByNotice) &&
+    groupedActiveTurnWithSystems
       ? [
           ...completedTurnsWithSystems,
           { ...groupedActiveTurnWithSystems, isActive: false },
@@ -862,7 +898,7 @@ export const ConversationView = React.memo(function ConversationView({
         item.id === groupedActiveTurnWithSystems.userMessage.id
     );
   const activeTurn =
-    replayIdleActiveTurn || activeTurnCommittedAsTurn
+    replayIdleActiveTurn || activeTurnCommittedAsTurn || idleTurnClosedByNotice
       ? undefined
       : groupedActiveTurnWithSystems;
 
@@ -985,10 +1021,31 @@ export const ConversationView = React.memo(function ConversationView({
     }
   };
 
+  // Unowned system notices that fall after the active turn's anchor must NOT
+  // be appended to <Static> yet: the active turn's body still renders in the
+  // dynamic region BELOW <Static>, so committing the row now would pin it
+  // above content that happened before it (observed: an /autonomous toggle
+  // notice rendering above an earlier turn-error row). While the turn is
+  // processing they render in the dynamic region below the tail instead —
+  // bounded by the turn's lifetime, since an IDLE turn followed by such a
+  // notice closes and commits instead (see idleTurnClosedByNotice), putting
+  // the notice through this ordered static path. Workflow-placed rows are
+  // exempt: their placement is owned by includeInterleavedSystemRows, and
+  // deferring them here would reorder them against later turn body.
+  const activeAnchorId = activeTurn?.userMessage.id;
+  let pastActiveAnchor = false;
+  const deferredSystemRows: Array<
+    StoreMessageType & { role: MessageRole.System }
+  > = [];
   messages.forEach((msg) => {
+    if (msg.id === activeAnchorId) pastActiveAnchor = true;
     if (msg.role === MessageRole.System) {
       if (!turnOwnedSystemIds.has(msg.id)) {
-        appendStatic({ type: 'system', id: msg.id, message: msg });
+        if (pastActiveAnchor && !isWorkflowPlacedRow(msg)) {
+          if (!emittedIds.has(msg.id)) deferredSystemRows.push(msg);
+        } else {
+          appendStatic({ type: 'system', id: msg.id, message: msg });
+        }
       }
       return;
     }
@@ -1158,6 +1215,14 @@ export const ConversationView = React.memo(function ConversationView({
             </Card>
           </Box>
         ))}
+
+      {/* Inter-turn system notices (e.g. /autonomous toggles) held out of
+          <Static> while the trailing turn still renders here; they show at
+          their true position — below the turn body — and commit to <Static>
+          in this order once the turn's card does. */}
+      {deferredSystemRows.map((msg) => (
+        <SystemMessage key={msg.id} message={msg} />
+      ))}
     </Box>
   );
 });
