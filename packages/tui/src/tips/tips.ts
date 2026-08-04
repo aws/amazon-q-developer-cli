@@ -180,6 +180,24 @@ const SHARED: readonly TipDef[] = [
     engines: ['v2'], // Shift+Tab agent-switch is a no-op on kas (v3)
     text: 'Press Shift+Tab to toggle plan mode; press it again to return to your previous agent.',
   },
+  {
+    id: 'tangent',
+    engines: ['kas'], // /tangent is v3-only
+    text: 'Use /tangent to explore a side quest in a separate conversation — /tangent ls lists and switches between them.',
+  },
+  {
+    id: 'show-thinking',
+    // In-cohort the thinking display lives in /verbosity; off-cohort it's the
+    // "Show thinking" row in /settings → display. Resolved at pick time.
+    text: () =>
+      flagEnabled('KIRO_LITE_ROLLOUT_ENABLED')
+        ? 'Reasoning blocks in the way? Set thinking display to collapsed or off via /verbosity.'
+        : 'Reasoning blocks in the way? Set Show thinking to collapsed or off in /settings → display.',
+  },
+  {
+    id: 'introspect',
+    text: 'Not sure how a Kiro feature works? Just ask — Kiro looks up its own docs to answer questions about itself.',
+  },
 ];
 
 // TUI only (Ctrl+O here expands output; in Lite it opens the inspect panel).
@@ -279,8 +297,11 @@ export function pickTip(
     }
   }
 
-  const total = weighted.reduce((s, w) => s + w.weight, 0) || 1;
-  let roll = rng() * total;
+  // Weights are constructed to sum to exactly 1 in every branch above.
+  // Re-summing them and scaling the roll reintroduces float drift that shifts
+  // the featured windows whenever the plain-tip count changes; roll against
+  // the nominal [0,1) directly and let the fallthrough absorb tail deficit.
+  let roll = rng();
   for (const w of weighted) {
     roll -= w.weight;
     if (roll < 0) return resolveText(w.tip, ctx);
