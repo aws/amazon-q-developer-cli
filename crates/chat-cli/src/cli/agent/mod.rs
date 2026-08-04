@@ -615,6 +615,19 @@ impl Agent {
         Ok(serde_json::to_string_pretty(&agent_clone)?)
     }
 
+    /// Serialize this agent to pretty JSON that both the classic engine and the V3 (KAS) engine
+    /// can load.
+    ///
+    /// KAS ignores a config that carries the classic-only trust fields (`allowedTools`,
+    /// `toolsSettings`) without a `permissions` block, so the serialized config is run through the
+    /// shared universal upgrade, which derives `permissions` and V3 tool tags while preserving the
+    /// classic fields.
+    pub fn to_v3_compatible_str_pretty(&self) -> eyre::Result<String> {
+        let value: serde_json::Value = serde_json::from_str(&self.to_str_pretty()?)?;
+        let upgraded = agent::agent_config::migration::migrate::upgrade_agent_config(&value).config;
+        Ok(serde_json::to_string_pretty(&upgraded)?)
+    }
+
     /// Resolves the prompt field, handling file:// URIs if present.
     /// Returns the prompt content as-is if it doesn't start with file://,
     /// or resolves the file URI and returns the file content.

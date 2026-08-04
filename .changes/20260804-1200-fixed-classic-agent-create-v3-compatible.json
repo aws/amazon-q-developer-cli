@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Agents created with `/agent create` in classic mode now produce a universal config that the V3 (KAS) engine also loads, instead of a classic-only config V3 skipped"
+}

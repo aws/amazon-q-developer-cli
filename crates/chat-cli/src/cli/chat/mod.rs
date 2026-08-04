@@ -6218,7 +6218,8 @@ async fn save_agent_config(
         .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {e}").into()))?;
 
     let config_file = config_dir.join(format!("{agent_name}.json"));
-    let config_json = serde_json::to_string_pretty(config)
+    let config_json = config
+        .to_v3_compatible_str_pretty()
         .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {e}").into()))?;
 
     tokio::fs::write(&config_file, config_json)

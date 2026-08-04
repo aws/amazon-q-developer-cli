@@ -490,7 +490,7 @@ pub async fn create_agent(
             ..Default::default()
         }
     }
-    .to_str_pretty()?;
+    .to_v3_compatible_str_pretty()?;
     let path_with_file_name = path.join(format!("{name}.json"));
 
     if !path.exists() {
