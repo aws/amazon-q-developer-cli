@@ -56,6 +56,9 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || '' }}
           fetch-depth: 0
+          # checkout@v6 blocks fork checkout under pull_request_target by default;
+          # this job intentionally reviews fork code, so opt back in.
+          allow-unsafe-pr-checkout: true
 
       - name: Install Kiro CLI
         if: steps.gate.outputs.skip != 'true'
