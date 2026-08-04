@@ -228,7 +228,10 @@ describe('activity tray queue and steering PTY stories', () => {
         {
           name: '/review',
           description: 'Review the current change',
-          meta: { subcommands: ['first', 'second'] },
+          meta: {
+            subcommands: ['first', 'second'],
+            subcommandDescriptions: { first: 'Review the first change' },
+          },
         },
       ],
     });
@@ -244,7 +247,7 @@ describe('activity tray queue and steering PTY stories', () => {
     await testCase.waitForStore(
       (value) => value.activeCommand?.command.name === '/review'
     );
-    await testCase.waitForVisibleText('/review first', 10_000);
+    await testCase.waitForVisibleText('Review the first change', 10_000);
     await testCase.sleepMs(150);
     await testCase.sendKeys(SHIFT_DOWN);
     expect((await testCase.getStore()).activityTraySelectedIndex).toBe(0);

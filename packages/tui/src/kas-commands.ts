@@ -111,6 +111,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'selection',
       hint: '',
       subcommands: ['create', 'edit', 'swap'],
+      subcommandDescriptions: {
+        create: 'Create a new agent',
+        edit: 'Edit an agent config in $EDITOR',
+        swap: 'Switch to a different agent',
+      },
       subcommandHints: {
         create: '<name> [--from <agent>] [--directory <path>]',
         edit: '[name]',
@@ -125,6 +130,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'selection',
       local: true,
       subcommands: ['new', 'save', 'load'],
+      subcommandDescriptions: {
+        new: 'Start a fresh session',
+        save: 'Save the conversation to a file',
+        load: 'Load a conversation from a file',
+      },
       subcommandHints: {
         new: '[prompt]',
         save: '[--force] <path>',
@@ -141,6 +151,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       local: true,
       cloudOnly: true,
       subcommands: ['new', 'save', 'load'],
+      subcommandDescriptions: {
+        new: 'Start a fresh session',
+        save: 'Save the conversation to a file',
+        load: 'Load a conversation from a file',
+      },
       subcommandHints: {
         new: '[prompt]',
         save: '[--force] <path>',
@@ -159,6 +174,9 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'selection',
       hint: '',
       subcommands: ['set-current-as-default'],
+      subcommandDescriptions: {
+        'set-current-as-default': 'Save the active model as the default',
+      },
     },
   },
   {
@@ -168,6 +186,9 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'selection',
       hint: '',
       subcommands: ['set-current-as-default'],
+      subcommandDescriptions: {
+        'set-current-as-default': 'Save the active effort level as the default',
+      },
     },
   },
   {
@@ -197,6 +218,12 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       local: true,
       subcommands: ['new', 'run', 'view', 'analyze_requirements'],
+      subcommandDescriptions: {
+        new: 'Create a new spec',
+        run: 'Execute tasks from a spec',
+        view: 'View a spec document',
+        analyze_requirements: 'Analyze requirements coverage for a spec',
+      },
       subcommandHints: {
         new: '<feature-name>',
         run: '<feature-name>',
@@ -221,6 +248,12 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'panel',
       hint: 'add <path>, remove <path>, clear',
       subcommands: ['show', 'add', 'remove', 'clear'],
+      subcommandDescriptions: {
+        show: 'Show context files and usage',
+        add: 'Add files to context',
+        remove: 'Remove files from context',
+        clear: 'Remove all files from context',
+      },
       subcommandHints: { add: '[--force] <path>...', remove: '<path>...' },
     },
   },
@@ -231,6 +264,11 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       inputType: 'panel',
       subcommands: ['status', 'init', 'overview'],
+      subcommandDescriptions: {
+        status: 'Show code intelligence status',
+        init: 'Initialize code intelligence for the workspace',
+        overview: 'Generate a codebase overview',
+      },
     },
   },
   {
@@ -263,6 +301,10 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       cloudOnly: true,
       subcommands: ['on', 'off'],
+      subcommandDescriptions: {
+        on: 'Enable autonomous mode',
+        off: 'Disable autonomous mode',
+      },
     },
   },
   {
@@ -306,6 +348,10 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       local: true,
       hint: '[run <recipe> | list]',
       subcommands: ['run', 'list'],
+      subcommandDescriptions: {
+        run: 'Run a workflow recipe',
+        list: 'List available recipes',
+      },
       subcommandHints: {
         run: '<recipe> [inputs]',
         list: '',
@@ -349,6 +395,10 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'selection',
       hint: '',
       subcommands: ['run', 'diagnostics'],
+      subcommandDescriptions: {
+        run: 'Upgrade agents by group',
+        diagnostics: 'Review upgraded agents',
+      },
       subcommandHints: {
         run: '(upgrade agents by group)',
         diagnostics: '(review upgraded agents)',
@@ -374,6 +424,7 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
       inputType: 'panel',
       hint: '<name> | ls',
       subcommands: ['ls'],
+      subcommandDescriptions: { ls: 'List tangents' },
       subcommandsOptional: true,
     },
   },

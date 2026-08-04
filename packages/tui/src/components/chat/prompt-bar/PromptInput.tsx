@@ -1196,10 +1196,11 @@ export const PromptInput = React.memo(function PromptInput({
                 );
               if (!alreadyInSub && matchesSub) {
                 const subHints = cmd.meta?.subcommandHints ?? {};
+                const subDescs = cmd.meta?.subcommandDescriptions ?? {};
                 const subOptions = subs.map((sub) => ({
                   value: sub,
                   label: sub,
-                  description: `${cmdName} ${sub}`,
+                  description: subDescs[sub] ?? '',
                   hint: subHints[sub] ?? undefined,
                 }));
                 setActiveCommand({ command: cmd, options: subOptions });

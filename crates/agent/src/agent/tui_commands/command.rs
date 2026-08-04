@@ -436,6 +436,65 @@ impl TuiCommand {
         }
     }
 
+    /// Human-readable descriptions shown next to each subcommand in the TUI dropdown.
+    pub fn subcommand_descriptions(&self) -> Vec<(&'static str, &'static str)> {
+        match self {
+            TuiCommand::Agent(_) => vec![
+                ("create", "Create a new agent"),
+                ("edit", "Edit an agent config in $EDITOR"),
+                ("swap", "Switch to a different agent"),
+            ],
+            TuiCommand::Model(_) => vec![("set-current-as-default", "Save the active model as the default")],
+            TuiCommand::Effort(_) => {
+                vec![("set-current-as-default", "Save the active effort level as the default")]
+            },
+            TuiCommand::Context(_) => vec![
+                ("show", "Show context files and usage"),
+                ("add", "Add files to context"),
+                ("remove", "Remove files from context"),
+                ("clear", "Remove all files from context"),
+            ],
+            TuiCommand::Knowledge(_) => vec![
+                ("show", "Show knowledge bases"),
+                ("add", "Index a file or directory"),
+                ("remove", "Remove a knowledge base"),
+                ("update", "Re-index a knowledge base"),
+                ("clear", "Remove all knowledge bases"),
+                ("cancel", "Cancel background indexing"),
+            ],
+            TuiCommand::Tools(_) => vec![
+                ("trust-all", "Trust all tools for this session"),
+                ("trust", "Trust a tool"),
+                ("untrust", "Require approval for a tool"),
+                ("reset", "Reset tool permissions to defaults"),
+            ],
+            TuiCommand::Chat(_) => vec![
+                ("save", "Save the conversation to a file"),
+                ("load", "Load a conversation from a file"),
+                ("new", "Start a fresh session"),
+            ],
+            TuiCommand::Code(_) => vec![
+                ("status", "Show code intelligence status"),
+                ("init", "Initialize code intelligence for the workspace"),
+                ("logs", "Show code intelligence logs"),
+                ("overview", "Generate a codebase overview"),
+                ("summary", "Summarize the workspace"),
+            ],
+            TuiCommand::Voice(_) => vec![
+                ("start", "Start voice input"),
+                ("stop", "Stop voice input"),
+                ("status", "Show voice input status"),
+            ],
+            TuiCommand::Mcp(_) => vec![
+                ("list", "List MCP servers"),
+                ("add", "Add an MCP server"),
+                ("remove", "Remove an MCP server"),
+            ],
+            TuiCommand::Goal(_) => vec![("clear", "Clear the active goal")],
+            _ => vec![],
+        }
+    }
+
     /// Metadata for TUI (options method, input type, etc.)
     pub fn meta(&self) -> Option<serde_json::Map<String, serde_json::Value>> {
         let mut meta = match self {
@@ -572,6 +631,15 @@ impl TuiCommand {
                     .collect();
                 meta.insert("subcommandHints".into(), serde_json::Value::Object(hints_map));
             }
+
+            let descriptions = self.subcommand_descriptions();
+            if !descriptions.is_empty() {
+                let desc_map: serde_json::Map<String, serde_json::Value> = descriptions
+                    .into_iter()
+                    .map(|(name, desc)| (name.to_string(), serde_json::Value::String(desc.to_string())))
+                    .collect();
+                meta.insert("subcommandDescriptions".into(), serde_json::Value::Object(desc_map));
+            }
         }
 
         meta
@@ -695,6 +763,24 @@ impl TuiCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_subcommand_has_a_description() {
+        for cmd in TuiCommand::all_commands() {
+            let descriptions: Vec<&str> = cmd
+                .subcommand_descriptions()
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect();
+            for sub in cmd.subcommands() {
+                assert!(
+                    descriptions.contains(&sub),
+                    "{} {sub} is missing a subcommand_descriptions entry",
+                    cmd.name()
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_serialize_model_with_args() {

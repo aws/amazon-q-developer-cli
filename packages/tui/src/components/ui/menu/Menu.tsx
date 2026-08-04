@@ -353,9 +353,13 @@ export const Menu = React.memo(function Menu({
             <Text>
               {brandText(keybindings.label('closeMenu'))}{' '}
               {dimText(closeMenuActionLabel)}
-              {dimText(` ${glyphs.smallDot} `)}
-              {brandText(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
-              {dimText('to navigate')}
+              {displayItems.length > 1 && (
+                <>
+                  {dimText(` ${glyphs.smallDot} `)}
+                  {brandText(`${glyphs.arrowUp}${glyphs.arrowDown}`)}{' '}
+                  {dimText('to navigate')}
+                </>
+              )}
               {onRightArrow ? (
                 <>
                   {dimText(` ${glyphs.smallDot} `)}

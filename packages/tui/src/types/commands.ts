@@ -28,6 +28,7 @@ export interface CommandMeta {
   inputType?: 'text' | 'selection' | 'multiselect' | 'panel';
   searchable?: boolean;
   subcommands?: string[];
+  subcommandDescriptions?: Record<string, string>;
   subcommandHints?: Record<string, string>;
   /**
    * When true, the command is valid with no subcommand (e.g. bare `/tangent`),

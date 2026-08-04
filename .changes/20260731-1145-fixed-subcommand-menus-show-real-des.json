@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Subcommand menus show real descriptions instead of repeating the command name"
+}

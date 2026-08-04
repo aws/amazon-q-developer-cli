@@ -175,12 +175,13 @@ export const CommandMenu: React.FC = () => {
     (cmd: AvailableCommand) => {
       const subs = cmd.meta?.subcommands;
       const subHints = cmd.meta?.subcommandHints ?? {};
+      const subDescs = cmd.meta?.subcommandDescriptions ?? {};
       if (!subs || subs.length === 0) return false;
 
       const subOptions = subs.map((sub) => ({
         value: sub,
         label: sub,
-        description: `${cmd.name} ${sub}`,
+        description: subDescs[sub] ?? '',
         hint: subHints[sub] ?? undefined,
       }));
       setActiveCommand({ command: cmd, options: subOptions });

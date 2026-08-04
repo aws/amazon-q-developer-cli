@@ -90,6 +90,12 @@ describe('kas-commands', () => {
       expect(specCmd!.meta).toEqual({
         local: true,
         subcommands: ['new', 'run', 'view', 'analyze_requirements'],
+        subcommandDescriptions: {
+          new: 'Create a new spec',
+          run: 'Execute tasks from a spec',
+          view: 'View a spec document',
+          analyze_requirements: 'Analyze requirements coverage for a spec',
+        },
         subcommandHints: {
           new: '<feature-name>',
           run: '<feature-name>',
@@ -118,6 +124,16 @@ describe('kas-commands', () => {
       );
       expect(modelCmd!.meta?.subcommands).toEqual(['set-current-as-default']);
       expect(effortCmd!.meta?.subcommands).toEqual(['set-current-as-default']);
+    });
+
+    it('every subcommand has a description', async () => {
+      const { KAS_COMMANDS } = await import('../kas-commands');
+      const missing = KAS_COMMANDS.flatMap((cmd) =>
+        (cmd.meta?.subcommands ?? [])
+          .filter((sub) => !cmd.meta?.subcommandDescriptions?.[sub])
+          .map((sub) => `${cmd.name} ${sub}`)
+      );
+      expect(missing).toEqual([]);
     });
 
     it('advertises canonical goal and workflow commands at startup', async () => {
@@ -206,6 +222,10 @@ describe('kas-commands', () => {
       expect(autonomousCmd!.meta).toEqual({
         cloudOnly: true,
         subcommands: ['on', 'off'],
+        subcommandDescriptions: {
+          on: 'Enable autonomous mode',
+          off: 'Disable autonomous mode',
+        },
       });
     });
 
