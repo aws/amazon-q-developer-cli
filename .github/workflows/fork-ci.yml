@@ -67,6 +67,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # Fork checkout under pull_request_target is gated behind the
+          # maintainer-only safe-to-test label (removed after each run).
+          allow-unsafe-pr-checkout: true
       - name: Read pinned Bun version
         id: bun-ver
         run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
@@ -107,6 +110,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # Fork checkout under pull_request_target is gated behind the
+          # maintainer-only safe-to-test label (removed after each run).
+          allow-unsafe-pr-checkout: true
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 libasound2-dev
@@ -183,6 +189,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # Fork checkout under pull_request_target is gated behind the
+          # maintainer-only safe-to-test label (removed after each run).
+          allow-unsafe-pr-checkout: true
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 libasound2-dev
