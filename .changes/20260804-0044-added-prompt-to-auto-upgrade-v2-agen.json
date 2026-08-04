@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Prompt to auto-upgrade V2 agent configs to the universal format when launching the V3 engine"
+}

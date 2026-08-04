@@ -68,6 +68,8 @@ use crate::util::launch_spinner::start_launch_spinner;
 mod v1;
 pub use v1::launch as launch_v1;
 
+mod auto_migrate;
+
 /// Launch the session according to the configured options.
 pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> Result<ExitCode> {
     let LaunchOptions {
@@ -95,6 +97,22 @@ pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> 
 
     let non_interactive = matches!(&interactivity, Interactivity::NonInteractive { .. });
     run_kas_gc_on_startup(os, agent_engine, !non_interactive).await;
+
+    if agent_engine == AgentEngine::Kas {
+        let target_agent = agent.clone().or_else(|| {
+            os.database
+                .settings
+                .get_string(crate::database::settings::Setting::ChatDefaultAgent)
+        });
+        let disable = auto_migrate::auto_migrate_agent_configs(!non_interactive, target_agent.as_deref(), &os.database);
+        if disable
+            && let Ok(path) = crate::util::paths::PathResolver::new(&os.env, &os.fs)
+                .workspace()
+                .settings_path()
+        {
+            auto_migrate::persist_disable_setting(&path);
+        }
+    }
 
     let mut cli_session_completion_emitted = false;
     let result = if let Interactivity::NonInteractive { input } = interactivity {
