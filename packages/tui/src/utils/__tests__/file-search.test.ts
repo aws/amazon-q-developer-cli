@@ -41,6 +41,19 @@ function search(query: string, limit?: number) {
   return searchFilesAbortable(query, new AbortController().signal, limit);
 }
 
+/**
+ * Fake signal whose `aborted` flips true after N polls — a timer-based abort
+ * races the directory walk and can miss it entirely on a fast filesystem.
+ */
+function abortAfterPolls(polls: number): AbortSignal {
+  let remaining = polls;
+  return {
+    get aborted() {
+      return --remaining < 0;
+    },
+  } as unknown as AbortSignal;
+}
+
 describe('file search', () => {
   test('finds matching files', async () => {
     expect(await search('unique-target')).toContain('unique-target.ts');
@@ -86,15 +99,21 @@ describe('file search', () => {
   test('returns fewer results when aborted mid-walk', async () => {
     const full = await search('file-', 200);
 
-    const signal = AbortSignal.timeout(0);
-    const partial = await searchFilesAbortable('file-', signal, 200);
+    const partial = await searchFilesAbortable(
+      'file-',
+      abortAfterPolls(10),
+      200
+    );
 
     expect(partial.length).toBeLessThan(full.length);
   });
 
   test('abort cancels walk — result count is less than max', async () => {
-    const signal = AbortSignal.timeout(0);
-    const results = await searchFilesAbortable('file-', signal, 200);
+    const results = await searchFilesAbortable(
+      'file-',
+      abortAfterPolls(10),
+      200
+    );
     expect(results.length).toBeLessThan(200);
   });
 

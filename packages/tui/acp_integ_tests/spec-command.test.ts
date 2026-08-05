@@ -158,7 +158,10 @@ describe('/spec command (_kiro/spec/*)', () => {
     await tc.sendKeys('/spec new my-feature');
     await tc.sleepMs(200);
     await tc.pressEnter();
-    await tc.sleepMs(800);
+
+    // The description-collection intro doubles as the "mode switch done"
+    // signal; waiting on it beats guessing a sleep on slow CI PTYs.
+    await tc.waitForVisibleText('What should this spec cover?', 10000);
 
     const configReqs = tc.mock.receivedRequests('session/set_config_option');
     const modeReqs = configReqs.filter(
@@ -167,15 +170,13 @@ describe('/spec command (_kiro/spec/*)', () => {
     expect(modeReqs.length).toBeGreaterThanOrEqual(1);
     expect((modeReqs[0]!.params as any).value).toBe('spec');
 
-    // The description-collection step is armed: the intro asks what the
-    // spec should cover, and nothing has been sent to the agent yet.
-    await tc.waitForVisibleText('What should this spec cover?', 5000);
     expect(tc.mock.receivedRequests('session/prompt').length).toBe(0);
 
     await tc.sendKeys('A clock that counts down');
     await tc.sleepMs(200);
     await tc.pressEnter();
-    await tc.sleepMs(1500);
+
+    await tc.waitForVisibleText('Creating spec', 10000);
 
     const promptReqs = tc.mock.receivedRequests('session/prompt');
     expect(promptReqs.length).toBeGreaterThanOrEqual(1);
@@ -183,5 +184,5 @@ describe('/spec command (_kiro/spec/*)', () => {
     expect(content).toContain('my-feature');
     expect(content).toContain('A clock that counts down');
     expect(content).toContain('ground truth');
-  });
+  }, 30000);
 });

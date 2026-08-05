@@ -56,6 +56,9 @@ describe('Bracketed Paste', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Got it.', 10000);
 
+    // While a turn is processing, Ctrl+C cancels instead of arming exit —
+    // wait for idle so both presses count toward the exit sequence.
+    await testCase.waitForIdle();
     await testCase.pressCtrlCTwice();
     await testCase.expectExit();
   }, 30000);
@@ -98,6 +101,7 @@ describe('Bracketed Paste', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Got it.', 10000);
 
+    await testCase.waitForIdle();
     await testCase.pressCtrlCTwice();
     await testCase.expectExit();
   }, 30000);
@@ -137,6 +141,7 @@ describe('Bracketed Paste', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Got it.', 10000);
 
+    await testCase.waitForIdle();
     await testCase.pressCtrlCTwice();
     await testCase.expectExit();
   }, 30000);
@@ -186,6 +191,7 @@ describe('Bracketed Paste', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Got both.', 10000);
 
+    await testCase.waitForIdle();
     await testCase.pressCtrlCTwice();
     await testCase.expectExit();
   }, 30000);
@@ -234,6 +240,7 @@ describe('Bracketed Paste', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Got the path.', 10000);
 
+    await testCase.waitForIdle();
     await testCase.pressCtrlCTwice();
     await testCase.expectExit();
   }, 30000);
