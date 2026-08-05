@@ -91,6 +91,13 @@ export interface TwinkiRenderOptions {
 	 * rows for cursor/viewport math. Default: false.
 	 */
 	wideLines?: boolean;
+	/**
+	 * Repaint only the viewport on native-scrollback full redraws instead of
+	 * clearing scrollback (default: false). Only safe when no element spans
+	 * rows above the viewport — a full-height gutter or border renders with
+	 * gaps, because rows above are left as committed history.
+	 */
+	preserveScrollbackOnRedraw?: boolean;
 }
 
 /**
@@ -132,6 +139,8 @@ export interface Instance {
 	clear(): void;
 	/** Enables physical-row tracking for soft-wrapped lines. */
 	setWideLines(enabled: boolean): void;
+	/** Enables viewport-only repaint on native-scrollback full redraws. */
+	setPreserveScrollbackOnRedraw(enabled: boolean): void;
 	/** Re-renders the application with a new React element */
 	rerender(element: React.ReactElement): void;
 	/** Adjusts the static write cursor after items are trimmed from the front of the Static array */
@@ -329,6 +338,7 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		textSelection: options.textSelection,
 		staticScrollbackCap: options.staticScrollbackCap,
 		wideLines: options.wideLines,
+		preserveScrollbackOnRedraw: options.preserveScrollbackOnRedraw,
 	});
 
 	const bridge = new ReactBridge(() => tui.requestRender());
@@ -489,6 +499,9 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		},
 		setWideLines(enabled: boolean) {
 			tui.setWideLinesEnabled(enabled);
+		},
+		setPreserveScrollbackOnRedraw(enabled: boolean) {
+			tui.setPreserveScrollbackOnRedraw(enabled);
 		},
 		getMetrics() {
 			const countNodes = (node: TwinkiNode | RootContainer): number => {

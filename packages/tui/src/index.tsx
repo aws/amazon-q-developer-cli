@@ -60,6 +60,7 @@ import {
   readStringSetting,
   readOptionalStringSetting,
 } from './utils/cli-settings';
+import { resolvePreserveScrollback } from './utils/renderer-options';
 import { UiModeSource } from './types/generated/chat-cli';
 import type { UiMode } from './types/ui-mode.js';
 import { Settings } from './constants/settings';
@@ -1576,20 +1577,38 @@ const startApp = async () => {
   const rendererWideLinesEnabled = (mode: UiMode) =>
     wrapDisabled || mode === 'lite';
 
-  // `wideLines` is a twinki-specific render option. We type the options
-  // object explicitly so the compiler doesn't require a cast.
-  const renderOptions: Parameters<typeof render>[1] & { wideLines?: boolean } =
-    {
-      exitOnCtrlC: false,
-      patchConsole: false,
-      // Install hit testing once. Terminal mouse reporting is immediately
-      // disabled below and only enabled by an explicit in-app toggle.
-      mouse: true,
-      // Lite and wrap-disabled surfaces use wrap="overflow", where a logical
-      // line can occupy multiple terminal rows. TUI -> lite switches update
-      // this below so ordinary TUI sessions keep the old fast path.
-      wideLines: rendererWideLinesEnabled(uiMode),
-    };
+  // Read once: the resolver below runs from an app-store subscription that
+  // fires on every batched streaming chunk, and readBoolSetting does
+  // existsSync + readFileSync + JSON.parse.
+  const preserveScrollbackSetting = readBoolSetting(
+    Settings.CHAT_PRESERVE_SCROLLBACK,
+    false
+  );
+
+  // Honored on every surface. On surfaces that draw the left status bar this
+  // leaves a gap in the bar where the repaint boundary falls — accepted, since
+  // keeping scrollback is worth more than an unbroken bar.
+  const rendererPreserveScrollback = () =>
+    resolvePreserveScrollback({ settingEnabled: preserveScrollbackSetting });
+
+  // `wideLines` and `preserveScrollbackOnRedraw` are twinki-specific render
+  // options. We type the options object explicitly so the compiler doesn't
+  // require a cast.
+  const renderOptions: Parameters<typeof render>[1] & {
+    wideLines?: boolean;
+    preserveScrollbackOnRedraw?: boolean;
+  } = {
+    exitOnCtrlC: false,
+    patchConsole: false,
+    // Install hit testing once. Terminal mouse reporting is immediately
+    // disabled below and only enabled by an explicit in-app toggle.
+    mouse: true,
+    // Lite and wrap-disabled surfaces use wrap="overflow", where a logical
+    // line can occupy multiple terminal rows. TUI -> lite switches update
+    // this below so ordinary TUI sessions keep the old fast path.
+    wideLines: rendererWideLinesEnabled(uiMode),
+    preserveScrollbackOnRedraw: rendererPreserveScrollback(),
+  };
   const instance = render(<App />, renderOptions);
   const renderTelemetryEngine: 'v2' | 'v3' =
     resolveAgentEngine() === 'kas' ? 'v3' : 'v2';
@@ -1615,12 +1634,15 @@ const startApp = async () => {
     disconnectMouseCapture();
     instance.unmount();
   };
+  // Only wideLines tracks the ui mode. Scrollback preservation no longer does:
+  // it follows the setting alone, so a /tui swap cannot change it.
   let lastRendererWideLinesEnabled = rendererWideLinesEnabled(uiMode);
   appStore.subscribe((state) => {
     const enabled = rendererWideLinesEnabled(state.uiMode);
-    if (enabled === lastRendererWideLinesEnabled) return;
-    lastRendererWideLinesEnabled = enabled;
-    instance.setWideLines(enabled);
+    if (enabled !== lastRendererWideLinesEnabled) {
+      lastRendererWideLinesEnabled = enabled;
+      instance.setWideLines(enabled);
+    }
   });
 
   // Wire useTerminalSize to Twinki's throttled resize callback —

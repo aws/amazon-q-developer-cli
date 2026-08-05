@@ -166,6 +166,11 @@ pub enum Setting {
         message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
     )]
     ChatDisableWrap,
+    #[strum(
+        message = "Repaint only the viewport instead of clearing terminal scrollback on full redraws, on every surface; where the left status bar spans the repaint boundary it shows a gap at the seam (boolean, default: false)",
+        props(scope = "global_only")
+    )]
+    ChatPreserveScrollback,
     #[strum(message = "Per-model additional field defaults (object of model ID → overrides)")]
     ChatModelDefaults,
     #[strum(
@@ -366,6 +371,7 @@ impl AsRef<str> for Setting {
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
             Self::ChatDisableWrap => "chat.disableWrap",
+            Self::ChatPreserveScrollback => "chat.preserveScrollback",
             Self::ChatModelDefaults => "chat.modelDefaults",
             Self::ChatKeybindingsCancelStream => "chat.keybindings.cancelStream",
             Self::ChatKeybindingsCloseMenu => "chat.keybindings.closeMenu",
@@ -476,6 +482,7 @@ impl TryFrom<&str> for Setting {
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             "chat.disableWrap" => Ok(Self::ChatDisableWrap),
+            "chat.preserveScrollback" => Ok(Self::ChatPreserveScrollback),
             "chat.modelDefaults" => Ok(Self::ChatModelDefaults),
             "chat.keybindings.cancelStream" => Ok(Self::ChatKeybindingsCancelStream),
             "chat.keybindings.closeMenu" => Ok(Self::ChatKeybindingsCloseMenu),
@@ -1013,5 +1020,16 @@ mod test {
         let aliased = Setting::try_from("chat.ui.mode").unwrap();
         assert!(matches!(canonical, Setting::UiMode));
         assert!(matches!(aliased, Setting::UiMode));
+    }
+
+    #[test]
+    fn test_preserve_scrollback_is_parseable_and_global_only() {
+        // This is the registry the shipped `settings` command parses through;
+        // registering only in chat-cli-v2 made the key return InvalidSetting.
+        let parsed = Setting::try_from("chat.preserveScrollback").unwrap();
+        assert!(matches!(parsed, Setting::ChatPreserveScrollback));
+        assert_eq!(Setting::ChatPreserveScrollback.as_ref(), "chat.preserveScrollback");
+        // The TUI reads this key from the global settings file only.
+        assert!(!Setting::ChatPreserveScrollback.is_workspace_overridable());
     }
 }

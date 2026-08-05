@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`chat.preserveScrollback` setting to repaint only the viewport instead of clearing terminal scrollback on full redraws, honored on every surface; where the left status bar spans the repaint boundary it shows a gap at the seam"
+}

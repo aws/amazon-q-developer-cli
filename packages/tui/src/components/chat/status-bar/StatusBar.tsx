@@ -9,6 +9,7 @@ import React, {
   useState,
 } from 'react';
 import { useTheme } from '../../../hooks/useThemeContext.js';
+import { useDropsLeftStatusBar } from '../../../hooks/useDropsLeftStatusBar.js';
 import { Text } from '../../ui/text/Text.js';
 import { Icon, IconType } from '../../ui/icon/Icon.js';
 import { Spinner } from '../../ui/spinner/Spinner.js';
@@ -73,6 +74,24 @@ export interface StatusBarProps {
 }
 
 export const StatusBar = React.memo(function StatusBar({
+  children,
+  barColor: barColorProp,
+  status: statusProp,
+}: StatusBarProps) {
+  // Checked here rather than at each call site so no message type can
+  // reintroduce the bar on a surface that drops it.
+  const dropsBar = useDropsLeftStatusBar();
+  if (dropsBar) {
+    return <>{children}</>;
+  }
+  return (
+    <StatusBarChrome barColor={barColorProp} status={statusProp}>
+      {children}
+    </StatusBarChrome>
+  );
+});
+
+const StatusBarChrome = React.memo(function StatusBarChrome({
   children,
   barColor: barColorProp,
   status: statusProp,

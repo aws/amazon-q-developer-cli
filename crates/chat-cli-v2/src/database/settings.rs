@@ -203,6 +203,11 @@ pub enum Setting {
         message = "Disable line wrapping in chat output; long lines soft-wrap visually but remain single logical lines for copy-paste (boolean)"
     )]
     ChatDisableWrap,
+    #[strum(
+        message = "Repaint only the viewport instead of clearing terminal scrollback on full redraws, on every surface; where the left status bar spans the repaint boundary it shows a gap at the seam (boolean, default: false)",
+        props(scope = "global_only")
+    )]
+    ChatPreserveScrollback,
     #[strum(message = "Per-model additional field defaults (object of model ID → overrides)")]
     ChatModelDefaults,
     #[strum(
@@ -313,6 +318,7 @@ impl AsRef<str> for Setting {
             Self::ToolSearchMinPct => "toolSearch.minPct",
             Self::ToolSearchMinTokens => "toolSearch.minTokens",
             Self::ChatDisableWrap => "chat.disableWrap",
+            Self::ChatPreserveScrollback => "chat.preserveScrollback",
             Self::ChatModelDefaults => "chat.modelDefaults",
             Self::ChatAllowAnimations => "chat.allowAnimations",
             Self::ChatAllowAsciiArt => "chat.allowAsciiArt",
@@ -419,6 +425,7 @@ impl TryFrom<&str> for Setting {
             "toolSearch.minPct" => Ok(Self::ToolSearchMinPct),
             "toolSearch.minTokens" => Ok(Self::ToolSearchMinTokens),
             "chat.disableWrap" => Ok(Self::ChatDisableWrap),
+            "chat.preserveScrollback" => Ok(Self::ChatPreserveScrollback),
             "chat.modelDefaults" => Ok(Self::ChatModelDefaults),
             "chat.allowAnimations" => Ok(Self::ChatAllowAnimations),
             "chat.allowAsciiArt" => Ok(Self::ChatAllowAsciiArt),
@@ -1365,5 +1372,24 @@ mod test {
         let aliased = Setting::try_from("chat.ui.mode").unwrap();
         assert!(matches!(canonical, Setting::UiMode));
         assert!(matches!(aliased, Setting::UiMode));
+    }
+
+    #[test]
+    fn test_preserve_scrollback_is_global_only() {
+        // The TUI reads this key from the global settings file only.
+        assert!(!Setting::ChatPreserveScrollback.is_workspace_overridable());
+    }
+
+    #[tokio::test]
+    async fn test_preserve_scrollback_read_write() {
+        let settings = Settings::new().await.unwrap();
+        assert_eq!(settings.get_value(Setting::ChatPreserveScrollback), None);
+        settings.set(Setting::ChatPreserveScrollback, true, None).await.unwrap();
+        assert_eq!(
+            settings.get_value(Setting::ChatPreserveScrollback),
+            Some(Value::Bool(true))
+        );
+        settings.remove(Setting::ChatPreserveScrollback, None).await.unwrap();
+        assert_eq!(settings.get_value(Setting::ChatPreserveScrollback), None);
     }
 }

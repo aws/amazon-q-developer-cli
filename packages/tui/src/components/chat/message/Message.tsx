@@ -6,7 +6,7 @@ import { Text } from '../../ui/text/Text.js';
 import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { MarkdownRenderer } from '../../ui/MarkdownRenderer.js';
 import type { StatusType } from '../../../types/componentTypes.js';
-import { useAppStoreOptional } from '../../../stores/app-store.js';
+import { useDropsLeftStatusBar } from '../../../hooks/useDropsLeftStatusBar.js';
 
 export enum MessageType {
   DEVELOPER = 'developer',
@@ -28,10 +28,6 @@ export const Message = React.memo(function Message({
   status,
   barColor,
 }: MessageProps) {
-  const { wrapDisabled } = useTheme();
-  // Live read so a /tui swap restores chrome on later rows; falls back to TUI
-  // chrome when rendered without an AppStoreContext (Storybook/snapshot tests).
-  const isLiteUi = useAppStoreOptional((s) => s.uiMode === 'lite', false);
   const messageStatus: StatusType = status || 'active';
 
   // Under wrapDisabled:
@@ -41,7 +37,7 @@ export const Message = React.memo(function Message({
   //     there is no leading whitespace or colored bar column. Keeps the
   //     output clean in scrollback AND avoids layout-shift between live and
   //     static forms.
-  const dropChrome = wrapDisabled || isLiteUi;
+  const dropChrome = useDropsLeftStatusBar();
   const useOverflow = dropChrome;
   const skipStatusBar = dropChrome;
 

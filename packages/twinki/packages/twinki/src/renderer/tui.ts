@@ -98,6 +98,17 @@ export interface TUIOptions {
    * terminal widths. The render width is clamped to this floor.
    */
   minWidth?: number;
+  /**
+   * Repaint only the viewport on native-scrollback full redraws instead of
+   * clearing scrollback and re-emitting the whole frame (default: false).
+   *
+   * Only safe when no element spans rows above the viewport. Rows above are
+   * left as committed history, so anything drawn as one continuous vertical
+   * run — a full-height gutter, border, or status bar — keeps whatever
+   * partial state it had when it scrolled off and renders with visible gaps.
+   * Enable only for layouts whose off-screen rows are self-contained.
+   */
+  preserveScrollbackOnRedraw?: boolean;
 }
 
 export type RenderKind = 'full' | 'partial';
@@ -216,6 +227,7 @@ export class TUI extends Container {
   private showHardwareCursor = isHardwareCursorEnabled();
   private hardwareCursorListeners = new Set<() => void>();
   private clearOnShrink = process.env.TWINKI_CLEAR_ON_SHRINK === '1';
+  private preserveScrollbackOnRedraw = false;
   private maxLinesRendered = 0;
   private previousViewportTop = 0;
   private fullRedrawCount = 0;
@@ -277,6 +289,13 @@ export class TUI extends Container {
   private liveContentPhysicalRow = 0;
   private dsrPending = false;
   private altScreen = false;
+  /**
+   * True once any frame has been committed. Full redraws before this point
+   * (cold start, resumed-session history) must emit the entire frame; after
+   * it, native-scrollback full redraws repaint only the viewport so committed
+   * scrollback content is never duplicated or destroyed.
+   */
+  private hadFirstFrame = false;
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
   private pacingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -328,6 +347,9 @@ export class TUI extends Container {
     }
     if (opts.wideLines) {
       this.wideLinesEnabled = true;
+    }
+    if (opts.preserveScrollbackOnRedraw) {
+      this.preserveScrollbackOnRedraw = true;
     }
     this.minWidth = Math.max(opts.minWidth ?? 10, 1);
     if (process.env.KIRO_RENDER_DEBUG === '1' || process.env.KIRO_RENDER_DEBUG_FILE || process.env.TWINKI_DEBUG_REDRAW === '1') {
@@ -420,6 +442,10 @@ export class TUI extends Container {
    */
   setClearOnShrink(enabled: boolean): void {
     this.clearOnShrink = enabled;
+  }
+
+  setPreserveScrollbackOnRedraw(enabled: boolean): void {
+    this.preserveScrollbackOnRedraw = enabled;
   }
 
   setWideLinesEnabled(enabled: boolean): void {
@@ -1666,6 +1692,7 @@ export class TUI extends Container {
     this.previousHasWide = hasWide;
     this.previousPhysRowsCache = physRows;
     this.previousWidth = width;
+    this.hadFirstFrame = true;
     this.frameGeneration = staticPrefixPristine
       ? this.staticBuffer.generation
       : -1;
@@ -1711,8 +1738,11 @@ export class TUI extends Container {
       }
       this.trimStaticOutput();
       // When live content (excluding static) overflowed the viewport, the old
-      // active rows are stuck in scrollback. Erase them now before the static
-      // flush pushes more content in, then reset for a clean full redraw.
+      // active rows above the viewport are stuck in scrollback where they can
+      // no longer be updated. With scrollback preservation on, erase only the
+      // VISIBLE rows and leave the overflowed rows as immutable history;
+      // otherwise \x1b[3J drops them, which costs the user their scroll
+      // position but is the only way to repaint rows a tall element spans.
       // "Live rows" = physical rows of the active tail (all lines in
       // `previousLines` after the accumulated static prefix). When wide
       // lines aren't enabled, physical === logical (one row per line).
@@ -1735,7 +1765,7 @@ export class TUI extends Container {
       if (liveRows > this.terminal.rows && !this.altScreen) {
         const screenRow = this.hardwareCursorRow - this.previousViewportTop;
         const rowsToErase = Math.min(screenRow + 1, this.terminal.rows);
-        let buf = '\x1b[3J';
+        let buf = this.preserveScrollbackOnRedraw ? '' : '\x1b[3J';
         for (let i = 0; i < rowsToErase; i++) {
           buf += '\x1b[2K' + (i < rowsToErase - 1 ? '\x1b[1A' : '');
         }
@@ -2276,12 +2306,97 @@ export class TUI extends Container {
     const CLEAR_ALL = TUI.CLEAR_ALL;
     const CLEAR_SCREEN = TUI.CLEAR_SCREEN;
 
-    // Strategy 1: First render (also after external clear)
-    // \x1b[J clears from cursor to end of screen, preventing stale content
-    // below the new output (e.g. after Ctrl+L cleared the screen).
-    // If live content alone exceeds the viewport, use CLEAR_ALL to also wipe
-    // stale active lines that may be stuck in scrollback.
+    /**
+     * Full redraw that repaints ONLY the visible viewport with the tail of
+     * the frame, leaving everything above (terminal scrollback) untouched.
+     *
+     * Opt-in via `preserveScrollbackOnRedraw`. The alternative — fullRender
+     * with CLEAR_ALL — destroys the user's entire scrollback (\x1b[3J) and
+     * yanks their scroll position to the top of the session, because
+     * re-emitting the whole frame is the only way to avoid duplicating the
+     * static prefix that is already physically in scrollback.
+     *
+     * Rows above the viewport become committed, immutable history: they keep
+     * whatever rendering they had when they scrolled off. That is invisible
+     * for self-contained text but wrong for an element spanning those rows —
+     * a full-height gutter or border shows gaps where the stale rows sit.
+     */
+    const viewportTailRender = (reason: string): boolean => {
+      // Walk back from the frame end until the tail fills the viewport, never
+      // exceeding `height` physical rows: surplus rows scroll off into
+      // scrollback and are appended again on the next redraw, duplicating the
+      // fragment and displacing real history. A logical line taller than the
+      // viewport cannot fit at all, so decline and let the caller full-render.
+      let startIdx = newLines.length;
+      let tailRows = 0;
+      while (startIdx > 0 && tailRows < height) {
+        const rows = this.wideLinesEnabled
+          ? rowOf(newLines[startIdx - 1] ?? '')
+          : 1;
+        if (tailRows + rows > height) break;
+        tailRows += rows;
+        startIdx--;
+      }
+      if (startIdx === newLines.length) {
+        this.debugLog(
+          `viewport-tail declined: reason=${reason} lines=${newLines.length} (tail line exceeds height)`
+        );
+        return false;
+      }
+      this.fullRedrawCount++;
+      this.debugLog(
+        `fullRedraw #${this.fullRedrawCount}: reason=${reason} lines=${newLines.length} (viewport-tail)`
+      );
+      const sync = !process.env['TWINKI_NO_SYNC'];
+      let buffer = sync ? '\x1b[?2026h' : '';
+      // Relative moves only — absolute addressing or clears above the
+      // viewport would touch committed scrollback.
+      const screenRow = Math.max(
+        0,
+        Math.min(height - 1, hardwareCursorRow - prevViewportTop)
+      );
+      if (screenRow > 0) buffer += `\x1b[${screenRow}A`;
+      buffer += '\r\x1b[J';
+      for (let i = startIdx; i < newLines.length; i++) {
+        if (i > startIdx) buffer += '\r\n';
+        buffer += newLines[i];
+      }
+      if (sync) buffer += '\x1b[?2026l';
+      this.terminal.write(buffer);
+      this.cursorRow = Math.max(0, newPhysRows - 1);
+      this.hardwareCursorRow = this.cursorRow;
+      // The viewport now shows the frame tail, so content-row coordinates
+      // must anchor the viewport at newPhysRows - height (never the old
+      // high-water mark: rows above the repainted region are unreachable).
+      this.maxLinesRendered = newPhysRows;
+      this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+      this.positionHardwareCursor(cursorPos, newPhysRows);
+      this.commitFrame(
+        newLines,
+        newHasWide,
+        newPhysRows,
+        width,
+        prefixIsPristine
+      );
+      return true;
+    };
+
+    // Strategy 1: First render (also after an invalidated frame or external
+    // clear). On a true cold start, write the whole frame so history (e.g. a
+    // resumed session's static prefix) lands in scrollback; '\x1b[J' clears
+    // stale content below (e.g. after Ctrl+L). After the first frame, when
+    // scrollback preservation is on, repaint only the viewport — the static
+    // prefix is already physically in scrollback and re-emitting it would
+    // require destroying the user's scrollback first.
     if (this.previousLines.length === 0 && !widthChanged) {
+      if (
+        !this.altScreen &&
+        this.preserveScrollbackOnRedraw &&
+        this.hadFirstFrame &&
+        viewportTailRender('first')
+      ) {
+        return;
+      }
       // Match accumulatedStaticOutput to newLines wrt wide-line state:
       // when nothing is wide at all, logical === physical.
       const staticPhysRows = this.wideLinesEnabled
@@ -2391,7 +2506,17 @@ export class TUI extends Container {
         // new end — those need to be erased one terminal row at a time.
         const extraPhys = prevPhysRows - newPhysRows;
         if (extraPhys > height) {
-          fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'extra>height');
+          if (
+            !this.altScreen &&
+            this.preserveScrollbackOnRedraw &&
+            viewportTailRender('extra>height')
+          ) {
+            return;
+          }
+          fullRender(
+            this.altScreen ? CLEAR_SCREEN : CLEAR_ALL,
+            'extra>height'
+          );
           return;
         }
         if (extraPhys > 0) buffer += '\x1b[1B';
@@ -2459,6 +2584,13 @@ export class TUI extends Container {
         return;
       }
     } else if (firstChangedPhysRow < previousContentViewportTop) {
+      if (
+        !this.altScreen &&
+        this.preserveScrollbackOnRedraw &&
+        viewportTailRender('off-screen-change')
+      ) {
+        return;
+      }
       fullRender(
         this.altScreen ? CLEAR_SCREEN : CLEAR_ALL,
         'off-screen-change'

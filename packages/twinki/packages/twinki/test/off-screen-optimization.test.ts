@@ -55,9 +55,9 @@ describe('Off-screen change optimization', () => {
     tui.stop();
   });
 
-  it('still does full redraw when content shrinks with off-screen changes', async () => {
+  it('repaints the viewport when content shrinks with off-screen changes', async () => {
     const term = new TestTerminal(40, 5);
-    const tui = new TUI(term);
+    const tui = new TUI(term, { preserveScrollbackOnRedraw: true });
     const comp = new MutableComponent();
 
     comp.lines = Array.from({ length: 10 }, (_, i) => `line ${i}`);
@@ -65,6 +65,8 @@ describe('Off-screen change optimization', () => {
     tui.start();
     await wait();
     await term.flush();
+
+    const redrawsBefore = tui.fullRedrawCount;
 
     // Shrink: remove lines (stale rows need clearing)
     comp.lines = comp.lines.slice(0, 7);
@@ -75,8 +77,13 @@ describe('Off-screen change optimization', () => {
 
     const frames = term.getFrames();
     expect(frames.length).toBe(2);
-    // Shrink case must trigger full redraw
-    expect(frames[1]!.isFull).toBe(true);
+    // Shrink is handled by a redraw (not the differential path) — but a
+    // viewport-tail repaint, never a scrollback-destroying clear.
+    expect(tui.fullRedrawCount).toBe(redrawsBefore + 1);
+    // Viewport shows the tail of the new 7-line content, no stale rows.
+    const viewport = frames[1]!.viewport;
+    expect(viewport.join('\n')).toContain('line 6');
+    expect(viewport.join('\n')).not.toContain('line 9');
 
     tui.stop();
   });

@@ -10,6 +10,7 @@ export const Settings = {
   CHAT_NOTIFICATION_METHOD: 'chat.notificationMethod',
   CHAT_AUTO_EXPAND_TOOL_OUTPUT: 'chat.autoExpandToolOutput',
   CHAT_DISABLE_WRAP: 'chat.disableWrap',
+  CHAT_PRESERVE_SCROLLBACK: 'chat.preserveScrollback',
   CHAT_DISABLE_TRUST_ALL_CONFIRMATION: 'chat.disableTrustAllConfirmation',
   CHAT_KEYBINDINGS_CANCEL_STREAM: 'chat.keybindings.cancelStream',
   CHAT_KEYBINDINGS_CLOSE_MENU: 'chat.keybindings.closeMenu',
