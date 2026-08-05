@@ -1,11 +1,11 @@
 # Cloud-sandbox test coverage map
 
-Dark-shipped feature: cloud sessions are enabled ONLY for internal nightly
-builds (rollout.rs `remote_sandbox`, ramped by #3666) or under
-`KIRO_TEST_MODE=1`. Released/external builds must show zero cloud UX — that
-guarantee is pinned by `crates/chat-cli/tests/cloud_sessions_gating.rs` and
-`rollout.rs` unit tests. Everything below tests the feature AS the eligible
-(nightly/internal or test-mode) user sees it, plus the dark-ship boundary.
+Dark-shipped feature: cloud sessions are enabled ONLY for internal users
+(any channel; rollout.rs `remote_sandbox`) or under `KIRO_TEST_MODE=1`.
+External builds must show zero cloud UX — that guarantee is pinned by
+`crates/chat-cli/tests/cloud_sessions_gating.rs` and `rollout.rs` unit
+tests. Everything below tests the feature AS the eligible (internal or
+test-mode) user sees it, plus the dark-ship boundary.
 
 Sources: Pippin "Kiro Next - CLI Bugs" doc (bugs #1–#35 + UX list), the
 basic user stories, merged fixes (#3552 #3599 #3651 #3652 #3653 #3656 #3657
@@ -49,7 +49,7 @@ Tiers:
 
 | Guarantee                                                             | Tier                         | Where                                                            |
 | --------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------- |
-| `remote_sandbox` enabled ONLY internal+nightly (#3666 matrix)         | unit (rust)                  | rollout.rs test_remote_sandbox_enabled_only_for_internal_nightly |
+| `remote_sandbox` enabled ONLY for internal users (any channel)        | unit (rust)                  | rollout.rs test_remote_sandbox_enabled_for_all_internal_any_channel |
 | Released `--list-sessions`: zero cloud UX even w/ stray env           | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
 | Released: injected cloud/remote-control KAS rows hidden (fail-closed) | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
 | Released JSON listing carries no cloud members                        | rust-integ (release profile) | cloud_sessions_gating.rs                                         |

@@ -402,10 +402,10 @@ impl ChatArgs {
     /// Dark-ship gate for `--cloud` / `--repo`. Returns clap's genuine
     /// `UnknownArgument` error (exit code 2, same wording and `Usage:` block as a
     /// real unknown flag) when a remote flag was supplied but the `RemoteSandbox`
-    /// rollout feature is off (all public/stable builds; only internal nightly
-    /// is ramped) -- so the dark-shipped flags are indistinguishable from a typo
+    /// rollout feature is off (all external builds; only internal users
+    /// are ramped) -- so the dark-shipped flags are indistinguishable from a typo
     /// and leak nothing. Returns `None` when the feature is enabled (internal
-    /// nightly cohort, or debug / `KIRO_TEST_MODE` / E2E builds; the V3-only
+    /// cohort on any channel, or debug / `KIRO_TEST_MODE` / E2E builds; the V3-only
     /// conflict check then applies in `resolve_agent_engine`) or no remote flag
     /// was passed -- except that on the enabled path a blank `--repo` value
     /// (`--repo ""` / `--repo ,`) yields a clap `InvalidValue` error.
@@ -424,7 +424,7 @@ impl ChatArgs {
     ///
     /// REMOVE only when the rollout is ramped for every segment AND channel
     /// (segment: all, channel: all, 100%). While any cohort is excluded --
-    /// today that is everyone but internal nightly -- this gate is exactly
+    /// today that is every external user -- this gate is exactly
     /// what keeps the flags dark for them.
     pub fn remote_sandbox_gate_error(&self, feature_enabled: bool) -> Option<clap::Error> {
         use clap::CommandFactory;

@@ -82,7 +82,7 @@ impl TestHome {
     }
 
     /// Base command with the hermetic environment. `test_mode` toggles the
-    /// remote-sandbox feature exactly the way nightly testing does.
+    /// remote-sandbox feature exactly the way internal testing does.
     ///
     /// `KIRO_API_KEY` satisfies the `is_logged_in` gate on the released shape
     /// (without it, a not-logged-in run without `KIRO_TEST_MODE` opens the

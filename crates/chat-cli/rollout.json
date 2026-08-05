@@ -10,10 +10,9 @@
     "segment": "all"
   },
   "remote_sandbox": {
-    "description": "Remote/cloud sandbox sessions (--cloud/--repo flags). Ramped to 100% for internal nightly; external and stable builds stay dark. Widen segment/channel here for the next ramp stage.",
+    "description": "Remote/cloud sandbox sessions (--cloud/--repo flags). Ramped to 100% for all internal users on every channel; external users stay dark. Widen segment here for the external ramp stage.",
     "treatment_percent": 100,
-    "segment": "internal",
-    "channel": "nightly"
+    "segment": "internal"
   },
   "voice": {
     "description": "Voice input mode - all internal users",

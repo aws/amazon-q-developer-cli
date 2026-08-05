@@ -363,7 +363,7 @@ mod tests {
         );
         assert!(
             json.contains("\"remote_sandbox\""),
-            "remote_sandbox should be enabled for internal nightly: {json}"
+            "remote_sandbox should be enabled for internal users: {json}"
         );
         assert!(!json.contains("\"workflows\""), "workflows must stay dark: {json}");
         assert!(
@@ -387,20 +387,20 @@ mod tests {
     }
 
     #[test]
-    fn test_remote_sandbox_enabled_only_for_internal_nightly() {
+    fn test_remote_sandbox_enabled_for_all_internal_any_channel() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(
             features.contains_key(<&str>::from(Feature::RemoteSandbox)),
             "remote_sandbox must be declared in rollout.json"
         );
 
-        // Ramped to internal nightly only. External users (any channel) and
-        // stable builds (any segment) must stay dark — that is the guarantee
-        // that keeps `--cloud`/`--repo` unusable by live customers.
+        // Ramped to all internal users on every channel. External users must
+        // stay dark on any channel — that is the guarantee that keeps
+        // `--cloud`/`--repo` unusable by live customers.
         for (is_internal, is_nightly, expected) in [
             (false, false, false),
             (false, true, false),
-            (true, false, false),
+            (true, false, true),
             (true, true, true),
         ] {
             let r = Rollout::new_for_test(is_internal, is_nightly);

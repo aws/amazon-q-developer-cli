@@ -1,6 +1,6 @@
 # Cloud Sessions — Design
 
-Status: Live on internal nightly (rollout 100%) · Owner: kiro-cli
+Status: Live for all internal users, every channel (rollout 100%) · Owner: kiro-cli
 Companion runbook: [docs/oncall/cloud_sessions_runbook.md](../oncall/cloud_sessions_runbook.md)
 
 Cloud sessions run an agent session on a remote cloud sandbox instead of the local machine:
@@ -60,7 +60,7 @@ necessarily the one that started the turn.
 Two independent gates, both required:
 
 1. **Client rollout gate** — `crates/chat-cli/rollout.json` → `remote_sandbox`
-   (compile-time; currently `internal` / `nightly` / 100%). Gated-out users see `--cloud`
+   (compile-time; currently `internal` / all channels / 100%). Gated-out users see `--cloud`
    rejected as an unknown argument, indistinguishable from a typo; cloud rows are hidden from
    listings. Pinned by release-profile tests (`cloud_sessions_gating.rs`).
 2. **KAS endpoint gate** — KAS constructs its remote adapters (session source, relay link,
@@ -174,8 +174,8 @@ Operational procedures, triage tables, and per-error-kind escalation live in the
 
 | Stage | rollout.json | Exit criteria |
 |---|---|---|
-| 0 — internal nightly (today) | `internal / nightly / 100%` | 1 week clean: done (98.9% start success, ~2.4s ready latency) |
-| 1 — internal stable | `internal / all / 100%` | 1–2 weeks: start success ≥99%, no skew/truncation spikes, alarm thresholds tuned, paging enabled |
+| 0 — internal nightly | `internal / nightly / 100%` | 1 week clean: done (98.9% start success, ~2.4s ready latency) |
+| 1 — internal stable (today) | `internal / all / 100%` | 1–2 weeks: start success ≥99%, no skew/truncation spikes, alarm thresholds tuned, paging enabled |
 | 2 — external ramp | `all / all / 25→50→100%` | ≥3 days/step; backend capacity sign-off before entry; alarms paging throughout |
 
 Rollback at any stage: revert the rollout CR (next release) or backend endpoint refusal

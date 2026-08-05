@@ -3,8 +3,8 @@
 Oncall guide for cloud (remote-sandbox) sessions: `kiro chat --cloud`, `/repo`, resume of cloud
 ids, `/autonomous`. Design and architecture: [docs/design/cloud-sessions.md](../design/cloud-sessions.md).
 
-Feature state: dark-shipped; live for **internal nightly only** (rollout 100%). External and
-stable builds cannot reach any cloud path, so customer-facing tickets about cloud sessions from
+Feature state: dark-shipped; live for **all internal users on every channel** (rollout 100%).
+External builds cannot reach any cloud path, so customer-facing tickets about cloud sessions from
 non-internal users indicate something is very wrong (check `KIRO_TEST_MODE` misuse first).
 
 ## Session lifecycle semantics (what the events mean)
@@ -103,7 +103,7 @@ Missing data = OK by design (dark-shipped feature; zero traffic is normal).
 
 ## Triage: "cloud session won't start / behaves wrong"
 
-1. **Which build?** Only internal nightly has the feature. `kiro diagnostic` on the reporter's
+1. **Which build?** Only internal users have the feature (any channel). `kiro diagnostic` on the reporter's
    machine shows the rollout state, whether a remote-sessions endpoint is configured, and the
    extracted KAS versions — ask for its output first.
 2. **Classify the failure.** The CLI already labels cloud errors
