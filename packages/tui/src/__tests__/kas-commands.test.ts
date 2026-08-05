@@ -156,7 +156,7 @@ describe('kas-commands', () => {
         expect(
           commands.find((command) => command.name === KasCommandName.Workflow)
             ?.meta?.subcommands
-        ).toEqual(['run', 'list']);
+        ).toEqual(['run', 'list', 'retry']);
       });
     });
 

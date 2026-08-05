@@ -708,6 +708,11 @@ describe('KasWorkflowExtension', () => {
       workflowId: TARGET.workflowId,
       status: 'running',
     });
+    transport.setRpcResponse('_kiro/workflow/retry', {
+      workflowId: TARGET.workflowId,
+      status: 'running',
+      retriedNodeIds: [TARGET.nodeId],
+    });
     transport.setRpcResponse('_kiro/workflow/cancel', {
       ok: true,
       previousStatus: 'running',
@@ -749,6 +754,13 @@ describe('KasWorkflowExtension', () => {
       status: 'running',
     });
     await expect(
+      extension.retryRun(TARGET.workflowId, TARGET.nodeId)
+    ).resolves.toEqual({
+      workflowId: TARGET.workflowId,
+      status: 'running',
+      retriedNodeIds: [TARGET.nodeId],
+    });
+    await expect(
       extension.cancelRun(TARGET.workflowId, 'completed')
     ).resolves.toEqual({
       ok: true,
@@ -786,6 +798,13 @@ describe('KasWorkflowExtension', () => {
       {
         method: '_kiro/workflow/resume',
         params: { workflowId: TARGET.workflowId },
+      },
+      {
+        method: '_kiro/workflow/retry',
+        params: {
+          workflowId: TARGET.workflowId,
+          nodeId: TARGET.nodeId,
+        },
       },
       {
         method: '_kiro/workflow/cancel',

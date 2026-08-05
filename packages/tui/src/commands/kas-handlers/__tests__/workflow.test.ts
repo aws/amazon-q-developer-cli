@@ -16,12 +16,13 @@ import {
 function run(
   workflowId: string,
   parentSessionId: string,
-  updatedAt: string
+  updatedAt: string,
+  status: WorkflowRunSummary['status'] = 'completed'
 ): WorkflowRunSummary {
   return {
     workflowId,
     name: workflowId,
-    status: 'completed',
+    status,
     createdAt: updatedAt,
     updatedAt,
     parentSessionId,
@@ -36,6 +37,11 @@ function workflowControls() {
     resumeWorkflow: mock(async (workflowId: string) => ({
       workflowId,
       status: 'running' as const,
+    })),
+    retryWorkflow: mock(async (workflowId: string, nodeId?: string) => ({
+      workflowId,
+      status: 'running' as const,
+      retriedNodeIds: [nodeId ?? 'failed-step'],
     })),
     cancelWorkflow: mock(async (_workflowId: string) => ({
       ok: true,
@@ -131,6 +137,55 @@ describe('/workflow KAS command', () => {
 
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
       'No workflows in this session yet. Start one with /workflow run.',
+      'warning',
+      3000
+    );
+    expect(ctx._spies.setShowWorkflowHistory).not.toHaveBeenCalled();
+  });
+
+  it('lists only retryable workflows for /workflow retry', async () => {
+    const failed = run(
+      'failed',
+      'session-1',
+      '2026-07-19T10:00:00.000Z',
+      'failed'
+    );
+    const aborted = run(
+      'aborted',
+      'session-1',
+      '2026-07-20T10:00:00.000Z',
+      'aborted'
+    );
+    const ctx = createKasContext({
+      sessionId: 'session-1',
+      listWorkflows: mock(async () => [
+        failed,
+        aborted,
+        run('completed', 'session-1', '2026-07-21T10:00:00.000Z'),
+        run('other-session', 'session-2', '2026-07-22T10:00:00.000Z', 'failed'),
+      ]),
+    });
+
+    expect(await executeCommand('/workflow retry', ctx)).toBe(true);
+
+    expect(ctx._spies.setShowWorkflowHistory).toHaveBeenCalledWith(true, [
+      aborted,
+      failed,
+    ]);
+  });
+
+  it('reports when there are no retryable workflows', async () => {
+    const ctx = createKasContext({
+      sessionId: 'session-1',
+      listWorkflows: mock(async () => [
+        run('completed', 'session-1', '2026-07-21T10:00:00.000Z'),
+      ]),
+    });
+
+    expect(await executeCommand('/workflow retry', ctx)).toBe(true);
+
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'No failed or aborted workflows to retry.',
       'warning',
       3000
     );
@@ -446,6 +501,47 @@ describe('/workflow KAS command', () => {
     expect(controls.resumeWorkflow).toHaveBeenCalledWith('wf-resume');
     expect(inspectWorkflow).toHaveBeenCalledWith('wf-status');
     expect(controls.cancelWorkflow).toHaveBeenCalledWith('wf-cancel');
+  });
+
+  it('retries a workflow or one workflow node through the typed Kiro API', async () => {
+    const controls = workflowControls();
+    const ctx = createKasContext(controls);
+
+    expect(await executeCommand('/workflow retry wf-retry', ctx)).toBe(true);
+    expect(controls.retryWorkflow).toHaveBeenNthCalledWith(
+      1,
+      'wf-retry',
+      undefined
+    );
+    expect(ctx._spies.showAlert).toHaveBeenLastCalledWith(
+      'Retrying 1 workflow step; status is running.',
+      'success',
+      3000
+    );
+
+    expect(
+      await executeCommand('/workflow retry wf-retry failed-node', ctx)
+    ).toBe(true);
+    expect(controls.retryWorkflow).toHaveBeenNthCalledWith(
+      2,
+      'wf-retry',
+      'failed-node'
+    );
+  });
+
+  it('rejects extra workflow retry arguments', async () => {
+    const controls = workflowControls();
+    const ctx = createKasContext(controls);
+
+    expect(
+      await executeCommand('/workflow retry wf-retry node extra', ctx)
+    ).toBe(true);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      'Usage: /workflow retry <workflowId> [nodeId]',
+      'error',
+      3000
+    );
+    expect(controls.retryWorkflow).not.toHaveBeenCalled();
   });
 
   it('requires a workflow id for every control subcommand', async () => {

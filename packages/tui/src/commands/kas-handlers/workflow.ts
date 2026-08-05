@@ -1,5 +1,6 @@
 import { extractRpcErrorMessage } from '../../utils/error-handling';
 import type { WorkflowRunSummary } from '../../types/workflow-history';
+import { isRetryableWorkflowStatus } from '../../types/workflow-status.js';
 import { shellSplit } from '../../utils/shell-split';
 import type {
   WorkflowRecipeDescriptor,
@@ -52,6 +53,9 @@ export async function handleWorkflow(
       return;
     case 'run':
       await runWorkflowCommand(cmd, rest, ctx);
+      return;
+    case 'retry':
+      await retryWorkflowCommand(ctx, rest);
       return;
     case 'pause':
     case 'resume':
@@ -296,7 +300,46 @@ function parseWorkflowInputs(value: string): Record<string, string> {
   return inputs;
 }
 
-async function openWorkflowHistory(ctx: CommandContext): Promise<void> {
+async function retryWorkflowCommand(
+  ctx: CommandContext,
+  args: string
+): Promise<void> {
+  if (!args) {
+    await openWorkflowHistory(ctx, true);
+    return;
+  }
+
+  const [workflowId, nodeId, ...extra] = shellSplit(args);
+  if (!workflowId || extra.length > 0) {
+    ctx.showAlert(
+      'Usage: /workflow retry <workflowId> [nodeId]',
+      'error',
+      3000
+    );
+    return;
+  }
+
+  try {
+    const response = await ctx.kiro.retryWorkflow(workflowId, nodeId);
+    const count = response.retriedNodeIds.length;
+    ctx.showAlert(
+      `Retrying ${count} workflow ${count === 1 ? 'step' : 'steps'}; status is ${response.status}.`,
+      'success',
+      3000
+    );
+  } catch (error) {
+    ctx.showAlert(
+      extractRpcErrorMessage(error, `Failed to retry workflow ${workflowId}`),
+      'error',
+      5000
+    );
+  }
+}
+
+async function openWorkflowHistory(
+  ctx: CommandContext,
+  retryableOnly = false
+): Promise<void> {
   const sessionId = ctx.kiro.sessionId;
   const localRuns = ctx.getLocalWorkflowRuns();
   let remoteRuns: WorkflowRunSummary[] = [];
@@ -319,13 +362,19 @@ async function openWorkflowHistory(ctx: CommandContext): Promise<void> {
   for (const run of remoteRuns) runsById.set(run.workflowId, run);
   const scopedRuns = sessionId
     ? [...runsById.values()]
-        .filter((run) => run.parentSessionId === sessionId)
+        .filter(
+          (run) =>
+            run.parentSessionId === sessionId &&
+            (!retryableOnly || isRetryableWorkflowStatus(run.status))
+        )
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     : [];
 
   if (scopedRuns.length === 0) {
     ctx.showAlert(
-      'No workflows in this session yet. Start one with /workflow run.',
+      retryableOnly
+        ? 'No failed or aborted workflows to retry.'
+        : 'No workflows in this session yet. Start one with /workflow run.',
       'warning',
       3000
     );
@@ -361,8 +410,12 @@ async function controlWorkflow(
       await ctx.kiro.pauseWorkflow(id);
       ctx.showAlert('Workflow paused', 'success', 3000);
     } else if (subcommand === 'resume') {
-      await ctx.kiro.resumeWorkflow(id);
-      ctx.showAlert('Workflow resumed', 'success', 3000);
+      const response = await ctx.kiro.resumeWorkflow(id);
+      ctx.showAlert(
+        `Workflow is ${response.status}`,
+        response.status === 'running' ? 'success' : 'warning',
+        3000
+      );
     } else {
       await ctx.kiro.cancelWorkflow(id);
       ctx.showAlert('Workflow cancelled', 'success', 3000);

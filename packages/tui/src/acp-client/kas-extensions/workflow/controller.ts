@@ -13,6 +13,7 @@ import type {
   WorkflowControlApi,
   WorkflowInspectResponse,
   WorkflowPauseResponse,
+  WorkflowRetryResponse,
   WorkflowResumeResponse,
   WorkflowRunSummary,
 } from '../../../types/workflow-history.js';
@@ -36,6 +37,7 @@ import {
   WORKFLOW_LIST_RECIPES_CONTRACT,
   WORKFLOW_LOAD_CONTRACT,
   WORKFLOW_PAUSE_CONTRACT,
+  WORKFLOW_RETRY_CONTRACT,
   WORKFLOW_RESUME_CONTRACT,
 } from './contracts.js';
 import { WorkflowParentRelayFilter } from './event-routing.js';
@@ -274,6 +276,16 @@ export class KasWorkflowExtension
 
   resumeRun(workflowId: string): Promise<WorkflowResumeResponse> {
     return this.runtime.request(WORKFLOW_RESUME_CONTRACT, { workflowId });
+  }
+
+  retryRun(
+    workflowId: string,
+    nodeId?: string
+  ): Promise<WorkflowRetryResponse> {
+    return this.runtime.request(WORKFLOW_RETRY_CONTRACT, {
+      workflowId,
+      nodeId,
+    });
   }
 
   cancelRun(

@@ -190,8 +190,16 @@ describe('workflow monitor view model', () => {
     expect(buildMonitorFooterHints({ ...base, status: 'paused' })).toContain(
       'r resume'
     );
-    expect(workflowControlShortcut('p', key())).toBe('pause');
-    expect(workflowControlShortcut('r', key())).toBe('resume');
-    expect(workflowControlShortcut('p', key({ ctrl: true }))).toBeNull();
+    expect(buildMonitorFooterHints({ ...base, status: 'failed' })).toContain(
+      'r retry'
+    );
+    expect(workflowControlShortcut('p', key(), 'running')).toBe('pause');
+    expect(workflowControlShortcut('r', key(), 'paused')).toBe('resume');
+    expect(workflowControlShortcut('r', key(), 'failed')).toBe('retry');
+    expect(workflowControlShortcut('r', key(), 'aborted')).toBe('retry');
+    expect(workflowControlShortcut('r', key(), 'completed')).toBeNull();
+    expect(
+      workflowControlShortcut('p', key({ ctrl: true }), 'running')
+    ).toBeNull();
   });
 });

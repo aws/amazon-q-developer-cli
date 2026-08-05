@@ -42,6 +42,7 @@ import type {
   WorkflowControlApi,
   WorkflowInspectResponse,
   WorkflowPauseResponse,
+  WorkflowRetryResponse,
   WorkflowResumeResponse,
   WorkflowRunSummary,
 } from './types/workflow-history';
@@ -501,6 +502,13 @@ export class Kiro {
 
   resumeWorkflow(workflowId: string): Promise<WorkflowResumeResponse> {
     return this.workflowControl.resumeRun(workflowId);
+  }
+
+  retryWorkflow(
+    workflowId: string,
+    nodeId?: string
+  ): Promise<WorkflowRetryResponse> {
+    return this.workflowControl.retryRun(workflowId, nodeId);
   }
 
   cancelWorkflow(

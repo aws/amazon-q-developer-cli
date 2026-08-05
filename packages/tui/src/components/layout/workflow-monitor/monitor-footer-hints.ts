@@ -3,7 +3,10 @@ import type {
   WorkflowMonitorNode,
 } from '../../../types/workflow-monitor.js';
 import type { WorkflowStatus } from '../../../types/workflow.js';
-import { isTerminalWorkflowStatus } from '../../../types/workflow-status.js';
+import {
+  isRetryableWorkflowStatus,
+  isTerminalWorkflowStatus,
+} from '../../../types/workflow-status.js';
 
 export interface MonitorFooterContext {
   selectedNode?: WorkflowMonitorNode | null;
@@ -31,6 +34,8 @@ export function buildMonitorFooterHints(ctx: MonitorFooterContext): string {
   if (!isTerminalWorkflowStatus(ctx.status)) {
     hints.push(ctx.status === 'paused' ? 'r resume' : 'p pause');
     hints.push('Ctrl+X stop');
+  } else if (isRetryableWorkflowStatus(ctx.status)) {
+    hints.push('r retry');
   }
   if (node) hints.push('Up/Down nodes');
   hints.push('Left/Right workflows');

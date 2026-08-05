@@ -7,7 +7,10 @@ import {
   AppStoreContext,
   createAppStore,
 } from '../../../../stores/app-store.js';
-import { workflowStore } from '../../../../stores/workflow-store.js';
+import {
+  createWorkflowStore,
+  workflowStore,
+} from '../../../../stores/workflow-store.js';
 import {
   ApprovalOptionId,
   type ApprovalRequestInfo,
@@ -17,6 +20,7 @@ import type {
   WorkflowCancelResponse,
   WorkflowInspectResponse,
   WorkflowPauseResponse,
+  WorkflowRetryResponse,
   WorkflowRunSummary,
 } from '../../../../types/workflow-history.js';
 import { WorkflowHistoryPanel } from '../WorkflowHistoryPanel.js';
@@ -232,6 +236,65 @@ describe('WorkflowMonitorScreen', () => {
     expect(output).toContain('WORKFLOWS');
     expect(output).toContain('Reconnect validation');
     expect(output).toContain('coder');
+  });
+
+  it('sends one retry when r repeats while the request is pending', async () => {
+    const store = createWorkflowStore();
+    store.getState().openHistoricalWorkflow({
+      workflowId: 'workflow-1',
+      parentSessionId: 'parent-1',
+      name: 'Retry validation',
+      status: 'failed',
+      nodes: [
+        {
+          id: 'step-1',
+          type: 'step',
+          status: 'failed',
+          label: 'coder',
+          parentId: null,
+          depth: 0,
+          sessionId: 'child-1',
+          agentName: 'coder',
+        },
+      ],
+      stepSessions: [],
+      startedAt: Date.now(),
+      completedAt: Date.now(),
+    });
+    let resolveRetry!: (response: WorkflowRetryResponse) => void;
+    const retryWorkflow = mock(
+      (_workflowId: string) =>
+        new Promise<WorkflowRetryResponse>((resolve) => {
+          resolveRetry = resolve;
+        })
+    );
+    const kiro = new Kiro();
+    kiro.retryWorkflow = retryWorkflow;
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowMonitorScreen store={store} />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, patchConsole: false, mouse: true }
+    );
+    await flush();
+
+    expect(stripAnsi(terminal.output)).toContain('r retry');
+    terminal.sendInput('r');
+    terminal.sendInput('r');
+    await flush();
+
+    expect(retryWorkflow).toHaveBeenCalledTimes(1);
+    expect(retryWorkflow).toHaveBeenCalledWith('workflow-1');
+
+    resolveRetry({
+      workflowId: 'workflow-1',
+      status: 'running',
+      retriedNodeIds: ['step-1'],
+    });
+    await flush();
   });
 
   it('keeps successful workflow messages out of the main alert bar', async () => {
@@ -552,6 +615,53 @@ describe('WorkflowMonitorScreen', () => {
 });
 
 describe('WorkflowHistoryPanel', () => {
+  it('retries the selected failed workflow with r', async () => {
+    workflowStore.getState().openWorkflowHistory([
+      {
+        workflowId: 'workflow-1',
+        name: 'Failed release',
+        status: 'failed',
+        createdAt: '2026-07-20T10:00:00.000Z',
+        updatedAt: '2026-07-20T10:01:00.000Z',
+        parentSessionId: 'parent-1',
+      },
+    ]);
+    let resolveRetry!: (response: WorkflowRetryResponse) => void;
+    const retryWorkflow = mock(
+      (_workflowId: string) =>
+        new Promise<WorkflowRetryResponse>((resolve) => {
+          resolveRetry = resolve;
+        })
+    );
+    const kiro = new Kiro();
+    kiro.retryWorkflow = retryWorkflow;
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowHistoryPanel onClose={() => {}} />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, patchConsole: false }
+    );
+    await flush();
+
+    expect(stripAnsi(terminal.output)).toContain('r retry');
+    terminal.sendInput('r');
+    terminal.sendInput('r');
+    await flush();
+    expect(retryWorkflow).toHaveBeenCalledTimes(1);
+    expect(stripAnsi(terminal.output)).toContain('retrying...');
+
+    resolveRetry({
+      workflowId: 'workflow-1',
+      status: 'running',
+      retriedNodeIds: ['step-1'],
+    });
+    await flush();
+    expect(workflowStore.getState().history.runs[0]?.status).toBe('running');
+  });
+
   it('pauses and resumes the selected workflow with p and r', async () => {
     const run: WorkflowRunSummary = {
       workflowId: 'workflow-1',

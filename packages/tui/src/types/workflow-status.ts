@@ -5,6 +5,10 @@ import type {
 } from './workflow.js';
 
 export type LiveWorkflowStatus = Extract<WorkflowStatus, 'running' | 'paused'>;
+export type RetryableWorkflowStatus = Extract<
+  WorkflowStatus,
+  'failed' | 'aborted'
+>;
 export type TerminalWorkflowStatus = Exclude<
   WorkflowRunCompleteStatus,
   'paused'
@@ -44,6 +48,9 @@ const LIVE_WORKFLOW_STATUSES: ReadonlySet<LiveWorkflowStatus> = new Set([
   'running',
   'paused',
 ]);
+
+const RETRYABLE_WORKFLOW_STATUSES: ReadonlySet<RetryableWorkflowStatus> =
+  new Set(['failed', 'aborted']);
 
 const RUN_COMPLETE_WORKFLOW_STATUSES: ReadonlySet<WorkflowRunCompleteStatus> =
   new Set(['paused', 'completed', 'failed', 'aborted']);
@@ -89,6 +96,12 @@ export function isLiveWorkflowStatus(
   status: WorkflowStatus
 ): status is LiveWorkflowStatus {
   return contains(LIVE_WORKFLOW_STATUSES, status);
+}
+
+export function isRetryableWorkflowStatus(
+  status: WorkflowStatus | undefined
+): status is RetryableWorkflowStatus {
+  return contains(RETRYABLE_WORKFLOW_STATUSES, status);
 }
 
 export function isTerminalWorkflowStatus(

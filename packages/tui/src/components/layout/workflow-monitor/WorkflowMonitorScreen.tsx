@@ -44,7 +44,10 @@ import {
 } from './workflow-tabs.js';
 import { classifyWorkflowStopKey } from './workflow-stop-confirmation.js';
 import { workflowControlShortcut } from './workflow-control-shortcut.js';
-import { isTerminalWorkflowStatus } from '../../../types/workflow-status.js';
+import {
+  isRetryableWorkflowStatus,
+  isTerminalWorkflowStatus,
+} from '../../../types/workflow-status.js';
 import type { WorkflowMonitorNode } from '../../../types/workflow-monitor.js';
 import type { WorkflowNodeSessionTarget } from '../../../types/workflow.js';
 import { setMouseCaptureEnabled } from '../../../utils/mouse-capture.js';
@@ -151,6 +154,7 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   const composerRevisionRef = useRef(0);
   const inputTextRef = useRef('');
   const messageDraftsRef = useRef(new Map<string, string>());
+  const pendingRetryWorkflowIdsRef = useRef(new Set<string>());
   const [, setClock] = useState(0);
 
   useEffect(() => {
@@ -381,6 +385,17 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       .catch((error: unknown) => showError(error, 'Could not resume workflow'));
   };
 
+  const retryWorkflow = () => {
+    if (!workflow || !isRetryableWorkflowStatus(workflow.status)) return;
+    const workflowId = workflow.workflowId;
+    if (pendingRetryWorkflowIdsRef.current.has(workflowId)) return;
+    pendingRetryWorkflowIdsRef.current.add(workflowId);
+    void kiro
+      .retryWorkflow(workflowId)
+      .catch((error: unknown) => showError(error, 'Could not retry workflow'))
+      .finally(() => pendingRetryWorkflowIdsRef.current.delete(workflowId));
+  };
+
   const stopWorkflow = () => {
     if (!workflow) return;
     const workflowId = workflow.workflowId;
@@ -484,13 +499,21 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       openInput();
       return;
     }
-    const controlShortcut = workflowControlShortcut(input, key);
+    const controlShortcut = workflowControlShortcut(
+      input,
+      key,
+      workflow?.status
+    );
     if (controlShortcut === 'pause') {
       pauseWorkflow();
       return;
     }
     if (controlShortcut === 'resume') {
       resumeWorkflow();
+      return;
+    }
+    if (controlShortcut === 'retry') {
+      retryWorkflow();
       return;
     }
     if (!key.ctrl && !key.meta && input === 'l') {

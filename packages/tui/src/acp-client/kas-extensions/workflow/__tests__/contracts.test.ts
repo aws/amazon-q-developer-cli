@@ -13,6 +13,7 @@ import {
   parseWorkflowPauseResponse,
   parsePersistedWorkflowProgress,
   parseWorkflowResumeResponse,
+  parseWorkflowRetryResponse,
   parseWorkflowLoadResponse,
   parseWorkflowNotification,
   parseWorkflowRecipeListResponse,
@@ -569,6 +570,17 @@ describe('workflow protocol boundary', () => {
       })
     ).toEqual({ workflowId: load.workflowId, status: 'running' });
     expect(
+      parseWorkflowRetryResponse({
+        workflowId: load.workflowId,
+        status: 'running',
+        retriedNodeIds: ['build'],
+      })
+    ).toEqual({
+      workflowId: load.workflowId,
+      status: 'running',
+      retriedNodeIds: ['build'],
+    });
+    expect(
       parseWorkflowCancelResponse({
         ok: true,
         previousStatus: 'running',
@@ -636,6 +648,13 @@ describe('workflow protocol boundary', () => {
       parseWorkflowResumeResponse({
         workflowId: load.workflowId,
         status: 'unknown',
+      })
+    ).toBeNull();
+    expect(
+      parseWorkflowRetryResponse({
+        workflowId: load.workflowId,
+        status: 'running',
+        retriedNodeIds: [''],
       })
     ).toBeNull();
     expect(

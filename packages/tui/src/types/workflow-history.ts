@@ -43,6 +43,12 @@ export interface WorkflowResumeResponse {
   status: WorkflowStatus;
 }
 
+export interface WorkflowRetryResponse {
+  workflowId: string;
+  status: WorkflowStatus;
+  retriedNodeIds: string[];
+}
+
 export interface WorkflowCancelResponse {
   ok: boolean;
   previousStatus: WorkflowStatus;
@@ -54,6 +60,7 @@ export interface WorkflowControlApi extends WorkflowLaunchApi {
   inspectRun(workflowId: string): Promise<WorkflowInspectResponse>;
   pauseRun(workflowId: string): Promise<WorkflowPauseResponse>;
   resumeRun(workflowId: string): Promise<WorkflowResumeResponse>;
+  retryRun(workflowId: string, nodeId?: string): Promise<WorkflowRetryResponse>;
   cancelRun(
     workflowId: string,
     targetStatus?: 'aborted' | 'completed'

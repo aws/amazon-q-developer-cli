@@ -25,6 +25,7 @@ import type {
   WorkflowInspectResponse,
   WorkflowListResponse,
   WorkflowPauseResponse,
+  WorkflowRetryResponse,
   WorkflowResumeResponse,
   WorkflowRunSummary,
 } from '../../../types/workflow-history.js';
@@ -804,6 +805,22 @@ export function parseWorkflowResumeResponse(
     : null;
 }
 
+export function parseWorkflowRetryResponse(
+  value: unknown
+): WorkflowRetryResponse | null {
+  return isRecord(value) &&
+    isNonEmptyString(value.workflowId) &&
+    isWorkflowStatus(value.status) &&
+    Array.isArray(value.retriedNodeIds) &&
+    value.retriedNodeIds.every(isNonEmptyString)
+    ? {
+        workflowId: value.workflowId,
+        status: value.status,
+        retriedNodeIds: value.retriedNodeIds,
+      }
+    : null;
+}
+
 export function parseWorkflowCancelResponse(
   value: unknown
 ): WorkflowCancelResponse | null {
@@ -851,6 +868,18 @@ export const WORKFLOW_RESUME_CONTRACT: RpcContract<
   method: '_kiro/workflow/resume',
   encode: ({ workflowId }) => ({ workflowId }),
   decode: parseWorkflowResumeResponse,
+};
+
+export const WORKFLOW_RETRY_CONTRACT: RpcContract<
+  { workflowId: string; nodeId?: string },
+  WorkflowRetryResponse
+> = {
+  method: '_kiro/workflow/retry',
+  encode: ({ workflowId, nodeId }) => ({
+    workflowId,
+    ...(nodeId === undefined ? {} : { nodeId }),
+  }),
+  decode: parseWorkflowRetryResponse,
 };
 
 export const WORKFLOW_CANCEL_CONTRACT: RpcContract<

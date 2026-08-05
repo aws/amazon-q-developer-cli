@@ -346,15 +346,17 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     meta: {
       inputType: 'panel',
       local: true,
-      hint: '[run <recipe> | list]',
-      subcommands: ['run', 'list'],
+      hint: '[run <recipe> | list | retry [workflowId]]',
+      subcommands: ['run', 'list', 'retry'],
       subcommandDescriptions: {
         run: 'Run a workflow recipe',
-        list: 'List available recipes',
+        list: 'Browse workflow history',
+        retry: 'Retry a failed or aborted workflow',
       },
       subcommandHints: {
         run: '<recipe> [inputs]',
         list: '',
+        retry: '[workflowId] [nodeId]',
       },
     },
   },

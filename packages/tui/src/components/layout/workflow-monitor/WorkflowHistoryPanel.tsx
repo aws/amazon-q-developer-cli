@@ -22,6 +22,7 @@ import {
 } from './workflow-control-shortcut.js';
 import {
   isLiveWorkflowStatus,
+  isRetryableWorkflowStatus,
   isTerminalWorkflowStatus,
 } from '../../../types/workflow-status.js';
 
@@ -40,6 +41,7 @@ const PENDING_ACTION_LABEL: Record<PendingWorkflowAction['kind'], string> = {
   load: 'loading...',
   pause: 'pausing...',
   resume: 'resuming...',
+  retry: 'retrying...',
   cancel: 'cancelling...',
 };
 
@@ -132,6 +134,7 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
     if (
       (actionKind === 'pause' && run.status !== 'running') ||
       (actionKind === 'resume' && run.status !== 'paused') ||
+      (actionKind === 'retry' && !isRetryableWorkflowStatus(run.status)) ||
       (actionKind === 'cancel' && !isLiveWorkflowStatus(run.status))
     ) {
       return;
@@ -151,6 +154,9 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
       } else {
         if (actionKind === 'resume') {
           const response = await kiro.resumeWorkflow(run.workflowId);
+          setHistoryRunStatus(run.workflowId, response.status);
+        } else if (actionKind === 'retry') {
+          const response = await kiro.retryWorkflow(run.workflowId);
           setHistoryRunStatus(run.workflowId, response.status);
         } else {
           const response = await kiro.cancelWorkflow(run.workflowId, 'aborted');
@@ -203,9 +209,11 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
       ? `p pause ${glyphs.smallDot} x cancel`
       : !pendingAction && selectedRun?.status === 'paused'
         ? `r resume ${glyphs.smallDot} x cancel`
-        : pendingAction
-          ? PENDING_ACTION_LABEL[pendingAction.kind]
-          : '';
+        : !pendingAction && isRetryableWorkflowStatus(selectedRun?.status)
+          ? 'r retry'
+          : pendingAction
+            ? PENDING_ACTION_LABEL[pendingAction.kind]
+            : '';
   const footerWidth = Math.max(1, width - 20);
   const footerHint = fitFooterHint(
     footerWidth,
@@ -248,7 +256,7 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
     ) {
       setCancelConfirmation(selectedRun.workflowId);
     } else {
-      const control = workflowControlShortcut(input, key);
+      const control = workflowControlShortcut(input, key, selectedRun?.status);
       if (selectedRun && control) void controlRun(selectedRun, control);
     }
   });
