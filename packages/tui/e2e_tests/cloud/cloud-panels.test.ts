@@ -87,4 +87,33 @@ describe('cloud sessions — /mcp and /tools panels (mock BFF)', () => {
     },
     120_000
   );
+
+  it.skipIf(skip)(
+    '/hooks in a cloud session never prints a raw Internal error or local hooks',
+    async () => {
+      // The 08/04 live parity sweep found /hooks printing a raw
+      // "● Internal error" in cloud sessions while /mcp and /tools had the
+      // provenance treatment (#3690/#3735). Server side that is KIRONEXT-4
+      // (sandbox rejects _kiro/hooks/list until the Hooks v2 EP flag is on —
+      // enabled in beta/gamma 08/03, prod pending). This pins the CLIENT bar,
+      // which holds regardless of what the sandbox answers (the mock relays
+      // nothing): the user sees a panel or a friendly message — never a raw
+      // error and never this machine's hooks.
+      harness = await CloudHarness.launch({ testName: 'cloud-hooks-panel' });
+      const tc = harness.testCase!;
+      await tc.waitForText('Cloud session created', BOOT_TIMEOUT);
+      await tc.waitForText('ask a question', 20_000);
+
+      await typeCommand(tc, '/hooks');
+      // A response renders either as the hooks panel ("N hooks" header /
+      // empty state) or the fetch-failure alert; give it time to settle.
+      await tc.sleepMs(5_000);
+
+      const snapshot = tc.getSnapshotFormatted();
+      expect(snapshot).not.toContain('Internal error');
+      // The harness repo has .kiro hooks configured locally; none may leak.
+      expect(snapshot).not.toContain('.kiro/hooks');
+    },
+    120_000
+  );
 });

@@ -209,58 +209,80 @@ describe('cloud sessions — resume + concurrent (mock BFF)', () => {
     150_000
   );
 
-  // ── SKIP-UNTIL-PR #3700: A→B→A reload replays A's history incl. user rows ──
   // Guards the "Cloud A→B→A re-load didn't re-replay" KAS bug (fixed KAS-side
-  // f78f0e590) and #3700's user-row replay: after switching away and back, the
-  // original session's FULL transcript — including the user's own messages —
-  // re-renders.
-  it.skip('SKIP-UNTIL-PR(#3700) switching A→B→A re-replays A’s history with user rows', async () => {
-    harness = await CloudHarness.launch({
-      testName: 'cloud-aba-reload',
-      cliArgs: ['--cloud', '--resume-id', MOCK_SPACE_IDS.banana],
-      bffEnv: { MOCK_BFF_HISTORY: '1', MOCK_BFF_CONCURRENT: '1' },
-    });
-    const tc = harness.testCase!;
-    await tc.waitForText('Repo cloned: 120 files at HEAD.', BOOT_TIMEOUT);
-    await tc.waitForText('ask a question', 20_000);
+  // f78f0e590) and the user-row replay from #3700, whose fix landed via #3699:
+  // after switching away and back, the original session's FULL transcript —
+  // including the user's own messages — re-renders.
+  it.skipIf(skip)(
+    'switching A→B→A re-replays A’s history with user rows',
+    async () => {
+      harness = await CloudHarness.launch({
+        testName: 'cloud-aba-reload',
+        cliArgs: ['--cloud', '--resume-id', MOCK_SPACE_IDS.banana],
+        bffEnv: { MOCK_BFF_HISTORY: '1', MOCK_BFF_CONCURRENT: '1' },
+      });
+      const tc = harness.testCase!;
+      await tc.waitForText('Repo cloned: 120 files at HEAD.', BOOT_TIMEOUT);
+      await tc.waitForText('ask a question', 20_000);
 
-    // A → B (switch to refactor payments via picker search).
-    for (const ch of '/sessions') {
-      await tc.sendKeys(ch);
-      await tc.sleepMs(50);
-    }
-    await tc.sleepMs(300);
-    await tc.pressEnter();
-    await tc.waitForText('refactor payments', 30_000);
-    for (const ch of 'refactor') {
-      await tc.sendKeys(ch);
-      await tc.sleepMs(50);
-    }
-    await tc.sleepMs(300);
-    await tc.pressEnter();
-    await tc.waitForText('refactor the payments retry logic', 30_000);
+      // A → B (switch to refactor payments via picker search).
+      for (const ch of '/sessions') {
+        await tc.sendKeys(ch);
+        await tc.sleepMs(50);
+      }
+      await tc.sleepMs(300);
+      await tc.pressEnter();
+      await tc.waitForText('refactor payments', 30_000);
+      for (const ch of 'refactor') {
+        await tc.sendKeys(ch);
+        await tc.sleepMs(50);
+      }
+      await tc.sleepMs(300);
+      await tc.pressEnter();
+      await tc.waitForText('refactor the payments retry logic', 30_000);
 
-    // B → A (switch back to banana).
-    for (const ch of '/sessions') {
-      await tc.sendKeys(ch);
-      await tc.sleepMs(50);
-    }
-    await tc.sleepMs(300);
-    await tc.pressEnter();
-    await tc.waitForText('banana-service', 30_000);
-    for (const ch of 'banana') {
-      await tc.sendKeys(ch);
-      await tc.sleepMs(50);
-    }
-    await tc.sleepMs(300);
-    await tc.pressEnter();
+      // B → A (switch back to banana).
+      for (const ch of '/sessions') {
+        await tc.sendKeys(ch);
+        await tc.sleepMs(50);
+      }
+      await tc.sleepMs(300);
+      await tc.pressEnter();
+      // 'banana-service' is already visible from A's first replay, so it can't
+      // gate on the picker being open; the banana ROW (its short id) can — the
+      // first picker excluded it while banana was the active session.
+      await tc.waitForText('aaaaaaa1', 30_000);
+      for (const ch of 'banana') {
+        await tc.sendKeys(ch);
+        await tc.sleepMs(50);
+      }
+      await tc.sleepMs(300);
+      await tc.pressEnter();
 
-    // A's history re-renders — the USER rows too (bug: user rows were
-    // dropped on re-load), and B's transcript is gone.
-    await tc.waitForText('clone the repo and list the files', 30_000);
-    await tc.waitForText('Repo cloned: 120 files at HEAD.', 20_000);
-    const snapshot = tc.getSnapshotFormatted();
-    expect(snapshot).toContain('now add a health check endpoint');
-    expect(snapshot).not.toContain('refactor the payments retry logic');
-  }, 240_000);
+      // A's history re-renders — the USER rows too (bug: user rows were
+      // dropped on re-load). Scrollback keeps everything since boot, so A's
+      // FIRST replay (and B's transcript) are still on screen and a plain
+      // waitForText would pass on stale rows; the regression is only visible
+      // as a second occurrence of A's user rows.
+      const countOf = (text: string) =>
+        tc.getSnapshotFormatted().split(text).length - 1;
+      const deadline = Date.now() + 60_000;
+      while (countOf('clone the repo and list the files') < 2) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            'A→B→A switch-back never re-replayed A’s user rows. Screen was:\n' +
+              tc.getSnapshotFormatted()
+          );
+        }
+        await tc.sleepMs(250);
+      }
+      expect(countOf('now add a health check endpoint')).toBeGreaterThanOrEqual(
+        2
+      );
+      expect(countOf('Repo cloned: 120 files at HEAD.')).toBeGreaterThanOrEqual(
+        2
+      );
+    },
+    240_000
+  );
 });

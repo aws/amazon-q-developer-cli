@@ -8,8 +8,8 @@ guarantee is pinned by `crates/chat-cli/tests/cloud_sessions_gating.rs` and
 (nightly/internal or test-mode) user sees it, plus the dark-ship boundary.
 
 Sources: Pippin "Kiro Next - CLI Bugs" doc (bugs #1–#35 + UX list), the
-basic user stories, merged fixes (#3552 #3599 #3651 #3652 #3656 #3657 #3664
-#3666), and open PRs (#3653 #3687 #3689 #3690 #3691 #3693 #3699 #3700).
+basic user stories, merged fixes (#3552 #3599 #3651 #3652 #3653 #3656 #3657
+#3664 #3666 #3690 #3699 #3720 #3797), and open PRs (#3689 #3691 #3693).
 
 Tiers:
 
@@ -79,7 +79,7 @@ Legend: ✅ covered by this change · ▶ covered when the named open PR merges 
 | 13          | "Open in browser" on headless                             | CLI fixed #3599                           | ✅ unit                                               | (merged with #3599's tests)                                                                                                                      |
 | 14/24       | /knowledge "Session not found" (+ pre-prompt variant #24) | KAS transport                             | ⛔ (invariant)                                        | per-decision no dedicated test; the KR sweep's global no-error check fails on any raw wire error in any scenario                                 |
 | 15          | /effort "not available on model"                          | KAS configOptions gap                     | ⛔ e2e seam                                           | /effort output is the friendly message; never raw error                                                                                          |
-| 16/25       | /clear "Failed to restore agent"                          | KAS set_config; CLI skip-no-op ▶ #3687    | ▶ e2e                                                 | /clear completes without error banner                                                                                                            |
+| 16/25       | /clear "Failed to restore agent"                          | Fixed upstream (KAS ≥0.26.14 accepts relayed set_config_option; #3687 closed unmerged) | ✅ e2e                | /clear completes without error banner (cloud-command-gates)                                                                                      |
 | 17/26       | /plan refusal (+ pre-prompt variant #26)                  | KAS transport                             | ⛔ (invariant)                                        | same — global no-error invariant                                                                                                                 |
 | 18/27       | /rewind fork "Internal error"                             | KAS no remote fork; ▶ #3689 hides /rewind | ▶ e2e                                                 | /rewind hidden from autocomplete + refuses with message in cloud                                                                                 |
 | 19          | /chat save/load local-path error                          | CLI gated #3656                           | ✅ e2e                                                | save/load gate message (real fix parked on xianwp/cloud-chat-save-0720)                                                                          |
@@ -94,22 +94,24 @@ Legend: ✅ covered by this change · ▶ covered when the named open PR merges 
 | —           | `!cmd` local bash in cloud                                | CLI blocked (gate)                        | ✅ unit (cloud-shell-escape-gate exists) + e2e gate   |
 | —           | /clear leaves viewport residue                            | CLI fixed #3651                           | ✅ e2e                                                | post-/clear snapshot has zero pre-clear text                                                                                                     |
 | —           | /chat new premature checklist + residue                   | ▶ #3699                                   | ▶ e2e                                                 | /chat new: wiped scrollback + honest "Creating…" order                                                                                           |
-| —           | A→B→A reload doesn't re-replay                            | KAS f78f0e590 + ▶ #3700 user rows         | ▶ e2e                                                 | switch A→B→A replays A's history incl. user rows                                                                                                 |
-| —           | /mcp /tools /hooks panel provenance                       | ▶ #3690                                   | ▶ e2e                                                 | cloud session panels carry sandbox-provenance notice                                                                                             |
+| —           | A→B→A reload doesn't re-replay                            | Fixed: KAS f78f0e590 + #3699 (user rows)  | ✅ e2e                                                | switch A→B→A re-replays A's history incl. user rows (occurrence count ≥2 — scrollback keeps the first replay, so presence alone is vacuous)      |
+| —           | /mcp /tools /hooks panel provenance                       | CLI fixed #3690/#3735                     | ✅ e2e                                                | cloud-panels.test.ts: /mcp and /tools show the sandbox notice, never local config                                                                |
+| —           | /hooks raw "Internal error" in cloud (08/04 parity sweep) | KIRONEXT-4 (closed): Hooks v2 EP flag on in beta/gamma; prod repro 08/04 pending prod flag | ✅ e2e (client bar) + 📋 prod-smoke | cloud-panels.test.ts /hooks test pins no-raw-error + no local leak at the mock tier; the live sandbox _kiro/hooks/list shape needs prod-mode smoke |
+| —           | Unrouted BFF → bare "UnknownError" (07/31 outage)         | CLI fixed #3720 guidance + #3797 classify | ✅ e2e + unit                                         | cloud-version-skew.test.ts + KR S16: MOCK_BFF_UNROUTED boot surfaces the version-skew guidance ('out of sync… Update kiro'), no silent fallback  |
 | —           | /sessions current session not listed                      | UX decision pending                       | 📋                                                    |
 | —           | ghost /disconnect print after detach                      | UX                                        | ▶ #3699 wipe covers                                   |
 | —           | pink/white checkmark mismatch in /repo                    | CLI fixed #3656                           | ✅ e2e repo-picker accent assertion                   |
 
 ## Open-PR-gated scenarios (add when each merges)
 
-- #3687 /clear skip no-op agent restore → un-gate bug 16/25 e2e
 - #3689 hide+refuse /rewind → un-gate bug 18/27 e2e
-- #3690 panel provenance → un-gate panels e2e
 - #3691 steer buffer guards → un-gate bug 23 unit+e2e
 - #3693 history_replay_complete boundary → tighten resume tests to the
   deterministic boundary event instead of text waits
-- #3699 /chat new transition → un-gate scrollback-wipe e2e
-- #3700 A→B→A user rows → un-gate reload-replay e2e
+
+Un-gated since this map was first written: #3687's e2e (fixed upstream in
+KAS, the PR itself closed unmerged), #3690's panels e2e
+(cloud-panels.test.ts), and #3700's A→B→A e2e (fix landed via #3699).
 
 The gated tests are written now and marked `it.skip` with the PR number so
 they light up by deleting the skip (grep `SKIP-UNTIL-PR`).

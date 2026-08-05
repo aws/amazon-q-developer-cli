@@ -218,6 +218,33 @@ if [ "$MODE" = "mock" ]; then
   stop_kr
 fi
 
+# ── unrouted BFF → version-skew guidance (mock only; 07/31 outage) ──────────
+# MOCK_BFF_UNROUTED=1 replays the outage: every op answered by the router with
+# a bodyless no-code error, flattened by KAS to "<op>: UnknownError". The CLI
+# must classify it version_skew (#3797) and render #3720's guidance — never a
+# bare UnknownError, never a phantom successful session. Prod-mode runs skip
+# this: it requires breaking the backend.
+if [ "$MODE" = "mock" ]; then
+  kill "$BFF_PID" 2>/dev/null; wait "$BFF_PID" 2>/dev/null
+  kill_stale_listener "$BFF_PORT"
+  ( cd "$TUI_DIR" && MOCK_BFF_PORT=$BFF_PORT MOCK_BFF_UNROUTED=1 exec bun e2e_tests/cloud/mock-bff.mjs >>/tmp/mock-bff-smoke.log 2>&1 ) &
+  BFF_PID=$!
+  sleep 2
+  if start_kr "--cloud"; then
+    if wait_scr "out of sync" 60; then pass "version-skew guidance renders"; else fail "version-skew guidance renders"; fi
+    if grepscr "Update kiro"; then pass "guidance names recovery action"; else fail "guidance names recovery action"; fi
+    if grepscr "Cloud session created"; then fail "no phantom created line"; else pass "no phantom created line"; fi
+    frame "version-skew"
+  fi
+  stop_kr
+  # Restore the plain BFF for the remaining sections.
+  kill "$BFF_PID" 2>/dev/null; wait "$BFF_PID" 2>/dev/null
+  kill_stale_listener "$BFF_PORT"
+  ( cd "$TUI_DIR" && MOCK_BFF_PORT=$BFF_PORT exec bun e2e_tests/cloud/mock-bff.mjs >>/tmp/mock-bff-smoke.log 2>&1 ) &
+  BFF_PID=$!
+  sleep 2
+fi
+
 # ── headless listing (no PTY needed) ────────────────────────────────────────
 # KIRO_KAS_SERVER_PATH/NODE_PATH are inherited (dev binaries have no embedded
 # KAS bundle); only the TUI-path override is dropped for a headless run.

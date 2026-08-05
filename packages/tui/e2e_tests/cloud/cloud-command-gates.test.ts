@@ -9,12 +9,12 @@
  *   fresh cloud boot shows NO "Cancelled" tool rows (bug #30)     (test 4)
  *   /clear leaves zero pre-clear text in the viewport (#3651)     (test 5)
  *   prompting after resume does not re-replay history (bug #32)   (test 6)
+ *   /clear completes without "Failed to restore agent"
+ *          (bugs #16/#25; fixed upstream in KAS ≥0.26.14)         (test 8)
  *
  * SKIP-UNTIL-PR tests (written now, skipped until the PR merges — grep
  * SKIP-UNTIL-PR to un-gate):
- *   #3689: /rewind hidden + refused in cloud (bugs #18/#27)       (test 8)
- *   #3687: /clear completes without "Failed to restore agent"
- *          (bugs #16/#25)                                         (test 9)
+ *   #3689: /rewind hidden + refused in cloud (bugs #18/#27)       (test 7)
  *
  * All tests run the real TUI + published KAS + mock BFF, under the same
  * KIRO_TEST_MODE=1 environment an internal-nightly user's enabled rollout
@@ -243,18 +243,27 @@ describe('cloud sessions — command gates + boot/clear hygiene (mock BFF)', () 
     expect(snapshot).not.toContain('session/fork');
   }, 120_000);
 
-  // ── SKIP-UNTIL-PR #3687: /clear without agent-restore error (bugs #16/#25) ──
-  it.skip('SKIP-UNTIL-PR(#3687) /clear completes without "Failed to restore agent"', async () => {
-    harness = await CloudHarness.launch({ testName: 'cloud-clear-agent' });
-    const tc = harness.testCase!;
-    await tc.waitForText('Cloud session created', BOOT_TIMEOUT);
-    await tc.waitForText('ask a question', 20_000);
+  // ── /clear without agent-restore error (bugs #16/#25) ──
+  // Was SKIP-UNTIL-PR(#3687); that PR closed unmerged because the trigger
+  // disappeared upstream: KAS >= 0.26.14 accepts relayed set_config_option
+  // (pre-fix it refused with RelayedOperationUnsupportedError -32000, which
+  // is what flashed "Failed to restore agent"), and the pinned @kiro/agent
+  // is well past that.
+  it.skipIf(skip)(
+    '/clear completes without "Failed to restore agent"',
+    async () => {
+      harness = await CloudHarness.launch({ testName: 'cloud-clear-agent' });
+      const tc = harness.testCase!;
+      await tc.waitForText('Cloud session created', BOOT_TIMEOUT);
+      await tc.waitForText('ask a question', 20_000);
 
-    await typeCommand(tc, '/clear');
-    await tc.waitForText('ask a question', 30_000);
-    await tc.sleepMs(3_000);
+      await typeCommand(tc, '/clear');
+      await tc.waitForText('ask a question', 30_000);
+      await tc.sleepMs(3_000);
 
-    const snapshot = tc.getSnapshotFormatted();
-    expect(snapshot).not.toContain('Failed to restore agent');
-  }, 120_000);
+      const snapshot = tc.getSnapshotFormatted();
+      expect(snapshot).not.toContain('Failed to restore agent');
+    },
+    120_000
+  );
 });

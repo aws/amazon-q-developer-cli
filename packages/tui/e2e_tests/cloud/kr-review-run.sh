@@ -404,6 +404,22 @@ if start_kr "--cloud"; then
 fi
 stop_kr
 
+# ── S16 unrouted BFF → version-skew guidance (07/31 outage signature) ───────
+# The one scenario whose SUBJECT is an error screen, so it does not run
+# no_error_check; it asserts the classified guidance instead. The unrouted
+# BFF answers every op with the router's no-code error, which the KAS Smithy
+# client flattens to "createSession: UnknownError" (#3797).
+scenario "S16" "Unrouted BFF: version-skew guidance, no silent fallback" "#3797; #3720 guidance; 07/31 outage"
+start_bff MOCK_BFF_UNROUTED=1
+if start_kr "--cloud"; then
+  if wait_scr "Cloud session failed" 60; then pass "boot checklist marks the failure"; else fail "boot checklist marks the failure"; fi
+  if wait_scr "out of sync" 20; then pass "version-skew guidance renders"; else fail "version-skew guidance renders"; fi
+  if grepscr "Update kiro"; then pass "guidance names the recovery action"; else fail "guidance names the recovery action"; fi
+  if grepscr "Cloud session created"; then fail "no phantom created line"; else pass "no phantom created line"; fi
+  frame "guidance"
+fi
+stop_kr
+
 # ════════════════════════════════════════════════════════════════════════════
 say ""
 if [ "$FAILS" -eq 0 ]; then say "ALL SCENARIOS PASS"; else say "$FAILS CHECK(S) FAILED"; fi

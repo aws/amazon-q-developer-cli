@@ -527,11 +527,31 @@ function sendProtocolError(res, status, op, error) {
   res.end(`mock BFF ${op || '<unknown>'}: ${detail}`);
 }
 
+// MOCK_BFF_UNROUTED=1 replays the 07/31 outage signature: the BFF's fronting
+// layer stops routing KiroWebBearerService, so EVERY operation is answered by
+// the router itself instead of the CBOR service. The KAS Smithy client finds
+// no error code in the response and flattens the failure to
+// "<op>: UnknownError" (its no-code default), which is exactly the string the
+// CLI must classify as version_skew (#3797). A bodyless error status keeps
+// the client's real no-code flattening path in the loop; an XML body (what
+// the router literally emits, an empty <UnknownOperationException/>) would
+// instead surface a CBOR deserialization error, a different failure string
+// than the one observed live.
+function sendUnroutedOperation(res) {
+  res.writeHead(404, { 'smithy-protocol': 'rpc-v2-cbor' });
+  res.end();
+}
+
 const server = http.createServer((req, res) => {
   const chunks = [];
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
     const op = opFromPath(req.url ?? '');
+    if (process.env.MOCK_BFF_UNROUTED === '1') {
+      console.log(`[mock-bff] ${req.method} ${req.url} op=${op} UNROUTED`);
+      sendUnroutedOperation(res);
+      return;
+    }
     const body = Buffer.concat(chunks);
     let input;
     try {
