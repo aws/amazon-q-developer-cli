@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'bun:test';
 import {
   filterPromptsByQuery,
+  filterSlashMenuCommands,
   buildAtMenuItems,
   findPromptByMenuLabel,
   atMenuShowsPrompts,
+  commandMatchesQuery,
+  commandMatchRank,
   isPromptMenuOpen,
 } from './command-menu-utils';
 import type { SlashCommand } from '../../stores/app-store';
@@ -62,6 +65,125 @@ describe('filterPromptsByQuery', () => {
       { name: '/bare', description: '', source: 'backend' },
     ];
     expect(filterPromptsByQuery(cmds, 'bare')).toEqual([]);
+  });
+});
+
+describe('commandMatchesQuery', () => {
+  it('matches a prefix', () => {
+    expect(commandMatchesQuery('/compact', 'co')).toBe(true);
+  });
+
+  it('matches a substring after a namespace prefix', () => {
+    expect(commandMatchesQuery('/agent-sop:pdd', 'pdd')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(commandMatchesQuery('/agent-sop:PDD', 'pdd')).toBe(true);
+    expect(commandMatchesQuery('/agent-sop:pdd', 'PDD')).toBe(true);
+  });
+
+  it('matches everything on empty query', () => {
+    expect(commandMatchesQuery('/help', '')).toBe(true);
+  });
+
+  it('rejects non-matches', () => {
+    expect(commandMatchesQuery('/help', 'pdd')).toBe(false);
+  });
+});
+
+describe('commandMatchRank', () => {
+  it('ranks prefix matches before substring matches', () => {
+    expect(commandMatchRank('/pdd-tool', 'pdd')).toBe(0);
+    expect(commandMatchRank('/agent-sop:pdd', 'pdd')).toBe(1);
+  });
+});
+
+describe('filterPromptsByQuery substring matching', () => {
+  const namespaced: SlashCommand[] = [
+    makePrompt('/agent-sop:pdd', 'PDD workflow'),
+    makePrompt('/pdd-quick', 'Quick PDD'),
+    makePrompt('/plan', 'Create plan'),
+  ];
+
+  it('finds namespaced prompts by suffix', () => {
+    const result = filterPromptsByQuery(namespaced, 'pdd');
+    expect(result.map((c) => c.name)).toEqual(['/pdd-quick', '/agent-sop:pdd']);
+  });
+
+  it('orders prefix matches before substring matches', () => {
+    const result = filterPromptsByQuery(namespaced, 'pdd');
+    expect(result[0]!.name).toBe('/pdd-quick');
+  });
+});
+
+describe('filterSlashMenuCommands', () => {
+  it('ranks a prefix-matched prompt above a substring-matched command', () => {
+    // A substring-only command must not steal the top slot (and Enter/Tab)
+    // from a prompt that was the sole match under prefix-only filtering.
+    const cmds: SlashCommand[] = [
+      makeCommand('/context', 'Manage context'),
+      makePrompt('/text-review', 'Review text'),
+    ];
+    expect(filterSlashMenuCommands(cmds, 'text').map((c) => c.name)).toEqual([
+      '/text-review',
+      '/context',
+    ]);
+  });
+
+  it('sorts commands before prompts within the same rank', () => {
+    const cmds: SlashCommand[] = [
+      makePrompt('/plan', 'Create plan'),
+      makeCommand('/planner', 'Planner command'),
+    ];
+    expect(filterSlashMenuCommands(cmds, 'plan').map((c) => c.name)).toEqual([
+      '/planner',
+      '/plan',
+    ]);
+  });
+
+  it('sorts alphabetically within the same rank and group', () => {
+    const cmds: SlashCommand[] = [
+      makeCommand('/save', 'Save'),
+      makeCommand('/sandbox', 'Sandbox'),
+    ];
+    expect(filterSlashMenuCommands(cmds, 'sa').map((c) => c.name)).toEqual([
+      '/sandbox',
+      '/save',
+    ]);
+  });
+
+  it('excludes hidden non-prompt commands', () => {
+    const cmds: SlashCommand[] = [
+      {
+        name: '/secret',
+        description: '',
+        source: 'backend',
+        meta: { type: 'action', hidden: true },
+      },
+    ];
+    expect(filterSlashMenuCommands(cmds, 'sec')).toEqual([]);
+  });
+
+  it('keeps the same top item as prefix-only filtering for prefix queries', () => {
+    const cmds: SlashCommand[] = [
+      makeCommand('/compact', 'Compact'),
+      makeCommand('/context', 'Context'),
+      makePrompt('/agent-sop:composer', 'Composer'),
+    ];
+    expect(filterSlashMenuCommands(cmds, 'co')[0]!.name).toBe('/compact');
+  });
+});
+
+describe('filterPromptsByQuery ordering', () => {
+  it('sorts same-rank prompts alphabetically, not by registration order', () => {
+    const cmds: SlashCommand[] = [
+      makePrompt('/zeta-review', 'Z'),
+      makePrompt('/alpha-review', 'A'),
+    ];
+    expect(filterPromptsByQuery(cmds, 'review').map((c) => c.name)).toEqual([
+      '/alpha-review',
+      '/zeta-review',
+    ]);
   });
 });
 

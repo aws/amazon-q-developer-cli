@@ -20,6 +20,7 @@ import {
   filterPromptsByQuery,
   atMenuPromptQuery,
   buildAtMenuItems,
+  filterSlashMenuCommands,
   isCommandVisibleInUiMode,
 } from './command-menu-utils.js';
 import { PromptsMenu } from './menu/PromptsMenu.js';
@@ -251,25 +252,7 @@ export const CommandMenu: React.FC = () => {
   const filteredCommands = useMemo(() => {
     if (activeTrigger?.key !== '/' || commandInputValue.includes(' '))
       return [];
-    const partial = commandInputValue.slice(1).toLowerCase();
-    const matches = slashCommands.filter((cmd) =>
-      cmd.name.slice(1).toLowerCase().startsWith(partial)
-    );
-    const cmds = matches.filter(
-      (c) =>
-        c.meta?.type !== 'prompt' &&
-        c.meta?.type !== 'skill' &&
-        c.meta?.type !== 'steering' &&
-        !c.meta?.hidden
-    );
-    const promptCmds = matches.filter(
-      (c) =>
-        c.meta?.type === 'prompt' ||
-        c.meta?.type === 'skill' ||
-        c.meta?.type === 'steering'
-    );
-    cmds.sort((a, b) => a.name.localeCompare(b.name));
-    return [...cmds, ...promptCmds];
+    return filterSlashMenuCommands(slashCommands, commandInputValue.slice(1));
   }, [commandInputValue, slashCommands, activeTrigger]);
 
   // Cache options per command to avoid re-fetching on every keystroke.

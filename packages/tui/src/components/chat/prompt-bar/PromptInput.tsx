@@ -28,6 +28,7 @@ import { computeInputSpans } from '../../../utils/input-syntax.js';
 import {
   isCommandVisibleInUiMode,
   atMenuShowsPrompts,
+  commandMatchesQuery,
 } from '../../ui/command-menu-utils.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
@@ -1045,10 +1046,7 @@ export const PromptInput = React.memo(function PromptInput({
               (cmd) =>
                 !cmd.meta?.hidden &&
                 isCommandVisibleInUiMode(cmd, isLiteMode ? 'lite' : 'tui') &&
-                cmd.name
-                  .slice(1)
-                  .toLowerCase()
-                  .startsWith(commandInputValue.slice(1).toLowerCase())
+                commandMatchesQuery(cmd.name, commandInputValue.slice(1))
             )
           : false;
       const slashMenuVisible = hasMatchingSlashCommands;
@@ -1772,10 +1770,7 @@ export const PromptInput = React.memo(function PromptInput({
         slashCommands.some(
           (cmd) =>
             !cmd.meta?.hidden &&
-            cmd.name
-              .slice(1)
-              .toLowerCase()
-              .startsWith(commandInputValue.slice(1).toLowerCase())
+            commandMatchesQuery(cmd.name, commandInputValue.slice(1))
         )) ||
       (activeTrigger?.key === '@' &&
         (filePickerHasResults ||

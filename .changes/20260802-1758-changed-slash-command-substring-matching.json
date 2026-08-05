@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Slash command menu now matches substrings (e.g. `/pdd` finds `/agent-sop:pdd`), with prefix matches ranked first"
+}

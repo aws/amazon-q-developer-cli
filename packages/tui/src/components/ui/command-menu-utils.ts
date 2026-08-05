@@ -40,17 +40,63 @@ export function isCommandVisibleInUiMode(
   );
 }
 
+/**
+ * Substring match so namespaced entries (e.g. /agent-sop:pdd) surface when
+ * the user types any part of the name, not just the leading prefix.
+ */
+export function commandMatchesQuery(cmdName: string, query: string): boolean {
+  return cmdName.slice(1).toLowerCase().includes(query.toLowerCase());
+}
+
+/** 0 = prefix match, 1 = other substring match. Lower sorts first. */
+export function commandMatchRank(cmdName: string, query: string): number {
+  return cmdName.slice(1).toLowerCase().startsWith(query.toLowerCase()) ? 0 : 1;
+}
+
+const isPromptLike = (cmd: AvailableCommand): boolean =>
+  cmd.meta?.type === 'prompt' ||
+  cmd.meta?.type === 'skill' ||
+  cmd.meta?.type === 'steering';
+
+/**
+ * Filter and order slash-menu entries. Rank is compared across the whole
+ * list — not per group — so a prefix-matched prompt always beats a
+ * substring-matched command; within a rank, commands sort before prompts,
+ * then alphabetical. Hidden entries only surface if prompt-like.
+ */
+export function filterSlashMenuCommands(
+  slashCommands: readonly AvailableCommand[],
+  partial: string
+): AvailableCommand[] {
+  return slashCommands
+    .filter(
+      (cmd) =>
+        commandMatchesQuery(cmd.name, partial) &&
+        (isPromptLike(cmd) || !cmd.meta?.hidden)
+    )
+    .sort(
+      (a, b) =>
+        commandMatchRank(a.name, partial) - commandMatchRank(b.name, partial) ||
+        Number(isPromptLike(a)) - Number(isPromptLike(b)) ||
+        a.name.localeCompare(b.name)
+    );
+}
+
 export function filterPromptsByQuery(
   slashCommands: readonly AvailableCommand[],
   atQuery: string
 ): AvailableCommand[] {
   if (!atQuery) return [];
-  const lower = atQuery.toLowerCase();
-  return slashCommands.filter(
-    (cmd) =>
-      cmd.meta?.type === 'prompt' &&
-      cmd.name.slice(1).toLowerCase().startsWith(lower)
-  );
+  return slashCommands
+    .filter(
+      (cmd) =>
+        cmd.meta?.type === 'prompt' && commandMatchesQuery(cmd.name, atQuery)
+    )
+    .sort(
+      (a, b) =>
+        commandMatchRank(a.name, atQuery) - commandMatchRank(b.name, atQuery) ||
+        a.name.localeCompare(b.name)
+    );
 }
 
 /**
@@ -98,10 +144,7 @@ export function isPromptMenuOpen({
     slashCommands.some(
       (cmd) =>
         isCommandVisibleInUiMode(cmd, uiMode) &&
-        cmd.name
-          .slice(1)
-          .toLowerCase()
-          .startsWith(commandInputValue.slice(1).toLowerCase())
+        commandMatchesQuery(cmd.name, commandInputValue.slice(1))
     )
   ) {
     return true;

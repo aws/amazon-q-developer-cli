@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-08-05
+  commit: d14212fed
   status: validated
   testable_headless: false
   category: slash_command
   title: /prompts
   description: Manage local and MCP prompts with list, get, create, edit, and remove operations
-  keywords: [prompts, templates, mcp, local, global, manage, autocomplete]
+  keywords: [prompts, templates, mcp, local, global, manage, autocomplete, search, substring, slash command menu, command menu]
   related: [agent-config, mcp]
 ---
 
@@ -19,14 +19,31 @@ Manage local and MCP prompts with list, get, create, edit, and remove operations
 
 The `/prompts` command manages prompt templates from local files, global files, and MCP servers. Create reusable prompts, edit them, retrieve with arguments, and list available prompts from all sources.
 
-## Quick Access with @
+## Quick Access with @ and /
 
-Type `@` followed by Tab to auto-complete available prompts from all sources (local, global, and MCP). Local and global file-based prompts are included alongside MCP prompts.
+Both the `@` menu (for prompts) and `/` menu (for slash commands) support **substring matching** — type any part of the name to find it.
+
+### @ Menu (Prompts)
+
+Type `@` followed by text to filter prompts from all sources (local, global, MCP):
 
 ```
 @<Tab>           # Shows all available prompts
-@fix<Tab>        # Auto-completes prompts starting with "fix"
+@fix             # Shows prompts containing "fix" anywhere in the name
+@pdd             # Finds @agent-sop:pdd even though "pdd" isn't at the start
 ```
+
+### / Menu (Slash Commands)
+
+Type `/` followed by text to filter slash commands and prompt shortcuts:
+
+```
+/help            # Shows /help (exact or prefix match)
+/pdd             # Finds /agent-sop:pdd via substring match
+/sop             # Finds /agent-sop:* prompts via substring match
+```
+
+**Ranking**: Prefix matches appear first in both menus, then substring matches. Within each tier, commands sort before prompts, then alphabetically.
 
 File-based prompts take precedence over MCP prompts with the same name.
 
