@@ -226,12 +226,21 @@ export function handleVerbosity(
           description: subSummary,
           group: 'Sections',
         },
-        {
-          value: 'set:thinkingDisplay:cycle',
-          label: 'Thinking',
-          description: `[${display.thinkingDisplay}] ${glyphs.smallDot} expanded/collapsed/off`,
-          group: 'Sections',
-        },
+        // Lite renders thinking as a single block (no collapsed/expanded
+        // distinction), so it gets a plain on/off toggle; only the TUI cycles.
+        isTuiMode
+          ? {
+              value: 'set:thinkingDisplay:cycle',
+              label: 'Thinking',
+              description: `[${display.thinkingDisplay}] ${glyphs.smallDot} expanded/collapsed/off`,
+              group: 'Sections',
+            }
+          : {
+              value: 'set:thinkingDisplay:toggle',
+              label: 'Thinking',
+              description: onOff(display.thinkingDisplay !== 'off'),
+              group: 'Sections',
+            },
         {
           value: 'set:showTasks',
           label: 'Task list',
@@ -363,11 +372,17 @@ export function handleVerbosity(
           'Write diffs',
           display.showWriteDiffs
         ),
-        toggle(
-          'set:persistOutput',
-          'Keep output in scrollback',
-          display.persistOutput
-        ),
+        // "Keep output in scrollback" only governs the TUI's expandable tool
+        // bodies; lite always persists its (capped) output, so hide the toggle.
+        ...(isTuiMode
+          ? [
+              toggle(
+                'set:persistOutput',
+                'Keep output in scrollback',
+                display.persistOutput
+              ),
+            ]
+          : []),
         ...argsRows,
       ];
     },
@@ -649,15 +664,21 @@ export function handleVerbosity(
       return true;
     }
     const thinkingMatch = rest.match(
-      /^thinkingDisplay:(cycle|off|collapsed|expanded)$/
+      /^thinkingDisplay:(cycle|toggle|off|collapsed|expanded)$/
     );
     if (thinkingMatch) {
       const arg = thinkingMatch[1]!;
       const order: ThinkingDisplayMode[] = ['expanded', 'collapsed', 'off'];
-      const next =
-        arg === 'cycle'
-          ? order[(order.indexOf(display.thinkingDisplay) + 1) % order.length]!
-          : (arg as ThinkingDisplayMode);
+      let next: ThinkingDisplayMode;
+      if (arg === 'cycle') {
+        next =
+          order[(order.indexOf(display.thinkingDisplay) + 1) % order.length]!;
+      } else if (arg === 'toggle') {
+        // Lite's binary switch: off ↔ expanded (its only rendered states).
+        next = display.thinkingDisplay === 'off' ? 'expanded' : 'off';
+      } else {
+        next = arg as ThinkingDisplayMode;
+      }
       updateConfig({ display: { thinkingDisplay: next } });
       openTopMenu('thinking');
       return true;

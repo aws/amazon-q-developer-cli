@@ -57,7 +57,7 @@ import {
 
 type UiMode = 'lite' | 'tui';
 type Engine = 'v2' | 'kas';
-type Menu = { options: Array<{ value: string }> };
+type Menu = { options: Array<{ value: string; description?: string }> };
 
 const cmd: SlashCommand = {
   name: '/verbosity',
@@ -199,6 +199,43 @@ describe('handleVerbosity', () => {
       thinkingDisplay: 'off',
       showThinkingContent: false,
     });
+  });
+
+  // Lite has no collapsed/expanded rendering and no scrollback-persistence
+  // toggle, so those TUI-only controls must not surface in the lite menu.
+  it('lite thinking is an on/off toggle; TUI keeps the tri-state cycle', () => {
+    const thinkingRow = (ctx: MockCommandContext) =>
+      firstArg<Menu>(ctx, 'setActiveCommand').options.find((o) =>
+        o.value.startsWith('set:thinkingDisplay')
+      )!;
+    const lite = thinkingRow(run('config', 'lite'));
+    expect(lite.value).toBe('set:thinkingDisplay:toggle');
+    expect(lite.description).not.toContain('collapsed');
+    const tui = thinkingRow(run('config', 'tui'));
+    expect(tui.value).toBe('set:thinkingDisplay:cycle');
+    expect(tui.description).toContain('expanded/collapsed/off');
+  });
+
+  it('lite thinking toggle flips off <-> expanded', () => {
+    setVerboseConfig({ display: { thinkingDisplay: 'expanded' } }, 'lite');
+    const ctx = context('lite');
+    run('set:thinkingDisplay:toggle', 'lite');
+    expect(getVerboseConfig('lite').display).toMatchObject({
+      thinkingDisplay: 'off',
+      showThinkingContent: false,
+    });
+    handleVerbosity(null, ctx, cmd, 'set:thinkingDisplay:toggle');
+    expect(getVerboseConfig('lite').display).toMatchObject({
+      thinkingDisplay: 'expanded',
+      showThinkingContent: true,
+    });
+  });
+
+  it('persistOutput row is TUI-only', () => {
+    expect(menuValues(run('menu:tool', 'lite'))).not.toContain(
+      'set:persistOutput'
+    );
+    expect(menuValues(run('menu:tool', 'tui'))).toContain('set:persistOutput');
   });
 
   it.each([
