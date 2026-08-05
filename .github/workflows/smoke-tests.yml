@@ -659,34 +659,5 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
           RUN_REASON: ${{ inputs.reason || 'scheduled' }}
-        run: |
-          if [ -z "$SLACK_BOT_TOKEN" ]; then exit 0; fi
-          VERDICT_FILE="${{ github.workspace }}/evidence/judge-verdict.json"
-          if [ -f "$VERDICT_FILE" ]; then
-            VERDICT=$(jq -r '.verdict' "$VERDICT_FILE")
-            SUMMARY=$(jq -r '.summary' "$VERDICT_FILE")
-          else
-            VERDICT="unknown"
-            SUMMARY="Judge did not produce verdict"
-          fi
-          case "$VERDICT" in
-            pass) EMOJI=":white_check_mark:" ;;
-            warn) EMOJI=":warning:" ;;
-            fail) EMOJI=":rotating_light:" ;;
-            *)    EMOJI=":question:" ;;
-          esac
-          RUN_URL="https://github.com/kiro-team/kiro-cli/actions/runs/${{ github.run_id }}"
-          DASHBOARD_URL="https://kiro-bot-dashboard.beta.harmony.a2z.com/?tab=smoke&runId=smoke-${{ github.run_id }}"
-          MESSAGE="${EMOJI} *${VERDICT^^}* — ${SUMMARY}"$'\n\n'"<${RUN_URL}|GitHub Run> | <${DASHBOARD_URL}|Dashboard> | Reason: ${RUN_REASON}"
-          PAYLOAD=$(jq -cn \
-            --arg text "$MESSAGE" \
-            '{channel: "C0ARG53D0NL", unfurl_links: false, blocks: [
-              {type: "header", text: {
-                type: "plain_text", text: "Smoke Test Judge Verdict"
-              }},
-              {type: "section", text: {type: "mrkdwn", text: $text}}
-            ]}')
-          curl -s -X POST https://slack.com/api/chat.postMessage \
-            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" || true
+          VERDICT_FILE: ${{ github.workspace }}/evidence/judge-verdict.json
+        run: bash scripts/smoke-slack-report.sh || true
