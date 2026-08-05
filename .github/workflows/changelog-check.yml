@@ -45,6 +45,10 @@ jobs:
           NEW_FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '.changes/*.json' || true)
           ./scripts/lint-changelog.sh $NEW_FRAGMENTS
 
+      - name: Test the pre-commit changelog gate
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        run: ./scripts/test-precommit-changelog.sh
+
       - name: Note missing changelog
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') && steps.check.outputs.found == 'false' }}
         run: |

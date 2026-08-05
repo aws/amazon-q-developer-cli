@@ -36,4 +36,30 @@ else
     echo "⏭️  No TUI files changed, skipping lint"
 fi
 
+# Changelog fragment checks — lint the staged bytes, not the working tree,
+# so a partially staged fragment is judged by what the commit will contain.
+# Scoped to staged files because the directory holds grandfathered entries
+# that fail current rules.
+STAGED_FRAGMENTS=$(git diff --cached --name-only --diff-filter=ACM | grep '^\.changes/.*\.json$' || true)
+if [ -n "$STAGED_FRAGMENTS" ]; then
+    echo "Linting staged changelog fragments..."
+    FRAGMENT_TMPDIR=$(mktemp -d)
+    trap 'rm -rf "$FRAGMENT_TMPDIR"' EXIT
+    set --
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        staged_copy="$FRAGMENT_TMPDIR/$(basename "$path")"
+        git show ":$path" > "$staged_copy"
+        set -- "$@" "$staged_copy"
+    done <<EOF
+$STAGED_FRAGMENTS
+EOF
+    if ! ./scripts/lint-changelog.sh "$@"; then
+        echo "❌ Changelog lint failed on staged content. See .changes/GUIDELINES.md for format rules."
+        exit 1
+    fi
+else
+    echo "⏭️  No changelog fragments staged, skipping changelog lint"
+fi
+
 exit 0

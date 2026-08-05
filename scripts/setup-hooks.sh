@@ -12,5 +12,5 @@ git config core.hooksPath .githooks
 echo "✓ Git hooks installed successfully"
 echo ""
 echo "Enabled hooks:"
-echo "  • pre-commit: runs cargo fmt and cargo clippy"
+echo "  • pre-commit: runs cargo fmt, cargo clippy, TUI lint, and changelog fragment lint"
 echo "  • pre-push: reminds to update documentation"
