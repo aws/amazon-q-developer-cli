@@ -12,6 +12,7 @@ import type {
   OverlayOptions,
 } from './component.js';
 import { isHardwareCursorEnabled } from './hardware-cursor.js';
+import { uninvertCursorCell } from './cursor-cell.js';
 import type { Terminal } from '../terminal/terminal.js';
 import { isKeyRelease, isKeyRepeat, matchesKey } from '../input/keys.js';
 import { throttle } from 'es-toolkit/compat';
@@ -1577,8 +1578,14 @@ export class TUI extends Container {
       const idx = line.indexOf(CURSOR_MARKER);
       if (idx !== -1) {
         const col = visibleWidth(line.slice(0, idx));
-        lines[row] =
+        let stripped =
           line.slice(0, idx) + line.slice(idx + CURSOR_MARKER.length);
+        // The visible hardware cursor inverts the marker cell on its own; a
+        // software inverse painted there cancels it and the cursor vanishes.
+        if (this.showHardwareCursor) {
+          stripped = uninvertCursorCell(stripped, idx);
+        }
+        lines[row] = stripped;
         return { row, col };
       }
     }

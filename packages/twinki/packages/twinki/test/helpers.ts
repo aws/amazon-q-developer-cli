@@ -295,6 +295,20 @@ export class TestTerminal implements Terminal {
 
 	/** Raw xterm buffer access for full-color screenshot export. */
 	xtermBuffer() { return this.xterm.buffer.active; }
+
+	/** The cell the terminal's own cursor is parked on, with its attributes. */
+	getCursorCell(): { char: string; inverse: boolean; row: number; col: number } {
+		const buf = this.xterm.buffer.active;
+		const row = buf.baseY + buf.cursorY;
+		const col = buf.cursorX;
+		const cell = buf.getLine(row)?.getCell(col);
+		return {
+			char: cell?.getChars() || ' ',
+			inverse: (cell?.isInverse() ?? 0) !== 0,
+			row,
+			col,
+		};
+	}
 }
 
 // --- Mutable component ---

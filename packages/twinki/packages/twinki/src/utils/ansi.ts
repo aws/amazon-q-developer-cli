@@ -216,6 +216,11 @@ export class AnsiCodeTracker {
 		return `\x1b[${codes.join(";")}m`;
 	}
 
+	/** Whether inverse video is active in the tracked state. */
+	get isInverse(): boolean {
+		return this.inverse;
+	}
+
 	/**
 	 * Checks if any formatting attributes are currently active.
 	 * 

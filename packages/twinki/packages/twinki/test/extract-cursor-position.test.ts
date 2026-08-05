@@ -114,3 +114,50 @@ describe('extractCursorPosition', () => {
 		expect(extractCursorPosition(tui, lines, 10)).toBeNull();
 	});
 });
+
+describe('extractCursorPosition inverse suppression', () => {
+	const INV = '\x1b[7m';
+	const NOINV = '\x1b[27m';
+
+	function makeTUIWithVisibleCursor(): TUI {
+		const term = new TestTerminal(80, 24);
+		return new TUI(term, true);
+	}
+
+	it('un-inverts the marker cell when the hardware cursor is visible', () => {
+		const tui = makeTUIWithVisibleCursor();
+		const lines = [`ab${CURSOR_MARKER}${INV}X${NOINV}cd`];
+		const result = extractCursorPosition(tui, lines, 10);
+		expect(result).toEqual({ row: 0, col: 2 });
+		expect(lines[0]).toBe(`ab${INV}${NOINV}X${INV}${NOINV}cd`);
+	});
+
+	it('leaves the marker cell inverse when the hardware cursor is hidden', () => {
+		const tui = makeTUI();
+		const lines = [`ab${CURSOR_MARKER}${INV}X${NOINV}cd`];
+		const result = extractCursorPosition(tui, lines, 10);
+		expect(result).toEqual({ row: 0, col: 2 });
+		expect(lines[0]).toBe(`ab${INV}X${NOINV}cd`);
+	});
+
+	it('leaves a non-inverse marker cell untouched', () => {
+		const tui = makeTUIWithVisibleCursor();
+		const lines = [`ab${CURSOR_MARKER}cd`];
+		extractCursorPosition(tui, lines, 10);
+		expect(lines[0]).toBe('abcd');
+	});
+
+	it('un-inverts inherited inversion on the marker cell', () => {
+		const tui = makeTUIWithVisibleCursor();
+		const lines = [`${INV}selected ${CURSOR_MARKER}row`];
+		extractCursorPosition(tui, lines, 10);
+		expect(lines[0]).toBe(`${INV}selected ${NOINV}r${INV}ow`);
+	});
+
+	it('does not touch inverse cells without the marker', () => {
+		const tui = makeTUIWithVisibleCursor();
+		const lines = [`${INV}X${NOINV}`, `ab${CURSOR_MARKER}cd`];
+		extractCursorPosition(tui, lines, 10);
+		expect(lines[0]).toBe(`${INV}X${NOINV}`);
+	});
+});
