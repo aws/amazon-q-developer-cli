@@ -54,7 +54,9 @@ import {
   useAppStore,
   summarizeInitErrors,
   severityForInitErrors,
+  MessageRole,
 } from '../../stores/app-store.js';
+import { ToolUseMessage } from '../ui/ToolUseMessage.js';
 import { workflowStore } from '../../stores/workflow-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useKeypress, type Key } from '../../hooks/useKeypress';
@@ -582,13 +584,16 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     setAgentError(null);
   }, [setAgentError]);
 
-  // Cold-boot only: the latch (not isInitialized, which flips mid-boot and
+  // Pre-first-prompt: the latch (not isInitialized, which flips mid-boot and
   // hid the checklist) keeps /chat new from replaying a stale connect screen.
+  // The latch now flips only on the user's first message (see app-store), so
+  // the screen survives the cloud prefetch tool calls (fetch_cloud_config, repo
+  // clone) that stream in during bring-up. No `messages.length === 0` clause —
+  // that would tear the screen down the instant the first prefetch call landed.
   const showCloudConnectScreen =
     cloudSessionActive &&
     !hasEnteredConversation &&
-    bootProgress.has('agent_connect') &&
-    messages.length === 0;
+    bootProgress.has('agent_connect');
   const [cloudBootFrame, setCloudBootFrame] = useState(0);
   useEffect(() => {
     if (!showCloudConnectScreen || globalPaused) return;
@@ -776,6 +781,54 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
             ))}
           </Box>
         )}
+
+        {/* Cloud prefetch tool cards (fetch_cloud_config, repo clone, steering/
+            learnings) streamed during bring-up, before the first prompt.
+            ConversationView holds these out of the transcript while the connect
+            screen is up (so they can't jump above it via <Static>); this block
+            shows them live BELOW the checklist + hint as they arrive. On the
+            first user message the hold lifts — the same messages commit to the
+            conversation scrollback — and this block unmounts with the connect
+            screen, so only the checklist/hint disappear. */}
+        {showCloudConnectScreen &&
+          messages.some(
+            (m) => m.role === MessageRole.ToolUse && !m.isSubagentTool
+          ) && (
+            <Box flexDirection="column" marginTop={1}>
+              {messages
+                // Subagent tool rows are excluded, mirroring the transcript
+                // renderers (they surface via their own subagent panels).
+                .filter(
+                  (
+                    m
+                  ): m is Extract<
+                    (typeof messages)[number],
+                    { role: MessageRole.ToolUse }
+                  > => m.role === MessageRole.ToolUse && !m.isSubagentTool
+                )
+                .map((m) => (
+                  <ToolUseMessage
+                    key={m.id}
+                    id={m.id}
+                    name={m.name}
+                    isQuestion={m.isQuestion}
+                    kind={m.kind}
+                    content={m.content}
+                    diff={m.diff}
+                    isFinished={m.isFinished}
+                    isStatic={true}
+                    status={m.status}
+                    result={m.result}
+                    locations={m.locations}
+                    purpose={m.purpose}
+                    startTime={m.startTime}
+                    finishTime={m.finishTime}
+                    mcpServerName={m.mcpServerName}
+                    denial={m.denial}
+                  />
+                ))}
+            </Box>
+          )}
 
         {/* Banner-less confirmation for a session created mid-conversation;
             armed only after the create resolves, dismissed by the first message. */}

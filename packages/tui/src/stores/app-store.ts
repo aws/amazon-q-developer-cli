@@ -9015,10 +9015,18 @@ export const createAppStore = (props: AppStoreProps) => {
     }
   });
 
+  // Latches on the user's FIRST prompt — not on any message. A cloud session's
+  // bring-up streams prefetch tool calls (fetch_cloud_config, repo clone) into
+  // `messages` before the user types, so gating on `messages.length > 0` would
+  // flip this mid-boot and tear down the connect screen while prefetch is still
+  // running. A user message is the real "entered the conversation" signal.
   // Never resets: an in-session /chat new re-empties `messages`, and the
   // cold-boot connect screen must not re-open for it.
   store.subscribe((state) => {
-    if (!state.hasEnteredConversation && state.messages.length > 0) {
+    if (
+      !state.hasEnteredConversation &&
+      state.messages.some((m) => m.role === MessageRole.User)
+    ) {
       store.setState({ hasEnteredConversation: true });
     }
   });

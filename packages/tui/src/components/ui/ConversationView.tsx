@@ -723,7 +723,41 @@ export const ConversationView = React.memo(function ConversationView({
     }
   }
 
-  if (messages.length > 0) {
+  // Cloud bring-up streams prefetch tool calls (fetch_cloud_config, repo clone)
+  // into `messages` before the user types. The cloud connect screen (checklist +
+  // config hint) owns the pre-first-prompt view, so while it is up hold EVERY
+  // pre-prompt row (not just ToolUse — a stray Model/steer row would jump above
+  // the dynamic connect screen via <Static> all the same) out of the transcript;
+  // the layout renders the held tool rows below the checklist instead. Once any
+  // user message exists the hold is lifted and the full transcript (prefetch
+  // included) renders normally. Non-cloud sessions and the post-first-prompt
+  // view are unaffected.
+  //
+  // Keyed on the same one-way `hasEnteredConversation` latch as the connect
+  // screen itself — NOT on `messages` emptiness — so "held out of the
+  // transcript" and "shown below the checklist" are always the same window. An
+  // in-session /chat new re-empties `messages` while the latch (and thus the
+  // closed connect screen) stays put; a message-based hold would re-engage
+  // then and swallow any pre-prompt row with nowhere to render it.
+  const hasEnteredConversation = useAppStore((s) => s.hasEnteredConversation);
+  const holdCloudPrefetch = cloudSessionActive && !hasEnteredConversation;
+  const conversationMessages = useMemo(() => {
+    const conv: StoreMessageType[] = [];
+    messages.forEach((msg) => {
+      if (msg.role === MessageRole.System) return;
+      if (holdCloudPrefetch) return;
+      conv.push(msg);
+    });
+    return conv;
+  }, [messages, holdCloudPrefetch]);
+
+  // Initial-load / welcome bookkeeping keys off the POST-hold view: held
+  // prefetch rows must not count as "messages appeared", or the welcome banner
+  // would leave the dynamic path (and commit to <Static>, with different
+  // leading spacing) while the connect screen is still up — the nightly keeps
+  // the dynamic welcome until the first prompt, and so do we.
+  const hasVisibleMessages = holdCloudPrefetch ? false : messages.length > 0;
+  if (hasVisibleMessages) {
     hadMessagesRef.current = true;
     _hadMessages = true;
   }
@@ -735,18 +769,8 @@ export const ConversationView = React.memo(function ConversationView({
   const shouldAnimate = !_hasAnimated;
   if (shouldAnimate) _hasAnimated = true;
 
-  const hasMessages = messages.length > 0;
+  const hasMessages = hasVisibleMessages;
   const isInitialLoad = !hasMessages && !hadMessagesRef.current;
-
-  const conversationMessages = useMemo(() => {
-    const conv: StoreMessageType[] = [];
-    messages.forEach((msg) => {
-      if (msg.role !== MessageRole.System) {
-        conv.push(msg);
-      }
-    });
-    return conv;
-  }, [messages]);
 
   // Incremental turn reconstruction: during streaming, only the active
   // turn grows (new AI messages appended). Completed turns are stable.

@@ -1,4 +1,5 @@
 import { chalk } from '../../../utils/color.js';
+import { CLOUD_CONFIG_URL } from '../../../utils/cloud-urls.js';
 
 export interface CloudStartupChecklistState {
   connected: boolean;
@@ -42,7 +43,9 @@ export interface CloudStartupChecklistGlyphs {
  * to "✓ Connected to kiro.dev"). Later steps stay hidden until reached. Once
  * every step is done, the final row is `✓ N repositories found, /repo to select
  * (optional)` when the repo count is known, else a bare dim "/repo to select
- * (optional)" hint.
+ * (optional)" hint. Below the rows (in every non-failed state) sits the
+ * cloud-config guidance paragraph, nudging the user to bring their local
+ * `~/.kiro/` setup to the cloud.
  */
 export function formatCloudStartupChecklist(
   state: CloudStartupChecklistState,
@@ -99,5 +102,19 @@ export function formatCloudStartupChecklist(
       rows.push(chalk.dim(`  ${repoHint}`));
     }
   }
+  // Guidance: the cloud workspace starts without the user's local ~/.kiro
+  // config; point them at the web settings page. Blank line then the paragraph
+  // (dim body, magenta link). Only reached in non-failed states — a hard
+  // failure returns above with just the failed row. The displayed link is the
+  // host-relative form of CLOUD_CONFIG_URL, which is the source of truth.
+  const configLink = CLOUD_CONFIG_URL.replace(/^https?:\/\//, '');
+  rows.push('');
+  rows.push(
+    chalk.dim(
+      "  Your cloud workspace doesn't have your local setup by default. Go to " +
+        `${chalk.magenta(configLink)} to bring your agents, MCP servers, hooks, ` +
+        'and steering from ~/.kiro/ (home directory) to the cloud.'
+    )
+  );
   return rows;
 }

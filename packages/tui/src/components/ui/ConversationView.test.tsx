@@ -196,6 +196,74 @@ describe('ConversationView workflow lifecycle rows', () => {
   });
 });
 
+describe('ConversationView cloud prefetch hold', () => {
+  const prefetch = (id: string, name: string): MessageType => ({
+    id,
+    role: MessageRole.ToolUse,
+    name,
+    content: '{}',
+    isFinished: true,
+    status: ToolUseStatus.Approved,
+    result: { status: 'success', output: 'ok' },
+  });
+
+  it('hides cloud prefetch tool cards until the first user message', async () => {
+    const terminal = new MockTerminal();
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    store.setState({ cloudSessionActive: true });
+    // Bring-up prefetch arrives before the user types.
+    store.setState({
+      messages: [
+        prefetch('p1', 'get_steering_files'),
+        prefetch('p2', 'get_learnings_for_prompt'),
+      ],
+    });
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={store}>
+        <ConversationView />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    await flush();
+
+    // No prefetch cards on screen yet — the connect screen owns this view.
+    let output = stripAnsi(terminal.output);
+    expect(output).not.toContain('get_steering_files');
+    expect(output).not.toContain('get_learnings_for_prompt');
+
+    // The user's first prompt lifts the hold; the transcript renders.
+    store.setState({
+      messages: [
+        prefetch('p1', 'get_steering_files'),
+        prefetch('p2', 'get_learnings_for_prompt'),
+        user('first-prompt'),
+      ],
+    });
+    await flush();
+
+    output = stripAnsi(terminal.output);
+    expect(output).toContain('get_steering_files');
+  });
+
+  it('does not hold prefetch-shaped messages in a non-cloud session', async () => {
+    const terminal = new MockTerminal();
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    // No cloudSessionActive — local sessions must be unaffected.
+    store.setState({ messages: [prefetch('p1', 'get_steering_files')] });
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={store}>
+        <ConversationView />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    await flush();
+
+    expect(stripAnsi(terminal.output)).toContain('get_steering_files');
+  });
+});
+
 describe('ConversationView inter-turn system notices', () => {
   it('renders a notice added after an idle turn below that turn, in order', async () => {
     // Regression: an unowned system notice (e.g. the /autonomous toggle line)

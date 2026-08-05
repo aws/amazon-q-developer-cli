@@ -135,6 +135,42 @@ describe('cloud cold-boot connect screen latch', () => {
     expect(stripAnsi(terminal.output)).not.toContain('Cloud session created');
   });
 
+  it('keeps the connect screen up while cloud prefetch tool calls stream in before the first user prompt', async () => {
+    // Regression: a cloud session's bring-up streams prefetch tool calls
+    // (fetch_cloud_config, repo clone) into `messages` before the user types.
+    // The screen must survive them — the "conversation entered" latch may only
+    // flip on a USER message, never on prefetch tool/model rows.
+    const store = bootingCloudStore();
+    store.setState({ isInitialized: true });
+    const terminal = renderInline(store);
+    await flush();
+    // Prefetch tool-use messages arrive (no user prompt yet).
+    store.setState({
+      messages: [
+        { id: 't1', role: MessageRole.ToolUse, name: 'fetch_cloud_config' },
+        { id: 't2', role: MessageRole.ToolUse, name: 'clone_repository' },
+      ] as never,
+    });
+    await flush();
+    // The latch stays false → the connect screen (checklist + hint) is still
+    // gated on, so it remains rendered above the streaming prefetch cards.
+    expect(store.getState().hasEnteredConversation).toBe(false);
+    // The prefetch cards render live below the checklist (the layout's own
+    // block — ConversationView holds them out of the transcript meanwhile).
+    const withPrefetch = stripAnsi(terminal.output);
+    expect(withPrefetch).toContain('fetch_cloud_config');
+    expect(withPrefetch).toContain('clone_repository');
+    // A subsequent user prompt is what finally latches it off.
+    store.setState({
+      messages: [
+        { id: 't1', role: MessageRole.ToolUse, name: 'fetch_cloud_config' },
+        { id: 'u1', role: MessageRole.User, content: 'go' },
+      ] as never,
+    });
+    await flush();
+    expect(store.getState().hasEnteredConversation).toBe(true);
+  });
+
   it('keeps the connect screen hidden after the conversation was entered (in-session /chat new)', async () => {
     const store = bootingCloudStore();
     store.setState({ isInitialized: true });

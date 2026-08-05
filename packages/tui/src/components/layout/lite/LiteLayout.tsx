@@ -582,15 +582,18 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     return false;
   }, [bootProgress, mcpInitStatus]);
 
-  // Cloud connect screen: while a cloud session is booting and no message has
-  // been sent yet, show the milestone checklist in place of the single boot
+  // Cloud connect screen: while a cloud session is booting and the user has not
+  // yet sent a prompt, show the milestone checklist in place of the single boot
   // row. False (inert) unless a cloud session is active — non-cloud startup
   // renders exactly as before. Rows are built at render time so the in-progress
-  // spinner animates with bootFrame.
+  // spinner animates with bootFrame. Gated on "no user message yet" rather than
+  // "no messages" so the cloud prefetch tool calls (fetch_cloud_config, repo
+  // clone) that stream in during bring-up don't tear the checklist down before
+  // the user has typed.
   const showCloudChecklist =
     cloudSessionActive &&
     bootProgress.has('agent_connect') &&
-    messages.length === 0;
+    !messages.some((m) => m.role === MessageRole.User);
 
   // Boot tick — cycles the spinner glyph (150ms, matches LiteLiveRegion). One
   // interval shared by the boot indicator + pending-agent footer chip.
