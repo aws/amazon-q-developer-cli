@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Steering sent near the end of a turn is delivered at the turn boundary instead of dropped"
+}

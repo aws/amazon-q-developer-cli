@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] A single malformed MCP registry entry no longer disables the rest of the registry"
+}

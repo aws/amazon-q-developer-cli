@@ -262,7 +262,10 @@ function handleForwardedAcp(sessionId, method, params) {
 // Per-operation output structs. Keys are the wire member names the adapters read.
 const responders = {
   // IRemoteSessionSource.new() -> CreateSpace; adapter reads response.spaceId.
-  CreateSpace: () => ({ spaceId: SPACE_BANANA }),
+  // Must be an id with no canned history: the relay attaches to a new space
+  // right away, so a reused id would replay another session's transcript into
+  // the fresh session.
+  CreateSpace: () => ({ spaceId: MOCK_SPACE_IDS.created }),
   // IRemoteSessionSource.list() -> ListSpaces; reads response.spaces[] as SpaceSummary.
   ListSpaces: () => ({ spaces: listedSpaces, nextToken: undefined }),
   DeleteSpace: () => ({}),
@@ -363,12 +366,11 @@ const responders = {
   },
   // loadSession() -> LoadSession; a @streaming op whose response.events is an AWS
   // event stream (handled on the event-stream path below; this entry only marks
-  // the op as known). KAS folds the frames per bff-remote-session-source:
-  // `event` frames are normalized into the transcript, each historical turn
-  // closes with its own `done` (stopReason 'end_turn' -> turnEnded, an
-  // intermediate boundary), and a final `done` of 'session_loaded' classifies
-  // as historyComplete and ends the fold. With no canned history the stream is
-  // just the sentinel -> an empty, clean resume (batch-1 behavior).
+  // the op as known). The consumer folds `event` frames into the transcript;
+  // among `done` frames only 'session_loaded' means anything (end-of-history),
+  // while the per-turn 'end_turn' dones still count as evidence the stream was
+  // not truncated. With no canned history the stream is just the sentinel ->
+  // an empty, clean resume (batch-1 behavior).
   LoadSession: () => undefined,
   // submitPrompt() -> StreamSendMessage (submit-and-ack): KAS awaits only the
   // command's resolution and expects the turn's output on the durable
@@ -494,8 +496,8 @@ function eventFrame(eventType, payload) {
 }
 
 // An SSEDoneEventData frame. `kiroSessionId` is a required model member;
-// `stopReason` drives classifyDoneReason ('end_turn' = turn boundary,
-// 'session_loaded' = end-of-history sentinel).
+// 'session_loaded' is the end-of-history sentinel, any other `stopReason`
+// carries no turn meaning but proves the stream was not truncated.
 function doneFrame(sessionId, stopReason) {
   return encodeFrame('done', { kiroSessionId: sessionId, stopReason });
 }
@@ -582,13 +584,22 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// Recursively drop `undefined` values (Dates and Buffers pass through). The
-// smithy CBOR encoder rejects any undefined, so an optional field must be
-// absent rather than explicitly undefined.
+// `tag()` marks its result with a module-private Symbol the CBOR encoder
+// checks; a rebuilt copy loses it and encodes as a plain map, which decodes
+// as `{tag, value}` instead of a Date on the consuming side.
+function isCborTag(v) {
+  return Object.getOwnPropertySymbols(v).some(
+    (s) => s.description === '@smithy/core/cbor::tagSymbol'
+  );
+}
+// Recursively drop `undefined` values (Dates, Buffers, and tag values pass
+// through untouched). The smithy CBOR encoder rejects any undefined, so an
+// optional field must be absent rather than explicitly undefined.
 function pruneUndefined(v) {
   if (v === undefined) return undefined;
   if (v === null) return null;
   if (v instanceof Date || Buffer.isBuffer(v)) return v;
+  if (typeof v === 'object' && isCborTag(v)) return v;
   if (Array.isArray(v))
     return v.map(pruneUndefined).filter((x) => x !== undefined);
   if (typeof v === 'object') {

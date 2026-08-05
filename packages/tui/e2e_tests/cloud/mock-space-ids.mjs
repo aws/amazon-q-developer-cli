@@ -13,9 +13,13 @@
 //             MOCK_BFF_CONCURRENT=1 only.
 //  - waiting: blocked on a pending question — listed under
 //             MOCK_BFF_CONCURRENT=1 only.
+//  - created: what CreateSpace returns — a fresh space with no canned
+//             history, kept distinct so a create never replays another
+//             session's transcript.
 export const MOCK_SPACE_IDS = {
   banana: 'aaaaaaa1-0001-4001-8001-000000000001',
   empty: 'aaaaaaa2-0002-4002-8002-000000000002',
   working: 'aaaaaaa3-0003-4003-8003-000000000003',
   waiting: 'aaaaaaa4-0004-4004-8004-000000000004',
+  created: 'aaaaaaa5-0005-4005-8005-000000000005',
 };

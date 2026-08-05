@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Chatting with a finished workflow step no longer fires stray status signals or restarts the run"
+}

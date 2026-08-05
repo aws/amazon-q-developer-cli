@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] A failed turn surfaces its error once instead of three times"
+}

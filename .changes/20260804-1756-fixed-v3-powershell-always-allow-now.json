@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] PowerShell \"Always Allow\" now persists for bare operands and relative paths"
+}

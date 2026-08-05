@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] A requested agent that cannot be used now explains why instead of reporting it as missing"
+}

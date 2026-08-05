@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] UserPromptSubmit command hooks receive the prompt and successful stdout"
+}

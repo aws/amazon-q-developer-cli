@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Subagents recover from a tool call interrupted mid-arguments instead of faulting the turn"
+}
