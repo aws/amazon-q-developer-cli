@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Subagent panel ctrl+d and ctrl+u navigation now wraps around at the first and last agent"
+}

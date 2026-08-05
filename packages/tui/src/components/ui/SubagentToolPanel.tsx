@@ -133,9 +133,9 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
     useKeypress((input, key) => {
       if (isStatic || rows.length === 0 || !key.ctrl) return;
       if (input === 'd') {
-        setFocusedCrewIndex(Math.min(clampedIndex + 1, rows.length - 1));
+        setFocusedCrewIndex((clampedIndex + 1) % rows.length);
       } else if (input === 'u') {
-        setFocusedCrewIndex(Math.max(clampedIndex - 1, 0));
+        setFocusedCrewIndex((clampedIndex - 1 + rows.length) % rows.length);
       }
     });
 
