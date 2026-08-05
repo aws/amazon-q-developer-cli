@@ -406,6 +406,7 @@ MCP logs: Same directory, `mcp.log`
 - **Comments: one line per block, the _why_ only.** No line-by-line narration, no multi-line essays, no design rationale inline (put that in a doc). Prefer self-documenting code.
 - **No dead code, no scope creep.** Every changed line traces to the change's stated purpose. No drive-by edits to unrelated files; no code without a caller; remove anything you orphan.
 - **Claims need evidence.** "Done / works / safe" must cite a check you ran (typecheck, test, diff, build). Keep PR comments and status consistent with reality; delete stale claims instead of leaving them.
+- **Publish UX evidence consistently.** For feature bug bashes or PR visual evidence, use the `publish-feature-bugbash-evidence` skill; pin reports to the tested SHA, validate the HTML, and keep one current PR evidence link.
 - **Root-cause before attributing.** When CI or a build breaks, prove the cause from what actually changed (diff, inputs) before claiming or denying responsibility.
 
 ## Comment Discipline
