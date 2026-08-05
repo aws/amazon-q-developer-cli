@@ -71,6 +71,11 @@ const USE_SYSTEM = hasFlag('system');
 const USE_KAS = hasFlag('kas');
 const KAS_REPO = arg('kas-repo');
 const KAS_REBUILD = hasFlag('kas-rebuild');
+// --workspace <dir>: run the TUI (and therefore the agent) with this directory as
+// its working dir, so specs/sessions land in an isolated workspace instead of the
+// launch dir. The TUI entry is resolved by absolute path below so it still loads
+// regardless of cwd.
+const WORKSPACE = arg('workspace');
 const OUTPUT_DIR = arg('out') ?? path.join(__dirname, 'test-outputs', `knight-rider-${Date.now()}`);
 const WIDTH = 120;
 const HEIGHT = 40;
@@ -133,6 +138,11 @@ function buildKasServer(repoRoot: string): string {
   return serverJs;
 }
 
+// Absolute path to the TUI source entry so the command resolves regardless of the
+// PTY's cwd. With --workspace the PTY runs in a foreign dir, so a relative
+// `./src/index.tsx` would not resolve.
+const TUI_ENTRY = path.resolve(__dirname, '../src/index.tsx');
+
 function resolveCommand(): { cmd: string; env: Record<string, string> } {
   if (CMD) return { cmd: CMD, env: {} };
   if (USE_V1) return { cmd: 'kiro-cli chat', env: {} };
@@ -141,7 +151,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
   if (USE_KAS) {
     const serverPath = KAS_REPO ? buildKasServer(KAS_REPO) : undefined;
     return {
-      cmd: 'bun ./src/index.tsx',
+      cmd: `bun ${TUI_ENTRY}`,
       env: {
         KIRO_AGENT_ENGINE: 'kas',
         KIRO_KAS_NODE_PATH: 'node',
@@ -156,7 +166,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
   }
   // Default: run TUI source directly with local Rust binary
   return {
-    cmd: 'bun ./src/index.tsx',
+    cmd: `bun ${TUI_ENTRY}`,
     env: {
       KIRO_CHAT_CLI_BIN: CARGO_BIN,
       KIRO_FEED_FILE: path.join(REPO_ROOT, 'crates/chat-cli/src/cli/feed.json'),
@@ -464,7 +474,7 @@ console.log(`   Frames:  ${OUTPUT_DIR}`);
 (async () => {
   try {
     const parts = resolvedCmd.split(/\s+/);
-    const p = new PtyManager({ width: WIDTH, height: HEIGHT, cwd: process.cwd(), env: extraEnv });
+    const p = new PtyManager({ width: WIDTH, height: HEIGHT, cwd: WORKSPACE ?? process.cwd(), env: extraEnv });
     p.spawn(parts[0]!, parts.slice(1));
     p.onData((data) => {
       for (const ws of wsClients) {

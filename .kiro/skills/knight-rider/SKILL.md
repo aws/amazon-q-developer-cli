@@ -44,6 +44,7 @@ Rust binary at `target/debug/chat_cli`. Build it once with `cargo build -p chat_
 | `--system` | off | Use system `kiro-cli chat --tui` instead of local source |
 | `--v1` | off | Launch legacy V1 Rust TUI |
 | `--cmd "bash"` | — | Launch any arbitrary command |
+| `--workspace <dir>` | launch cwd | Run the TUI (and agent) with this dir as its working dir — isolate specs/sessions per run without cd-ing (the TUI entry is resolved by absolute path so it loads from any cwd) |
 | `--port 4000` | `3001` | Custom port |
 | `--out /tmp/test` | auto-timestamped | Custom output directory |
 
@@ -66,7 +67,7 @@ bun run knight-rider --kas --system
 ```
 
 **Prerequisites for KAS mode:**
-- Logged in via `kiro-cli login` (KAS asks the host for tokens via the `_kiro/auth/getAccessToken` ACP callback; the SQLite-backed token store is the source of truth)
+- Auth. Either export `KIRO_API_KEY` (preferred for scripted/parallel runs — KAS reads it as the highest-priority auth provider, ahead of the `--auth=acp-callback` flag the TUI hard-codes, so it skips the OIDC token shell-out) OR be logged in via `kiro-cli login` (KAS then asks the host for tokens via the `_kiro/auth/getAccessToken` ACP callback backed by the SQLite token store)
 - Either `@kiro/agent` installed (`bun install` after `./scripts/codeartifact-login.sh`) or `--kas-repo` pointing to a local checkout
 - Workspace packages must be built: `cd packages/twinki/packages/twinki && bun run build`
 - A built `chat_cli` binary at `target/debug/chat_cli` (knight-rider sets `KIRO_CHAT_CLI_BIN` to it; the TUI's auth callback handler shells out to `chat _ get-kas-token`)
@@ -341,6 +342,8 @@ open "$DIR/index.html"
 | Port 3001 already in use | Kill stale: `for pid in $(lsof -ti:3001 2>/dev/null); do kill $pid 2>/dev/null; done` |
 | Slash command autocomplete not appearing | Ensure you type `/` alone first, then wait 0.5s before typing command name |
 | KAS: "Cannot find package 'twinki'" | Build twinki: `cd packages/twinki/packages/twinki && bun run build` |
+| TUI boot crash `controller.setMouseEnabled is not a function` | twinki `dist` is stale (its build is incremental). Force a full rebuild: `cd packages/twinki/packages/twinki && rm -rf dist tsconfig.build.tsbuildinfo && bun run build` |
+| KAS: "ACP connection closed" right after boot; `SyntaxError: Named export '...' not found ... is a CommonJS module` | `--kas-repo`'s bundle is missing a rebuilt `@amzn/*` workspace client. Build the bundle from the kiro-agent repo with its official `npm run build` first, then launch WITHOUT `--kas-rebuild` so the harness reuses that good bundle. |
 | KAS: "unexpected argument '--experimental-wasm-modules'" | The node binary the TUI is spawning is actually a different binary. Check `KIRO_KAS_NODE_PATH` in your shell - the script sets it to `node` explicitly when KAS mode is selected. Ensure you're using the latest knight-rider.ts |
 | KAS: Stuck at "Initializing..." forever | Check if node process spawned: `ps aux \| grep acp-server`. If not, verify `@kiro/agent` is installed and token is valid |
 | KAS: Prompt queued but never processed | KAS hasn't finished initializing. Wait for mode indicator (e.g., `vibe`) in status bar before sending prompts |
