@@ -24,6 +24,21 @@ function storeWithSendSpy() {
 }
 
 describe('submitRepoPicker', () => {
+  it('resumes a blocked queue after submitting an unchanged selection', async () => {
+    const { store } = storeWithSendSpy();
+    const processQueue = mock(async () => {});
+    store.setState({
+      queuedMessages: ['/tui'],
+      processQueue,
+      showRepoPicker: true,
+    } as never);
+
+    await store.getState().submitRepoPicker([]);
+    await new Promise((resolve) => queueMicrotask(resolve));
+
+    expect(processQueue).toHaveBeenCalledTimes(1);
+  });
+
   it('closes the picker and clears its resources without sending when nothing is selected', async () => {
     const { store, sendMessage } = storeWithSendSpy();
     store

@@ -53,7 +53,8 @@ function join(segments: readonly string[], separator: string): string {
 export function formatLiteActivitySummary(
   counts: LiteActivityCounts,
   maxWidth: number,
-  separator: string
+  separator: string,
+  queueEditHint: string
 ): string | null {
   const width = Math.max(1, Math.floor(maxWidth));
   const workflows = workflowLabels(
@@ -70,6 +71,7 @@ export function formatLiteActivitySummary(
       : '';
   const queueCompact =
     counts.queuedMessages > 0 ? `${counts.queuedMessages} queued` : '';
+  const queueAction = counts.queuedMessages > 0 ? queueEditHint : '';
   const tasksFull =
     counts.remainingTasks > 0
       ? `${plural(counts.remainingTasks, 'task')} remaining`
@@ -95,6 +97,14 @@ export function formatLiteActivitySummary(
 
   const candidates = workflows
     ? [
+        [
+          workflows.full,
+          stepProgress,
+          queueFull,
+          queueAction,
+          taskFull,
+          expandFull,
+        ],
         [workflows.full, stepProgress, queueFull, taskFull, expandFull],
         [workflows.full, stepProgress, queueCompact, taskCompact, expandFull],
         [workflows.full, stepProgress, queueCompact, expandFull],
@@ -108,10 +118,12 @@ export function formatLiteActivitySummary(
           : []),
       ]
     : [
+        [queueFull, queueAction, taskFull, expandFull],
         [queueFull, taskFull, expandFull],
         [queueCompact, taskCompact, expandFull],
         [taskFull, expandFull],
         [taskCompact, expandCompact],
+        [queueFull, queueAction],
         [queueFull],
         [queueCompact],
       ];

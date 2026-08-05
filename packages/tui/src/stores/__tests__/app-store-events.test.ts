@@ -3014,4 +3014,19 @@ describe('app-store — showCloudQuitPrompt slice', () => {
     store.getState().setShowCloudQuitPrompt(false);
     expect(store.getState().showCloudQuitPrompt).toBe(false);
   });
+
+  it('resumes a queue when the cloud quit prompt is cancelled', async () => {
+    const store = makeStore();
+    const processQueue = mock(async () => {});
+    store.setState({
+      showCloudQuitPrompt: true,
+      queuedMessages: ['/tui'],
+      processQueue,
+    });
+
+    store.getState().setShowCloudQuitPrompt(false);
+    await new Promise((resolve) => queueMicrotask(resolve));
+
+    expect(processQueue).toHaveBeenCalledTimes(1);
+  });
 });

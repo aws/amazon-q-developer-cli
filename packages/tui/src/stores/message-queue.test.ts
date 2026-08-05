@@ -1,7 +1,8 @@
 import { describe, it, expect, mock, afterAll } from 'bun:test';
-import { createAppStore, MessageRole } from './app-store';
+import { buildCommandContext, createAppStore, MessageRole } from './app-store';
 import { Kiro } from '../kiro';
 import { AgentEventType } from '../types/agent-events';
+import { workflowStore } from './workflow-store';
 
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
@@ -11,6 +12,7 @@ mock.module('../kiro', () => ({
     clearSteering: mock(),
     cancel: mock(),
     close: mock(),
+    sendUiModeChanged: mock(),
     recordSlashCommandInvocation: mock(),
   })),
 }));
@@ -292,7 +294,7 @@ describe('Message queue (backend-driven)', () => {
         expect(store.getState().queuedMessages).toEqual(['a chat message']);
       });
 
-      it('keeps a known slash command local even mid-turn in lite', () => {
+      it('keeps a slash command local even mid-turn in lite', () => {
         const store = createTestStore();
         const mockSteerMessage = mock(() => Promise.resolve());
         (store.getState().kiro as any).steerMessage = mockSteerMessage;
@@ -1254,9 +1256,9 @@ describe('Compaction drains queue', () => {
         loadingMessage: 'Agent changing to coder',
       });
 
-      await store.getState().handleUserInput('/verbosity');
+      await store.getState().handleUserInput('/tui');
 
-      expect(store.getState().queuedMessages).toEqual(['/verbosity']);
+      expect(store.getState().queuedMessages).toEqual(['/tui']);
       // Pre-fix: a transient alert echoed the same message the queue strip
       // already renders. The alert is gone now; the strip is the single
       // surface for "this is queued".
@@ -1270,31 +1272,28 @@ describe('Compaction drains queue', () => {
       store.setState({
         uiMode: 'lite',
         loadingMessage: 'Agent changing to coder',
-        queuedMessages: ['/verbosity'],
+        queuedMessages: ['/tui'],
       });
 
-      await store.getState().handleUserInput('/verbosity');
+      await store.getState().handleUserInput('/tui');
 
-      expect(store.getState().queuedMessages).toEqual([
-        '/verbosity',
-        '/verbosity',
-      ]);
+      expect(store.getState().queuedMessages).toEqual(['/tui', '/tui']);
       expect(store.getState().transientAlert).toBeNull();
     });
   });
 });
 
 describe('KAS mode lite command gating (regression: KAS-only commands must not leak to the model)', () => {
-  // `/rewind` is the canonical repro: it lives in KAS_COMMANDS → the
+  // `/plan` is the canonical non-interactive repro: it lives in KAS_COMMANDS → the
   // `kasCommands` slice, and is NOT advertised into `slashCommands`. Before
   // the fix, the four lite submit/queue gates checked `slashCommands` only,
-  // so `/rewind` (and /effort, /spec, /model, /knowledge, /plan, …) fell
+  // so `/plan` (and /effort, /spec, /model, /knowledge, /rewind, …) fell
   // through and got sent to the LLM as chat text — the panel never opened and
   // a billed turn was wasted each time. The gates now consult
   // `liteGateCommands`, which in KAS mode is the merged visible list
   // (kasCommands ∪ slashCommands ∪ projections) — exactly what the dispatcher
   // can resolve.
-  const KAS_ONLY_CMD = '/rewind';
+  const KAS_ONLY_CMD = '/plan';
 
   it('sanity: the KAS-only command is in kasCommands but NOT slashCommands', () => {
     const store = createKasTestStore();
@@ -1371,11 +1370,13 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
     it('emits a [queue] drain row for a KAS-only slash command', async () => {
       const store = createKasTestStore();
       const messagesBefore = store.getState().messages.length;
+      const mockHandleUserInput = mock(async () => {});
       store.setState({
         uiMode: 'lite',
         sessionId: 'session-abc',
         activeInterruptMode: 'queue',
         queuedMessages: [KAS_ONLY_CMD],
+        handleUserInput: mockHandleUserInput as never,
       });
 
       await store.getState().processQueue();
@@ -1383,6 +1384,105 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       const drainRow = store.getState().messages[messagesBefore];
       expect(drainRow?.role).toBe(MessageRole.System);
       expect(drainRow?.content).toContain(`[queue] ${KAS_ONLY_CMD}`);
+      expect(mockHandleUserInput).toHaveBeenCalledWith(KAS_ONLY_CMD);
+    });
+
+    it('pauses on a queued model picker and resumes with the next command after selection', async () => {
+      const store = createKasTestStore();
+      const setConfigOption = mock(() => Promise.resolve());
+      (store.getState().kiro as any).setConfigOption = setConfigOption;
+      store.getState().handleKasModelConfigEvent({
+        type: AgentEventType.KasModelConfigUpdate,
+        models: [{ id: 'sonnet', name: 'Sonnet' }],
+        efforts: [],
+        currentModelId: 'sonnet',
+        currentLevel: null,
+        origin: 'serverPush',
+      });
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+        queuedMessages: ['/model', '/tui'],
+      });
+
+      await store.getState().processQueue();
+
+      expect(store.getState().activeCommand?.command.name).toBe('/model');
+      expect(store.getState().queuedMessages).toEqual(['/tui']);
+      expect(store.getState().uiMode).toBe('lite');
+
+      await store.getState().executeCommandWithArg('sonnet');
+
+      expect(setConfigOption).toHaveBeenCalledWith('model', 'sonnet');
+      expect(store.getState().activeCommand).toBeNull();
+      expect(store.getState().queuedMessages).toEqual([]);
+      expect(store.getState().uiMode).toBe('tui');
+    });
+
+    it('pauses after an argument opens a menu and resumes when it closes', async () => {
+      const store = createKasTestStore();
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+        queuedMessages: ['/settings terminal', '/tui'],
+      });
+
+      await store.getState().processQueue();
+
+      expect(store.getState().activeCommand?.command.name).toBe('/settings');
+      expect(store.getState().queuedMessages).toEqual(['/tui']);
+      expect(store.getState().uiMode).toBe('lite');
+
+      store.getState().setActiveCommand(null);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(store.getState().queuedMessages).toEqual([]);
+      expect(store.getState().uiMode).toBe('tui');
+    });
+
+    it('pauses for a backend panel and resumes after a direct close', async () => {
+      const store = createKasTestStore();
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        activeInterruptMode: 'queue',
+        showThemePanel: true,
+        queuedMessages: ['/tui'],
+      });
+
+      await store.getState().processQueue();
+
+      expect(store.getState().queuedMessages).toEqual(['/tui']);
+      expect(store.getState().uiMode).toBe('lite');
+
+      store.getState().setShowThemePanel(false);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(store.getState().queuedMessages).toEqual([]);
+      expect(store.getState().uiMode).toBe('tui');
+    });
+
+    it('resumes after workflow history closes through the command context', async () => {
+      const store = createKasTestStore();
+      const processQueue = mock(async () => {});
+      store.setState({
+        queuedMessages: ['/tui'],
+        processQueue,
+      });
+      workflowStore.getState().openWorkflowHistory([]);
+      const ctx = buildCommandContext(
+        store.getState(),
+        store.setState,
+        store.getState
+      );
+
+      ctx.setShowWorkflowHistory(false);
+      await new Promise((resolve) => queueMicrotask(resolve));
+
+      expect(workflowStore.getState().history.isOpen).toBe(false);
+      expect(processQueue).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1405,12 +1505,41 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       expect(mockSteerMessage).not.toHaveBeenCalled();
       expect(store.getState().queuedMessages).toEqual([KAS_ONLY_CMD]);
     });
+
+    it('queues a bare selection command followed by a mode switch', async () => {
+      const store = createKasTestStore();
+      const input = store.getState().input;
+      store.setState({
+        uiMode: 'lite',
+        sessionId: 'session-abc',
+        isProcessing: true,
+        activeInterruptMode: 'queue',
+        commandInputValue: '/model',
+        input: { ...input, lines: ['/model'], cursorCol: 6 },
+      });
+
+      await store.getState().handleUserInput('/model');
+      await store.getState().handleUserInput('/tui');
+
+      expect(store.getState().queuedMessages).toEqual(['/model', '/tui']);
+      expect(store.getState().commandInputValue).toBe('');
+      expect(store.getState().input.lines).toEqual(['']);
+      expect(store.getState().transientAlert).toBeNull();
+    });
   });
 
   describe('Gate 4: handleUserInput idle (dispatches KAS command, does not send as chat)', () => {
     it('dispatches a KAS-only slash command via executeCommand instead of sendMessage', async () => {
       const store = createKasTestStore();
       const mockSendMessage = mock(() => Promise.resolve());
+      const mockExecuteCommand = mock(() =>
+        Promise.resolve({
+          success: true,
+          message: 'Switched to kiro_planner',
+          data: { agent: { name: 'kiro_planner' } },
+        })
+      );
+      (store.getState().kiro as any).executeCommand = mockExecuteCommand;
       store.setState({
         uiMode: 'lite',
         sessionId: 'session-abc',
@@ -1418,27 +1547,11 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
         sendMessage: mockSendMessage as never,
       });
 
-      const messagesBefore = store.getState().messages.length;
       await store.getState().handleUserInput(KAS_ONLY_CMD);
 
-      // The idle lite gate recognizes the KAS command and routes it to
-      // executeCommand (which dispatches via kasCommands ∪ slashCommands).
-      // It must NOT fall through to sendMessage (the leak-to-model path).
       expect(mockSendMessage).not.toHaveBeenCalled();
-      // Positive signal that the command actually dispatched: handleRewind
-      // with no args + no prior turns surfaces "No previous turns to rewind
-      // to". In lite mode warnings route to a System scrollback row (via
-      // applyLiteAlertRouting → addSystemMessage), not transientAlert. (If
-      // the gate had leaked, sendMessage would have fired and no such row
-      // would appear.)
-      const newRows = store.getState().messages.slice(messagesBefore);
-      expect(
-        newRows.some(
-          (m) =>
-            typeof m.content === 'string' &&
-            m.content.includes('No previous turns')
-        )
-      ).toBe(true);
+      expect(mockExecuteCommand).toHaveBeenCalled();
+      expect(store.getState().currentAgent?.name).toBe('kiro_planner');
     });
 
     it('still sends an unknown slash token as chat (lite contract preserved in KAS mode)', async () => {

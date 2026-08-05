@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Lite queued slash commands now run in FIFO order, pause while a picker or panel owns input, resume when it closes, and show an Up Arrow edit hint"
+}

@@ -99,7 +99,8 @@ export const LiteActivityTray = React.memo(function LiteActivityTray({
       completedTasks: completedTaskCount,
     },
     width - visibleWidth(prefix),
-    ` ${glyphs.smallDot} `
+    ` ${glyphs.smallDot} `,
+    `${glyphs.arrowUp} to edit`
   );
 
   if (!expanded) {

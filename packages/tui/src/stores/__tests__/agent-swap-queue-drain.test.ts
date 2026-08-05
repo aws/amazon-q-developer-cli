@@ -1,20 +1,4 @@
-/**
- * Regression test for the agent-swap + queued-slash-command bug.
- *
- * Repro: in lite mode, while a `/agent swap <name>` is in flight (the
- * dispatcher has set `loadingMessage` and is awaiting the RPC), the user
- * queues a picker command. When the swap RPC resolves, `processQueue` should
- * drain that command and open its menu — but the OUTER dispatcher's
- * "show result message" step then fires `ctx.showAlert(result.message,
- * 'success', 5000)` for the agent swap. Lite's `showAlert` override in
- * `executeCommandWithArg` used to call `set({ activeCommand: null })`
- * unconditionally, clobbering the just-opened menu.
- *
- * The fix narrows the override: `activeCommand` is only cleared on
- * warning/error status. Success alerts are silently dropped already
- * (lite has no NotificationBar), so there's no menu-display invariant
- * for them to enforce.
- */
+/** Panel commands wait for an in-flight agent swap before opening. */
 
 import { describe, it, expect, mock, afterAll } from 'bun:test';
 import { createAppStore } from '../app-store';
@@ -53,15 +37,13 @@ afterAll(() => {
 });
 
 describe('agent swap with queued slash command (lite)', () => {
-  it('opens the queued picker menu after the swap settles', async () => {
+  it('opens a queued panel after the swap settles', async () => {
     const mockKiro = new Kiro();
     const store = createAppStore({ kiro: mockKiro, uiMode: 'lite' });
     store.setState({
       isInitialized: true,
       currentAgent: { name: 'kiro' },
-      // Inject /agent into slashCommands the way CommandsUpdate would, plus
-      // a local panel command to stand in for picker-opening commands from
-      // later slices.
+      // Inject /agent into slashCommands the way CommandsUpdate would.
       slashCommands: [
         ...store.getState().slashCommands,
         {
@@ -69,12 +51,6 @@ describe('agent swap with queued slash command (lite)', () => {
           description: 'Switch agent',
           source: 'backend' as const,
           meta: {},
-        },
-        {
-          name: '/pick',
-          description: 'Open a picker',
-          source: 'local' as const,
-          meta: { local: true, inputType: 'panel' as const },
         },
       ],
     });
@@ -101,19 +77,15 @@ describe('agent swap with queued slash command (lite)', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(store.getState().loadingMessage).toBe('Agent changing to coder');
 
-    // While swap is in flight, queue a picker command.
-    await store.getState().handleUserInput('/pick');
-    expect(store.getState().queuedMessages).toEqual(['/pick']);
+    // While swap is in flight, queue a panel command for the settled session.
+    await store.getState().handleUserInput('/settings');
+    expect(store.getState().queuedMessages).toEqual(['/settings']);
 
-    // Let the swap complete: the RPC resolves, setLoadingMessage(null) fires
-    // processQueue inline, processQueue drains /pick and opens its menu,
-    // then the dispatcher's "show result message" step runs the success alert.
+    // The panel opens only after the swap's loading window closes.
     await swapPromise;
     await new Promise((r) => setTimeout(r, 30));
 
     expect(store.getState().queuedMessages).toEqual([]);
-    // The bug: success alert clobbered activeCommand. With the fix, the
-    // queued picker menu survives.
-    expect(store.getState().activeCommand?.command.name).toBe('/pick');
+    expect(store.getState().showSettingsPanel).toBe(true);
   });
 });

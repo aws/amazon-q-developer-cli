@@ -5,6 +5,7 @@ import {
 } from '../activity-summary.js';
 
 const SEPARATOR = ' · ';
+const QUEUE_EDIT_HINT = '↑ to edit';
 
 describe('formatLiteActivitySummary', () => {
   it('shows all actionable Lite activity when space allows', () => {
@@ -20,10 +21,11 @@ describe('formatLiteActivitySummary', () => {
           completedTasks: 1,
         },
         120,
-        SEPARATOR
+        SEPARATOR,
+        QUEUE_EDIT_HINT
       )
     ).toBe(
-      '3 workflows running · steps 3/10 · 1 message queued · 2 tasks remaining · ctrl+x expand'
+      '3 workflows running · steps 3/10 · 1 message queued · ↑ to edit · 2 tasks remaining · ctrl+x expand'
     );
   });
 
@@ -38,15 +40,17 @@ describe('formatLiteActivitySummary', () => {
       completedTasks: 1,
     };
 
-    expect(formatLiteActivitySummary(counts, 85, SEPARATOR)).toBe(
+    expect(
+      formatLiteActivitySummary(counts, 85, SEPARATOR, QUEUE_EDIT_HINT)
+    ).toBe(
       '3 workflows running · steps 3/10 · 1 queued · 2 tasks · ctrl+x expand'
     );
-    expect(formatLiteActivitySummary(counts, 50, SEPARATOR)).toBe(
-      '3 workflows running · steps 3/10 · ctrl+x expand'
-    );
-    expect(formatLiteActivitySummary(counts, 20, SEPARATOR)).toBe(
-      'steps 3/10 · ctrl+x'
-    );
+    expect(
+      formatLiteActivitySummary(counts, 50, SEPARATOR, QUEUE_EDIT_HINT)
+    ).toBe('3 workflows running · steps 3/10 · ctrl+x expand');
+    expect(
+      formatLiteActivitySummary(counts, 20, SEPARATOR, QUEUE_EDIT_HINT)
+    ).toBe('steps 3/10 · ctrl+x');
   });
 
   it('counts paused workflows as monitorable activity', () => {
@@ -62,7 +66,8 @@ describe('formatLiteActivitySummary', () => {
           completedTasks: 0,
         },
         80,
-        SEPARATOR
+        SEPARATOR,
+        QUEUE_EDIT_HINT
       )
     ).toBe('1 workflow running, 2 paused · steps 4/12 · ctrl+x expand');
   });
@@ -80,9 +85,10 @@ describe('formatLiteActivitySummary', () => {
           completedTasks: 0,
         },
         80,
-        SEPARATOR
+        SEPARATOR,
+        QUEUE_EDIT_HINT
       )
-    ).toBe('2 messages queued · 1 task remaining · ctrl+x expand');
+    ).toBe('2 messages queued · ↑ to edit · 1 task remaining · ctrl+x expand');
   });
 
   it('keeps completed tasks expandable when no work remains', () => {
@@ -98,7 +104,8 @@ describe('formatLiteActivitySummary', () => {
           completedTasks: 3,
         },
         80,
-        SEPARATOR
+        SEPARATOR,
+        QUEUE_EDIT_HINT
       )
     ).toBe('3 tasks done · ctrl+x expand');
   });
@@ -116,9 +123,38 @@ describe('formatLiteActivitySummary', () => {
           completedTasks: 0,
         },
         80,
-        SEPARATOR
+        SEPARATOR,
+        QUEUE_EDIT_HINT
       )
+    ).toBe('2 messages queued · ↑ to edit');
+  });
+
+  it('drops the queue edit hint before truncating the queue count', () => {
+    const counts = {
+      runningWorkflows: 0,
+      pausedWorkflows: 0,
+      completedSteps: 0,
+      totalSteps: 0,
+      queuedMessages: 2,
+      remainingTasks: 0,
+      completedTasks: 0,
+    };
+
+    expect(
+      formatLiteActivitySummary(counts, 20, SEPARATOR, QUEUE_EDIT_HINT)
     ).toBe('2 messages queued');
+    expect(
+      formatLiteActivitySummary(counts, 12, SEPARATOR, QUEUE_EDIT_HINT)
+    ).toBe('2 queued');
+
+    expect(
+      formatLiteActivitySummary(
+        { ...counts, remainingTasks: 1 },
+        48,
+        SEPARATOR,
+        QUEUE_EDIT_HINT
+      )
+    ).toBe('2 queued · 1 task · ctrl+x expand');
   });
 
   it('hides when no actionable activity remains', () => {
@@ -134,7 +170,8 @@ describe('formatLiteActivitySummary', () => {
           completedTasks: 0,
         },
         80,
-        SEPARATOR
+        SEPARATOR,
+        QUEUE_EDIT_HINT
       )
     ).toBeNull();
   });

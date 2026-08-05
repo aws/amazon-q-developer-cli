@@ -218,20 +218,14 @@ export function useBackendPanelHandlers() {
   }, [kiro, setShowCodePanel]);
 
   const handleRewindSelect = useCallback(
-    (rowId: string) => {
+    async (rowId: string) => {
       setShowRewindExplorer(false);
-      setActiveCommand(null);
+      store.setState({ activeCommand: null });
       clearCommandInput();
-      // Fire `/rewind <idx>` through the normal command pipeline so the
-      // rewindAction effect handles the clone + session load.
-      void handleUserInput(`/rewind ${rowId}`);
+      await handleUserInput(`/rewind ${rowId}`);
+      await store.getState().processQueue();
     },
-    [
-      setShowRewindExplorer,
-      setActiveCommand,
-      clearCommandInput,
-      handleUserInput,
-    ]
+    [setShowRewindExplorer, clearCommandInput, handleUserInput, store]
   );
 
   // Resume the chosen session via the store's resumeSession action, which fires
@@ -256,26 +250,30 @@ export function useBackendPanelHandlers() {
   }, [kiro]);
 
   const handleTangentSelect = useCallback(
-    (sessionId: string, title: string) => {
+    async (sessionId: string, title: string) => {
       setShowTangentExplorer(false);
-      setActiveCommand(null);
+      store.setState({ activeCommand: null });
       clearCommandInput();
       // A picker selects a session, so switch to that exact session id (root,
       // sibling, or descendant) — never round-trip through a title/bare command.
       // Selecting the row you're already on is a no-op.
       const decision = resolveTangentSelection(sessionId, kiro.sessionId);
-      if (decision.action === 'noop') return;
-      void dispatchSlashCommand(
+      if (decision.action === 'noop') {
+        await store.getState().processQueue();
+        return;
+      }
+      await dispatchSlashCommand(
         `/tangent ${decision.sessionId}`,
         `/tangent ${title}`
       );
+      await store.getState().processQueue();
     },
     [
       setShowTangentExplorer,
-      setActiveCommand,
       clearCommandInput,
       dispatchSlashCommand,
       kiro,
+      store,
     ]
   );
 

@@ -374,6 +374,7 @@ export type { SpecConfig } from '../utils/spec-config.js';
 import { formatImageLabel } from '../utils/image-label.js';
 import { spliceSteerLine, removeSteerLine } from '../utils/queue-navigation.js';
 import { workflowStore } from './workflow-store.js';
+import { hasBlockingCommandInteraction } from './ui-interaction.js';
 import { summarizeWorkflowRuns } from './workflow-view-model.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
 import { collectCloudAttachments } from '../utils/cloud-attach.js';
@@ -2467,9 +2468,8 @@ function extractTaskState(
  * want to surface a success should call ctx.announceSystem). activeCommand is
  * cleared only on warn/error: the dispatcher's success path fires showAlert with
  * the result message even when nothing visible happened, and clearing
- * unconditionally would clobber a menu a queued slash command just opened
- * mid-drain (e.g. /agent swap → queued /verbosity opens its picker → success
- * alert clears it). A failed command's menu shouldn't linger over its error.
+ * unconditionally would clobber a menu opened by a queued command with
+ * arguments. A failed command's menu shouldn't linger over its error.
  */
 function applyLiteAlertRouting(
   ctx: CommandContext,
@@ -2569,6 +2569,17 @@ function recordBusySlashCommandInvocation(
   }
 }
 
+function resumeQueueAfterInteraction(
+  get: StoreApi<AppState & AppActions>['getState']
+): void {
+  queueMicrotask(() => {
+    const state = get();
+    if (state.queuedMessages.length > 0 && !state.commandInputValue.trim()) {
+      void state.processQueue();
+    }
+  });
+}
+
 /** Build a CommandContext from the current AppState + setter. */
 export function buildCommandContext(
   state: AppState & AppActions,
@@ -2654,7 +2665,10 @@ export function buildCommandContext(
     setTangentName: state.setTangentName,
     setShowWorkflowHistory: (show, runs = []) => {
       if (show) workflowStore.getState().openWorkflowHistory(runs);
-      else workflowStore.getState().closeWorkflowHistory();
+      else {
+        workflowStore.getState().closeWorkflowHistory();
+        resumeQueueAfterInteraction(get);
+      }
     },
     getLocalWorkflowRuns: () => {
       const workflowState = workflowStore.getState();
@@ -2899,7 +2913,10 @@ export const createAppStore = (props: AppStoreProps) => {
         description:
           '(moved to /settings theme) Select a theme that looks best for your terminal',
         source: 'local' as const,
-        meta: { local: true, hidden: agentEngine === 'kas' },
+        meta: {
+          local: true,
+          hidden: agentEngine === 'kas',
+        },
       },
       {
         // /lite and /tui are the symmetric session swaps. The handlers route
@@ -6255,6 +6272,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setActiveCommand: (command: ActiveCommand | null) => {
       set({ activeCommand: command });
+      if (command == null) resumeQueueAfterInteraction(get);
     },
 
     setCommandInput: (value: string) => {
@@ -6342,6 +6360,9 @@ export const createAppStore = (props: AppStoreProps) => {
       applyLiteAlertRouting(ctx, state, set);
 
       await executeCommandWithArg(cmdName, arg, ctx);
+      if (get().queuedMessages.length > 0) {
+        await get().processQueue();
+      }
     },
 
     resumeSession: async (sessionId, environment) => {
@@ -6383,6 +6404,11 @@ export const createAppStore = (props: AppStoreProps) => {
         uiMode,
         isProcessing,
       } = get();
+      const gateCommands = liteGateCommands(get());
+      const isKnownSlashCommand = isKnownSlashCommandToken(
+        trimmed,
+        gateCommands
+      );
 
       // Lite local queue: it renders pending entries from `queuedMessages`
       // (the "(N queued)" strip) and drains them via processQueue. Keep BOTH
@@ -6394,11 +6420,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // matches TUI steering. Routing a slash command — or a message during a
       // resume window where sessionId is stale/absent and there's no turn to
       // drain into — to steerMessage would silently lose it.
-      if (
-        uiMode === 'lite' &&
-        (!isProcessing ||
-          isKnownSlashCommandToken(trimmed, liteGateCommands(get())))
-      ) {
+      if (uiMode === 'lite' && (!isProcessing || isKnownSlashCommand)) {
         set((state) => ({
           queuedMessages: [...state.queuedMessages, trimmed],
         }));
@@ -6453,6 +6475,7 @@ export const createAppStore = (props: AppStoreProps) => {
         await cancelInProgress;
       }
 
+      const queueState = get();
       const {
         isProcessing,
         isCompacting,
@@ -6460,13 +6483,20 @@ export const createAppStore = (props: AppStoreProps) => {
         _observerQueueBlocked,
         pendingSteerContent,
         queuedMessages,
-      } = get();
+      } = queueState;
 
       // Observer auth/session failures require recovery before queued work resumes.
       if (_observerQueueBlocked) return;
 
-      // Don't drain while the session is busy (prevents double-send races).
-      if (isProcessing || isCompacting || loadingMessage) return;
+      // Don't drain while the session or a command-owned interaction is busy.
+      if (
+        isProcessing ||
+        isCompacting ||
+        loadingMessage ||
+        hasBlockingCommandInteraction(queueState) ||
+        workflowStore.getState().history.isOpen
+      )
+        return;
 
       // Only a backend-dropped cancel redirect may replay as a prompt.
       if (pendingSteerContent != null && get()._steerReplayArmed) {
@@ -6511,18 +6541,11 @@ export const createAppStore = (props: AppStoreProps) => {
       // following a queued /tui must still dispatch as a slash command
       // even though the swap put us in TUI mode mid-drain.
       const isSlash = nextMessage.startsWith('/');
-      if (
-        isSlash &&
-        isKnownSlashCommandToken(nextMessage, liteGateCommands(get()))
-      ) {
-        // Emit a scrollback marker so users have a record that a queued
-        // slash command ran. Most painful for picker-opening commands
-        // (/model, /agent, /effort, /theme, /chat): if the user dismisses
-        // the picker with Esc, no announcement lands and scrollback
-        // contains no evidence the queued command fired at all. The row
-        // is dim-styled so it reads as a turn-boundary marker; lite
-        // renders it inline in scrollback, modern TUI surfaces it in the
-        // conversation view — both are useful.
+      const gateCommands = liteGateCommands(get());
+      const isKnownSlashCommand =
+        isSlash && isKnownSlashCommandToken(nextMessage, gateCommands);
+      if (isKnownSlashCommand) {
+        // Keep a durable record when a queued slash command runs.
         set((state) => ({
           messages: [
             ...state.messages,
@@ -7712,7 +7735,10 @@ export const createAppStore = (props: AppStoreProps) => {
       const added = selected.filter((repo) => !previous.includes(repo));
       const removed = previous.filter((repo) => !selected.includes(repo));
       const instruction = formatRepoChangeInstruction(added, removed);
-      if (!instruction) return;
+      if (!instruction) {
+        resumeQueueAfterInteraction(get);
+        return;
+      }
       const preTurnMessageCount = get().messages.length;
       // sendMessage silently queues (early-returns) instead of firing when a
       // turn is already in flight; a queued instruction leaves the inspected
@@ -7725,7 +7751,10 @@ export const createAppStore = (props: AppStoreProps) => {
         !get().isCompacting &&
         !get().loadingMessage;
       await get().sendMessage(instruction);
-      if (!turnFired) return;
+      if (!turnFired) {
+        resumeQueueAfterInteraction(get);
+        return;
+      }
       // Roll back only on evidence the work didn't happen: no tool in the
       // turn succeeded AND something failed. Error flags alone are unreliable
       // — a phantom session error can land during a turn whose clones all
@@ -7752,9 +7781,13 @@ export const createAppStore = (props: AppStoreProps) => {
           status: 'warning',
           autoHideMs: 8000,
         });
+        resumeQueueAfterInteraction(get);
         return;
       }
-      if (!anyToolFailed) return;
+      if (!anyToolFailed) {
+        resumeQueueAfterInteraction(get);
+        return;
+      }
       // Mixed outcome: some tools succeeded, some failed. Settle each
       // requested repo against the tools that mention it so a failed clone
       // never stays in the footer behind an unrelated success.
@@ -7772,7 +7805,10 @@ export const createAppStore = (props: AppStoreProps) => {
                 : undefined,
         }))
       );
-      if (reconciled === selected) return;
+      if (reconciled === selected) {
+        resumeQueueAfterInteraction(get);
+        return;
+      }
       logger.warn('[repo-attach] reconciling footer after partial failure', {
         selected,
         reconciled,
@@ -7793,6 +7829,7 @@ export const createAppStore = (props: AppStoreProps) => {
         status: 'warning',
         autoHideMs: 8000,
       });
+      resumeQueueAfterInteraction(get);
     },
 
     setCloudProviderChecked: (cloudProviderChecked) =>
@@ -7840,6 +7877,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowThemePanel: (show) => {
       set({ showThemePanel: show });
+      if (!show) resumeQueueAfterInteraction(get);
     },
 
     setShowStatusLinePanel: (show: boolean) => {
@@ -7847,6 +7885,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
     setShowCloudQuitPrompt: (show) => {
       set({ showCloudQuitPrompt: show });
+      if (!show) resumeQueueAfterInteraction(get);
     },
 
     setShowSettingsPanel: (show) => {
@@ -8081,6 +8120,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
     closeArtifactView: () => {
       set({ artifactViewOpen: null });
+      resumeQueueAfterInteraction(get);
     },
 
     moveArtifactCursor: (direction: 'prev' | 'next') => {
@@ -8367,6 +8407,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
     closeSurveyPanel: () => {
       set({ showSurveyPanel: false, activeSurvey: null });
+      resumeQueueAfterInteraction(get);
     },
 
     submitSurvey: (answers) => {
@@ -8413,6 +8454,7 @@ export const createAppStore = (props: AppStoreProps) => {
           autoHideMs: 3000,
         },
       }));
+      resumeQueueAfterInteraction(get);
 
       // Fire-and-forget ingestion.
       const metadata = {

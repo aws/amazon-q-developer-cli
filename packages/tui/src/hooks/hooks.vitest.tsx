@@ -443,6 +443,54 @@ describe('useBackendPanelHandlers', () => {
 
     expect(store.getState().contextBreakdown).toBe(freshBreakdown);
   });
+
+  test('drains only after a rewind selection dispatch completes', async () => {
+    const order: string[] = [];
+    const store = createAppStore({ kiro: {} as any });
+    store.setState({
+      activeCommand: {
+        command: { name: '/rewind', description: 'Rewind' },
+        options: [],
+      },
+      handleUserInput: vi.fn(async () => {
+        order.push('dispatch');
+      }),
+      processQueue: vi.fn(async () => {
+        order.push('drain');
+      }),
+    });
+    const handlers = await renderHookInStore(useBackendPanelHandlers, store);
+
+    await handlers.handleRewindSelect('turn-1');
+
+    expect(order).toEqual(['dispatch', 'drain']);
+    expect(store.getState().activeCommand).toBeNull();
+  });
+
+  test('drains only after a tangent selection dispatch completes', async () => {
+    const order: string[] = [];
+    const store = createAppStore({
+      kiro: { sessionId: 'current' } as any,
+    });
+    store.setState({
+      activeCommand: {
+        command: { name: '/tangent', description: 'Tangent' },
+        options: [],
+      },
+      dispatchSlashCommand: vi.fn(async () => {
+        order.push('dispatch');
+      }),
+      processQueue: vi.fn(async () => {
+        order.push('drain');
+      }),
+    });
+    const handlers = await renderHookInStore(useBackendPanelHandlers, store);
+
+    await handlers.handleTangentSelect('next', 'Next');
+
+    expect(order).toEqual(['dispatch', 'drain']);
+    expect(store.getState().activeCommand).toBeNull();
+  });
 });
 
 describe('useRenderMetrics', () => {

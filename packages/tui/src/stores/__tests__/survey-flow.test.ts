@@ -202,6 +202,21 @@ describe('Survey flow integration', () => {
     ).toBe('sess-123');
   });
 
+  it('submitSurvey resumes a queue blocked by the panel', async () => {
+    const store = makeStore();
+    const processQueue = mock(async () => {});
+    store.setState({
+      showSurveyPanel: true,
+      queuedMessages: ['/tui'],
+      processQueue,
+    });
+
+    store.getState().submitSurvey({ experience: 'Good' });
+    await new Promise((resolve) => queueMicrotask(resolve));
+
+    expect(processQueue).toHaveBeenCalledTimes(1);
+  });
+
   it('dismissSurveyPrompt clears prompt bar and bumps dismiss count', () => {
     const store = makeStore();
     // Trigger notification

@@ -63,6 +63,7 @@ import {
   selectLiveWorkflowCount,
   workflowStore,
 } from '../../../stores/workflow-store.js';
+import { hasOpenBackendPanel } from '../../../stores/ui-interaction.js';
 import {
   selectBootIndicatorPhase,
   formatBootIndicator,
@@ -219,38 +220,9 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const { allowAsciiArt } = useAllowAsciiArt();
   const animationPaused = useAnimationPaused();
 
-  // Panel show-flags — needed here to build anyPanelOpen, which drives the
-  // input-area swap and gates the always-armed Esc/Ctrl+C handler.
-  const {
-    showContextBreakdown,
-    showHelpPanel,
-    showUsagePanel,
-    showMcpPanel,
-    showToolsPanel,
-    showGoalPanel,
-    showTuiPanel,
-    showStatsPanel,
-    showHooksPanel,
-    showRepoPicker,
-    showKnowledgePanel,
-    showCodePanel,
-    showChangelogPanel,
-    showMemoriesPanel,
-    showRewindExplorer,
-    showTangentExplorer,
-    tangentName,
-    showKeybindingsPanel,
-    showDisplaySettingsPanel,
-    showStatusLinePanel,
-    showThemePanel,
-    showSettingsPanel,
-    artifactViewOpen,
-    showSourceProviderGate,
-    sourceProviderSetupUrl,
-    showSessionPicker,
-    showCloudQuitPrompt,
-  } = useUIState();
-  const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
+  const { tangentName, showSourceProviderGate, sourceProviderSetupUrl } =
+    useUIState();
+  const backendPanelOpen = useAppStore(hasOpenBackendPanel);
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
   const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
   // Goal-loop state (set by `/goal`). Lite surfaces it as a status-line segment
@@ -277,33 +249,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     return () => clearInterval(id);
   }, [goalStatus]);
 
-  const anyPanelOpen =
-    showContextBreakdown ||
-    showHelpPanel ||
-    showUsagePanel ||
-    showMcpPanel ||
-    showToolsPanel ||
-    showGoalPanel ||
-    showTuiPanel ||
-    showStatsPanel ||
-    showHooksPanel ||
-    showRepoPicker ||
-    showKnowledgePanel ||
-    showCodePanel ||
-    showChangelogPanel ||
-    showMemoriesPanel ||
-    showRewindExplorer ||
-    showTangentExplorer ||
-    showKeybindingsPanel ||
-    showDisplaySettingsPanel ||
-    showStatusLinePanel ||
-    showThemePanel ||
-    showSettingsPanel ||
-    !!artifactViewOpen ||
-    showSurveyPanel ||
-    showSessionPicker ||
-    showCloudQuitPrompt ||
-    workflowHistoryOpen;
+  const anyPanelOpen = backendPanelOpen || workflowHistoryOpen;
 
   // The lite /verbosity menu renders via <CommandMenu> (not a backend panel)
   // for its live preview + truncation editor, but presents like other
