@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "A requested agent whose config was rejected reported as missing — the file and the defect are now named"
+}

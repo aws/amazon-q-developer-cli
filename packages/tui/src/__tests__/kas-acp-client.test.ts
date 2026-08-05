@@ -6411,6 +6411,71 @@ describe('MCP OAuth flow', () => {
       expect(notFound.requestedAgent).toBe('amzn-builder');
     });
 
+    it('agent not_found carries the rejected file when one claimed the id', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/customAgent/not_found']({
+        sessionId: 'test',
+        requestedAgent: 'thunder-agent',
+        fallbackAgent: 'vibe',
+        skipped: {
+          path: '/a/thunder-agent.json',
+          reasonCode: 'cli_only_agent',
+          error: 'uses fields this agent engine does not support: allowedTools',
+        },
+      });
+      const notFound = events.find((e) => e.type === 'agent_not_found');
+      expect(notFound.skipped).toEqual({
+        path: '/a/thunder-agent.json',
+        reasonCode: 'cli_only_agent',
+        error: 'uses fields this agent engine does not support: allowedTools',
+      });
+    });
+
+    it('agent not_found drops a reason code this client does not know but keeps the defect', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/customAgent/not_found']({
+        sessionId: 'test',
+        requestedAgent: 'future',
+        fallbackAgent: 'vibe',
+        skipped: {
+          path: '/a/future.json',
+          reasonCode: 'invented_later',
+          error: 'something new',
+        },
+      });
+      const notFound = events.find((e) => e.type === 'agent_not_found');
+      expect(notFound.skipped).toEqual({
+        path: '/a/future.json',
+        error: 'something new',
+      });
+    });
+
+    it('agent not_found omits skipped when the id matched no file', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const kc = (client as any).kiroClient;
+      const events: any[] = [];
+      (client as any).broadcastStreamEvent = (e: any) => events.push(e);
+      kc._extNotifHandlers['_kiro/customAgent/not_found']({
+        sessionId: 'test',
+        requestedAgent: 'typo',
+        fallbackAgent: 'vibe',
+      });
+      const notFound = events.find((e) => e.type === 'agent_not_found');
+      expect(notFound.skipped).toBeUndefined();
+    });
+
     it('backend-initiated agent switch normalizes the wire id (vibe -> default)', async () => {
       const client = new KasAcpClient();
       await client.initialize();

@@ -29,6 +29,133 @@ describe('summarizeInitErrors', () => {
     );
   });
 
+  it('agent rejected for CLI-only fields points at the command that fixes it', () => {
+    const errors: InitError[] = [
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'thunder-agent',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
+        skipped: {
+          path: '/home/user/.kiro/agents/thunder-agent.json',
+          reasonCode: 'cli_only_agent',
+          error: 'uses fields this agent engine does not support: allowedTools',
+        },
+      },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      `agent "thunder-agent" needs upgrading for this agent engine, using "${KAS_DEFAULT_AGENT_ID}" — run /upgrade-agent to convert thunder-agent.json`
+    );
+  });
+
+  it('agent rejected for an invalid config reports the file it was declared in', () => {
+    const errors: InitError[] = [
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'amzn-builder',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
+        skipped: {
+          path: '/a/AmazonBuilderCoreAIAgents-amzn-builder.json',
+          reasonCode: 'invalid_config',
+          error: 'Error: Schema validation failed: tools: Invalid input',
+        },
+      },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      `agent "amzn-builder" has an invalid config, using "${KAS_DEFAULT_AGENT_ID}" — AmazonBuilderCoreAIAgents-amzn-builder.json: Schema validation failed: tools: Invalid input`
+    );
+  });
+
+  it('reports an engine-side load failure as the engine failing, not as bad config', () => {
+    const errors: InitError[] = [
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'unlucky',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
+        skipped: {
+          path: '/a/unlucky.json',
+          reasonCode: 'internal_error',
+          error: 'EMFILE: too many open files',
+        },
+      },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      `agent "unlucky" could not be loaded by the agent engine, using "${KAS_DEFAULT_AGENT_ID}" — unlucky.json: EMFILE: too many open files`
+    );
+  });
+
+  it('unreadable agent config', () => {
+    const errors: InitError[] = [
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'locked',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
+        skipped: {
+          path: '/a/locked.json',
+          reasonCode: 'unreadable',
+          error: 'EACCES: permission denied',
+        },
+      },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      `agent "locked" config could not be read, using "${KAS_DEFAULT_AGENT_ID}" — locked.json: EACCES: permission denied`
+    );
+  });
+
+  it('falls back to a neutral verdict when the reason code is absent', () => {
+    const errors: InitError[] = [
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'mystery',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
+        skipped: { path: '/a/mystery.json', error: 'something new' },
+      },
+    ];
+    expect(summarizeInitErrors(errors)).toBe(
+      `agent "mystery" is not usable, using "${KAS_DEFAULT_AGENT_ID}" — mystery.json: something new`
+    );
+  });
+
+  it('truncates a long defect so the file name stays visible', () => {
+    const errors: InitError[] = [
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'verbose',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
+        skipped: {
+          path: '/a/verbose.json',
+          reasonCode: 'invalid_config',
+          error: `Schema validation failed: ${'x'.repeat(200)}`,
+        },
+      },
+    ];
+    const message = summarizeInitErrors(errors)!;
+    expect(message).toContain('verbose.json: Schema validation failed: ');
+    expect(message.endsWith('…')).toBe(true);
+    expect(message.length).toBeLessThan(180);
+  });
+
+  it('truncates a long defect on a code-point boundary', () => {
+    const errors: InitError[] = [
+      {
+        type: 'agent_not_found',
+        requestedAgent: 'emoji',
+        fallbackAgent: KAS_DEFAULT_AGENT_ID,
+        skipped: {
+          path: '/a/emoji.json',
+          reasonCode: 'invalid_config',
+          // The 90th code point onward is dropped; each 🚀 is two code units, so a
+          // code-unit slice would cut one in half.
+          error: `Schema validation failed: ${'🚀'.repeat(80)}`,
+        },
+      },
+    ];
+    const message = summarizeInitErrors(errors)!;
+    expect(message.endsWith('…')).toBe(true);
+    expect(message).not.toContain('\ufffd');
+    // No lone surrogate survived the cut.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(message)).toBe(false);
+  });
+
   it('single agent config error with path', () => {
     const errors: InitError[] = [
       {

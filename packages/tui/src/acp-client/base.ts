@@ -24,6 +24,7 @@ import {
   type ApprovalRequestEvent,
   type KiroMeta,
   type MeteringUsage,
+  type RejectedAgentConfig,
 } from '../types/agent-events';
 import type {
   CommandOptionsResponse,
@@ -69,6 +70,38 @@ function parseMcpTitle(
 ): { serverName: string; toolName: string } | undefined {
   const match = title?.match(/^@([^/]+)\/(.+)$/);
   return match ? { serverName: match[1]!, toolName: match[2]! } : undefined;
+}
+
+const AGENT_REJECTION_REASONS = new Set([
+  'cli_only_agent',
+  'invalid_config',
+  'unreadable',
+  'internal_error',
+]);
+
+/**
+ * Read the rejected-file detail off an agent not-found notification. A backend
+ * that doesn't send it, or sends it without the two fields worth showing,
+ * yields undefined — which reads as "no file claimed that id".
+ */
+function parseRejectedAgentConfig(
+  value: unknown
+): RejectedAgentConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.path !== 'string' || typeof raw.error !== 'string') {
+    return undefined;
+  }
+  const reasonCode =
+    typeof raw.reasonCode === 'string' &&
+    AGENT_REJECTION_REASONS.has(raw.reasonCode)
+      ? (raw.reasonCode as RejectedAgentConfig['reasonCode'])
+      : undefined;
+  return {
+    path: raw.path,
+    error: raw.error,
+    ...(reasonCode ? { reasonCode } : {}),
+  };
 }
 
 /**
@@ -1146,10 +1179,12 @@ export abstract class BaseAcpClient implements SessionClient {
   }
 
   protected handleAgentNotFound(params: Record<string, unknown>) {
+    const skipped = parseRejectedAgentConfig(params.skipped);
     this.broadcastStreamEvent({
       type: AgentEventType.AgentNotFound,
       requestedAgent: (params.requestedAgent as string) ?? '',
       fallbackAgent: (params.fallbackAgent as string) ?? '',
+      ...(skipped ? { skipped } : {}),
     });
   }
 

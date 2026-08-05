@@ -1390,6 +1390,42 @@ describe('Stream event handler — AgentNotFound', () => {
     expect(store.getState().initErrors).toHaveLength(1);
     expect(store.getState().initErrors[0].type).toBe('agent_not_found');
   });
+
+  it('carries the rejected file through to the alert the user reads', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.AgentNotFound,
+      requestedAgent: 'thunder-agent',
+      fallbackAgent: KAS_DEFAULT_AGENT_ID,
+      skipped: {
+        path: '/home/u/.kiro/agents/thunder-agent.json',
+        reasonCode: 'cli_only_agent',
+        error: 'uses fields this agent engine does not support: allowedTools',
+      },
+    });
+    expect(store.getState().initErrors[0].skipped?.reasonCode).toBe(
+      'cli_only_agent'
+    );
+    // The whole point of the detail is that it reaches the user, not just the store.
+    expect(store.getState().transientAlert?.message).toBe(
+      `agent "thunder-agent" needs upgrading for this agent engine, using "${KAS_DEFAULT_AGENT_ID}" — run /upgrade-agent to convert thunder-agent.json`
+    );
+  });
+
+  it('leaves the message as plain not-found when no file claimed the id', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.AgentNotFound,
+      requestedAgent: 'really-not-here',
+      fallbackAgent: KAS_DEFAULT_AGENT_ID,
+    });
+    expect(store.getState().initErrors[0].skipped).toBeUndefined();
+    expect(store.getState().transientAlert?.message).toBe(
+      `agent "really-not-here" not found, using "${KAS_DEFAULT_AGENT_ID}"`
+    );
+  });
 });
 
 describe('Stream event handler — AgentConfigError', () => {

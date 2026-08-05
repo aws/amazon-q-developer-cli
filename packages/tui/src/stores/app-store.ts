@@ -62,6 +62,7 @@ import {
   type ToolDiff,
   type ToolKind,
   type KasModelConfigUpdateEvent,
+  type RejectedAgentConfig,
 } from '../types/agent-events';
 import {
   resolveEffortToApply,
@@ -827,7 +828,13 @@ export interface RetryStatus {
 
 export type InitError =
   | { type: 'mcp_failure'; serverName: string; error: string }
-  | { type: 'agent_not_found'; requestedAgent: string; fallbackAgent: string }
+  | {
+      type: 'agent_not_found';
+      requestedAgent: string;
+      fallbackAgent: string;
+      /** The rejected file that claimed the id; absent means nothing claimed it. */
+      skipped?: RejectedAgentConfig;
+    }
   | { type: 'agent_config_error'; path?: string; error: string }
   | { type: 'mcp_governance_disabled'; apiFailure: boolean }
   | { type: 'web_tools_governance_disabled'; apiFailure: boolean };
@@ -933,6 +940,49 @@ export function resolveToolCallId(
   return latestToolRowFor(messages, wireId)?.id ?? wireId;
 }
 
+/** Longest defect text kept inline; the bar is one line and the file name matters more. */
+const AGENT_ERROR_DETAIL_LIMIT = 90;
+
+function truncate(text: string, limit: number): string {
+  // Code points, not code units: a defect string is user-authored, and slicing
+  // mid-surrogate would leave an unpaired half before the ellipsis.
+  const chars = Array.from(text);
+  return chars.length > limit ? `${chars.slice(0, limit - 1).join('')}…` : text;
+}
+
+/**
+ * Word the verdict on an agent the user named. Without `skipped` nothing on
+ * disk claimed the id, so it really is missing; with it the file exists and was
+ * refused, and the file name plus the defect is what makes that fixable.
+ */
+export function describeAgentNotFound(
+  requestedAgent: string,
+  fallbackAgent: string,
+  skipped?: RejectedAgentConfig
+): string {
+  if (!skipped) {
+    return `agent "${requestedAgent}" not found, using "${fallbackAgent}"`;
+  }
+  // A V2-authored profile is fixable in one step, so the remedy earns the line the
+  // unsupported-field list would have taken.
+  if (skipped.reasonCode === 'cli_only_agent') {
+    return `agent "${requestedAgent}" needs upgrading for this agent engine, using "${fallbackAgent}" — run /upgrade-agent to convert ${basename(skipped.path)}`;
+  }
+  const verdict =
+    skipped.reasonCode === 'unreadable'
+      ? 'config could not be read'
+      : skipped.reasonCode === 'invalid_config'
+        ? 'has an invalid config'
+        : skipped.reasonCode === 'internal_error'
+          ? 'could not be loaded by the agent engine'
+          : 'is not usable';
+  const detail = truncate(
+    skipped.error.replace(/^Error:\s*/, ''),
+    AGENT_ERROR_DETAIL_LIMIT
+  );
+  return `agent "${requestedAgent}" ${verdict}, using "${fallbackAgent}" — ${basename(skipped.path)}: ${detail}`;
+}
+
 /** Compute a summary message from accumulated init errors. */
 export function summarizeInitErrors(errors: InitError[]): string | null {
   if (errors.length === 0) return null;
@@ -978,7 +1028,7 @@ export function summarizeInitErrors(errors: InitError[]): string | null {
   if (agentNotFound.length > 0) {
     const e = agentNotFound[0]!;
     parts.push(
-      `agent "${e.requestedAgent}" not found, using "${e.fallbackAgent}"`
+      describeAgentNotFound(e.requestedAgent, e.fallbackAgent, e.skipped)
     );
   }
 
@@ -4791,6 +4841,7 @@ export const createAppStore = (props: AppStoreProps) => {
                   type: 'agent_not_found' as const,
                   requestedAgent: event.requestedAgent,
                   fallbackAgent: event.fallbackAgent,
+                  ...(event.skipped ? { skipped: event.skipped } : {}),
                 },
               ];
               set({ initErrors: updated });

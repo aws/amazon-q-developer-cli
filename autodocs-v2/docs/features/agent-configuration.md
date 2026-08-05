@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-07-14
-  commit: 106ed7591
+  validated: 2026-07-31
+  commit: 5e7c93bcd
   status: validated
   testable_headless: true
   category: feature
@@ -762,9 +762,23 @@ Checks JSON syntax and schema compliance.
 
 ### Issue: Agent Not Found
 
-**Symptom**: "Agent not found" error  
-**Cause**: Agent file doesn't exist or invalid name  
+**Symptom**: Warning like `agent "my-agent" not found, using "default"`  
+**Cause**: No agent file with that name exists  
 **Solution**: Check file exists in `.kiro/agents/` or `~/.kiro/agents/`. Use `kiro-cli agent list`.
+
+### Issue: Agent Config Rejected
+
+**Symptom**: Warning naming the file and a specific defect, e.g.:
+- `agent "my-agent" is not supported by this agent engine, using "default" — my-agent.json: uses fields this agent engine does not support: allowedTools`
+- `agent "my-agent" has an invalid config, using "default" — my-agent.json: Schema validation failed: tools: Invalid input`
+- `agent "my-agent" config could not be read, using "default" — my-agent.json: EACCES: permission denied`
+
+**Cause**: A config file claims the requested agent name but cannot be loaded. Reasons include:
+- `is not supported by this agent engine` — config uses fields the current engine doesn't support (e.g. `allowedTools` in KAS)
+- `has an invalid config` — JSON schema validation failed
+- `config could not be read` — file permissions or I/O error
+
+**Solution**: Fix the defect named in the warning. The fallback agent handles your prompt in the meantime.
 
 ### Issue: Invalid JSON
 

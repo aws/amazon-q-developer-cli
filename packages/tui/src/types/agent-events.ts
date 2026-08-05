@@ -822,10 +822,30 @@ export interface AgentSwitchedEvent {
   model?: string;
 }
 
+/** How a file that declared an agent failed to load. */
+export type AgentConfigRejectionReason =
+  | 'cli_only_agent'
+  | 'invalid_config'
+  | 'unreadable'
+  | 'internal_error';
+
+/** A file that claimed an agent id the backend then could not use. */
+export interface RejectedAgentConfig {
+  path: string;
+  /** Absent when the backend sent a code this client does not know. */
+  reasonCode?: AgentConfigRejectionReason;
+  error: string;
+}
+
 export interface AgentNotFoundEvent {
   type: AgentEventType.AgentNotFound;
   requestedAgent: string;
   fallbackAgent: string;
+  /**
+   * The rejected file that claimed `requestedAgent`. Absent means no file
+   * claimed it, i.e. the agent really is missing rather than defective.
+   */
+  skipped?: RejectedAgentConfig;
 }
 
 export interface AgentConfigErrorEvent {

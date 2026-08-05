@@ -1112,6 +1112,66 @@ async fn emit_kas_noninteractive_turn(
     }
 }
 
+/// A file that claimed a requested agent id and was refused by the backend.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RejectedAgentConfig {
+    path: String,
+    reason_code: Option<String>,
+    error: String,
+}
+
+/// The backend's verdict on an agent the user named.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentNotFoundParams {
+    #[serde(default)]
+    requested_agent: String,
+    #[serde(default)]
+    fallback_agent: String,
+    skipped: Option<RejectedAgentConfig>,
+}
+
+impl AgentNotFoundParams {
+    /// A file is named only when one claimed the id and was refused; nothing
+    /// named means nothing on disk claimed it, so the agent really is missing.
+    fn describe(&self) -> String {
+        // The KAS wire id for the default agent is "vibe"; users know it as "default".
+        let fallback = match self.fallback_agent.as_str() {
+            "vibe" => "default",
+            other => other,
+        };
+        let Some(skipped) = self.skipped.as_ref() else {
+            return format!("agent \"{}\" not found, using \"{fallback}\"", self.requested_agent);
+        };
+        let file = std::path::Path::new(&skipped.path)
+            .file_name()
+            .map_or(skipped.path.as_str(), |name| {
+                name.to_str().unwrap_or(skipped.path.as_str())
+            });
+        // A V2-authored profile is fixable in one step, so the remedy earns the line the
+        // unsupported-field list would have taken.
+        if skipped.reason_code.as_deref() == Some("cli_only_agent") {
+            return format!(
+                "agent \"{}\" needs upgrading for this agent engine, using \"{fallback}\" — run /upgrade-agent to convert {file}",
+                self.requested_agent
+            );
+        }
+        let verdict = match skipped.reason_code.as_deref() {
+            Some("unreadable") => "config could not be read",
+            Some("invalid_config") => "has an invalid config",
+            Some("internal_error") => "could not be loaded by the agent engine",
+            _ => "is not usable",
+        };
+        format!(
+            "agent \"{}\" {verdict}, using \"{fallback}\" — {}: {}",
+            self.requested_agent,
+            file,
+            skipped.error.strip_prefix("Error: ").unwrap_or(&skipped.error)
+        )
+    }
+}
+
 /// Drive a non-interactive V2 or V3 session.
 #[allow(clippy::too_many_arguments)]
 async fn launch_acp_non_interactive(
@@ -1260,7 +1320,18 @@ async fn launch_acp_non_interactive(
             chat_cli_v2::auth::kas_token::handle_ext_method(args).await
         }
 
-        async fn ext_notification(&self, _args: acp::ExtNotification) -> acp::Result<()> {
+        async fn ext_notification(&self, args: acp::ExtNotification) -> acp::Result<()> {
+            // A requested agent that didn't resolve is otherwise invisible here: the
+            // fallback answers the prompt and the run exits 0, so a script's output
+            // silently comes from the wrong agent. The leading `_` of the wire method
+            // is stripped before dispatch.
+            if matches!(
+                args.method.as_ref(),
+                "kiro/customAgent/not_found" | "kiro.dev/agent/not_found"
+            ) && let Ok(params) = serde_json::from_str::<AgentNotFoundParams>(args.params.get())
+            {
+                eprintln!("[warn] {}", params.describe());
+            }
             Ok(())
         }
     }
@@ -1858,5 +1929,99 @@ mod tests {
             .expect("userAgentTags should be a JSON array");
         let tags: Vec<&str> = tags.iter().filter_map(|v| v.as_str()).collect();
         assert_eq!(tags, vec!["app/AmazonQ-For-CLI"]);
+    }
+
+    fn agent_verdict(params: serde_json::Value) -> String {
+        serde_json::from_value::<AgentNotFoundParams>(params)
+            .expect("notification params should deserialize")
+            .describe()
+    }
+
+    #[test]
+    fn agent_not_found_without_a_rejected_file_reads_as_missing() {
+        // Nothing on disk claimed the id, so "not found" is the truthful verdict.
+        let verdict = agent_verdict(serde_json::json!({
+            "requestedAgent": "typo",
+            "fallbackAgent": "vibe",
+        }));
+        assert_eq!(verdict, "agent \"typo\" not found, using \"default\"");
+    }
+
+    #[test]
+    fn cli_only_agent_points_at_the_command_that_fixes_it() {
+        // The unsupported-field list is diagnostic; /upgrade-agent converts the file in one step.
+        let verdict = agent_verdict(serde_json::json!({
+            "requestedAgent": "thunder-agent",
+            "fallbackAgent": "vibe",
+            "skipped": {
+                "path": "/home/u/.kiro/agents/thunder-agent.json",
+                "reasonCode": "cli_only_agent",
+                "error": "Agent profile uses fields this agent engine does not support: allowedTools",
+            },
+        }));
+        assert_eq!(
+            verdict,
+            "agent \"thunder-agent\" needs upgrading for this agent engine, using \"default\" — run /upgrade-agent to convert thunder-agent.json"
+        );
+    }
+
+    #[test]
+    fn agent_rejection_names_the_file_and_the_defect_per_reason() {
+        let cases = [
+            ("invalid_config", "has an invalid config"),
+            ("unreadable", "config could not be read"),
+            ("internal_error", "could not be loaded by the agent engine"),
+            ("invented_later", "is not usable"),
+        ];
+        for (reason_code, verdict) in cases {
+            let message = agent_verdict(serde_json::json!({
+                "requestedAgent": "amzn-builder",
+                "fallbackAgent": "vibe",
+                "skipped": {
+                    "path": "/home/u/.kiro/agents/Team-amzn-builder.json",
+                    "reasonCode": reason_code,
+                    "error": "Schema validation failed: tools: Invalid input",
+                },
+            }));
+            assert_eq!(
+                message,
+                format!(
+                    "agent \"amzn-builder\" {verdict}, using \"default\" — Team-amzn-builder.json: Schema validation failed: tools: Invalid input"
+                ),
+                "reasonCode {reason_code} should read as {verdict}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_rejection_tolerates_a_backend_that_sends_no_reason_code() {
+        let verdict = agent_verdict(serde_json::json!({
+            "requestedAgent": "mystery",
+            "fallbackAgent": "vibe",
+            "skipped": { "path": "mystery.json", "error": "something new" },
+        }));
+        assert_eq!(
+            verdict,
+            "agent \"mystery\" is not usable, using \"default\" — mystery.json: something new"
+        );
+    }
+
+    #[test]
+    fn agent_rejection_drops_the_redundant_error_prefix_and_keeps_a_non_kas_fallback() {
+        // `Error: ` is how the backend stringifies a thrown error; the reader gains nothing from it.
+        // A fallback that isn't the KAS default id passes through untranslated.
+        let verdict = agent_verdict(serde_json::json!({
+            "requestedAgent": "zeta-notes",
+            "fallbackAgent": "my-other-agent",
+            "skipped": {
+                "path": "/a/b/zeta-notes.md",
+                "reasonCode": "invalid_config",
+                "error": "Error: No front matter found",
+            },
+        }));
+        assert_eq!(
+            verdict,
+            "agent \"zeta-notes\" has an invalid config, using \"my-other-agent\" — zeta-notes.md: No front matter found"
+        );
     }
 }
