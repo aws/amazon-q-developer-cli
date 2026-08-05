@@ -3,9 +3,10 @@ Copyright Amazon.com, Inc. or its affiliates.
 
 This product includes software developed at Amazon.com, Inc.
 
-It also redistributes the following third-party pre-trained machine-learning
-model artifacts, which are governed by their upstream licenses. See
-docs/third-party-models.md for context, download paths, and CDN details.
+It also redistributes third-party components governed by their upstream
+licenses: pre-trained machine-learning model artifacts (see
+docs/third-party-models.md for context, download paths, and CDN details),
+followed by third-party native libraries compiled into binary dependencies.
 
 --------------------------------------------------------------------------
 
@@ -42,7 +43,87 @@ OpenAI Whisper model weights, converted to GGML format by whisper.cpp
 
 --------------------------------------------------------------------------
 
+Bundled native libraries (onnxruntime-node)
+
+  Kiro CLI depends on the onnxruntime-node package (pulled in transitively via
+  @huggingface/transformers) for semantic-search embeddings. Its native
+  library, libonnxruntime.so, is built from ONNX Runtime 1.21.0 and statically
+  incorporates the third-party C/C++ libraries listed below. These libraries
+  are not visible to package.json or Cargo.lock, so they are attributed here.
+  All are redistributed unmodified.
+
+  ONNX Runtime 1.21.0 — MIT (see LICENSE.MIT)
+    Copyright (c) Microsoft Corporation
+    https://github.com/microsoft/onnxruntime
+
+  Eigen — Mozilla Public License 2.0 (see LICENSE.MPL); some files are under
+  BSD-3-Clause, Apache-2.0, or the Minpack license (see the upstream COPYING.*
+  files at the source below)
+    Copyright (c) the Eigen authors
+    Source (redistributed unmodified):
+      https://gitlab.com/libeigen/eigen
+      commit 1d8b82b0740839c0de7f1242a3585e3390ff5f33 (3.4 branch)
+
+  abseil-cpp 20240722.0 — Apache-2.0 (see LICENSE.APACHE)
+    Copyright The Abseil Authors
+    https://github.com/abseil/abseil-cpp
+
+  HowardHinnant/date 3.0.1 — MIT (see LICENSE.MIT)
+    Copyright (c) Howard Hinnant and contributors
+    https://github.com/HowardHinnant/date
+
+  FlatBuffers 23.5.26 — Apache-2.0 (see LICENSE.APACHE)
+    Copyright (c) Google Inc.
+    https://github.com/google/flatbuffers
+
+  Microsoft GSL 4.0.0 — MIT (see LICENSE.MIT)
+    Copyright (c) 2015 Microsoft Corporation
+    https://github.com/microsoft/GSL
+
+  Boost.MP11 (boost-1.82.0) — Boost Software License 1.0 (see LICENSE.BSL-1.0)
+    Copyright Peter Dimov and contributors
+    https://github.com/boostorg/mp11
+
+  nlohmann/json 3.11.3 — MIT (see LICENSE.MIT)
+    Copyright (c) 2013-2022 Niels Lohmann
+    https://github.com/nlohmann/json
+
+  ONNX 1.17.0 — Apache-2.0 (see LICENSE.APACHE)
+    Copyright The ONNX Authors
+    https://github.com/onnx/onnx
+
+  Protocol Buffers 21.12 — BSD-3-Clause (see LICENSE.BSD-3-CLAUSE)
+    Copyright 2008 Google Inc.
+    https://github.com/protocolbuffers/protobuf
+
+  utf8_range — MIT (see LICENSE.MIT)
+    Copyright (c) 2019 Yibo Cai; Copyright 2022 Google LLC
+    https://github.com/protocolbuffers/utf8_range
+
+  pytorch/cpuinfo (incl. bundled clog) — BSD-2-Clause (see LICENSE.BSD-2-CLAUSE)
+    Copyright (c) 2019 Google LLC; 2017-2018 Facebook Inc.;
+      2012-2017 Georgia Institute of Technology
+    clog: Copyright (C) 2018 Marat Dukhan; 2017-2018 Facebook Inc.;
+      2017 Georgia Institute of Technology
+    https://github.com/pytorch/cpuinfo
+
+  RE2 (2024-07-02) — BSD-3-Clause (see LICENSE.BSD-3-CLAUSE)
+    Copyright (c) 2009 The RE2 Authors
+    https://github.com/google/re2
+
+  SafeInt 3.0.28 — MIT (see LICENSE.MIT)
+    Copyright (c) 2018 Microsoft
+    https://github.com/dcleblanc/SafeInt
+
+  node-addon-api — MIT (see LICENSE.MIT)
+    Copyright (c) 2017 Node.js API collaborators
+    https://github.com/nodejs/node-addon-api
+
+--------------------------------------------------------------------------
+
 Software crate and package dependencies (Rust via Cargo, TypeScript via
 Bun/npm) are enumerated by their respective package manifests and are not
 re-listed here. See Cargo.lock and each package's package.json + LICENSE
-distribution for their attribution.
+distribution for their attribution. The exception is the native C/C++
+libraries statically compiled into the onnxruntime-node binary dependency,
+which are not visible to those manifests and are attributed above.

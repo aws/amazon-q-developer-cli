@@ -82,6 +82,29 @@ model is `base`.
 
 ---
 
+## Native libraries (not model artifacts)
+
+Separate from the model artifacts above, Kiro CLI also redistributes native
+C/C++ libraries that are statically compiled into a binary dependency:
+`libonnxruntime.so`, shipped by the `onnxruntime-node` package (pulled in
+transitively via `@huggingface/transformers`) and built from ONNX Runtime
+1.21.0. Because those bundled libraries are not visible to `package.json`,
+`Cargo.lock`, or the Rust `deny.toml` license scan, they are attributed
+explicitly in [`../NOTICE`](../NOTICE) under "Bundled native libraries".
+
+Most are permissive (MIT / Apache-2.0 / BSD / BSL-1.0). The one weak-copyleft
+component is **Eigen (MPL-2.0)**, redistributed unmodified; per the Open Source
+Distribution process this requires attribution plus a link to the upstream
+source, both recorded in `NOTICE`. Full license texts live in the repository
+root: `LICENSE.MPL`, `LICENSE.APACHE`, `LICENSE.MIT`, `LICENSE.BSD-3-CLAUSE`,
+`LICENSE.BSD-2-CLAUSE`, and `LICENSE.BSL-1.0`.
+
+For AL2 targets these libraries are rebuilt from source (glibc floor) by the
+`Node22Al2StandalonePublish` pipeline; the bundled component set and their
+licenses are identical regardless of who compiles them.
+
+---
+
 If you find a model that Kiro CLI downloads at runtime and isn't listed
 here, or an upstream license has changed, please open a PR against this
 file and `NOTICE`.
