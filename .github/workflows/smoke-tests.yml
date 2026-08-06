@@ -661,3 +661,11 @@ jobs:
           RUN_REASON: ${{ inputs.reason || 'scheduled' }}
           VERDICT_FILE: ${{ github.workspace }}/evidence/judge-verdict.json
         run: bash scripts/smoke-slack-report.sh || true
+
+      - name: Cut CTI ticket on failure
+        if: always()
+        shell: bash
+        env:
+          SMOKE_TICKETY_ENABLED: ${{ vars.SMOKE_TICKETY_ENABLED }}
+          VERDICT_FILE: ${{ github.workspace }}/evidence/judge-verdict.json
+        run: bash scripts/smoke-cut-ticket.sh || true
