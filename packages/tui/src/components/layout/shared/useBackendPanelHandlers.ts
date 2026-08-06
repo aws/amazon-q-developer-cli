@@ -23,7 +23,6 @@ export function useBackendPanelHandlers() {
   const {
     setShowContextBreakdown,
     setShowHelpPanel,
-    setShowTuiPanel,
     setShowGoalPanel,
     setShowUsagePanel,
     setShowMcpPanel,
@@ -88,7 +87,6 @@ export function useBackendPanelHandlers() {
     handleCloseContextBreakdown: makeClose(setShowContextBreakdown),
     handleCloseUsagePanel: makeClose(setShowUsagePanel),
     handleCloseHelpPanel: makeClose(setShowHelpPanel),
-    handleCloseTuiPanel: makeClose(setShowTuiPanel),
     handleCloseGoalPanel: makeClose(setShowGoalPanel),
     handleCloseMcpPanel: makeClose(setShowMcpPanel),
     handleCloseToolsPanel: makeClose(setShowToolsPanel),

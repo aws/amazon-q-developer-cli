@@ -9,9 +9,10 @@ import { Settings } from '../../constants/settings.js';
 import {
   readBoolSetting,
   readStringSetting,
-  readCliSettings,
-  writeCliSettings,
 } from '../../utils/cli-settings.js';
+import { persistUiModeDefault } from '../../utils/ui-mode-default.js';
+import type { UiMode } from '../../types/ui-mode.js';
+import { ModeChangeSource } from '../../types/generated/chat-cli.js';
 import {
   useGlyphs,
   useAllowAsciiArt,
@@ -37,11 +38,6 @@ interface ToggleItem {
 }
 
 const THINKING_MODES: ThinkingMode[] = ['collapsed', 'expanded', 'off'];
-
-/** Normalize the persisted chat.ui.mode setting for telemetry payloads. */
-function normalizeUiModeForTelemetry(raw: string): 'lite' | 'tui' | 'unset' {
-  return raw === 'lite' || raw === 'tui' ? raw : 'unset';
-}
 
 /** In-cohort, thinking display lives in /verbosity; off-cohort /verbosity is
  *  gated away, so restore the mainline "Show thinking" Display row there. */
@@ -134,6 +130,7 @@ export function selectDisplayItems(rolloutEnabled: boolean): ToggleItem[] {
 }
 
 interface DisplaySettingsPanelProps {
+  surface: UiMode;
   onClose: () => void;
   onDismiss?: () => void;
   /** Hands off to the status-line panel, which replaces this one. */
@@ -141,6 +138,7 @@ interface DisplaySettingsPanelProps {
 }
 
 export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
+  surface,
   onClose,
   onDismiss,
   onOpenStatusLine,
@@ -184,6 +182,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
     )
   );
   const kiro = useAppStore((state) => state.kiro);
+  const setUiMode = useAppStore((state) => state.setUiMode);
   const fromSettings = useAppStore((state) => state.settingsReturnOnEscape);
   const setTerminalTitleEnabled = useAppStore(
     (state) => state.setTerminalTitleEnabled
@@ -197,23 +196,17 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
         const next =
           item.cycle[(item.cycle.indexOf(cur) + 1) % item.cycle.length]!;
         if (key === Settings.CHAT_UI_MODE) {
-          // Default UI: dual-write (cli.json + ACP setSetting) so the next
-          // session boots into the chosen layout, plus emit the
-          // uiModeDefaultChanged telemetry event when the value actually
-          // changes. Mirrors the dispatch the old `/settings default-ui:<mode>`
-          // handler used to do — only the entry point moved into this panel.
-          const previous = normalizeUiModeForTelemetry(cur);
-          const settings = readCliSettings();
-          settings[key] = next;
-          writeCliSettings(settings);
-          kiro.setSetting(key, next).catch(() => {});
-          if (previous !== next) {
-            kiro.sendUiModeDefaultChanged?.({
-              from: previous,
-              to: next as 'lite' | 'tui',
+          const nextUiMode = next as UiMode;
+          if (surface !== nextUiMode) {
+            setUiMode(nextUiMode);
+            kiro.sendUiModeChanged({
+              from: surface,
+              to: nextUiMode,
+              source: ModeChangeSource.SettingsPanel,
               sessionId: kiro.sessionId,
             });
           }
+          persistUiModeDefault(nextUiMode, kiro);
         } else if (key === Settings.CHAT_SHOW_THINKING) {
           // Persist through the verbosity store so the version bump re-resolves
           // useGlyphs' thinkingMode live. This row is off-cohort only, where
@@ -250,6 +243,8 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
       values,
       ITEMS,
       kiro,
+      surface,
+      setUiMode,
       setAllowAsciiArt,
       setAllowAnimations,
       setAllowIcons,

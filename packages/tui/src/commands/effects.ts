@@ -9,6 +9,7 @@ import {
 } from './cloud-scrollback-reconcile.js';
 import type { CommandResult } from '../types/commands.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
+import { persistUiModeDefault } from '../utils/ui-mode-default.js';
 import { KAS_DEFAULT_AGENT_NAME } from '../constants/agents.js';
 import {
   enrichTurnsWithPreview,
@@ -1411,41 +1412,34 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
       return;
     }
     const fromMode = ctx.getUiMode?.() ?? 'tui';
-    // tui→lite clears scrollback and re-renders the full conversation in
-    // lite form (symmetric with lite→tui). setUiMode bumps the clear
-    // token; LiteLayout + ConversationView both observe it, wipe their
-    // module-level singletons, and reset twinki's cursor. The user gets
-    // consistent lite styling (You:/<agent>: headers, current verbosity,
-    // current theme) across every message rather than a half-and-half
-    // mix of TUI-styled history + lite-styled new rows.
-    const notice = '[EXPERIMENTAL] Switched to Lite UI';
     if (fromMode === 'lite') {
-      ctx.addSystemMessage(notice, true);
-    } else {
-      ctx.setUiMode?.('lite', notice);
-      ctx.kiro.sendUiModeChanged({
-        from: fromMode,
-        to: 'lite',
-        source: ModeChangeSource.SlashCommand,
-        sessionId: ctx.kiro.sessionId,
-      });
+      ctx.announceSystem('Already in the Lite UI');
+      return;
     }
+    // Cross-mode swaps re-render existing messages in the destination layout.
+    ctx.setUiMode?.('lite', '[EXPERIMENTAL] Switched to Lite UI');
+    persistUiModeDefault('lite', ctx.kiro);
+    ctx.kiro.sendUiModeChanged({
+      from: fromMode,
+      to: 'lite',
+      source: ModeChangeSource.SlashCommand,
+      sessionId: ctx.kiro.sessionId,
+    });
   },
 
   switchToTui: (_result, ctx) => {
-    // /tui from lite swaps to TUI; from TUI it falls through to the
-    // info panel (origin/main behavior). Symmetric with /lite.
-    if (ctx.getUiMode?.() === 'lite') {
-      ctx.setUiMode?.('tui', 'Switched to TUI mode');
-      ctx.kiro.sendUiModeChanged({
-        from: 'lite',
-        to: 'tui',
-        source: ModeChangeSource.SlashCommand,
-        sessionId: ctx.kiro.sessionId,
-      });
+    if (ctx.getUiMode?.() !== 'lite') {
+      ctx.announceSystem('Already in the TUI');
       return;
     }
-    ctx.setShowTuiPanel(true);
+    ctx.setUiMode?.('tui', 'Switched to TUI mode');
+    persistUiModeDefault('tui', ctx.kiro);
+    ctx.kiro.sendUiModeChanged({
+      from: 'lite',
+      to: 'tui',
+      source: ModeChangeSource.SlashCommand,
+      sessionId: ctx.kiro.sessionId,
+    });
   },
 
   /** /verbosity implementation lives in ./verbosity-menu.ts. */

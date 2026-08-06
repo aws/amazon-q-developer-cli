@@ -8,7 +8,6 @@ export function hasOpenBackendPanel(state: AppState): boolean {
     state.showMcpPanel ||
     state.showToolsPanel ||
     state.showGoalPanel ||
-    state.showTuiPanel ||
     state.showStatsPanel ||
     state.showHooksPanel ||
     state.showRepoPicker ||

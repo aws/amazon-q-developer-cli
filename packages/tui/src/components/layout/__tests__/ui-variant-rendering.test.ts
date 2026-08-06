@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import React from 'react';
 import stripAnsi from 'strip-ansi';
 import { render, type Instance, type Terminal } from 'twinki';
@@ -75,9 +78,30 @@ const approval = {
 let activeInstance: Instance | null = null;
 type VariantSurfaceName = Exclude<keyof VariantSurfaces, 'Layout'>;
 
+// /lite and /tui now persist chat.ui.mode to cli.json; redirect KIRO_HOME to a
+// throwaway dir so driving them here never touches the real user config.
+let sandboxHome: string | undefined;
+let previousKiroHome: string | undefined;
+
+beforeEach(() => {
+  previousKiroHome = process.env.KIRO_HOME;
+  sandboxHome = mkdtempSync(join(tmpdir(), 'ui-variant-kiro-home-'));
+  process.env.KIRO_HOME = sandboxHome;
+});
+
 afterEach(() => {
   activeInstance?.unmount();
   activeInstance = null;
+  if (previousKiroHome === undefined) delete process.env.KIRO_HOME;
+  else process.env.KIRO_HOME = previousKiroHome;
+  if (sandboxHome) {
+    try {
+      rmSync(sandboxHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    sandboxHome = undefined;
+  }
 });
 
 async function flush(): Promise<void> {
@@ -510,14 +534,16 @@ describe('UI variant layout rendering', () => {
       const firstNotice = output.indexOf(notice);
       const user = output.indexOf('hello there');
       const model = output.indexOf('Hello! What are we working on?');
-      const secondNotice = output.indexOf(notice, firstNotice + notice.length);
+      // /lite while already in lite is now a no-op notice, not a duplicate
+      // switch notice — it still lands chronologically in lite scrollback.
+      const alreadyNotice = output.indexOf('Already in the Lite UI');
       const tuiNotice = output.indexOf('Switched to TUI mode');
 
       expect(firstNotice).toBeGreaterThanOrEqual(0);
       expect(user).toBeGreaterThan(firstNotice);
       expect(model).toBeGreaterThan(user);
-      expect(secondNotice).toBeGreaterThan(model);
-      expect(tuiNotice).toBeGreaterThan(secondNotice);
+      expect(alreadyNotice).toBeGreaterThan(model);
+      expect(tuiNotice).toBeGreaterThan(alreadyNotice);
     } finally {
       if (previousRollout === undefined) {
         delete process.env.KIRO_LITE_ROLLOUT_ENABLED;

@@ -381,8 +381,8 @@ pub struct UiModeSessionStartNotification {
     pub session_id: Option<String>,
 }
 
-/// Telemetry payload sent when the user toggles the UI mode mid-session via `/lite` or
-/// `/tui`. Caller is responsible for skipping no-op changes (`from == to`).
+/// Telemetry payload sent when the user toggles the UI mode mid-session.
+/// Caller is responsible for skipping no-op changes (`from == to`).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
 #[notification(method = "_kiro.dev/telemetry/uiModeChanged")]
 #[typeshare]
@@ -392,8 +392,7 @@ pub struct UiModeChangedNotification {
     pub from: String,
     /// Mode after the toggle (`"lite"` or `"tui"`).
     pub to: String,
-    /// How the toggle was initiated. Today only `slashCommand`; the field is reserved
-    /// so a future keybinding entry point doesn't need a wire-format change.
+    /// How the toggle was initiated.
     pub source: ModeChangeSource,
     /// ACP session id, used as `amazonqConversationId` on the metric.
     pub session_id: Option<String>,
@@ -436,6 +435,7 @@ mod tests {
     fn test_mode_change_source_ser_deser() {
         test_ser_deser!(ModeChangeSource, ModeChangeSource::ShiftTab, "shiftTab");
         test_ser_deser!(ModeChangeSource, ModeChangeSource::SlashCommand, "slashCommand");
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::SettingsPanel, "settingsPanel");
     }
 
     #[test]

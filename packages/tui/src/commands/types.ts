@@ -154,8 +154,6 @@ export interface CommandContext {
       subcommands?: string[];
     }>
   ) => void;
-  /** Show/hide TUI info panel */
-  setShowTuiPanel: (show: boolean) => void;
   /** Show/hide changelog panel */
   setShowChangelogPanel: (show: boolean) => void;
   /** Show/hide memories panel */

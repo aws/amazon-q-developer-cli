@@ -510,7 +510,7 @@ describe('runEffect routing', () => {
     expect(ctx._spies.sendMessage!).toHaveBeenCalledWith('run this prompt');
   });
 
-  it('/tui from TUI mode opens the info panel', () => {
+  it('/tui from TUI mode is a no-op with a notice (disabled in TUI)', () => {
     const cmd: SlashCommand = {
       name: '/tui',
       description: '',
@@ -523,10 +523,12 @@ describe('runEffect routing', () => {
     runEffect(cmd, null, ctx, '');
 
     expect(ctx._spies.setUiMode!).not.toHaveBeenCalled();
-    expect(ctx._spies.setShowTuiPanel!).toHaveBeenCalledWith(true);
+    expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+      'Already in the TUI'
+    );
   });
 
-  it('/tui from lite mode switches to TUI', () => {
+  it('/tui from lite mode switches to TUI and persists the default', () => {
     const cmd: SlashCommand = {
       name: '/tui',
       description: '',
@@ -542,6 +544,8 @@ describe('runEffect routing', () => {
       'tui',
       'Switched to TUI mode'
     );
+    // Switching also makes TUI the persisted default (cli.json + ACP).
+    expect(ctx.kiro.setSetting).toHaveBeenCalledWith('chat.ui.mode', 'tui');
   });
 
   it('/lite is a no-op when KIRO_LITE_ROLLOUT_ENABLED is unset', () => {
@@ -585,9 +589,37 @@ describe('runEffect routing', () => {
         'lite',
         '[EXPERIMENTAL] Switched to Lite UI'
       );
+      // Switching also makes Lite the persisted default (cli.json + ACP).
+      expect(ctx.kiro.setSetting).toHaveBeenCalledWith('chat.ui.mode', 'lite');
       expect(ctx._spies.addSystemMessage!).not.toHaveBeenCalled();
       expect(ctx._spies.announceSystem!).not.toHaveBeenCalled();
       expect(ctx._spies.showAlert!).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
+      else process.env.KIRO_LITE_ROLLOUT_ENABLED = prev;
+    }
+  });
+
+  it('/lite from lite mode is a no-op with a notice (disabled in lite)', () => {
+    const prev = process.env.KIRO_LITE_ROLLOUT_ENABLED;
+    process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
+    try {
+      const cmd: SlashCommand = {
+        name: '/lite',
+        description: '',
+        source: 'local',
+        meta: { local: true, tuiOnly: true },
+      };
+      const ctx = createMockCommandContext();
+      (ctx as any).getUiMode = () => 'lite';
+
+      runEffect(cmd, null, ctx, '');
+
+      expect(ctx._spies.setUiMode!).not.toHaveBeenCalled();
+      expect(ctx.kiro.setSetting).not.toHaveBeenCalled();
+      expect(ctx._spies.announceSystem!).toHaveBeenCalledWith(
+        'Already in the Lite UI'
+      );
     } finally {
       if (prev === undefined) delete process.env.KIRO_LITE_ROLLOUT_ENABLED;
       else process.env.KIRO_LITE_ROLLOUT_ENABLED = prev;

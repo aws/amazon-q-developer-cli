@@ -13,6 +13,8 @@ export enum ModeChangeSource {
 	ShiftTab = "shiftTab",
 	/** User invoked a slash command (`/agent`, `/plan`). */
 	SlashCommand = "slashCommand",
+	/** User changed the active UI from the display settings panel. */
+	SettingsPanel = "settingsPanel",
 }
 
 /**
@@ -66,18 +68,15 @@ export interface SessionDataView {
 }
 
 /**
- * Telemetry payload sent when the user toggles the UI mode mid-session via `/lite` or
- * `/tui`. Caller is responsible for skipping no-op changes (`from == to`).
+ * Telemetry payload sent when the user toggles the UI mode mid-session.
+ * Caller is responsible for skipping no-op changes (`from == to`).
  */
 export interface UiModeChangedNotification {
 	/** Mode before the toggle (`"lite"` or `"tui"`). */
 	from: string;
 	/** Mode after the toggle (`"lite"` or `"tui"`). */
 	to: string;
-	/**
-	 * How the toggle was initiated. Today only `slashCommand`; the field is reserved
-	 * so a future keybinding entry point doesn't need a wire-format change.
-	 */
+	/** How the toggle was initiated. */
 	source: ModeChangeSource;
 	/** ACP session id, used as `amazonqConversationId` on the metric. */
 	sessionId?: string;
@@ -98,12 +97,7 @@ export interface UiModeDefaultChangedNotification {
 
 /**
  * Which input source resolved the UI mode at session start. The wire format is the
- * camelCase variant name. Mirrors the precedence order in `resolveUiMode` (env var >
- * persisted setting > built-in default).
- * 
- * Defined here (rather than in `chat-cli-v2`'s `agent::acp::schema`) so the portable
- * [`Event`] types can refer to it directly; `agent::acp::schema` re-exports it to keep
- * the V2 API surface unchanged.
+ * camelCase variant name.
  */
 export enum UiModeSource {
 	/** Resolved from the `KIRO_UI_MODE` env var. */

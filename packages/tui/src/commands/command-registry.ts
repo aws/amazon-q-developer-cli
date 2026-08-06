@@ -47,6 +47,8 @@ interface LocalCommandDefinition {
   inputType?: CommandMeta['inputType'];
   rollout?: 'hide-unless-lite-enabled' | 'lite-only-unless-enabled';
   hiddenInKas?: boolean;
+  liteOnly?: boolean;
+  tuiOnly?: boolean;
 }
 
 interface NonPanelCommandRegistration {
@@ -212,11 +214,12 @@ export const COMMAND_REGISTRY = {
     local: {
       description: '[EXPERIMENTAL] Switch to Lite UI',
       rollout: 'hide-unless-lite-enabled',
+      tuiOnly: true,
     },
   },
   tui: {
     effect: 'switchToTui',
-    local: { description: 'Switch to TUI mode' },
+    local: { description: 'Switch to TUI mode', liteOnly: true },
   },
   verbosity: {
     effect: 'verbosityConfig',
@@ -302,6 +305,12 @@ export function getLocalSlashCommands(
       }
       if (local.hiddenInKas && agentEngine === 'kas') {
         meta.hidden = true;
+      }
+      if (local.liteOnly) {
+        meta.liteOnly = true;
+      }
+      if (local.tuiOnly) {
+        meta.tuiOnly = true;
       }
 
       return [

@@ -1382,7 +1382,6 @@ interface BaseAppActions {
     show: boolean,
     breakdown?: ContextBreakdownData
   ) => void;
-  setShowTuiPanel: (show: boolean) => void;
   setShowChangelogPanel: (show: boolean) => void;
   setShowMemoriesPanel: (show: boolean) => void;
   setShowHelpPanel: (
@@ -2035,7 +2034,6 @@ export interface AppState {
   contextBreakdown: ContextBreakdownData | null;
   /** Raw context-usage snapshot pushed by the agent, independent of panel UI. */
   contextBreakdownCache: ContextBreakdownData | null;
-  showTuiPanel: boolean;
   showChangelogPanel: boolean;
   showMemoriesPanel: boolean;
   showHelpPanel: boolean;
@@ -2659,7 +2657,6 @@ export function buildCommandContext(
     setShowContextBreakdown: state.setShowContextBreakdown,
     getContextBreakdownCache: () => get().contextBreakdownCache,
     setShowHelpPanel: state.setShowHelpPanel,
-    setShowTuiPanel: state.setShowTuiPanel,
     setShowChangelogPanel: state.setShowChangelogPanel,
     setShowMemoriesPanel: state.setShowMemoriesPanel,
     setShowUsagePanel: state.setShowUsagePanel,
@@ -2960,7 +2957,6 @@ export const createAppStore = (props: AppStoreProps) => {
     showContextBreakdown: false,
     contextBreakdown: null,
     contextBreakdownCache: null,
-    showTuiPanel: false,
     showChangelogPanel: false,
     showMemoriesPanel: false,
     showHelpPanel: false,
@@ -6234,7 +6230,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
       const state = get();
       const ctx: CommandContext = buildCommandContext(state, set, get, {
-        showTuiPanel: false,
         showChangelogPanel: false,
         showMemoriesPanel: false,
         showCodePanel: false,
@@ -6261,7 +6256,6 @@ export const createAppStore = (props: AppStoreProps) => {
       });
       const state = get();
       const ctx: CommandContext = buildCommandContext(state, set, get, {
-        showTuiPanel: false,
         showChangelogPanel: false,
         showMemoriesPanel: false,
         showCodePanel: false,
@@ -7387,10 +7381,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setShowContextBreakdown: (show, breakdown) => {
       set({ showContextBreakdown: show, contextBreakdown: breakdown ?? null });
-    },
-
-    setShowTuiPanel: (show) => {
-      set({ showTuiPanel: show });
     },
 
     setShowChangelogPanel: (show) => {

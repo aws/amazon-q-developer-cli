@@ -21,6 +21,12 @@ describe('command registry', () => {
 
     expect(off.some((command) => command.name === '/lite')).toBe(false);
     expect(on.some((command) => command.name === '/lite')).toBe(true);
+    expect(on.find((command) => command.name === '/lite')?.meta.tuiOnly).toBe(
+      true
+    );
+    expect(on.find((command) => command.name === '/tui')?.meta.liteOnly).toBe(
+      true
+    );
     expect(
       off.find((command) => command.name === '/verbosity')?.meta.liteOnly
     ).toBe(true);

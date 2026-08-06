@@ -118,26 +118,17 @@ describe('/spec new description collection', () => {
     expect(snap).toContain('Spec setup cancelled');
   }, 30000);
 
-  it('a panel command runs without ending the step, and its esc only closes the panel', async () => {
-    testCase = await launchWithSpecCommand('spec-desc-panel-esc');
+  it('a redundant UI command no-ops without ending the step', async () => {
+    testCase = await launchWithSpecCommand('spec-desc-tui-noop');
     await armDescriptionStep(testCase);
 
     await testCase.typeAndSubmit('/tui');
     await testCase.sleepMs(400);
 
-    // The command runs and the step survives it.
-    let store = await testCase.getStore();
-    expect(store.showTuiPanel).toBe(true);
-    expect(store.pendingSpecDescription?.featureName).toBe('web-clock');
-
-    // Esc belongs to the panel here — the step must not be cancelled too.
-    await testCase.pressEscape();
-    await testCase.sleepMs(400);
-
-    store = await testCase.getStore();
-    expect(store.showTuiPanel).toBe(false);
+    const store = await testCase.getStore();
     expect(store.pendingSpecDescription?.featureName).toBe('web-clock');
     expect(store.currentAgent?.name).toBe('spec');
+    expect(testCase.getSnapshot().join('\n')).toContain('Already in the TUI');
     expect(testCase.getSnapshot().join('\n')).toContain(PLACEHOLDER);
   }, 30000);
 

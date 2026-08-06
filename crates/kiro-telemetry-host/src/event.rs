@@ -135,6 +135,8 @@ pub enum ModeChangeSource {
     ShiftTab,
     /// User invoked a slash command (`/agent`, `/plan`).
     SlashCommand,
+    /// User changed the active UI from the display settings panel.
+    SettingsPanel,
 }
 
 /// Which input source resolved the UI mode at session start. The wire format is the
@@ -612,5 +614,6 @@ mod tests {
     fn test_mode_change_source_ser_deser() {
         test_ser_deser!(ModeChangeSource, ModeChangeSource::ShiftTab, "shiftTab");
         test_ser_deser!(ModeChangeSource, ModeChangeSource::SlashCommand, "slashCommand");
+        test_ser_deser!(ModeChangeSource, ModeChangeSource::SettingsPanel, "settingsPanel");
     }
 }

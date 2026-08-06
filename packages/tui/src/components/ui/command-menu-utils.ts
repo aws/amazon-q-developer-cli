@@ -28,16 +28,18 @@ export interface PromptMenuState {
 
 /**
  * Whether a slash command should surface for the current UI mode. Hidden
- * compatibility commands never surface; liteOnly commands stay out of TUI.
+ * compatibility commands never surface; liteOnly commands stay out of TUI,
+ * tuiOnly commands stay out of lite.
  */
 export function isCommandVisibleInUiMode(
   cmd: AvailableCommand,
   uiMode: 'lite' | 'tui' | undefined
 ): boolean {
-  return (
-    cmd.meta?.hidden !== true &&
-    (uiMode === 'lite' || cmd.meta?.liteOnly !== true)
-  );
+  if (cmd.meta?.hidden === true) return false;
+  const inLite = uiMode === 'lite';
+  if (cmd.meta?.liteOnly === true && !inLite) return false;
+  if (cmd.meta?.tuiOnly === true && inLite) return false;
+  return true;
 }
 
 /**

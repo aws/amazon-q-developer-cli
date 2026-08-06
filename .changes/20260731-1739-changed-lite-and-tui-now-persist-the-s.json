@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "`/lite` and `/tui` now persist the selected mode as the default for future sessions"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "`/lite` is hidden from the command menu when already in lite mode (and vice versa for `/tui`)"
+}

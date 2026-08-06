@@ -122,7 +122,6 @@ export function createMockCommandContext(
     setShowContextBreakdown: spy('setShowContextBreakdown') as any,
     getContextBreakdownCache: opts.getContextBreakdownCache ?? (() => null),
     setShowHelpPanel: spy('setShowHelpPanel') as any,
-    setShowTuiPanel: spy('setShowTuiPanel') as any,
     setShowChangelogPanel: spy('setShowChangelogPanel') as any,
     setShowMemoriesPanel: spy('setShowMemoriesPanel') as any,
     setShowUsagePanel: spy('setShowUsagePanel') as any,

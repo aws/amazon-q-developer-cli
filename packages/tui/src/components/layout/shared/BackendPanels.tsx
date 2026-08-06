@@ -8,7 +8,6 @@ import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { ContextBreakdown } from '../../ui/ContextBreakdown.js';
 import { HelpPanel } from '../../ui/HelpPanel.js';
-import { TuiPanel } from '../../ui/TuiPanel.js';
 import { McpPanel } from '../../ui/McpPanel.js';
 import { ToolsPanel } from '../../ui/ToolsPanel.js';
 import { GoalPanel } from '../../ui/GoalPanel.js';
@@ -83,7 +82,6 @@ const BACKEND_PANEL_DEFINITIONS = [
   ['showMcpPanel', 'McpPanel', ALL_INLINE_GATES],
   ['showToolsPanel', 'ToolsPanel', ALL_INLINE_GATES],
   ['showGoalPanel', 'GoalPanel', ['header']],
-  ['showTuiPanel', 'TuiPanel', ALL_INLINE_GATES],
   ['showStatsPanel', 'StatsPanel', ['header', 'input']],
   ['showHooksPanel', 'HooksPanel', ALL_INLINE_GATES],
   ['showRepoPicker', 'RepoPickerPanel', ALL_INLINE_GATES],
@@ -191,7 +189,6 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     mcpMode,
     showToolsPanel,
     showGoalPanel,
-    showTuiPanel,
     toolsList,
     showStatsPanel,
     statsList,
@@ -248,7 +245,6 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     showMcpPanel,
     showToolsPanel,
     showGoalPanel,
-    showTuiPanel,
     showStatsPanel,
     showHooksPanel,
     showRepoPicker,
@@ -454,7 +450,6 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
       />
     ),
     showGoalPanel: () => <GoalPanel onClose={handlers.handleCloseGoalPanel} />,
-    showTuiPanel: () => <TuiPanel onClose={handlers.handleCloseTuiPanel} />,
     showStatsPanel: () => (
       <StatsPanel
         stats={statsList}
@@ -490,6 +485,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     ),
     showDisplaySettingsPanel: () => (
       <DisplaySettingsPanel
+        surface={surface}
         onClose={handlers.handleCloseDisplaySettingsPanel}
         onDismiss={handlers.handleDismissDisplaySettingsPanel}
         onOpenStatusLine={handlers.handleOpenStatusLinePanel}

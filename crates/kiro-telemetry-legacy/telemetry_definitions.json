@@ -566,7 +566,7 @@
     {
       "name": "codewhispererterminal_uiModeChangeSource",
       "type": "string",
-      "description": "How a UI-mode toggle was initiated. Known values today: 'slashCommand'."
+      "description": "How a UI-mode toggle was initiated. Known values today: 'slashCommand', 'settingsPanel'."
     },
     {
       "name": "codewhispererterminal_uiModeDefaultFrom",
