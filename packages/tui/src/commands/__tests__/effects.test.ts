@@ -1809,6 +1809,50 @@ describe('/spec new effect', () => {
   });
 });
 
+describe('/spec cloud-session guard', () => {
+  const specCmd: SlashCommand = {
+    name: '/spec',
+    description: 'Spec commands',
+    source: 'local' as const,
+    meta: {
+      local: true,
+      subcommands: ['new', 'run', 'view', 'analyze_requirements'],
+    },
+  };
+
+  // One `it` per form so a regression names the failing form directly.
+  const forms: Array<[label: string, args: string]> = [
+    ['bare /spec (picker)', ''],
+    ['/spec new', 'new slack bot'],
+    ['/spec run', 'run alpha'],
+    ['/spec view', 'view alpha'],
+    ['/spec analyze_requirements', 'analyze_requirements alpha'],
+  ];
+  for (const [label, args] of forms) {
+    it(`refuses ${label} in a cloud session without touching local specs`, async () => {
+      const setConfigOption = mock(() => Promise.resolve());
+      const ctx = createMockCommandContext({
+        slashCommands: [specCmd],
+        kiro: { setConfigOption } as any,
+        cloudSessionActive: true,
+      });
+      // The async effect's return value is not observable here, so pin the
+      // observable behavior: the alert fired and nothing downstream ran.
+      await runEffect(specCmd, null, ctx, args);
+
+      expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+        '/spec is not available for a cloud session yet.',
+        'error',
+        5000
+      );
+      // Nothing downstream ran: no mode switch, no picker, no prompt.
+      expect(setConfigOption).not.toHaveBeenCalled();
+      expect(ctx._spies.setCurrentAgent).not.toHaveBeenCalled();
+      expect(ctx._spies.sendMessage).not.toHaveBeenCalled();
+    });
+  }
+});
+
 describe('/spec analyze_requirements effect', () => {
   const specCmd: SlashCommand = {
     name: '/spec',

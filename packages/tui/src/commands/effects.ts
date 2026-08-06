@@ -750,6 +750,17 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
    *                              let the agent drive to completion
    */
   runSpec: async (_result, ctx, cmd, args) => {
+    // Cloud sessions: every /spec form reads the LOCAL .kiro/specs tree,
+    // which is not the sandbox filesystem the session runs on — refuse up
+    // front instead of showing stale local specs.
+    if (ctx.cloudSessionActive) {
+      ctx.showAlert(
+        '/spec is not available for a cloud session yet.',
+        'error',
+        5000
+      );
+      return true;
+    }
     const trimmed = args.trim();
     const workspaceRoot = process.cwd();
 
