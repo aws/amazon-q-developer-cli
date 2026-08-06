@@ -1,4 +1,4 @@
-import { Box, CURSOR_MARKER, useHardwareCursor } from './../../../renderer.js';
+import { Box, CURSOR_MARKER } from './../../../renderer.js';
 import React, {
   useEffect,
   useRef,
@@ -109,14 +109,12 @@ export const CursorBlock = ({
   char?: string;
   markerOwnedElsewhere?: boolean;
 }) => {
-  // A visible hardware cursor already inverts the cell the marker lands on;
-  // inverting the same cell again cancels out and the cursor vanishes.
-  const hardwareCursorVisible = useHardwareCursor();
-  const hardwareCursorHere = !markerOwnedElsewhere && hardwareCursorVisible;
+  // The renderer un-inverts the marker cell when the terminal's own cursor
+  // is parked there, so the inverse is painted unconditionally here.
   return (
     <>
       {!markerOwnedElsewhere && <Text>{CURSOR_MARKER}</Text>}
-      <Text inverse={!hardwareCursorHere}>{char}</Text>
+      <Text inverse>{char}</Text>
     </>
   );
 };

@@ -3,8 +3,10 @@
  *
  * Under a multiplexer twinki leaves the hardware cursor visible so IME
  * composition anchors to the right cell. A block hardware cursor inverts the
- * cell it sits on, so the prompt must not paint that cell reverse-video too —
- * the two inversions cancel out and the cursor becomes invisible.
+ * cell it sits on, so the frame must not carry a reverse-video attribute on
+ * that same cell — the two inversions cancel out and the cursor becomes
+ * invisible. The renderer strips the inversion from the marker cell; these
+ * cases pin the resulting frame bytes across the cursor-visibility matrix.
  *
  * Each case renders the cursor the way the prompt does (inline, inside a
  * wrapping Text) and inspects the cell the cursor actually landed on.
@@ -157,9 +159,9 @@ describe('CursorBlock', () => {
 
 /**
  * The environment is only where the renderer starts: a caller can override the
- * hardware cursor at construction or change it later. The prompt has to follow
- * the resolved state, otherwise it hides the cursor when the renderer turned the
- * hardware cursor off, or double-inverts when the renderer turned it on.
+ * hardware cursor at construction or change it later. The frame has to follow
+ * the resolved state, otherwise the cell stays un-inverted after the renderer
+ * turned the hardware cursor off, or double-inverts after it turned it on.
  */
 describe("CursorBlock vs. the renderer's resolved state", () => {
   let captured: { setShowHardwareCursor(enabled: boolean): void } | null = null;

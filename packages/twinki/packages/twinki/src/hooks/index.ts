@@ -14,7 +14,6 @@ export { useFocusManager } from './useFocusManager.js';
 export { useFrames } from './useFrames.js';
 export { useMouse } from './useMouse.js';
 export type { UseMouseOptions } from './useMouse.js';
-export { useHardwareCursor } from './useHardwareCursor.js';
 export { useSelectionCopy } from './useSelectionCopy.js';
 export type { UseSelectionCopyOptions } from './useSelectionCopy.js';
 export { usePaste } from './usePaste.js';

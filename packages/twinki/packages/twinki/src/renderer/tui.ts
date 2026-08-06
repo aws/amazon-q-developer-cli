@@ -225,7 +225,6 @@ export class TUI extends Container {
   private inputBuffer = '';
   private cellSizeQueryPending = false;
   private showHardwareCursor = isHardwareCursorEnabled();
-  private hardwareCursorListeners = new Set<() => void>();
   private clearOnShrink = process.env.TWINKI_CLEAR_ON_SHRINK === '1';
   private preserveScrollbackOnRedraw = false;
   private maxLinesRendered = 0;
@@ -411,24 +410,17 @@ export class TUI extends Container {
     if (this.showHardwareCursor === enabled) return;
     this.showHardwareCursor = enabled;
     if (!enabled) this.terminal.hideCursor();
-    for (const listener of this.hardwareCursorListeners) listener();
     this.requestRender();
   }
 
   /**
    * Whether the terminal's own cursor is currently visible.
    *
-   * Components that draw a cursor by inverting a cell must not invert the cell
-   * this cursor sits on, so they need the resolved state rather than the
-   * environment default it started from.
+   * The environment helper is only the starting point: this reflects a
+   * constructor override or a later setShowHardwareCursor call.
    */
   get hardwareCursorVisible(): boolean {
     return this.showHardwareCursor;
-  }
-
-  onHardwareCursorChange(listener: () => void): () => void {
-    this.hardwareCursorListeners.add(listener);
-    return () => this.hardwareCursorListeners.delete(listener);
   }
 
   /**

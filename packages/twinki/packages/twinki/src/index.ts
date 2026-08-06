@@ -118,7 +118,6 @@ export type { UseTypewriterOptions, TypewriterSpeed } from './hooks/index.js';
 export { useFrames } from './hooks/index.js';
 export { useMouse } from './hooks/index.js';
 export type { UseMouseOptions } from './hooks/index.js';
-export { useHardwareCursor } from './hooks/index.js';
 export { useSelectionCopy } from './hooks/index.js';
 export type { UseSelectionCopyOptions } from './hooks/index.js';
 export { useTabs } from './hooks/index.js';
