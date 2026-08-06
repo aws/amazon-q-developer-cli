@@ -173,6 +173,7 @@ use types::{
     AgentSnapshot,
     ConversationMetadata,
     ConversationState,
+    LastContextUsage,
 };
 use util::path::canonicalize_path_sys;
 use util::providers::{
@@ -1361,6 +1362,7 @@ impl Agent {
             self.agent_event_buf
                 .push(AgentLoopEvent::new(handle.id().clone(), evt.clone()).into());
             if let AgentLoopEventKind::UserTurnEnd(md) = evt {
+                self.record_context_usage(&md);
                 self.conversation_metadata.user_turn_metadatas.push(md.clone());
 
                 // Commit the pending user message so it's preserved in history.
@@ -2466,6 +2468,7 @@ impl Agent {
                 },
             },
             AgentLoopEventKind::UserTurnEnd(md) => {
+                self.record_context_usage(&md);
                 self.conversation_metadata.user_turn_metadatas.push(md.clone());
 
                 // Execute Stop hooks if required
@@ -2931,7 +2934,7 @@ impl Agent {
         };
 
         let model_name = self.model.display_name().filter(|s| !s.is_empty());
-        format_request(
+        let mut args = format_request(
             messages,
             tool_specs,
             &self.agent_config,
@@ -2945,7 +2948,16 @@ impl Agent {
             deferred_tools_list,
             model_name.as_deref(),
         )
-        .await
+        .await;
+
+        // Carry the last reported context usage so the agent loop can synthesize an
+        // overflow before dispatching if we are already at the backend-vended limit.
+        // Honors `disable_auto_compact`, since the recovery this triggers is compaction.
+        if !self.settings.disable_auto_compact {
+            args.context_usage_percentage = self.current_context_usage_percentage();
+        }
+
+        args
     }
 
     async fn send_request(&mut self, request_args: SendRequestArgs) -> Result<AgentLoopResponse, AgentError> {
@@ -2960,10 +2972,35 @@ impl Agent {
         Ok(res)
     }
 
+    /// Records `md`'s reported context usage as the current reading.
+    ///
+    /// Overwrites any previous value, including with `None` when the turn's final
+    /// response reported nothing. Reads `final_context_usage_percentage` rather than the
+    /// turn aggregate, so a compaction that ran earlier in the same turn cannot be
+    /// undone by this write.
+    fn record_context_usage(&mut self, md: &UserTurnMetadata) {
+        self.conversation_metadata.last_context_usage =
+            md.final_context_usage_percentage.map(|percentage| LastContextUsage {
+                percentage,
+                model_id: md.model.clone(),
+            });
+    }
+
+    /// Returns the current context usage percentage, if one applies.
+    ///
+    /// `None` when nothing has been reported since the last compaction, or when the
+    /// stored reading came from a different model, since the percentage is relative
+    /// to the reporting model's context window.
+    fn current_context_usage_percentage(&self) -> Option<f32> {
+        let last = self.conversation_metadata.last_context_usage.as_ref()?;
+        (last.model_id == self.model.model_id()).then_some(last.percentage)
+    }
+
     /// Starts compaction of the conversation history.
     ///
     /// This can be triggered either:
     /// - Automatically when context window overflow occurs
+    /// - Proactively when context usage exceeds the threshold
     /// - Manually via `CompactConversation` request
     async fn start_compaction(&mut self, strategy: CompactStrategy) -> Result<(), AgentError> {
         debug!(?strategy, "starting compaction");
@@ -3048,6 +3085,10 @@ impl Agent {
                         compact::finalize_compaction(&mut self.conversation_state, msg, &strategy, context_window_size);
 
                     info!("compaction completed successfully");
+                    // History just shrank, so any prior reading no longer describes it.
+                    // This is what stops the retry, and every later prompt, from
+                    // synthesizing another overflow against a stale value.
+                    self.conversation_metadata.last_context_usage = None;
                     self.compaction_loop = None;
                     self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
                     self.agent_event_buf

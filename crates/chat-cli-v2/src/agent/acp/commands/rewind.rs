@@ -215,6 +215,11 @@ async fn rewind_to(ctx: &CommandContext<'_>, selected_prompt_index: usize) -> Re
             v1.conversation_metadata.user_turn_metadatas.len(),
         );
         v1.conversation_metadata.user_turn_metadatas.truncate(new_meta_len);
+
+        // History was rewritten, so the stored context usage reading no longer
+        // describes it. Leaving it would make the first prompt in the rewound
+        // session compact a conversation the user just deliberately restored.
+        v1.conversation_metadata.last_context_usage = None;
     }
 
     let new_db = SessionDb::new(

@@ -44,6 +44,18 @@ pub struct SendRequestArgs {
     pub messages: Vec<Message>,
     pub tool_specs: Option<Vec<ToolSpec>>,
     pub system_prompt: Option<String>,
+    /// Context usage percentage reported by the backend for the most recent completed
+    /// turn, if any.
+    ///
+    /// Used to synthesize a context overflow before dispatching (see
+    /// [`SYNTHETIC_OVERFLOW_THRESHOLD`]). The compaction request hardcodes `None` so it
+    /// can never trigger against itself. Post-compaction retries are `None` because
+    /// successful compaction clears the stored reading before the retry is formatted,
+    /// not because of anything at this call site.
+    ///
+    /// [`SYNTHETIC_OVERFLOW_THRESHOLD`]: crate::agent::consts::SYNTHETIC_OVERFLOW_THRESHOLD
+    #[serde(default)]
+    pub context_usage_percentage: Option<f32>,
 }
 
 impl SendRequestArgs {
@@ -52,6 +64,7 @@ impl SendRequestArgs {
             messages,
             tool_specs,
             system_prompt,
+            context_usage_percentage: None,
         }
     }
 }
@@ -285,6 +298,16 @@ pub struct UserTurnMetadata {
     pub request_attempts: Option<u32>,
     /// Context usage percentage (0-100)
     pub context_usage_percentage: Option<f32>,
+    /// Context usage percentage reported by the turn's **final** response, or `None` if
+    /// that response reported none.
+    ///
+    /// Distinct from [`Self::context_usage_percentage`], which keeps the last value
+    /// reported by any request in the turn. A compaction can run part way through a
+    /// turn, so only the final response's reading describes the history as it stands
+    /// when the turn ends. Used to decide whether to synthesize a context overflow on
+    /// the next request; the aggregate above remains the telemetry value.
+    #[serde(default)]
+    pub final_context_usage_percentage: Option<f32>,
     /// Metering usage (credits) accumulated across all requests in this turn
     #[serde(default)]
     pub metering_usage: Vec<super::types::MeteringUsageInfo>,

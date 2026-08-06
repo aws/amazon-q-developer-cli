@@ -1,0 +1,24 @@
+// Boundary fixture: a reading of exactly 100 MUST synthesize an overflow.
+//
+// The backend clamps the reported percentage at 100, verified live against a GPT model:
+// a conversation taken well past the vended limit still reports exactly 100.0. So 100 is
+// the only signal available and the comparison has to be inclusive. An exclusive
+// comparison would make the feature dead code.
+
+// 1: first prompt reports exactly 100%.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I can help with that."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.000000Z","requestEndTime":"2025-10-23T21:04:31.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":20},"usage":{"inputTokens":1000,"outputTokens":100,"contextUsagePercentage":100.0},"service":{"requestId":"at-the-limit","statusCode":null}}}}
+
+// 2: compaction summary, triggered by the synthesized overflow on the second prompt.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"# Conversation Summary\n\nThe user asked for help."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:05:00.000000Z","requestEndTime":"2025-10-23T21:05:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":40},"usage":null,"service":{"requestId":"second-prompt","statusCode":null}}}}
+
+// 3: post-compaction retry, answering the second prompt for real.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Answer to the second prompt."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:06:00.000000Z","requestEndTime":"2025-10-23T21:06:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":40},"usage":null,"service":{"requestId":"retry-after-boundary","statusCode":null}}}}

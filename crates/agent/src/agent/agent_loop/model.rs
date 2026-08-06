@@ -140,6 +140,7 @@ impl Model for MockModel {
         _cancel_token: CancellationToken,
     ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>> {
         let req = SendRequestArgs {
+            context_usage_percentage: None,
             messages: messages.clone(),
             tool_specs: tool_specs.clone(),
             system_prompt: system_prompt.clone(),

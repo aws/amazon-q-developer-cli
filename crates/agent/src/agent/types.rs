@@ -290,10 +290,35 @@ impl Default for ConversationState {
     }
 }
 
+/// A context usage percentage paired with the model that reported it.
+///
+/// The percentage is relative to the reporting model's context window, so it is only
+/// meaningful while that same model is in use. Switching models invalidates it: 100%
+/// of a 272K window is roughly 27% of a 1M one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LastContextUsage {
+    pub percentage: f32,
+    /// Model that produced this reading, from [`UserTurnMetadata::model`].
+    pub model_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConversationMetadata {
     /// History of user turns
     pub user_turn_metadatas: Vec<UserTurnMetadata>,
+    /// Most recent context usage reported by the backend, or `None` if unknown.
+    ///
+    /// This is the operational value used to decide whether to synthesize a context
+    /// overflow before dispatching a request. It is deliberately a single current
+    /// reading rather than a search over [`Self::user_turn_metadatas`], which is
+    /// append-only telemetry history and retains readings from before a compaction.
+    ///
+    /// Overwritten at the end of every turn with whatever that turn reported,
+    /// including overwriting with `None` when the turn reported nothing, and cleared
+    /// when compaction shrinks the history. Best effort: when it is unset, no
+    /// overflow is synthesized and the request dispatches normally.
+    #[serde(default)]
+    pub last_context_usage: Option<LastContextUsage>,
     /// The request that started the most recent user turn
     pub user_turn_start_request: Option<SendRequestArgs>,
     /// The most recent request sent

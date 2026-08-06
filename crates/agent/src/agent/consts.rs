@@ -46,6 +46,30 @@ pub const TOOL_USES_INTERRUPTED_MESSAGE: &str = "Tool uses were interrupted, wai
 /// The actual context budget is enforced separately in create_context_messages.
 pub const MAX_RESOURCE_FILE_LENGTH: u64 = 5 * 1024 * 1024;
 
+/// Context usage percentage at which the client synthesizes a context overflow error
+/// instead of dispatching the request to the backend.
+///
+/// The backend cannot throw this itself: it only learns the context usage percentage
+/// after a response completes, and the only point it is able to throw is before
+/// streaming begins, so the two windows never overlap. The client does have the
+/// previous turn's reported percentage, so it injects the overflow at the same call
+/// site the backend would have thrown it from, and the existing overflow recovery
+/// path handles compaction and retry unchanged.
+///
+/// This matters because GPT models accept requests past their priced 272K input
+/// boundary and bill them at 2x rather than rejecting them.
+///
+/// The comparison is inclusive because the backend clamps the reported percentage at
+/// 100: measured against a GPT model, a conversation taken well past the vended limit
+/// reports exactly 100.0 and never more. An exclusive comparison would therefore never
+/// fire at all.
+///
+/// This stays safe for models that enforce their own limit. There, a request at the
+/// limit is answered and reports 100, and the following request is the one the backend
+/// would reject. Synthesizing on that request preempts a rejection that was coming
+/// anyway, so no usable context is given up; it only avoids a wasted round trip.
+pub const SYNTHETIC_OVERFLOW_THRESHOLD: f32 = 100.0;
+
 /// Approximate bytes per token for estimation.
 pub const BYTES_PER_TOKEN: usize = 4;
 

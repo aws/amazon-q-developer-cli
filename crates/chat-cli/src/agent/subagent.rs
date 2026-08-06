@@ -1133,6 +1133,7 @@ mod tests {
             assistant_response_length: 200,
             request_attempts: Some(3),
             context_usage_percentage: None,
+            final_context_usage_percentage: None,
             metering_usage: Vec::new(),
             user_prompt_length: 80,
         };

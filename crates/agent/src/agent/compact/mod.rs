@@ -177,6 +177,9 @@ pub fn create_compaction_request(
     enforce_conversation_invariants(&mut messages, &mut tools);
 
     SendRequestArgs {
+        // Never set: the compaction request must not synthesize an overflow
+        // against itself, which would recurse into aggressive compaction.
+        context_usage_percentage: None,
         messages: messages.into(),
         tool_specs: if tools.is_empty() { None } else { Some(tools) },
         system_prompt: None,

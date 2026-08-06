@@ -1,0 +1,19 @@
+// First prompt response - reports 100% context usage, at the vended limit
+// The backend clamps this value at 100, so 100 means at-or-past the vended limit.
+// Verified live: a conversation taken well past 272K still reports exactly 100.0.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"I can help with that."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.000000Z","requestEndTime":"2025-10-23T21:04:31.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":20},"usage":{"inputTokens":1000,"outputTokens":100,"contextUsagePercentage":100.0},"service":{"requestId":"first-response","statusCode":null}}}}
+
+// Compaction summary response (triggered proactively before second prompt)
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"# Conversation Summary\n\nThe user asked for help and I acknowledged."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:05:00.000000Z","requestEndTime":"2025-10-23T21:05:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":{"inputTokens":500,"outputTokens":50,"contextUsagePercentage":30.0},"service":{"requestId":"compaction-summary","statusCode":null}}}}
+
+// Retry after compaction - second prompt succeeds with lower context usage
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Here is the answer to your follow-up question."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:06:00.000000Z","requestEndTime":"2025-10-23T21:06:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":40},"usage":{"inputTokens":800,"outputTokens":200,"contextUsagePercentage":45.0},"service":{"requestId":"retry-response","statusCode":null}}}}

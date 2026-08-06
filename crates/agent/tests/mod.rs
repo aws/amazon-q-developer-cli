@@ -1231,6 +1231,275 @@ async fn test_compaction_retry_on_context_overflow_failure() {
 }
 
 #[tokio::test]
+async fn test_proactive_compaction_on_high_context_usage() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Responses: first prompt response (100% context usage) -> compaction summary -> retry (second
+    // prompt). The second prompt consumes no response of its own: the agent loop synthesizes a
+    // ContextWindowOverflow instead of dispatching it, which drives the existing recovery path.
+    let responses = parse_response_streams(include_str!("./mock_responses/proactive_compaction.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("proactive compaction on high context usage")
+        .with_default_agent_config()
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // Pin the policy value itself. Behavioral tests sit exactly on it, so this plus the
+    // fixture pins both the constant and the inclusive comparison.
+    assert_eq!(
+        agent::consts::SYNTHETIC_OVERFLOW_THRESHOLD,
+        100.0,
+        "272K pricing boundary policy; changing this changes when we start paying 2x"
+    );
+
+    // First prompt - response reports 103%, i.e. the backend accepted a request past the
+    // limit it vended, which is the only way a reading can exceed 100.
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Second prompt should trigger proactive compaction before sending
+    test.send_prompt("follow up question".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Verify compaction events were emitted
+    let compaction_events = test.compaction_events();
+
+    assert!(
+        compaction_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started))),
+        "expected CompactionEvent::Started from proactive compaction"
+    );
+    assert!(
+        compaction_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+        "expected CompactionEvent::Completed"
+    );
+
+    // Verify the retry happened (recovery attempt event)
+    assert!(
+        compaction_events.iter().any(|e| matches!(
+            e,
+            AgentEvent::Compaction(CompactionEvent::ContextRecoveryAttempt { final_attempt: false })
+        )),
+        "expected ContextRecoveryAttempt after proactive compaction"
+    );
+
+    // Verify agent ended in idle state (successful)
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected agent to be idle after proactive compaction and retry"
+    );
+}
+
+#[tokio::test]
+async fn test_stale_context_usage_is_not_reused_after_compaction() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Regression: a reader that searches turn history for the most recent reported
+    // percentage skips the retry turn (which reports none) and finds the pre-compaction
+    // 100.0, compacting again on every later prompt. Correct behavior is one compaction.
+    let responses = parse_response_streams(include_str!("./mock_responses/stale_context_usage_not_reused.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("stale context usage is not reused after compaction")
+        .with_default_agent_config()
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // Prompt 1 - response reports 100%, the clamped over-limit signal
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Prompt 2 - synthesizes an overflow, compacts, retries. The retry reports no
+    // percentage, so afterwards the current reading must be unset.
+    test.send_prompt("second prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let started_after_two = test
+        .compaction_events()
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started)))
+        .count();
+    assert_eq!(started_after_two, 1, "prompt 2 should compact exactly once");
+
+    // The compaction count alone cannot distinguish success from the recovery ladder
+    // running to exhaustion, so pin the outcome too: no last-ditch truncation attempt,
+    // and the turn actually completed.
+    let final_attempts = test
+        .compaction_events()
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                AgentEvent::Compaction(CompactionEvent::ContextRecoveryAttempt { final_attempt: true })
+            )
+        })
+        .count();
+    assert_eq!(
+        final_attempts, 0,
+        "prompt 2 must not reach the final truncation attempt"
+    );
+    let mid = test.create_snapshot().await;
+    assert!(
+        matches!(mid.execution_state.active_state, ActiveState::Idle),
+        "prompt 2 must complete rather than enter the error state"
+    );
+
+    // Prompt 3 - must dispatch normally. If the stale 100.0 is resurrected this
+    // compacts again, which is the bug.
+    test.send_prompt("third prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let started_after_three = test
+        .compaction_events()
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started)))
+        .count();
+    assert_eq!(
+        started_after_three, 1,
+        "prompt 3 must not compact again; the pre-compaction reading was resurrected"
+    );
+
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected idle after three prompts"
+    );
+}
+
+#[tokio::test]
+async fn test_reading_exactly_at_limit_synthesizes_overflow() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // The backend clamps the reported percentage at 100, verified live against a GPT
+    // model: a conversation taken well past the vended limit still reports exactly 100.0.
+    // So the comparison must be inclusive; an exclusive one makes the feature dead code.
+    let responses = parse_response_streams(include_str!(
+        "./mock_responses/context_usage_at_limit_synthesizes.jsonl"
+    ))
+    .await
+    .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("reading exactly at limit synthesizes overflow")
+        .with_default_agent_config()
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let snapshot = test.create_snapshot().await;
+    assert_eq!(
+        snapshot
+            .conversation_metadata
+            .last_context_usage
+            .as_ref()
+            .map(|u| u.percentage),
+        Some(100.0),
+        "the 100% reading should be recorded"
+    );
+
+    // The second prompt must synthesize rather than dispatch, since 100 is the only
+    // over-limit signal the backend ever emits.
+    test.send_prompt("second prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let started = test
+        .compaction_events()
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started)))
+        .count();
+    assert_eq!(
+        started, 1,
+        "a reading of exactly 100 must trigger compaction; the backend never reports more"
+    );
+
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected idle after two prompts"
+    );
+}
+
+#[tokio::test]
+async fn test_mid_turn_compaction_does_not_restore_prior_reading() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Regression: when compaction happens part way through a turn, the turn's recorded
+    // percentage must come from the final response, not from the latest value reported
+    // anywhere in the turn. Otherwise the pre-compaction 100.0 is written back on top of
+    // the clear and the next prompt compacts freshly compacted history.
+    let responses = parse_response_streams(include_str!("./mock_responses/context_usage_mid_turn_compaction.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("mid turn compaction does not restore prior reading")
+        .with_default_agent_config()
+        .with_file(("test.txt", "hello world"))
+        .with_trust_all_tools(true)
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // Prompt 1: reports 100% on a tool-use response, the continuation overflows for real,
+    // compaction runs mid-turn, and the retry ends the turn reporting nothing.
+    test.send_prompt("read the file".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let started_after_one = test
+        .compaction_events()
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started)))
+        .count();
+    assert_eq!(started_after_one, 1, "the real overflow should compact exactly once");
+
+    // The reading must not survive the compaction that ran during this turn.
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        snapshot.conversation_metadata.last_context_usage.is_none(),
+        "a pre-compaction reading was written back after the clear: {:?}",
+        snapshot.conversation_metadata.last_context_usage
+    );
+
+    // Prompt 2 must dispatch normally rather than synthesizing another overflow.
+    test.send_prompt("second prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let started_after_two = test
+        .compaction_events()
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started)))
+        .count();
+    assert_eq!(
+        started_after_two, 1,
+        "prompt 2 must not compact again after a mid-turn compaction"
+    );
+
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected idle after two prompts"
+    );
+}
+
+#[tokio::test]
 async fn test_overflow_after_compaction_retry_truncates_user_message() {
     let _ = tracing_subscriber::fmt::try_init();
 

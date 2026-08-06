@@ -56,6 +56,7 @@ use uuid::Uuid;
 
 use super::tools::BuiltInToolName;
 use crate::agent::AgentId;
+use crate::agent::consts::SYNTHETIC_OVERFLOW_THRESHOLD;
 use crate::agent::util::request_channel::{
     RequestReceiver,
     RequestSender,
@@ -310,7 +311,32 @@ impl AgentLoop {
                     .clone();
 
                 let cancel_token = self.cancel_token.clone();
-                let stream = model.stream(args.messages, args.tool_specs, args.system_prompt, cancel_token);
+
+                // Synthesize a context overflow instead of dispatching when the last
+                // reported context usage already reached the backend-vended limit.
+                //
+                // The backend cannot throw this itself: it only knows the usage
+                // percentage after a response completes, and can only throw before
+                // streaming begins. Injecting here, at the same call site that would
+                // have surfaced the backend's own overflow, means the existing overflow
+                // recovery path handles compaction and retry with no other changes.
+                let over_limit = args
+                    .context_usage_percentage
+                    .is_some_and(|pct| pct >= SYNTHETIC_OVERFLOW_THRESHOLD);
+
+                let stream: Pin<Box<dyn Stream<Item = StreamResult> + Send>> = if over_limit {
+                    warn!(
+                        context_usage_percentage = args.context_usage_percentage,
+                        threshold = SYNTHETIC_OVERFLOW_THRESHOLD,
+                        "context usage at the vended limit, synthesizing overflow instead of dispatching"
+                    );
+                    Box::pin(futures::stream::once(async {
+                        StreamResult::Err(StreamError::new(StreamErrorKind::ContextWindowOverflow))
+                    }))
+                } else {
+                    model.stream(args.messages, args.tool_specs, args.system_prompt, cancel_token)
+                };
+
                 self.curr_stream = Some(stream);
                 self.curr_stream_state = Some(StreamParseState::new(next_user_message, model.model_id()));
                 Ok(AgentLoopResponse::Success)
@@ -419,6 +445,16 @@ impl AgentLoop {
             }
         }
 
+        // Separate from the aggregate above, which keeps the last value any request in
+        // the turn reported. A compaction can run part way through a turn, so only the
+        // final response's reading describes the history as it now stands.
+        let final_context_usage_percentage = self
+            .stream_states
+            .last()
+            .and_then(|s| s.metadata.as_ref())
+            .and_then(|md| md.usage.as_ref())
+            .and_then(|usage| usage.context_usage_percentage);
+
         let user_prompt_length = self.stream_states.first().map_or(0, |s| s.user_message.text().len());
 
         UserTurnMetadata {
@@ -452,6 +488,7 @@ impl AgentLoop {
             assistant_response_length,
             request_attempts,
             context_usage_percentage,
+            final_context_usage_percentage,
             metering_usage,
             user_prompt_length,
         }

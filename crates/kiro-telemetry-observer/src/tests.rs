@@ -318,6 +318,7 @@ fn test_compaction_turn_carries_compact_message_meta_tag() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };
@@ -591,6 +592,7 @@ fn test_end_turn_emits_record_user_turn_completion() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 11,
     };
@@ -634,6 +636,7 @@ fn test_turn_completion_keeps_subsecond_duration() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };
@@ -670,6 +673,7 @@ fn test_end_turn_emits_context_usage_percentage() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: Some(42.5),
+        final_context_usage_percentage: Some(42.5),
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };
@@ -718,6 +722,7 @@ fn test_subagent_context_marks_chat_and_turn_telemetry() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };
@@ -786,6 +791,7 @@ fn test_turn_completion_accumulates_token_counts() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };
@@ -833,6 +839,7 @@ fn test_error_turn_propagates_reason() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };
@@ -904,6 +911,7 @@ fn test_turn_completion_carries_last_request_attempts() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };
@@ -944,6 +952,7 @@ fn test_turn_completion_attempts_is_none_when_transport_does_not_report() {
         assistant_response_length: 0,
         request_attempts: None,
         context_usage_percentage: None,
+        final_context_usage_percentage: None,
         metering_usage: Vec::new(),
         user_prompt_length: 0,
     };

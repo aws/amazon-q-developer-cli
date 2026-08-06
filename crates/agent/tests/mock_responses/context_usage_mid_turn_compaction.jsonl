@@ -1,0 +1,41 @@
+// Regression fixture: a compaction that happens PART WAY THROUGH a turn.
+//
+// The shape that matters: the turn's first request reports 100% and has a tool use, so
+// the turn continues. The tool-result continuation genuinely overflows, compaction runs
+// and clears the reading, and the post-compaction retry reports no percentage.
+//
+// If the turn's recorded percentage is the last value reported ANYWHERE in the turn
+// rather than the final response's, that pre-compaction 100.0 is written back after the
+// clear and the next prompt compacts a conversation that was just compacted.
+
+// 1: first request of the turn. Reports 103% and asks for a tool, so the turn continues
+// and no UserTurnEnd fires yet.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockStart","data":{"contentBlockStart":{"kind":"toolUse","data":{"toolUseId":"tooluse_read_1","name":"read"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"toolUse","data":{"input":"{\"operations\": [{\"mode\": \"Line\", \"path\": \"test.txt\"}]}"}},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"contentBlockStop","data":{"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"toolUse"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.000000Z","requestEndTime":"2025-10-23T21:04:31.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":20},"usage":{"inputTokens":1000,"outputTokens":100,"contextUsagePercentage":100.0},"service":{"requestId":"cycle-1-reports-overage","statusCode":null}}}}
+
+// 2: the tool-result continuation genuinely overflows. This is a real backend rejection,
+// not a synthesized one, and it triggers compaction mid-turn.
+{"result":"error","data":{"original_request_id":"req-continuation","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// 3: compaction summary.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"# Conversation Summary\n\nThe user asked to read a file."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:05:00.000000Z","requestEndTime":"2025-10-23T21:05:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":50},"usage":null,"service":{"requestId":"compaction-summary","statusCode":null}}}}
+
+// 4: post-compaction retry. Ends the turn and reports NO percentage, so the turn's
+// recorded reading must be unset.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"The file says hello world."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:06:00.000000Z","requestEndTime":"2025-10-23T21:06:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":40},"usage":null,"service":{"requestId":"retry-no-usage","statusCode":null}}}}
+
+// 5: second prompt. Consumed only if it dispatches normally instead of compacting again.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Answer to the second prompt."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:07:00.000000Z","requestEndTime":"2025-10-23T21:07:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":40},"usage":null,"service":{"requestId":"second-prompt","statusCode":null}}}}
