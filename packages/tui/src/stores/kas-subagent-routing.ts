@@ -3,6 +3,7 @@ import {
   AgentEventType,
   type AgentStreamEvent,
   type KiroMeta,
+  type ToolCallOrigin,
 } from '../types/agent-events';
 import type { SessionLifecycleEvent } from '../types/multi-session.js';
 
@@ -24,6 +25,9 @@ export interface KasSubagentRoutingState {
     string,
     {
       title?: string;
+      name?: string;
+      origin?: ToolCallOrigin;
+      originalTitle?: string;
       kind?: string;
       rawInput?: Record<string, unknown>;
     }
@@ -92,7 +96,11 @@ export type KasPermissionRequest = Omit<
   'toolCall'
 > & {
   toolCallId?: string;
-  toolCall?: Partial<acp.RequestPermissionRequest['toolCall']>;
+  toolCall?: Partial<acp.RequestPermissionRequest['toolCall']> & {
+    name?: string;
+    kind?: acp.ToolKind | null;
+    origin?: ToolCallOrigin;
+  };
 };
 
 export interface KasPermissionRoutingInput {
@@ -463,7 +471,10 @@ export function createKasSubagentRoutingActions(
     rememberKasToolCall: (event) => {
       if (event.type !== AgentEventType.ToolCall) return;
       getKas().kasToolCallSnapshots.set(event.id, {
-        title: event.name,
+        title: event.originalTitle ?? event.name,
+        name: event.name,
+        origin: event.origin,
+        originalTitle: event.originalTitle,
         kind: event.kind,
         rawInput: event.args,
       });
@@ -504,18 +515,27 @@ export function createKasSubagentRoutingActions(
         !!subtaskId &&
         (kas.pipelineStageSubtasks.has(subtaskId) ||
           kas.independentSubagentSubtasks.has(subtaskId));
+      const enrichedToolCall = {
+        ...existingToolCall,
+        toolCallId,
+        title:
+          existingToolCall.title ??
+          fallbackTitle ??
+          cachedToolCall?.originalTitle ??
+          cachedToolCall?.title,
+        rawInput:
+          existingToolCall.rawInput ??
+          fallbackRawInput ??
+          cachedToolCall?.rawInput,
+        name: existingToolCall.name ?? cachedToolCall?.name,
+        kind:
+          existingToolCall.kind ??
+          (cachedToolCall?.kind as acp.ToolKind | undefined),
+        origin: existingToolCall.origin ?? cachedToolCall?.origin,
+      };
       const enriched: acp.RequestPermissionRequest = {
         ...request,
-        toolCall: {
-          ...existingToolCall,
-          toolCallId,
-          title:
-            existingToolCall.title ?? fallbackTitle ?? cachedToolCall?.title,
-          rawInput:
-            existingToolCall.rawInput ??
-            fallbackRawInput ??
-            cachedToolCall?.rawInput,
-        },
+        toolCall: enrichedToolCall,
         ...(subtaskId &&
           !isSubagentSpawn &&
           hasRenderableSubagentSession && { sessionId: subtaskId }),

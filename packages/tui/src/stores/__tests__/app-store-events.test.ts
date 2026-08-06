@@ -195,6 +195,34 @@ describe('Stream event handler — ToolCall', () => {
     }
   });
 
+  it('preserves MCP provenance and raw args on an edit-kind name collision', async () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-mcp-collision',
+      name: 'fs_write',
+      origin: 'mcp',
+      originalTitle: '@server/fs_write',
+      kind: 'edit',
+      args: { operation: 'custom', payload: 'keep me' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const msg = store
+      .getState()
+      .messages.find((candidate: any) => candidate.id === 'tc-mcp-collision');
+    expect(msg).toMatchObject({
+      origin: 'mcp',
+      originalTitle: '@server/fs_write',
+    });
+    expect(JSON.parse(msg!.content)).toEqual({
+      operation: 'custom',
+      payload: 'keep me',
+    });
+    expect(msg!.diff).toBeUndefined();
+  });
+
   it('renders a tool card for a standalone-subagent ToolCall forwarded to main', async () => {
     // A hidden/standalone subagent's tool call is forwarded to the main stream
     // by KasAcpClient with sessionId stripped to undefined. Verify the main

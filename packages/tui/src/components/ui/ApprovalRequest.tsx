@@ -13,8 +13,13 @@ import {
   type TrustOption,
   type ConsentContext,
 } from '../../types/agent-events';
-import { MessageRole, useAppStore } from '../../stores/app-store.js';
+import {
+  MessageRole,
+  ToolUseStatus,
+  useAppStore,
+} from '../../stores/app-store.js';
 import { deriveShellTrustOptions } from '../../utils/shell-trust-options.js';
+import { ToolUseMessage } from './ToolUseMessage.js';
 
 interface ApprovalRequestProps {
   onDrillInSubmit: (value: string) => void;
@@ -200,9 +205,37 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
   const toolName =
     toolMsg && toolMsg.role === MessageRole.ToolUse
       ? toolMsg.name
-      : (pendingApproval.toolCall.title ?? 'Tool');
+      : (pendingApproval.toolCall.name ??
+        pendingApproval.toolId ??
+        pendingApproval.toolCall.title ??
+        'Tool');
+  const toolKind =
+    toolMsg && toolMsg.role === MessageRole.ToolUse
+      ? toolMsg.kind
+      : pendingApproval.toolCall.kind;
+  const toolOrigin =
+    toolMsg && toolMsg.role === MessageRole.ToolUse
+      ? toolMsg.origin
+      : pendingApproval.toolCall.origin;
 
   const prefix = subagentName ? `${subagentName} > ` : '';
+  const rawApprovalInput = pendingApproval.toolCall.rawInput;
+  const serializedApprovalInput =
+    rawApprovalInput == null || rawApprovalInput === ''
+      ? ''
+      : typeof rawApprovalInput === 'string'
+        ? rawApprovalInput
+        : JSON.stringify(rawApprovalInput);
+  const permissionFirstTool =
+    !toolMsg && serializedApprovalInput
+      ? {
+          id: pendingApproval.toolCall.toolCallId,
+          name: toolName,
+          kind: toolKind,
+          origin: toolOrigin,
+          content: serializedApprovalInput,
+        }
+      : null;
   const title =
     mode === 'drill-in'
       ? `${prefix}${toolName} requires approval ${glyphs.smallDot} Modify request`
@@ -321,6 +354,14 @@ export const ApprovalRequest: React.FC<ApprovalRequestProps> = ({
       footerLeft={footerLeft}
     >
       <Box flexDirection="column">
+        {permissionFirstTool && (
+          <Box marginBottom={1}>
+            <ToolUseMessage
+              {...permissionFirstTool}
+              status={ToolUseStatus.Pending}
+            />
+          </Box>
+        )}
         {consentContext &&
           (consentContext.capability || consentContext.resource) && (
             <Box marginBottom={1}>

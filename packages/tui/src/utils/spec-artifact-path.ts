@@ -14,6 +14,7 @@
 
 import { resolve, isAbsolute } from 'node:path';
 import type { ArtifactKind } from './spec-artifact-loader.js';
+import { isArtifactWriteTool } from '../types/tool-capabilities.js';
 
 /** Match anywhere in the path, not just from the start. */
 const SPEC_ARTIFACT_RE =
@@ -64,27 +65,6 @@ export function extractToolPath(
 }
 
 /**
- * Recognised tool names that may write a file. We accept multiple
- * variants so we stay compatible across agent engines:
- *
- *   - `fs_write` — V1 alias used historically.
- *   - `Write`    — KAS native single-purpose write tool.
- *   - `create`   — KAS spec workflow uses this lowercase variant
- *                  with `args.command === 'create'` for new files.
- *   - `Edit`/`fs_edit` — multiplex tools whose operation is given by
- *                  `args.command` (e.g. `create`, `update`, `replace`).
- *                  The caller must check `command` before treating it
- *                  as a write; we handle that in `isWriteOperation`.
- */
-const KNOWN_WRITE_TOOL_NAMES = new Set([
-  'fs_write',
-  'Write',
-  'create',
-  'Edit',
-  'fs_edit',
-]);
-
-/**
  * Operation strings that imply the tool is producing/modifying file
  * content (and therefore worth tracking as a generation event).
  *
@@ -122,7 +102,7 @@ const WRITE_COMMAND_VALUES = new Set([
  * actually creating or replacing file content.
  */
 export function isFileWriteToolName(name: string): boolean {
-  return KNOWN_WRITE_TOOL_NAMES.has(name);
+  return isArtifactWriteTool(name);
 }
 
 /**

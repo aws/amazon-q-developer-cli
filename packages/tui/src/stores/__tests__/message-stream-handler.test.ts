@@ -256,6 +256,34 @@ describe('createMessageStreamHandler', () => {
       expect(toolMsg!.content).toContain('/updated.txt');
     });
 
+    it('propagates provenance when a full MCP event replaces a placeholder', () => {
+      const initial: MessageType[] = [
+        {
+          id: 'tool-mcp',
+          role: MessageRole.ToolUse,
+          name: 'fs_read',
+          content: '{}',
+        },
+      ];
+      const { handler, getMessages } = setup(initial);
+
+      handler({
+        type: AgentEventType.ToolCall,
+        id: 'tool-mcp',
+        name: 'fs_read',
+        origin: 'mcp',
+        originalTitle: '@server/fs_read',
+        kind: 'read',
+        args: { customPath: '/not-a-builtin-shape' },
+      });
+
+      const toolMsg = getMessages().find((m) => m.id === 'tool-mcp');
+      expect(toolMsg).toMatchObject({
+        origin: 'mcp',
+        originalTitle: '@server/fs_read',
+      });
+    });
+
     it('adds new tool message when ID not found', () => {
       const { handler, getMessages } = setup();
 

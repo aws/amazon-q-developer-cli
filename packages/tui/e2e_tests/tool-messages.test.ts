@@ -29,65 +29,117 @@ describe('Tool Messages', () => {
       testCase = null;
     }
     if (tempDir) {
-      try { fs.rmSync(tempDir, { recursive: true }); } catch { /* ignore */ }
+      try {
+        fs.rmSync(tempDir, { recursive: true });
+      } catch {
+        /* ignore */
+      }
       tempDir = '';
     }
   });
 
-  it('renders shell tool message', async () => {
-    testCase = await E2ETestCase.builder()
-      .withTestName('shell-tool-message')
-      .launch();
+  for (const mode of ['tui', 'lite'] as const) {
+    it(`${mode} renders the representative shell tool lifecycle`, async () => {
+      let builder = E2ETestCase.builder().withTestName(
+        `shell-tool-message-${mode}`
+      );
+      if (mode === 'lite') builder = builder.withLite();
+      testCase = await builder.launch();
 
-    await testCase.waitForText('ask a question', 10000);
-    await testCase.getSessionId();
+      await testCase.waitForText('ask a question', 10000);
+      await testCase.getSessionId();
 
-    // Stream 1: Tool use
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'ToolUseEvent',
+      // Stream 1: Tool use
+      await testCase.pushSendMessageResponse([
+        {
+          kind: 'event',
           data: {
-            tool_use_id: 'tool-1',
-            name: 'execute_bash',
-            input: JSON.stringify({ command: 'echo hello' }),
-            stop: true,
+            kind: 'ToolUseEvent',
+            data: {
+              tool_use_id: 'tool-1',
+              name: 'execute_bash',
+              input: JSON.stringify({ command: 'echo hello' }),
+              stop: true,
+            },
           },
         },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+      ]);
+      await testCase.pushSendMessageResponse(null);
 
-    // Stream 2: Assistant response after tool execution
-    await testCase.pushSendMessageResponse([
-      {
-        kind: 'event',
-        data: {
-          kind: 'AssistantResponseEvent',
-          data: { content: 'Command executed.' },
+      // Stream 2: Assistant response after tool execution
+      await testCase.pushSendMessageResponse([
+        {
+          kind: 'event',
+          data: {
+            kind: 'AssistantResponseEvent',
+            data: { content: 'Command executed.' },
+          },
         },
-      },
-    ]);
-    await testCase.pushSendMessageResponse(null);
+      ]);
+      await testCase.pushSendMessageResponse(null);
 
-    // Send prompt
-    await testCase.sendKeys('run ls');
-    await testCase.sleepMs(100);
-    await testCase.pressEnter();
+      await testCase.sendKeys('run echo');
+      await testCase.sleepMs(100);
+      await testCase.pressEnter();
 
-    // Wait for tool to finish and assistant response to render
-    await testCase.waitForText('Shell', 10000);
-    await testCase.waitForText('Command executed', 10000);
+      await testCase.waitForText('Shell', 10000);
+      await testCase.waitForText('Command executed', 10000);
 
-    const snapshot = testCase.getSnapshot();
-    console.log('Snapshot:\n' + testCase.getSnapshotFormatted());
+      const snapshot = testCase.getSnapshot();
+      expect(snapshot.some((line) => line.includes('Shell'))).toBe(true);
+      expect(snapshot.some((line) => line.includes('Command executed'))).toBe(
+        true
+      );
+    }, 30000);
+  }
 
-    expect(snapshot.some((line) => line.includes('Shell'))).toBe(true);
-    expect(snapshot.some((line) => line.includes('Command executed'))).toBe(
-      true
-    );
-  }, 30000);
+  for (const mode of ['tui', 'lite'] as const) {
+    it(`${mode} visibly falls back for a fixture-only new tool`, async () => {
+      let builder = E2ETestCase.builder().withTestName(
+        `new-tool-fallback-${mode}`
+      );
+      if (mode === 'lite') builder = builder.withLite();
+      testCase = await builder.launch();
+
+      await testCase.waitForText('ask a question', 10000);
+      await testCase.getSessionId();
+
+      await testCase.pushSendMessageResponse([
+        {
+          kind: 'event',
+          data: {
+            kind: 'ToolUseEvent',
+            data: {
+              tool_use_id: `generate-report-${mode}`,
+              name: 'generate_report',
+              input: JSON.stringify({ query: 'quarterly-guardrail-marker' }),
+              stop: true,
+            },
+          },
+        },
+      ]);
+      await testCase.pushSendMessageResponse(null);
+      await testCase.pushSendMessageResponse([
+        {
+          kind: 'event',
+          data: {
+            kind: 'AssistantResponseEvent',
+            data: { content: 'Synthetic report lifecycle finished.' },
+          },
+        },
+      ]);
+      await testCase.pushSendMessageResponse(null);
+
+      await testCase.sendKeys('generate a report');
+      await testCase.pressEnter();
+      await testCase.waitForText('Synthetic report lifecycle', 15000);
+
+      const screen = testCase.getSnapshot().join('\n');
+      expect(screen).toContain('generate_report');
+      expect(screen).toContain('quarterly-guardrail-marker');
+      expect(screen).toContain('does not exist');
+    }, 30000);
+  }
 
   it('renders read tool message', async () => {
     testCase = await E2ETestCase.builder()
@@ -376,17 +428,20 @@ describe('Tool Messages', () => {
     // Create a temp file where the replacement target is on line 5 (1-indexed).
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-e2e-write-'));
     const filePath = path.join(tempDir, 'test-file.py');
-    fs.writeFileSync(filePath, [
-      'import os',
-      'import sys',
-      '',
-      'def main():',
-      '    print("hello world")',
-      '    return 0',
-      '',
-      'if __name__ == "__main__":',
-      '    main()',
-    ].join('\n'));
+    fs.writeFileSync(
+      filePath,
+      [
+        'import os',
+        'import sys',
+        '',
+        'def main():',
+        '    print("hello world")',
+        '    return 0',
+        '',
+        'if __name__ == "__main__":',
+        '    main()',
+      ].join('\n')
+    );
 
     testCase = await E2ETestCase.builder()
       .withTestName('write-str-replace')
@@ -408,7 +463,8 @@ describe('Tool Messages', () => {
               command: 'strReplace',
               path: filePath,
               oldStr: '    print("hello world")',
-              newStr: '    print("hello, world!")\n    print("goodbye, world!")',
+              newStr:
+                '    print("hello, world!")\n    print("goodbye, world!")',
             }),
             stop: true,
           },
@@ -417,7 +473,10 @@ describe('Tool Messages', () => {
     ]);
     await testCase.pushSendMessageResponse(null);
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Done.' } } },
+      {
+        kind: 'event',
+        data: { kind: 'AssistantResponseEvent', data: { content: 'Done.' } },
+      },
     ]);
     await testCase.pushSendMessageResponse(null);
 
@@ -449,7 +508,10 @@ describe('Tool Messages', () => {
   it('write create overwrite preserves new content in store', async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-e2e-create-'));
     const filePath = path.join(tempDir, 'game.py');
-    fs.writeFileSync(filePath, 'def play():\n    print("playing")\n    return True\n');
+    fs.writeFileSync(
+      filePath,
+      'def play():\n    print("playing")\n    return True\n'
+    );
 
     testCase = await E2ETestCase.builder()
       .withTestName('write-create-overwrite')
@@ -459,7 +521,8 @@ describe('Tool Messages', () => {
     await testCase.waitForText('ask a question', 10000);
     await testCase.getSessionId();
 
-    const newContent = 'def play():\n    print("playing game")\n    score = 0\n    return score';
+    const newContent =
+      'def play():\n    print("playing game")\n    score = 0\n    return score';
 
     await testCase.pushSendMessageResponse([
       {
@@ -469,7 +532,11 @@ describe('Tool Messages', () => {
           data: {
             tool_use_id: 'tool-create-1',
             name: 'write',
-            input: JSON.stringify({ command: 'create', path: filePath, content: newContent }),
+            input: JSON.stringify({
+              command: 'create',
+              path: filePath,
+              content: newContent,
+            }),
             stop: true,
           },
         },
@@ -477,7 +544,10 @@ describe('Tool Messages', () => {
     ]);
     await testCase.pushSendMessageResponse(null);
     await testCase.pushSendMessageResponse([
-      { kind: 'event', data: { kind: 'AssistantResponseEvent', data: { content: 'Done.' } } },
+      {
+        kind: 'event',
+        data: { kind: 'AssistantResponseEvent', data: { content: 'Done.' } },
+      },
     ]);
     await testCase.pushSendMessageResponse(null);
 

@@ -282,6 +282,46 @@ describe('trivial-tool dimming through the real render path', () => {
   });
 });
 
+describe('tool provenance through the real render path', () => {
+  it('renders a colliding KAS MCP write as a generic tool with raw arguments', () => {
+    const output = stripAnsi(
+      renderMessageToText(
+        {
+          id: 'mcp-write-collision',
+          role: 'tool_use',
+          name: 'fs_write',
+          origin: 'mcp',
+          originalTitle: '@server/fs_write',
+          kind: 'edit',
+          content: JSON.stringify({
+            command: 'str_replace',
+            path: '/tmp/file.ts',
+            old_str: 'before',
+            new_str: 'after',
+          }),
+          isFinished: true,
+          result: { status: 'success', output: 'custom result' },
+        },
+        'Kiro',
+        {
+          display: {
+            ...DEFAULT_DISPLAY,
+            toolArgsMode: 'block',
+            showWriteDiffs: true,
+          },
+          filtersOverride: [],
+        }
+      )
+    );
+
+    expect(output).toContain('fs_write');
+    expect(output).toContain('command:');
+    expect(output).toContain('old_str:');
+    expect(output).not.toContain('Write');
+    expect(output).not.toContain('added 1 line');
+  });
+});
+
 describe('formatToolArgLines wrap behavior', () => {
   // WHY: long values used to wrap back to column 0 (single chalk.dim'd line,
   // terminal soft-wrap). Now wrapping happens at the renderer with the parent's
@@ -1365,8 +1405,7 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
     expect(out).toContain('permission denied');
   });
 
-  // v3/KAS write: friendly title (not in WRITE_TOOLS) + kind:'edit'. Used to
-  // dump raw args under the default (block) toolArgsMode; kind must route to a diff.
+  // v3/KAS write: a registered friendly title plus kind:'edit'.
   test('v3 write (kind:edit) renders a diff, not raw args', () => {
     setDisplay({ toolArgsMode: 'block' });
     const out = stripAnsi(
@@ -1461,6 +1500,34 @@ describe('truncation caps (argsMaxLines / outputMaxLines)', () => {
       )
     );
     expect(out).toContain('src/gone.ts');
+  });
+
+  test('unknown edit-kind tool stays generic and does not render a diff', () => {
+    setDisplay({ toolArgsMode: 'block' });
+    const out = stripAnsi(
+      renderMessageToText(
+        {
+          id: 't-mcp-edit',
+          role: 'tool_use',
+          name: 'mcp__server__custom_edit',
+          kind: 'edit',
+          content: JSON.stringify({
+            command: 'strReplace',
+            path: 'src/foo.ts',
+            oldStr: 'const a = 1;',
+            newStr: 'const a = 2;',
+          }),
+          isFinished: true,
+        } as any,
+        'kiro_default'
+      )
+    );
+
+    expect(out).toContain('mcp__server__custom_edit');
+    expect(out).toContain('oldStr:');
+    expect(out).toContain('newStr:');
+    expect(out).not.toMatch(/-\s+const a = 1;/);
+    expect(out).not.toMatch(/\+\s+const a = 2;/);
   });
 });
 
@@ -1763,6 +1830,12 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
       contains: 'Write [create src/foo.ts]',
     },
     {
+      name: 'KAS Write File {path,text} → "create <path>"',
+      tool: 'Write File',
+      args: { path: 'src/foo.ts', text: 'hello' },
+      contains: 'Write [create src/foo.ts]',
+    },
+    {
       name: 'fs_write insert → "insert <path>"',
       tool: 'fs_write',
       args: {
@@ -1794,18 +1867,17 @@ describe('inline arg chip — pattern/path combination + path shortening', () =>
       noCwd: 'chip',
     },
     {
-      // Legacy "command means shell" branch, gated to SHELL_TOOL_NAMES so
-      // fs_write's `command` discriminator can't hijack it.
+      // The shell renderer owns command chips, so fs_write's `command`
+      // discriminator cannot hijack this branch.
       name: 'shell shows the command',
       tool: 'shell',
       args: { command: 'git status' },
       contains: 'Shell [git status]',
     },
     {
-      // Regression guard: an agent-advertised title (capital "Shell") isn't in
-      // SHELL_TOOL_NAMES, so it skips the shell branch and must still surface
-      // the command via the last-resort fallback rather than rendering no chip.
-      name: 'command-bearing tool not in SHELL_TOOL_NAMES still shows command',
+      // Regression guard: an agent-advertised title (capital "Shell") is not a
+      // registered shell alias, so the generic fallback must still surface it.
+      name: 'unregistered command-bearing tool still shows command',
       tool: 'Shell',
       args: { command: 'echo concat-test' },
       contains: 'Shell [echo concat-test]',

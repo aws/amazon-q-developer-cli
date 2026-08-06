@@ -3344,6 +3344,163 @@ describe('KasAcpClient', () => {
     expect(toolFinishCalls[0]!.args.outcome).toBe('error');
   });
 
+  it('preserves KAS MCP provenance and original title across permission enrichment', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    client.onUpdate((event: any) => events.push(event));
+    await client.newSession();
+
+    await capturedSessionUpdateHandler({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc-mcp-write',
+        title: '@collision-server/fs_write',
+        kind: 'edit',
+        rawInput: { operation: 'custom', payload: 'unchanged' },
+        content: [],
+        locations: [],
+      },
+    });
+
+    const toolCall = events.find(
+      (event) =>
+        event.type === AgentEventType.ToolCall && event.id === 'tc-mcp-write'
+    );
+    expect(toolCall).toMatchObject({
+      name: 'fs_write',
+      origin: 'mcp',
+      originalTitle: '@collision-server/fs_write',
+    });
+
+    const permissionPromise = capturedPermissionHandler({
+      toolCallId: 'tc-mcp-write',
+      options: [
+        { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
+      ],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const approval = events.find(
+      (event) => event.type === AgentEventType.ApprovalRequest
+    )?.value;
+    expect(approval.toolCall).toMatchObject({
+      toolCallId: 'tc-mcp-write',
+      title: '@collision-server/fs_write',
+      rawInput: { operation: 'custom', payload: 'unchanged' },
+      name: 'fs_write',
+      kind: 'edit',
+      origin: 'mcp',
+    });
+    approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+  });
+
+  it('preserves chunk-first main-session MCP provenance for permission enrichment', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    client.onUpdate((event: any) => events.push(event));
+    await client.newSession();
+
+    (client as any).handleExtSessionUpdate({
+      sessionId: 'kas-session-1',
+      update: {
+        sessionUpdate: 'tool_call_chunk',
+        toolCallId: 'tc-mcp-chunk',
+        title: '@collision-server/fs_write',
+        kind: 'edit',
+      },
+    });
+
+    expect(
+      events.find(
+        (event) =>
+          event.type === AgentEventType.ToolCall && event.id === 'tc-mcp-chunk'
+      )
+    ).toMatchObject({
+      name: 'fs_write',
+      origin: 'mcp',
+      originalTitle: '@collision-server/fs_write',
+    });
+
+    const permissionPromise = capturedPermissionHandler({
+      toolCallId: 'tc-mcp-chunk',
+      options: [
+        { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
+      ],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const approval = events.find(
+      (event) =>
+        event.type === AgentEventType.ApprovalRequest &&
+        event.value.toolCall.toolCallId === 'tc-mcp-chunk'
+    )?.value;
+    expect(approval.toolCall).toMatchObject({
+      toolCallId: 'tc-mcp-chunk',
+      title: '@collision-server/fs_write',
+      rawInput: {},
+      name: 'fs_write',
+      kind: 'edit',
+      origin: 'mcp',
+    });
+    approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
+    await permissionPromise;
+  });
+
+  it('normalizes built-in and MCP permission-first tool identities', async () => {
+    const client = new KasAcpClient();
+    const events: any[] = [];
+    client.onUpdate((event: any) => events.push(event));
+    await client.newSession();
+
+    for (const [toolCallId, title, origin] of [
+      ['permission-first-write', 'Creating report.ts', 'builtin'],
+      ['permission-first-mcp', '@collision-server/fs_write', 'mcp'],
+      [
+        'permission-first-running-mcp',
+        'Running: @collision-server/fs_write',
+        'mcp',
+      ],
+    ] as const) {
+      const permissionPromise = capturedPermissionHandler({
+        toolCallId,
+        toolCall: {
+          toolCallId,
+          title,
+          kind: 'edit',
+          rawInput: {
+            command: 'create',
+            path: '/workspace/report.ts',
+            content: 'export const ready = true;',
+          },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
+        ],
+        _meta: { kiro: { toolId: 'fs_write' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const approval = events.find(
+        (event) =>
+          event.type === AgentEventType.ApprovalRequest &&
+          event.value.toolCall.toolCallId === toolCallId
+      )?.value;
+      expect(approval.toolCall).toMatchObject({
+        toolCallId,
+        name: 'fs_write',
+        kind: 'edit',
+        origin,
+      });
+      approval.resolve({ outcome: 'selected', optionId: 'allow_once' });
+      await permissionPromise;
+    }
+  });
+
   // ── Stub methods ──
 
   it('listSettings returns settings from cli.json', async () => {

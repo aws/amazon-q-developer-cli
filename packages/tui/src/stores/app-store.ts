@@ -51,15 +51,15 @@ import { isMcpMessage } from '../lite/verbose.js';
 import {
   AgentEventType,
   ApprovalOptionId,
-  TASK_TOOL_NAMES,
-  SESSION_TOOL_NAMES,
   isParentSubagentTool,
+  TASK_TOOL_NAMES,
   deriveToolDiff,
   type AgentStreamEvent,
   type ApprovalRequestInfo,
   type QuestionRequestInfo,
   type SpecCheckpointPhase,
   type ToolDiff,
+  type ToolCallOrigin,
   type ToolKind,
   type KasModelConfigUpdateEvent,
   type RejectedAgentConfig,
@@ -554,6 +554,8 @@ export type MessageType =
       role: MessageRole.ToolUse;
       name: string;
       isQuestion?: boolean;
+      origin?: ToolCallOrigin;
+      originalTitle?: string;
       sessionId?: string;
       pipelineGroupId?: string;
       kind?: ToolKind;
@@ -4015,10 +4017,13 @@ export const createAppStore = (props: AppStoreProps) => {
               if (existingIndex !== -1) {
                 const existingMsg = state.messages[existingIndex];
                 if (existingMsg && existingMsg.role === MessageRole.ToolUse) {
-                  const hasNewContent =
-                    Object.keys(event.args).length > 0 || event.toolContent;
+                  const hasNewData =
+                    Object.keys(event.args).length > 0 ||
+                    event.toolContent ||
+                    event.origin ||
+                    event.originalTitle;
                   const denial = deriveToolDenial(event.meta?.kiro);
-                  if (hasNewContent || isQuestion || denial) {
+                  if (hasNewData || isQuestion || denial) {
                     const messages = [...state.messages];
                     messages[existingIndex] = {
                       ...existingMsg,
@@ -4028,6 +4033,9 @@ export const createAppStore = (props: AppStoreProps) => {
                         event.meta?.kiro?.pipeline?.groupId ??
                         existingMsg.pipelineGroupId,
                       content,
+                      origin: event.origin ?? existingMsg.origin,
+                      originalTitle:
+                        event.originalTitle ?? existingMsg.originalTitle,
                       purpose: purpose ?? existingMsg.purpose,
                       kind: event.kind || existingMsg.kind,
                       locations: event.locations || existingMsg.locations,
@@ -4046,7 +4054,7 @@ export const createAppStore = (props: AppStoreProps) => {
               let clearedMessages = state.messages;
               let clearedSessions = state.sessions;
               let clearedEventBuffer = state.sessionEventBuffer;
-              if (SESSION_TOOL_NAMES.has(event.name)) {
+              if (isParentSubagentTool(event.name, event.origin)) {
                 const activeParentGroups = new Set<string>();
                 const incomingPipelineGroup =
                   event.meta?.kiro?.pipeline?.groupId;
@@ -4057,7 +4065,7 @@ export const createAppStore = (props: AppStoreProps) => {
                 for (const message of state.messages) {
                   if (
                     message.role !== MessageRole.ToolUse ||
-                    !isParentSubagentTool(message.name) ||
+                    !isParentSubagentTool(message.name, message.origin) ||
                     message.isFinished
                   ) {
                     continue;
@@ -4142,6 +4150,8 @@ export const createAppStore = (props: AppStoreProps) => {
                     role: MessageRole.ToolUse,
                     name: event.name,
                     ...(isQuestion && { isQuestion: true }),
+                    origin: event.origin,
+                    originalTitle: event.originalTitle,
                     sessionId: event.sessionId,
                     pipelineGroupId: event.meta?.kiro?.pipeline?.groupId,
                     ...(isMcpMessage(kiroMeta) && {

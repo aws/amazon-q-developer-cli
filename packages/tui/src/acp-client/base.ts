@@ -25,6 +25,7 @@ import {
   type KiroMeta,
   type MeteringUsage,
   type RejectedAgentConfig,
+  type ToolCallOrigin,
 } from '../types/agent-events';
 import type {
   CommandOptionsResponse,
@@ -72,6 +73,13 @@ function parseMcpTitle(
   return match ? { serverName: match[1]!, toolName: match[2]! } : undefined;
 }
 
+function parseRunningMcpTitle(
+  title: string | undefined
+): { serverName: string; toolName: string } | undefined {
+  const match = title?.match(/^Running:\s+(.+)$/);
+  return parseMcpTitle(match?.[1]);
+}
+
 const AGENT_REJECTION_REASONS = new Set([
   'cli_only_agent',
   'invalid_config',
@@ -101,6 +109,40 @@ function parseRejectedAgentConfig(
     path: raw.path,
     error: raw.error,
     ...(reasonCode ? { reasonCode } : {}),
+  };
+}
+
+export function normalizeToolCallTitle(
+  title: string | undefined,
+  canonicalName?: string
+): {
+  name: string | undefined;
+  origin: ToolCallOrigin;
+  originalTitle?: string;
+} {
+  const identitySource = canonicalName || title;
+  const name = stripMcpTitlePrefix(identitySource);
+  const isQualifiedMcpIdentity = (value: string | undefined): boolean =>
+    !!value &&
+    (value.startsWith('mcp__') || parseMcpTitle(value) !== undefined);
+  const runningMcpTitle = parseRunningMcpTitle(title);
+  const runningTitleMatchesCanonical =
+    runningMcpTitle !== undefined &&
+    (canonicalName === undefined || runningMcpTitle.toolName === canonicalName);
+  const isMcp =
+    isQualifiedMcpIdentity(identitySource) ||
+    isQualifiedMcpIdentity(title) ||
+    runningTitleMatchesCanonical;
+  const originalTitle =
+    title && title !== name
+      ? title
+      : identitySource && identitySource !== name
+        ? identitySource
+        : undefined;
+  return {
+    name,
+    origin: isMcp ? 'mcp' : 'builtin',
+    ...(originalTitle && { originalTitle }),
   };
 }
 
@@ -1230,14 +1272,18 @@ export abstract class BaseAcpClient implements SessionClient {
     const { sessionId, update } = envelope;
     if (update.sessionUpdate === 'tool_call_chunk') {
       const isSubagentEvent = sessionId && sessionId !== this.sessionId;
+      const kiroMeta = update.kiroMeta;
+      const identity = normalizeToolCallTitle(update.title, kiroMeta?.toolName);
       const event: AgentStreamEvent = {
         type: AgentEventType.ToolCall,
         id: update.toolCallId,
-        name: stripMcpTitlePrefix(update.title) || update.title,
+        name: identity.name || update.title,
+        origin: identity.origin,
+        originalTitle: identity.originalTitle,
         kind: update.kind,
         args: {},
         sessionId: isSubagentEvent ? sessionId : undefined,
-        ...(update.kiroMeta ? { meta: { kiro: update.kiroMeta } } : {}),
+        ...(kiroMeta && { meta: { kiro: kiroMeta } }),
       };
       if (isSubagentEvent) this.broadcastMultiSession(sessionId, event);
       this.broadcastStreamEvent(event);
@@ -1389,12 +1435,20 @@ export abstract class BaseAcpClient implements SessionClient {
           line: loc.line ?? undefined,
         }));
         const kiroMeta = extractToolKiroMetaFromUpdate(update);
+        const identity = normalizeToolCallTitle(
+          update.title,
+          kiroMeta?.toolName
+        );
         return {
           type: AgentEventType.ToolCall,
           id: update.toolCallId,
           name: kiroMeta?.pipeline
             ? 'orchestrate_subagent'
-            : stripMcpTitlePrefix(update.title) || 'unknown',
+            : identity.name || 'unknown',
+          origin: kiroMeta?.pipeline ? 'builtin' : identity.origin,
+          originalTitle: kiroMeta?.pipeline
+            ? undefined
+            : identity.originalTitle,
           kind: update.kind ?? undefined,
           args: (update.rawInput as Record<string, unknown>) ?? {},
           toolContent: toolContent.length > 0 ? toolContent : undefined,
@@ -1424,10 +1478,16 @@ export abstract class BaseAcpClient implements SessionClient {
             | Record<string, unknown>
             | undefined;
           if (rawInput && typeof rawInput.response === 'string') {
+            const identity = normalizeToolCallTitle(
+              update.title ?? undefined,
+              kiroMetaUpdate?.toolName
+            );
             const synthesized: AgentStreamEvent = {
               type: AgentEventType.ToolCall,
               id: update.toolCallId,
-              name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
+              name: identity.name || 'unknown',
+              origin: identity.origin,
+              originalTitle: identity.originalTitle,
               kind: update.kind ?? undefined,
               args: rawInput,
               synthesized: true,
@@ -1468,10 +1528,16 @@ export abstract class BaseAcpClient implements SessionClient {
             !update.title &&
             (!notifSessionId || notifSessionId === this.sessionId);
           if (update.rawInput !== undefined && !isUnattributableOrphanRead) {
+            const identity = normalizeToolCallTitle(
+              update.title ?? undefined,
+              kiroMetaUpdate?.toolName
+            );
             const synthesized: AgentStreamEvent = {
               type: AgentEventType.ToolCall,
               id: update.toolCallId,
-              name: stripMcpTitlePrefix(update.title ?? undefined) || 'unknown',
+              name: identity.name || 'unknown',
+              origin: identity.origin,
+              originalTitle: identity.originalTitle,
               kind: update.kind ?? undefined,
               args: (update.rawInput as Record<string, unknown>) ?? {},
               ...(kiroMetaUpdate && { meta: { kiro: kiroMetaUpdate } }),
@@ -1937,6 +2003,17 @@ export abstract class BaseAcpClient implements SessionClient {
   ): Promise<acp.RequestPermissionResponse> {
     return new Promise<acp.RequestPermissionResponse>((resolve) => {
       const meta = params._meta as any;
+      const rawToolCall = (params.toolCall ?? {}) as {
+        toolCallId?: string;
+        title?: string;
+        rawInput?: unknown;
+        name?: string;
+        kind?: string;
+        origin?: ToolCallOrigin;
+      };
+      const canonicalName =
+        rawToolCall.name ?? meta?.kiro?.toolName ?? meta?.kiro?.toolId;
+      const identity = normalizeToolCallTitle(rawToolCall.title, canonicalName);
       const event: ApprovalRequestEvent = {
         type: AgentEventType.ApprovalRequest,
         value: {
@@ -1945,9 +2022,12 @@ export abstract class BaseAcpClient implements SessionClient {
             | string
             | undefined,
           toolCall: {
-            toolCallId: params.toolCall?.toolCallId || '',
-            title: params.toolCall?.title ?? undefined,
-            rawInput: (params.toolCall as any)?.rawInput ?? undefined,
+            toolCallId: rawToolCall.toolCallId || '',
+            title: rawToolCall.title,
+            rawInput: rawToolCall.rawInput,
+            name: rawToolCall.name ?? identity.name,
+            kind: rawToolCall.kind,
+            origin: rawToolCall.origin ?? identity.origin,
           },
           permissionOptions: (params.options || []).map((opt) => ({
             kind: opt.kind as ApprovalOptionId,

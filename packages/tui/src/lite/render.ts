@@ -25,18 +25,16 @@ import {
 import { UNICODE_GLYPHS, type Glyphs } from '../utils/glyphs.js';
 import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 import {
-  READ_TOOL_NAMES,
-  GREP_TOOL_NAMES,
-  GLOB_TOOL_NAMES,
-  CODE_TOOL_NAMES,
-  INTROSPECT_TOOL_NAMES,
-  SHELL_TOOL_NAMES,
-  WRITE_TOOL_NAMES,
-  TASK_TOOL_NAMES,
   isParentSubagentTool,
+  isTrivialTool,
+  resolveScrollbackToolRenderer,
+  resolveToolDisplayName,
   resolveToolId,
-} from '../types/agent-events.js';
-import { getToolLabel, formatLineRange } from '../types/tool-status.js';
+  toolDiffPolicy,
+  type ScrollbackToolRenderer,
+  type ToolCallOrigin,
+} from '../types/tool-capabilities.js';
+import { formatLineRange } from '../types/tool-status.js';
 import {
   getVerboseDisplay,
   shouldShowToolOutput,
@@ -1084,9 +1082,12 @@ export interface ToolCallRenderInfo {
 
 /** Canonical built-in label (Shell/Read/…) so KAS titles ("Run Command",
  *  "List Directory") read like v2; raw name for MCP/unknown tools. */
-export function toolDisplayName(name: string): string {
-  const id = resolveToolId(name);
-  return id ? getToolLabel(id) : name;
+export function toolDisplayName(
+  name: string,
+  kind?: string,
+  origin?: ToolCallOrigin
+): string {
+  return resolveToolDisplayName(name, kind, origin);
 }
 
 /**
@@ -1112,7 +1113,7 @@ export function renderToolCall(
   info: ToolCallRenderInfo,
   theme?: RenderTheme
 ): string {
-  const isTrivial = info.isTrivial ?? TRIVIAL_TOOLS.has(info.name);
+  const isTrivial = info.isTrivial ?? isTrivialTool(info.name);
 
   const brandFn = theme?.brand ?? brand;
   const agent = info.agentPrefix ? chalk.blue(info.agentPrefix) : '';
@@ -1366,30 +1367,59 @@ export function formatElapsed(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** "Trivial" read-style tools — rendered dimmed. */
-const TRIVIAL_TOOLS = new Set([
-  ...READ_TOOL_NAMES,
-  ...GREP_TOOL_NAMES,
-  ...GLOB_TOOL_NAMES,
-  ...CODE_TOOL_NAMES,
-  ...INTROSPECT_TOOL_NAMES,
-]);
+type LiteToolRenderMode = 'write' | 'read' | 'subagent' | 'task' | 'generic';
 
-// Tools that render an inline diff in lite mode. Intentionally distinct from
-// the canonical WRITE_TOOL_NAMES registry: lite only diffs tools that carry a
-// previewable old/new payload (edit/create_file/write_file), and skips
-// delete_file/fs_append which have no diff to show.
-const WRITE_TOOLS = new Set([
-  'fs_write',
-  'str_replace',
-  'write',
-  'edit',
-  'create_file',
-  'write_file',
-]);
+function resolveLiteToolRenderMode(
+  renderer: ScrollbackToolRenderer
+): LiteToolRenderMode {
+  switch (renderer) {
+    case 'write':
+      return 'write';
+    case 'read':
+      return 'read';
+    case 'session':
+      return 'subagent';
+    case 'task':
+      return 'task';
+    case 'shell':
+    case 'web_search':
+    case 'web_fetch':
+    case 'grep':
+    case 'glob':
+    case 'ls':
+    case 'code':
+    case 'introspect':
+    case 'image_read':
+    case 'goal':
+    case 'knowledge':
+    case 'workflow':
+    case 'generic':
+      return 'generic';
+    default: {
+      const exhaustive: never = renderer;
+      return exhaustive;
+    }
+  }
+}
 
-export function isReadTool(name: string): boolean {
-  return READ_TOOL_NAMES.has(name);
+function resolveLiteToolRenderDispatch(
+  name: string,
+  kind?: string,
+  origin?: ToolCallOrigin
+): {
+  mode: LiteToolRenderMode;
+  isRead: boolean;
+  isWriteWithDiff: boolean;
+} {
+  const mode = resolveLiteToolRenderMode(
+    resolveScrollbackToolRenderer(name, kind, origin)
+  );
+  return {
+    mode,
+    isRead: mode === 'read',
+    isWriteWithDiff:
+      mode === 'write' && toolDiffPolicy(name, kind, origin) === 'unified',
+  };
 }
 
 /**
@@ -2006,7 +2036,9 @@ export function stripShellPreamble(command: string): string {
 export function extractInlineArg(
   toolName: string,
   content: string,
-  maxChars: number | null = 80
+  maxChars: number | null = 80,
+  kind?: string,
+  origin?: ToolCallOrigin
 ): string | undefined {
   if (!content) return undefined;
   let args: Record<string, unknown> | undefined;
@@ -2019,10 +2051,10 @@ export function extractInlineArg(
   }
   if (!args) return undefined;
 
-  // Shell tools: the command is the chip. Gated on SHELL_TOOL_NAMES so the
-  // write-tool `command` discriminator doesn't win and show a useless chip.
+  // Shell tools: the command is the chip. The renderer family gate prevents a
+  // write tool's `command` discriminator from winning this branch.
   if (
-    SHELL_TOOL_NAMES.has(toolName) &&
+    resolveScrollbackToolRenderer(toolName, kind, origin) === 'shell' &&
     typeof args.command === 'string' &&
     args.command.length > 0
   ) {
@@ -2031,12 +2063,12 @@ export function extractInlineArg(
   }
 
   // Write tools: verb + relative path (path alone hides the operation).
-  if (WRITE_TOOL_NAMES.has(toolName)) {
+  if (resolveScrollbackToolRenderer(toolName, kind, origin) === 'write') {
     const path = typeof args.path === 'string' ? args.path : null;
     if (path) {
       let verb = 'write';
       const oldStr = args.old_str ?? args.oldStr;
-      const fileText = args.file_text ?? args.content;
+      const fileText = args.file_text ?? args.content ?? args.text;
       const insertLine = args.insert_line ?? args.insertLine;
       // Prefer the explicit `command`; infer from shape for older callers.
       if (args.command === 'create') verb = 'create';
@@ -2057,7 +2089,7 @@ export function extractInlineArg(
   // Code intelligence: `operation` is the discriminator (search_symbols vs
   // goto_definition vs get_diagnostics…); the generic branches below drop it
   // and show only the symbol/path. Prefix it + the target, like Code.tsx.
-  if (resolveToolId(toolName) === 'code') {
+  if (resolveToolId(toolName, kind, origin) === 'code') {
     const operation =
       typeof args.operation === 'string' ? args.operation : null;
     const target =
@@ -3095,6 +3127,8 @@ export interface MessageLike {
    *  "is MCP" signal for the `mcp` verbosity category, since the tool `name` is
    *  the bare (server-prefix-stripped) tool name. */
   mcpServerName?: string;
+  origin?: ToolCallOrigin;
+  originalTitle?: string;
   success?: boolean;
   standalone?: boolean;
   agentName?: string;
@@ -3255,16 +3289,20 @@ export function renderMessageToText(
             : 'running';
       const showAgent = msg.agentName && msg.agentName !== mainAgentName;
       const agentPrefix = showAgent ? `[${msg.agentName}] ` : undefined;
-      // `|| msg.kind` catches v3/KAS writes/reads whose friendly titles aren't
-      // in the name sets (else they fall through to a raw args dump).
-      const isWrite = WRITE_TOOLS.has(msg.name || '') || msg.kind === 'edit';
-      const isRead = isReadTool(msg.name || '') || msg.kind === 'read';
+      const dispatch = resolveLiteToolRenderDispatch(
+        msg.name || '',
+        msg.kind,
+        msg.origin
+      );
       const display = ctx.display ?? getVerboseDisplay();
 
       // Subagent tool: one canonical block per pipeline run, shown in full
       // (it's what the parent agent sees). Per-stage tool calls are hidden
       // from the chat log (they live in the footer activity strip).
-      if (isParentSubagentTool(msg.name)) {
+      if (
+        dispatch.mode === 'subagent' &&
+        isParentSubagentTool(msg.name, msg.origin)
+      ) {
         const elapsed =
           msg.startTime && msg.finishTime
             ? msg.finishTime - msg.startTime
@@ -3297,7 +3335,7 @@ export function renderMessageToText(
       // structured body instead of the raw args JSON; display name → `tasks`
       // to match the tray + /verbose. Falls through to generic on malformed
       // args so a schema change still shows something.
-      if (msg.name && TASK_TOOL_NAMES.has(msg.name)) {
+      if (dispatch.mode === 'task') {
         const taskBlock = formatTaskToolBody(
           msg.content,
           ctx.termCols,
@@ -3347,24 +3385,30 @@ export function renderMessageToText(
       }
 
       const isQuestion = msg.isQuestion === true;
+      // Reasoning slot (gated by showToolReasoning) only ever surfaces the
+      // agent's real `__tool_use_purpose`, never a synthesized args one-liner
+      // — so purple always means "the agent reasoned about this call".
+      const inlineArg =
+        display.toolArgsMode === 'inline'
+          ? extractInlineArg(
+              msg.name || '',
+              msg.content,
+              display.argsMaxChars,
+              msg.kind,
+              msg.origin
+            )
+          : undefined;
       const reasoning = display.showToolReasoning
         ? extractToolReasoning(msg.content, msg.purpose)
         : undefined;
 
       const info: ToolCallRenderInfo = {
-        name: isQuestion ? 'Question:' : toolDisplayName(msg.name || 'unknown'),
-        inlineArg: isQuestion
-          ? stripInlineMarkdown(msg.name || '')
-          : display.toolArgsMode === 'inline'
-            ? extractInlineArg(
-                msg.name || '',
-                msg.content,
-                display.argsMaxChars
-              )
-            : undefined,
-        // Triviality is a wire-name fact; compute it here since `name` is the
-        // canonical label, which TRIVIAL_TOOLS (wire names) wouldn't match.
-        isTrivial: TRIVIAL_TOOLS.has(msg.name || ''),
+        name: isQuestion
+          ? 'Question:'
+          : toolDisplayName(msg.name || 'unknown', msg.kind, msg.origin),
+        inlineArg: isQuestion ? stripInlineMarkdown(msg.name || '') : inlineArg,
+        isTrivial:
+          !isQuestion && isTrivialTool(msg.name || '', msg.kind, msg.origin),
         status,
         description: reasoning,
         agentPrefix,
@@ -3378,7 +3422,7 @@ export function renderMessageToText(
         // (the agent isn't progressing, so the spinner would lie).
         awaitingApproval: isAwaitingApproval(msg, ctx),
       };
-      if (isWrite && msg.content) {
+      if (dispatch.isWriteWithDiff && msg.content) {
         // Suppress the diff when this call is awaiting approval (already shown
         // in the prompt) or the user turned off the Write-diffs toggle; the
         // header row still records that the write fired.
@@ -3400,7 +3444,7 @@ export function renderMessageToText(
       // highlighted lines); the output bar is skipped (body shows content).
       // Filters still gate it — fall through to the bare line when read isn't enabled.
       if (
-        isRead &&
+        dispatch.isRead &&
         msg.content &&
         !isRejected &&
         shouldShowToolOutput(

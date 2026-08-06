@@ -1285,10 +1285,6 @@ describe('Enum and constant exports', () => {
     expect(ToolUseStatus.Approved as string).toBe('approved');
     expect(ToolUseStatus.Rejected as string).toBe('rejected');
   });
-
-  it('NOT_READY_TOOLS is a Set', () => {
-    expect(NOT_READY_TOOLS).toBeInstanceOf(Set);
-  });
 });
 
 describe('Simple state setters', () => {

@@ -1,20 +1,14 @@
 import {
-  resolveToolId,
-  kindToToolId,
+  isParentSubagentTool,
+  resolveToolDisplayName,
+  type ToolCallOrigin,
   type ToolKind,
-} from '../types/agent-events.js';
-import {
-  TOOL_LABELS,
-  getToolLabel,
-  type BuiltinToolId,
-} from '../types/tool-status.js';
+} from '../types/tool-capabilities.js';
 import { parseToolArg } from './tool-result.js';
 
-const PREVIEW_MAX = 120;
+export { resolveToolDisplayName } from '../types/tool-capabilities.js';
 
-/** Tool names that spawn/orchestrate subagents — their primary preview arg is
- *  the prompt/task given to the spawned agent. */
-const SUBAGENT_TOOL_NAMES = new Set(['subagent', 'agent_crew']);
+const PREVIEW_MAX = 120;
 
 /** Title prefix KAS uses for per-stage subagent wrapper cards. */
 const SUBAGENT_TITLE_PREFIX = 'Sub-agent:';
@@ -38,7 +32,12 @@ const ORCHESTRATE_SUBAGENT_TITLE = 'Orchestrate Sub-agent';
  * kind of these KAS cards and avoids a false positive on a coincidental
  * MCP/user tool that happens to share the title text.
  */
-export function isSubagentCard(name: string, kind?: ToolKind): boolean {
+export function isSubagentCard(
+  name: string,
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
+): boolean {
+  if (origin === 'mcp') return false;
   if (kind !== undefined && kind !== 'other') return false;
   if (name.startsWith(SUBAGENT_TITLE_PREFIX)) return true;
   if (name === ORCHESTRATE_SUBAGENT_TITLE) return true;
@@ -68,20 +67,6 @@ const PRIMARY_ARG_KEYS = [
 ];
 
 /**
- * Resolve the friendly display name for a tool from its wire name, falling
- * back to a name that is itself a builtin id (e.g. "subagent"), then its ACP
- * kind, and finally the raw name — mirroring the routing in ToolUseContent so
- * a collapsed entry shows the same label users see normally.
- */
-export function resolveToolDisplayName(name: string, kind?: ToolKind): string {
-  const direct = Object.prototype.hasOwnProperty.call(TOOL_LABELS, name)
-    ? (name as BuiltinToolId)
-    : undefined;
-  const toolId = resolveToolId(name) ?? direct ?? kindToToolId(kind);
-  return toolId ? getToolLabel(toolId) : name;
-}
-
-/**
  * Whether a tool call should be collapsed in spec mode. Collapse every tool
  * that actually carries args to hide, to a title + one-line preview.
  *
@@ -108,9 +93,13 @@ export function shouldCollapseToolCard(
   name: string,
   kind: ToolKind | undefined,
   content: string | undefined,
-  hideArgs: boolean
+  hideArgs: boolean,
+  origin?: ToolCallOrigin
 ): boolean {
-  return (hideArgs || isSubagentCard(name, kind)) && isCollapsibleTool(content);
+  return (
+    (hideArgs || isSubagentCard(name, kind, origin)) &&
+    isCollapsibleTool(content)
+  );
 }
 
 /** True when the tool args parse to a non-empty object — i.e. there is
@@ -168,9 +157,10 @@ export interface CollapsedToolPreview {
 export function collapsedToolPreview(
   name: string,
   kind: ToolKind | undefined,
-  content: string
+  content: string,
+  origin?: ToolCallOrigin
 ): CollapsedToolPreview {
-  const title = resolveToolDisplayName(name, kind);
+  const title = resolveToolDisplayName(name, kind, origin);
 
   // KAS "Sub-agent: <role>" wrapper cards carry the agent name in the title
   // itself; normalize to a clean "Subagent" title + role target so they read
@@ -199,7 +189,7 @@ export function collapsedToolPreview(
     return { title, target, preview: raw ? firstLine(raw) : undefined };
   }
 
-  if (SUBAGENT_TOOL_NAMES.has(name)) {
+  if (isParentSubagentTool(name, origin)) {
     const target =
       parseToolArg(content, 'agent') ??
       parseToolArg(content, 'subagent_type') ??

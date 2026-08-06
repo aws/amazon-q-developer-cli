@@ -152,7 +152,7 @@ export const CrewMonitorContent: React.FC = () => {
             for (let i = msgs.length - 1; i >= 0; i--) {
               const m = msgs[i]!;
               if (m.role === MessageRole.ToolUse && !m.isFinished) {
-                const toolId = resolveToolId(m.name);
+                const toolId = resolveToolId(m.name, m.kind, m.origin);
                 activeStatus = toolId ? getToolLabel(toolId) : m.name;
                 break;
               }
@@ -171,7 +171,7 @@ export const CrewMonitorContent: React.FC = () => {
             for (let i = msgs.length - 1; i >= 0; i--) {
               const m = msgs[i]!;
               if (m.role === MessageRole.ToolUse && !m.isFinished) {
-                const toolId = resolveToolId(m.name);
+                const toolId = resolveToolId(m.name, m.kind, m.origin);
                 const label = toolId ? getToolLabel(toolId) : m.name;
                 let param: string | undefined;
                 try {

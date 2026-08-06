@@ -308,6 +308,37 @@ describe('AcpClient', () => {
     expect(event.name).toBe('fs_write');
   });
 
+  it('uses canonical V2 metadata for MCP identity and retains the display title', async () => {
+    const client = new AcpClient('/path/to/agent', []);
+    await client.newSession();
+    const handler = mock((_event: any) => {});
+    client.onUpdate(handler);
+
+    await client.sessionUpdate({
+      sessionId: 'test-session-123',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc-mcp',
+        title: 'Running: @weather/get_forecast',
+        kind: 'other',
+        rawInput: { city: 'Seattle' },
+        content: [],
+        locations: [],
+        _meta: { kiro: { toolName: '@weather/get_forecast' } },
+      },
+    } as unknown as SessionNotification);
+
+    expect(handler.mock.calls[0]![0]).toMatchObject({
+      type: AgentEventType.ToolCall,
+      id: 'tc-mcp',
+      name: 'get_forecast',
+      origin: 'mcp',
+      originalTitle: 'Running: @weather/get_forecast',
+      args: { city: 'Seattle' },
+      meta: { kiro: { toolName: '@weather/get_forecast' } },
+    });
+  });
+
   it('sessionUpdate for tool_call_update completed broadcasts ToolCallFinished', async () => {
     const client = new AcpClient('/path/to/agent', []);
     await client.newSession();

@@ -1,6 +1,7 @@
 import { chalk } from '../../../utils/color.js';
 import { UNICODE_GLYPHS, type Glyphs } from '../../../utils/glyphs.js';
 import { extractInlineArg } from '../../../lite/render.js';
+import type { ToolCallOrigin, ToolKind } from '../../../types/agent-events.js';
 
 export type SubagentPhase =
   | 'running'
@@ -118,12 +119,14 @@ export function formatSubagentRow(
  */
 export function extractFooterToolDetail(
   toolName: string,
-  content: string
+  content: string,
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
 ): string | null {
   if (!content) return null;
   // Reuse the lean preset's inline-arg formatter (no char cap — the footer
   // row is truncated to terminal width by formatSubagentRow anyway).
-  const chip = extractInlineArg(toolName, content, null);
+  const chip = extractInlineArg(toolName, content, null, kind, origin);
   if (!chip) return null;
   // Strip the surrounding [...] brackets that the inline-arg chip adds.
   if (chip.startsWith('[') && chip.endsWith(']')) {

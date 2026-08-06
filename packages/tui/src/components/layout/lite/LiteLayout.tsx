@@ -756,7 +756,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // subagent walks below short-circuit on the common no-pipeline path.
   const hasAnySubagentTool = useMemo(() => {
     for (const m of messages) {
-      if (m.role === MessageRole.ToolUse && isParentSubagentTool(m.name))
+      if (
+        m.role === MessageRole.ToolUse &&
+        isParentSubagentTool(m.name, m.origin)
+      )
         return true;
     }
     return false;
@@ -1171,7 +1174,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
           activeToolFinished: false,
         });
       }
-
       for (const message of selectSubagentToolMessagesForScope(
         messages,
         scope,
@@ -1204,10 +1206,16 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
           continue;
         }
         if (row.phase === 'summarizing') continue;
-        row.activeToolName = toolDisplayName(message.name);
+        row.activeToolName = toolDisplayName(
+          message.name,
+          message.kind,
+          message.origin
+        );
         row.activeToolDetail = extractFooterToolDetail(
           message.name,
-          message.content
+          message.content,
+          message.kind,
+          message.origin
         );
         row.activeToolFinished = !!message.isFinished;
         if (approvalToolCallId && message.id === approvalToolCallId) {

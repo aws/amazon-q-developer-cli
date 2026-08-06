@@ -30,6 +30,7 @@
 
 import { describe, test, expect, afterEach, vi } from 'vitest';
 import React from 'react';
+import stripAnsi from 'strip-ansi';
 import { render, type Instance } from 'twinki';
 import type { Terminal } from 'twinki';
 import {
@@ -162,34 +163,43 @@ function mountApproval(
   return { terminal, respondToApproval, onNotesSubmit };
 }
 
-const READ_TRUST_OPTION = {
-  label: 'Exact file',
-  display: 'subdir/file.txt',
-  setting_key: 'allowedPaths',
-  patterns: ['subdir/file.txt'],
-};
+function mountApprovalPainter(toolMsg: MessageType): Harness {
+  if (toolMsg.role !== MessageRole.ToolUse) {
+    throw new Error('Expected a tool-use message');
+  }
 
-const SHELL_TRUST_OPTION = {
-  label: 'Exact command',
-  display: 'echo done',
-  setting_key: 'allowedCommands',
-  patterns: ['echo done'],
-};
-
-function makeKasReadTrustApproval() {
-  return {
-    toolId: 'fs_read',
-    toolCall: {
-      toolCallId: 'tooluse_read_1',
-      title: 'fs_read',
-    },
-    permissionOptions: [
-      { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
-      { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
-      { kind: ApprovalOptionId.AllowAlways, optionId: 'always-accept' },
-    ],
-    trustOptions: [READ_TRUST_OPTION],
-  };
+  const terminal = new MockTerminal();
+  const respondToApproval = vi.fn();
+  const onNotesSubmit = vi.fn();
+  const rawInput = JSON.parse(toolMsg.content);
+  const instance = render(
+    <AppStoreContext.Provider
+      value={createAppStore({ kiro: new Kiro(), agentEngine: 'v2' })}
+    >
+      <ApprovalPrompt
+        messages={[toolMsg]}
+        approval={{
+          toolCall: {
+            toolCallId: toolMsg.id,
+            title: toolMsg.originalTitle ?? toolMsg.name,
+            rawInput,
+          },
+          permissionOptions: [
+            { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+            { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+          ],
+          trustOptions: [],
+        }}
+        respondToApproval={respondToApproval}
+        getStageInputColor={() => (text: string) => text}
+        mainAgentName="main"
+        onNotesSubmit={onNotesSubmit}
+      />
+    </AppStoreContext.Provider>,
+    { terminal, exitOnCtrlC: false }
+  );
+  activeInstance = instance;
+  return { terminal, respondToApproval, onNotesSubmit };
 }
 
 describe('ApprovalPrompt — fast path (no staged note)', () => {
@@ -277,6 +287,295 @@ describe('ApprovalPrompt — tool display label', () => {
     await flush();
     expect(terminal.output).toContain('Shell');
     expect(terminal.output).not.toContain('Run Command');
+  });
+});
+
+describe('ApprovalPrompt — tool payload rendering', () => {
+  test('renders an eligible edit-kind tool as a write diff', async () => {
+    const h = mountApprovalPainter({
+      id: 'call-write',
+      role: MessageRole.ToolUse,
+      name: 'Patch Workspace',
+      kind: 'edit',
+      content: JSON.stringify({
+        command: 'str_replace',
+        path: '/workspace/file.ts',
+        old_str: 'const value = 1;',
+        new_str: 'const value = 2;',
+      }),
+      isFinished: false,
+    });
+    await flush();
+    const output = stripAnsi(h.terminal.output);
+
+    expect(output).toContain('Write');
+    expect(output).toContain('/workspace/file.ts');
+    expect(output).toMatch(/-\s+const value = 1;/);
+    expect(output).toMatch(/\+\s+const value = 2;/);
+    expect(output).not.toContain('old_str:');
+    expect(output).not.toContain('new_str:');
+  });
+
+  test('renders a parent subagent with the dedicated pipeline painter', async () => {
+    const h = mountApprovalPainter({
+      id: 'call-subagent',
+      role: MessageRole.ToolUse,
+      name: 'orchestrate_subagent',
+      content: JSON.stringify({
+        task: 'Audit approval routing',
+        stages: [
+          {
+            name: 'reviewer',
+            role: 'explorer',
+            prompt_template: 'Inspect the approval components',
+          },
+        ],
+      }),
+      isFinished: false,
+    });
+    await flush();
+    const output = stripAnsi(h.terminal.output);
+
+    expect(output).toContain('pipeline:');
+    expect(output).toContain('[reviewer]');
+    expect(output).toContain('(explorer)');
+    expect(output).toContain('Inspect the approval components');
+    expect(output).not.toContain('stages:');
+  });
+
+  test('renders ordinary tool arguments without specialized paint', async () => {
+    const h = mountApprovalPainter({
+      id: 'call-generic',
+      role: MessageRole.ToolUse,
+      name: 'custom_inspector',
+      content: JSON.stringify({
+        query: 'approval routing',
+        limit: 2,
+      }),
+      isFinished: false,
+    });
+    await flush();
+    const output = stripAnsi(h.terminal.output);
+
+    expect(output).toContain('custom_inspector');
+    expect(output).toContain('query:');
+    expect(output).toContain('approval routing');
+    expect(output).toContain('limit:');
+    expect(output).not.toContain('pipeline:');
+  });
+
+  test('keeps an MCP edit-kind name collision generic and renders arguments, not a diff', async () => {
+    const h = mountApprovalPainter({
+      id: 'call-1',
+      role: MessageRole.ToolUse,
+      name: 'fs_write',
+      origin: 'mcp',
+      originalTitle: '@server/fs_write',
+      kind: 'edit',
+      content: JSON.stringify({
+        command: 'str_replace',
+        path: '/workspace/file.ts',
+        old_str: 'before',
+        new_str: 'after',
+      }),
+      isFinished: false,
+    });
+    await flush();
+    const output = stripAnsi(h.terminal.output);
+
+    expect(output).toContain('fs_write');
+    expect(output).toContain('command:');
+    expect(output).toContain('old_str:');
+    expect(output).not.toContain('Write needs approval');
+    expect(output).not.toContain('added 1 line');
+    expect(output).not.toMatch(/-\s+before/);
+    expect(output).not.toMatch(/\+\s+after/);
+  });
+
+  test('renders MCP permission arguments before the ToolUse message arrives', async () => {
+    const terminal = new MockTerminal();
+    const instance = render(
+      <AppStoreContext.Provider
+        value={createAppStore({ kiro: new Kiro(), agentEngine: 'v2' })}
+      >
+        <ApprovalPrompt
+          messages={[]}
+          approval={{
+            toolCall: {
+              toolCallId: 'call-mcp-first',
+              title: '@weather/get_forecast',
+              rawInput: { city: 'Seattle', units: 'metric' },
+              name: 'get_forecast',
+              origin: 'mcp',
+            },
+            permissionOptions: [
+              { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+              { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+            ],
+            trustOptions: [],
+          }}
+          respondToApproval={vi.fn()}
+          getStageInputColor={() => (text: string) => text}
+          mainAgentName="main"
+          onNotesSubmit={vi.fn()}
+        />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    activeInstance = instance;
+    await flush();
+    const output = stripAnsi(terminal.output);
+
+    expect(output).toContain('get_forecast');
+    expect(output).toContain('city:');
+    expect(output).toContain('Seattle');
+    expect(output).toContain('units:');
+    expect(output).toContain('metric');
+  });
+
+  test('renders a permission-first built-in write as a diff', async () => {
+    const terminal = new MockTerminal();
+    const instance = render(
+      <AppStoreContext.Provider
+        value={createAppStore({ kiro: new Kiro(), agentEngine: 'kas' })}
+      >
+        <ApprovalPrompt
+          messages={[]}
+          approval={{
+            toolId: 'fs_write',
+            toolCall: {
+              toolCallId: 'call-write-first',
+              title: 'Creating report.ts',
+              name: 'fs_write',
+              kind: 'edit',
+              origin: 'builtin',
+              rawInput: {
+                command: 'str_replace',
+                path: '/workspace/report.ts',
+                old_str: 'export const ready = false;',
+                new_str: 'export const ready = true;',
+              },
+            },
+            permissionOptions: [
+              { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+              { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+            ],
+            trustOptions: [],
+          }}
+          respondToApproval={vi.fn()}
+          getStageInputColor={() => (text: string) => text}
+          mainAgentName="main"
+          onNotesSubmit={vi.fn()}
+        />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    activeInstance = instance;
+    await flush();
+    const output = stripAnsi(terminal.output);
+
+    expect(output).toContain('Write needs approval');
+    expect(output).toContain('/workspace/report.ts');
+    expect(output).toMatch(/-\s+export const ready = false;/);
+    expect(output).toMatch(/\+\s+export const ready = true;/);
+    expect(output).not.toContain('old_str:');
+  });
+
+  test('renders permission arguments while the ToolUse message is an empty chunk placeholder', async () => {
+    const terminal = new MockTerminal();
+    const instance = render(
+      <AppStoreContext.Provider
+        value={createAppStore({ kiro: new Kiro(), agentEngine: 'v2' })}
+      >
+        <ApprovalPrompt
+          messages={[
+            {
+              id: 'call-mcp-chunk-first',
+              role: MessageRole.ToolUse,
+              name: 'get_forecast',
+              origin: 'mcp',
+              originalTitle: '@weather/get_forecast',
+              content: '{}',
+              isFinished: false,
+            },
+          ]}
+          approval={{
+            toolCall: {
+              toolCallId: 'call-mcp-chunk-first',
+              title: '@weather/get_forecast',
+              rawInput: { city: 'Seattle', units: 'metric' },
+            },
+            permissionOptions: [
+              { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+              { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+            ],
+            trustOptions: [],
+          }}
+          respondToApproval={vi.fn()}
+          getStageInputColor={() => (text: string) => text}
+          mainAgentName="main"
+          onNotesSubmit={vi.fn()}
+        />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    activeInstance = instance;
+    await flush();
+    const output = stripAnsi(terminal.output);
+
+    expect(output).toContain('city:');
+    expect(output).toContain('Seattle');
+    expect(output).toContain('units:');
+    expect(output).toContain('metric');
+  });
+
+  test('renders edit permission input instead of the synthesized empty edit placeholder', async () => {
+    const terminal = new MockTerminal();
+    const instance = render(
+      <AppStoreContext.Provider
+        value={createAppStore({ kiro: new Kiro(), agentEngine: 'v2' })}
+      >
+        <ApprovalPrompt
+          messages={[
+            {
+              id: 'call-edit-chunk-first',
+              role: MessageRole.ToolUse,
+              name: 'fs_write',
+              kind: 'edit',
+              content: JSON.stringify({ command: 'create', content: '' }),
+              isFinished: false,
+            },
+          ]}
+          approval={{
+            toolCall: {
+              toolCallId: 'call-edit-chunk-first',
+              title: 'Creating report.ts',
+              rawInput: {
+                command: 'create',
+                path: '/workspace/report.ts',
+                content: 'export const ready = true;',
+              },
+            },
+            permissionOptions: [
+              { kind: ApprovalOptionId.AllowOnce, optionId: 'accept' },
+              { kind: ApprovalOptionId.RejectOnce, optionId: 'reject' },
+            ],
+            trustOptions: [],
+          }}
+          respondToApproval={vi.fn()}
+          getStageInputColor={() => (text: string) => text}
+          mainAgentName="main"
+          onNotesSubmit={vi.fn()}
+        />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    activeInstance = instance;
+    await flush();
+    const output = stripAnsi(terminal.output);
+
+    expect(output).toContain('/workspace/report.ts');
+    expect(output).toContain('export const ready = true;');
   });
 });
 

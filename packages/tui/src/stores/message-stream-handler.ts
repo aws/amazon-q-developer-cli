@@ -171,6 +171,8 @@ export function createMessageStreamHandler(
               next[idx] = {
                 ...existing,
                 content,
+                origin: event.origin ?? existing.origin,
+                originalTitle: event.originalTitle ?? existing.originalTitle,
                 kind: event.kind || existing.kind,
                 locations: event.locations || existing.locations,
                 diff: diff ?? existing.diff,
@@ -185,6 +187,8 @@ export function createMessageStreamHandler(
               id: event.id,
               role: MessageRole.ToolUse,
               name: event.name,
+              origin: event.origin,
+              originalTitle: event.originalTitle,
               kind: event.kind,
               content,
               diff,

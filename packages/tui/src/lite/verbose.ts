@@ -97,6 +97,42 @@ export const TUI_DEFAULT_DISPLAY: VerboseDisplayConfig = {
   persistOutput: false,
 };
 
+/** Permission decisions always expose the payload being approved. */
+export function approvalDisplayConfig(
+  current: VerboseDisplayConfig
+): VerboseDisplayConfig {
+  if (
+    current.toolArgsMode === 'block' &&
+    current.showWriteDiffs &&
+    current.argsMaxLines === null &&
+    current.argsMaxChars === null &&
+    current.outputMaxLines === null &&
+    current.outputMaxChars === null &&
+    current.subagent.pipeline &&
+    current.subagent.prompts &&
+    current.subagent.roles &&
+    current.subagent.deps
+  ) {
+    return current;
+  }
+  return {
+    ...current,
+    toolArgsMode: 'block',
+    showWriteDiffs: true,
+    argsMaxLines: null,
+    argsMaxChars: null,
+    outputMaxLines: null,
+    outputMaxChars: null,
+    subagent: {
+      ...current.subagent,
+      pipeline: true,
+      prompts: true,
+      roles: true,
+      deps: true,
+    },
+  };
+}
+
 export const DENSITY_PRESETS = ['lean', 'default', 'full'] as const;
 export type DensityPreset = (typeof DENSITY_PRESETS)[number];
 

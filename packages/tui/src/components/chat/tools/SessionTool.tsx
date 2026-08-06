@@ -13,6 +13,7 @@ import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
 import { SubagentDetail, type SubagentDetailProps } from './SubagentDetail.js';
 import { collectSubagentSummariesByParentCached } from '../../layout/lite/subagent-summaries.js';
 import type { SubagentStageSummary } from '../../../lite/render.js';
+import { isParentSubagentTool } from '../../../types/agent-events.js';
 
 const EMPTY: SubagentStageSummary[] = [];
 
@@ -51,10 +52,7 @@ export const SessionTool = React.memo(function SessionTool({
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
 
-  const isCrewTool =
-    name === 'subagent' ||
-    name === 'agent_crew' ||
-    name === 'orchestrate_subagent';
+  const isCrewTool = isParentSubagentTool(name);
 
   const showSubagentDetail =
     isCrewTool && process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';

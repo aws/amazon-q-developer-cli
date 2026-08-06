@@ -1,5 +1,37 @@
-import { ToolNameAlias } from '../../e2e_tests/types/agent.js';
-import type { BuiltinToolId } from './tool-status.js';
+import {
+  toolDiffPolicy,
+  type ToolCallOrigin,
+  type ToolKind,
+} from './tool-capabilities.js';
+export {
+  CODE_TOOL_NAMES,
+  GLOB_TOOL_NAMES,
+  GREP_TOOL_NAMES,
+  IMAGE_READ_TOOL_NAMES,
+  INTROSPECT_TOOL_NAMES,
+  isParentSubagentTool,
+  isWorkflowLaunchTool,
+  KNOWLEDGE_TOOL_NAMES,
+  LS_TOOL_NAMES,
+  NON_SCROLLBACK_TOOL_IDS,
+  PARENT_SUBAGENT_TOOL_NAMES,
+  READ_TOOL_NAMES,
+  resolveScrollbackToolRenderer,
+  resolveToolId,
+  SESSION_TOOL_NAMES,
+  SHELL_PROCESS_TOOL_NAMES,
+  SHELL_TOOL_NAMES,
+  TASK_TOOL_NAMES,
+  TOOL_CAPABILITIES,
+  WEB_FETCH_TOOL_NAMES,
+  WEB_SEARCH_TOOL_NAMES,
+  WORKFLOW_LAUNCH_TOOL_NAMES,
+  WORKFLOW_TOOL_NAMES,
+  WRITE_TOOL_NAMES,
+  type ScrollbackToolRenderer,
+  type ToolCallOrigin,
+  type ToolKind,
+} from './tool-capabilities.js';
 import type {
   CommandMeta,
   PromptEntry,
@@ -90,185 +122,6 @@ export enum ToolCallStatus {
   Failed = 'failed',
 }
 
-// Built-in tool name sets for matching
-export const WRITE_TOOL_NAMES: Set<string> = new Set([
-  ToolNameAlias.FsWrite,
-  ToolNameAlias.Write,
-  'str_replace',
-  'fs_append',
-  'delete_file',
-  'Write File',
-  'Replace in File',
-  'Append to File',
-  'Delete File',
-]);
-export const READ_TOOL_NAMES: Set<string> = new Set([
-  ToolNameAlias.FsRead,
-  ToolNameAlias.Read,
-  'read_file',
-  'read_files',
-  'list_directory',
-  'Read File',
-  'Read Files',
-  'List Directory',
-]);
-export const SHELL_TOOL_NAMES: Set<string> = new Set([
-  ToolNameAlias.ExecuteBash,
-  ToolNameAlias.ExecuteCmd,
-  ToolNameAlias.Shell,
-  'control_bash_process',
-  'control_pwsh_process',
-  'run_command',
-  'Run Command',
-  'Control Process',
-]);
-// KAS process-management tools. Kept separate from SHELL_TOOL_NAMES so they
-// keep their own display labels (resolveToolId only reads SHELL_TOOL_NAMES),
-// but verbose.ts umbrellas them under the 'shell' verbosity category.
-export const SHELL_PROCESS_TOOL_NAMES: Set<string> = new Set([
-  'list_processes',
-  'List Processes',
-  'get_process_output',
-  'Get Process Output',
-]);
-export const WEB_SEARCH_TOOL_NAMES: Set<string> = new Set([
-  'web_search',
-  'Searching the web',
-]);
-export const WEB_FETCH_TOOL_NAMES: Set<string> = new Set([
-  'web_fetch',
-  'Fetching web content',
-  'Fetch URL',
-]);
-export const GREP_TOOL_NAMES: Set<string> = new Set([
-  'grep',
-  'grep_search',
-  'Grep Search',
-]);
-export const GLOB_TOOL_NAMES: Set<string> = new Set([
-  'glob',
-  'file_search',
-  'File Search',
-]);
-// TODO: Remove LS_TOOL_NAMES and IMAGE_READ_TOOL_NAMES once enough time has passed that users
-// are unlikely to load saved conversations containing old ls/imageRead tool calls.
-// These tools are now part of the unified fs_read tool (mode: "Directory" / "Image").
-export const LS_TOOL_NAMES: Set<string> = new Set([ToolNameAlias.Ls]);
-export const CODE_TOOL_NAMES: Set<string> = new Set([
-  'code',
-  'Code Intelligence',
-]);
-export const IMAGE_READ_TOOL_NAMES: Set<string> = new Set([
-  ToolNameAlias.ImageRead,
-  'imageRead',
-]);
-export const SESSION_TOOL_NAMES: Set<string> = new Set([
-  'session_management',
-  'subagent',
-  'agent_crew',
-  'orchestrate_subagent',
-  'invoke_sub_agent',
-  'subagent_response',
-  'Invoke Agent',
-  'Subagent Response',
-]);
-
-/**
- * Tool names whose `tool_call` IS a subagent/pipeline PARENT — i.e. the row
- * that lite collapses into the single canonical subagent block and that drives
- * the active-subagent footer strip. Narrower than {@link SESSION_TOOL_NAMES}
- * (excludes `session_management` and the `*_response` tools, which are not
- * orchestration parents and must not collapse).
- *
- * `orchestrate_subagent` is the name the backend emits for a pipeline (agent_crew)
- * parent when its update carries `_meta.kiro.pipeline` (see acp-client.ts
- * `convertAcpUpdateToEvent`). Lite previously hard-coded `name === 'subagent'`
- * in its recognition checks, so a renamed pipeline parent went unrecognized —
- * breaking grouping/hiding and leaking per-stage rows into scrollback.
- */
-export const PARENT_SUBAGENT_TOOL_NAMES: Set<string> = new Set([
-  'subagent',
-  'orchestrate_subagent',
-  'invoke_sub_agent',
-  'agent_crew',
-]);
-
-/** True when `name` is a subagent/pipeline parent tool. */
-export const isParentSubagentTool = (name?: string | null): boolean =>
-  !!name && PARENT_SUBAGENT_TOOL_NAMES.has(name);
-export const INTROSPECT_TOOL_NAMES: Set<string> = new Set([
-  'introspect',
-  'Introspect',
-]);
-export const KNOWLEDGE_TOOL_NAMES: Set<string> = new Set([
-  'knowledge',
-  'Knowledge Search',
-]);
-export const TASK_TOOL_NAMES: Set<string> = new Set([
-  'task',
-  'todo_list',
-  'todo',
-  'Task List',
-]);
-export const WORKFLOW_LAUNCH_TOOL_NAMES: ReadonlySet<string> = new Set([
-  'run_workflow',
-  'Run Workflow',
-]);
-export const WORKFLOW_TOOL_NAMES: ReadonlySet<string> = new Set([
-  ...WORKFLOW_LAUNCH_TOOL_NAMES,
-  'inspect_workflow',
-  'Inspect Workflow',
-]);
-
-export const isWorkflowLaunchTool = (name?: string): boolean =>
-  name !== undefined && WORKFLOW_LAUNCH_TOOL_NAMES.has(name);
-
-/** Map a wire tool name to its BuiltinToolId, or undefined for MCP/unknown tools. */
-export function resolveToolId(name: string): BuiltinToolId | undefined {
-  if (WRITE_TOOL_NAMES.has(name)) return 'write';
-  if (READ_TOOL_NAMES.has(name)) return 'read';
-  if (SHELL_TOOL_NAMES.has(name)) return 'shell';
-  if (WEB_SEARCH_TOOL_NAMES.has(name)) return 'web_search';
-  if (WEB_FETCH_TOOL_NAMES.has(name)) return 'web_fetch';
-  if (GREP_TOOL_NAMES.has(name)) return 'grep';
-  if (GLOB_TOOL_NAMES.has(name)) return 'glob';
-  // TODO: Remove ls/image_read resolution once legacy tool names are cleaned up.
-  if (LS_TOOL_NAMES.has(name)) return 'ls';
-  if (CODE_TOOL_NAMES.has(name)) return 'code';
-  if (IMAGE_READ_TOOL_NAMES.has(name)) return 'image_read';
-  if (TASK_TOOL_NAMES.has(name)) return 'task';
-  if (KNOWLEDGE_TOOL_NAMES.has(name)) return 'knowledge';
-  return undefined;
-}
-
-export type ToolKind = 'edit' | 'read' | 'shell' | 'grep' | 'glob' | string;
-
-/**
- * Map an ACP `ToolKind` to a `BuiltinToolId` for display-label purposes.
- *
- * Used as a fallback when a tool's wire name isn't a known builtin but its
- * `kind` is — mirroring the kind-based routing in ToolUseMessage so a failed
- * read/edit renders a friendly label ("Read"/"Write") instead of the raw wire
- * name (e.g. KAS sends "read_files"/"Replace in File"). Only the kinds that
- * routing keys on are mapped; everything else falls back to the raw name.
- */
-export function kindToToolId(
-  kind: ToolKind | undefined
-): BuiltinToolId | undefined {
-  switch (kind) {
-    case 'read':
-      return 'read';
-    case 'edit':
-      return 'write';
-    case 'execute':
-      return 'shell';
-    case 'search':
-      return 'grep';
-    default:
-      return undefined;
-  }
-}
-
 export interface ToolCallLocation {
   path: string;
   line?: number;
@@ -304,6 +157,9 @@ export type ToolCallDiffContent = ToolDiff & { type: 'diff' };
  * not render a diff preview during approval.
  */
 export function deriveToolDiff(event: ToolCallEvent): ToolDiff | undefined {
+  if (toolDiffPolicy(event.name, event.kind, event.origin) === 'none') {
+    return undefined;
+  }
   const wireDiff = event.toolContent?.[0];
   if (wireDiff) {
     return {
@@ -396,7 +252,15 @@ export interface ApprovalRequestInfo {
    */
   originSessionId?: string;
   sessionId?: string;
-  toolCall: { toolCallId: string; title?: string; rawInput?: unknown };
+  toolCall: {
+    toolCallId: string;
+    title?: string;
+    rawInput?: unknown;
+    /** Canonical identity used by registry-driven approval rendering. */
+    name?: string;
+    kind?: ToolKind;
+    origin?: ToolCallOrigin;
+  };
   /**
    * Stable KAS tool identifier from `_meta.kiro.toolId`, when available.
    */
@@ -529,6 +393,10 @@ export interface ToolCallEvent {
   type: AgentEventType.ToolCall;
   id: string;
   name: string;
+  /** Source family retained when KAS strips an MCP title's `@server/` prefix. */
+  origin?: ToolCallOrigin;
+  /** Unmodified ACP title when normalization changed the displayed tool name. */
+  originalTitle?: string;
   kind?: ToolKind;
   args: Record<string, unknown>;
   toolContent?: Array<ToolCallDiffContent>;

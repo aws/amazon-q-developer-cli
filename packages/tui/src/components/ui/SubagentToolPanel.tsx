@@ -9,7 +9,11 @@ import { PieSpinner } from '../ui/spinner/PieSpinner.js';
 import { getStatusColor } from '../../utils/colorUtils.js';
 import { useAppStore, MessageRole } from '../../stores/app-store.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
-import { resolveToolId } from '../../types/agent-events.js';
+import {
+  resolveToolId,
+  type ToolCallOrigin,
+  type ToolKind,
+} from '../../types/agent-events.js';
 import { getToolLabel } from '../../types/tool-status.js';
 import { selectSubagentToolSessions } from './subagent-session-filter.js';
 
@@ -38,8 +42,13 @@ function getToolParam(content: string): string | null {
   }
 }
 
-function formatToolDesc(name: string, content: string): string {
-  const toolId = resolveToolId(name);
+function formatToolDesc(
+  name: string,
+  content: string,
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
+): string {
+  const toolId = resolveToolId(name, kind, origin);
   const label = toolId ? getToolLabel(toolId) : name;
   const param = getToolParam(content);
   const desc = param ? `${label} (${param})` : label;
@@ -84,7 +93,12 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
 
       const activeToolByAgent = new Map<
         string,
-        { name: string; content: string }
+        {
+          name: string;
+          content: string;
+          kind?: ToolKind;
+          origin?: ToolCallOrigin;
+        }
       >();
       for (const msg of messages) {
         if (msg.role !== MessageRole.ToolUse) continue;
@@ -93,6 +107,8 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
           activeToolByAgent.set(msg.agentName, {
             name: msg.name,
             content: msg.content,
+            kind: msg.kind,
+            origin: msg.origin,
           });
         }
       }
@@ -120,7 +136,9 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
           name,
           agentName: session.agentName ?? name,
           status: session.status,
-          activeToolDesc: tool ? formatToolDesc(tool.name, tool.content) : null,
+          activeToolDesc: tool
+            ? formatToolDesc(tool.name, tool.content, tool.kind, tool.origin)
+            : null,
           hasPendingApproval: sessionsWithApproval.has(session.id),
         });
       }

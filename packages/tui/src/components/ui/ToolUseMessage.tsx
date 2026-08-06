@@ -31,27 +31,15 @@ import {
 } from '../../utils/tool-result.js';
 import { ToolUseStatus, type ToolResult } from '../../stores/app-store.js';
 import {
-  WRITE_TOOL_NAMES,
-  READ_TOOL_NAMES,
-  SHELL_TOOL_NAMES,
-  WEB_SEARCH_TOOL_NAMES,
-  WEB_FETCH_TOOL_NAMES,
-  GREP_TOOL_NAMES,
-  GLOB_TOOL_NAMES,
-  LS_TOOL_NAMES,
-  CODE_TOOL_NAMES,
-  SESSION_TOOL_NAMES,
-  resolveToolId,
-  kindToToolId,
-  INTROSPECT_TOOL_NAMES,
-  IMAGE_READ_TOOL_NAMES,
-  TASK_TOOL_NAMES,
-  KNOWLEDGE_TOOL_NAMES,
-  WORKFLOW_TOOL_NAMES,
   type ToolDiff,
   type ToolKind,
   type ToolCallLocation,
 } from '../../types/agent-events.js';
+import {
+  resolveScrollbackToolRenderer,
+  resolveToolId,
+  type ToolCallOrigin,
+} from '../../types/tool-capabilities.js';
 import { getToolLabel } from '../../types/tool-status.js';
 import { useKeybindings } from '../../hooks/useKeybindings.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
@@ -64,6 +52,7 @@ import {
 } from '../../utils/collapsed-tool-view.js';
 import { useAppStore } from '../../stores/app-store.js';
 import {
+  VerbosityOverrideContext,
   useVerboseDisplay,
   useShouldShowToolOutput,
 } from '../../hooks/useVerbose.js';
@@ -74,6 +63,7 @@ import {
   useToolOutputVisible,
   useVerbosityToolContext,
 } from './VerbosityToolContext.js';
+import { approvalDisplayConfig } from '../../lite/verbose.js';
 
 export interface ToolUseMessageProps {
   id: string;
@@ -85,6 +75,7 @@ export interface ToolUseMessageProps {
   status?: ToolUseStatus;
   result?: ToolResult;
   kind?: ToolKind;
+  origin?: ToolCallOrigin;
   locations?: ToolCallLocation[];
   barColor?: string;
   /** Drop the solid accent-bar gutter (keeps the status dot). Used by the
@@ -114,6 +105,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     status,
     result,
     kind,
+    origin,
     locations,
     barColor,
     noBar,
@@ -129,11 +121,17 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     const { getColor, wrapDisabled } = useTheme();
     const isLiteUi = useAppStore((s) => s.uiMode === 'lite');
     const keybindings = useKeybindings();
-    const display = useVerboseDisplay();
-    const outputVisible = useShouldShowToolOutput(
+    const configuredDisplay = useVerboseDisplay();
+    const configuredOutputVisible = useShouldShowToolOutput(
       name,
       isMcpMessage({ mcpServerName })
     );
+    const isApproval = status === ToolUseStatus.Pending;
+    const display = isApproval
+      ? approvalDisplayConfig(configuredDisplay)
+      : configuredDisplay;
+    const outputVisible = isApproval || configuredOutputVisible;
+    const renderer = resolveScrollbackToolRenderer(name, kind, origin);
     const toolOutputsExpanded = useAppStore((s) => s.toolOutputsExpanded);
     const frozenArgsExpanded = useRef(toolOutputsExpanded);
     if (!isStatic) frozenArgsExpanded.current = toolOutputsExpanded;
@@ -141,12 +139,12 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
       ? frozenArgsExpanded.current
       : toolOutputsExpanded;
     const reasoning =
-      display.showToolReasoning && !SESSION_TOOL_NAMES.has(name)
+      display.showToolReasoning && renderer !== 'session'
         ? extractToolReasoning(content, purpose)
         : undefined;
-    const elapsed =
+    const elapsedMs =
       display.showElapsed && startTime != null && finishTime != null
-        ? finishTime - startTime
+        ? Math.max(0, finishTime - startTime)
         : undefined;
     const statusIcon: StatusType | undefined = useMemo(() => {
       if (status === ToolUseStatus.Rejected) return 'error';
@@ -166,7 +164,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
       () => ({
         outputVisible,
         reasoning,
-        elapsedMs: elapsed,
+        elapsedMs,
         argsMode: portActive ? display.toolArgsMode : undefined,
         argsMaxLines: portActive ? display.argsMaxLines : undefined,
         argsMaxChars: portActive ? display.argsMaxChars : undefined,
@@ -176,7 +174,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
       [
         outputVisible,
         reasoning,
-        elapsed,
+        elapsedMs,
         portActive,
         display.toolArgsMode,
         display.argsMaxLines,
@@ -186,7 +184,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
       ]
     );
 
-    const inner = (
+    const toolContent = (
       <VerbosityToolContext.Provider value={toolContextValue}>
         {agentLabel && (
           <Box>
@@ -200,6 +198,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
           name={name}
           isQuestion={isQuestion}
           kind={kind}
+          origin={origin}
           content={content}
           diff={diff}
           isFinished={isFinished}
@@ -218,6 +217,13 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
         )}
       </VerbosityToolContext.Provider>
     );
+    const inner = isApproval ? (
+      <VerbosityOverrideContext.Provider value={{ display, filters: ['all'] }}>
+        {toolContent}
+      </VerbosityOverrideContext.Provider>
+    ) : (
+      toolContent
+    );
 
     if (skipStatusBar) return inner;
 
@@ -234,6 +240,7 @@ interface ToolContentProps {
   name: string;
   isQuestion?: boolean;
   kind?: ToolKind;
+  origin?: ToolCallOrigin;
   content: string;
   diff?: ToolDiff;
   isFinished: boolean;
@@ -247,7 +254,15 @@ const ToolUseContent = React.memo(function ToolUseContent(
   props: ToolContentProps
 ) {
   const hideArgs = useHideToolArgs();
-  if (shouldCollapseToolCard(props.name, props.kind, props.content, hideArgs)) {
+  if (
+    shouldCollapseToolCard(
+      props.name,
+      props.kind,
+      props.content,
+      hideArgs,
+      props.origin
+    )
+  ) {
     return <CollapsedToolEntry {...props} />;
   }
   return <FullToolContent {...props} />;
@@ -256,7 +271,7 @@ const ToolUseContent = React.memo(function ToolUseContent(
 const CollapsedToolEntry = React.memo(function CollapsedToolEntry(
   props: ToolContentProps
 ) {
-  const { name, kind, content, isStatic } = props;
+  const { name, kind, origin, content, isStatic } = props;
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const argsOff = useVerbosityToolContext().argsMode === 'off';
@@ -268,7 +283,7 @@ const CollapsedToolEntry = React.memo(function CollapsedToolEntry(
 
   if (expanded && !argsOff) return <FullToolContent {...props} />;
 
-  const collapsed = collapsedToolPreview(name, kind, content);
+  const collapsed = collapsedToolPreview(name, kind, content, origin);
   const { title, target } = collapsed;
   const preview = argsOff ? undefined : collapsed.preview;
   const muted = getColor('muted');
@@ -298,6 +313,7 @@ const FullToolContent = React.memo(function FullToolContent({
   name,
   isQuestion,
   kind,
+  origin,
   content,
   diff,
   isFinished,
@@ -309,6 +325,7 @@ const FullToolContent = React.memo(function FullToolContent({
   const { requestRemeasure } = useStatusBar();
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
+  const renderer = resolveScrollbackToolRenderer(name, kind, origin);
 
   const effectiveFinished = isFinished && status !== ToolUseStatus.Pending;
 
@@ -327,7 +344,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (WORKFLOW_TOOL_NAMES.has(name)) {
+  if (renderer === 'workflow') {
     return (
       <WorkflowTool
         name={name}
@@ -344,7 +361,7 @@ const FullToolContent = React.memo(function FullToolContent({
     try {
       const parsed = JSON.parse(content);
       let target: string;
-      if (SESSION_TOOL_NAMES.has(name)) {
+      if (renderer === 'session') {
         const task = (['task', 'target', 'name'] as const)
           .map((k) => parsed[k])
           .find((v) => typeof v === 'string') as string | undefined;
@@ -362,14 +379,12 @@ const FullToolContent = React.memo(function FullToolContent({
 
   if (result?.status === 'error' && effectiveFinished) {
     const toolRendersOwnError =
-      !WRITE_TOOL_NAMES.has(name) &&
-      kind !== 'edit' &&
-      (INTROSPECT_TOOL_NAMES.has(name) ||
-        (!READ_TOOL_NAMES.has(name) && kind !== 'read')) &&
-      !IMAGE_READ_TOOL_NAMES.has(name) &&
-      !TASK_TOOL_NAMES.has(name);
+      renderer !== 'write' &&
+      renderer !== 'read' &&
+      renderer !== 'image_read' &&
+      renderer !== 'task';
     if (!toolRendersOwnError) {
-      const toolId = resolveToolId(name) ?? kindToToolId(kind);
+      const toolId = resolveToolId(name, kind, origin);
       const displayName = toolId ? getToolLabel(toolId) : name;
       return (
         <FallbackError
@@ -381,7 +396,7 @@ const FullToolContent = React.memo(function FullToolContent({
     }
   }
 
-  if (INTROSPECT_TOOL_NAMES.has(name)) {
+  if (renderer === 'introspect') {
     return (
       <Introspect
         isFinished={effectiveFinished}
@@ -392,7 +407,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (WRITE_TOOL_NAMES.has(name) || kind === 'edit') {
+  if (renderer === 'write') {
     const startLine = locations?.[0]?.line;
     return (
       <Write
@@ -407,7 +422,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (READ_TOOL_NAMES.has(name) || kind === 'read') {
+  if (renderer === 'read') {
     return (
       <Read
         noStatusBar
@@ -419,7 +434,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (SHELL_TOOL_NAMES.has(name)) {
+  if (renderer === 'shell') {
     const title = getToolLabel('shell');
     let command: string | undefined;
     try {
@@ -442,7 +457,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (WEB_SEARCH_TOOL_NAMES.has(name)) {
+  if (renderer === 'web_search') {
     return (
       <WebSearch
         isFinished={effectiveFinished}
@@ -453,7 +468,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (WEB_FETCH_TOOL_NAMES.has(name)) {
+  if (renderer === 'web_fetch') {
     return (
       <WebFetch
         isFinished={effectiveFinished}
@@ -464,7 +479,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (GREP_TOOL_NAMES.has(name)) {
+  if (renderer === 'grep') {
     return (
       <Grep
         noStatusBar
@@ -476,7 +491,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (GLOB_TOOL_NAMES.has(name)) {
+  if (renderer === 'glob') {
     return (
       <Glob
         noStatusBar
@@ -488,7 +503,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (LS_TOOL_NAMES.has(name)) {
+  if (renderer === 'ls') {
     return (
       <Ls
         noStatusBar
@@ -500,7 +515,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (CODE_TOOL_NAMES.has(name)) {
+  if (renderer === 'code') {
     return (
       <Code
         noStatusBar
@@ -512,7 +527,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (SESSION_TOOL_NAMES.has(name)) {
+  if (renderer === 'session') {
     return (
       <SessionTool
         id={id}
@@ -525,7 +540,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (IMAGE_READ_TOOL_NAMES.has(name)) {
+  if (renderer === 'image_read') {
     return (
       <ImageRead
         noStatusBar
@@ -536,7 +551,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (name === 'goal') {
+  if (renderer === 'goal') {
     const labels: Record<string, string> = {
       complete: `${glyphs.checkmark} Goal complete`,
       status: 'Goal status',
@@ -561,7 +576,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (TASK_TOOL_NAMES.has(name)) {
+  if (renderer === 'task') {
     const labels: Record<string, string> = {
       create: 'Task list created',
       complete: 'Tasks updated',
@@ -593,7 +608,7 @@ const FullToolContent = React.memo(function FullToolContent({
     );
   }
 
-  if (KNOWLEDGE_TOOL_NAMES.has(name)) {
+  if (renderer === 'knowledge') {
     const title = getToolLabel('knowledge');
     const command = parseToolArg(content, 'command');
     const params = formatToolParams(content, ['command']);
@@ -618,7 +633,12 @@ const FullToolContent = React.memo(function FullToolContent({
     return <FallbackError name={name} content={content} error={result.error} />;
   }
 
-  const toolId = resolveToolId(name);
+  if (renderer !== 'generic') {
+    const exhaustive: never = renderer;
+    return exhaustive;
+  }
+
+  const toolId = resolveToolId(name, kind, origin);
   const fallbackName = toolId ? getToolLabel(toolId) : name;
   return (
     <Tool

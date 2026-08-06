@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import {
   mcpServerNameFromTitle,
+  normalizeToolCallTitle,
   stripMcpTitlePrefix,
   toolTelemetryStartFromEvent,
   unwrapKasMcpOutput,
@@ -65,6 +66,102 @@ describe('toolTelemetryStartFromEvent', () => {
       name: 'reviewer',
       toolOrigin: 'builtin',
       builtinToolName: 'use_subagent',
+    });
+  });
+});
+
+describe('normalizeToolCallTitle', () => {
+  it('normalizes KAS MCP titles directly', () => {
+    expect(normalizeToolCallTitle('@weather/get_forecast')).toEqual({
+      name: 'get_forecast',
+      origin: 'mcp',
+      originalTitle: '@weather/get_forecast',
+    });
+  });
+
+  it('uses V2 canonical metadata instead of its descriptive title', () => {
+    expect(
+      normalizeToolCallTitle(
+        'Running: @weather/get_forecast',
+        '@weather/get_forecast'
+      )
+    ).toEqual({
+      name: 'get_forecast',
+      origin: 'mcp',
+      originalTitle: 'Running: @weather/get_forecast',
+    });
+    expect(normalizeToolCallTitle('Creating file.ts', 'fs_write')).toEqual({
+      name: 'fs_write',
+      origin: 'builtin',
+      originalTitle: 'Creating file.ts',
+    });
+  });
+
+  it('retains MCP provenance when canonical metadata is unqualified', () => {
+    expect(
+      normalizeToolCallTitle('@weather/get_forecast', 'get_forecast')
+    ).toEqual({
+      name: 'get_forecast',
+      origin: 'mcp',
+      originalTitle: '@weather/get_forecast',
+    });
+    expect(
+      normalizeToolCallTitle('Running: @weather/get_forecast', 'get_forecast')
+    ).toEqual({
+      name: 'get_forecast',
+      origin: 'mcp',
+      originalTitle: 'Running: @weather/get_forecast',
+    });
+  });
+
+  it('retains explicit MCP provenance when metadata collides with a built-in', () => {
+    expect(
+      normalizeToolCallTitle('@collision-server/fs_write', 'fs_write')
+    ).toEqual({
+      name: 'fs_write',
+      origin: 'mcp',
+      originalTitle: '@collision-server/fs_write',
+    });
+    expect(
+      normalizeToolCallTitle('mcp__collision-server__fs_write', 'fs_write')
+    ).toEqual({
+      name: 'fs_write',
+      origin: 'mcp',
+      originalTitle: 'mcp__collision-server__fs_write',
+    });
+    expect(
+      normalizeToolCallTitle('Running: @collision-server/fs_write', 'fs_write')
+    ).toEqual({
+      name: 'fs_write',
+      origin: 'mcp',
+      originalTitle: 'Running: @collision-server/fs_write',
+    });
+    expect(
+      normalizeToolCallTitle('Running: @server/execute_bash', 'execute_bash')
+    ).toEqual({
+      name: 'execute_bash',
+      origin: 'mcp',
+      originalTitle: 'Running: @server/execute_bash',
+    });
+  });
+
+  it('does not infer MCP provenance from scoped packages in built-in commands', () => {
+    expect(
+      normalizeToolCallTitle(
+        'Running: npm install @scope/package',
+        'execute_bash'
+      )
+    ).toEqual({
+      name: 'execute_bash',
+      origin: 'builtin',
+      originalTitle: 'Running: npm install @scope/package',
+    });
+    expect(
+      normalizeToolCallTitle('Running: @scope/package', 'execute_bash')
+    ).toEqual({
+      name: 'execute_bash',
+      origin: 'builtin',
+      originalTitle: 'Running: @scope/package',
     });
   });
 });

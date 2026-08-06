@@ -31,7 +31,7 @@ import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTwinkiContext } from 'twinki';
 import { useThinkingMode } from '../../hooks/useGlyphs.js';
-import { SESSION_TOOL_NAMES } from '../../types/agent-events.js';
+import { resolveScrollbackToolRenderer } from '../../types/agent-events.js';
 import type { ConversationTurn } from '../../stores/app-store.js';
 import {
   groupMessagesIntoTurns,
@@ -148,6 +148,7 @@ const StaticMessage = React.memo(function StaticMessage({
           name={message.name}
           isQuestion={message.isQuestion}
           kind={message.kind}
+          origin={message.origin}
           content={message.content}
           diff={message.diff}
           isFinished={true}
@@ -306,7 +307,12 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           ) {
             return null;
           }
-          const isSessionTool = SESSION_TOOL_NAMES.has(message.name);
+          const isSessionTool =
+            resolveScrollbackToolRenderer(
+              message.name,
+              message.kind,
+              message.origin
+            ) === 'session';
           return (
             <React.Fragment key={message.id}>
               <ToolUseMessage
@@ -314,6 +320,7 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
                 name={message.name}
                 isQuestion={message.isQuestion}
                 kind={message.kind}
+                origin={message.origin}
                 content={message.content}
                 diff={message.diff}
                 isFinished={message.isFinished}

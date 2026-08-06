@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import {
   resolveToolId,
-  kindToToolId,
   isParentSubagentTool,
   deriveToolDiff,
 } from '../agent-events';
@@ -76,19 +75,6 @@ describe('resolveToolId', () => {
   });
 });
 
-describe('kindToToolId', () => {
-  it('maps the kinds that routing keys on', () => {
-    expect(kindToToolId('read')).toBe('read');
-    expect(kindToToolId('edit')).toBe('write');
-    expect(kindToToolId('execute')).toBe('shell');
-    expect(kindToToolId('search')).toBe('grep');
-  });
-
-  it('returns undefined for other kinds and undefined', () => {
-    expect(kindToToolId(undefined)).toBeUndefined();
-  });
-});
-
 describe('isParentSubagentTool', () => {
   it('recognizes the plain subagent parent', () => {
     expect(isParentSubagentTool('subagent')).toBe(true);
@@ -122,7 +108,8 @@ describe('deriveToolDiff (transport-agnostic diff rendering for cloud sessions)'
   it('derives a diff from the ACP toolContent payload even for a sandbox-only path (no local file read)', () => {
     const event = {
       type: 'tool_call',
-      kind: 'write',
+      name: 'fs_write',
+      kind: 'edit',
       // A path that does not exist on the local machine — proves the diff comes
       // from the wire payload, not a filesystem read.
       toolContent: [
@@ -145,6 +132,7 @@ describe('deriveToolDiff (transport-agnostic diff rendering for cloud sessions)'
   it('derives a diff from the edit tool input (args) when no explicit toolContent is present', () => {
     const event = {
       type: 'tool_call',
+      name: 'fs_write',
       kind: 'edit',
       args: {
         path: '/nonexistent/sandbox/only/app.ts',
@@ -163,6 +151,7 @@ describe('deriveToolDiff (transport-agnostic diff rendering for cloud sessions)'
   it('returns undefined when no diff can be derived (no payload, non-edit kind)', () => {
     const event = {
       type: 'tool_call',
+      name: 'execute_bash',
       kind: 'shell',
       args: { command: 'ls' },
     } as unknown as ToolCallEvent;

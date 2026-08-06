@@ -18,9 +18,18 @@ describe('resolveToolDisplayName', () => {
     expect(resolveToolDisplayName('knowledge')).toBe('Knowledge');
   });
 
-  it('falls back to ACP kind when the name is unknown', () => {
+  it('falls back to ACP kind for unknown built-in titles', () => {
     expect(resolveToolDisplayName('custom_reader', 'read')).toBe('Read');
     expect(resolveToolDisplayName('custom_editor', 'edit')).toBe('Write');
+  });
+
+  it('keeps MCP names generic even when ACP supplies a built-in kind', () => {
+    expect(resolveToolDisplayName('custom_reader', 'read', 'mcp')).toBe(
+      'custom_reader'
+    );
+    expect(resolveToolDisplayName('custom_editor', 'edit', 'mcp')).toBe(
+      'custom_editor'
+    );
   });
 
   it('falls back to the raw name when neither resolves', () => {

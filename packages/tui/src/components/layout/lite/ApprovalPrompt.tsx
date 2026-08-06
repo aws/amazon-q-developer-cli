@@ -7,11 +7,16 @@ import {
 } from '../../../stores/app-store.js';
 import {
   ApprovalOptionId,
-  isParentSubagentTool,
   type PermissionOption,
   type TrustOption,
   type ConsentContext,
 } from '../../../types/agent-events.js';
+import {
+  toolApprovalDetail,
+  toolApprovalPresentation,
+  type ToolCallOrigin,
+  type ToolKind,
+} from '../../../types/tool-capabilities.js';
 import { deriveShellTrustOptions } from '../../../utils/shell-trust-options.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { PromptInput } from '../../chat/prompt-bar/PromptInput.js';
@@ -25,15 +30,6 @@ import {
 } from '../../../lite/render.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { chalk } from '../../../utils/color.js';
-
-export const WRITE_TOOL_NAMES = new Set([
-  'fs_write',
-  'str_replace',
-  'write',
-  'edit',
-  'create_file',
-  'write_file',
-]);
 
 export function ApprovalPrompt({
   messages,
@@ -94,10 +90,36 @@ export function ApprovalPrompt({
   );
   const rawToolName =
     toolMsg && toolMsg.role === MessageRole.ToolUse ? toolMsg.name : null;
-  const toolName = rawToolName || approval.toolCall.title || 'tool';
+  const toolName =
+    rawToolName ||
+    approval.toolCall.name ||
+    approval.toolId ||
+    approval.toolCall.title ||
+    'tool';
+  const toolKind =
+    toolMsg && toolMsg.role === MessageRole.ToolUse
+      ? toolMsg.kind
+      : approval.toolCall.kind;
+  const toolOrigin =
+    toolMsg && toolMsg.role === MessageRole.ToolUse
+      ? toolMsg.origin
+      : approval.toolCall.origin;
+  const rawApprovalInput = approval.toolCall.rawInput;
+  const approvalInputContent =
+    rawApprovalInput == null || rawApprovalInput === ''
+      ? toolMsg && toolMsg.role === MessageRole.ToolUse
+        ? toolMsg.content
+        : ''
+      : typeof rawApprovalInput === 'string'
+        ? rawApprovalInput
+        : JSON.stringify(rawApprovalInput);
   // Display label (KAS "Run Command"→"Shell") to match scrollback; keep raw
   // toolName for extractApprovalDetail, which keys on lowercase wire aliases.
-  const displayToolName = toolDisplayName(toolName);
+  const displayToolName = toolDisplayName(toolName, toolKind, toolOrigin);
+  const isMcpTool =
+    toolOrigin === 'mcp' ||
+    toolName.startsWith('mcp__') ||
+    /^@[^/]+\//.test(approval.toolCall.title ?? '');
 
   // Subagent attribution: only mark the prompt as a subagent request when
   // the requesting tool's agentName actually differs from the main agent's
@@ -120,14 +142,22 @@ export function ApprovalPrompt({
   ) : null;
 
   const detail = (() => {
+    if (isMcpTool) return null;
     const raw = approval.toolCall.rawInput;
     if (raw)
       return extractApprovalDetail(
         toolName,
-        typeof raw === 'string' ? raw : JSON.stringify(raw)
+        typeof raw === 'string' ? raw : JSON.stringify(raw),
+        toolKind,
+        toolOrigin
       );
     if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
-      return extractApprovalDetail(toolMsg.name, toolMsg.content);
+      return extractApprovalDetail(
+        toolMsg.name,
+        toolMsg.content,
+        toolMsg.kind,
+        toolMsg.origin
+      );
     }
     return null;
   })();
@@ -415,28 +445,43 @@ export function ApprovalPrompt({
   // tool kinds whose handler keeps __tool_use_purpose in the JSON blob
   // (the generic `else` branch in the ToolCall handler).
   const reasoning = (() => {
-    if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) return null;
-    if (typeof toolMsg.purpose === 'string' && toolMsg.purpose.trim()) {
+    if (
+      toolMsg &&
+      toolMsg.role === MessageRole.ToolUse &&
+      typeof toolMsg.purpose === 'string' &&
+      toolMsg.purpose.trim()
+    ) {
       return toolMsg.purpose;
     }
-    if (!toolMsg.content) return null;
+    if (!approvalInputContent) return null;
     try {
-      const args = JSON.parse(toolMsg.content);
+      const args = JSON.parse(approvalInputContent);
       return args.__tool_use_purpose || null;
     } catch {
       return null;
     }
   })();
 
-  // Write tools render a proper unified diff instead of the key:value args
-  // dump; falls through to the generic printer when args don't parse.
+  const approvalPresentation = toolApprovalPresentation(
+    toolName,
+    toolKind,
+    toolOrigin
+  );
+
   const writeDiffLines = (() => {
-    if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) return null;
-    // `kind === 'edit'` catches v3/KAS writes whose friendly title isn't in the set.
-    if (!WRITE_TOOL_NAMES.has(toolMsg.name) && toolMsg.kind !== 'edit')
-      return null;
+    switch (approvalPresentation) {
+      case 'arguments':
+      case 'subagent':
+        return null;
+      case 'diff':
+        break;
+      default: {
+        const exhaustive: never = approvalPresentation;
+        return exhaustive;
+      }
+    }
     try {
-      const args = JSON.parse(toolMsg.content);
+      const args = JSON.parse(approvalInputContent);
       // Wire format is snake_case (Rust serde — see crates/chat-cli/src/cli/
       // chat/tools/fs_write.rs `enum FsWrite`). Accept camelCase as fallback
       // so non-Rust callers (KAS native tool, future MCP-routed write tools)
@@ -483,26 +528,30 @@ export function ApprovalPrompt({
     }
   })();
 
-  // Pretty-print tool args with the same indented printer the chat log uses,
-  // so the approval prompt and finalized scrollback match. The `subagent`
-  // tool gets its own per-stage renderer so the user sees the pipeline
-  // structure (task, stages with role/depends_on/prompt) instead of a raw
-  // JSON dump that wraps awkwardly in the terminal.
   const toolArgsLines = (() => {
-    if (writeDiffLines) return null;
-    if (!toolMsg || toolMsg.role !== MessageRole.ToolUse) return null;
-    if (isParentSubagentTool(toolMsg.name)) {
-      return formatSubagentApprovalLines(
-        toolMsg.content,
-        process.stdout.columns,
-        {
-          getStageInputColor,
-          theme: renderTheme,
-          glyphs,
-        }
-      );
+    const argumentLines = formatToolArgLines(toolName, approvalInputContent);
+    switch (approvalPresentation) {
+      case 'diff':
+        return writeDiffLines ? null : argumentLines;
+      case 'subagent':
+        return (
+          formatSubagentApprovalLines(
+            approvalInputContent,
+            process.stdout.columns,
+            {
+              getStageInputColor,
+              theme: renderTheme,
+              glyphs,
+            }
+          ) ?? argumentLines
+        );
+      case 'arguments':
+        return argumentLines;
+      default: {
+        const exhaustive: never = approvalPresentation;
+        return exhaustive;
+      }
     }
-    return formatToolArgLines(toolMsg.name, toolMsg.content);
   })();
 
   if (page === 'trust') {
@@ -666,31 +715,22 @@ export function ApprovalPrompt({
 
 function extractApprovalDetail(
   toolName: string,
-  content: string
+  content: string,
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
 ): string | string[] | null {
   if (!content) return null;
   try {
     const args = JSON.parse(content);
 
-    // bash/execute_bash/shell: show full command
-    if (
-      toolName === 'bash' ||
-      toolName === 'execute_bash' ||
-      toolName === 'shell' ||
-      toolName === 'run_command'
-    ) {
+    const detail = toolApprovalDetail(toolName, kind, origin);
+    if (detail === 'shell-command') {
       if (args.command && typeof args.command === 'string') {
         return chalk.white(`command: ${args.command}`);
       }
     }
 
-    // delete_file: show path
-    if (
-      toolName === 'delete_file' ||
-      toolName === 'delete' ||
-      toolName === 'fs_delete' ||
-      toolName === 'remove_file'
-    ) {
+    if (detail === 'delete-path') {
       const path = args.path || args.file_path || args.filePath;
       if (path) return chalk.white(`delete: ${path}`);
     }

@@ -1,4 +1,5 @@
 import type { ToolCallEvent } from '../types/agent-events';
+import { toolDiffPolicy } from '../types/tool-capabilities.js';
 
 /**
  * Result of synthesizing a ToolUse message's content from a ToolCall event.
@@ -41,7 +42,9 @@ export function synthesizeToolUseContent(
 
   let content: string;
   const toolContentDiff = event.toolContent?.[0];
-  if (toolContentDiff) {
+  const hasUnifiedDiff =
+    toolDiffPolicy(event.name, event.kind, event.origin) === 'unified';
+  if (toolContentDiff && hasUnifiedDiff) {
     const args = event.args as Record<string, unknown>;
     content = JSON.stringify({
       command: inferEditCommand(args),
@@ -51,7 +54,7 @@ export function synthesizeToolUseContent(
       newStr: toolContentDiff.newText,
       insertLine: args.insertLine,
     });
-  } else if (event.kind === 'edit') {
+  } else if (event.kind === 'edit' && hasUnifiedDiff) {
     const args = event.args as Record<string, unknown>;
     content = JSON.stringify({
       command: inferEditCommand(args),

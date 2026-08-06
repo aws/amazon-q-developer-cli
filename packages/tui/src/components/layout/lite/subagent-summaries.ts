@@ -113,7 +113,7 @@ export function collectSubagentSummariesByParent(
   for (const msg of messages) {
     if (msg.role !== MessageRole.ToolUse) continue;
     const isVisibleParent =
-      isParentSubagentTool(msg.name) &&
+      isParentSubagentTool(msg.name, msg.origin) &&
       (!msg.agentName || msg.agentName === mainAgentName);
     if (isVisibleParent) {
       activeParentId = msg.id;

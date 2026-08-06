@@ -115,8 +115,8 @@ import {
   BaseAcpClient,
   buildStdioStreams,
   extractKasSessionInfoMeta,
+  normalizeToolCallTitle,
   normalizeKasTurnCompletion,
-  stripMcpTitlePrefix,
   toolTelemetryStartFromEvent,
   toAgentProcess,
   type AcpSessionUpdate,
@@ -964,10 +964,13 @@ export class KasAcpClient extends BaseAcpClient {
     const { sessionId: originSessionId, update } = envelope;
     if (update.sessionUpdate === 'tool_call_chunk') {
       const kiroMeta = update.kiroMeta;
+      const identity = normalizeToolCallTitle(update.title, kiroMeta?.toolName);
       const event: AgentStreamEvent = {
         type: AgentEventType.ToolCall,
         id: update.toolCallId,
-        name: stripMcpTitlePrefix(update.title) || update.title,
+        name: identity.name || update.title,
+        origin: identity.origin,
+        originalTitle: identity.originalTitle,
         kind: update.kind,
         args: {},
         ...(originSessionId ? { sessionId: originSessionId } : {}),
@@ -991,6 +994,9 @@ export class KasAcpClient extends BaseAcpClient {
         );
         this.broadcastMultiSession(kiroMeta.agentSubtaskId, event);
         return;
+      }
+      if (!originSessionId || originSessionId === this.sessionId) {
+        this.kasSubagentRoutingStore.rememberKasToolCall(event);
       }
     }
     super.handleDecodedExtSessionUpdate(envelope);
