@@ -460,3 +460,61 @@ jobs:
               echo "| Autocomplete | ${{ needs.dispatch_autocomplete.result == 'success' && '✅' || needs.dispatch_autocomplete.result == 'skipped' && '⏭️' || '❌' }} |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify_nightly_failure:
+    name: Nightly Failure Notification
+    needs: [tag, prepare, build_darwin, build_linux, build_windows, build_windows_retry, smoke_tests, dispatch_autocomplete]
+    if: |
+      always() &&
+      needs.prepare.outputs.channel == 'nightly' &&
+      (needs.tag.result == 'failure' ||
+       needs.build_darwin.result == 'failure' ||
+       needs.build_linux.result == 'failure' ||
+       (needs.build_windows.result == 'failure' && needs.build_windows_retry.result == 'failure') ||
+       needs.smoke_tests.result == 'failure' ||
+       needs.dispatch_autocomplete.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build failure payload
+        id: payload
+        run: |
+          set -euo pipefail
+
+          # Determine which platforms/stages failed
+          FAILED=""
+          if [[ "${{ needs.tag.result }}" == "failure" ]]; then FAILED="${FAILED}Tag ❌  "; fi
+          if [[ "${{ needs.build_darwin.result }}" == "failure" ]]; then FAILED="${FAILED}Darwin ❌  "; fi
+          if [[ "${{ needs.build_linux.result }}" == "failure" ]]; then FAILED="${FAILED}Linux ❌  "; fi
+          if [[ "${{ needs.build_windows.result }}" == "failure" && "${{ needs.build_windows_retry.result }}" != "success" ]]; then FAILED="${FAILED}Windows ❌  "; fi
+          if [[ "${{ needs.smoke_tests.result }}" == "failure" ]]; then FAILED="${FAILED}Smoke Tests ❌  "; fi
+          if [[ "${{ needs.dispatch_autocomplete.result }}" == "failure" ]]; then FAILED="${FAILED}Autocomplete ❌  "; fi
+
+          [[ -z "$FAILED" ]] && FAILED="Unknown failure"
+
+          VERSION="${{ needs.prepare.outputs.version || 'unknown' }}"
+          BRANCH="${{ needs.prepare.outputs.branch_name || 'main' }}"
+          TIMESTAMP="${{ needs.prepare.outputs.build_timestamp || 'unknown' }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          jq -n \
+            --arg message "🚨 Nightly build failed!" \
+            --arg version "$VERSION" \
+            --arg branch_name "$BRANCH" \
+            --arg build_timestamp "$TIMESTAMP" \
+            --arg run_url "$RUN_URL" \
+            --arg failed_platforms "$FAILED" \
+            '{
+              message: $message,
+              version: $version,
+              branch_name: $branch_name,
+              build_timestamp: $build_timestamp,
+              run_url: $run_url,
+              failed_platforms: $failed_platforms
+            }' > payload.json
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@007b2c3c751a190b6f0f040e47ed024deaa72844 # v1.23.0
+        with:
+          payload-file-path: payload.json
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_NIGHTLY_FAILURE_WEBHOOK_URL }}
