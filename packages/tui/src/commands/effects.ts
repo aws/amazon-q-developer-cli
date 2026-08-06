@@ -1,11 +1,5 @@
 /**
- * Effect registry for slash commands.
- *
- * Two tables:
- * 1. commandEffects: maps command name → effect name
- * 2. effectHandlers: maps effect name → handler function
- *
- * Command names derived from TuiCommand type (typeshare generated).
+ * Effect handlers for slash commands registered in command-registry.ts.
  */
 
 import type { CommandContext } from './types.js';
@@ -13,7 +7,7 @@ import {
   armCloudScrollbackReconcile,
   cancelCloudScrollbackReconcile,
 } from './cloud-scrollback-reconcile.js';
-import type { CommandResult, TuiCommand } from '../types/commands.js';
+import type { CommandResult } from '../types/commands.js';
 import { ModeChangeSource } from '../types/generated/chat-cli.js';
 import { KAS_DEFAULT_AGENT_NAME } from '../constants/agents.js';
 import {
@@ -62,6 +56,10 @@ import {
   clearUserTitle,
   isTerminalTitleEnabled,
 } from '../utils/terminal-title.js';
+import {
+  getCommandEffect,
+  type CommandEffectName,
+} from './command-registry.js';
 
 /** Effect handler function. Returns true if it handled its own messaging. */
 export type EffectHandler = (
@@ -83,49 +81,6 @@ function confirmAction(ctx: CommandContext, msg: string, ms = 3000): void {
     ctx.showAlert(msg, 'success', ms);
   }
 }
-
-/** Extract command name from TuiCommand union type */
-type CommandName = TuiCommand['command'] | 'spawn' | 'switch' | 'spec';
-
-/** Effect names - semantic actions the TUI can perform */
-type EffectName =
-  | 'updateModel'
-  | 'updateEffort'
-  | 'updateAgent'
-  | 'showContextPanel'
-  | 'showHelpPanel'
-  | 'showUsagePanel'
-  | 'showMcpPanel'
-  | 'showToolsPanel'
-  | 'showHooksPanel'
-  | 'showKnowledgePanel'
-  | 'executePrompt'
-  | 'clearMessages'
-  | 'quit'
-  | 'pasteImage'
-  | 'promptEditor'
-  | 'loadSession'
-  | 'replyEditor'
-  | 'showCodePanel'
-  | 'showFeedbackUrl'
-  | 'spawnSession'
-  | 'runSpec'
-  | 'switchSession'
-  | 'copyToClipboard'
-  | 'openRawView'
-  | 'showThemeMenu'
-  | 'showGoalPanel'
-  | 'showSettingsMenu'
-  | 'switchToTui'
-  | 'showChangelogPanel'
-  | 'showSessionId'
-  | 'showStatsPanel'
-  | 'switchToGuideAgent'
-  | 'switchToLite'
-  | 'switchToPlanMode'
-  | 'verbosityConfig'
-  | 'rewindAction'
-  | 'updateTitle';
 
 /**
  * Cancel any active cloud scrollback reconcile window (a new transition or
@@ -152,57 +107,13 @@ export function scheduleCloudClearRewipes(
   if (!ctx.kiro.isCloudSessionActive()) return;
   armCloudScrollbackReconcile(() => ctx.bumpLiteScrollbackClear());
 }
-
-/**
- * Command → Effect mapping.
- */
-const commandEffects: Partial<Record<string, EffectName>> = {
-  feedback: 'showFeedbackUrl',
-  help: 'showHelpPanel',
-  model: 'updateModel',
-  effort: 'updateEffort',
-  agent: 'updateAgent',
-  plan: 'switchToPlanMode',
-  context: 'showContextPanel',
-  usage: 'showUsagePanel',
-  prompts: 'executePrompt',
-  clear: 'clearMessages',
-  quit: 'quit',
-  exit: 'quit',
-  mcp: 'showMcpPanel',
-  tools: 'showToolsPanel',
-  stats: 'showStatsPanel',
-  hooks: 'showHooksPanel',
-  knowledge: 'showKnowledgePanel',
-  paste: 'pasteImage',
-  editor: 'promptEditor',
-  reply: 'replyEditor',
-  code: 'showCodePanel',
-  spawn: 'spawnSession',
-  switch: 'switchSession',
-  spec: 'runSpec',
-  copy: 'copyToClipboard',
-  transcript: 'openRawView',
-  theme: 'showThemeMenu',
-  settings: 'showSettingsMenu',
-  tui: 'switchToTui',
-  lite: 'switchToLite',
-  verbosity: 'verbosityConfig',
-  changelog: 'showChangelogPanel',
-  'session-id': 'showSessionId',
-  guide: 'switchToGuideAgent',
-  goal: 'showGoalPanel',
-  rewind: 'rewindAction',
-  title: 'updateTitle',
-};
-
 // Fire once per session to avoid stacking deprecation rows in lite scrollback.
 let themeDeprecationAnnounced = false;
 
 /**
  * Effect handlers.
  */
-const effectHandlers: Record<EffectName, EffectHandler> = {
+const effectHandlers: Record<CommandEffectName, EffectHandler> = {
   updateModel: (result, ctx) => {
     const data = result?.data as
       | {
@@ -1420,7 +1331,7 @@ const effectHandlers: Record<EffectName, EffectHandler> = {
   showSettingsMenu: (_result, ctx, cmd, args) => {
     if (args) {
       const resolveEffect = (name: string) => {
-        const handler = effectHandlers[name as EffectName];
+        const handler = effectHandlers[name as CommandEffectName];
         if (!handler) {
           throw new Error(`Unknown effect handler: ${name}`);
         }
@@ -1852,7 +1763,7 @@ export function runEffect(
   args: string
 ): boolean {
   const cmdName = cmd.name.replace(/^\//, '');
-  const effectName = commandEffects[cmdName as CommandName];
+  const effectName = getCommandEffect(cmdName);
   if (effectName) {
     return effectHandlers[effectName]?.(result, ctx, cmd, args) === true;
   }

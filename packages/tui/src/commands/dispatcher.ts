@@ -15,6 +15,11 @@ import { handleChat as handleV2Chat } from './v2-handlers/chat.js';
 import { isKasCommand } from '../kas-commands.js';
 import { startPTTRecording, type ModelDownloadInfo } from './voice-helper.js';
 import { extractRpcErrorMessage } from '../utils/error-handling.js';
+import {
+  getCommandPanelState,
+  hasCommandEffect,
+  isKasHandlerCommandName,
+} from './command-registry.js';
 
 /**
  * Run one local voice capture round.
@@ -170,14 +175,33 @@ export async function dispatch(
     return;
   }
 
+  if (
+    inputType === 'panel' &&
+    (!getCommandPanelState(cmdName) ||
+      (!hasCommandEffect(cmdName) &&
+        !(
+          ctx.agentEngine === 'kas' &&
+          isKasCommand(cmd) &&
+          isKasHandlerCommandName(cmd.name)
+        )))
+  ) {
+    ctx.showAlert(
+      `Unsupported panel command /${cmdName}: no shared frontend panel is registered.`,
+      'error',
+      5000
+    );
+    return;
+  }
+
   // KAS intercept: in KAS mode, registered handlers own the command flow
   // and skip the V2 dispatcher pipeline entirely.
-  if (ctx.agentEngine === 'kas' && isKasCommand(cmd)) {
-    const handler = kasHandlers[cmd.name];
-    if (handler) {
-      await handler(cmd, args, ctx, options);
-      return;
-    }
+  if (
+    ctx.agentEngine === 'kas' &&
+    isKasCommand(cmd) &&
+    isKasHandlerCommandName(cmd.name)
+  ) {
+    await kasHandlers[cmd.name](cmd, args, ctx, options);
+    return;
   }
 
   // Drop a stale chain if the user dispatches anything other than /model

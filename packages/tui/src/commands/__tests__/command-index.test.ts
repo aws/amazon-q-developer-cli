@@ -165,6 +165,27 @@ describe('executeCommand', () => {
       '/steering'
     );
   });
+
+  it('routes a newly advertised backend command without per-layout wiring', async () => {
+    const cmd = makeCmd({ name: '/foo', source: 'backend' });
+    const ctx = createMockCommandContext({ slashCommands: [cmd] });
+    (ctx.kiro.executeCommand as any).mockResolvedValue({
+      success: true,
+      message: 'Foo complete',
+      data: undefined,
+    });
+
+    expect(isKnownSlashCommandToken('/foo value', ctx.slashCommands)).toBe(
+      true
+    );
+    expect(await executeCommand('/foo value', ctx)).toBe(true);
+    expect(ctx.kiro.executeCommand).toHaveBeenCalled();
+    const executeCall = (ctx.kiro.executeCommand as any).mock.calls[0]!;
+    expect(executeCall[0]).toEqual({
+      command: 'foo',
+      args: { value: 'value' },
+    });
+  });
 });
 
 describe('executeCommandWithArg', () => {

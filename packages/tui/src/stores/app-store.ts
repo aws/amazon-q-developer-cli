@@ -359,6 +359,7 @@ import {
   recordSlashCommandInvocation,
   type CommandContext,
 } from '../commands/index.js';
+import { getLocalSlashCommands } from '../commands/command-registry.js';
 import {
   loadArtifactSummary,
   type ArtifactKind,
@@ -2850,134 +2851,7 @@ export const createAppStore = (props: AppStoreProps) => {
     editingSteerLineIndex: null,
     queuedInputRestore: null,
     pendingSteerContent: null,
-    slashCommands: [
-      {
-        name: '/editor',
-        description: 'Open $EDITOR to compose a prompt',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/spawn',
-        description: 'Spawn a new agent session with a task',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        // Always registered so cold-boot users discovering /switch via
-        // autocomplete get the correct "No active sessions" alert instead of
-        // having "/switch" sent to the agent as a chat message. The
-        // switchSession effect at effects.ts handles the empty-sessions case.
-        name: '/switch',
-        description: 'Switch to a spawned agent session',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/copy',
-        description:
-          'Copy last response to clipboard (use /transcript for full conversation)',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/transcript',
-        description: 'Open conversation transcript in $PAGER (quit with q)',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/quit',
-        description: 'Quit the application',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/exit',
-        description: 'Quit the application',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/settings',
-        description:
-          'Configure theme, terminal, keybindings, and other preferences',
-        source: 'local' as const,
-        // inputType is set dynamically in showSettingsMenu rather than here:
-        // a static 'selection' would make the dispatcher fetch options from
-        // the backend for what is a local command.
-        meta: { local: true },
-      },
-      {
-        name: '/theme',
-        description:
-          '(moved to /settings theme) Select a theme that looks best for your terminal',
-        source: 'local' as const,
-        meta: {
-          local: true,
-          hidden: agentEngine === 'kas',
-        },
-      },
-      {
-        // /lite and /tui are the symmetric session swaps. The handlers route
-        // through setUiMode, which clears scrollback and re-renders the
-        // conversation in the destination mode's form. From TUI mode, /tui
-        // falls through to the info panel (origin/main behavior).
-        name: '/lite',
-        description: '[EXPERIMENTAL] Switch to Lite UI',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/tui',
-        description: 'Switch to TUI mode',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        // /verbosity is the most-touched config menu (filters, density,
-        // truncation), so it earns a top-level shortcut despite most other
-        // /settings entries lacking one. /settings verbosity is also wired
-        // (settings-subcommands.ts) for users who discover the menu via
-        // /settings; both paths land in the same handler. Always a peer in
-        // lite; on the TUI it only surfaces inside the Lite rollout cohort
-        // (liteOnly hides it otherwise — the port doesn't exist off-cohort).
-        name: '/verbosity',
-        description:
-          'Configure rendering: tool args, reasoning, output filters, density, subagent sections.',
-        source: 'local' as const,
-        meta: {
-          local: true,
-          liteOnly: process.env.KIRO_LITE_ROLLOUT_ENABLED !== '1',
-          hidden: agentEngine === 'kas',
-        },
-      },
-      {
-        name: '/changelog',
-        description: 'Show recent release notes',
-        source: 'local' as const,
-        meta: { local: true, inputType: 'panel' as const },
-      },
-      {
-        name: '/session-id',
-        description: 'Print the current session ID',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-      {
-        name: '/title',
-        description: 'Set, clear, or show the terminal window title',
-        source: 'local' as const,
-        meta: { local: true },
-      },
-    ]
-      // /lite is a dead entry off the rollout (switchToLite no-ops), so drop
-      // it from the menu there. /tui stays — KAS lite↔TUI switching dispatches
-      // it through this same local list (liteGateCommands).
-      .filter(
-        (cmd) =>
-          cmd.name !== '/lite' || process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
-      ),
+    slashCommands: getLocalSlashCommands(undefined, agentEngine),
     kasCommands: agentEngine === 'kas' ? [...getKasCommands()] : [],
     cloudSessionActive: false,
     cloudSnapshotReadiness: {

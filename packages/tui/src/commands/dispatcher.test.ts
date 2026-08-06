@@ -13,6 +13,70 @@ function makeCmd(overrides: Partial<SlashCommand> = {}): SlashCommand {
 }
 
 describe('dispatch', () => {
+  describe('panel command parity', () => {
+    for (const uiMode of ['tui', 'lite'] as const) {
+      for (const agentEngine of ['v2', 'kas'] as const) {
+        for (const source of ['backend', 'local'] as const) {
+          it(`rejects an unmapped ${source} panel in ${uiMode}/${agentEngine}`, async () => {
+            const ctx = createMockCommandContext();
+            ctx.agentEngine = agentEngine;
+            ctx.getUiMode = () => uiMode;
+            const cmd = makeCmd({
+              name: '/unmapped-panel',
+              source,
+              meta: {
+                inputType: 'panel',
+                ...(source === 'local' ? { local: true } : {}),
+              },
+            });
+
+            await dispatch(cmd, '', ctx);
+
+            expect(ctx.kiro.executeCommand).not.toHaveBeenCalled();
+            expect(ctx._spies.setActiveCommand).not.toHaveBeenCalled();
+            expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+              'Unsupported panel command /unmapped-panel: no shared frontend panel is registered.',
+              'error',
+              5000
+            );
+          });
+        }
+      }
+
+      it(`opens registered backend and frontend panels in ${uiMode}`, async () => {
+        const ctx = createMockCommandContext();
+        ctx.getUiMode = () => uiMode;
+        (ctx.kiro.executeCommand as any).mockResolvedValue({
+          success: true,
+          message: '',
+          data: { commands: [] },
+        });
+
+        await dispatch(
+          makeCmd({
+            name: '/help',
+            source: 'backend',
+            meta: { inputType: 'panel' },
+          }),
+          '',
+          ctx
+        );
+        await dispatch(
+          makeCmd({
+            name: '/changelog',
+            source: 'local',
+            meta: { local: true, inputType: 'panel' },
+          }),
+          '',
+          ctx
+        );
+
+        expect(ctx._spies.setShowHelpPanel).toHaveBeenCalled();
+        expect(ctx._spies.setShowChangelogPanel).toHaveBeenCalledWith(true);
+      });
+    }
+  });
+
   describe('/feedback command', () => {
     it('shows selection menu when options are returned', async () => {
       const ctx = createMockCommandContext();

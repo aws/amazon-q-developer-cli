@@ -21,6 +21,7 @@ import { handleEffort } from './effort';
 import { handleRepo } from './repo';
 import { handleMcp } from './mcp';
 import { handleWorkflow } from './workflow';
+import type { KasHandlerCommandName } from '../command-registry.js';
 
 export type KasHandler = (
   cmd: KasCommand,
@@ -29,16 +30,7 @@ export type KasHandler = (
   options?: DispatchOptions
 ) => Promise<void>;
 
-/**
- * Map of KAS-side command handlers. Adding a new handler narrows the
- * `Partial<...>` further; removing the `Partial<>` would force every
- * `KasCommandName` member to be implemented.
- *
- * TODO: as more KAS commands gain client-side handlers (i.e. stop going
- * through `KasAcpClient.executeCommand`), drop the `Partial<>` so the
- * compiler enforces total coverage.
- */
-export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
+export const kasHandlers = {
   [KasCommandName.Chat]: handleChat,
   [KasCommandName.Sessions]: handleChat,
   [KasCommandName.Disconnect]: handleDisconnect,
@@ -59,4 +51,4 @@ export const kasHandlers: Partial<Record<KasCommandName, KasHandler>> = {
   [KasCommandName.Effort]: handleEffort,
   [KasCommandName.Repo]: handleRepo,
   [KasCommandName.Workflow]: handleWorkflow,
-};
+} satisfies Record<KasHandlerCommandName, KasHandler>;

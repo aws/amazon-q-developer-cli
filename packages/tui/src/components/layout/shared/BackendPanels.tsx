@@ -5,6 +5,7 @@
  */
 import React, { useCallback, useMemo } from 'react';
 import { useStore } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { ContextBreakdown } from '../../ui/ContextBreakdown.js';
 import { HelpPanel } from '../../ui/HelpPanel.js';
 import { TuiPanel } from '../../ui/TuiPanel.js';
@@ -41,7 +42,7 @@ import {
   useContextState,
   useKiroClient,
 } from '../../../stores/selectors.js';
-import { useAppStore } from '../../../stores/app-store.js';
+import { useAppStore, type AppState } from '../../../stores/app-store.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import { startMcpOAuth } from '../../../utils/mcp-oauth.js';
 import { copyToSystemClipboard } from '../../../commands/effects.js';
@@ -54,8 +55,118 @@ import type { UiMode } from '../../../types/ui-mode.js';
 
 interface BackendPanelsProps {
   handlers: BackendPanelHandlers;
-  /** The surface the mounting layout paints, for panels that edit per-surface state. */
   surface: UiMode;
+}
+
+type InlinePanelGate = 'header' | 'input' | 'copyHint';
+
+const ALL_INLINE_GATES = [
+  'header',
+  'input',
+  'copyHint',
+] as const satisfies readonly InlinePanelGate[];
+
+interface BackendPanelDefinition {
+  stateKey: keyof AppState;
+  componentName: string;
+  inlineGates: readonly InlinePanelGate[];
+}
+
+const BACKEND_PANEL_DEFINITIONS = [
+  ['showContextBreakdown', 'ContextBreakdown', ALL_INLINE_GATES],
+  ['showUsagePanel', 'UsagePanel', ALL_INLINE_GATES],
+  ['showRewindExplorer', 'Explorer', ALL_INLINE_GATES],
+  ['showTangentExplorer', 'Explorer', ALL_INLINE_GATES],
+  ['showHelpPanel', 'HelpPanel', ALL_INLINE_GATES],
+  ['showChangelogPanel', 'ChangelogPanel', ALL_INLINE_GATES],
+  ['showMemoriesPanel', 'MemoriesPanel', ALL_INLINE_GATES],
+  ['showMcpPanel', 'McpPanel', ALL_INLINE_GATES],
+  ['showToolsPanel', 'ToolsPanel', ALL_INLINE_GATES],
+  ['showGoalPanel', 'GoalPanel', ['header']],
+  ['showTuiPanel', 'TuiPanel', ALL_INLINE_GATES],
+  ['showStatsPanel', 'StatsPanel', ['header', 'input']],
+  ['showHooksPanel', 'HooksPanel', ALL_INLINE_GATES],
+  ['showRepoPicker', 'RepoPickerPanel', ALL_INLINE_GATES],
+  ['showSessionPicker', 'SessionPickerPanel', ALL_INLINE_GATES],
+  ['showKeybindingsPanel', 'KeybindingsPanel', ALL_INLINE_GATES],
+  ['showDisplaySettingsPanel', 'DisplaySettingsPanel', ALL_INLINE_GATES],
+  ['showStatusLinePanel', 'StatusLineSettingsPanel', ['input', 'copyHint']],
+  ['showThemePanel', 'ThemePanel', ALL_INLINE_GATES],
+  ['showSettingsPanel', 'SettingsPanel', ALL_INLINE_GATES],
+  ['showKnowledgePanel', 'KnowledgePanel', ALL_INLINE_GATES],
+  ['showCodePanel', 'CodePanel', ALL_INLINE_GATES],
+  ['artifactViewOpen', 'ArtifactView', ALL_INLINE_GATES],
+  ['showSurveyPanel', 'SurveyPanel', ALL_INLINE_GATES],
+  ['showCloudQuitPrompt', 'CloudQuitPrompt', ALL_INLINE_GATES],
+] as const satisfies readonly (readonly [
+  keyof AppState,
+  string,
+  readonly InlinePanelGate[],
+])[];
+
+export const BACKEND_PANEL_REGISTRY = BACKEND_PANEL_DEFINITIONS.map(
+  ([stateKey, componentName, inlineGates]) => ({
+    stateKey,
+    componentName,
+    inlineGates,
+  })
+) satisfies readonly BackendPanelDefinition[];
+
+export type BackendPanelStateKey =
+  (typeof BACKEND_PANEL_REGISTRY)[number]['stateKey'];
+export type BackendPanelId = BackendPanelStateKey | 'workflowHistory';
+
+export const BACKEND_PANEL_STATE_KEYS = BACKEND_PANEL_REGISTRY.map(
+  ({ stateKey }) => stateKey
+);
+export const BACKEND_PANEL_COMPONENT_NAMES = BACKEND_PANEL_REGISTRY.map(
+  ({ componentName }) => componentName
+);
+
+export interface BackendPanelVisibility {
+  any: boolean;
+  inlineHeader: boolean;
+  inlineInput: boolean;
+  inlineCopyHint: boolean;
+}
+
+export function selectBackendPanelVisibility(
+  state: Pick<AppState, BackendPanelStateKey>
+): BackendPanelVisibility {
+  const visibility: BackendPanelVisibility = {
+    any: false,
+    inlineHeader: false,
+    inlineInput: false,
+    inlineCopyHint: false,
+  };
+
+  for (const { stateKey, inlineGates } of BACKEND_PANEL_REGISTRY) {
+    if (!state[stateKey]) continue;
+    visibility.any = true;
+    for (const gate of inlineGates as readonly InlinePanelGate[]) {
+      if (gate === 'header') visibility.inlineHeader = true;
+      if (gate === 'input') visibility.inlineInput = true;
+      if (gate === 'copyHint') visibility.inlineCopyHint = true;
+    }
+  }
+
+  return visibility;
+}
+
+export function useBackendPanelVisibility(): BackendPanelVisibility {
+  const visibility = useAppStore(useShallow(selectBackendPanelVisibility));
+  const workflowHistoryOpen = useStore(
+    workflowStore,
+    (state) => state.history.isOpen
+  );
+  return workflowHistoryOpen
+    ? {
+        any: true,
+        inlineHeader: true,
+        inlineInput: true,
+        inlineCopyHint: true,
+      }
+    : visibility;
 }
 
 export const BackendPanels: React.FC<BackendPanelsProps> = ({
@@ -126,6 +237,33 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     workflowStore,
     (state) => state.history.isOpen
   );
+  const panelState = {
+    showContextBreakdown,
+    showUsagePanel,
+    showRewindExplorer,
+    showTangentExplorer,
+    showHelpPanel,
+    showChangelogPanel,
+    showMemoriesPanel,
+    showMcpPanel,
+    showToolsPanel,
+    showGoalPanel,
+    showTuiPanel,
+    showStatsPanel,
+    showHooksPanel,
+    showRepoPicker,
+    showSessionPicker,
+    showKeybindingsPanel,
+    showDisplaySettingsPanel,
+    showStatusLinePanel,
+    showThemePanel,
+    showSettingsPanel,
+    showKnowledgePanel,
+    showCodePanel,
+    artifactViewOpen,
+    showSurveyPanel,
+    showCloudQuitPrompt,
+  } satisfies Pick<AppState, BackendPanelStateKey>;
 
   // Overlay auth-required status onto MCP servers pending OAuth or with a forced
   // (re-)authentication in progress — same shaping both layouts had locally.
@@ -172,234 +310,242 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     [kiro, setShowMcpPanel]
   );
 
+  const panelRenderers = {
+    showContextBreakdown: () => (
+      <ContextBreakdown
+        percent={contextUsagePercent}
+        breakdown={contextBreakdown ?? undefined}
+        model={currentModel?.name ?? null}
+        agentName={currentAgent?.name ?? null}
+        initialExpanded={contextBreakdown?.initialExpanded}
+        onClose={handlers.handleCloseContextBreakdown}
+        onTabSwitch={handlers.handleTabFromContext}
+      />
+    ),
+    showUsagePanel: () => (
+      <UsagePanel
+        data={usageData}
+        onClose={handlers.handleCloseUsagePanel}
+        onTabSwitch={handlers.handleTabFromUsage}
+      />
+    ),
+    showRewindExplorer: () => (
+      <Explorer
+        title="/rewind"
+        description="Fork from a previous prompt in this session"
+        columns={[
+          { key: 'label', label: 'User Prompt' },
+          { key: 'group', label: 'Context used', align: 'right' },
+        ]}
+        rows={rewindRows.map((turn) => ({
+          id: String(turn.logIndex),
+          values: {
+            label: turn.label,
+            group: turn.group ?? '',
+          },
+          preview: turn.responseSnippet
+            ? { body: turn.responseSnippet }
+            : undefined,
+        }))}
+        previewHeading="Response Snippet"
+        keyHints={[
+          { key: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'navigate' },
+          { key: 'Enter', label: 'to fork' },
+        ]}
+        onSelect={(row) => handlers.handleRewindSelect(row.id)}
+        onClose={handlers.handleCloseRewindExplorer}
+      />
+    ),
+    showTangentExplorer: () => (
+      <Explorer
+        title="/tangent ls"
+        description="Switch to a tangent"
+        columns={[
+          { key: 'label', label: 'Tangent', align: 'left' },
+          { key: 'lastActive', label: 'Last active', align: 'right' },
+        ]}
+        rows={tangentRows.map((row) => ({
+          id: row.id,
+          values: { label: row.label, lastActive: row.lastActive ?? '' },
+          tag: row.isCurrent ? '[current]' : undefined,
+        }))}
+        initialSelectedIndex={Math.max(
+          0,
+          tangentRows.findIndex((row) => row.isCurrent)
+        )}
+        keyHints={[
+          { key: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'navigate' },
+          { key: 'Enter', label: 'to switch' },
+        ]}
+        onSelect={(row) => {
+          const tangentRow = tangentRows.find((item) => item.id === row.id);
+          handlers.handleTangentSelect(row.id, tangentRow?.title ?? row.id);
+        }}
+        onClose={handlers.handleCloseTangentExplorer}
+      />
+    ),
+    showHelpPanel: () => (
+      <HelpPanel
+        commands={helpCommands}
+        onClose={handlers.handleCloseHelpPanel}
+      />
+    ),
+    showChangelogPanel: () => (
+      <ChangelogPanel onClose={handlers.handleCloseChangelogPanel} />
+    ),
+    showMemoriesPanel: () => (
+      <MemoriesPanel onClose={handlers.handleCloseMemoriesPanel} />
+    ),
+    showMcpPanel: () => (
+      <McpPanel
+        servers={mcpServersWithAuth}
+        registryServers={mcpRegistryServers}
+        initErrors={initErrors}
+        pendingOAuthUrls={pendingOAuthServers}
+        mode={mcpMode}
+        cloudSessionActive={cloudSessionActive}
+        cloudSnapshotReadiness={cloudSnapshotReadiness.mcp}
+        onClose={handlers.handleCloseMcpPanel}
+        onAuthenticate={startMcpServerOAuth}
+        onForceAuth={
+          supportsMcpCommandActions
+            ? (serverName) => {
+                void runMcpServerAction(`auth ${serverName}`);
+              }
+            : startMcpServerOAuth
+        }
+        onAbortAuth={
+          supportsMcpCommandActions
+            ? (serverName) => {
+                void runMcpServerAction(`cancel-auth ${serverName}`);
+              }
+            : undefined
+        }
+        onRemoveCredentials={
+          supportsMcpCommandActions
+            ? (serverName) => {
+                void runMcpServerAction(`logout ${serverName}`);
+              }
+            : undefined
+        }
+        onAction={
+          supportsMcpCommandActions
+            ? async (serverNames: string[]) => {
+                const action = mcpMode === 'add' ? 'add' : 'remove';
+                await runMcpPanelAction({
+                  kiro,
+                  value: `${action} ${serverNames.join(',')}`,
+                  refreshValue: action,
+                  panelMode: action,
+                  setShowMcpPanel,
+                });
+              }
+            : undefined
+        }
+      />
+    ),
+    showToolsPanel: () => (
+      <ToolsPanel
+        tools={toolsList}
+        initErrors={initErrors}
+        cloudSessionActive={cloudSessionActive}
+        cloudSnapshotReadiness={cloudSnapshotReadiness.tools}
+        onClose={handlers.handleCloseToolsPanel}
+      />
+    ),
+    showGoalPanel: () => <GoalPanel onClose={handlers.handleCloseGoalPanel} />,
+    showTuiPanel: () => <TuiPanel onClose={handlers.handleCloseTuiPanel} />,
+    showStatsPanel: () => (
+      <StatsPanel
+        stats={statsList}
+        summary={statsSummary}
+        onClose={handlers.handleCloseStatsPanel}
+      />
+    ),
+    showHooksPanel: () => (
+      <HooksPanel
+        hooks={hooksList}
+        cloudSessionActive={cloudSessionActive}
+        onClose={handlers.handleCloseHooksPanel}
+      />
+    ),
+    showRepoPicker: () => (
+      <RepoPickerPanel
+        resources={repoPickerResources}
+        initialSelected={attachedRepos}
+        onSubmit={(selected) => void submitRepoPicker(selected)}
+        onClose={handlers.handleCloseRepoPicker}
+      />
+    ),
+    showSessionPicker: () => (
+      <SessionPickerPanel
+        rows={sessionPickerRows}
+        title={sessionPickerTitle}
+        onSelect={handlers.handleSessionSelect}
+        onClose={handlers.handleCloseSessionPicker}
+      />
+    ),
+    showKeybindingsPanel: () => (
+      <KeybindingsPanel onClose={handlers.handleCloseKeybindingsPanel} />
+    ),
+    showDisplaySettingsPanel: () => (
+      <DisplaySettingsPanel
+        onClose={handlers.handleCloseDisplaySettingsPanel}
+        onDismiss={handlers.handleDismissDisplaySettingsPanel}
+        onOpenStatusLine={handlers.handleOpenStatusLinePanel}
+      />
+    ),
+    showThemePanel: () => (
+      <ThemePanel onClose={handlers.handleCloseThemePanel} />
+    ),
+    showStatusLinePanel: () => (
+      <StatusLineSettingsPanel
+        surface={surface}
+        onClose={handlers.handleCloseStatusLinePanel}
+        onDismiss={handlers.handleDismissStatusLinePanel}
+      />
+    ),
+    showSettingsPanel: () => (
+      <SettingsPanel onClose={handlers.handleCloseSettingsPanel} />
+    ),
+    showKnowledgePanel: () => (
+      <KnowledgePanel
+        entries={knowledgeEntries}
+        status={knowledgeStatus}
+        onClose={handlers.handleCloseKnowledgePanel}
+      />
+    ),
+    showCodePanel: () => (
+      <CodePanel
+        data={codeData}
+        onClose={handlers.handleCloseCodePanel}
+        onRefresh={handlers.handleRefreshCodePanel}
+      />
+    ),
+    artifactViewOpen: () => <ArtifactView />,
+    showSurveyPanel: () => (
+      <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
+    ),
+    showCloudQuitPrompt: () => (
+      <CloudQuitPrompt
+        onKeepRunning={() => quitCloudSessionKeepRunning(kiro)}
+        onTurnOff={() => quitCloudSessionTurnOff(kiro)}
+        onCancel={() => setShowCloudQuitPrompt(false)}
+      />
+    ),
+  } satisfies Record<BackendPanelStateKey, () => React.ReactNode>;
+
   return (
     <>
-      {showContextBreakdown && (
-        <ContextBreakdown
-          percent={contextUsagePercent}
-          breakdown={contextBreakdown ?? undefined}
-          model={currentModel?.name ?? null}
-          agentName={currentAgent?.name ?? null}
-          initialExpanded={contextBreakdown?.initialExpanded}
-          onClose={handlers.handleCloseContextBreakdown}
-          onTabSwitch={handlers.handleTabFromContext}
-        />
-      )}
-      {showUsagePanel && (
-        <UsagePanel
-          data={usageData}
-          onClose={handlers.handleCloseUsagePanel}
-          onTabSwitch={handlers.handleTabFromUsage}
-        />
-      )}
-      {showRewindExplorer && (
-        <Explorer
-          title="/rewind"
-          description="Fork from a previous prompt in this session"
-          columns={[
-            { key: 'label', label: 'User Prompt' },
-            { key: 'group', label: 'Context used', align: 'right' },
-          ]}
-          rows={rewindRows.map((turn) => ({
-            id: String(turn.logIndex),
-            values: {
-              label: turn.label,
-              group: turn.group ?? '',
-            },
-            preview: turn.responseSnippet
-              ? { body: turn.responseSnippet }
-              : undefined,
-          }))}
-          previewHeading="Response Snippet"
-          keyHints={[
-            { key: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'navigate' },
-            { key: 'Enter', label: 'to fork' },
-          ]}
-          onSelect={(row) => handlers.handleRewindSelect(row.id)}
-          onClose={handlers.handleCloseRewindExplorer}
-        />
-      )}
-      {showTangentExplorer && (
-        <Explorer
-          title="/tangent ls"
-          description="Switch to a tangent"
-          columns={[
-            { key: 'label', label: 'Tangent', align: 'left' },
-            { key: 'lastActive', label: 'Last active', align: 'right' },
-          ]}
-          rows={tangentRows.map((row) => ({
-            id: row.id,
-            values: { label: row.label, lastActive: row.lastActive ?? '' },
-            tag: row.isCurrent ? '[current]' : undefined,
-          }))}
-          initialSelectedIndex={Math.max(
-            0,
-            tangentRows.findIndex((row) => row.isCurrent)
-          )}
-          keyHints={[
-            { key: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'navigate' },
-            { key: 'Enter', label: 'to switch' },
-          ]}
-          onSelect={(row) => {
-            // Every row carries its sessionId as `id`; switch to that exact
-            // session (the handler no-ops if it's the current one).
-            const tangentRow = tangentRows.find((r) => r.id === row.id);
-            handlers.handleTangentSelect(row.id, tangentRow?.title ?? row.id);
-          }}
-          onClose={handlers.handleCloseTangentExplorer}
-        />
-      )}
-      {showHelpPanel && (
-        <HelpPanel
-          commands={helpCommands}
-          onClose={handlers.handleCloseHelpPanel}
-        />
-      )}
-      {showChangelogPanel && (
-        <ChangelogPanel onClose={handlers.handleCloseChangelogPanel} />
-      )}
-      {showMemoriesPanel && (
-        <MemoriesPanel onClose={handlers.handleCloseMemoriesPanel} />
-      )}
-      {showMcpPanel && (
-        <McpPanel
-          servers={mcpServersWithAuth}
-          registryServers={mcpRegistryServers}
-          initErrors={initErrors}
-          pendingOAuthUrls={pendingOAuthServers}
-          mode={mcpMode}
-          cloudSessionActive={cloudSessionActive}
-          cloudSnapshotReadiness={cloudSnapshotReadiness.mcp}
-          onClose={handlers.handleCloseMcpPanel}
-          onAuthenticate={startMcpServerOAuth}
-          onForceAuth={
-            supportsMcpCommandActions
-              ? (serverName) => {
-                  void runMcpServerAction(`auth ${serverName}`);
-                }
-              : startMcpServerOAuth
-          }
-          onAbortAuth={
-            supportsMcpCommandActions
-              ? (serverName) => {
-                  void runMcpServerAction(`cancel-auth ${serverName}`);
-                }
-              : undefined
-          }
-          onRemoveCredentials={
-            supportsMcpCommandActions
-              ? (serverName) => {
-                  void runMcpServerAction(`logout ${serverName}`);
-                }
-              : undefined
-          }
-          onAction={
-            supportsMcpCommandActions
-              ? async (serverNames: string[]) => {
-                  const action = mcpMode === 'add' ? 'add' : 'remove';
-                  await runMcpPanelAction({
-                    kiro,
-                    value: `${action} ${serverNames.join(',')}`,
-                    refreshValue: action,
-                    panelMode: action,
-                    setShowMcpPanel,
-                  });
-                }
-              : undefined
-          }
-        />
-      )}
-      {showToolsPanel && (
-        <ToolsPanel
-          tools={toolsList}
-          initErrors={initErrors}
-          cloudSessionActive={cloudSessionActive}
-          cloudSnapshotReadiness={cloudSnapshotReadiness.tools}
-          onClose={handlers.handleCloseToolsPanel}
-        />
+      {BACKEND_PANEL_REGISTRY.map(({ stateKey }) =>
+        panelState[stateKey] ? (
+          <React.Fragment key={stateKey}>
+            {panelRenderers[stateKey]()}
+          </React.Fragment>
+        ) : null
       )}
       {workflowHistoryOpen && (
         <WorkflowHistoryPanel onClose={handlers.handleCloseWorkflowHistory} />
-      )}
-      {showGoalPanel && <GoalPanel onClose={handlers.handleCloseGoalPanel} />}
-      {showTuiPanel && <TuiPanel onClose={handlers.handleCloseTuiPanel} />}
-      {showStatsPanel && (
-        <StatsPanel
-          stats={statsList}
-          summary={statsSummary}
-          onClose={handlers.handleCloseStatsPanel}
-        />
-      )}
-      {showHooksPanel && (
-        <HooksPanel
-          hooks={hooksList}
-          cloudSessionActive={cloudSessionActive}
-          onClose={handlers.handleCloseHooksPanel}
-        />
-      )}
-      {showRepoPicker && (
-        <RepoPickerPanel
-          resources={repoPickerResources}
-          initialSelected={attachedRepos}
-          onSubmit={(selected) => void submitRepoPicker(selected)}
-          onClose={handlers.handleCloseRepoPicker}
-        />
-      )}
-      {showSessionPicker && (
-        <SessionPickerPanel
-          rows={sessionPickerRows}
-          title={sessionPickerTitle}
-          onSelect={handlers.handleSessionSelect}
-          onClose={handlers.handleCloseSessionPicker}
-        />
-      )}
-      {showKeybindingsPanel && (
-        <KeybindingsPanel onClose={handlers.handleCloseKeybindingsPanel} />
-      )}
-      {showDisplaySettingsPanel && (
-        <DisplaySettingsPanel
-          onClose={handlers.handleCloseDisplaySettingsPanel}
-          onDismiss={handlers.handleDismissDisplaySettingsPanel}
-          onOpenStatusLine={handlers.handleOpenStatusLinePanel}
-        />
-      )}
-      {showThemePanel && (
-        <ThemePanel onClose={handlers.handleCloseThemePanel} />
-      )}
-      {showStatusLinePanel && (
-        <StatusLineSettingsPanel
-          surface={surface}
-          onClose={handlers.handleCloseStatusLinePanel}
-          onDismiss={handlers.handleDismissStatusLinePanel}
-        />
-      )}
-      {showSettingsPanel && (
-        <SettingsPanel onClose={handlers.handleCloseSettingsPanel} />
-      )}
-      {showKnowledgePanel && (
-        <KnowledgePanel
-          entries={knowledgeEntries}
-          status={knowledgeStatus}
-          onClose={handlers.handleCloseKnowledgePanel}
-        />
-      )}
-      {showCodePanel && (
-        <CodePanel
-          data={codeData}
-          onClose={handlers.handleCloseCodePanel}
-          onRefresh={handlers.handleRefreshCodePanel}
-        />
-      )}
-      {artifactViewOpen && <ArtifactView />}
-      {showSurveyPanel && (
-        <SurveyPanel onClose={closeSurveyPanel} onSubmit={submitSurvey} />
-      )}
-      {showCloudQuitPrompt && (
-        <CloudQuitPrompt
-          onKeepRunning={() => quitCloudSessionKeepRunning(kiro)}
-          onTurnOff={() => quitCloudSessionTurnOff(kiro)}
-          onCancel={() => setShowCloudQuitPrompt(false)}
-        />
       )}
     </>
   );

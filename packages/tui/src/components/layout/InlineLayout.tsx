@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useStore } from 'zustand';
 import { Box, Text } from './../../renderer.js';
 import { truncateToWidth } from '../../utils/text-width.js';
 import { usePlanModeToggle } from '../../hooks/usePlanModeToggle.js';
@@ -31,7 +30,10 @@ import { SpecDescriptionIntro } from '../ui/SpecDescriptionIntro.js';
 import { TrustAllToolsBanner } from '../ui/TrustAllToolsBanner.js';
 import { SurveyPromptBar } from '../ui/SurveyPromptBar';
 import { ArtifactGenerationCard } from '../ui/ArtifactView/ArtifactGenerationCard.js';
-import { BackendPanels } from './shared/BackendPanels.js';
+import {
+  BackendPanels,
+  useBackendPanelVisibility,
+} from './shared/BackendPanels.js';
 import { SpecCheckpointChip } from '../ui/SpecCheckpointChip.js';
 import { useBackendPanelHandlers } from './shared/useBackendPanelHandlers.js';
 import type { VariantLayoutProps } from './variant-layout.js';
@@ -57,7 +59,6 @@ import {
   MessageRole,
 } from '../../stores/app-store.js';
 import { ToolUseMessage } from '../ui/ToolUseMessage.js';
-import { workflowStore } from '../../stores/workflow-store.js';
 import { useSessionConversation } from '../../stores/session-conversations.js';
 import { useKeypress, type Key } from '../../hooks/useKeypress';
 import { useInteractionReady } from '../../hooks/useInteractionReady.js';
@@ -239,38 +240,12 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const trustAllToolsAccepted = useAppStore(
     (state) => state.trustAllToolsConfirmed
   );
-  // Panel show-flags drive PromptBar header/hideInput gating; the panels
-  // themselves render via the shared <BackendPanels> cluster.
   const {
     toolOutputsExpanded,
     hasExpandableToolOutputs,
-    showContextBreakdown,
-    showTuiPanel,
-    showChangelogPanel,
-    showMemoriesPanel,
-    showHelpPanel,
-    showUsagePanel,
-    showRewindExplorer,
-    showTangentExplorer,
     tangentName,
-    showMcpPanel,
-    showToolsPanel,
-    showGoalPanel,
-    showStatsPanel,
-    showHooksPanel,
-    showKeybindingsPanel,
-    showDisplaySettingsPanel,
-    showStatusLinePanel,
-    showThemePanel,
-    showSettingsPanel,
-    showKnowledgePanel,
-    showCodePanel,
-    artifactViewOpen,
     showSourceProviderGate,
     sourceProviderSetupUrl,
-    showSessionPicker,
-    showRepoPicker,
-    showCloudQuitPrompt,
   } = useUIState();
   const { toggleToolOutputsExpanded } = useUIActions();
   const {
@@ -319,10 +294,6 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const settings = useAppStore((s) => s.settings);
   const mode = useAppStore((state) => state.mode);
   const backendPanelHandlers = useBackendPanelHandlers();
-  const workflowHistoryOpen = useStore(
-    workflowStore,
-    (state) => state.history.isOpen
-  );
 
   const toggleHintLabel = useMemo(() => {
     const binding = resolveKeybinding(settings, 'toggleInterruptMode');
@@ -332,9 +303,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const exitSequence = useAppStore((state) => state.exitSequence);
   const suspendArmed = useAppStore((state) => state.suspendArmed);
 
-  // Research-survey state. showSurveyPanel gates PromptBar chrome; the panel
-  // itself renders via <BackendPanels>. surveyPrompt drives the inline nudge.
-  const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
+  const backendPanelVisibility = useBackendPanelVisibility();
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
   const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
 
@@ -925,31 +894,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
         <Box marginBottom={1}>
           <ActivityTrayAwarePromptBar
             header={
-              showContextBreakdown ||
-              showHelpPanel ||
-              showTuiPanel ||
-              showChangelogPanel ||
-              showMemoriesPanel ||
-              showUsagePanel ||
-              showRewindExplorer ||
-              showTangentExplorer ||
-              showMcpPanel ||
-              showToolsPanel ||
-              showGoalPanel ||
-              showStatsPanel ||
-              showHooksPanel ||
-              showKeybindingsPanel ||
-              showDisplaySettingsPanel ||
-              showThemePanel ||
-              showSettingsPanel ||
-              showKnowledgePanel ||
-              showCodePanel ||
-              !!artifactViewOpen ||
-              showSurveyPanel ||
-              showSessionPicker ||
-              showRepoPicker ||
-              showCloudQuitPrompt ||
-              workflowHistoryOpen ||
+              backendPanelVisibility.inlineHeader ||
               !!pendingApproval ||
               !!pendingQuestion ||
               !!voiceDownloadConfirm
@@ -1003,31 +948,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                   !!pendingApproval ||
                   !!pendingQuestion ||
                   !!voiceDownloadConfirm ||
-                  showContextBreakdown ||
-                  showHelpPanel ||
-                  showTuiPanel ||
-                  showChangelogPanel ||
-                  showMemoriesPanel ||
-                  showUsagePanel ||
-                  showRewindExplorer ||
-                  showTangentExplorer ||
-                  showMcpPanel ||
-                  showToolsPanel ||
-                  showStatsPanel ||
-                  showHooksPanel ||
-                  showKeybindingsPanel ||
-                  showDisplaySettingsPanel ||
-                  showStatusLinePanel ||
-                  showThemePanel ||
-                  showSettingsPanel ||
-                  showKnowledgePanel ||
-                  showCodePanel ||
-                  !!artifactViewOpen ||
-                  showSurveyPanel ||
-                  showSessionPicker ||
-                  showRepoPicker ||
-                  showCloudQuitPrompt ||
-                  workflowHistoryOpen
+                  backendPanelVisibility.inlineInput
             }
           >
             {!pendingQuestion && <CommandMenu />}
@@ -1089,30 +1010,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
                 !pendingApproval &&
                 !pendingQuestion &&
                 !activeCommand &&
-                !showContextBreakdown &&
-                !showHelpPanel &&
-                !showTuiPanel &&
-                !showChangelogPanel &&
-                !showMemoriesPanel &&
-                !showUsagePanel &&
-                !showRewindExplorer &&
-                !showTangentExplorer &&
-                !showMcpPanel &&
-                !showToolsPanel &&
-                !showHooksPanel &&
-                !showKeybindingsPanel &&
-                !showDisplaySettingsPanel &&
-                !showStatusLinePanel &&
-                !showThemePanel &&
-                !showSettingsPanel &&
-                !showKnowledgePanel &&
-                !showCodePanel &&
-                !artifactViewOpen &&
-                !showSurveyPanel &&
-                !showSessionPicker &&
-                !showRepoPicker &&
-                !showCloudQuitPrompt &&
-                !workflowHistoryOpen &&
+                !backendPanelVisibility.inlineCopyHint &&
                 commandInputValue.length === 0 &&
                 exitSequence === 0 &&
                 !suspendArmed

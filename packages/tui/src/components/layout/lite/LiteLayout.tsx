@@ -63,7 +63,6 @@ import {
   selectLiveWorkflowCount,
   workflowStore,
 } from '../../../stores/workflow-store.js';
-import { hasOpenBackendPanel } from '../../../stores/ui-interaction.js';
 import {
   selectBootIndicatorPhase,
   formatBootIndicator,
@@ -103,7 +102,10 @@ import {
 import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
 import { chalk } from '../../../utils/color.js';
-import { BackendPanels } from '../shared/BackendPanels.js';
+import {
+  BackendPanels,
+  useBackendPanelVisibility,
+} from '../shared/BackendPanels.js';
 import { SourceProviderGate } from '../../ui/SourceProviderGate.js';
 import { openUrlInBrowser } from '../../../utils/browser.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../../utils/cloud-urls.js';
@@ -222,7 +224,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
 
   const { tangentName, showSourceProviderGate, sourceProviderSetupUrl } =
     useUIState();
-  const backendPanelOpen = useAppStore(hasOpenBackendPanel);
+  const { any: anyPanelOpen } = useBackendPanelVisibility();
   const surveyPrompt = useAppStore((s) => s.surveyPrompt);
   const dismissSurveyPrompt = useAppStore((s) => s.dismissSurveyPrompt);
   // Goal-loop state (set by `/goal`). Lite surfaces it as a status-line segment
@@ -230,10 +232,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const goalStatus = useAppStore((s) => s.goalStatus);
 
   const handlers = useBackendPanelHandlers();
-  const workflowHistoryOpen = useStore(
-    workflowStore,
-    (state) => state.history.isOpen
-  );
 
   // Tick every 60s while a goal is active so the elapsed time in the status
   // line advances even when idle (mirrors InlineLayout's goal chip).
@@ -248,8 +246,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     const id = setInterval(() => setGoalTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, [goalStatus]);
-
-  const anyPanelOpen = backendPanelOpen || workflowHistoryOpen;
 
   // The lite /verbosity menu renders via <CommandMenu> (not a backend panel)
   // for its live preview + truncation editor, but presents like other
