@@ -19,6 +19,13 @@ export type WorkflowCompletionSignal = NonNullable<
 export type WorkflowJoinPolicy = JoinPolicy;
 export type WorkflowMaxIterationPolicy = OnMaxIterations;
 export type WorkflowWatchOutcome = WatchOutcome;
+export type WorkflowRestoreResult =
+  | 'restored'
+  | 'discovery_failed'
+  | 'load_failed'
+  | 'rejected'
+  | '_other_';
+export type WorkflowRestoreSummary = Record<WorkflowRestoreResult, number>;
 
 interface WorkflowStopConditionFields {
   containsText?: string;

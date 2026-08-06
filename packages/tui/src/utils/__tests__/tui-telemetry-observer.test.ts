@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AgentEventType, ContentType } from '../../types/agent-events';
+import type { WorkflowEvent } from '../../types/workflow.js';
+import { WorkflowTelemetryTracker } from '../workflow-telemetry.js';
 
 // @ts-expect-error - query-string import avoids process-global mocks in other suites.
 const observerMod = await import('../tui-telemetry-observer?unit');
@@ -27,6 +29,9 @@ const {
   recordTuiToolCall,
   recordTuiUiModeSessionStarted,
   recordTuiUserTurn,
+  recordTuiWorkflowControl,
+  recordTuiWorkflowObservations,
+  recordTuiWorkflowRestoreSummary,
   repoCountBucket,
   resultFromStatus,
   turnFailureReasonFromStatus,
@@ -260,6 +265,185 @@ describe('TUI-owned usage metrics', () => {
       'lite',
       'unknown',
     ]);
+  });
+});
+
+describe('workflow telemetry', () => {
+  const version = '9.8.7-test';
+
+  it('emits each lifecycle instrument with catalog dimensions', () => {
+    recordTuiWorkflowObservations(
+      [
+        {
+          type: 'run',
+          event: 'started',
+          topology: 'mixed',
+          stepBucket: '6_10',
+        },
+        {
+          type: 'run_duration',
+          durationSeconds: 45,
+          outcome: 'completed',
+          topology: 'mixed',
+          stepBucket: '6_10',
+        },
+        {
+          type: 'node',
+          nodeType: 'repeat',
+          outcome: 'failed',
+        },
+        {
+          type: 'node_duration',
+          durationSeconds: 7,
+          nodeType: 'repeat',
+          outcome: 'failed',
+        },
+        { type: 'concurrent', activeRuns: 2 },
+      ],
+      version,
+      deps
+    );
+
+    expect(counterCalls.map((call) => call.name)).toEqual([
+      'kiro_cli_workflow_run_total',
+      'kiro_cli_workflow_node_total',
+    ]);
+    expect(histogramCalls.map((call) => call.name)).toEqual([
+      'kiro_cli_workflow_run_duration_seconds',
+      'kiro_cli_workflow_node_duration_seconds',
+    ]);
+    expect(gaugeCalls).toEqual([
+      {
+        name: 'kiro_cli_workflow_concurrent_runs',
+        value: 2,
+        attrs: {
+          version_full: version,
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
+    ]);
+    expect(counterCalls[0]?.attrs).toEqual({
+      version_full: version,
+      workflow_run_event: 'started',
+      workflow_topology: 'mixed',
+      workflow_step_bucket: '6_10',
+      agent_engine: 'v3',
+    });
+    expect(histogramCalls[0]?.attrs).toEqual({
+      version_full: version,
+      workflow_outcome: 'completed',
+      workflow_topology: 'mixed',
+      workflow_step_bucket: '6_10',
+      agent_engine: 'v3',
+    });
+    expect(counterCalls[1]?.attrs).toEqual({
+      version_full: version,
+      workflow_node_type: 'repeat',
+      workflow_node_outcome: 'failed',
+      agent_engine: 'v3',
+    });
+  });
+
+  it('records control and restoration outcomes without identifiers', () => {
+    recordTuiWorkflowControl('pause', 'failed', version, deps);
+    recordTuiWorkflowRestoreSummary(
+      {
+        restored: 3,
+        discovery_failed: 1,
+        load_failed: 2,
+        rejected: 4,
+        _other_: 0,
+      },
+      version,
+      deps
+    );
+
+    expect(counterCalls).toEqual([
+      {
+        name: 'kiro_cli_workflow_control_total',
+        value: 1,
+        attrs: {
+          version_full: version,
+          workflow_control_action: 'pause',
+          workflow_control_result: 'failed',
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
+      {
+        name: 'kiro_cli_workflow_restore_total',
+        value: 3,
+        attrs: {
+          version_full: version,
+          workflow_restore_result: 'restored',
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
+      {
+        name: 'kiro_cli_workflow_restore_total',
+        value: 1,
+        attrs: {
+          version_full: version,
+          workflow_restore_result: 'discovery_failed',
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
+      {
+        name: 'kiro_cli_workflow_restore_total',
+        value: 2,
+        attrs: {
+          version_full: version,
+          workflow_restore_result: 'load_failed',
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
+      {
+        name: 'kiro_cli_workflow_restore_total',
+        value: 4,
+        attrs: {
+          version_full: version,
+          workflow_restore_result: 'rejected',
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
+    ]);
+  });
+
+  it('emits a live lifecycle once and suppresses persisted history', () => {
+    const tracker = new WorkflowTelemetryTracker();
+    const event = {
+      type: 'run_start',
+      workflowId: 'private-workflow-id',
+      workflowName: 'private-workflow-name',
+      inputs: { private: 'value' },
+      nodeTree: [{ nodeId: 'private-node-id', type: 'step' }],
+    } as const satisfies WorkflowEvent;
+
+    recordTuiWorkflowObservations(tracker.observe(event, false), version, deps);
+    expect(counterCalls).toEqual([]);
+    expect(gaugeCalls).toEqual([]);
+
+    recordTuiWorkflowObservations(tracker.observe(event, true), version, deps);
+    recordTuiWorkflowObservations(tracker.observe(event, true), version, deps);
+
+    expect(counterCalls).toHaveLength(1);
+    expect(counterCalls[0]).toMatchObject({
+      name: 'kiro_cli_workflow_run_total',
+      value: 1,
+      attrs: {
+        version_full: version,
+        workflow_run_event: 'started',
+        workflow_topology: 'sequential',
+        workflow_step_bucket: '1',
+        agent_engine: 'v3',
+      },
+    });
+    expect(gaugeCalls).toHaveLength(1);
   });
 });
 

@@ -43,6 +43,33 @@ attributes:
   - name: repo_count_bucket
     description: Bounded count of repositories selected for a cloud session.
     allowed_values: [none, "1", "2", "3_5", "6_plus", unknown]
+  - name: workflow_run_event
+    description: Client-observed workflow lifecycle transition.
+    allowed_values: [started, paused, completed, failed, aborted]
+  - name: workflow_outcome
+    description: Terminal result of a workflow run.
+    allowed_values: [completed, failed, aborted, _other_]
+  - name: workflow_topology
+    description: Static composition of executable workflow nodes.
+    allowed_values: [sequential, parallel, iterative, watch, mixed, _other_]
+  - name: workflow_step_bucket
+    description: Bounded count of declared executable leaf steps.
+    allowed_values: ["1", "2", "3_5", "6_10", "11_plus", _other_]
+  - name: workflow_node_type
+    description: Node kind from the typed workflow contract.
+    allowed_values: [step, sequence, repeat, parallel, watch]
+  - name: workflow_node_outcome
+    description: Node lifecycle status from the typed workflow contract.
+    allowed_values: [pending, running, paused, completed, failed, aborted, skipped]
+  - name: workflow_control_action
+    description: User-facing workflow control operation.
+    allowed_values: [pause, resume, cancel, retry, message]
+  - name: workflow_control_result
+    description: Client-observed result of a workflow control operation.
+    allowed_values: [success, failed]
+  - name: workflow_restore_result
+    description: Client-observed result of restoring a persisted workflow.
+    allowed_values: [restored, discovery_failed, load_failed, rejected, _other_]
   - name: ui_mode
     description: First-party interactive layout selected at session start.
     allowed_values: [tui, lite, unknown]

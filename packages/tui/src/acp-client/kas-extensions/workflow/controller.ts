@@ -6,7 +6,9 @@ import {
 import type {
   WorkflowConversationApi,
   WorkflowEvent,
+  WorkflowLoadResponse,
   WorkflowNodeSessionTarget,
+  WorkflowRestoreSummary,
 } from '../../../types/workflow.js';
 import type {
   WorkflowCancelResponse,
@@ -195,16 +197,26 @@ export class KasWorkflowExtension
     return this.runtime.request(WORKFLOW_INVOKE_CONTRACT, { workflowId });
   }
 
-  async restoreParentRuns(workspacePaths: readonly string[]): Promise<void> {
+  async restoreParentRuns(
+    workspacePaths: readonly string[]
+  ): Promise<WorkflowRestoreSummary> {
+    const summary: WorkflowRestoreSummary = {
+      restored: 0,
+      discovery_failed: 0,
+      load_failed: 0,
+      rejected: 0,
+      _other_: 0,
+    };
     const parentSessionId = this.parentSessionId;
-    if (!parentSessionId) return;
+    if (!parentSessionId) return summary;
 
     let runs: WorkflowRunSummary[];
     try {
       runs = await this.listRuns(workspacePaths);
     } catch (error) {
+      summary.discovery_failed += 1;
       logger.debug('[acp-client] Workflow restore is unavailable', { error });
-      return;
+      return summary;
     }
 
     for (const run of runs) {
@@ -215,25 +227,40 @@ export class KasWorkflowExtension
         continue;
       }
 
+      let response: WorkflowLoadResponse;
       try {
-        const response = await this.runtime.request(WORKFLOW_LOAD_CONTRACT, {
+        response = await this.runtime.request(WORKFLOW_LOAD_CONTRACT, {
           workflowId: run.workflowId,
         });
-        if (
-          this.parentSessionId !== parentSessionId ||
-          response.workflowId !== run.workflowId ||
-          response.state.parentSessionId !== parentSessionId ||
-          (response.state.status !== 'running' &&
-            response.state.status !== 'paused')
-        ) {
-          continue;
-        }
+      } catch (error) {
+        summary.load_failed += 1;
+        logger.warn('[acp-client] Failed to load active workflow', {
+          workflowId: run.workflowId,
+          error,
+        });
+        continue;
+      }
 
+      if (
+        this.parentSessionId !== parentSessionId ||
+        response.workflowId !== run.workflowId ||
+        response.state.parentSessionId !== parentSessionId ||
+        (response.state.status !== 'running' &&
+          response.state.status !== 'paused')
+      ) {
+        summary.rejected += 1;
+        continue;
+      }
+
+      try {
         const registration = this.owners.registerLoadedRun(
           response,
           parentSessionId
         );
-        if (!registration) continue;
+        if (!registration) {
+          summary.rejected += 1;
+          continue;
+        }
         for (const sessionId of registration.removedSessionIds) {
           this.removeSession(sessionId);
         }
@@ -257,13 +284,16 @@ export class KasWorkflowExtension
             this.children.disposeLeaseWhenIdle(owner.sessionId);
           }
         }
+        summary.restored += 1;
       } catch (error) {
+        summary._other_ += 1;
         logger.warn('[acp-client] Failed to restore active workflow', {
           workflowId: run.workflowId,
           error,
         });
       }
     }
+    return summary;
   }
 
   inspectRun(workflowId: string): Promise<WorkflowInspectResponse> {

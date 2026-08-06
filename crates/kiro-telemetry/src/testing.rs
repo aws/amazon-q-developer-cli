@@ -62,6 +62,11 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         ExecutionContext::Main,
     )
     .builtin_tool_name(Some("fs_read"));
+    let workflow_dimensions = |builder: MetricBuilder| {
+        builder
+            .attribute("version_full", version_attr())
+            .attribute("agent_engine", engine.as_str())
+    };
 
     vec![
         record_run_started(interface, engine, os),
@@ -73,6 +78,32 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         record_cloud_repo_attach("submitted", "2", engine),
         record_cloud_error("session_new", "version_skew", engine),
         record_cloud_attach("image", "under_1m", engine),
+        workflow_dimensions(counter("kiro_cli_workflow_run_total", 1))
+            .attribute("workflow_run_event", "started")
+            .attribute("workflow_topology", "mixed")
+            .attribute("workflow_step_bucket", "6_10")
+            .expect_valid(),
+        workflow_dimensions(histogram("kiro_cli_workflow_run_duration_seconds", 45.0))
+            .attribute("workflow_outcome", "completed")
+            .attribute("workflow_topology", "mixed")
+            .attribute("workflow_step_bucket", "6_10")
+            .expect_valid(),
+        workflow_dimensions(counter("kiro_cli_workflow_node_total", 1))
+            .attribute("workflow_node_type", "repeat")
+            .attribute("workflow_node_outcome", "failed")
+            .expect_valid(),
+        workflow_dimensions(histogram("kiro_cli_workflow_node_duration_seconds", 7.0))
+            .attribute("workflow_node_type", "repeat")
+            .attribute("workflow_node_outcome", "failed")
+            .expect_valid(),
+        workflow_dimensions(counter("kiro_cli_workflow_control_total", 1))
+            .attribute("workflow_control_action", "pause")
+            .attribute("workflow_control_result", "success")
+            .expect_valid(),
+        workflow_dimensions(counter("kiro_cli_workflow_restore_total", 1))
+            .attribute("workflow_restore_result", "restored")
+            .expect_valid(),
+        workflow_dimensions(gauge("kiro_cli_workflow_concurrent_runs", 2.0)).expect_valid(),
         record_ui_mode_session_started(UiMode::Tui),
         record_daily_heartbeat(ReleaseChannel::Stable, os, InstallSource::Internal),
         record_slash_command("/help", engine),

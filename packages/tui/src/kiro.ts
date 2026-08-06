@@ -72,6 +72,9 @@ import type {
   SourceProviderResourcesRequest,
 } from '@kiro/acp-type-covenant';
 import type { InterruptMode } from './constants/interrupt-mode';
+import { recordTuiWorkflowControl } from './utils/tui-telemetry-observer';
+import type { WorkflowControlAction } from './utils/workflow-telemetry';
+import { getCliVersion } from './utils/version';
 
 /** Narrow source-provider slice the `/repo` command needs. */
 export interface RepoProviderSource {
@@ -90,11 +93,16 @@ type ClientSubscription = 'sessionEvent' | 'multiSession' | 'subagentList';
 
 export type WorkflowProgressSource = 'live' | 'history-replay';
 
+export interface KiroDependencies {
+  recordWorkflowControl?: typeof recordTuiWorkflowControl;
+}
+
 /**
  * Stateless Kiro class that only manages session client lifecycle.
  * All state is managed externally in the app store.
  */
 export class Kiro {
+  private readonly recordWorkflowControl: typeof recordTuiWorkflowControl;
   private sessionClient?: SessionClient;
   private _settings: Record<string, unknown> = {};
   private commandsHandler?: (
@@ -172,6 +180,11 @@ export class Kiro {
   private activePromptToken?: symbol;
   private _promptActive = false;
   private historyReplaySubscribers = 0;
+
+  constructor(dependencies: KiroDependencies = {}) {
+    this.recordWorkflowControl =
+      dependencies.recordWorkflowControl ?? recordTuiWorkflowControl;
+  }
 
   get sessionId(): string | undefined {
     return this.sessionClient?.sessionId;
@@ -462,8 +475,10 @@ export class Kiro {
     target: WorkflowNodeSessionTarget,
     content: string
   ): Promise<void> {
-    this.onSessionMessageSent?.(target.sessionId);
-    await this.workflowConversation.sendMessage(target, content);
+    return this.observeWorkflowControl('message', async () => {
+      this.onSessionMessageSent?.(target.sessionId);
+      await this.workflowConversation.sendMessage(target, content);
+    });
   }
 
   private get workflowControl(): WorkflowControlApi {
@@ -497,11 +512,17 @@ export class Kiro {
   }
 
   pauseWorkflow(workflowId: string): Promise<WorkflowPauseResponse> {
-    return this.workflowControl.pauseRun(workflowId);
+    return this.observeWorkflowControl(
+      'pause',
+      () => this.workflowControl.pauseRun(workflowId),
+      (response) => response.paused
+    );
   }
 
   resumeWorkflow(workflowId: string): Promise<WorkflowResumeResponse> {
-    return this.workflowControl.resumeRun(workflowId);
+    return this.observeWorkflowControl('resume', () =>
+      this.workflowControl.resumeRun(workflowId)
+    );
   }
 
   retryWorkflow(
@@ -515,7 +536,29 @@ export class Kiro {
     workflowId: string,
     targetStatus?: 'aborted' | 'completed'
   ): Promise<WorkflowCancelResponse> {
-    return this.workflowControl.cancelRun(workflowId, targetStatus);
+    return this.observeWorkflowControl(
+      'cancel',
+      () => this.workflowControl.cancelRun(workflowId, targetStatus),
+      (response) => response.ok
+    );
+  }
+
+  private async observeWorkflowControl<T>(
+    action: WorkflowControlAction,
+    request: () => Promise<T>,
+    accepted: (response: T) => boolean = () => true
+  ): Promise<T> {
+    try {
+      const response = await request();
+      if (!accepted(response)) {
+        throw new Error(`Workflow ${action} was rejected`);
+      }
+      this.recordWorkflowControl(action, 'success', getCliVersion());
+      return response;
+    } catch (error) {
+      this.recordWorkflowControl(action, 'failed', getCliVersion());
+      throw error;
+    }
   }
 
   onSessionMessageSent?: (sessionId: string) => void;

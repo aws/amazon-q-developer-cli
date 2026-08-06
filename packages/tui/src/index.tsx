@@ -86,6 +86,7 @@ import { startProcessHealthCollector } from './utils/process-health-collector';
 import {
   recordTuiProcessHealth,
   recordTuiRender,
+  recordTuiWorkflowObservations,
   forceFlushMetrics,
 } from './utils/tui-telemetry-observer';
 import { getCliVersion } from './utils/version.js';
@@ -98,6 +99,7 @@ import {
 import { installConsoleInterceptor } from './utils/console-interceptor';
 import { connectMouseCapture } from './utils/mouse-capture.js';
 import { workflowStore } from './stores/workflow-store.js';
+import { WorkflowTelemetryTracker } from './utils/workflow-telemetry.js';
 
 // Route every `console.*` call through `logger` (file-only). Must run
 // before any third-party code (notably `@agentclientprotocol/sdk`)
@@ -290,6 +292,8 @@ let initPromise: Promise<void> | null = null;
 // re-renders that cycle Ink's stdin listener (which breaks input under Bun).
 let pendingHistoryEvents: AgentStreamEvent[] = [];
 let initialHistoryReplayComplete = false;
+const workflowTelemetryTracker = new WorkflowTelemetryTracker();
+const workflowTelemetryVersion = getCliVersion();
 
 const wireUpHandlers = () => {
   // Wire up history event handler so resumed sessions populate the message list.
@@ -523,6 +527,7 @@ const wireUpHandlers = () => {
 const startInitialization = (resumePickerSessionId?: string) => {
   if (initPromise) return initPromise;
   initialHistoryReplayComplete = false;
+  workflowTelemetryTracker.reset();
 
   wireUpHandlers();
 
@@ -700,6 +705,13 @@ const startInitialization = (resumePickerSessionId?: string) => {
     .createStreamEventHandler();
   kiro.onWorkflowProgress((event, source) => {
     workflowStore.getState().applyEvent(event.event);
+    recordTuiWorkflowObservations(
+      workflowTelemetryTracker.observe(
+        event.event,
+        source === 'live' && initialHistoryReplayComplete
+      ),
+      workflowTelemetryVersion
+    );
     if (source === 'live' && initialHistoryReplayComplete) {
       workflowLifecycleHandler(event);
     }

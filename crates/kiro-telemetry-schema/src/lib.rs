@@ -412,7 +412,7 @@ mod tests {
     fn registry_loads_and_validates() {
         let registry = Registry::parse().expect("schema should load");
 
-        assert_eq!(registry.metrics.len(), 46);
+        assert_eq!(registry.metrics.len(), 53);
         assert!(registry.metric("kiro_cli_run_started_total").is_some());
         assert!(registry.metric("kiro_cli_telemetry_export_dropped_total").is_some());
     }
@@ -443,6 +443,134 @@ mod tests {
                 "{} is missing a description",
                 attribute.name
             );
+        }
+    }
+
+    #[test]
+    fn workflow_metrics_use_bounded_dimensions() {
+        let registry = Registry::parse().expect("schema should load");
+        let metrics = [
+            (
+                "kiro_cli_workflow_run_total",
+                MetricKind::Counter,
+                &[
+                    "version_full",
+                    "workflow_run_event",
+                    "workflow_topology",
+                    "workflow_step_bucket",
+                    "agent_engine",
+                ][..],
+            ),
+            (
+                "kiro_cli_workflow_run_duration_seconds",
+                MetricKind::Histogram,
+                &[
+                    "version_full",
+                    "workflow_outcome",
+                    "workflow_topology",
+                    "workflow_step_bucket",
+                    "agent_engine",
+                ][..],
+            ),
+            (
+                "kiro_cli_workflow_node_total",
+                MetricKind::Counter,
+                &[
+                    "version_full",
+                    "workflow_node_type",
+                    "workflow_node_outcome",
+                    "agent_engine",
+                ][..],
+            ),
+            (
+                "kiro_cli_workflow_node_duration_seconds",
+                MetricKind::Histogram,
+                &[
+                    "version_full",
+                    "workflow_node_type",
+                    "workflow_node_outcome",
+                    "agent_engine",
+                ][..],
+            ),
+            (
+                "kiro_cli_workflow_control_total",
+                MetricKind::Counter,
+                &[
+                    "version_full",
+                    "workflow_control_action",
+                    "workflow_control_result",
+                    "agent_engine",
+                ][..],
+            ),
+            (
+                "kiro_cli_workflow_restore_total",
+                MetricKind::Counter,
+                &["version_full", "workflow_restore_result", "agent_engine"][..],
+            ),
+            (
+                "kiro_cli_workflow_concurrent_runs",
+                MetricKind::ObservableGauge,
+                &["version_full", "agent_engine"][..],
+            ),
+        ];
+
+        for (name, kind, attributes) in metrics {
+            let metric = registry.metric(name).unwrap_or_else(|| panic!("missing {name}"));
+            assert_eq!(metric.kind, kind);
+            assert_eq!(metric.attributes, attributes);
+            assert_eq!(metric.cloudwatch_dimensions, attributes);
+            for attribute in attributes.iter().filter(|name| **name != "version_full") {
+                assert!(
+                    registry.attribute(attribute).is_some_and(AttributeSpec::is_closed_enum),
+                    "{name}.{attribute} must be a closed enum"
+                );
+            }
+        }
+
+        let expected_values = [
+            (
+                "workflow_run_event",
+                &["started", "paused", "completed", "failed", "aborted"][..],
+            ),
+            ("workflow_outcome", &["completed", "failed", "aborted", "_other_"][..]),
+            (
+                "workflow_topology",
+                &["sequential", "parallel", "iterative", "watch", "mixed", "_other_"][..],
+            ),
+            (
+                "workflow_step_bucket",
+                &["1", "2", "3_5", "6_10", "11_plus", "_other_"][..],
+            ),
+            (
+                "workflow_node_type",
+                &["step", "sequence", "repeat", "parallel", "watch"][..],
+            ),
+            (
+                "workflow_node_outcome",
+                &[
+                    "pending",
+                    "running",
+                    "paused",
+                    "completed",
+                    "failed",
+                    "aborted",
+                    "skipped",
+                ][..],
+            ),
+            (
+                "workflow_control_action",
+                &["pause", "resume", "cancel", "retry", "message"][..],
+            ),
+            ("workflow_control_result", &["success", "failed"][..]),
+            (
+                "workflow_restore_result",
+                &["restored", "discovery_failed", "load_failed", "rejected", "_other_"][..],
+            ),
+        ];
+
+        for (name, values) in expected_values {
+            let attribute = registry.attribute(name).unwrap_or_else(|| panic!("missing {name}"));
+            assert_eq!(attribute.allowed_values, values);
         }
     }
 

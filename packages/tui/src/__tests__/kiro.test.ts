@@ -6,6 +6,7 @@ import type {
   WorkflowProgressStreamEvent,
 } from '../types/agent-events';
 import type { WorkflowProgressSource } from '../kiro';
+import type { WorkflowNodeSessionTarget } from '../types/workflow.js';
 import type {
   WorkflowCancelResponse,
   WorkflowInspectResponse,
@@ -36,6 +37,12 @@ const mockUpdateHandlers = new Set<(event: AgentStreamEvent) => void>();
 const mockSessionEventUnsubscribe = mock(() => {});
 const mockMultiSessionUnsubscribe = mock(() => {});
 const mockSubagentListUnsubscribe = mock(() => {});
+const mockWorkflowConversation = {
+  sendMessage: mock(
+    (_target: WorkflowNodeSessionTarget, _content: string): Promise<void> =>
+      Promise.resolve()
+  ),
+};
 const mockWorkflowControl = {
   listRecipes: mock(
     (_workspacePaths: readonly string[]): Promise<WorkflowRecipeDescriptor[]> =>
@@ -140,6 +147,7 @@ const mockSessionClient = {
   invokeSpec: mock((req: { sessionId: string }) =>
     Promise.resolve({ sessionId: req.sessionId, executionId: 'exec-1' })
   ),
+  workflowConversation: mockWorkflowConversation,
   workflowControl: mockWorkflowControl,
 };
 
@@ -170,6 +178,7 @@ const MockAcpClientClass = class MockAcpClient {
   listSessions = mockSessionClient.listSessions;
   resolveSpecSession = mockSessionClient.resolveSpecSession;
   invokeSpec = mockSessionClient.invokeSpec;
+  workflowConversation = mockSessionClient.workflowConversation;
   workflowControl = mockSessionClient.workflowControl;
   constructor() {}
 };
@@ -187,6 +196,10 @@ mock.module('../acp-client', () => ({
   AcpClient: MockAcpClientClass,
   createAcpClient: () => new MockAcpClientClass(),
 }));
+
+const recordTuiWorkflowControl = mock(
+  (_action: string, _result: string, _version: string): void => {}
+);
 
 afterAll(() => {
   mock.restore();
@@ -232,11 +245,16 @@ describe('Kiro', () => {
     mockSessionClient.listSessions.mockClear();
     mockSessionClient.resolveSpecSession.mockClear();
     mockSessionClient.invokeSpec.mockClear();
+    mockWorkflowConversation.sendMessage.mockClear();
+    mockWorkflowControl.listRecipes.mockClear();
+    mockWorkflowControl.createRun.mockClear();
+    mockWorkflowControl.invokeRun.mockClear();
     mockWorkflowControl.listRuns.mockClear();
     mockWorkflowControl.inspectRun.mockClear();
     mockWorkflowControl.pauseRun.mockClear();
     mockWorkflowControl.resumeRun.mockClear();
     mockWorkflowControl.cancelRun.mockClear();
+    recordTuiWorkflowControl.mockClear();
     mockUpdateHandlers.clear();
     mockOnUpdateHandler = null;
     mockSessionClient.initialize.mockImplementation(() => Promise.resolve());
@@ -542,7 +560,14 @@ describe('Kiro', () => {
   });
 
   it('forwards workflow launch, history, and controls through the typed capability', async () => {
-    const kiro = new Kiro();
+    const kiro = new Kiro({ recordWorkflowControl: recordTuiWorkflowControl });
+    const nodeTarget = {
+      workflowId: 'workflow-1',
+      parentSessionId: 'parent-session',
+      nodeId: 'build',
+      nodePath: ['root', 'build'],
+      sessionId: 'workflow-node-session',
+    } as const satisfies WorkflowNodeSessionTarget;
     const state = {
       workflowId: 'workflow-1',
       workflowName: 'Test workflow',
@@ -607,6 +632,9 @@ describe('Kiro', () => {
       workflowId: 'workflow-1',
       state,
     });
+    await expect(
+      kiro.messageWorkflowNode(nodeTarget, 'private message')
+    ).resolves.toBeUndefined();
     await expect(kiro.pauseWorkflow('workflow-1')).resolves.toEqual({
       paused: true,
     });
@@ -632,12 +660,95 @@ describe('Kiro', () => {
     });
     expect(mockWorkflowControl.invokeRun).toHaveBeenCalledWith('workflow-1');
     expect(mockWorkflowControl.inspectRun).toHaveBeenCalledWith('workflow-1');
+    expect(mockWorkflowConversation.sendMessage).toHaveBeenCalledWith(
+      nodeTarget,
+      'private message'
+    );
     expect(mockWorkflowControl.pauseRun).toHaveBeenCalledWith('workflow-1');
     expect(mockWorkflowControl.resumeRun).toHaveBeenCalledWith('workflow-1');
     expect(mockWorkflowControl.cancelRun).toHaveBeenCalledWith(
       'workflow-1',
       'completed'
     );
+    expect(recordTuiWorkflowControl.mock.calls).toEqual([
+      ['message', 'success', expect.any(String)],
+      ['pause', 'success', expect.any(String)],
+      ['resume', 'success', expect.any(String)],
+      ['cancel', 'success', expect.any(String)],
+    ]);
+  });
+
+  it('records every rejected workflow control and preserves its error', async () => {
+    const error = new Error('workflow transport unavailable');
+    const target = {
+      workflowId: 'workflow-1',
+      parentSessionId: 'parent-session',
+      nodeId: 'build',
+      nodePath: ['root', 'build'],
+      sessionId: 'workflow-node-session',
+    } as const satisfies WorkflowNodeSessionTarget;
+    const kiro = new Kiro({ recordWorkflowControl: recordTuiWorkflowControl });
+    await kiro.initialize('/path/to/agent');
+
+    const cases = [
+      {
+        action: 'message',
+        reject: () =>
+          mockWorkflowConversation.sendMessage.mockRejectedValueOnce(error),
+        invoke: () => kiro.messageWorkflowNode(target, 'private message'),
+      },
+      {
+        action: 'pause',
+        reject: () => mockWorkflowControl.pauseRun.mockRejectedValueOnce(error),
+        invoke: () => kiro.pauseWorkflow('workflow-1'),
+      },
+      {
+        action: 'resume',
+        reject: () =>
+          mockWorkflowControl.resumeRun.mockRejectedValueOnce(error),
+        invoke: () => kiro.resumeWorkflow('workflow-1'),
+      },
+      {
+        action: 'cancel',
+        reject: () =>
+          mockWorkflowControl.cancelRun.mockRejectedValueOnce(error),
+        invoke: () => kiro.cancelWorkflow('workflow-1'),
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      recordTuiWorkflowControl.mockClear();
+      testCase.reject();
+      await expect(testCase.invoke()).rejects.toBe(error);
+      expect(recordTuiWorkflowControl).toHaveBeenCalledWith(
+        testCase.action,
+        'failed',
+        expect.any(String)
+      );
+    }
+  });
+
+  it('treats resolved workflow control rejections as failures', async () => {
+    const kiro = new Kiro({ recordWorkflowControl: recordTuiWorkflowControl });
+    await kiro.initialize('/path/to/agent');
+
+    mockWorkflowControl.pauseRun.mockResolvedValueOnce({ paused: false });
+    await expect(kiro.pauseWorkflow('workflow-1')).rejects.toThrow(
+      'Workflow pause was rejected'
+    );
+
+    mockWorkflowControl.cancelRun.mockResolvedValueOnce({
+      ok: false,
+      previousStatus: 'running',
+    });
+    await expect(kiro.cancelWorkflow('workflow-1')).rejects.toThrow(
+      'Workflow cancel was rejected'
+    );
+
+    expect(recordTuiWorkflowControl.mock.calls).toEqual([
+      ['pause', 'failed', expect.any(String)],
+      ['cancel', 'failed', expect.any(String)],
+    ]);
   });
 
   it('preserves workflow control errors for the command layer', async () => {

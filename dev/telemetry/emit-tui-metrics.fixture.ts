@@ -19,6 +19,9 @@ import {
   recordTuiToolCall,
   recordTuiUiModeSessionStarted,
   recordTuiUserTurn,
+  recordTuiWorkflowControl,
+  recordTuiWorkflowObservations,
+  recordTuiWorkflowRestore,
 } from '../../packages/tui/src/utils/tui-telemetry-observer';
 import type { ProcessHealthSnapshot } from '../../packages/tui/src/utils/process-health-collector';
 import { getEmitFailedTotal } from '../../packages/tui/src/utils/otlp-emit';
@@ -226,6 +229,40 @@ async function main(): Promise<void> {
         version: VERSION,
         platform: process.platform,
       })
+    ),
+    step('workflow lifecycle, duration, node, and concurrency metrics', () =>
+      recordTuiWorkflowObservations(
+        [
+          {
+            type: 'run',
+            event: 'started',
+            topology: 'sequential',
+            stepBucket: '1',
+          },
+          {
+            type: 'run_duration',
+            durationSeconds: 12,
+            outcome: 'completed',
+            topology: 'sequential',
+            stepBucket: '1',
+          },
+          { type: 'node', nodeType: 'step', outcome: 'completed' },
+          {
+            type: 'node_duration',
+            durationSeconds: 6,
+            nodeType: 'step',
+            outcome: 'completed',
+          },
+          { type: 'concurrent', activeRuns: 2 },
+        ],
+        VERSION
+      )
+    ),
+    step('kiro_cli_workflow_control_total', () =>
+      recordTuiWorkflowControl('pause', 'success', VERSION)
+    ),
+    step('kiro_cli_workflow_restore_total', () =>
+      recordTuiWorkflowRestore('restored', VERSION)
     ),
   ];
 

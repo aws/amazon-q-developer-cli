@@ -71,6 +71,62 @@ metrics:
     temporality: delta
     attributes: [version_full, attach_kind, attach_size_bucket, agent_engine]
     cloudwatch_dimensions: [version_full, attach_kind, attach_size_bucket, agent_engine]
+  - name: kiro_cli_workflow_run_total
+    description: Client-observed workflow lifecycle transitions grouped by static topology and executable step count.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, workflow_run_event, workflow_topology, workflow_step_bucket, agent_engine]
+    cloudwatch_dimensions: [version_full, workflow_run_event, workflow_topology, workflow_step_bucket, agent_engine]
+  - name: kiro_cli_workflow_run_duration_seconds
+    description: Client-observed terminal workflow duration grouped by outcome, topology, and executable step count.
+    kind: histogram
+    unit: s
+    priority: P1
+    temporality: delta
+    attributes: [version_full, workflow_outcome, workflow_topology, workflow_step_bucket, agent_engine]
+    cloudwatch_dimensions: [version_full, workflow_outcome, workflow_topology, workflow_step_bucket, agent_engine]
+  - name: kiro_cli_workflow_node_total
+    description: Client-observed workflow node lifecycle transitions grouped by typed node kind and outcome.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, workflow_node_type, workflow_node_outcome, agent_engine]
+    cloudwatch_dimensions: [version_full, workflow_node_type, workflow_node_outcome, agent_engine]
+  - name: kiro_cli_workflow_node_duration_seconds
+    description: Client-observed terminal workflow node duration grouped by typed node kind and outcome.
+    kind: histogram
+    unit: s
+    priority: P1
+    temporality: delta
+    attributes: [version_full, workflow_node_type, workflow_node_outcome, agent_engine]
+    cloudwatch_dimensions: [version_full, workflow_node_type, workflow_node_outcome, agent_engine]
+  - name: kiro_cli_workflow_control_total
+    description: Client-observed workflow control attempts grouped by bounded action and result.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, workflow_control_action, workflow_control_result, agent_engine]
+    cloudwatch_dimensions: [version_full, workflow_control_action, workflow_control_result, agent_engine]
+  - name: kiro_cli_workflow_restore_total
+    description: Client-observed workflow restoration attempts grouped by bounded result.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, workflow_restore_result, agent_engine]
+    cloudwatch_dimensions: [version_full, workflow_restore_result, agent_engine]
+  - name: kiro_cli_workflow_concurrent_runs
+    description: Client-observed count of running and paused workflows after a live lifecycle transition.
+    kind: observable_gauge
+    unit: "1"
+    priority: P1
+    temporality: cumulative
+    attributes: [version_full, agent_engine]
+    cloudwatch_dimensions: [version_full, agent_engine]
   - name: kiro_cli_ui_mode_session_started_total
     description: First-party interactive sessions started in each TUI layout.
     kind: counter

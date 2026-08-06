@@ -94,6 +94,7 @@ import {
   recordTuiTokensConsumed,
   recordTuiUiModeSessionStarted,
   recordTuiUserTurn,
+  recordTuiWorkflowRestoreSummary,
   resultFromStatus,
   turnFailureReasonFromStatus,
   TuiToolCallObserver,
@@ -1658,8 +1659,13 @@ export class KasAcpClient extends BaseAcpClient {
         });
       }
     }
-    await this.workflowExtension?.restoreParentRuns([process.cwd()]);
+    const workflowRestore = await this.workflowExtension?.restoreParentRuns([
+      process.cwd(),
+    ]);
     this.assertActive('session load');
+    if (workflowRestore) {
+      recordTuiWorkflowRestoreSummary(workflowRestore, this.version);
+    }
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',
       sessionId,

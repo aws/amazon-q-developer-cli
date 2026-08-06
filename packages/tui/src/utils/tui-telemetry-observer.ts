@@ -26,6 +26,13 @@ import {
   type AgentStreamEvent,
 } from '../types/agent-events';
 import { canonicalSlashCommandName } from './slash-command-telemetry';
+import type { WorkflowRestoreSummary } from '../types/workflow.js';
+import type {
+  WorkflowControlAction,
+  WorkflowControlResult,
+  WorkflowRestoreMetricResult,
+  WorkflowTelemetryObservation,
+} from './workflow-telemetry.js';
 
 export const TUI_SCOPE = 'kiro.tui';
 /**
@@ -530,6 +537,155 @@ export function recordTuiCloudRepoAttach(
     },
     TUI_SCOPE
   );
+}
+
+const WORKFLOW_RUN_DURATION_BOUNDS = [
+  1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600, 7200,
+];
+const WORKFLOW_NODE_DURATION_BOUNDS = [
+  1, 2, 5, 10, 30, 60, 120, 300, 600, 1800,
+];
+
+export function recordTuiWorkflowObservations(
+  observations: readonly WorkflowTelemetryObservation[],
+  version: string,
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  const emitCounter = counterFn(deps);
+  const emitHistogram = histogramFn(deps);
+  const emitGauge = gaugeFn(deps);
+
+  for (const observation of observations) {
+    switch (observation.type) {
+      case 'run':
+        emitCounter(
+          'kiro_cli_workflow_run_total',
+          1,
+          {
+            version_full: version,
+            workflow_run_event: observation.event,
+            workflow_topology: observation.topology,
+            workflow_step_bucket: observation.stepBucket,
+            agent_engine: DEFAULT_ENGINE,
+          },
+          TUI_SCOPE
+        );
+        break;
+      case 'run_duration':
+        emitHistogram(
+          'kiro_cli_workflow_run_duration_seconds',
+          observation.durationSeconds,
+          {
+            version_full: version,
+            workflow_outcome: observation.outcome,
+            workflow_topology: observation.topology,
+            workflow_step_bucket: observation.stepBucket,
+            agent_engine: DEFAULT_ENGINE,
+          },
+          TUI_SCOPE,
+          WORKFLOW_RUN_DURATION_BOUNDS
+        );
+        break;
+      case 'node':
+        emitCounter(
+          'kiro_cli_workflow_node_total',
+          1,
+          {
+            version_full: version,
+            workflow_node_type: observation.nodeType,
+            workflow_node_outcome: observation.outcome,
+            agent_engine: DEFAULT_ENGINE,
+          },
+          TUI_SCOPE
+        );
+        break;
+      case 'node_duration':
+        emitHistogram(
+          'kiro_cli_workflow_node_duration_seconds',
+          observation.durationSeconds,
+          {
+            version_full: version,
+            workflow_node_type: observation.nodeType,
+            workflow_node_outcome: observation.outcome,
+            agent_engine: DEFAULT_ENGINE,
+          },
+          TUI_SCOPE,
+          WORKFLOW_NODE_DURATION_BOUNDS
+        );
+        break;
+      case 'concurrent':
+        emitGauge(
+          'kiro_cli_workflow_concurrent_runs',
+          observation.activeRuns,
+          { version_full: version, agent_engine: DEFAULT_ENGINE },
+          TUI_SCOPE
+        );
+        break;
+      default: {
+        const exhaustive: never = observation;
+        void exhaustive;
+      }
+    }
+  }
+}
+
+export function recordTuiWorkflowControl(
+  action: WorkflowControlAction,
+  result: WorkflowControlResult,
+  version: string,
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_workflow_control_total',
+    1,
+    {
+      version_full: version,
+      workflow_control_action: action,
+      workflow_control_result: result,
+      agent_engine: DEFAULT_ENGINE,
+    },
+    TUI_SCOPE
+  );
+}
+
+export function recordTuiWorkflowRestore(
+  result: WorkflowRestoreMetricResult,
+  version: string,
+  count = 1,
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps) || !Number.isFinite(count) || count <= 0) {
+    return;
+  }
+  counterFn(deps)(
+    'kiro_cli_workflow_restore_total',
+    count,
+    {
+      version_full: version,
+      workflow_restore_result: result,
+      agent_engine: DEFAULT_ENGINE,
+    },
+    TUI_SCOPE
+  );
+}
+
+export function recordTuiWorkflowRestoreSummary(
+  summary: WorkflowRestoreSummary,
+  version: string,
+  deps?: TuiTelemetryDeps
+): void {
+  recordTuiWorkflowRestore('restored', version, summary.restored, deps);
+  recordTuiWorkflowRestore(
+    'discovery_failed',
+    version,
+    summary.discovery_failed,
+    deps
+  );
+  recordTuiWorkflowRestore('load_failed', version, summary.load_failed, deps);
+  recordTuiWorkflowRestore('rejected', version, summary.rejected, deps);
+  recordTuiWorkflowRestore('_other_', version, summary._other_, deps);
 }
 
 /**

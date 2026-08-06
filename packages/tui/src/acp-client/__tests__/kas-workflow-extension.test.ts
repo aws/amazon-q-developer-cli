@@ -873,9 +873,13 @@ describe('KasWorkflowExtension', () => {
     transport.setWorkflowLoad(running);
     transport.setWorkflowLoad(paused);
 
-    await expect(
-      extension.restoreParentRuns(['/workspace'])
-    ).resolves.toBeUndefined();
+    await expect(extension.restoreParentRuns(['/workspace'])).resolves.toEqual({
+      restored: 2,
+      discovery_failed: 0,
+      load_failed: 1,
+      rejected: 0,
+      _other_: 0,
+    });
 
     expect(
       transport.requests
@@ -936,7 +940,13 @@ describe('KasWorkflowExtension', () => {
     await loadStarted.promise;
     extension.setParentSession(OTHER_PARENT_SESSION_ID);
     releaseLoad.resolve(loadedWorkflow(TARGET, 'running'));
-    await expect(restore).resolves.toBeUndefined();
+    await expect(restore).resolves.toEqual({
+      restored: 0,
+      discovery_failed: 0,
+      load_failed: 0,
+      rejected: 1,
+      _other_: 0,
+    });
 
     expect(transport.leaseCalls).toEqual([]);
     expect(host.effects).toEqual([]);
@@ -944,8 +954,60 @@ describe('KasWorkflowExtension', () => {
     const unavailable = createFixture();
     await expect(
       unavailable.extension.restoreParentRuns(['/workspace'])
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({
+      restored: 0,
+      discovery_failed: 1,
+      load_failed: 0,
+      rejected: 0,
+      _other_: 0,
+    });
     expect(unavailable.host.effects).toEqual([]);
+  });
+
+  it('reports invalid live state and ownership registration as rejected', async () => {
+    const invalidState = loadedWorkflow(TARGET, 'completed');
+    const conflictingTarget = {
+      ...TARGET,
+      workflowId: 'workflow-conflicting-owner',
+      sessionId: 'conflicting-child-session',
+    };
+    const conflictingOwner = loadedWorkflow(conflictingTarget, 'running');
+    conflictingOwner.stepSessions.push({
+      nodeId: 'different-node',
+      nodePath: ['root', 'different-node'],
+      sessionId: conflictingTarget.sessionId,
+    });
+    const { transport, extension } = createFixture();
+    transport.setRpcResponse('_kiro/workflow/list', {
+      runs: [
+        {
+          workflowId: invalidState.workflowId,
+          name: 'Invalid state',
+          status: 'running',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: PARENT_SESSION_ID,
+        },
+        {
+          workflowId: conflictingOwner.workflowId,
+          name: 'Conflicting owner',
+          status: 'running',
+          createdAt: '2026-07-19T10:00:00.000Z',
+          updatedAt: '2026-07-19T10:01:00.000Z',
+          parentSessionId: PARENT_SESSION_ID,
+        },
+      ],
+    });
+    transport.setWorkflowLoad(invalidState);
+    transport.setWorkflowLoad(conflictingOwner);
+
+    await expect(extension.restoreParentRuns(['/workspace'])).resolves.toEqual({
+      restored: 0,
+      discovery_failed: 0,
+      load_failed: 0,
+      rejected: 2,
+      _other_: 0,
+    });
   });
 
   it('registers lifecycle nodes with dedicated child listeners and session events', () => {

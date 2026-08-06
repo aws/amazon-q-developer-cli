@@ -258,6 +258,9 @@ const mockRecordTuiTokensConsumed = mock((_a: unknown) => {});
 const mockRecordTuiCreditsConsumed = mock((_a: unknown) => {});
 const mockRecordTuiSlashCommand = mock((_a: unknown) => {});
 const mockRecordTuiUiModeSessionStarted = mock((_a: unknown) => {});
+const mockRecordTuiWorkflowRestoreSummary = mock(
+  (_summary: unknown, _version: string) => {}
+);
 const toolStartCalls: Array<{ id: string; info: TuiToolCallStart }> = [];
 const toolFinishCalls: Array<{ id: string; args: ToolFinishArgs }> = [];
 mock.module('../utils/tui-telemetry-observer', () => ({
@@ -278,6 +281,7 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiCreditsConsumed: mockRecordTuiCreditsConsumed,
   recordTuiSlashCommand: mockRecordTuiSlashCommand,
   recordTuiUiModeSessionStarted: mockRecordTuiUiModeSessionStarted,
+  recordTuiWorkflowRestoreSummary: mockRecordTuiWorkflowRestoreSummary,
   modeFromId: (id?: string) => (id && id.length > 0 ? id : 'interactive'),
   resultFromStatus: (status?: string) => {
     switch (status) {
@@ -425,6 +429,7 @@ function freshMocks() {
   mockRecordTuiCreditsConsumed.mockClear();
   mockRecordTuiSlashCommand.mockClear();
   mockRecordTuiUiModeSessionStarted.mockClear();
+  mockRecordTuiWorkflowRestoreSummary.mockClear();
   toolStartCalls.length = 0;
   toolFinishCalls.length = 0;
   capturedSessionUpdateHandler = null;
@@ -1188,6 +1193,16 @@ describe('KasAcpClient', () => {
           state: expect.objectContaining({ status: 'paused' }),
         }),
       })
+    );
+    expect(mockRecordTuiWorkflowRestoreSummary).toHaveBeenCalledWith(
+      {
+        restored: 1,
+        discovery_failed: 0,
+        load_failed: 0,
+        rejected: 0,
+        _other_: 0,
+      },
+      expect.any(String)
     );
   });
 

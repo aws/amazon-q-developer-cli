@@ -17,6 +17,7 @@ const textPrompt = (text: string): ContentBlock[] => [{ type: 'text', text }];
 mock.module('../utils/tui-telemetry-observer', () => ({
   DEFAULT_ENGINE: 'v3',
   TUI_SCOPE: 'kiro.tui',
+  recordTuiWorkflowRestoreSummary: mock(() => {}),
   modeFromId: (id?: string) => (!id || id === 'default' ? 'interactive' : id),
   resultFromStatus: (status?: string) =>
     status === 'completed' ? 'success' : '_other_',
