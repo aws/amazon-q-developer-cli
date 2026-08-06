@@ -48,6 +48,9 @@ export async function handleWorkflow(
   const rest = separator === -1 ? '' : trimmed.slice(separator).trim();
 
   switch (subcommand) {
+    case 'new':
+      await createWorkflowFromDescription(ctx, rest);
+      return;
     case 'list':
       await openWorkflowHistory(ctx);
       return;
@@ -65,11 +68,69 @@ export async function handleWorkflow(
       return;
     default:
       ctx.showAlert(
-        `Unknown /workflow subcommand: ${subcommand}`,
+        `Unknown /workflow subcommand: ${subcommand}. Try run, list, or new.`,
         'error',
         3000
       );
   }
+}
+
+/**
+ * Bundled KAS subagent that authors workflow definitions. Registered in the
+ * agent's `CustomAgentRegistry`, so the top-level chat model can reach it
+ * through its delegation tool — we don't (and can't) switch the session's
+ * agent to it, we just name it so the model delegates instead of improvising.
+ * If it isn't registered the delegation simply won't resolve and the model
+ * falls back to authoring the file itself, which the prompt also covers.
+ */
+const WORKFLOW_CREATOR_AGENT = 'wf-workflow-creator';
+
+/**
+ * `/workflow new <description>` — mirror of `/spec new`: hand the description
+ * to the agent and ask it to author a reusable recipe.
+ *
+ * Two things this prompt has to get right, both learned from the server side:
+ *
+ * 1. Delegate to `wf-workflow-creator`. It owns the workflow schema and
+ *    validates before returning, so it produces launchable recipes where the
+ *    chat model guessing at the schema produces invalid ones.
+ * 2. Ask for a *file*, not the creator's native output. The creator's normal
+ *    contract is `save_workflow_definition` → a single-use `generated://<id>`
+ *    ref, which is consumed the moment it launches. `/workflow run` and the
+ *    recipe picker instead read `<name>.workflow.json` from `.kiro/workflows/`
+ *    (see the agent's recipe-loader), so a `generated://` ref would leave
+ *    nothing for this command to find. We want a persistent, re-runnable
+ *    recipe on disk.
+ */
+async function createWorkflowFromDescription(
+  ctx: CommandContext,
+  description: string
+): Promise<void> {
+  const goal = description.trim();
+  if (!goal) {
+    ctx.showAlert('Usage: /workflow new <description>', 'error', 4000);
+    return;
+  }
+
+  const prompt = [
+    `Author a new reusable workflow recipe for this goal: ${goal}`,
+    '',
+    `Delegate the authoring to the \`${WORKFLOW_CREATOR_AGENT}\` agent if it is`,
+    'available — it owns the workflow schema and validates what it produces.',
+    'Give it the goal above plus any relevant context (file paths, decisions,',
+    'constraints). If it is not available, author the definition yourself and',
+    'validate it with the validate_workflow tool before writing it.',
+    '',
+    'This recipe must persist as a re-runnable file, so do NOT stop at a',
+    'single-use `generated://` reference: write the validated workflow JSON to',
+    '`.kiro/workflows/<name>.workflow.json` (kebab-case `<name>`) in the',
+    'workspace. Declare any inputs the recipe needs.',
+    '',
+    'When it is saved, tell me the recipe name so I can launch it with',
+    '`/workflow run <name>`.',
+  ].join('\n');
+
+  await ctx.sendMessage(prompt, undefined, `/workflow new ${goal}`);
 }
 
 async function runWorkflowCommand(
@@ -114,10 +175,12 @@ async function openRecipePicker(
     const recipes = await ctx.kiro.listWorkflowRecipes();
     ctx.setLoadingMessage(null);
     if (recipes.length === 0) {
+      // U02: surface the naming convention so users can discover how to add
+      // recipes when none are found.
       ctx.showAlert(
-        'No workflow recipes available in this workspace.',
+        'No workflow recipes available in this workspace. Recipes must be named <name>.workflow.json in .kiro/workflows/',
         'warning',
-        3000
+        5000
       );
       return;
     }
@@ -197,10 +260,16 @@ async function runRecipe(
   try {
     ctx.setLoadingMessage(`Starting workflow ${recipe.name}...`);
     const source = await resolveRunSource(recipe);
+    // #9 client stopgap: forward a concrete session model so KAS's parentModelId
+    // cascade resolves to it. Skip the literal 'auto' (and unset) — there is
+    // nothing concrete to pass, and forwarding 'auto' is what the backend rejects.
+    const modelId = ctx.getCurrentModel?.()?.id;
+    const concreteModelId = modelId && modelId !== 'auto' ? modelId : undefined;
     const created = await ctx.kiro.createWorkflow({
       source,
       inputs,
       ...(ctx.kiro.sessionId ? { parentSessionId: ctx.kiro.sessionId } : {}),
+      ...(concreteModelId ? { modelId: concreteModelId } : {}),
     });
     await ctx.kiro.invokeWorkflow(created.workflowId);
     ctx.setLoadingMessage(null);

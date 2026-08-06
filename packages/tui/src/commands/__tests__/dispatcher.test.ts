@@ -382,4 +382,40 @@ describe('dispatch - additional coverage', () => {
       expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
     });
   });
+
+  describe('localOnly guard (cloud workflow stopgap, kiro-agent #178)', () => {
+    it('refuses a localOnly command (prefix-typed) inside a cloud session', async () => {
+      const ctx = createMockCommandContext({ cloudSessionActive: true });
+      await dispatch(
+        makeCmd({ name: '/workflow', meta: { localOnly: true, local: true } }),
+        'run demo',
+        ctx
+      );
+      // Guard returned before any input gathering or execution.
+      expect(ctx._spies.sendMessage!).not.toHaveBeenCalled();
+      expect(ctx._spies.setActiveCommand!).not.toHaveBeenCalled();
+    });
+
+    it('allows a localOnly command in a local (non-cloud) session', async () => {
+      // Mock ctx defaults to cloudSessionActive: false. `/workflow` is a
+      // KAS-owned panel, so dispatch through the KAS engine — under v2 the
+      // shared panel guard would refuse it for an unrelated reason.
+      const listWorkflows = mock(() => Promise.resolve([]));
+      const ctx = createMockCommandContext({
+        kiro: { listWorkflows } as any,
+      });
+      ctx.agentEngine = 'kas';
+      await dispatch(
+        makeCmd({
+          name: '/workflow',
+          meta: { localOnly: true, inputType: 'panel', local: true },
+        }),
+        '',
+        ctx
+      );
+      // The KAS handler ran (bare /workflow opens history) rather than being
+      // refused by either guard.
+      expect(listWorkflows).toHaveBeenCalled();
+    });
+  });
 });

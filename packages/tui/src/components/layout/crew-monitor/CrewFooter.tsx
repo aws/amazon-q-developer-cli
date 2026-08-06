@@ -19,10 +19,10 @@ export const CrewFooter = React.memo(function CrewFooter({
   return (
     <Box paddingX={1}>
       {hasExecutingSelected && canKill && (
-        <Text color="gray">^x kill session {glyphs.smallDot} </Text>
+        <Text color="gray">ctrl+x kill session {glyphs.smallDot} </Text>
       )}
       <Text color="gray">
-        {hasWorkflow ? `Tab workflows ${glyphs.smallDot} ` : ''}q/^g back
+        {hasWorkflow ? `Tab workflows ${glyphs.smallDot} ` : ''}q/ctrl+g back
       </Text>
     </Box>
   );

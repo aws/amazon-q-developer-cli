@@ -22,6 +22,7 @@ export async function handleHelp(
   const commands = [
     ...ctx.kasCommands
       .filter((c) => !c.meta?.cloudOnly || ctx.cloudSessionActive)
+      .filter((c) => !c.meta?.localOnly || !ctx.cloudSessionActive)
       .filter((c) => isCommandVisibleInUiMode(c, uiMode))
       .map((c) => ({
         name: c.name,

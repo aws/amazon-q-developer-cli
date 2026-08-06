@@ -142,6 +142,10 @@ export const ActivityTrayCollapsed = React.memo(function ActivityTrayCollapsed({
             </React.Fragment>
           ))}
           {` ${glyphs.smallDot} ctrl+x expand`}
+          {/* N13: surface ctrl+g monitor while a workflow is active (the
+              workflow-start chip in WorkflowTool.tsx already advertises it
+              transiently; this keeps it always-visible in the tray). */}
+          {liveWorkflows.length > 0 && ` ${glyphs.smallDot} ctrl+g monitor`}
         </Text>
       </Box>
     </Box>

@@ -711,12 +711,13 @@ export const WORKFLOW_CREATE_CONTRACT: RpcContract<
   WorkflowCreateResponse
 > = {
   method: '_kiro/workflow/new',
-  encode: ({ source, inputs, parentSessionId }) => ({
+  encode: ({ source, inputs, parentSessionId, modelId }) => ({
     ...(source.type === 'path'
       ? { workflowPath: source.workflowPath }
       : { workflow: source.workflow }),
     inputs,
     ...(parentSessionId === undefined ? {} : { parentSessionId }),
+    ...(modelId === undefined ? {} : { modelId }),
   }),
   decode: parseWorkflowCreateResponse,
 };

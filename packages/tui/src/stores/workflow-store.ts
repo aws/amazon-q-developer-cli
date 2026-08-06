@@ -206,6 +206,20 @@ export function selectWorkflowNodeIndex(state: WorkflowStoreState): number {
     : 0;
 }
 
+/**
+ * The most recently archived (completed/cancelled/failed) run, or null if none.
+ * Map preserves insertion order, so the last archived entry is the newest.
+ * Used by ctrl+g to reopen a just-finished run that `completeRun` already
+ * evicted from the live `workflows` map.
+ */
+export function selectMostRecentArchivedWorkflow(
+  state: WorkflowStoreState
+): WorkflowRunView | null {
+  let last: WorkflowRunView | null = null;
+  for (const workflow of state.archivedWorkflows.values()) last = workflow;
+  return last;
+}
+
 export function selectLiveWorkflowCount(state: WorkflowStoreState): number {
   let count = 0;
   for (const workflow of state.workflows.values()) {

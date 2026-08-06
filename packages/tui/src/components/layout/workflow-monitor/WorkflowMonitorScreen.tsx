@@ -52,6 +52,11 @@ import type { WorkflowMonitorNode } from '../../../types/workflow-monitor.js';
 import type { WorkflowNodeSessionTarget } from '../../../types/workflow.js';
 import { setMouseCaptureEnabled } from '../../../utils/mouse-capture.js';
 import {
+  readBoolSetting,
+  updateCliSetting,
+} from '../../../utils/cli-settings.js';
+import { Settings } from '../../../constants/settings.js';
+import {
   WORKFLOW_MESSAGE_COMPOSER_HEIGHT,
   WorkflowMessageComposer,
   type WorkflowMessageMode,
@@ -59,6 +64,10 @@ import {
 
 type InputMode = 'none' | WorkflowMessageMode;
 const WORKFLOW_APPROVAL_HEIGHT = 8;
+// #13: reserved rows for the non-clipped paused-question banner. A fixed height
+// keeps the output-pane height math deterministic while wrapping long questions
+// across up to this many rows (instead of truncating to "...if").
+const QUESTION_BANNER_ROWS = 3;
 
 export interface WorkflowMonitorScreenProps {
   store?: StoreApi<WorkflowStoreState>;
@@ -144,7 +153,11 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   const [inputMode, setInputMode] = useState<InputMode>('none');
   const [inputText, setInputTextState] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
-  const [mouseModeEnabled, setMouseModeEnabled] = useState(false);
+  // #2/#15: mouse capture defaults ON but is persisted, so users who rely on
+  // native terminal text-selection can turn it off with `m` and have that stick.
+  const [mouseModeEnabled, setMouseModeEnabled] = useState(() =>
+    readBoolSetting(Settings.WORKFLOW_MONITOR_MOUSE, true)
+  );
   const [activeView, setActiveView] = useState<'workflows' | 'agents'>(
     'workflows'
   );
@@ -159,12 +172,16 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
 
   useEffect(() => {
     setWorkflowSurfaceOpen('monitor', true);
+    // Honor the persisted mouse preference on open (default ON, #2/#15).
+    setMouseCaptureEnabled(mouseModeEnabled);
     return () => {
       composerRevisionRef.current += 1;
       setMouseCaptureEnabled(false);
       setInputState(false);
       setWorkflowSurfaceOpen('monitor', false);
     };
+    // Only run on mount/unmount; live toggles go through the `m` handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setInputState, setWorkflowSurfaceOpen]);
 
   useEffect(() => {
@@ -534,6 +551,9 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       setMouseModeEnabled((enabled) => {
         const next = !enabled;
         setMouseCaptureEnabled(next);
+        // Persist the explicit preference (fire-and-forget; failure is logged
+        // inside cli-settings and only costs the sticky default, not the toggle).
+        void updateCliSetting(Settings.WORKFLOW_MONITOR_MOUSE, next);
         return next;
       });
     }
@@ -571,13 +591,29 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   );
   const statusColor = getColor(RUN_STATUS_COLOR_TOKEN[workflow.status]);
   const progress = workflowProgress(workflow.nodes);
-  const outputAccessoryHeight = selectedApproval
-    ? WORKFLOW_APPROVAL_HEIGHT
-    : inputMode === 'none'
-      ? inputError
-        ? 1
-        : 0
-      : WORKFLOW_MESSAGE_COMPOSER_HEIGHT;
+  // #13: the actionable question a paused step is waiting on. Surfaced in a
+  // dedicated wrapping banner (below) that lives OUTSIDE the scrollable output
+  // pane, so it can never be clipped at "...if" like the raw transcript tail.
+  const pausedQuestion =
+    selectedNode?.status === 'paused' &&
+    selectedNode.completionSignal === 'need_input'
+      ? selectedNode.pauseReason?.trim()
+      : undefined;
+  const questionBannerRows = pausedQuestion ? QUESTION_BANNER_ROWS : 0;
+  // #13: jump the output pane to its end whenever the selected step (or its
+  // status) changes, so the tail is visible immediately on pause/select.
+  const scrollToEndKey = selectedNode
+    ? `${selectedNode.sessionId ?? selectedNode.id} ${selectedNode.status}`
+    : undefined;
+  const outputAccessoryHeight =
+    questionBannerRows +
+    (selectedApproval
+      ? WORKFLOW_APPROVAL_HEIGHT
+      : inputMode === 'none'
+        ? inputError
+          ? 1
+          : 0
+        : WORKFLOW_MESSAGE_COMPOSER_HEIGHT);
   const horizontalRule = glyphs.lineHorizontalHeavy.repeat(
     Math.max(0, width - 2)
   );
@@ -629,11 +665,12 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       <Box width={width} paddingX={1}>
         <Text wrap="truncate">
           {getColor('secondary')(`${glyphs.lineVertical} `)}
-          {statusColor(
-            `${allowIcons ? `${runStatusGlyph(workflow.status, glyphs)} ` : ''}${workflow.name}`
-          )}
+          {allowIcons
+            ? statusColor(`${runStatusGlyph(workflow.status, glyphs)} `)
+            : ''}
+          {getColor('brand')(workflow.name)}
           {getColor('secondary')(
-            ` - ${runStatusLabel(workflow.status, pauseRequested)} ${glyphs.lineVertical} ${progress.completed}/${progress.total} ${glyphs.lineVertical} ${elapsedLabel(workflow.startedAt, now())} ${glyphs.lineVertical} Tab agents`
+            ` - ${runStatusLabel(workflow.status, pauseRequested)} ${glyphs.lineVertical} ${progress.completed}/${progress.total} ${glyphs.lineVertical} ${elapsedLabel(workflow.startedAt, now())} ${glyphs.lineVertical} Tab agent monitor`
           )}
           {queuedMessageCount > 0
             ? getColor('warning')(
@@ -699,7 +736,22 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
             )}
             width={dimensions.outputWidth}
             title="WORKFLOW OUTPUT"
+            scrollActive={inputMode === 'none' && !selectedApproval}
+            scrollToEndKey={scrollToEndKey}
           />
+          {pausedQuestion && (
+            <Box
+              width={dimensions.outputWidth}
+              height={QUESTION_BANNER_ROWS}
+              paddingX={1}
+              overflow="hidden"
+            >
+              <Text wrap="wrap">
+                {getColor('warning').bold(`${glyphs.warning} Waiting on you: `)}
+                {getColor('primary')(pausedQuestion)}
+              </Text>
+            </Box>
+          )}
           {selectedApproval ? (
             <Box
               width={dimensions.outputWidth}

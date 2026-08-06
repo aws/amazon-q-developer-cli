@@ -4,6 +4,7 @@ import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
 import { WorkflowMonitorScreen } from './workflow-monitor/index.js';
+import { MonitorApprovalBanner } from './MonitorApprovalBanner.js';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
@@ -27,7 +28,10 @@ import {
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { useAllowAnimations } from '../../hooks/useGlyphs.js';
 import { UI_VARIANTS } from './ui-variants.js';
-import { workflowStore } from '../../stores/workflow-store.js';
+import {
+  workflowStore,
+  selectMostRecentArchivedWorkflow,
+} from '../../stores/workflow-store.js';
 import {
   useActivityTrayInputGateReader,
   useActivityTrayVisibility,
@@ -225,6 +229,16 @@ export const AppContainer: React.FC = () => {
         process.stdout.write('\x1b[?1049h');
         setMode('workflow-monitor');
       },
+      enterWorkflowMonitorForLast: () => {
+        const recent = selectMostRecentArchivedWorkflow(
+          workflowStore.getState()
+        );
+        if (!recent) return false;
+        workflowStore.getState().openHistoricalWorkflow(recent);
+        process.stdout.write('\x1b[?1049h');
+        setMode('workflow-monitor');
+        return true;
+      },
       collapseActivityTray: toggleActivityTray,
       fireTransientAlertAction: () => transientAlert?.action?.onAction(),
       dismissTransientAlert,
@@ -277,6 +291,10 @@ export const AppContainer: React.FC = () => {
 
   return (
     <AnimationPausedContext.Provider value={!allowAnimations}>
+      {/* #12/#14: pinned above the mode switch so a pending approval raised in
+          the main session stays visible (and tells you how to answer it) from
+          every monitor view. Renders nothing in inline mode. */}
+      <MonitorApprovalBanner />
       {mode === 'inline' && (
         <Layout
           ApprovalPrompt={ApprovalPrompt}

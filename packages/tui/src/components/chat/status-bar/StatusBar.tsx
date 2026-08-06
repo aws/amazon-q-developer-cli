@@ -71,12 +71,21 @@ export interface StatusBarProps {
   barColor?: string;
   /** Status icon to show on first line */
   status?: StatusType;
+  /**
+   * Drop the left accent-bar gutter entirely and render children flush-left.
+   * Used by surfaces (e.g. the session/agent-monitor output panes) that embed
+   * StatusBar content but don't want the chat accent chrome or its 2-char
+   * left offset. The status-icon column is still preserved when a status is
+   * set so dots/spinners remain visible.
+   */
+  noBar?: boolean;
 }
 
 export const StatusBar = React.memo(function StatusBar({
   children,
   barColor: barColorProp,
   status: statusProp,
+  noBar = false,
 }: StatusBarProps) {
   // Checked here rather than at each call site so no message type can
   // reintroduce the bar on a surface that drops it.
@@ -85,7 +94,7 @@ export const StatusBar = React.memo(function StatusBar({
     return <>{children}</>;
   }
   return (
-    <StatusBarChrome barColor={barColorProp} status={statusProp}>
+    <StatusBarChrome barColor={barColorProp} status={statusProp} noBar={noBar}>
       {children}
     </StatusBarChrome>
   );
@@ -95,6 +104,7 @@ const StatusBarChrome = React.memo(function StatusBarChrome({
   children,
   barColor: barColorProp,
   status: statusProp,
+  noBar = false,
 }: StatusBarProps) {
   const { getColor } = useTheme();
   const { active } = useCardContext();
@@ -186,17 +196,13 @@ const StatusBarChrome = React.memo(function StatusBarChrome({
   const showPieSpinner = status === 'executing';
   const showArrowDown = status === 'paused';
   const showArrowRight = status === 'usage';
+  const hasStatusIcon =
+    showDot || showSpinner || showPieSpinner || showArrowDown || showArrowRight;
 
   // Render the status bar column elements
   const barElements = useMemo(() => {
     // When lineCount is 0 but we have a status to show (e.g. inside Ink's <Static>
     // where measureElement doesn't trigger), render at least the status icon
-    const hasStatusIcon =
-      showDot ||
-      showSpinner ||
-      showPieSpinner ||
-      showArrowDown ||
-      showArrowRight;
     const effectiveLineCount = lineCount === 0 && hasStatusIcon ? 1 : lineCount;
 
     if (effectiveLineCount === 0) return null;
@@ -244,9 +250,17 @@ const StatusBarChrome = React.memo(function StatusBarChrome({
             <Icon type={IconType.DOT} color={dotColor} />
           </Box>
         );
-      } else if (active && status !== 'paused' && status !== 'usage') {
+      } else if (
+        active &&
+        status !== 'paused' &&
+        status !== 'usage' &&
+        !noBar
+      ) {
         // Use line-specific override color, or barColor prop, or status color, or default
-        // Don't show bar for paused status (only show the arrow icon)
+        // Don't show bar for paused status (only show the arrow icon).
+        // When noBar is set we keep the line-0 status icon but never paint the
+        // solid accent block on continuation lines (that block was the leftover
+        // green/colored gutter visible on monitor tool cards).
         const color =
           lineColors[i] ||
           (status && status !== 'active'
@@ -271,11 +285,13 @@ const StatusBarChrome = React.memo(function StatusBarChrome({
     showArrowDown,
     showArrowRight,
     showPieSpinner,
+    hasStatusIcon,
     active,
     lineColors,
     defaultBarColor,
     getColor,
     barColorProp,
+    noBar,
   ]);
 
   // Background color for the bar column — fills any gap between bar elements and content height
@@ -293,24 +309,31 @@ const StatusBarChrome = React.memo(function StatusBarChrome({
     return defaultBarColor;
   }, [active, status, defaultBarColor, getColor]);
 
+  // When noBar is set, drop the accent-bar gutter and its left offset so
+  // children render flush-left. Keep the status-icon column only when there's
+  // an icon to show (dot/spinner/arrow), so status affordances survive.
+  const hideGutter = noBar && !hasStatusIcon;
+
   return (
     <StatusBarContext.Provider value={contextValue}>
       <Box flexDirection="row" width="100%">
         {/* Bar stretches to match content; content sizes to its own height */}
-        <Box
-          flexDirection="column"
-          width={STATUS_BAR_WIDTH}
-          justifyContent="flex-start"
-          backgroundColor={barBgColor}
-        >
-          {barElements}
-        </Box>
+        {!hideGutter && (
+          <Box
+            flexDirection="column"
+            width={STATUS_BAR_WIDTH}
+            justifyContent="flex-start"
+            backgroundColor={noBar ? undefined : barBgColor}
+          >
+            {barElements}
+          </Box>
+        )}
         <Box
           flexDirection="column"
           flexGrow={1}
           flexShrink={1}
           alignSelf="flex-start"
-          marginLeft={STATUS_BAR_MARGIN_LEFT}
+          marginLeft={hideGutter ? 0 : STATUS_BAR_MARGIN_LEFT}
           ref={contentRef}
         >
           {children}

@@ -46,8 +46,12 @@ export const CrewMonitorContent: React.FC = () => {
   const sessionsWithEvents = useSessionsWithEvents();
   const { width, height } = useTerminalSize();
 
+  // Workflow-step sessions belong to the workflow monitor (^g), not the agent
+  // monitor. Without this filter their results leak into this screen's stage
+  // list and it renders workflow output instead of just crew agents.
   const sessions = useMemo(
-    () => Array.from(sessionsMap.values()),
+    () =>
+      Array.from(sessionsMap.values()).filter((s) => s.group !== 'workflow'),
     [sessionsMap]
   );
 
@@ -210,7 +214,7 @@ export const CrewMonitorContent: React.FC = () => {
         <Box flexGrow={1} justifyContent="center" alignItems="center">
           <Box flexDirection="column" alignItems="center">
             <Text color="gray">No active subagents</Text>
-            <Text color="gray">Press q or ^g to return to chat</Text>
+            <Text color="gray">Press q or ctrl+g to return to chat</Text>
           </Box>
         </Box>
       </Box>

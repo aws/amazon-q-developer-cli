@@ -147,6 +147,7 @@ describe('kas-commands', () => {
         ).toEqual({
           inputType: 'panel',
           local: true,
+          localOnly: true,
           hint: '<description> [--max N]',
         });
         expect(
@@ -156,7 +157,7 @@ describe('kas-commands', () => {
         expect(
           commands.find((command) => command.name === KasCommandName.Workflow)
             ?.meta?.subcommands
-        ).toEqual(['run', 'list', 'retry']);
+        ).toEqual(['run', 'list', 'new', 'retry']);
       });
     });
 

@@ -20,6 +20,9 @@ export interface MessageProps {
   type: MessageType;
   status?: StatusType;
   barColor?: string;
+  /** Drop the solid accent-bar gutter (e.g. in the workflow monitor's session
+   *  output, which must not show the left bar). Forwarded to StatusBar. */
+  noBar?: boolean;
 }
 
 export const Message = React.memo(function Message({
@@ -27,6 +30,7 @@ export const Message = React.memo(function Message({
   type,
   status,
   barColor,
+  noBar,
 }: MessageProps) {
   const messageStatus: StatusType = status || 'active';
 
@@ -51,7 +55,7 @@ export const Message = React.memo(function Message({
   }
 
   return (
-    <StatusBar status={messageStatus} barColor={barColor}>
+    <StatusBar status={messageStatus} barColor={barColor} noBar={noBar}>
       <MessageContent content={content} type={type} useOverflow={useOverflow} />
       {type === MessageType.DEVELOPER && <Text> </Text>}
     </StatusBar>

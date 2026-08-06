@@ -4,6 +4,7 @@ import type {
   WorkflowLoadResponse,
 } from '../../../../types/workflow.js';
 import {
+  WORKFLOW_CREATE_CONTRACT,
   WORKFLOW_NOTIFICATION_METHODS,
   parseWorkflowCancelResponse,
   parseWorkflowCreateResponse,
@@ -680,5 +681,25 @@ describe('workflow protocol boundary', () => {
         status: 'unknown',
       })
     ).toBeNull();
+  });
+
+  it('forwards a concrete modelId on create but omits it when absent (#9)', () => {
+    const base = {
+      source: { type: 'path' as const, workflowPath: 'bundled://demo' },
+      inputs: { prompt: 'go' },
+      parentSessionId: PARENT_SESSION_ID,
+    };
+
+    expect(
+      WORKFLOW_CREATE_CONTRACT.encode({ ...base, modelId: 'claude-opus-4-8' })
+    ).toEqual({
+      workflowPath: 'bundled://demo',
+      inputs: { prompt: 'go' },
+      parentSessionId: PARENT_SESSION_ID,
+      modelId: 'claude-opus-4-8',
+    });
+
+    // No modelId key when the caller passes none (session model was 'auto').
+    expect(WORKFLOW_CREATE_CONTRACT.encode(base)).not.toHaveProperty('modelId');
   });
 });

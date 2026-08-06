@@ -11,6 +11,22 @@ export interface ScrollableBoxProps {
   height: number;
   width?: number;
   autoScroll?: boolean;
+  /**
+   * When false, the j/k/page scroll key handler is suspended so this box
+   * doesn't claim those keys while another surface (e.g. an open composer or
+   * a different pane) owns input. Mouse-wheel scrolling stays active. Defaults
+   * to true to preserve existing call sites.
+   */
+  isActive?: boolean;
+  /**
+   * #13: change this value to force the view to jump to the end of the content
+   * (e.g. when a workflow step pauses to ask a question and the actionable tail
+   * would otherwise sit clipped below the fold). Unlike {@link autoScroll} —
+   * which only reacts to content *growth* while the user is at the bottom — a
+   * changed key scrolls to the bottom unconditionally, then clears the
+   * "user scrolled up" latch so subsequent growth keeps following.
+   */
+  scrollToEndKey?: string | number;
   children: React.ReactNode;
 }
 
@@ -18,6 +34,8 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
   height,
   width,
   autoScroll = true,
+  isActive = true,
+  scrollToEndKey,
   children,
 }) => {
   const [scrollTop, setScrollTop] = useState(0);
@@ -88,6 +106,27 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
     prevContentHeight.current = contentHeight;
   }, [contentHeight, autoScroll]);
 
+  // #13: force a jump to the end when the caller changes scrollToEndKey. The
+  // content for the new selection may not be measured yet, so we latch a
+  // pending flag and re-apply once contentHeight settles (see effect below).
+  const pendingScrollToEnd = useRef(false);
+  const prevScrollToEndKey = useRef(scrollToEndKey);
+  useEffect(() => {
+    if (scrollToEndKey === prevScrollToEndKey.current) return;
+    prevScrollToEndKey.current = scrollToEndKey;
+    if (scrollToEndKey === undefined) return;
+    pendingScrollToEnd.current = true;
+    userScrolledUp.current = false;
+    setScrollTop(maxScrollRef.current);
+  }, [scrollToEndKey]);
+
+  // Re-apply the pending jump after the new selection's content is measured.
+  useEffect(() => {
+    if (!pendingScrollToEnd.current) return;
+    pendingScrollToEnd.current = false;
+    setScrollTop(maxScrollRef.current);
+  }, [contentHeight]);
+
   // Reset scroll when height changes
   const prevHeight = useRef(height);
   useEffect(() => {
@@ -97,14 +136,17 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
     }
   }, [height]);
 
-  useKeypress((input, key) => {
-    if (input === 'k') scroll(-1);
-    else if (input === 'j') scroll(1);
-    else if (key.pageUp || (key.ctrl && input === 'u'))
-      scroll(-Math.floor(height / 2));
-    else if (key.pageDown || (key.ctrl && input === 'd'))
-      scroll(Math.floor(height / 2));
-  });
+  useKeypress(
+    (input, key) => {
+      if (input === 'k') scroll(-1);
+      else if (input === 'j') scroll(1);
+      else if (key.pageUp || (key.ctrl && input === 'u'))
+        scroll(-Math.floor(height / 2));
+      else if (key.pageDown || (key.ctrl && input === 'd'))
+        scroll(Math.floor(height / 2));
+    },
+    { isActive }
+  );
 
   useMouse(
     useCallback(

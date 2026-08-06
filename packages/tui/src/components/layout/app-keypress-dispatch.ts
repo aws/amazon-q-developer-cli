@@ -48,6 +48,13 @@ export interface AppKeypressActions {
   setMode: (mode: AppMode) => void;
   enterCrewMonitor: () => void;
   enterWorkflowMonitor: () => void;
+  /**
+   * Reopen the most recently finished run in the workflow monitor. Returns
+   * `true` if one was found (and the monitor was entered), `false` if there is
+   * no archived run to reopen. Lets ctrl+g target a just-finished workflow that
+   * `completeRun` has already evicted from the live `workflows` map.
+   */
+  enterWorkflowMonitorForLast: () => boolean;
   collapseActivityTray: () => void;
   fireTransientAlertAction: () => void;
   dismissTransientAlert: () => void;
@@ -219,7 +226,8 @@ export function dispatchAppKeypress(
       actions.setMode('inline');
     } else if (state.hasWorkflow) {
       actions.enterWorkflowMonitor();
-    } else {
+    } else if (!actions.enterWorkflowMonitorForLast()) {
+      // No live run and nothing to reopen — fall back to the crew monitor.
       actions.enterCrewMonitor();
     }
     return true;

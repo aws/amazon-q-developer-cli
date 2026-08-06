@@ -22,6 +22,9 @@ interface ThinkingMessageProps {
    * tips or schedule timers. Only the main ConversationView mount passes true.
    */
   showTip?: boolean;
+  /** Drop the solid accent-bar gutter (keeps the spinner). Used by the
+   *  workflow monitor's session output, which must not show the left bar. */
+  noBar?: boolean;
 }
 
 /**
@@ -37,6 +40,7 @@ interface ThinkingMessageProps {
 export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
   barColor,
   showTip = false,
+  noBar,
 }) => {
   const { getColor } = useTheme();
   const secondaryColor = getColor('secondary');
@@ -84,7 +88,7 @@ export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
 
   return (
     <Box flexDirection="column">
-      <StatusBar status="thinking" barColor={barColor}>
+      <StatusBar status="thinking" barColor={barColor} noBar={noBar}>
         <Text>
           {secondaryColor(message)}
           {dim(` (${keybindings.label('cancelStream')} to cancel)`)}

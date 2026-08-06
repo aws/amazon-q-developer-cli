@@ -75,6 +75,10 @@ function makeActions(): AppKeypressActions & {
     setMode: track('setMode'),
     enterCrewMonitor: track('enterCrewMonitor'),
     enterWorkflowMonitor: track('enterWorkflowMonitor'),
+    enterWorkflowMonitorForLast: () => {
+      track('enterWorkflowMonitorForLast')();
+      return false;
+    },
     collapseActivityTray: track('collapseActivityTray'),
     fireTransientAlertAction: track('fireTransientAlertAction'),
     dismissTransientAlert: track('dismissTransientAlert'),
@@ -496,7 +500,7 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
     expect(actions._args.copyOAuthUrl).toEqual(['https://example.com/auth']);
   });
 
-  it('Ctrl+G from inline enters crew-monitor', () => {
+  it('Ctrl+G from inline with no run falls back to crew-monitor', () => {
     const actions = makeActions();
     dispatchAppKeypress(
       'g',
@@ -505,7 +509,29 @@ describe('dispatchAppKeypress: hardcoded behaviors', () => {
       actions,
       DEFAULT_BINDINGS
     );
+    // First tries to reopen the last finished run; falsy result → crew-monitor.
+    expect(actions._calls.enterWorkflowMonitorForLast).toBe(1);
     expect(actions._calls.enterCrewMonitor).toBe(1);
+  });
+
+  it('Ctrl+G reopens the last finished run when one exists', () => {
+    const actions = makeActions();
+    // Simulate a just-finished run being available to reopen.
+    actions.enterWorkflowMonitorForLast = () => {
+      actions._calls.enterWorkflowMonitorForLast =
+        (actions._calls.enterWorkflowMonitorForLast ?? 0) + 1;
+      return true;
+    };
+    dispatchAppKeypress(
+      'g',
+      blankKey({ ctrl: true }),
+      baseState(),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.enterWorkflowMonitorForLast).toBe(1);
+    // Reopened a run → must NOT fall back to the crew monitor.
+    expect(actions._calls.enterCrewMonitor).toBeUndefined();
   });
 
   it('Ctrl+G from inline enters workflow monitor when a run is retained', () => {

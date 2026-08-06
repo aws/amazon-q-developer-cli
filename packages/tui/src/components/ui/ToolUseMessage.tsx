@@ -87,6 +87,9 @@ export interface ToolUseMessageProps {
   kind?: ToolKind;
   locations?: ToolCallLocation[];
   barColor?: string;
+  /** Drop the solid accent-bar gutter (keeps the status dot). Used by the
+   *  workflow monitor's session output, which must not show the left bar. */
+  noBar?: boolean;
   isStatic?: boolean;
   agentLabel?: string;
   agentLabelColor?: string;
@@ -113,6 +116,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     kind,
     locations,
     barColor,
+    noBar,
     isStatic = false,
     agentLabel,
     agentLabelColor,
@@ -218,7 +222,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     if (skipStatusBar) return inner;
 
     return (
-      <StatusBar status={statusIcon} barColor={barColor}>
+      <StatusBar status={statusIcon} barColor={barColor} noBar={noBar}>
         {inner}
       </StatusBar>
     );

@@ -64,6 +64,10 @@ export const Settings = {
   // buildKasSettings() via boolMappings. Monitor evaluates + warns; enforce blocks.
   CHAT_ENABLE_INFRA_SAFETY_MONITOR: 'chat.enableInfraSafetyMonitor',
   CHAT_ENABLE_INFRA_SAFETY_ENFORCE: 'chat.enableInfraSafetyEnforce',
+  // Whether the workflow monitor enables mouse capture (click-to-select nodes,
+  // wheel scroll, drag-resize) on open. Default ON; toggled live with `m` and
+  // persisted so power users who rely on terminal text-selection can opt out.
+  WORKFLOW_MONITOR_MOUSE: 'chat.workflowMonitor.mouseEnabled',
 } as const;
 
 /**

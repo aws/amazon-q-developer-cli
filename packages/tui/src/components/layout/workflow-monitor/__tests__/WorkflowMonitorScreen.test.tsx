@@ -392,6 +392,41 @@ describe('WorkflowMonitorScreen', () => {
     });
   });
 
+  // #19: up/down navigate between nodes while the steer/respond composer is
+  // open; they must move the selection *without* tearing the composer down.
+  it('keeps the steer composer open while navigating with up/down', async () => {
+    openMultiNodeMessageableWorkflow();
+
+    const kiro = new Kiro();
+    kiro.messageWorkflowNode = async () => {};
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowMonitorScreen />
+      </AppStoreContext.Provider>,
+      {
+        terminal,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        mouse: true,
+      }
+    );
+    await flush();
+
+    terminal.sendInput('s');
+    await flush();
+    expect(workflowStore.getState().inputActive).toBe(true);
+
+    terminal.sendInput('\x1b[B'); // down
+    await flush();
+    expect(workflowStore.getState().inputActive).toBe(true);
+
+    terminal.sendInput('\x1b[A'); // up
+    await flush();
+    expect(workflowStore.getState().inputActive).toBe(true);
+  });
+
   it('restores the submitted workflow message when sending fails', async () => {
     openMessageableWorkflow('Failure recovery');
 

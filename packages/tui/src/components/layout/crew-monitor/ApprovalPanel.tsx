@@ -286,6 +286,15 @@ export const ApprovalPanel = React.memo(function ApprovalPanel({
         }}
         showSelectedIndicator={true}
       />
+      {page === 'default' && (
+        <Box marginTop={1}>
+          <Text>
+            {secondary(
+              `y approve ${glyphs.smallDot} n deny ${glyphs.smallDot} t trust`
+            )}
+          </Text>
+        </Box>
+      )}
     </Panel>
   );
 });

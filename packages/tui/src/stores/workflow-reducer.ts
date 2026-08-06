@@ -163,6 +163,24 @@ function carryForwardNodes(
   });
 }
 
+// X12: iteration/child rows inherit maxIterations from their nearest ancestor
+// (the repeat/loop container carries the real N; child rows only get an
+// `iteration`), so the ↻n/N denominator resolves instead of showing ↻n/?.
+function ancestorMaxIterations(
+  nodes: readonly WorkflowMonitorNode[],
+  node: WorkflowMonitorNode | undefined
+): number | undefined {
+  let parentId = node?.parentId ?? null;
+  const seen = new Set<string>();
+  while (parentId !== null && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = nodes.find((candidate) => candidate.id === parentId);
+    if (parent?.maxIterations !== undefined) return parent.maxIterations;
+    parentId = parent?.parentId ?? null;
+  }
+  return undefined;
+}
+
 function nodeMatches(
   node: WorkflowMonitorNode,
   identity: NodeIdentity
@@ -494,6 +512,11 @@ export function reduceWorkflowEvent(
         iteration: event.iteration,
         branchId: event.branchId,
       };
+      const targetNode = run.nodes.find((node) => nodeMatches(node, identity));
+      const inheritedMaxIterations =
+        event.iteration !== undefined && targetNode?.maxIterations === undefined
+          ? ancestorMaxIterations(run.nodes, targetNode)
+          : undefined;
       const nodes = patchNodes(run.nodes, identity, {
         status: 'running',
         sessionId: event.sessionId,
@@ -501,6 +524,9 @@ export function reduceWorkflowEvent(
         agentName: event.agentName,
         iteration: event.iteration,
         branchId: event.branchId,
+        ...(inheritedMaxIterations !== undefined
+          ? { maxIterations: inheritedMaxIterations }
+          : {}),
       });
       const stepSessions = event.sessionId
         ? mergeSessions(run.stepSessions, [

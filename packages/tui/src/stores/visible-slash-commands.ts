@@ -125,6 +125,9 @@ export const selectVisibleSlashCommands = (
     // current session is a cloud session — so existing local-only users
     // never see them (dark-ship). `cloudSessionActive` is false on released builds.
     if (cmd.meta?.cloudOnly && !state.cloudSessionActive) continue;
+    // Local-only commands (e.g. `/workflow*`) are hidden inside a cloud session
+    // until KAS supports sandbox workflows (kiro-agent #178).
+    if (cmd.meta?.localOnly && state.cloudSessionActive) continue;
     seen.add(cmd.name);
     deduped.push(cmd);
   }

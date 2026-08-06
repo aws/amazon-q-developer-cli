@@ -34,6 +34,14 @@ export interface WorkflowCreateRequest {
   source: WorkflowRunSource;
   inputs: Record<string, string>;
   parentSessionId?: string;
+  /**
+   * Concrete model id to seed the run with. Client stopgap for #9: when the
+   * session has a real model selected we forward it so KAS's `parentModelId`
+   * cascade resolves to that id instead of falling through to the literal
+   * `'auto'` (which the backend rejects with INVALID_MODEL_ID). Omitted when
+   * the session model is itself `'auto'`/unset — nothing concrete to pass.
+   */
+  modelId?: string;
 }
 
 export interface WorkflowCreateResponse {

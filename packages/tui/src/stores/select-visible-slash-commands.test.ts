@@ -323,6 +323,45 @@ describe('v2Only commands — hidden in KAS, visible in V2', () => {
   });
 });
 
+describe('/workflow* local-only visibility gate (cloud stopgap, kiro-agent #178)', () => {
+  const withFeatures = (value: string | undefined, fn: () => void) => {
+    const prev = process.env.KIRO_ENABLED_FEATURES;
+    if (value === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+    else process.env.KIRO_ENABLED_FEATURES = value;
+    features._resetForTests();
+    try {
+      fn();
+    } finally {
+      if (prev === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+      else process.env.KIRO_ENABLED_FEATURES = prev;
+      features._resetForTests();
+    }
+  };
+
+  const gated = ['/workflow', '/goal', '/workflows'];
+
+  it('shows /workflow + /goal in a local KAS session (feature enabled)', () => {
+    withFeatures('["workflows"]', () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      // cloudSessionActive defaults to false (a local session).
+      const visible = selectVisibleSlashCommands(store.getState());
+      expect(visible.find((c) => c.name === '/workflow')).toBeDefined();
+      expect(visible.find((c) => c.name === '/goal')).toBeDefined();
+    });
+  });
+
+  it('hides all /workflow* + /goal once the session is marked cloud', () => {
+    withFeatures('["workflows"]', () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      store.getState().setCloudSessionActive(true);
+      const visible = selectVisibleSlashCommands(store.getState());
+      for (const name of gated) {
+        expect(visible.find((c) => c.name === name)).toBeUndefined();
+      }
+    });
+  });
+});
+
 describe('UI mode commands — KAS vs V2', () => {
   const withRollout = (value: string | undefined, fn: () => void) => {
     const prev = process.env.KIRO_LITE_ROLLOUT_ENABLED;

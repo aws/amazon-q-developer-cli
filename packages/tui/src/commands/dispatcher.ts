@@ -175,6 +175,14 @@ export async function dispatch(
     return;
   }
 
+  // Local-only commands (e.g. `/workflow*`) are hidden from autocomplete inside
+  // a cloud session, but prefix-typed input still resolves them — refuse here
+  // so they can't fire against a cloud sandbox where KAS's workflow handlers
+  // walk local filesystem paths that don't exist (kiro-agent #178).
+  if (cmd.meta?.localOnly && ctx.cloudSessionActive) {
+    return;
+  }
+
   if (
     inputType === 'panel' &&
     (!getCommandPanelState(cmdName) ||

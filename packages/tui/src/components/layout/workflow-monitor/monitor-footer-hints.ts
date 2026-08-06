@@ -42,7 +42,7 @@ export function buildMonitorFooterHints(ctx: MonitorFooterContext): string {
   hints.push(ctx.monitorLayout === 'stacked' ? 'l split' : 'l stack');
   hints.push(ctx.mouseModeEnabled ? 'm mouse:on' : 'm mouse:off');
   hints.push('[ ] resize');
-  hints.push('Tab agents');
+  hints.push('Tab agent monitor');
   hints.push('Esc back');
   return hints.join(' | ');
 }

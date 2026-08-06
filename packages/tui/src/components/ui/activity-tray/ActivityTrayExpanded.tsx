@@ -224,8 +224,9 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
               color={activeTab === 'workflow' ? fg : mutedHex}
               bold={activeTab === 'workflow'}
             >
-              {!allowIcons ? '' : glyphs.executing} Workflow (
-              {progress.completed}/{progress.total})
+              {!allowIcons ? '' : glyphs.executing}{' '}
+              {workflow.name?.trim() || 'Workflow'} ({progress.completed}/
+              {progress.total})
             </Text>
           )}
         </Box>

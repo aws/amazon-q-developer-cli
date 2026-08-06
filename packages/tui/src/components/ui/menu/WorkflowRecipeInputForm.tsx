@@ -139,7 +139,7 @@ export function WorkflowRecipeInputForm({
       <Box paddingX={1} flexDirection="column">
         <Text>{brand(`Run workflow ${glyphs.smallDot} ${recipe.name}`)}</Text>
         {recipe.description && (
-          <Text wrap="truncate">{secondary(recipe.description)}</Text>
+          <Text wrap="wrap">{secondary(recipe.description)}</Text>
         )}
       </Box>
       <Divider />

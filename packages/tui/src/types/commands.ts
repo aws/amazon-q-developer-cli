@@ -41,6 +41,15 @@ export interface CommandMeta {
   local?: boolean;
   /** When true, the command is hidden unless the session is a cloud session. */
   cloudOnly?: boolean;
+  /**
+   * When true, the command is hidden (and refused if prefix-typed) *inside* a
+   * cloud session — the inverse of {@link cloudOnly}. Used to gate features
+   * that only work against a local workspace, e.g. workflows: KAS's workflow
+   * handlers walk real filesystem paths that don't exist in a cloud sandbox
+   * (kiro-agent #178 / grooming #4), so we hide `/workflow*` in cloud until the
+   * server gains sandbox-aware recipe resolution.
+   */
+  localOnly?: boolean;
   type?: 'action' | 'prompt' | 'skill' | 'steering';
   arguments?: Array<{
     name: string;

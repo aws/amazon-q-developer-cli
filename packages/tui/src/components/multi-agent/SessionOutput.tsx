@@ -79,6 +79,7 @@ const ConversationTurnCard = React.memo(
             content={turn.userMessage.content}
             type={MessageType.DEVELOPER}
             barColor={agentBarColor}
+            noBar
           />
         )}
 
@@ -98,6 +99,7 @@ const ConversationTurnCard = React.memo(
                 result={message.result}
                 locations={message.locations}
                 barColor={agentBarColor}
+                noBar
                 isStatic={!turn.isActive || message.isFinished}
                 mcpServerName={message.mcpServerName}
                 denial={message.denial}
@@ -116,6 +118,7 @@ const ConversationTurnCard = React.memo(
                 content={message.content}
                 type={MessageType.AGENT}
                 barColor={agentBarColor}
+                noBar
               />
             );
           }
@@ -126,6 +129,7 @@ const ConversationTurnCard = React.memo(
               content={message.content}
               type={MessageType.AGENT}
               barColor={agentBarColor}
+              noBar
             />
           );
         })}
@@ -134,6 +138,7 @@ const ConversationTurnCard = React.memo(
           <ThinkingMessage
             key={`${turn.userMessage.id}-thinking`}
             barColor={agentBarColor}
+            noBar
           />
         )}
       </Card>
@@ -170,6 +175,7 @@ const _StaticTurnCard = React.memo(function _StaticTurnCard({
             content={turn.userMessage.content}
             type={MessageType.DEVELOPER}
             barColor={agentBarColor}
+            noBar
           />
         )}
 
@@ -192,6 +198,7 @@ const _StaticTurnCard = React.memo(function _StaticTurnCard({
                 barColor={agentBarColor}
                 mcpServerName={message.mcpServerName}
                 denial={message.denial}
+                noBar
               />
             );
           }
@@ -202,6 +209,7 @@ const _StaticTurnCard = React.memo(function _StaticTurnCard({
               content={message.content}
               type={MessageType.AGENT}
               barColor={agentBarColor}
+              noBar
             />
           );
         })}
@@ -233,7 +241,7 @@ const SessionHeader = React.memo(function SessionHeader({
 
   return (
     <Box paddingX={1} marginBottom={1}>
-      <StatusBar barColor={agentBarColor}>
+      <StatusBar barColor={agentBarColor} noBar>
         <Text>
           {statusIcon} {stagePrefix}
           {session.name}
