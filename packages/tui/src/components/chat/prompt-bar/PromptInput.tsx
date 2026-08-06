@@ -1755,7 +1755,11 @@ export const PromptInput = React.memo(function PromptInput({
     },
     // Detach the prompt's key listener entirely while a useInput-owning panel
     // is open, so its type-to-search owns the keyboard (no double echo).
-    { onEmptyPaste: handlePasteImage, isActive: !inputPanelOpen }
+    {
+      onEmptyPaste: handlePasteImage,
+      isActive: !inputPanelOpen,
+      coalescePrintableRenders: activeTrigger == null && activeCommand == null,
+    }
   );
 
   const renderContent = () => {

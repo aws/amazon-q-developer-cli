@@ -50,6 +50,8 @@ export interface Key {
 export interface UseInputOptions {
 	/** Whether input handling is active. Default: true */
 	isActive?: boolean;
+	/** Coalesce plain printable input commits into one terminal frame. */
+	coalescePrintableRenders?: boolean;
 }
 
 /**
@@ -87,6 +89,7 @@ export function useInput(
 ): void {
 	const { tui } = useTwinkiContext();
 	const isActive = options.isActive ?? true;
+	const coalescePrintableRenders = options.coalescePrintableRenders ?? false;
 	const handlerRef = useRef(handler);
 	handlerRef.current = handler;
 
@@ -95,11 +98,18 @@ export function useInput(
 
 		const unsub = tui.addInputListener((data) => {
 			const { input, key } = parseInputData(data);
+			if (
+				coalescePrintableRenders &&
+				input.length > 0 &&
+				!Object.values(key).some(Boolean)
+			) {
+				tui.coalesceInputRenders();
+			}
 			handlerRef.current(input, key);
 		});
 
 		return unsub;
-	}, [tui, isActive]);
+	}, [tui, isActive, coalescePrintableRenders]);
 }
 
 /** Shared helper: parse raw terminal data into input string + Key object */

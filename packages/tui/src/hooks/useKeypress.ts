@@ -50,9 +50,17 @@ export function keyToRawBytes(key: Key, userInput: string): string {
  */
 export const useKeypress = (
   handler: KeyHandler,
-  options: { isActive?: boolean; onEmptyPaste?: EmptyPasteHandler } = {}
+  options: {
+    isActive?: boolean;
+    onEmptyPaste?: EmptyPasteHandler;
+    coalescePrintableRenders?: boolean;
+  } = {}
 ) => {
-  const { isActive = true, onEmptyPaste } = options;
+  const {
+    isActive = true,
+    onEmptyPaste,
+    coalescePrintableRenders = false,
+  } = options;
 
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
@@ -79,7 +87,7 @@ export const useKeypress = (
         paste: false,
       });
     },
-    { isActive }
+    { isActive, coalescePrintableRenders }
   );
 
   usePaste(

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Coalesce rapid printable keystrokes into fewer render passes for smoother TUI typing"
+}

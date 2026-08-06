@@ -220,6 +220,8 @@ export class TUI extends Container {
   private focusedComponent: Component | null = null;
   private inputListeners = new Set<InputListener>();
   private renderRequested = false;
+  private deferInputRender = false;
+  private inputDeferralTimer: ReturnType<typeof setImmediate> | null = null;
   private cursorRow = 0;
   private hardwareCursorRow = 0;
   private inputBuffer = '';
@@ -609,6 +611,15 @@ export class TUI extends Container {
    */
   removeInputListener(listener: InputListener): void {
     this.inputListeners.delete(listener);
+  }
+
+  coalesceInputRenders(): void {
+    this.deferInputRender = true;
+    if (this.inputDeferralTimer) return;
+    this.inputDeferralTimer = setImmediate(() => {
+      this.inputDeferralTimer = null;
+      this.deferInputRender = false;
+    });
   }
 
   /**
@@ -1149,6 +1160,11 @@ export class TUI extends Container {
       clearTimeout(this.pacingTimer);
       this.pacingTimer = null;
     }
+    if (this.inputDeferralTimer) {
+      clearImmediate(this.inputDeferralTimer);
+      this.inputDeferralTimer = null;
+    }
+    this.deferInputRender = false;
     if (this.mouseEnabled) this.disableMouse();
     if (this.altScreen) {
       this.exitAltScreen();
@@ -1237,12 +1253,14 @@ export class TUI extends Container {
     if (this.renderRequested) return;
     this.renderRequested = true;
 
-    // No frame pacing — render on next tick
+    // Input can synchronously update local and external stores; paint them together.
     if (this.frameBudgetMs <= 0) {
-      process.nextTick(() => {
+      const render = () => {
         this.renderRequested = false;
         this.doRender();
-      });
+      };
+      if (this.deferInputRender) setImmediate(render);
+      else process.nextTick(render);
       return;
     }
 

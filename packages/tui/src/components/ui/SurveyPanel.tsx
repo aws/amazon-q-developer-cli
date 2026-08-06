@@ -11,6 +11,7 @@ import type {
 } from '../../constants/survey.js';
 import { useAppStore } from '../../stores/app-store.js';
 import { visibleWidth } from '../../utils/text-width.js';
+import { isPrintable } from '../../utils/string.js';
 
 interface SurveyPanelProps {
   onClose: () => void;
@@ -125,7 +126,7 @@ export const SurveyPanel: React.FC<SurveyPanelProps> = ({
       if (validationError) setValidationError(null);
       return;
     }
-    if (input && input.length === 1 && input >= ' ' && !key.ctrl && !key.meta) {
+    if (input && isPrintable(input) && !key.ctrl && !key.meta) {
       setFreeText((t) => t + input);
       if (validationError) setValidationError(null);
     }
