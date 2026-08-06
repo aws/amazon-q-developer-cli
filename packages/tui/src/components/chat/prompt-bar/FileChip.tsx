@@ -1,7 +1,6 @@
 import React from 'react';
 import path from 'path';
-import { Text } from './../../../renderer.js';
-import { useTheme } from '../../../hooks/useThemeContext.js';
+import { PromptChip } from './PromptChip.js';
 
 export interface FileChipProps {
   filePath: string;
@@ -13,12 +12,5 @@ export const FileChip = React.memo(function FileChip({
   lineCount,
 }: FileChipProps) {
   const fileName = path.basename(filePath);
-  const { getColor } = useTheme();
-  const rawMutedBg = getColor('muted').hex;
-  const mutedBg = rawMutedBg === 'inherit' ? undefined : rawMutedBg;
-  return (
-    <Text backgroundColor={mutedBg} color={getColor('brand').hex}>
-      {` ${fileName}  ${lineCount} lines `}
-    </Text>
-  );
+  return <PromptChip label={`${fileName}  ${lineCount} lines`} />;
 });

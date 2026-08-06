@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Prompt bar file and pasted chips now use brand background with high-contrast text for legibility across all themes"
+}

@@ -16,6 +16,10 @@ export const kiroDark: Theme = {
     brandMuted: { truecolor: '#8700FF', color256: 93 },
     highlight: { truecolor: '#0087FF', color256: 33 },
     components: {
+      promptChip: {
+        background: { truecolor: '#C19AFF', color256: 141 },
+        text: { truecolor: '#262626', color256: 235 },
+      },
       snackbar: {
         background: { truecolor: '#552B99', color256: 54 }, // Always dark purple (same as dark mode)
         text: { truecolor: '#ffffff', color256: 15 }, // Always bright purple (same as dark mode)

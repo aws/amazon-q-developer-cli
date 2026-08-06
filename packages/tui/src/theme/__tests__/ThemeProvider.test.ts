@@ -3,6 +3,7 @@ import { kiroDark } from '../kiroDark';
 import { kiroLight } from '../kiroLight';
 import { kiroSafe } from '../kiroSafe';
 import { createThemeContext } from '../ThemeProvider';
+import type { ChalkColorName, TerminalColor } from '../../types/themeTypes';
 
 // --- getAutoTheme mocking: must be at module top level ---
 const mockDetect = mock(() => ({
@@ -280,5 +281,141 @@ describe('getAutoTheme', () => {
       });
       expect(getAutoTheme()).toBe(kiroLight);
     });
+
+    it('keeps forced-safe prompt chip colors explicit and adaptive', () => {
+      process.env.KIRO_TERMINAL_THEME = 'safe';
+      const chip = getAutoTheme().colors.components.promptChip;
+
+      expect(chip).toEqual({
+        background: { named: 'magentaBright' },
+        text: { named: 'black' },
+      });
+      expect(chip.background.named).not.toBe('default');
+      expect(chip.text.named).not.toBe('default');
+    });
+  });
+});
+
+type Rgb = [number, number, number];
+
+const ansiNamedRgb: Record<Exclude<ChalkColorName, 'default'>, Rgb> = {
+  black: [0, 0, 0],
+  red: [255, 0, 0],
+  green: [0, 255, 0],
+  yellow: [255, 255, 0],
+  blue: [0, 0, 255],
+  magenta: [255, 0, 255],
+  cyan: [0, 255, 255],
+  white: [255, 255, 255],
+  blackBright: [128, 128, 128],
+  redBright: [255, 128, 128],
+  greenBright: [128, 255, 128],
+  yellowBright: [255, 255, 128],
+  blueBright: [128, 128, 255],
+  magentaBright: [255, 128, 255],
+  cyanBright: [128, 255, 255],
+  whiteBright: [255, 255, 255],
+  gray: [128, 128, 128],
+  grey: [128, 128, 128],
+};
+
+function hexToRgb(hex: string): Rgb {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function color256ToRgb(index: number): Rgb {
+  if (index < 16) {
+    const base: Rgb[] = [
+      [0, 0, 0],
+      [128, 0, 0],
+      [0, 128, 0],
+      [128, 128, 0],
+      [0, 0, 128],
+      [128, 0, 128],
+      [0, 128, 128],
+      [192, 192, 192],
+      [128, 128, 128],
+      [255, 0, 0],
+      [0, 255, 0],
+      [255, 255, 0],
+      [0, 0, 255],
+      [255, 0, 255],
+      [0, 255, 255],
+      [255, 255, 255],
+    ];
+    return base[index]!;
+  }
+  if (index < 232) {
+    const level = [0, 95, 135, 175, 215, 255];
+    const offset = index - 16;
+    return [
+      level[Math.floor(offset / 36)]!,
+      level[Math.floor((offset % 36) / 6)]!,
+      level[offset % 6]!,
+    ];
+  }
+  const gray = 8 + (index - 232) * 10;
+  return [gray, gray, gray];
+}
+
+function relativeLuminance(rgb: Rgb): number {
+  const [red, green, blue] = rgb.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+}
+
+function contrastRatio(foreground: Rgb, background: Rgb): number {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  return (
+    (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+    (Math.min(foregroundLuminance, backgroundLuminance) + 0.05)
+  );
+}
+
+function namedToRgb(color: TerminalColor): Rgb {
+  if (!color.named || color.named === 'default') {
+    throw new Error('Prompt chip colors must not inherit terminal defaults');
+  }
+  return ansiNamedRgb[color.named];
+}
+
+describe('prompt chip contrast', () => {
+  it.each([
+    ['kiroDark', kiroDark],
+    ['kiroLight', kiroLight],
+    ['kiroSafe', kiroSafe],
+  ] as const)('%s keeps its label at AA contrast', (_name, theme) => {
+    const { background, text } = theme.colors.components.promptChip;
+    const pairs: Array<[string, Rgb, Rgb]> = [];
+
+    if (background.truecolor && text.truecolor) {
+      pairs.push([
+        'truecolor',
+        hexToRgb(text.truecolor),
+        hexToRgb(background.truecolor),
+      ]);
+    }
+    if (background.color256 !== undefined && text.color256 !== undefined) {
+      pairs.push([
+        'color256',
+        color256ToRgb(text.color256),
+        color256ToRgb(background.color256),
+      ]);
+    }
+    if (background.named && text.named) {
+      pairs.push(['named', namedToRgb(text), namedToRgb(background)]);
+    }
+
+    expect(pairs.length).toBeGreaterThan(0);
+    for (const [_mode, foreground, fill] of pairs) {
+      expect(contrastRatio(foreground, fill)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

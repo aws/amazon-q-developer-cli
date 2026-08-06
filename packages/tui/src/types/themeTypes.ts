@@ -56,6 +56,10 @@ export interface Theme {
     brandMuted: TerminalColor;
     highlight: TerminalColor;
     components: {
+      promptChip: {
+        background: TerminalColor;
+        text: TerminalColor;
+      };
       snackbar: {
         background: TerminalColor;
         text: TerminalColor;

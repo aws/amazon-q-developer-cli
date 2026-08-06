@@ -24,6 +24,10 @@ export const kiroSafe: Theme = {
     brandMuted: { named: 'magenta' },
     highlight: { named: 'blueBright' },
     components: {
+      promptChip: {
+        background: { named: 'magentaBright' },
+        text: { named: 'black' },
+      },
       snackbar: {
         background: { named: 'magenta' },
         text: { named: 'white' },

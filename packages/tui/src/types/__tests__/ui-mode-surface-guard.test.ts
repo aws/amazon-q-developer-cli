@@ -10,7 +10,6 @@ const appContainerPath = 'components/layout/AppContainer.tsx';
 // Shared components that intentionally vary data or one-sided visibility.
 // Every addition is an explicit architecture decision; stale entries fail.
 const allowedModeDataReaders = new Set([
-  'components/chat/message/Message.tsx',
   'components/chat/prompt-bar/PromptInput.tsx',
   'components/layout/lite/LiteLayout.tsx',
   'components/ui/CommandMenu.tsx',

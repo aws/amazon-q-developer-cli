@@ -1,7 +1,6 @@
 import React from 'react';
-import { Text } from './../../../renderer.js';
-import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
+import { PromptChip } from './PromptChip.js';
 
 export const PASTE_COLLAPSE_THRESHOLD_LINES = 10;
 export const PASTE_COLLAPSE_THRESHOLD_CHARS = 500;
@@ -47,10 +46,7 @@ export const PastedChip = React.memo(function PastedChip({
   imageHeight,
   imageSizeBytes,
 }: PastedChipProps) {
-  const { getColor } = useTheme();
   const glyphs = useGlyphs();
-  const rawMutedBg = getColor('muted').hex;
-  const mutedBg = rawMutedBg === 'inherit' ? undefined : rawMutedBg;
   let label: string;
 
   if (type === 'image') {
@@ -69,9 +65,5 @@ export const PastedChip = React.memo(function PastedChip({
       ` ${glyphs.arrowRight}`;
   }
 
-  return (
-    <Text backgroundColor={mutedBg} color={getColor('brand').hex}>
-      {` ${label} `}
-    </Text>
-  );
+  return <PromptChip label={label} />;
 });

@@ -26,7 +26,7 @@ import {
  * This interface combines the base Theme with a convenient color getter method.
  */
 export interface ThemeContextValue extends Theme {
-  getColor: (colorPath: string) => any; // Returns chalk chain that can be called or further chained
+  getColor: (colorPath: string, mode?: 'fg' | 'bg') => any; // Returns chalk chain that can be called or further chained
   /** User-customized prompt text color (falls back to primary) */
   getUserPromptColor: () => any;
   /** User-customized prompt background hex (falls back to surface, undefined if no bg) */
@@ -110,7 +110,7 @@ export const createThemeContext = (
   return {
     ...theme,
     colors: effectiveColors,
-    getColor: (colorPath: string) => {
+    getColor: (colorPath: string, mode: 'fg' | 'bg' = 'fg') => {
       const keys = colorPath.split('.');
       let colorDef: any = effectiveColors;
 
@@ -121,7 +121,7 @@ export const createThemeContext = (
         }
       }
 
-      return getTerminalChalkColor(colorDef);
+      return getTerminalChalkColor(colorDef, mode);
     },
     getUserPromptColor: () => {
       if (!userPromptColor) {
