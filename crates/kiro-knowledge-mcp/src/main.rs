@@ -83,7 +83,7 @@ impl ServerHandler for KnowledgeServer {
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         if request.name.as_ref() != "search_kiro_knowledge" {
             return Err(ErrorData::invalid_params(
                 format!("unknown tool: {}", request.name),
@@ -117,7 +117,7 @@ impl ServerHandler for KnowledgeServer {
 
         let text = format_chunks(&chunks);
 
-        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]).into())
     }
 }
 

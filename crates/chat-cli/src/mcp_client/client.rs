@@ -645,6 +645,13 @@ impl Service<RoleClient> for McpClientService {
                 format!("Method not found: {}", req.method),
                 None,
             )),
+            // rmcp 3.0 marks ServerRequest non-exhaustive; reject anything we
+            // don't explicitly handle.
+            _ => Err(rmcp::ErrorData::new(
+                rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                "Method not found",
+                None,
+            )),
         }
     }
 
@@ -665,9 +672,11 @@ impl Service<RoleClient> for McpClientService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
-            ServerNotification::ElicitationCompleteNotification(_) => (),
             ServerNotification::TaskStatusNotification(_) => (),
             ServerNotification::CustomNotification(_) => (),
+            // rmcp 3.0 marks ServerNotification non-exhaustive
+            // (ElicitationCompleteNotification was removed; SubscriptionsAcknowledged added).
+            _ => (),
         };
         Ok(())
     }

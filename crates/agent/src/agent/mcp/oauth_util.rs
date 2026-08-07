@@ -15,10 +15,7 @@ use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use reqwest::Client;
-use rmcp::service::{
-    DynService,
-    ServiceExt,
-};
+use rmcp::service::ServiceExt;
 use rmcp::transport::auth::{
     AuthClient,
     OAuthClientConfig,
@@ -381,10 +378,7 @@ enum HttpServiceBuilderState {
     Exhausted,
 }
 
-pub type HttpRunningService = (
-    rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>,
-    Option<AuthClientWrapper>,
-);
+pub type HttpRunningService<S> = (rmcp::service::RunningService<RoleClient, S>, Option<AuthClientWrapper>);
 
 pub struct HttpServiceBuilder<'a> {
     pub server_name: &'a str,
@@ -427,7 +421,7 @@ impl<'a> HttpServiceBuilder<'a> {
         self,
         service: &S,
         cred_dir: &Path,
-    ) -> Result<HttpRunningService, OauthUtilError> {
+    ) -> Result<HttpRunningService<S>, OauthUtilError> {
         let HttpServiceBuilder {
             server_name,
             url,
@@ -478,7 +472,7 @@ impl<'a> HttpServiceBuilder<'a> {
                         StreamableHttpClientTransportConfig::with_uri(url.as_str()),
                     );
 
-                    match service.clone().into_dyn().serve(transport).await {
+                    match service.clone().serve(transport).await {
                         Ok(service) => return Ok((service, None)),
                         Err(e) => {
                             info!("## mcp: unauthenticated http failed for {server_name}: {e:?}, trying authenticated");
@@ -513,7 +507,7 @@ impl<'a> HttpServiceBuilder<'a> {
                         StreamableHttpClientTransportConfig::with_uri(url.as_str()),
                     );
 
-                    match service.clone().into_dyn().serve(transport).await {
+                    match service.clone().serve(transport).await {
                         Ok(service) => {
                             let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac, ReauthContext {
                                 server_name: server_name.to_string(),

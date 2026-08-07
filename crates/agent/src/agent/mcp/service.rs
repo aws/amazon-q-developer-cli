@@ -20,10 +20,7 @@ use rmcp::model::{
     ServerRequest,
     Tool as RmcpTool,
 };
-use rmcp::service::{
-    DynService,
-    ServiceExt,
-};
+use rmcp::service::ServiceExt;
 use rmcp::transport::{
     ConfigureCommandExt as _,
     TokioChildProcess,
@@ -145,7 +142,7 @@ impl McpService {
 
                 let start_time = Instant::now();
                 info!(?server_name, "Launching MCP server");
-                let service = self.into_dyn().serve(process).await?;
+                let service = self.serve(process).await?;
                 serve_time_taken = start_time.elapsed();
                 info!(?serve_time_taken, ?server_name, "MCP server launched successfully");
 
@@ -292,6 +289,13 @@ impl rmcp::Service<RoleClient> for McpService {
                 format!("Method not found: {}", req.method),
                 None,
             )),
+            // rmcp 3.0 marks ServerRequest non-exhaustive; reject anything we
+            // don't explicitly handle.
+            _ => Err(rmcp::ErrorData::new(
+                rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                "Method not found",
+                None,
+            )),
         }
     }
 
@@ -337,9 +341,11 @@ impl rmcp::Service<RoleClient> for McpService {
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
-            ServerNotification::ElicitationCompleteNotification(_) => (),
             ServerNotification::TaskStatusNotification(_) => (),
             ServerNotification::CustomNotification(_) => (),
+            // rmcp 3.0 marks ServerNotification non-exhaustive
+            // (ElicitationCompleteNotification was removed; SubscriptionsAcknowledged added).
+            _ => (),
         }
         Ok(())
     }
@@ -510,6 +516,73 @@ macro_rules! decorate_with_auth_retry {
             }
         }
     };
+    // Variant where the public method name differs from the inner rmcp method
+    // ($inner) and the inner result is mapped through $map (a non-capturing
+    // closure). Used for call_tool -> call_tool_once, unwrapping the rmcp 3.0
+    // `CallToolResponse` into a `CallToolResult`.
+    ($param_type:ty, $public:ident, $inner:ident, $return_type:ty, $map:expr) => {
+        pub async fn $public(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
+            let map = $map;
+
+            // Proactively check token validity before making the call.
+            if let Some(auth_client) = self.auth_client.as_ref() {
+                if let Err(e) = auth_client.auth_client.get_access_token().await {
+                    info!("Token pre-check failed ({e}), attempting re-authentication before call");
+                    if let Err(reauth_err) = auth_client.reauthorize().await {
+                        error!("Pre-call re-authentication failed: {reauth_err}");
+                    }
+                }
+            }
+
+            let first_attempt = match &self.running_service {
+                InnerService::Original(rs) => rs.$inner(param.clone()).await,
+                InnerService::Peer(peer) => peer.$inner(param.clone()).await,
+            };
+
+            match first_attempt {
+                Ok(result) => map(result),
+                Err(e) => {
+                    if let Some(auth_client) = self.auth_client.as_ref() {
+                        let refresh_result = auth_client.refresh_token().await;
+                        match refresh_result {
+                            Ok(_) => {
+                                info!("Token refreshed");
+                                let retried = match &self.running_service {
+                                    InnerService::Original(rs) => rs.$inner(param).await,
+                                    InnerService::Peer(peer) => peer.$inner(param).await,
+                                };
+                                retried.and_then(map)
+                            },
+                            Err(refresh_err) => {
+                                info!("Token refresh failed ({refresh_err}), attempting re-authentication");
+                                match auth_client.reauthorize().await {
+                                    Ok(_) => {
+                                        info!("Reauth initiated");
+                                    },
+                                    Err(reauth_err) => {
+                                        error!("Re-authentication failed: {reauth_err}");
+                                        return Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                            rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                            MCP_AUTH_REAUTH_FAILED,
+                                            None,
+                                        )));
+                                    },
+                                }
+
+                                Err(rmcp::ServiceError::McpError(rmcp::ErrorData::new(
+                                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                    MCP_AUTH_REFRESH_FAILED,
+                                    None,
+                                )))
+                            },
+                        }
+                    } else {
+                        Err(e)
+                    }
+                },
+            }
+        }
+    };
 }
 
 /// Represents a handle to a running MCP server.
@@ -525,11 +598,27 @@ pub struct RunningMcpService {
 }
 
 impl RunningMcpService {
-    decorate_with_auth_retry!(CallToolRequestParams, call_tool, CallToolResult);
-
     decorate_with_auth_retry!(list_all_tools, Vec<RmcpTool>);
 
     decorate_with_auth_retry!(list_all_prompts, Vec<RmcpPrompt>);
+
+    // call_tool_once (single request/response) instead of rmcp 3.0's call_tool,
+    // which drives MRTR input-required rounds through the local handler and
+    // produces a future that cannot cross `tokio::spawn` (HRTB "implementation
+    // of Service is not general enough"). Our client handler rejects elicitation
+    // requests, so MRTR rounds could never complete anyway; `InputRequired`/
+    // `Task` responses surface as `UnexpectedResponse`.
+    decorate_with_auth_retry!(
+        CallToolRequestParams,
+        call_tool,
+        call_tool_once,
+        CallToolResult,
+        |response: rmcp::model::CallToolResponse| match response {
+            rmcp::model::CallToolResponse::Complete(result) => Ok(result),
+            // We don't drive MRTR rounds or the SEP-2663 task lifecycle.
+            _ => Err(rmcp::ServiceError::UnexpectedResponse),
+        }
+    );
 
     pub async fn get_prompt(
         &self,
@@ -595,7 +684,7 @@ impl RunningMcpService {
 
     fn new(
         server_name: String,
-        running_service: rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>,
+        running_service: rmcp::service::RunningService<RoleClient, McpService>,
         child_stderr: Option<ChildStderr>,
         auth_client: Option<AuthClientWrapper>,
     ) -> Self {
@@ -678,8 +767,7 @@ impl RunningMcpService {
         };
         let ct = tokio_util::sync::CancellationToken::new();
         ct.cancel(); // Cancel immediately so transport is closed
-        let boxed: Box<dyn DynService<RoleClient>> = Box::new(service);
-        let rs = rmcp::service::serve_directly_with_ct(boxed, ours, None, ct);
+        let rs = rmcp::service::serve_directly_with_ct(service, ours, None, ct);
         Self {
             running_service: InnerService::Original(rs),
             auth_client: None,
@@ -695,7 +783,7 @@ impl RunningMcpService {
 /// pointer type to `Peer<C>`. This enum allows us to hold either the original service or its
 /// peer representation, enabling cloning by converting the original service to a peer when needed.
 pub enum InnerService {
-    Original(rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>),
+    Original(rmcp::service::RunningService<RoleClient, McpService>),
     Peer(rmcp::service::Peer<RoleClient>),
 }
 

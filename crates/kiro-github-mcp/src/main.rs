@@ -101,7 +101,7 @@ impl ServerHandler for GithubServer {
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         let args_value: serde_json::Value = match request.arguments {
             Some(map) => serde_json::Value::Object(map.into_iter().collect()),
             None => serde_json::Value::Object(Default::default()),
@@ -116,7 +116,7 @@ impl ServerHandler for GithubServer {
             ));
         }
 
-        match request.name.as_ref() {
+        let result = match request.name.as_ref() {
             "search_github_issues" => {
                 let input: SearchInput = serde_json::from_value(args_value)
                     .map_err(|e| ErrorData::invalid_params(format!("invalid arguments: {e}"), None))?;
@@ -164,7 +164,8 @@ impl ServerHandler for GithubServer {
                 ),
                 None,
             )),
-        }
+        }?;
+        Ok(result.into())
     }
 }
 

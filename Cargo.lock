@@ -107,7 +107,7 @@ dependencies = [
  "regex",
  "regex-syntax",
  "reqwest 0.13.3",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "rusqlite",
  "rustls 0.23.40",
  "rustls-native-certs",
@@ -1486,6 +1486,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+
+[[package]]
 name = "base64-simd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2164,7 +2170,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.3",
  "ring",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "rusqlite",
  "rustls 0.23.40",
  "rustls-native-certs",
@@ -2314,7 +2320,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.3",
  "ring",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "rusqlite",
  "rustls 0.23.40",
  "rustls-native-certs",
@@ -2551,7 +2557,7 @@ dependencies = [
  "moka",
  "notify",
  "rayon",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -5396,7 +5402,7 @@ dependencies = [
  "chrono",
  "clap",
  "reqwest 0.13.3",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "serde",
  "serde_json",
  "tokio",
@@ -5413,7 +5419,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-bedrockagentruntime",
  "clap",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "serde",
  "serde_json",
  "tempfile",
@@ -5440,7 +5446,7 @@ dependencies = [
  "hyper 1.9.0",
  "hyper-util",
  "reqwest 0.13.3",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -6180,7 +6186,7 @@ dependencies = [
  "anyhow",
  "axum 0.8.9",
  "clap",
- "rmcp 2.0.0",
+ "rmcp 3.0.0",
  "serde",
  "serde_json",
  "tempfile",
@@ -8501,12 +8507,12 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "2.0.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d52d21e5b342699bc4de690e6104fc4e43255e4e8420ff0f2cbb963aac09da6f"
+checksum = "fcd2b6dd3b18129368955f32661a7718969e8c152c7d8866434c09cf15a512e0"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytes",
  "chrono",
  "futures",
@@ -8519,7 +8525,7 @@ dependencies = [
  "process-wrap",
  "rand 0.10.1",
  "reqwest 0.13.3",
- "rmcp-macros 2.0.0",
+ "rmcp-macros 3.0.0",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -8549,9 +8555,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "2.0.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c68cec74c5b3ac73ff46375ae49e161637bda80bba70f0d5db641583bb308ee"
+checksum = "e1aa4b9345795260a43fc23d6d05e096407c8b953903f673af7c4404b49fb2d6"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -9658,9 +9664,9 @@ dependencies = [
 
 [[package]]
 name = "sse-stream"
-version = "0.2.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3962b63f038885f15bce2c6e02c0e7925c072f1ac86bb60fd44c5c6b762fb72"
+checksum = "c123f296ade4ec4b8b0f6162116e6629f5146922ca5ab40ca9d3c2e73ab4761e"
 dependencies = [
  "bytes",
  "futures-util",

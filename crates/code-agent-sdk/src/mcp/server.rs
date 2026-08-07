@@ -5,6 +5,7 @@ use anyhow::Result;
 use rmcp::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams,
+    CallToolResponse,
     CallToolResult,
     ContentBlock,
     ErrorCode,
@@ -291,19 +292,15 @@ impl ServerHandler for CodeIntelligenceServer {
             ),
         ];
 
-        Ok(ListToolsResult {
-            tools,
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListToolsResult::with_all_items(tools))
     }
 
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
-        match request.name.as_ref() {
+    ) -> Result<CallToolResponse, ErrorData> {
+        let result = match request.name.as_ref() {
             "workspace_status" => self.detect_workspace_tool(request.arguments).await,
             "initialize_workspace" => self.initialize_tool(request.arguments).await,
             "search_symbols" => self.find_symbols_tool(request.arguments).await,
@@ -315,7 +312,8 @@ impl ServerHandler for CodeIntelligenceServer {
             "rename_symbol" => self.rename_symbol_tool(request.arguments).await,
             "format_code" => self.format_code_tool(request.arguments).await,
             _ => Err(ErrorData::new(ErrorCode::METHOD_NOT_FOUND, "Method not found", None)),
-        }
+        }?;
+        Ok(result.into())
     }
 }
 

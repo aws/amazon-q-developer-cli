@@ -135,12 +135,12 @@ impl ServerHandler for MockMcpServer {
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         let tool_name = request.name.as_ref();
 
         if let Some(response) = find_response(&self.responses, tool_name, &request.arguments) {
             let text = serde_json::to_string_pretty(&response).unwrap_or_default();
-            Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
+            Ok(CallToolResult::success(vec![ContentBlock::text(text)]).into())
         } else {
             Err(ErrorData::new(
                 ErrorCode::METHOD_NOT_FOUND,

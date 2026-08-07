@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP OAuth against Microsoft Entra ID by honoring the server-declared OAuth resource (rmcp 3.0)"
+}

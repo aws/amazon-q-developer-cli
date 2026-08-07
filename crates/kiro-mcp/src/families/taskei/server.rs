@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use rmcp::model::{
     CallToolRequestParams,
-    CallToolResult,
+    CallToolResponse,
     ListToolsResult,
     PaginatedRequestParams,
     ServerCapabilities,
@@ -180,7 +180,7 @@ impl ServerHandler for TaskeiServer {
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         let tool_name = request.name.to_string();
         let args_value: Value = match request.arguments {
             Some(map) => Value::Object(map.into_iter().collect()),
@@ -193,7 +193,7 @@ impl ServerHandler for TaskeiServer {
         // the operator left the list empty.
         self.check_room_id(&args_value)?;
 
-        if taskei_tools::is_read_tool(&tool_name) {
+        let result = if taskei_tools::is_read_tool(&tool_name) {
             let view = self.bridge.read_only();
             mcp_proxy::call_read_tool_remote(&view, &self.endpoint, &self.region, &tool_name, &args_value).await
         } else if taskei_tools::is_write_tool(&tool_name) {
@@ -218,7 +218,8 @@ impl ServerHandler for TaskeiServer {
                 ),
                 None,
             ))
-        }
+        }?;
+        Ok(result.into())
     }
 }
 
