@@ -30,7 +30,7 @@ export type LoadError =
   | {
       kind: 'ArtifactNotFound';
       featureName: string;
-      artifact: ArtifactKind;
+      artifact: string;
       path: string;
     }
   | { kind: 'TooLarge'; path: string; sizeBytes: number }
@@ -43,6 +43,11 @@ export type LoadError =
 
 export type LoadResult =
   | { ok: true; summary: ArtifactSummary }
+  | { ok: false; error: LoadError };
+
+/** The document's own text, for surfaces that show it rather than a summary. */
+export type LoadSourceResult =
+  | { ok: true; source: string; path: string }
   | { ok: false; error: LoadError };
 
 /** Map a Node fs error code to our `ReadFailed.category`. */
@@ -112,21 +117,17 @@ async function readBoundedFile(
  *
  * Never throws — caller branches on the discriminated union result.
  */
-export async function loadArtifactSummary(
+export async function loadArtifactSource(
   workspaceRoot: string,
   featureName: string,
-  artifact: ArtifactKind
-): Promise<LoadResult> {
+  artifact: string
+): Promise<LoadSourceResult> {
   const featureDir = join(specsRoot(workspaceRoot), featureName);
   if (!existsSync(featureDir)) {
     return { ok: false, error: { kind: 'FeatureNotFound', featureName } };
   }
 
-  const artifactPath = resolveArtifactPath(
-    workspaceRoot,
-    featureName,
-    artifact
-  );
+  const artifactPath = join(featureDir, `${artifact}.md`);
 
   let read: Awaited<ReturnType<typeof readBoundedFile>>;
   try {
@@ -170,7 +171,15 @@ export async function loadArtifactSummary(
 
   // Buffer.toString('utf8') substitutes U+FFFD for malformed sequences,
   // satisfying the robustness invariant.
-  const source = read.bytes.toString('utf8');
-  const summary = parseArtifact(artifact, source);
-  return { ok: true, summary };
+  return { ok: true, source: read.bytes.toString('utf8'), path: artifactPath };
+}
+
+export async function loadArtifactSummary(
+  workspaceRoot: string,
+  featureName: string,
+  artifact: ArtifactKind
+): Promise<LoadResult> {
+  const read = await loadArtifactSource(workspaceRoot, featureName, artifact);
+  if (!read.ok) return read;
+  return { ok: true, summary: parseArtifact(artifact, read.source) };
 }

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Spec review screen (`ctrl+X` at phase checkpoints) to read documents, stage line comments, and send revision requests"
+}

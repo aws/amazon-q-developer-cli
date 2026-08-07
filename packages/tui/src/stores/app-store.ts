@@ -361,6 +361,7 @@ import {
 } from '../commands/index.js';
 import { getLocalSlashCommands } from '../commands/command-registry.js';
 import {
+  loadArtifactSource,
   loadArtifactSummary,
   type ArtifactKind,
   type ArtifactSummary,
@@ -398,6 +399,13 @@ import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { findSpecFeature } from '../utils/spec-workspace.js';
 import { runFromAnswer } from '../utils/spec-run-options.js';
 import { composeSpecKickoffPrompt } from '../utils/spec-workspace.js';
+import {
+  anchorFor,
+  navigableStops,
+  nextHeadingLine,
+  nextReviewActionId,
+  type ReviewAction,
+} from '../utils/spec-review/review-actions.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
 import { isUserDeniedReason } from '../constants/tool-failure-reasons.js';
@@ -459,6 +467,40 @@ function expiredCheckpoint<
   T extends { specPhaseCheckpoint: unknown; pendingQuestion: unknown },
 >(state: T): T['specPhaseCheckpoint'] {
   return state.pendingQuestion ? state.specPhaseCheckpoint : null;
+}
+
+type SpecCheckpoint = NonNullable<AppState['specPhaseCheckpoint']>;
+
+/** The review surface and its staged comments, absent a checkpoint or both. */
+function specReviewState(get: () => AppState): {
+  review: SpecCheckpoint['review'];
+  comments: ReviewAction[];
+} {
+  const checkpoint = get().specPhaseCheckpoint;
+  return {
+    review: checkpoint?.review ?? null,
+    comments: checkpoint?.comments ?? [],
+  };
+}
+
+function patchSpecCheckpoint(
+  set: (patch: Partial<AppState>) => void,
+  get: () => AppState,
+  patch: Partial<SpecCheckpoint>
+): void {
+  const checkpoint = get().specPhaseCheckpoint;
+  if (!checkpoint) return;
+  set({ specPhaseCheckpoint: { ...checkpoint, ...patch } });
+}
+
+function patchSpecReview(
+  set: (patch: Partial<AppState>) => void,
+  get: () => AppState,
+  patch: Partial<NonNullable<SpecCheckpoint['review']>>
+): void {
+  const review = get().specPhaseCheckpoint?.review;
+  if (!review) return;
+  patchSpecCheckpoint(set, get, { review: { ...review, ...patch } });
 }
 
 function describeLoadError(err: LoadError): string {
@@ -1881,15 +1923,43 @@ export interface AppState {
    */
   pendingSpecRun: { featureName: string; makeAllRequired: boolean } | null;
   /**
-   * The most recent spec phase checkpoint reported by the agent: the phase
-   * whose document just completed. Cleared when the question it accompanies
-   * resolves.
+   * The most recent spec phase checkpoint reported by the agent: the phase whose
+   * document just completed.
+   *
+   * Everything the review surface owns hangs off this one field — the comments
+   * staged against the document and the surface itself — so the several paths
+   * that retire a checkpoint cannot leave either behind. Comments outliving
+   * their checkpoint would be counted into the next one and sent quoting a
+   * document the agent never wrote.
    */
   specPhaseCheckpoint: {
     featureName: string;
     phase: SpecCheckpointPhase;
     artifactPath: string;
+    /**
+     * Staged against this checkpoint's document. Held outside `review` so
+     * closing the surface keeps them: the user reviews, closes, and sends from
+     * the checkpoint menu.
+     */
+    comments: ReviewAction[];
+    /** The surface, while it is on screen. */
+    review: {
+      lines: string[];
+      cursor: { lineIndex: number; commentId: string | null };
+      composing: { editingId: string | null; draft: string } | null;
+      error: string | null;
+    } | null;
   } | null;
+  openSpecReview: () => Promise<void>;
+  closeSpecReview: () => void;
+  moveSpecReviewCursor: (delta: number) => void;
+  moveSpecReviewCursorToSection: (direction: 1 | -1) => void;
+  moveSpecReviewCursorToComment: (direction: 1 | -1) => void;
+  moveSpecReviewCursorToEdge: (edge: 'start' | 'end') => void;
+  startSpecReviewComment: () => string;
+  cancelSpecReviewComment: () => void;
+  commitSpecReviewComment: (body: string) => void;
+  removeSpecReviewCommentAtCursor: () => void;
   /**
    * Armed by `/spec new <name>`: the next submitted line is the feature
    * description for the spec kickoff prompt, not a chat message. The intro
@@ -4494,6 +4564,8 @@ export const createAppStore = (props: AppStoreProps) => {
                 featureName: event.featureName,
                 phase: event.phase,
                 artifactPath: event.artifactPath,
+                comments: [],
+                review: null,
               },
             });
             break;
@@ -5961,7 +6033,8 @@ export const createAppStore = (props: AppStoreProps) => {
           messages,
           questionQueue: remainingQueue,
           pendingQuestion: remainingQueue[0] ?? null,
-          // The checkpoint marks one question only.
+          // The checkpoint marks one question only; the surface and comments
+          // it carries go with it.
           specPhaseCheckpoint: null,
           ...(queuedRun ? { pendingSpecRun: queuedRun } : {}),
         };
@@ -6045,6 +6118,193 @@ export const createAppStore = (props: AppStoreProps) => {
           autoHideMs: 5000,
         });
       }
+    },
+
+    openSpecReview: async () => {
+      const checkpoint = get().specPhaseCheckpoint;
+      if (!checkpoint) return;
+      const read = await loadArtifactSource(
+        process.cwd(),
+        checkpoint.featureName,
+        checkpoint.phase
+      );
+      set((state) => {
+        // A phase completing during the read replaces the checkpoint. Attaching
+        // this document to it would show one phase's text under another's name,
+        // and any comment would be sent quoting lines the named document lacks.
+        const current = state.specPhaseCheckpoint;
+        if (
+          current?.featureName !== checkpoint.featureName ||
+          current.phase !== checkpoint.phase
+        ) {
+          return {};
+        }
+        return {
+          specPhaseCheckpoint: {
+            ...current,
+            review: {
+              lines: read.ok ? read.source.split('\n') : [],
+              cursor: { lineIndex: 0, commentId: null },
+              composing: null,
+              error: read.ok ? null : describeLoadError(read.error),
+            },
+          },
+        };
+      });
+    },
+
+    closeSpecReview: () => patchSpecCheckpoint(set, get, { review: null }),
+
+    moveSpecReviewCursor: (delta) => {
+      const { review, comments } = specReviewState(get);
+      if (!review || review.lines.length === 0) return;
+      const stops = navigableStops(review.lines.length, comments);
+      const at = stops.findIndex(
+        (stop) =>
+          stop.lineIndex === review.cursor.lineIndex &&
+          stop.commentId === review.cursor.commentId
+      );
+      const next = Math.max(0, Math.min(stops.length - 1, at + delta));
+      patchSpecReview(set, get, { cursor: stops[next]! });
+    },
+
+    moveSpecReviewCursorToSection: (direction) => {
+      const { review } = specReviewState(get);
+      if (!review) return;
+      const line = nextHeadingLine(
+        review.lines,
+        review.cursor.lineIndex,
+        direction
+      );
+      if (line === null) {
+        get().moveSpecReviewCursorToEdge(direction === 1 ? 'end' : 'start');
+        return;
+      }
+      patchSpecReview(set, get, {
+        cursor: { lineIndex: line, commentId: null },
+      });
+    },
+
+    moveSpecReviewCursorToComment: (direction) => {
+      const { review, comments } = specReviewState(get);
+      if (!review) return;
+      const staged = [...comments].sort(
+        (a, b) => a.anchor.range.start - b.anchor.range.start
+      );
+      if (staged.length === 0) return;
+      const at = staged.findIndex(
+        (action) => action.id === review.cursor.commentId
+      );
+      // Off a comment, the nearest one in the direction of travel; on one, its
+      // neighbour, stopping at the ends rather than wrapping.
+      const target =
+        at >= 0
+          ? staged[Math.max(0, Math.min(staged.length - 1, at + direction))]
+          : direction === 1
+            ? (staged.find(
+                (action) => action.anchor.range.start > review.cursor.lineIndex
+              ) ?? staged[staged.length - 1])
+            : ([...staged]
+                .reverse()
+                .find(
+                  (action) =>
+                    action.anchor.range.start < review.cursor.lineIndex
+                ) ?? staged[0]);
+      if (!target) return;
+      patchSpecReview(set, get, {
+        cursor: { lineIndex: target.anchor.range.start, commentId: target.id },
+      });
+    },
+
+    moveSpecReviewCursorToEdge: (edge) => {
+      const { review } = specReviewState(get);
+      if (!review || review.lines.length === 0) return;
+      patchSpecReview(set, get, {
+        cursor: {
+          lineIndex: edge === 'start' ? 0 : review.lines.length - 1,
+          commentId: null,
+        },
+      });
+    },
+
+    startSpecReviewComment: () => {
+      const { review, comments } = specReviewState(get);
+      if (!review || review.error) return '';
+      const editingId = review.cursor.commentId;
+      const editing = editingId
+        ? comments.find((action) => action.id === editingId)
+        : undefined;
+      const draft = editing?.body ?? '';
+      patchSpecReview(set, get, {
+        composing: { editingId: editing?.id ?? null, draft },
+      });
+      return draft;
+    },
+
+    cancelSpecReviewComment: () =>
+      patchSpecReview(set, get, { composing: null }),
+
+    commitSpecReviewComment: (body) => {
+      const { review, comments } = specReviewState(get);
+      if (!review) return;
+      const trimmed = body.trim();
+      const editingId = review.composing?.editingId ?? null;
+      if (!trimmed) {
+        // An emptied comment is a removed one; a blank new one never existed.
+        patchSpecCheckpoint(set, get, {
+          comments: editingId
+            ? comments.filter((action) => action.id !== editingId)
+            : comments,
+          review: {
+            ...review,
+            composing: null,
+            cursor: editingId
+              ? { lineIndex: review.cursor.lineIndex, commentId: null }
+              : review.cursor,
+          },
+        });
+        return;
+      }
+      if (editingId) {
+        patchSpecCheckpoint(set, get, {
+          comments: comments.map((action) =>
+            action.id === editingId ? { ...action, body: trimmed } : action
+          ),
+          review: { ...review, composing: null },
+        });
+        return;
+      }
+      const action: ReviewAction = {
+        kind: 'comment',
+        id: nextReviewActionId(),
+        anchor: anchorFor(review.lines, {
+          start: review.cursor.lineIndex,
+          end: review.cursor.lineIndex,
+        }),
+        body: trimmed,
+      };
+      patchSpecCheckpoint(set, get, {
+        comments: [...comments, action],
+        review: {
+          ...review,
+          composing: null,
+          // Land on the new comment so it can be edited or dropped at once.
+          cursor: { lineIndex: review.cursor.lineIndex, commentId: action.id },
+        },
+      });
+    },
+
+    removeSpecReviewCommentAtCursor: () => {
+      const { review, comments } = specReviewState(get);
+      const commentId = review?.cursor.commentId;
+      if (!review || !commentId) return;
+      patchSpecCheckpoint(set, get, {
+        comments: comments.filter((action) => action.id !== commentId),
+        review: {
+          ...review,
+          cursor: { lineIndex: review.cursor.lineIndex, commentId: null },
+        },
+      });
     },
 
     setPendingSpecDescription: (pending) =>

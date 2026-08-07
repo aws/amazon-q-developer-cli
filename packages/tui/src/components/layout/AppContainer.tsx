@@ -5,6 +5,7 @@ import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
 import { WorkflowMonitorScreen } from './workflow-monitor/index.js';
 import { MonitorApprovalBanner } from './MonitorApprovalBanner.js';
+import { SpecReviewScreen } from './SpecReviewScreen.js';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
@@ -122,6 +123,9 @@ export const AppContainer: React.FC = () => {
   const reverseSearchActive = useAppStore((state) => state.reverseSearchActive);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
   const pendingQuestion = useAppStore((state) => state.pendingQuestion);
+  const specReviewOpen = useAppStore(
+    (state) => state.specPhaseCheckpoint?.review != null
+  );
   const editingQueueIndex = useAppStore((state) => state.editingQueueIndex);
   const editingSteerLineIndex = useAppStore(
     (state) => state.editingSteerLineIndex
@@ -201,6 +205,7 @@ export const AppContainer: React.FC = () => {
       hasCommandInput,
       reverseSearchActive,
       pendingApproval: !!pendingApproval || !!pendingQuestion,
+      specReviewOpen,
       editingQueueIndex: editingQueueIndex ?? null,
       editingSteerLineIndex: editingSteerLineIndex ?? null,
       transientAlertHasAction: !!transientAlert?.action,
@@ -295,7 +300,8 @@ export const AppContainer: React.FC = () => {
           the main session stays visible (and tells you how to answer it) from
           every monitor view. Renders nothing in inline mode. */}
       <MonitorApprovalBanner />
-      {mode === 'inline' && (
+      {specReviewOpen && <SpecReviewScreen />}
+      {!specReviewOpen && mode === 'inline' && (
         <Layout
           ApprovalPrompt={ApprovalPrompt}
           StatusLine={StatusLine}

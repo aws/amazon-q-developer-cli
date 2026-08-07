@@ -686,6 +686,18 @@ export class TestCaseBuilder {
   }
 
   /**
+   * Runs the TUI from `dir`, so a test can exercise workspace-relative paths
+   * (spec documents, for instance) the way a real shell would.
+   *
+   * @param dir - Working directory for the spawned TUI process
+   * @returns This builder for method chaining
+   */
+  withCwd(dir: string): TestCaseBuilder {
+    this.options.cwd = dir;
+    return this;
+  }
+
+  /**
    * Sets extra environment variables for the spawned TUI process.
    *
    * @param env - Key-value pairs to merge into the process environment

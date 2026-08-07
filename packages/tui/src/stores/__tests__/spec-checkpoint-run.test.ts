@@ -42,6 +42,8 @@ function atCheckpoint(
       featureName: 'web-clock',
       phase,
       artifactPath: `/w/.kiro/specs/web-clock/${phase}.md`,
+      comments: [],
+      review: null,
     },
     pendingQuestion: question,
     questionQueue: [question],

@@ -9,8 +9,8 @@ import {
   formatTaskToolBody,
   renderReadToolCall,
   wrapAnsiLine,
-  wrapAtWords,
 } from '../render.js';
+import { wrapAtWords } from '../../utils/text-width.js';
 import {
   setVerboseConfig,
   resetVerboseCache,

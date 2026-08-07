@@ -17,6 +17,7 @@ export interface AppKeypressState {
   hasWorkflow: boolean;
   workflowInputActive: boolean;
   workflowHistoryOpen: boolean;
+  specReviewOpen: boolean;
   activityTrayOpen: boolean;
   promptMenuOpen: boolean;
   isProcessing: boolean;
@@ -90,6 +91,10 @@ export function dispatchAppKeypress(
   bindings: AppKeypressBindings
 ): boolean {
   if (state.workflowHistoryOpen) return true;
+  // The spec review surface covers the screen and owns every key it maps, so
+  // no global shortcut may fire underneath it — a quit here would cancel the
+  // checkpoint turn the surface exists to answer.
+  if (state.specReviewOpen) return true;
   if (state.promptMenuOpen && key.escape) return true;
 
   if (state.mode === 'inline' && state.activityTrayOpen && key.escape) {

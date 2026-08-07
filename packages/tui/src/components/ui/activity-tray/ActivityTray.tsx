@@ -9,6 +9,7 @@ import {
   useActivityTrayInputGateReader,
   useActivityTrayModel,
 } from './useActivityTrayModel.js';
+import { useAppStore } from '../../../stores/app-store.js';
 
 export const ActivityTray = React.memo(function ActivityTray() {
   const {
@@ -37,10 +38,19 @@ export const ActivityTray = React.memo(function ActivityTray() {
     };
   }, [setWorkflowSurfaceOpen, open]);
 
+  const specCheckpointOpen = useAppStore(
+    (s) => s.specPhaseCheckpoint !== null && s.pendingQuestion !== null
+  );
+
   useInput(
     (input, key) => {
       if (!readInputGate().inputEnabled) return;
       if (key.ctrl && input === 'x') {
+        // A spec checkpoint claims ctrl+X to open its document for review. This
+        // yields on the store alone, while the checkpoint also waits for the
+        // question to be on screen — so the key is briefly inert rather than
+        // opening the tray a moment before the review shortcut is advertised.
+        if (specCheckpointOpen) return;
         toggleActivityTray();
       }
     },

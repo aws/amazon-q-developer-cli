@@ -36,6 +36,7 @@ const baseState = (
   hasWorkflow: false,
   workflowInputActive: false,
   workflowHistoryOpen: false,
+  specReviewOpen: false,
   activityTrayOpen: false,
   promptMenuOpen: false,
   isProcessing: false,
@@ -239,6 +240,46 @@ describe('dispatchAppKeypress: cancelStream binding', () => {
 });
 
 // ---- quit (ctrl+c) ----
+
+describe('dispatchAppKeypress: spec review surface', () => {
+  // The surface covers the screen and maps its own keys. A quit reaching the
+  // dispatcher would cancel the very checkpoint turn the surface exists to
+  // answer, and leave the user on a screen whose exits had gone with it.
+  const cases: [string, string, Key][] = [
+    ['quit', 'c', blankKey({ ctrl: true })],
+    ['exit sequence', 'd', blankKey({ ctrl: true })],
+    ['suspend', 'z', blankKey({ ctrl: true })],
+    ['monitor toggle', 'g', blankKey({ ctrl: true })],
+    ['cancel stream', '', blankKey({ escape: true })],
+  ];
+
+  for (const [name, input, key] of cases) {
+    it(`swallows ${name} while the review is open`, () => {
+      const actions = makeActions();
+      const handled = dispatchAppKeypress(
+        input,
+        key,
+        baseState({ specReviewOpen: true, isProcessing: true }),
+        actions,
+        DEFAULT_BINDINGS
+      );
+      expect(handled).toBe(true);
+      expect(actions._calls).toEqual({});
+    });
+  }
+
+  it('leaves the same keys alone once the review closes', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ specReviewOpen: false, isProcessing: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.cancelMessage).toBe(1);
+  });
+});
 
 describe('dispatchAppKeypress: quit binding', () => {
   it('quit while idle on empty input starts the exit sequence', () => {

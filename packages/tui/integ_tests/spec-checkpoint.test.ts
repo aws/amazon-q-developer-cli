@@ -65,8 +65,8 @@ describe('spec phase checkpoint', () => {
     expect(snap).toContain(CONTINUE_OPTION);
     // The free-text row is what turns a typed reply into feedback.
     expect(snap).toContain('or type feedback to request changes');
-    // The marker names the phase, not the whole "complete + view" chip.
-    expect(snap).not.toContain('ctrl+X');
+    // The marker also carries the way in to review the document.
+    expect(snap).toContain('ctrl+X');
     // A lone option has nothing to recommend against.
     expect(snap).not.toContain('(recommended)');
 

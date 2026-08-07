@@ -35,6 +35,12 @@ import {
   useBackendPanelVisibility,
 } from './shared/BackendPanels.js';
 import { SpecCheckpointChip } from '../ui/SpecCheckpointChip.js';
+import {
+  routeCheckpointAnswer,
+  stagedCommentsOption,
+} from '../../utils/spec-review/checkpoint-answer.js';
+import type { UserInputOption } from '@kiro/acp-type-covenant';
+import type { QuestionRequestInfo } from '../../types/agent-events.js';
 import { useBackendPanelHandlers } from './shared/useBackendPanelHandlers.js';
 import type { VariantLayoutProps } from './variant-layout.js';
 
@@ -214,7 +220,8 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     initErrors,
     pendingOAuthServers,
   } = useNotificationState();
-  const { dismissTransientAlert, setAgentError } = useNotificationActions();
+  const { dismissTransientAlert, setAgentError, showTransientAlert } =
+    useNotificationActions();
   const {
     isProcessing,
     isCompacting,
@@ -235,6 +242,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const voiceDownloadConfirm = useAppStore(
     (state) => state.voiceDownloadConfirm
   );
+  const specCheckpoint = useAppStore((state) => state.specPhaseCheckpoint);
   const globalPaused = useAnimationPaused();
   const keybindings = useKeybindings();
   const trustAllToolsAccepted = useAppStore(
@@ -397,6 +405,31 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   const interactionReady = useInteractionReady(
     pendingQuestion ?? pendingApproval
   );
+  const stagedOption = stagedCommentsOption(specCheckpoint);
+
+  const checkpointOptions = (options: UserInputOption[]): UserInputOption[] =>
+    stagedOption ? [{ title: stagedOption }, ...options] : options;
+
+  const answerCheckpoint = (
+    answer: string,
+    answerForAgent: string | undefined,
+    question: QuestionRequestInfo
+  ): boolean => {
+    const route = routeCheckpointAnswer(specCheckpoint, answer);
+    if (route.kind === 'send') {
+      return respondToQuestion(answer, question, route.answerForAgent);
+    }
+    if (route.kind === 'refuse') {
+      showTransientAlert({
+        message: route.message,
+        status: 'warning',
+        autoHideMs: 5000,
+      });
+      return false;
+    }
+    return respondToQuestion(answer, question, answerForAgent);
+  };
+
   const showQuestion = interactionReady ? pendingQuestion : null;
   const showApproval =
     interactionReady && !pendingQuestion ? pendingApproval : null;
@@ -956,9 +989,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               <Question
                 key={`${showQuestion.sessionId}:${showQuestion.toolCallId}`}
                 question={showQuestion.question}
-                options={showQuestion.options}
+                options={checkpointOptions(showQuestion.options)}
                 onAnswer={(answer, answerForAgent) =>
-                  respondToQuestion(answer, showQuestion, answerForAgent)
+                  answerCheckpoint(answer, answerForAgent, showQuestion)
                 }
                 onCancel={() => void cancelMessage()}
                 titlePrefix={

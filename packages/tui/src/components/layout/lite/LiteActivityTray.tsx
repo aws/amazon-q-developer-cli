@@ -6,7 +6,7 @@ import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
-import { wrapAtWords } from '../../../lite/render.js';
+import { wrapAtWords } from '../../../utils/text-width.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import {
   workflowActivitySummary,
