@@ -10,18 +10,18 @@ import { resolveHighlightLanguage } from '../utils/highlight-languages.js';
 import { getAgentDisplayName } from '../utils/agentColors.js';
 import {
   parseMarkdown,
-  parseInlineMarkdown,
   stripInlineMarkdown,
   type MarkdownSegment,
 } from '../utils/markdown.js';
 import {
-  constrainColumnWidths,
-  wrapCellText,
-  padCell,
-  shouldStackTable,
-  formatStackedTable,
-  type Alignment,
-} from '../utils/table-layout.js';
+  buildMarkdownRenderBlocks,
+  needsMarkdownSpacingBefore,
+  renderMarkdownInlineSegment,
+  renderMarkdownInlineText,
+  renderMarkdownTableLines,
+  type InlineMarkdownPainters,
+  type MarkdownRenderBlock,
+} from '../utils/markdown-rendering.js';
 import { UNICODE_GLYPHS, type Glyphs } from '../utils/glyphs.js';
 import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 import {
@@ -778,73 +778,41 @@ export function renderMarkdownToLines(
   glyphs?: Glyphs,
   theme?: RenderTheme
 ): string[] {
-  const segments = parseMarkdown(text);
-  if (segments.length === 0) return [];
-
+  const blocks = buildMarkdownRenderBlocks(parseMarkdown(text));
   const out: string[] = [];
-  let isFirstBlock = true;
-  // Group consecutive plain-text inline segments into a single paragraph so
-  // wrapping operates on the joined text rather than per-segment fragments.
-  let textGroup: MarkdownSegment[] = [];
+  let previous: MarkdownRenderBlock | undefined;
 
-  const flushTextGroup = () => {
-    if (textGroup.length === 0) return;
-    const styled = textGroup
-      .map((seg) => renderInlineSegment(seg, theme))
-      .join('');
-    if (!styled) {
-      textGroup = [];
-      return;
-    }
-    // One logical line per source paragraph; wrapStyled(s, 0, 0) is the
-    // explicit no-wrap path (see COPY-PASTE INVARIANT). restWidth is still
-    // consumed by the structural blocks below.
-    void restWidth;
-    appendBlock(out, isFirstBlock, () => wrapStyled(styled, 0, 0));
-    isFirstBlock = false;
-    textGroup = [];
-  };
-
-  let prev: MarkdownSegment | null = null;
-  for (const seg of segments) {
-    if (
-      seg.codeBlock ||
-      seg.header ||
-      seg.boldHeading ||
-      seg.blockquote ||
-      seg.horizontalRule ||
-      seg.table ||
-      seg.listItem
-    ) {
-      flushTextGroup();
-      const lines = renderBlockSegment(seg, restWidth, glyphs, theme);
-      const skipBlank = prev
-        ? prev.listItem && seg.listItem
-          ? prev.listItem.indent === seg.listItem.indent
-          : !!prev.blockquote && !!seg.blockquote
-        : false;
-      if (!isFirstBlock && !skipBlank) out.push('');
-      out.push(...lines);
-      isFirstBlock = false;
-      prev = seg;
-      continue;
-    }
-    // Inline-ish segment (paragraph text) — accumulate.
-    textGroup.push(seg);
-    prev = seg;
+  for (const block of blocks) {
+    const lines = renderLiteMarkdownBlock(block, restWidth, glyphs, theme);
+    if (lines.length === 0) continue;
+    if (previous && needsMarkdownSpacingBefore(previous, block)) out.push('');
+    out.push(...lines);
+    previous = block;
   }
-  flushTextGroup();
+
   return out;
 }
 
-/** Append a block's lines, with a leading blank when not the first block. */
-function appendBlock(
-  out: string[],
-  isFirstBlock: boolean,
-  produce: () => string[]
-): void {
-  if (!isFirstBlock) out.push('');
-  out.push(...produce());
+function renderLiteMarkdownBlock(
+  block: MarkdownRenderBlock,
+  width: number,
+  glyphs?: Glyphs,
+  theme?: RenderTheme
+): string[] {
+  switch (block.type) {
+    case 'text': {
+      const styled = block.segments
+        .map((segment) => renderInlineSegment(segment, theme))
+        .join('');
+      // Keep one logical line per source paragraph. The terminal owns visual
+      // wrapping so clipboard text does not acquire hard line breaks.
+      return styled ? wrapStyled(styled, 0, 0) : [];
+    }
+    case 'horizontalRule':
+      return renderHorizontalRule(width, glyphs);
+    default:
+      return renderBlockSegment(block.segment, width, glyphs, theme);
+  }
 }
 
 function renderBlockSegment(
@@ -873,12 +841,14 @@ function renderBlockSegment(
     if (!inline) return [prefix];
     return [prefix + styled];
   }
-  if (seg.horizontalRule) {
-    const w = Math.min(40, width || 40);
-    return [chalk.dim(g.lineHorizontal.repeat(Math.max(3, w)))];
-  }
   if (seg.table) return renderMarkdownTable(seg.table, width, glyphs, theme);
   return [];
+}
+
+function renderHorizontalRule(width: number, glyphs?: Glyphs): string[] {
+  const g = resolveGlyphs(glyphs);
+  const ruleWidth = Math.min(40, width || 40);
+  return [chalk.dim(g.lineHorizontal.repeat(Math.max(3, ruleWidth)))];
 }
 
 function renderListItem(
@@ -924,88 +894,11 @@ function renderMarkdownTable(
   glyphs?: Glyphs,
   theme?: RenderTheme
 ): string[] {
-  const headers = table.headers;
-  if (headers.length === 0) return [];
-
-  const measureRendered = (s: string) =>
-    visibleWidth(renderInlineMarkdown(s, theme));
-
-  const colWidths = headers.map((h, ci) => {
-    const headerW = measureRendered(h);
-    const dataW = table.rows.map((r) => measureRendered(r[ci] || ''));
-    return Math.max(headerW, ...dataW, 3);
-  });
-
-  if (shouldStackTable(colWidths, termWidth)) {
-    return formatStackedTable(
-      headers,
-      table.rows,
-      (s) => renderInlineMarkdown(s, theme),
-      chalk.bold
-    );
-  }
-
-  if (termWidth > 0) constrainColumnWidths(colWidths, termWidth);
-
-  // Active glyph set (Unicode box-drawing / ASCII fallbacks). teeLeft=┤,
-  // teeRight=├ (modern TUI's semantics), mapped through directly.
-  const g = resolveGlyphs(glyphs);
-  const cornerTL = g.cornerTopLeft;
-  const cornerTR = g.cornerTopRight;
-  const cornerBL = g.cornerBottomLeft;
-  const cornerBR = g.cornerBottomRight;
-  const lineH = g.lineHorizontal;
-  const lineV = g.lineVertical;
-  const teeT = g.teeTop;
-  const teeB = g.teeBottom;
-  const teeL = g.teeLeft;
-  const teeR = g.teeRight;
-  const cross = g.tableCross;
-
-  const border = (left: string, mid: string, right: string, fill: string) =>
-    left + colWidths.map((w) => fill.repeat(w + 2)).join(mid) + right;
-
-  const renderRow = (rawCells: string[], bold?: boolean): string[] => {
-    const styledCells = rawCells.map((c) => {
-      let s = renderInlineMarkdown(c, theme);
-      if (bold && s) s = chalk.bold(s);
-      return s;
-    });
-    const wrapped = styledCells.map((c, ci) =>
-      wrapCellText(c, colWidths[ci]!, visibleWidth)
-    );
-    const maxLines = Math.max(1, ...wrapped.map((w) => w.length));
-    const lines: string[] = [];
-    for (let li = 0; li < maxLines; li++) {
-      const cells = colWidths.map((_, ci) => {
-        const styled = wrapped[ci]?.[li] ?? '';
-        return padCell(
-          styled,
-          colWidths[ci]!,
-          (table.alignments[ci] || 'left') as Alignment,
-          visibleWidth
-        );
-      });
-      const joined = cells.join(` ${chalk.dim(lineV)} `);
-      lines.push(`${chalk.dim(lineV)} ${joined} ${chalk.dim(lineV)}`);
-    }
-    return lines;
-  };
-
-  const out: string[] = [];
-  out.push(chalk.dim(border(cornerTL, teeT, cornerTR, lineH)));
-  out.push(...renderRow(headers, true));
-  if (table.rows.length > 0) {
-    out.push(chalk.dim(border(teeR, cross, teeL, lineH)));
-    for (let ri = 0; ri < table.rows.length; ri++) {
-      out.push(...renderRow(table.rows[ri] ?? []));
-      if (ri < table.rows.length - 1) {
-        out.push(chalk.dim(border(teeR, cross, teeL, lineH)));
-      }
-    }
-  }
-  out.push(chalk.dim(border(cornerBL, teeB, cornerBR, lineH)));
-  return out;
+  return renderMarkdownTableLines(table, {
+    termWidth,
+    glyphs: resolveGlyphs(glyphs),
+    renderInline: (s) => renderInlineMarkdown(s, theme),
+  }).lines;
 }
 
 /**
@@ -1018,30 +911,7 @@ function renderInlineSegment(
   theme?: RenderTheme
 ): string {
   const t = resolveTheme(theme);
-  if (seg.children && seg.children.length > 0) {
-    const inner = seg.children
-      .map((child) => renderInlineSegment(child, t))
-      .join('');
-    if (seg.bold) return chalk.bold(inner);
-    if (seg.italic) return chalk.italic(inner);
-    if (seg.strikethrough) return chalk.strikethrough(inner);
-    if (seg.link) {
-      // Underline applied separately from theme color so links stay distinct
-      // on themes whose link slot matches prose (lite uses underline+color,
-      // not OSC8, so it works in every terminal).
-      const labeled = chalk.underline(t.link(inner));
-      // Drop the `(url)` trailer when the label already equals the URL.
-      const stripped = stripAnsiQuick(inner);
-      if (stripped === seg.link.url) return labeled;
-      return labeled + t.secondary(` (${seg.link.url})`);
-    }
-    return inner;
-  }
-  if (seg.quote) return t.inlineCode(seg.text);
-  if (seg.bold) return chalk.bold(seg.text);
-  if (seg.italic) return chalk.italic(seg.text);
-  if (seg.strikethrough) return chalk.strikethrough(seg.text);
-  return seg.text;
+  return renderMarkdownInlineSegment(seg, liteInlinePainters(t));
 }
 
 /**
@@ -1051,9 +921,22 @@ function renderInlineSegment(
  */
 function renderInlineMarkdown(s: string, theme?: RenderTheme): string {
   if (!s) return '';
-  const segs = parseInlineMarkdown(s);
   const t = resolveTheme(theme);
-  return segs.map((seg) => renderInlineSegment(seg, t)).join('');
+  return renderMarkdownInlineText(s, liteInlinePainters(t));
+}
+
+function liteInlinePainters(t: RenderTheme): InlineMarkdownPainters {
+  return {
+    text: (text) => text,
+    inlineCode: t.inlineCode,
+    bold: chalk.bold,
+    italic: chalk.italic,
+    strikethrough: chalk.strikethrough,
+    link: (text, url, isBareUrl) => {
+      const labeled = chalk.underline(t.link(text));
+      return isBareUrl ? labeled : labeled + t.secondary(` (${url})`);
+    },
+  };
 }
 export interface ToolCallRenderInfo {
   name: string;

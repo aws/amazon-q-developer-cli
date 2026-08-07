@@ -168,6 +168,17 @@ describe('table stacking', () => {
       '**Description**: print dir',
     ]);
   });
+
+  it('keeps headers visible when a narrow table has no data rows', () => {
+    expect(
+      formatStackedTable(
+        ['Command', 'Description'],
+        [],
+        (s) => `_${s}_`,
+        (s) => `**${s}**`
+      )
+    ).toEqual(['**_Command_**', '**_Description_**']);
+  });
 });
 
 describe('padCell', () => {

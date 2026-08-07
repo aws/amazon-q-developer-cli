@@ -34,6 +34,12 @@ export function formatStackedTable(
   renderInline: (s: string) => string,
   styleLabel: (s: string) => string
 ): string[] {
+  if (rows.length === 0) {
+    return headers
+      .filter(Boolean)
+      .map((header) => styleLabel(renderInline(header)));
+  }
+
   const out: string[] = [];
   for (const row of rows) {
     const rowLines: string[] = [];

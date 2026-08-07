@@ -3,10 +3,16 @@ import { Box } from '../../renderer.js';
 import { useSyntaxHighlight } from '../../utils/syntax-highlight.js';
 import {
   parseMarkdown,
-  parseInlineMarkdown,
   tryAppendMarkdownDelta,
   type MarkdownSegment,
 } from '../../utils/markdown.js';
+import {
+  buildMarkdownRenderBlocks,
+  needsMarkdownSpacingBefore,
+  renderMarkdownInlineSegment,
+  renderMarkdownInlineText,
+  renderMarkdownTableLines,
+} from '../../utils/markdown-rendering.js';
 import { expandTabs } from '../../utils/string.js';
 import { Text } from './text/Text.js';
 import type { TextProps } from '../../renderer.js';
@@ -15,16 +21,7 @@ import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { hyperlink } from '../../utils/terminal-capabilities.js';
 import { chalk } from '../../utils/color.js';
-import { visibleWidth } from '../../utils/text-width.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
-import {
-  constrainColumnWidths,
-  wrapCellText,
-  padCell,
-  shouldStackTable,
-  formatStackedTable,
-  type Alignment,
-} from '../../utils/table-layout.js';
 
 interface MarkdownRendererProps {
   content: string;
@@ -37,15 +34,6 @@ interface MarkdownRendererProps {
    */
   useOverflow?: boolean;
 }
-
-type RenderBlock =
-  | { type: 'text'; segments: MarkdownSegment[] }
-  | { type: 'code'; segment: MarkdownSegment }
-  | { type: 'header'; segment: MarkdownSegment }
-  | { type: 'listItem'; segment: MarkdownSegment }
-  | { type: 'blockquote'; segment: MarkdownSegment }
-  | { type: 'horizontalRule' }
-  | { type: 'table'; segment: MarkdownSegment };
 
 export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   content,
@@ -110,108 +98,41 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
     return parsed;
   }, [content]);
 
-  const styleSegment = (seg: MarkdownSegment): string => {
-    const cached = styledSegmentCacheRef.current.get(seg);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    // Resolve inner content: recurse into children or use leaf text with color
-    const inner = seg.children
-      ? seg.children.map((child) => styleSegment(child)).join('')
-      : color(seg.text);
-
-    let styled: string;
-    if (seg.quote) {
-      styled = inlineCodeColor(seg.children ? inner : seg.text);
-      styledSegmentCacheRef.current.set(seg, styled);
-      return styled;
-    }
-    if (seg.link) {
-      const linkText = hyperlink(seg.link.url, linkColor(inner));
-      // For bare URLs (text === url), the parenthesized URL is redundant.
-      // For markdown links, show the URL wrapped in OSC 8 so it stays
-      // clickable even when it wraps across terminal lines.
-      const isBareUrl = !seg.children && seg.text === seg.link.url;
-      styled = isBareUrl
+  const inlinePainters = {
+    text: color,
+    inlineCode: inlineCodeColor,
+    bold: chalk.bold,
+    italic: chalk.italic,
+    strikethrough: chalk.strikethrough,
+    link: (text: string, url: string, isBareUrl: boolean) => {
+      const linkText = hyperlink(url, linkColor(text));
+      return isBareUrl
         ? linkText
-        : linkText +
-          secondaryColor(` (${hyperlink(seg.link.url, seg.link.url)})`);
-      styledSegmentCacheRef.current.set(seg, styled);
-      return styled;
-    }
-    styled = inner;
-    if (seg.bold) styled = chalk.bold(styled);
-    if (seg.italic) styled = chalk.italic(styled);
-    if (seg.strikethrough) styled = chalk.strikethrough(styled);
-
-    styledSegmentCacheRef.current.set(seg, styled);
-    return styled;
+        : linkText + secondaryColor(` (${hyperlink(url, url)})`);
+    },
   };
+
+  const styleSegment = (seg: MarkdownSegment): string =>
+    renderMarkdownInlineSegment(
+      seg,
+      inlinePainters,
+      styledSegmentCacheRef.current
+    );
 
   const renderInlineText = (text: string): string => {
-    return parseInlineMarkdown(text)
-      .map((seg) => styleSegment(seg))
-      .join('');
+    return renderMarkdownInlineText(text, inlinePainters);
   };
 
-  const blocks = React.useMemo(() => {
-    const computedBlocks: RenderBlock[] = [];
-    let currentTextGroup: MarkdownSegment[] = [];
-
-    const flushTextGroup = () => {
-      if (currentTextGroup.length > 0) {
-        computedBlocks.push({ type: 'text', segments: currentTextGroup });
-        currentTextGroup = [];
-      }
-    };
-
-    segments.forEach((segment) => {
-      if (segment.codeBlock) {
-        flushTextGroup();
-        computedBlocks.push({ type: 'code', segment });
-      } else if (segment.header || segment.boldHeading) {
-        flushTextGroup();
-        computedBlocks.push({ type: 'header', segment });
-      } else if (segment.listItem) {
-        flushTextGroup();
-        computedBlocks.push({ type: 'listItem', segment });
-      } else if (segment.blockquote) {
-        flushTextGroup();
-        computedBlocks.push({ type: 'blockquote', segment });
-      } else if (segment.horizontalRule) {
-        flushTextGroup();
-        computedBlocks.push({ type: 'horizontalRule' });
-      } else if (segment.table) {
-        flushTextGroup();
-        computedBlocks.push({ type: 'table', segment });
-      } else {
-        currentTextGroup.push(segment);
-      }
-    });
-    flushTextGroup();
-
-    return computedBlocks;
-  }, [segments]);
-
-  const needsSpacingBefore = (
-    prev: RenderBlock,
-    curr: RenderBlock
-  ): boolean => {
-    if (prev.type === 'listItem' && curr.type === 'listItem') {
-      const prevIndent = prev.segment.listItem!.indent;
-      const currIndent = curr.segment.listItem!.indent;
-      // Add spacing when de-indenting (e.g. sub-item → new top-level item)
-      return currIndent < prevIndent;
-    }
-    if (prev.type === 'blockquote' && curr.type === 'blockquote') return false;
-    return true;
-  };
+  const blocks = React.useMemo(
+    () => buildMarkdownRenderBlocks(segments),
+    [segments]
+  );
 
   return (
     <Box flexDirection="column">
       {blocks.map((block, i) => {
-        const mt = i > 0 && needsSpacingBefore(blocks[i - 1]!, block) ? 1 : 0;
+        const mt =
+          i > 0 && needsMarkdownSpacingBefore(blocks[i - 1]!, block) ? 1 : 0;
 
         if (block.type === 'code') {
           const code = expandTabs(block.segment.codeBlock!.code);
@@ -268,138 +189,19 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         }
 
         if (block.type === 'table') {
-          const { headers, rows, alignments } = block.segment.table!;
-          const measureRendered = (s: string) =>
-            visibleWidth(renderInlineText(s));
-
-          // Measure natural widths based on rendered text (markdown stripped)
-          const colWidths = headers.map((h, ci) => {
-            const headerWidth = measureRendered(h);
-            const dataWidths = rows.map((r) => measureRendered(r[ci] || ''));
-            return Math.max(headerWidth, ...dataWidths, 3);
+          const table = renderMarkdownTableLines(block.segment.table!, {
+            termWidth,
+            glyphs,
+            renderInline: renderInlineText,
           });
-
-          if (shouldStackTable(colWidths, termWidth)) {
-            const lines = formatStackedTable(
-              headers,
-              rows,
-              renderInlineText,
-              chalk.bold
-            );
-            return (
-              <Box key={i} flexDirection="column" marginTop={mt}>
-                {lines.map((line, li) => (
-                  <Text key={li} wrap={wrapMode}>
-                    {line}
-                  </Text>
-                ))}
-              </Box>
-            );
-          }
-
-          constrainColumnWidths(colWidths, termWidth);
-
-          const border = (
-            left: string,
-            mid: string,
-            right: string,
-            fill: string
-          ) =>
-            left + colWidths.map((w) => fill.repeat(w + 2)).join(mid) + right;
-
-          // Render inline markdown first, then wrap styled text, then pad
-          const renderWrappedRow = (rawCells: string[], bold?: boolean) => {
-            const styledCells = rawCells.map((c) => {
-              let s = renderInlineText(c);
-              if (bold && s) s = chalk.bold(s);
-              return s;
-            });
-            const wrapped = styledCells.map((c, ci) =>
-              wrapCellText(c, colWidths[ci]!, visibleWidth)
-            );
-            const maxLines = Math.max(...wrapped.map((w) => w.length));
-            const lines: string[] = [];
-            for (let li = 0; li < maxLines; li++) {
-              const line = rawCells
-                .map((_, ci) => {
-                  const styled = wrapped[ci]?.[li] || '';
-                  return padCell(
-                    styled,
-                    colWidths[ci]!,
-                    (alignments[ci] || 'left') as Alignment,
-                    visibleWidth
-                  );
-                })
-                .join(` ${chalk.dim(glyphs.lineVertical)} `);
-              lines.push(
-                `${chalk.dim(glyphs.lineVertical)} ${line} ${chalk.dim(glyphs.lineVertical)}`
-              );
-            }
-            return lines;
-          };
-
-          const headerLines = renderWrappedRow(headers, true);
-          const rowSeparator =
-            rows.length > 0
-              ? chalk.dim(
-                  border(
-                    glyphs.teeRight,
-                    glyphs.tableCross,
-                    glyphs.teeLeft,
-                    glyphs.lineHorizontal
-                  )
-                )
-              : undefined;
 
           return (
             <Box key={i} flexDirection="column" marginTop={mt}>
-              <Text>
-                {chalk.dim(
-                  border(
-                    glyphs.cornerTopLeft,
-                    glyphs.teeTop,
-                    glyphs.cornerTopRight,
-                    glyphs.lineHorizontal
-                  )
-                )}
-              </Text>
-              {headerLines.map((line, li) => (
-                <Text key={`h${li}`}>{line}</Text>
+              {table.lines.map((line, li) => (
+                <Text key={li} wrap={table.stacked ? wrapMode : undefined}>
+                  {line}
+                </Text>
               ))}
-              {rowSeparator && <Text>{rowSeparator}</Text>}
-              {rows.map((row, ri) => {
-                const lines = renderWrappedRow(row);
-                const isLast = ri === rows.length - 1;
-                return (
-                  <React.Fragment key={ri}>
-                    {lines.map((line, li) => (
-                      <Text key={`${ri}-${li}`}>{line}</Text>
-                    ))}
-                    {!isLast && (
-                      <Text>
-                        {chalk.dim(
-                          border(
-                            glyphs.teeRight,
-                            glyphs.tableCross,
-                            glyphs.teeLeft,
-                            glyphs.lineHorizontal
-                          )
-                        )}
-                      </Text>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-              <Text>
-                {chalk.dim(
-                  border(
-                    glyphs.cornerBottomLeft,
-                    glyphs.teeBottom,
-                    glyphs.cornerBottomRight,
-                    glyphs.lineHorizontal
-                  )
-                )}
-              </Text>
             </Box>
           );
         }
