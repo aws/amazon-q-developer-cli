@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Reasoning is now replayed in conversation history when using the Auto model, enabling thinking with Auto (the server validates reasoning continuity across model switches)"
+}

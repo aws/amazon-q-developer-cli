@@ -251,16 +251,20 @@ impl RtsModel {
     /// a turn with interleaved thinking can emit multiple sealed thinking blocks (the
     /// agent loop accumulates them in stream order — see `agent/agent_loop/mod.rs`).
     /// We forward the most recent one: the reasoning that led to the turn's final output.
-    /// Hence reverse iteration below. Returns `None` if the current model is "Auto", if
-    /// there are no valid thinking blocks, or if the thinking block's model_id doesn't
-    /// match the current model.
+    /// Hence reverse iteration below. Returns `None` if there are no valid thinking
+    /// blocks, or if the thinking block's model_id doesn't match the current model.
+    ///
+    /// "Auto" is treated like any other model id: thinking blocks are tagged with the
+    /// client-configured model id (see `StreamParseState::new`), so under Auto the tag is
+    /// "Auto" and the equality gate below passes. Whether the backend actually resolved
+    /// Auto to a different model between turns is decided server-side via the Turn
+    /// Reconstruction envelope carried in `signature`/`redacted_content` (the server
+    /// strips reasoning when the resolved model changed), so the client no longer needs
+    /// to defensively strip all reasoning under Auto.
     fn filter_reasoning_for_history(
         content: &[ContentBlock],
         current_model_id: &Option<String>,
     ) -> Option<rts::ReasoningContentForHistory> {
-        if current_model_id.as_deref() == Some("Auto") {
-            return None;
-        }
         // Iterate in reverse so the first match `find_map` returns is the LAST thinking
         // block in stream order — i.e. the last sealed reasoning block.
         content.iter().rev().find_map(|c| {
@@ -1465,8 +1469,11 @@ mod tests {
         assert!(result.is_none());
     }
 
+    /// Under Auto, a thinking block tagged with a concrete model id is still stripped by
+    /// the model-equality gate ("claude-opus-4.7" != "Auto"). Such blocks can only come
+    /// from a session where the user switched from a concrete model to Auto.
     #[test]
-    fn test_filter_reasoning_auto_model_always_strips() {
+    fn test_filter_reasoning_auto_model_strips_concrete_tagged_block() {
         use agent::agent_loop::types::ThinkingBlock;
         let content = vec![ContentBlock::Thinking(ThinkingBlock {
             text: "reasoning".into(),
@@ -1477,6 +1484,26 @@ mod tests {
         let current = Some("Auto".to_string());
         let result = RtsModel::filter_reasoning_for_history(&content, &current);
         assert!(result.is_none());
+    }
+
+    /// Thinking blocks produced while Auto is selected are tagged "Auto" (the
+    /// client-configured model id — see `StreamParseState::new`), so they are forwarded
+    /// when Auto is still the current model. The server-side Turn Reconstruction
+    /// envelope decides whether the resolved model changed between turns.
+    #[test]
+    fn test_filter_reasoning_auto_tagged_block_forwarded_under_auto() {
+        use agent::agent_loop::types::ThinkingBlock;
+        let content = vec![ContentBlock::Thinking(ThinkingBlock {
+            text: "reasoning".into(),
+            signature: Some("sig".into()),
+            redacted_content: vec![],
+            model_id: Some("Auto".into()),
+        })];
+        let current = Some("Auto".to_string());
+        let result = RtsModel::filter_reasoning_for_history(&content, &current)
+            .expect("Auto-tagged reasoning should be forwarded under Auto");
+        assert_eq!(result.signature.as_deref(), Some("sig"));
+        assert_eq!(result.model_id.as_deref(), Some("Auto"));
     }
 
     #[test]
