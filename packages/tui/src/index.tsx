@@ -421,8 +421,7 @@ const wireUpHandlers = () => {
     appStore.getState().handleCompactionEvent(event);
   });
 
-  kiro.onTurnSummary((event) => {
-    appStore.getState().handleTurnSummaryEvent(event);
+  kiro.onTurnSummary(() => {
     // Refresh terminal title once after the first turn completes per session —
     // the backend writes the session title to disk from the first user prompt,
     // so by turn end it's guaranteed to be available.

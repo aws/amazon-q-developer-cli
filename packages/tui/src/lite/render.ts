@@ -3507,6 +3507,9 @@ export function renderMessageToText(
     }
 
     case 'system':
+      if (msg.kind === 'turn-usage') {
+        return chalk.dim(`  ${msg.content}`);
+      }
       return msg.success !== false
         ? renderSystemInfo(msg.content)
         : renderSystemError(msg.content);

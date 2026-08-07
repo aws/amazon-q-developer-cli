@@ -73,6 +73,99 @@ describe('/goal command', () => {
     await testCase.expectExit();
   }, 45000);
 
+  for (const surface of [
+    { name: 'full TUI', lite: false },
+    { name: 'Lite TUI', lite: true },
+  ]) {
+    it(`shows each iteration's usage once and in order on ${surface.name}`, async () => {
+      let builder = E2ETestCase.builder()
+        .withTerminal({ width: 120, height: 50 })
+        .withTestName(`goal-iteration-usage-${surface.lite ? 'lite' : 'full'}`);
+      if (surface.lite) builder = builder.withLite();
+      testCase = await builder.launch();
+
+      await testCase.waitForText('ask a question', 10000);
+      await testCase.sendKeys('/goal inspect credits --max 3');
+      await testCase.pressEnter();
+      await testCase.waitForText('Goal:', 10000);
+
+      const iterations = [
+        {
+          response: 'First iteration finished.',
+          credits: '0.47',
+          nextBoundary: 'Goal iteration 2/3',
+        },
+        {
+          response: 'Second iteration finished.',
+          credits: '0.25',
+          nextBoundary: 'Goal iteration 3/3',
+        },
+        {
+          response: 'Final iteration finished.',
+          credits: '0.99',
+          nextBoundary: null,
+        },
+      ] as const;
+
+      for (const iteration of iterations) {
+        await testCase.pushSendMessageResponse([
+          {
+            kind: 'event',
+            data: {
+              kind: 'AssistantResponseEvent',
+              data: { content: iteration.response },
+            },
+          },
+          {
+            kind: 'event',
+            data: {
+              kind: 'MeteringEvent',
+              data: {
+                usage: Number(iteration.credits),
+                unit: 'credit',
+                unit_plural: 'credits',
+              },
+            },
+          },
+        ]);
+        await testCase.pushSendMessageResponse(null);
+
+        const usage = `Credits: ${iteration.credits}`;
+        await testCase.waitForText(usage, 15000);
+        if (iteration.nextBoundary) {
+          await testCase.waitForText(iteration.nextBoundary, 15000);
+          expect((await testCase.getStore()).isProcessing).toBe(true);
+        } else {
+          await testCase.waitForIdle(15000);
+        }
+
+        const screen = testCase.getSnapshot().join('\n');
+        const responseAt = screen.indexOf(iteration.response);
+        const usageAt = screen.indexOf(usage);
+        expect(responseAt).toBeGreaterThanOrEqual(0);
+        expect(usageAt).toBeGreaterThan(responseAt);
+        expect(
+          screen.split('\n').find((line) => line.includes(usage))
+        ).toContain('Time:');
+        if (iteration.nextBoundary) {
+          expect(screen.indexOf(iteration.nextBoundary)).toBeGreaterThan(
+            usageAt
+          );
+        }
+      }
+
+      const finalScreen = testCase.getSnapshot().join('\n');
+      expect(finalScreen.match(/Credits: /g)).toHaveLength(3);
+      for (const iteration of iterations) {
+        expect(
+          finalScreen.match(
+            new RegExp(`Credits: ${iteration.credits.replace('.', '\\.')}`, 'g')
+          )
+        ).toHaveLength(1);
+      }
+    }, 60000);
+  }
+
   it('allows /goal clear during agent processing', async () => {
     testCase = await E2ETestCase.builder()
       .withTerminal({ width: 120, height: 40 })

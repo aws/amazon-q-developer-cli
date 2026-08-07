@@ -498,6 +498,41 @@ function emptySummaryFor(artifact: ArtifactKind): ArtifactSummary {
   }
 }
 
+function formatTurnSummaryText(
+  event: Extract<AgentStreamEvent, { type: AgentEventType.TurnSummary }>
+): string | null {
+  const totals = new Map<string, { value: number; label: string }>();
+  for (const usage of event.meteringUsage) {
+    const existing = totals.get(usage.unitPlural);
+    if (existing) {
+      existing.value += usage.value;
+    } else {
+      totals.set(usage.unitPlural, {
+        value: usage.value,
+        label:
+          usage.unitPlural.charAt(0).toUpperCase() + usage.unitPlural.slice(1),
+      });
+    }
+  }
+
+  const parts = Array.from(totals.values(), ({ value, label }) => {
+    const truncated = Math.floor(value * 100) / 100;
+    return `${label}: ${truncated.toFixed(2)}`;
+  });
+  if (event.turnDurationMs != null) {
+    const seconds = Math.floor(event.turnDurationMs / 1000);
+    parts.push(
+      `Time: ${
+        seconds < 60
+          ? `${seconds}s`
+          : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+      }`
+    );
+  }
+
+  return parts.length > 0 ? parts.join(' • ') : null;
+}
+
 // ── End spec artifact view helpers ─────────────────────────
 
 /**
@@ -601,7 +636,7 @@ export type MessageType =
       /** True for status rows emitted while a user turn is in flight. */
       turnOwned?: boolean;
       /** Structured workflow rows support durable styling and turn ownership. */
-      kind?: 'workflow-lifecycle' | 'workflow-completion';
+      kind?: 'workflow-lifecycle' | 'workflow-completion' | 'turn-usage';
       workflowId?: string;
       workflowTurnId?: string;
       workflowName?: string;
@@ -1193,7 +1228,6 @@ interface BaseAppActions {
   ) => void;
   setPreviousAgentName: (name: string | null) => void;
   handleCompactionEvent: (event: AgentStreamEvent) => Promise<void>;
-  handleTurnSummaryEvent: (event: AgentStreamEvent) => void;
 
   // Chat actions
   clearMessages: () => void;
@@ -1992,7 +2026,6 @@ export interface AppState {
    * more than once. Anything that must act exactly per turn watches this instead.
    */
   turnsCompleted: number;
-  turnSummaries: Map<string, string>; // turnId (user message id) → formatted summary text
 
   // Usage panel state
   showUsagePanel: boolean;
@@ -2953,7 +2986,6 @@ export const createAppStore = (props: AppStoreProps) => {
     displaySnapshotBySession: new Map(),
     lastTurnTokens: null,
     turnsCompleted: 0,
-    turnSummaries: new Map(),
     showContextBreakdown: false,
     contextBreakdown: null,
     contextBreakdownCache: null,
@@ -4804,9 +4836,51 @@ export const createAppStore = (props: AppStoreProps) => {
             });
             break;
           }
-          case AgentEventType.TurnSummary:
-            // Handled by global handleTurnSummaryEvent, not here
+          case AgentEventType.TurnSummary: {
+            if (pendingContentFlush) {
+              clearTimeout(pendingContentFlush);
+              pendingContentFlush = null;
+            }
+            if (
+              streamingMsgId == null &&
+              (bufferedContent || bufferedThinking)
+            ) {
+              flushContentToStore();
+            }
+            commitBufferedContent();
+            bufferedContent = '';
+            bufferedThinking = '';
+            lastContentEventId = null;
+            thinkingStart = null;
+            thinkingMs = null;
+
+            const text = formatTurnSummaryText(event);
+            if (text) {
+              set((state) => {
+                if (
+                  !state.messages.some(
+                    (message) => message.role === MessageRole.User
+                  )
+                ) {
+                  return {};
+                }
+                return {
+                  messages: [
+                    ...state.messages,
+                    {
+                      id: generateMessageId(),
+                      role: MessageRole.System,
+                      content: text,
+                      success: true,
+                      turnOwned: true,
+                      kind: 'turn-usage',
+                    },
+                  ],
+                };
+              });
+            }
             break;
+          }
           case AgentEventType.TurnStart:
             turnOpen = true;
             observerTurnBlocked = false;
@@ -5633,51 +5707,6 @@ export const createAppStore = (props: AppStoreProps) => {
         }
         if (shouldDrainQueue) await get().processQueue();
       }
-    },
-
-    handleTurnSummaryEvent: (event) => {
-      if (event.type !== AgentEventType.TurnSummary) return;
-      // Aggregate by unit (e.g. multiple "credits" entries → single total)
-      const totals = new Map<string, { value: number; label: string }>();
-      for (const u of event.meteringUsage) {
-        const key = u.unitPlural;
-        const existing = totals.get(key);
-        if (existing) {
-          existing.value += u.value;
-        } else {
-          totals.set(key, {
-            value: u.value,
-            label: key.charAt(0).toUpperCase() + key.slice(1),
-          });
-        }
-      }
-      const parts: string[] = [];
-      for (const { value, label } of totals.values()) {
-        parts.push(`${label}: ${(Math.floor(value * 100) / 100).toFixed(2)}`);
-      }
-      if (event.turnDurationMs != null) {
-        const s = Math.floor(event.turnDurationMs / 1000);
-        parts.push(
-          `Time: ${s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`}`
-        );
-      }
-      if (parts.length === 0) return;
-      const text = `${parts.join(' • ')}`;
-      // Find the last User message ID as the turn key
-      const msgs = get().messages;
-      let turnId: string | undefined;
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i]!.role === MessageRole.User) {
-          turnId = msgs[i]!.id;
-          break;
-        }
-      }
-      if (!turnId) return;
-      set((state) => {
-        const m = new Map(state.turnSummaries);
-        m.set(turnId, text);
-        return { turnSummaries: m };
-      });
     },
 
     respondToApproval: (

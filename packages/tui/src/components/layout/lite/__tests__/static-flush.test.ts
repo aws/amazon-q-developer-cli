@@ -2,7 +2,6 @@ import { describe, test, expect } from 'vitest';
 import {
   computeActiveToolBatchIds,
   firstUnfinishedToolIndex,
-  formatTurnSummaryRow,
   isInnerSubagentTool,
   needsLeadingBlank,
   selectStaticEligible,
@@ -364,9 +363,9 @@ describe('inner subagent filtering', () => {
 //   3. Blank between the last tool call and the agent's text response.
 //   4. System rows behave like conversational rows (blank on both sides)
 //      except system→system, which stays compact.
-//   5. Blank BEFORE the credits/time trailer (formatTurnSummaryRow).
+//   5. Blank BEFORE the credits/time row (the shared row is a System message).
 // A failure means the rule regressed — adjust needsLeadingBlank /
-// formatTurnSummaryRow, not the table.
+// renderMessageToText, not the table.
 describe('needsLeadingBlank — section-boundary rules', () => {
   function system(id: string): MessageType {
     return { id, role: MessageRole.System, content: 's', success: true };
@@ -396,14 +395,5 @@ describe('needsLeadingBlank — section-boundary rules', () => {
     expect(needsLeadingBlank(make[prev]!('p'), make[next]!('n'))).toBe(
       expected
     );
-  });
-
-  test('rule 5: trailer text starts with a blank line', () => {
-    // formatTurnSummaryRow guarantees the leading blank — even if the
-    // upstream renderer changes its color/indent. Locks the rule against
-    // future tweaks to the trailer's appearance.
-    const out = formatTurnSummaryRow('  Credits: 0.05 · Time: 3s');
-    expect(out.startsWith('\n')).toBe(true);
-    expect(out).toBe('\n  Credits: 0.05 · Time: 3s');
   });
 });

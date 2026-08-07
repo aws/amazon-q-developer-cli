@@ -32,7 +32,6 @@ import { LiteLiveRegion } from './LiteLiveRegion.js';
 import { LiteSubagentPanel } from './LiteSubagentPanel.js';
 import {
   computeActiveToolBatchIds,
-  formatTurnSummaryRow,
   needsLeadingBlank,
   selectStaticEligible,
 } from './static-flush.js';
@@ -173,7 +172,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // Shift+Tab toggles plan mode (shared with InlineLayout).
   usePlanModeToggle(!pendingQuestion);
   const contextUsagePercent = useAppStore((s) => s.contextUsagePercent);
-  const turnSummaries = useAppStore((s) => s.turnSummaries);
   const queuedMessages = useAppStore((s) => s.queuedMessages);
   const editingQueueIndex = useAppStore((s) => s.editingQueueIndex);
   const pendingSteerContent = useAppStore((s) => s.pendingSteerContent);
@@ -670,10 +668,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const emittedSubagentSummaryKeysByParentRef = useRef<
     Map<string, Set<string>>
   >(new Map());
-  // Turn-summary trailers already committed — never re-emit.
-  const committedTurnSummariesRef = useRef<Set<string>>(new Set());
-  // User id opening the in-flight (or last) turn; its trailer flushes here.
-  const openTurnUserIdRef = useRef<string | null>(null);
   // Last appended eligible msg — the next delta computes its leading blank
   // against this without re-walking the full eligible list.
   const lastAppendedEligibleMsgRef = useRef<MessageType | null>(null);
@@ -709,8 +703,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     lastFlushedEligibleCountRef.current = 0;
     pushedStaticIdsRef.current = new Set();
     emittedSubagentSummaryKeysByParentRef.current = new Map();
-    committedTurnSummariesRef.current = new Set();
-    openTurnUserIdRef.current = null;
     lastAppendedEligibleMsgRef.current = null;
     // Two-armed gate for the swap-with-content anchor banner. User-arm:
     // tui→lite + /chat <id> load (messages carries prior chat).
@@ -852,7 +844,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       });
       lastFlushedEligibleCountRef.current = eligible.length;
     }
-    // Hot-path bypass: nothing new to flush AND no trailer ready — skip the
+    // Hot-path bypass: nothing new to flush — skip the
     // renderCtx / subagent walk / theme build (most spinner re-renders land here).
     const haveNewEligible =
       eligible.length > lastFlushedEligibleCountRef.current;
@@ -867,17 +859,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     );
     const havePendingSubagentSummaryAppendix =
       pendingSubagentSummaryEntries.length > 0;
-    const openTurnId = openTurnUserIdRef.current;
-    const havePendingTrailerForOpenTurn =
-      !isProcessing &&
-      openTurnId != null &&
-      turnSummaries.has(openTurnId) &&
-      !committedTurnSummariesRef.current.has(openTurnId);
-    if (
-      !haveNewEligible &&
-      !havePendingTrailerForOpenTurn &&
-      !havePendingSubagentSummaryAppendix
-    ) {
+    if (!haveNewEligible && !havePendingSubagentSummaryAppendix) {
       return items;
     }
 
@@ -918,24 +900,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       isStatic: true,
     };
 
-    /**
-     * Emit the trailer for `userId` if its summary is available and we
-     * haven't already pushed it. Trailer placement is locked at FIRST
-     * emission — re-rendering the items array would race twinki's
-     * monotonic cursor and re-emit the trailer at a different index.
-     */
-    const commitTrailer = (userId: string) => {
-      if (committedTurnSummariesRef.current.has(userId)) return;
-      const summary = turnSummaries.get(userId);
-      if (!summary) return;
-      committedTurnSummariesRef.current.add(userId);
-      const summaryId = `${userId}__summary`;
-      items.push({
-        id: summaryId,
-        text: formatTurnSummaryRow(chalk.dim(`  ${summary}`)),
-      });
-    };
-
     // Walk only the delta — eligible messages that haven't been appended
     // yet. The prior segment is already in `items` and must not change.
     const start = lastFlushedEligibleCountRef.current;
@@ -946,15 +910,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       // pushedStaticIdsRef): a Model row flipping eligible after a later row
       // was flushed would otherwise re-push that row forever.
       if (pushedStaticIdsRef.current.has(msg.id)) continue;
-      // Trailer flush rule (1): a User OR System row closes the open turn —
-      // push its trailer BEFORE this boundary row (System included so /verbose
-      // status announcements don't shove the trailer into a later turn).
-      if (
-        openTurnUserIdRef.current &&
-        (msg.role === MessageRole.User || msg.role === MessageRole.System)
-      ) {
-        commitTrailer(openTurnUserIdRef.current);
-      }
       const prefix =
         prevMsg !== null && needsLeadingBlank(prevMsg, msg) ? '\n' : '';
       const text =
@@ -978,24 +933,9 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         );
       }
       prevMsg = msg;
-      // A new User message opens a new turn; remember its id so we know
-      // which trailer to flush at the next User/System or at turn end.
-      if (msg.role === MessageRole.User) {
-        openTurnUserIdRef.current = msg.id;
-      }
     }
     lastFlushedEligibleCountRef.current = eligible.length;
     lastAppendedEligibleMsgRef.current = prevMsg;
-
-    // Trailer flush rule (2): the turn is fully settled (`!isProcessing`)
-    // and its summary is available — emit the trailer at the tail.
-    if (
-      !isProcessing &&
-      openTurnUserIdRef.current &&
-      turnSummaries.has(openTurnUserIdRef.current)
-    ) {
-      commitTrailer(openTurnUserIdRef.current);
-    }
 
     for (const appendix of renderPendingSubagentSummaryAppendices(
       pendingSubagentSummaryEntries,
@@ -1017,7 +957,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   }, [
     messages,
     isProcessing,
-    turnSummaries,
     agentName,
     activeToolBatchIds,
     pendingApproval,

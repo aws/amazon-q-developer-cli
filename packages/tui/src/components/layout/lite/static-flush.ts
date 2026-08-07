@@ -159,13 +159,3 @@ export function needsLeadingBlank(
 ): boolean {
   return needsLeadingBlankByRole(prev.role, next.role);
 }
-
-/**
- * Format the per-turn credits/time trailer row with its leading blank baked
- * in (rule 5: blank BEFORE the trailer). Pure helper — `rendered` is already
- * styled by the caller; the leading '\n' is safe because the turn's User
- * message always precedes the trailer.
- */
-export function formatTurnSummaryRow(rendered: string): string {
-  return '\n' + rendered;
-}

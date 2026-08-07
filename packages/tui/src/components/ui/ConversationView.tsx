@@ -92,6 +92,14 @@ const SystemMessage = React.memo(function SystemMessage({
     );
   }
 
+  if (message.kind === 'turn-usage') {
+    return (
+      <Box marginTop={1}>
+        <TurnUsageSummary text={message.content} />
+      </Box>
+    );
+  }
+
   return (
     <Box marginY={1}>
       <StatusBar status={message.success ? 'success' : 'error'}>
@@ -215,7 +223,6 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   mainAgentName,
   onReadyToFlush,
   prevFlushedRole,
-  turnId,
   questionPanelVisible,
 }: {
   tailMessages: StoreMessageType[];
@@ -223,13 +230,11 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
   mainAgentName: string | undefined;
   onReadyToFlush?: () => void;
   prevFlushedRole?: MessageRole;
-  turnId: string;
   questionPanelVisible?: boolean;
 }) {
   const { isProcessing } = useConversationState();
   const { height: termHeight } = useTerminalSize();
   const { thinkingMode } = useThinkingMode();
-  const summaryText = useAppStore((s) => s.turnSummaries.get(turnId));
   // Live streaming content lives in its own slot (post-E1). The placeholder
   // Model row in `tailMessages` has empty content while streaming; the live
   // text is in `streamingContent` and the row that owns it is identified by
@@ -420,11 +425,6 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
         );
       })}
       {showThinking && <ThinkingMessage barColor={agentBarColor} showTip />}
-      {!isProcessing && summaryText && (
-        <Box marginTop={1}>
-          <TurnUsageSummary text={summaryText} />
-        </Box>
-      )}
     </HideToolArgsContext.Provider>
   );
 });
@@ -436,9 +436,6 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
   turn: ConversationTurn;
 }) {
   const { getColor } = useTheme();
-  const summaryText = useAppStore((s) =>
-    s.turnSummaries.get(turn.userMessage.id)
-  );
   const agentName =
     'agentName' in turn.userMessage ? turn.userMessage.agentName : undefined;
   const agentBarColor = agentName
@@ -493,11 +490,6 @@ const StaticTurnCard = React.memo(function StaticTurnCard({
             </InkText>
           </StatusBar>
         )}
-        {summaryText && (
-          <Box marginTop={1}>
-            <TurnUsageSummary text={summaryText} />
-          </Box>
-        )}
       </Card>
     </Box>
   );
@@ -526,8 +518,7 @@ type StaticItem =
       mainAgentName: string | undefined;
       isLast: boolean;
       prevRole?: MessageRole;
-    }
-  | { type: 'summary'; id: string; text: string };
+    };
 
 // These must also be module-level so that <Static> items, emitted IDs, and
 // per-turn flush tracking survive the unmount/remount cycle that happens when
@@ -644,12 +635,6 @@ export const ConversationView = React.memo(function ConversationView({
   const { messages, isProcessing, settings } = useConversationState();
   const { getColor } = useTheme();
   const { adjustStaticCursor } = useTwinkiContext();
-  // Subscribe to the full turnSummaries Map. This intentionally uses a broad
-  // selector (not a focused .get(id)) because the summary for a completed turn
-  // arrives asynchronously after the turn ends. We need the Map update to
-  // trigger a re-render so the append logic runs. Low-impact: entries are added
-  // only when a turn completes (~once per 10-60s).
-  const turnSummaries = useAppStore((s) => s.turnSummaries);
 
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
@@ -1040,15 +1025,6 @@ export const ConversationView = React.memo(function ConversationView({
         mainAgentName: agentName,
       });
       tailMsgs.forEach((msg) => flushedIds.add(msg.id));
-      // Append turn summary so it survives the transition to <Static>
-      const summaryText = turnSummaries.get(turn.userMessage.id);
-      if (summaryText) {
-        appendStatic({
-          type: 'summary',
-          id: `${turn.userMessage.id}__summary`,
-          text: summaryText,
-        });
-      }
     }
   };
 
@@ -1199,14 +1175,6 @@ export const ConversationView = React.memo(function ConversationView({
                 </Box>
               );
             }
-            if (item.type === 'summary') {
-              return (
-                <Box key={item.id} flexDirection="column">
-                  <InkText> </InkText>
-                  <TurnUsageSummary text={item.text} />
-                </Box>
-              );
-            }
             return null;
           }}
         </Static>
@@ -1226,7 +1194,6 @@ export const ConversationView = React.memo(function ConversationView({
                 mainAgentName={activeAgentName}
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
-                turnId={activeTurn.userMessage.id}
                 questionPanelVisible={questionPanelVisible}
               />
             </Box>
@@ -1240,7 +1207,6 @@ export const ConversationView = React.memo(function ConversationView({
                 mainAgentName={activeAgentName}
                 onReadyToFlush={handleReadyToFlush}
                 prevFlushedRole={prevFlushedRole}
-                turnId={activeTurn.userMessage.id}
                 questionPanelVisible={questionPanelVisible}
               />
             </Card>

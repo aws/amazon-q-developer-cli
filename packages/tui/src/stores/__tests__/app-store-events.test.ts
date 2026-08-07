@@ -1932,13 +1932,20 @@ describe('handleCompactionEvent', () => {
   });
 });
 
-describe('handleTurnSummaryEvent', () => {
-  it('aggregates metering usage and stores summary', () => {
+describe('TurnSummary events', () => {
+  it('retains each goal iteration summary when later metadata arrives', () => {
     const store = makeStore();
     store.setState({
-      messages: [{ id: 'u1', role: MessageRole.User, content: 'hi' }],
+      messages: [{ id: 'u1', role: MessageRole.User, content: '/goal test' }],
     });
-    store.getState().handleTurnSummaryEvent({
+    const handler = store.getState().createStreamEventHandler();
+
+    handler({
+      type: AgentEventType.Content,
+      id: 'response-1',
+      content: { type: ContentType.Text, text: 'First response' },
+    });
+    handler({
       type: AgentEventType.TurnSummary,
       meteringUsage: [
         { unitPlural: 'credits', value: 1.5 },
@@ -1946,9 +1953,46 @@ describe('handleTurnSummaryEvent', () => {
       ],
       turnDurationMs: 5000,
     });
-    const summaries = store.getState().turnSummaries;
-    expect(summaries.get('u1')).toContain('Credits: 2.00');
-    expect(summaries.get('u1')).toContain('Time: 5s');
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'goal-iter-1',
+      name: 'Goal iteration 2/2',
+      kind: 'other',
+      args: {},
+    });
+    handler({
+      type: AgentEventType.Content,
+      id: 'response-2',
+      content: { type: ContentType.Text, text: 'Second response' },
+    });
+    handler({
+      type: AgentEventType.TurnSummary,
+      meteringUsage: [{ unitPlural: 'credits', value: 0.25 }],
+      turnDurationMs: 9000,
+    });
+
+    expect(
+      store.getState().messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        kind: 'kind' in message ? message.kind : undefined,
+      }))
+    ).toEqual([
+      { role: MessageRole.User, content: '/goal test', kind: undefined },
+      { role: MessageRole.Model, content: 'First response', kind: undefined },
+      {
+        role: MessageRole.System,
+        content: 'Credits: 2.00 • Time: 5s',
+        kind: 'turn-usage',
+      },
+      { role: MessageRole.ToolUse, content: '{}', kind: 'other' },
+      { role: MessageRole.Model, content: 'Second response', kind: undefined },
+      {
+        role: MessageRole.System,
+        content: 'Credits: 0.25 • Time: 9s',
+        kind: 'turn-usage',
+      },
+    ]);
   });
 
   it('formats time as minutes when >= 60s', () => {
@@ -1956,23 +2000,22 @@ describe('handleTurnSummaryEvent', () => {
     store.setState({
       messages: [{ id: 'u2', role: MessageRole.User, content: 'hi' }],
     });
-    store.getState().handleTurnSummaryEvent({
+    store.getState().createStreamEventHandler()({
       type: AgentEventType.TurnSummary,
       meteringUsage: [{ unitPlural: 'credits', value: 3.0 }],
       turnDurationMs: 125000,
     });
-    const summaries = store.getState().turnSummaries;
-    expect(summaries.get('u2')).toContain('2m 5s');
+    expect(store.getState().messages.at(-1)?.content).toContain('2m 5s');
   });
 
   it('does nothing when no user message exists', () => {
     const store = makeStore();
     store.setState({ messages: [] });
-    store.getState().handleTurnSummaryEvent({
+    store.getState().createStreamEventHandler()({
       type: AgentEventType.TurnSummary,
       meteringUsage: [{ unitPlural: 'credits', value: 1 }],
     });
-    expect(store.getState().turnSummaries.size).toBe(0);
+    expect(store.getState().messages).toEqual([]);
   });
 });
 
