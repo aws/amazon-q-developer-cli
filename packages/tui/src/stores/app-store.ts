@@ -432,8 +432,6 @@ import {
 import { submitFormToAperture } from '../utils/survey-submit.js';
 import {
   SESSION_FEEDBACK_SURVEY,
-  PLAN_QUALITY_SURVEY,
-  IMPLEMENT_PLAN_SURVEY,
   type SurveyDefinition,
 } from '../constants/survey.js';
 
@@ -1701,10 +1699,6 @@ interface BaseAppActions {
   submitSurvey: (answers: Record<string, string>) => void;
   /** User dismissed the notification bar without opening the panel. */
   dismissSurveyPrompt: () => void;
-  /** Trigger the plan-quality survey (called on plan mode exit / handoff). */
-  triggerPlanSurvey: () => void;
-  /** Trigger the implement-plan survey (called after all plan tasks complete). */
-  triggerImplementPlanSurvey: () => void;
 }
 
 export const AppStoreContext = createContext<AppStoreApi | null>(null);
@@ -2407,8 +2401,6 @@ export interface AppState {
   showSurveyPanel: boolean;
   /** Which survey is currently active (shown in the panel). */
   activeSurvey: SurveyDefinition | null;
-  /** Whether the plan-quality survey was shown this session (gates implement-plan). */
-  planSurveyShownThisSession: boolean;
   /** Active survey prompt bar (null = hidden). Separate from transientAlert. */
   surveyPrompt: { message: string; survey: SurveyDefinition } | null;
 
@@ -3217,7 +3209,6 @@ export const createAppStore = (props: AppStoreProps) => {
     completedTurnCount: 0,
     showSurveyPanel: false,
     activeSurvey: null,
-    planSurveyShownThisSession: false,
     surveyPrompt: null,
 
     sendMessage: async (
@@ -5610,16 +5601,6 @@ export const createAppStore = (props: AppStoreProps) => {
           status: 'info',
           autoHideMs: 3000,
         });
-      }
-
-      // Trigger plan quality survey when switching away from planner
-      // (the handoff moment — plan was presented and user approved it).
-      if (
-        prevAgent?.name === 'kiro_planner' &&
-        agent?.name &&
-        agent.name !== 'kiro_planner'
-      ) {
-        queueMicrotask(() => get().triggerPlanSurvey());
       }
 
       // Welcome banner rides on the agent-switch payload from its single owner:
@@ -8411,22 +8392,7 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     setTasks: (tasks: TaskItem[]) => {
-      const prevTasks = get().tasks;
       set({ tasks });
-
-      // Trigger implement-plan survey when all tasks are done.
-      // Detection: either all tasks have status 'completed', OR tasks were
-      // cleared (set to empty) after previously having pending items — the
-      // agent removes tasks from the list once they're done.
-      const hadPending =
-        prevTasks.length > 0 && prevTasks.some((t) => t.status !== 'completed');
-      const allDone =
-        (tasks.length > 0 && tasks.every((t) => t.status === 'completed')) ||
-        (tasks.length === 0 && prevTasks.length > 0);
-
-      if (allDone && hadPending) {
-        queueMicrotask(() => get().triggerImplementPlanSurvey());
-      }
     },
 
     toggleActivityTray: () => {
@@ -8576,18 +8542,8 @@ export const createAppStore = (props: AppStoreProps) => {
     submitSurvey: (answers) => {
       const survey = get().activeSurvey ?? SESSION_FEEDBACK_SURVEY;
 
-      // Cooldown semantics:
-      //   - session-feedback uses its own 30-day cooldown (independent).
-      //   - plan-quality and implement-plan share a 90-day cooldown with each
-      //     other (they are a pair: implement is gated on plan having shown).
       if (survey.id === SESSION_FEEDBACK_SURVEY.id) {
         markSurveyCompleted(SESSION_FEEDBACK_SURVEY.id);
-      } else if (
-        survey.id === PLAN_QUALITY_SURVEY.id ||
-        survey.id === IMPLEMENT_PLAN_SURVEY.id
-      ) {
-        markSurveyCompleted(PLAN_QUALITY_SURVEY.id);
-        markSurveyCompleted(IMPLEMENT_PLAN_SURVEY.id);
       }
       // unknown survey id is a noop — sharing is opt-in per id
 
@@ -8596,16 +8552,9 @@ export const createAppStore = (props: AppStoreProps) => {
         answerCount: Object.keys(answers).length,
       });
 
-      // Track plan survey shown for gating implement-plan survey.
-      const planShown =
-        survey.id === PLAN_QUALITY_SURVEY.id
-          ? true
-          : get().planSurveyShownThisSession;
-
       set((s) => ({
         showSurveyPanel: false,
         activeSurvey: null,
-        planSurveyShownThisSession: planShown,
         surveyState: {
           ...s.surveyState,
           lastShownAt: Date.now(),
@@ -8643,23 +8592,12 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     dismissSurveyPrompt: () => {
-      // Cooldown semantics:
-      //   - session-feedback uses its own 30-day cooldown (independent).
-      //   - plan-quality and implement-plan share a 90-day cooldown with each
-      //     other.
       const dismissed =
         get().surveyPrompt?.survey ?? get().activeSurvey ?? null;
-      // Stray invocation with no active survey: noop. Do not re-couple
-      // session-feedback to the plan/implement pair by marking everything.
+      // Stray invocation with no active survey: noop.
       if (!dismissed) return;
       if (dismissed.id === SESSION_FEEDBACK_SURVEY.id) {
         markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
-      } else if (
-        dismissed.id === PLAN_QUALITY_SURVEY.id ||
-        dismissed.id === IMPLEMENT_PLAN_SURVEY.id
-      ) {
-        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-        markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
       }
       // unknown survey id is a noop — sharing is opt-in per id
 
@@ -8673,50 +8611,6 @@ export const createAppStore = (props: AppStoreProps) => {
           dismissCount: s.surveyState.dismissCount + 1,
         },
       }));
-    },
-
-    triggerPlanSurvey: () => {
-      const state = get();
-      if (state.showSurveyPanel || state.surveyPrompt || state.transientAlert)
-        return;
-
-      // Resolve eligibility for plan survey (10% sampling, 30-day cooldown)
-      const planState = loadSurveyState(PLAN_QUALITY_SURVEY.id);
-      const { eligible, state: resolved } = resolveEligibility(
-        PLAN_QUALITY_SURVEY,
-        planState
-      );
-      if (!eligible || !shouldShowSurvey(PLAN_QUALITY_SURVEY, resolved)) return;
-
-      markSurveyShown(PLAN_QUALITY_SURVEY.id);
-      set({
-        planSurveyShownThisSession: true,
-        surveyPrompt: {
-          message: PLAN_QUALITY_SURVEY.notificationMessage,
-          survey: PLAN_QUALITY_SURVEY,
-        },
-      });
-    },
-
-    triggerImplementPlanSurvey: () => {
-      const state = get();
-      // Only shown if the plan-quality survey was shown this session.
-      if (!state.planSurveyShownThisSession) return;
-      if (state.showSurveyPanel) return;
-
-      // If the plan survey prompt is still showing (user never responded),
-      // replace it with the more relevant implementation survey.
-      if (state.surveyPrompt?.survey.id === PLAN_QUALITY_SURVEY.id) {
-        markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-      }
-
-      markSurveyShown(IMPLEMENT_PLAN_SURVEY.id);
-      set({
-        surveyPrompt: {
-          message: IMPLEMENT_PLAN_SURVEY.notificationMessage,
-          survey: IMPLEMENT_PLAN_SURVEY,
-        },
-      });
     },
 
     dispatchSlashCommand: async (execCmd: string, recordAs?: string) => {
@@ -8900,7 +8794,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
       // Clear all UI state before processing any input
       const hadSurveyPrompt = !!state.surveyPrompt;
-      const dismissedSurveyId = state.surveyPrompt?.survey.id ?? null;
       set({
         activeCommand: null,
         showContextBreakdown: false,
@@ -8919,25 +8812,7 @@ export const createAppStore = (props: AppStoreProps) => {
       // If the survey prompt was showing and the user chose to type instead
       // of accepting it, count that as a dismissal toward the cooldown.
       if (hadSurveyPrompt) {
-        // Cooldown semantics:
-        //   - session-feedback uses its own 30-day cooldown (independent).
-        //   - plan-quality and implement-plan share a 90-day cooldown with
-        //     each other.
-        if (dismissedSurveyId === SESSION_FEEDBACK_SURVEY.id) {
-          markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
-        } else if (
-          dismissedSurveyId === PLAN_QUALITY_SURVEY.id ||
-          dismissedSurveyId === IMPLEMENT_PLAN_SURVEY.id
-        ) {
-          markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-          markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
-        } else {
-          // Defensive fallback for unknown survey ids; current code paths
-          // only set surveyPrompt with known ids.
-          markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
-          markSurveyDismissed(PLAN_QUALITY_SURVEY.id);
-          markSurveyDismissed(IMPLEMENT_PLAN_SURVEY.id);
-        }
+        markSurveyDismissed(SESSION_FEEDBACK_SURVEY.id);
         set((s) => ({
           surveyState: {
             ...s.surveyState,

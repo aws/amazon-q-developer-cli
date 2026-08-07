@@ -5,12 +5,7 @@ import {
   submitFormToAperture,
   type SurveyMetadata,
 } from './survey-submit.js';
-import {
-  SESSION_FEEDBACK_SURVEY,
-  PLAN_QUALITY_SURVEY,
-  IMPLEMENT_PLAN_SURVEY,
-  validateEmail,
-} from '../constants/survey.js';
+import { SESSION_FEEDBACK_SURVEY, validateEmail } from '../constants/survey.js';
 
 describe('validateEmail', () => {
   test('accepts typical addresses', () => {
@@ -103,65 +98,6 @@ describe('buildSurveyPayload: SessionFeedback', () => {
   });
 });
 
-describe('buildSurveyPayload: Plan', () => {
-  test('produces correct Aperture coordinates', () => {
-    const payload = buildSurveyPayload(PLAN_QUALITY_SURVEY, {
-      plan_quality: 'Very well',
-    });
-    expect(payload.category).toBe('KiroCLI');
-    expect(payload.name).toBe('Plan');
-    expect(payload.version).toBe('1.0.0');
-  });
-
-  test('has 2 questions', () => {
-    const payload = buildSurveyPayload(PLAN_QUALITY_SURVEY, {
-      plan_quality: 'Very well',
-    });
-    expect(payload.customerResponses).toHaveLength(2);
-  });
-
-  test('Q1: rating with correct question text', () => {
-    const payload = buildSurveyPayload(PLAN_QUALITY_SURVEY, {
-      plan_quality: 'Extremely well',
-    });
-    const r = payload.customerResponses[0]!;
-    expect(r.question).toBe('/plan');
-    expect(r.response.responseType).toBe('rating');
-    expect(r.response.responseValue).toEqual(['5']);
-    expect(r.response.rowLabels).toBeDefined();
-    expect(r.response.columnLabels).toBeDefined();
-  });
-});
-
-describe('buildSurveyPayload: ImplementPlan', () => {
-  test('produces correct Aperture coordinates', () => {
-    const payload = buildSurveyPayload(IMPLEMENT_PLAN_SURVEY, {
-      implementation_quality: 'Good',
-    });
-    expect(payload.category).toBe('KiroCLI');
-    expect(payload.name).toBe('ImplementPlan');
-    expect(payload.version).toBe('1.0.0');
-  });
-
-  test('has 3 questions', () => {
-    const payload = buildSurveyPayload(IMPLEMENT_PLAN_SURVEY, {
-      implementation_quality: 'Good',
-    });
-    expect(payload.customerResponses).toHaveLength(3);
-  });
-
-  test('Q3: email with pii', () => {
-    const payload = buildSurveyPayload(IMPLEMENT_PLAN_SURVEY, {
-      implementation_quality: 'Good',
-      email: 'a@b.com',
-    });
-    const r = payload.customerResponses[2]!;
-    expect(r.pii).toBe(true);
-    expect(r.response.responseType).toBe('text');
-    expect(r.response.responseValue).toBe('a@b.com');
-  });
-});
-
 describe('submitFormToAperture', () => {
   let originalFetch: typeof fetch;
 
@@ -191,15 +127,17 @@ describe('submitFormToAperture', () => {
       return new Response('{}', { status: 200 });
     }) as unknown as typeof fetch;
 
-    await submitFormToAperture(PLAN_QUALITY_SURVEY, {
-      plan_quality: 'Very well',
-      feedback: 'Nice plan',
+    await submitFormToAperture(SESSION_FEEDBACK_SURVEY, {
+      experience: 'Excellent',
+      feedback: 'Nice session',
     });
 
     const parsed = JSON.parse(capturedBody!);
-    expect(parsed.name).toBe('Plan');
-    expect(parsed.customerResponses[0].question).toBe('/plan');
-    expect(parsed.customerResponses[0].response.responseValue).toEqual(['4']);
+    expect(parsed.name).toBe('SessionFeedback');
+    expect(parsed.customerResponses[0].question).toBe(
+      'Experience with Kiro CLI'
+    );
+    expect(parsed.customerResponses[0].response.responseValue).toEqual(['5']);
   });
 
   test('surfaces 429 as rateLimited', async () => {

@@ -16,7 +16,7 @@ import {
 } from './survey-state.js';
 import {
   SESSION_FEEDBACK_SURVEY,
-  PLAN_QUALITY_SURVEY,
+  type SurveyDefinition,
 } from '../constants/survey.js';
 
 describe('survey-state', () => {
@@ -68,21 +68,23 @@ describe('survey-state', () => {
   });
 
   test('multiple surveys are stored independently', () => {
-    saveSurveyState('session-feedback', {
+    // Arbitrary survey ids — this pins the persistence layer (distinct ids
+    // don't clobber each other), independent of which surveys exist.
+    saveSurveyState('survey-a', {
       eligible: true,
       lastShownAt: 100,
       lastCompletedAt: null,
       dismissCount: 0,
     });
-    saveSurveyState('plan-quality', {
+    saveSurveyState('survey-b', {
       eligible: false,
       lastShownAt: 200,
       lastCompletedAt: null,
       dismissCount: 1,
     });
-    expect(loadSurveyState('session-feedback').eligible).toBe(true);
-    expect(loadSurveyState('plan-quality').eligible).toBe(false);
-    expect(loadSurveyState('plan-quality').dismissCount).toBe(1);
+    expect(loadSurveyState('survey-a').eligible).toBe(true);
+    expect(loadSurveyState('survey-b').eligible).toBe(false);
+    expect(loadSurveyState('survey-b').dismissCount).toBe(1);
   });
 
   test('resolveEligibility returns cached value once set', () => {
@@ -104,11 +106,17 @@ describe('survey-state', () => {
   });
 
   test('resolveEligibility uses survey-specific sample rate', () => {
-    // PLAN_QUALITY_SURVEY has 10% rate
+    // A global env override applies a custom rate regardless of the
+    // definition's own sampleRate.
+    const custom: SurveyDefinition = {
+      ...SESSION_FEEDBACK_SURVEY,
+      id: 'rate-test',
+      sampleRate: 0.9,
+    };
     process.env.KIRO_SURVEY_SAMPLE_RATE = '0.1';
     const hit = resolveEligibility(
-      PLAN_QUALITY_SURVEY,
-      loadSurveyState('plan-quality'),
+      custom,
+      loadSurveyState('rate-test'),
       () => 0.05
     );
     expect(hit.eligible).toBe(true);
@@ -223,14 +231,14 @@ describe('survey-state', () => {
   });
 
   test('markSurveyCompleted updates both timestamps', () => {
-    saveSurveyState('plan-quality', {
+    saveSurveyState('survey-a', {
       eligible: true,
       lastShownAt: null,
       lastCompletedAt: null,
       dismissCount: 0,
     });
-    markSurveyCompleted('plan-quality', 42);
-    const state = loadSurveyState('plan-quality');
+    markSurveyCompleted('survey-a', 42);
+    const state = loadSurveyState('survey-a');
     expect(state.lastShownAt).toBe(42);
     expect(state.lastCompletedAt).toBe(42);
   });
