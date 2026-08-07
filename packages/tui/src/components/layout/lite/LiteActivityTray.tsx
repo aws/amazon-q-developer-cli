@@ -5,7 +5,7 @@ import { Box, Text } from '../../../renderer.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
-import { getVerboseDisplay } from '../../../lite/verbose.js';
+import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
 import { wrapAtWords } from '../../../lite/render.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import {
@@ -54,7 +54,7 @@ export const LiteActivityTray = React.memo(function LiteActivityTray({
   const { allowIcons } = useAllowIcons();
   const { getColor } = useTheme();
 
-  const showTasks = getVerboseDisplay().showTasks;
+  const { showTasks } = useVerboseDisplay();
   const visibleTasks = showTasks ? tasks : [];
   const liveWorkflows = useMemo(
     () =>
