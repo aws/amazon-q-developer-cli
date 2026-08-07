@@ -10,9 +10,9 @@
     "segment": "all"
   },
   "remote_sandbox": {
-    "description": "Remote/cloud sandbox sessions (--cloud/--repo flags). Ramped to 100% for all internal users on every channel; external users stay dark. Widen segment here for the external ramp stage.",
+    "description": "Remote/cloud sandbox sessions (--cloud/--repo flags). Ramped to 100% for all users on every channel. Dial treatment_percent to 0 to kill-switch (re-darkens the flags in the next release).",
     "treatment_percent": 100,
-    "segment": "internal"
+    "segment": "all"
   },
   "voice": {
     "description": "Voice input mode - all internal users",

@@ -1,11 +1,13 @@
 # Cloud-sandbox test coverage map
 
-Dark-shipped feature: cloud sessions are enabled ONLY for internal users
-(any channel; rollout.rs `remote_sandbox`) or under `KIRO_TEST_MODE=1`.
-External builds must show zero cloud UX — that guarantee is pinned by
+Cloud sessions are ramped to ALL users on every channel (rollout.rs
+`remote_sandbox`, 100%) or force-enabled under `KIRO_TEST_MODE=1`. At 100%
+the gate needs no bucketing id, so telemetry-disabled users (no client id)
+are enabled too. The rollout entry stays wired as the kill-switch:
+`treatment_percent: 0` re-darkens the feature — that boundary is pinned by
 `crates/chat-cli/tests/cloud_sessions_gating.rs` and `rollout.rs` unit
-tests. Everything below tests the feature AS the eligible (internal or
-test-mode) user sees it, plus the dark-ship boundary.
+tests. Everything below tests the feature AS every user sees it, plus the
+kill-switch boundary.
 
 Sources: Pippin "Kiro Next - CLI Bugs" doc (bugs #1–#35 + UX list), the
 basic user stories, merged fixes (#3552 #3599 #3651 #3652 #3653 #3656 #3657
@@ -45,15 +47,16 @@ Tiers:
 | Opt-in: same env without --cloud stays local                                                     | e2e              | cloud-sessions.test.ts t7                                   |
 | /autonomous on/off: picker + [current] tag, verified mode switch (#3653 CLI; KAS 0.27.8 relay)   | e2e + smoke      | cloud-autonomous.test.ts; smoke "autonomous"; KR S15        |
 
-## Dark-ship boundary (release safety)
+## Kill-switch boundary (release safety)
 
 | Guarantee                                                             | Tier                         | Where                                                            |
 | --------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------- |
-| `remote_sandbox` enabled ONLY for internal users (any channel)        | unit (rust)                  | rollout.rs test_remote_sandbox_enabled_for_all_internal_any_channel |
-| Released `--list-sessions`: zero cloud UX even w/ stray env           | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
-| Released: injected cloud/remote-control KAS rows hidden (fail-closed) | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
-| Released JSON listing carries no cloud members                        | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
-| Released: `--cloud`/`--repo` rejected as unknown args                 | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
+| `remote_sandbox` enabled for ALL users (any segment, any channel)     | unit (rust)                  | rollout.rs test_remote_sandbox_enabled_for_all_users_any_channel |
+| 100% ramp needs no client id; partial ramp fails closed without one   | unit (rust)                  | rollout.rs full-ramp / partial-ramp client-id tests              |
+| No-cohort user on release binary: live listing tags + cloud rows      | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
+| No-cohort JSON listing carries cloud rows with their members          | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
+| No-cohort user on release binary: `--cloud`/`--repo` flags live       | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
+| Cohort user on release binary: flags live, cloud rows listed          | rust-integ (release profile) | cloud_sessions_gating.rs                                         |
 | Malformed executionTarget fails CLOSED (hidden)                       | unit (rust)                  | persist.rs kas_tests                                             |
 | Release-binary injected-row spot check                                | smoke                        | knight-rider-smoke.sh dark-ship section                          |
 

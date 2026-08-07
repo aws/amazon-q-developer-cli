@@ -368,18 +368,17 @@ describe('Paste Chip Expand', () => {
     await testCase.waitForText('ask a question', 10000);
 
     await pasteCollapsible(testCase);
-    await testCase.sleepMs(300);
-
-    let snapshot = testCase.getSnapshot().join('\n');
-    expect(snapshot).toContain('12 lines');
+    // A fixed sleep raced chip rendering on slow CI PTYs; wait on the chip
+    // label instead.
+    await testCase.waitForText('12 lines', 10000);
 
     const lines2 = Array.from({ length: 15 }, (_, i) => `second ${i + 1}`);
     await testCase.sendKeys(
       `${PASTE_START}${lines2.join('\n')}${PASTE_END}`
     );
-    await testCase.sleepMs(300);
+    await testCase.waitForText('15 lines', 10000);
 
-    snapshot = testCase.getSnapshot().join('\n');
+    const snapshot = testCase.getSnapshot().join('\n');
     expect(snapshot).toContain('12 lines');
     expect(snapshot).toContain('15 lines');
   }, 30000);

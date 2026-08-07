@@ -1,6 +1,6 @@
 # Cloud Sessions — Design
 
-Status: Live for all internal users, every channel (rollout 100%) · Owner: kiro-cli
+Status: Live for all users (internal and external), every channel (rollout 100%) · Owner: kiro-cli
 Companion runbook: [docs/oncall/cloud_sessions_runbook.md](../oncall/cloud_sessions_runbook.md)
 
 Cloud sessions run an agent session on a remote cloud sandbox instead of the local machine:
@@ -60,9 +60,12 @@ necessarily the one that started the turn.
 Two independent gates, both required:
 
 1. **Client rollout gate** — `crates/chat-cli/rollout.json` → `remote_sandbox`
-   (compile-time; currently `internal` / all channels / 100%). Gated-out users see `--cloud`
-   rejected as an unknown argument, indistinguishable from a typo; cloud rows are hidden from
-   listings. Pinned by release-profile tests (`cloud_sessions_gating.rs`).
+   (compile-time; currently `all` / all channels / 100%). The entry is retained as the
+   kill-switch: dialing `treatment_percent` to 0 re-darkens `--cloud` (rejected as an unknown
+   argument, indistinguishable from a typo) and hides cloud rows from listings in the next
+   release. At 100% the gate needs no bucketing id, so users without a persisted client id
+   (telemetry disabled) are enabled too; at a partial percent they fail closed to the dark
+   shape. Pinned by release-profile tests (`cloud_sessions_gating.rs`).
 2. **KAS endpoint gate** — KAS constructs its remote adapters (session source, relay link,
    provider catalog) only when `KIRO_REMOTE_SESSIONS_ENDPOINT` is supplied. Without it, KAS makes
    zero BFF calls and advertises `executionTargets: ['local']`.
@@ -175,9 +178,9 @@ Operational procedures, triage tables, and per-error-kind escalation live in the
 | Stage | rollout.json | Exit criteria |
 |---|---|---|
 | 0 — internal nightly | `internal / nightly / 100%` | 1 week clean: done (98.9% start success, ~2.4s ready latency) |
-| 1 — internal stable (today) | `internal / all / 100%` | 1–2 weeks: start success ≥99%, no skew/truncation spikes, alarm thresholds tuned, paging enabled |
-| 2 — external ramp | `all / all / 25→50→100%` | ≥3 days/step; backend capacity sign-off before entry; alarms paging throughout |
+| 1 — internal stable | `internal / all / 100%` | done: start success ≥99%, no skew/truncation spikes, alarm thresholds tuned, paging enabled |
+| 2 — external ramp (today) | `all / all / 100%` | backend capacity signed off; alarms paging throughout; the rollout schema has one treatment_percent per feature (hash-bucketed per user), so a staged external percent would have dropped the feature for already-ramped internal users — external went straight to 100% |
 
-Rollback at any stage: revert the rollout CR (next release) or backend endpoint refusal
-(immediate). The dark-ship invariant holds at every stage — gated-out users cannot observe the
-feature exists.
+Rollback at any stage: revert the rollout CR / dial `treatment_percent` to 0 (next release) or
+backend endpoint refusal (immediate). Kill-switched users cannot observe the feature exists
+beyond the now-public `--help` text.

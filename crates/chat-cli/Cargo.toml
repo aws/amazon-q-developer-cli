@@ -179,5 +179,6 @@ kiro-telemetry = { workspace = true, features = ["test-support"] }
 mockito.workspace = true
 paste.workspace = true
 predicates.workspace = true
+rusqlite.workspace = true
 tracing-test.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

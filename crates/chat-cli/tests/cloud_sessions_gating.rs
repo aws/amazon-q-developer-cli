@@ -1,28 +1,34 @@
 //! Cloud-session gating coverage for the headless surfaces (batch 1).
 //!
 //! Exercises the real `chat_cli` binary the way a released user and a test
-//! user would run it, asserting the dark-ship guarantee on the headless
-//! cloud-session surfaces:
+//! user would run it. The remote-sandbox rollout is ramped to every segment
+//! and channel at 100%, and a fully-ramped feature needs no bucketing id —
+//! so every released user gets the full cloud UX, with or without a rollout
+//! cohort (a persisted client id). The rollout entry stays wired as the
+//! kill-switch: a partial/zero `treatment_percent` re-darkens the flags,
+//! and at a partial percent a user without a client id fails closed.
+//! Both cohort and no-cohort users are pinned to the SAME live shape here:
 //!
-//!   - `--list-sessions`: cloud rows + environment/status columns appear ONLY when the
-//!     remote-sandbox feature is force-enabled (`KIRO_TEST_MODE=1`); a released-shape run is
-//!     byte-format identical to prod (no `local`/`cloud` tags, no status column).
+//!   - `--list-sessions`: cloud rows + environment/status columns appear for every user (cohort,
+//!     no-cohort, and under `KIRO_TEST_MODE=1`).
 //!   - `--delete-session`: short-id prefix resolution against the merged local+cloud listing,
-//!     ambiguity handling, and cloud-row delete verification are gated the same way.
-//!   - `--cloud` / `--repo` flag gating: on a released build shape both flags are rejected as
-//!     unknown arguments (exit 2), indistinguishable from a typo.
+//!     ambiguity handling, and cloud-row delete verification.
+//!   - `--cloud` / `--repo` flags: live for every user (clap validation errors like
+//!     `--repo`-requires-`--cloud` prove the enabled parse path; a kill-switched build would reject
+//!     them as unknown arguments instead).
 //!
 //! Most tests mock KAS at the listing seam via `KIRO_TEST_MOCK_KAS_SESSIONS`
 //! (the same JSON the live `session/list` merge consumes): no network, no BFF.
-//! `list_sessions_released_shape_has_no_cloud_ux` does not set the mock, so it
-//! attempts (and quickly fails) a real KAS spawn — still no network. The
+//! `list_sessions_no_cohort_shape_shows_cloud_columns` does not set the mock,
+//! so it attempts (and quickly fails) a real KAS spawn — still no network. The
 //! interactive cloud-session flows (boot, provider gate, repo picker,
 //! disconnect, quit) are covered by the TUI e2e suite in
 //! `packages/tui/e2e_tests/cloud/` and the knight-rider smoke script.
 //!
 //! Release-profile only tests: `Rollout::init` force-enables every feature in
-//! debug builds, so the released (feature-off) shape is only observable on a
-//! `--release` binary. Those tests carry `#[cfg_attr(debug_assertions, ignore)]`
+//! debug builds, so the real rollout decision is only observable on a
+//! `--release` binary. Those tests carry
+//! `#[cfg_attr(debug_assertions, ignore)]`
 //! so a debug `cargo test` reports them as IGNORED (not silently `ok`); the CI
 //! release step (`.github/workflows/rust.yml`) is what actually proves them.
 
@@ -126,12 +132,27 @@ impl TestHome {
     fn session_file(&self, id: &str) -> std::path::PathBuf {
         self.sessions.join(format!("{id}.json"))
     }
+
+    /// Put this home IN the rollout cohort: run the binary once so the real
+    /// migration path creates the database, then write a client id the way
+    /// first-run telemetry initialization would. `Rollout::init` reads the
+    /// client id from this table; the cohort tests prove the feature is live
+    /// through the bucketing path too, not only the 100% short-circuit.
+    fn seed_client_id(&self) {
+        self.cmd(false).args(["chat", "--list-sessions"]).assert().success();
+        let conn = rusqlite::Connection::open(self.home.join("test.sqlite3")).expect("open test db");
+        conn.execute(
+            "INSERT OR REPLACE INTO state (key, value) VALUES ('telemetryClientId', ?1)",
+            ["\"550e8400-e29b-41d4-a716-446655440000\""],
+        )
+        .expect("seed client id");
+    }
 }
 
 /// Mock KAS listing rows in the exact `SessionInfoEntry` wire shape the
 /// listing merge consumes (camelCase). A local-store row, a cloud row, and an
 /// unknown/not-yet-shipped remote kind (`remote-control`) that the fail-closed
-/// released gate must also hide.
+/// classifier must tag `cloud`, never `local`.
 fn mock_kas_sessions(cwd: &std::path::Path) -> String {
     serde_json::json!([
         {
@@ -162,39 +183,33 @@ fn mock_kas_sessions(cwd: &std::path::Path) -> String {
 
 // ── --list-sessions ─────────────────────────────────────────────────────────
 
-/// Released shape (no KIRO_TEST_MODE): the listing must carry ZERO cloud UX —
-/// no environment tags, no status column, no cloud rows — even when a stray
-/// endpoint env var is present. This is the dark-ship guarantee for the one
-/// headless surface a released user can hit.
+/// No-cohort shape (fresh home, no client id, no KIRO_TEST_MODE): at 100%
+/// every bucket is treatment, so a user without a persisted client id
+/// (telemetry opted out) gets the SAME live listing as everyone else — the
+/// environment tag column appears on local rows. "All users" includes users
+/// the rollout cannot bucket.
 #[test]
 #[cfg_attr(
     debug_assertions,
     ignore = "release-profile only: debug builds force-enable all rollout features"
 )]
-fn list_sessions_released_shape_has_no_cloud_ux() {
+fn list_sessions_no_cohort_shape_shows_cloud_columns() {
     if cfg!(debug_assertions) {
         // Guard against `--include-ignored` on a debug binary, where the
-        // released shape is unobservable.
+        // real rollout decision is unobservable.
         return;
     }
     let th = TestHome::new();
     th.write_v2_session("11111111-2222-4333-8444-555555555555", "plain local session");
 
-    let assert = th
-        .cmd(false)
-        // A stray endpoint alone must NOT unlock anything.
-        .env("KIRO_REMOTE_SESSIONS_ENDPOINT", "https://app.kiro.dev")
-        .args(["chat", "--list-sessions"])
-        .assert()
-        .success();
+    let assert = th.cmd(false).args(["chat", "--list-sessions"]).assert().success();
 
     let out = readable_output(&assert);
     assert!(out.contains("plain local session"), "local row must list: {out}");
-    // The cloud additions are the ` | local | idle` / ` | cloud | <status>`
-    // tag pairs appended per row. None may appear on the released shape.
-    for tag in ["| cloud |", "| local |", "cloud-sandbox"] {
-        assert!(!out.contains(tag), "released listing leaked cloud UX ({tag}): {out}");
-    }
+    assert!(
+        out.contains("| local |"),
+        "no-cohort listing must carry the live environment tags at 100% ramp: {out}"
+    );
 }
 
 /// Test shape (KIRO_TEST_MODE=1): cloud rows appear with the environment tag
@@ -224,14 +239,16 @@ fn list_sessions_test_shape_shows_cloud_rows_with_state() {
     assert!(out.contains("plain local session"), "{out}");
 }
 
-/// Cloud rows injected through the test seam still obey the rollout gate.
-/// Local KAS rows remain part of the normal merged listing.
+/// Cloud rows injected through the test seam list for a no-cohort user too:
+/// at 100% the listing gate is open for everyone, so the merged listing shows
+/// cloud rows with their tags. The unknown/future non-local kind must still
+/// classify as `cloud` (fail-closed classification), never `local`.
 #[test]
 #[cfg_attr(
     debug_assertions,
     ignore = "release-profile only: debug builds force-enable all rollout features"
 )]
-fn mock_kas_cloud_rows_are_hidden_on_released_shape() {
+fn mock_kas_cloud_rows_list_on_no_cohort_shape() {
     if cfg!(debug_assertions) {
         return;
     }
@@ -247,33 +264,25 @@ fn mock_kas_cloud_rows_are_hidden_on_released_shape() {
 
     let out = readable_output(&assert);
     assert!(
-        !out.contains("banana-service (cloud)"),
-        "released listing must filter cloud KAS rows: {out}"
+        out.contains("banana-service (cloud)"),
+        "no-cohort listing must show cloud rows at 100% ramp: {out}"
     );
-    // The fail-closed gate must also hide an unknown/future non-local kind. An
-    // exclude-list gate (`!= Some("cloud-sandbox")`) would let this row through
-    // — this assertion is what distinguishes fail-closed from fail-open.
-    assert!(
-        !out.contains("remote-control session"),
-        "released listing must filter unknown/future non-local kinds (fail-closed): {out}"
-    );
-    // Positive guard: an over-broad filter that dropped *all* KAS rows would
-    // also satisfy the assertions above. The local KAS row must survive.
+    assert!(out.contains("| cloud |"), "cloud tag missing: {out}");
     assert!(
         out.contains("KAS local session"),
-        "released listing must keep local KAS rows: {out}"
+        "local KAS rows must list alongside cloud rows: {out}"
     );
+    assert!(out.contains("| local |"), "local tag missing: {out}");
 }
 
-/// The JSON listing obeys the same gate: on the released shape no cloud row
-/// survives the filter and no per-row `executionTarget`/`status` members are
-/// emitted (they are skip-if-None and only KAS cloud rows carry them here).
+/// The JSON listing is live for a no-cohort user too: cloud rows survive with
+/// their `executionTarget`/`status` members intact.
 #[test]
 #[cfg_attr(
     debug_assertions,
     ignore = "release-profile only: debug builds force-enable all rollout features"
 )]
-fn list_sessions_json_released_shape_has_no_cloud_members() {
+fn list_sessions_json_no_cohort_shape_has_cloud_members() {
     if cfg!(debug_assertions) {
         return;
     }
@@ -297,17 +306,12 @@ fn list_sessions_json_released_shape_has_no_cloud_members() {
         sessions.iter().any(|s| s["title"] == "plain local session"),
         "local row must list: {listing}"
     );
-    for s in sessions {
-        assert!(
-            s["executionTarget"].is_null() && s["status"].is_null(),
-            "released JSON listing leaked cloud members: {s}"
-        );
-        assert_ne!(s["title"], "banana-service (cloud)", "cloud row leaked: {listing}");
-        assert_ne!(
-            s["title"], "remote-control session",
-            "unknown/future non-local kind leaked into released JSON: {listing}"
-        );
-    }
+    let cloud = sessions
+        .iter()
+        .find(|s| s["title"] == "banana-service (cloud)")
+        .unwrap_or_else(|| panic!("cloud row must list at 100% ramp: {listing}"));
+    assert_eq!(cloud["executionTarget"], "cloud-sandbox", "{listing}");
+    assert_eq!(cloud["status"], "in_progress", "{listing}");
 }
 
 // ── --delete-session ────────────────────────────────────────────────────────
@@ -407,54 +411,128 @@ fn delete_session_sub_eight_char_prefix_is_not_resolved() {
 
 // ── --cloud / --repo flag gating ────────────────────────────────────────────
 
-/// On the released shape the dark-shipped flags are rejected exactly like a
-/// typo: clap `UnknownArgument`, exit code 2, no cloud bring-up of any kind —
-/// even with a stray endpoint env var present. This is the end-to-end proof
-/// of `ChatArgs::remote_sandbox_gate_error` on a real release binary.
+/// No-cohort shape: the flags are LIVE — at 100% ramp
+/// `remote_sandbox_gate_error` rejects nothing even without a client id.
+/// Proven the same way as the cohort test below, via deterministic
+/// parse-time clap errors that never reach the network: `--repo` without
+/// `--cloud` errors "requires '--cloud'" (a kill-switched build would
+/// instead reject `--repo` as an unknown argument).
 #[test]
 #[cfg_attr(
     debug_assertions,
     ignore = "release-profile only: debug builds force-enable all rollout features"
 )]
-fn cloud_and_repo_flags_released_shape_rejected_as_unknown_arguments() {
+fn cloud_and_repo_flags_live_on_no_cohort_shape() {
     if cfg!(debug_assertions) {
         return;
     }
     let th = TestHome::new();
-    let cases: [(&[&str], &str); 2] = [
-        (&["chat", "--cloud", "--no-interactive", "say hi"], "--cloud"),
-        (
-            &[
-                "chat",
-                "--repo",
-                "kiro-team/banana-service",
-                "--no-interactive",
-                "say hi",
-            ],
-            "--repo",
-        ),
-    ];
-    for (args, flag) in cases {
-        let assert = th
-            .cmd(false)
-            .env("KIRO_REMOTE_SESSIONS_ENDPOINT", "https://app.kiro.dev")
-            .args(args)
-            .assert()
-            .failure()
-            .code(2);
 
-        let out = readable_output(&assert);
-        assert!(
-            out.contains(&format!("unexpected argument '{flag}' found")),
-            "released {flag} must be rejected as unknown: {out}"
-        );
-        for leak in [
-            "Cloud session created",
-            "Creating cloud session",
-            "cloud-sandbox",
-            "repositories found",
-        ] {
-            assert!(!out.contains(leak), "released {flag} leaked cloud UX ({leak}): {out}");
-        }
+    let assert = th
+        .cmd(false)
+        .args([
+            "chat",
+            "--repo",
+            "kiro-team/banana-service",
+            "--no-interactive",
+            "say hi",
+        ])
+        .assert()
+        .failure()
+        .code(2);
+    let out = readable_output(&assert);
+    assert!(
+        out.contains("'--repo <REPO>' requires '--cloud'"),
+        "no-cohort --repo must take the enabled path: {out}"
+    );
+    assert!(
+        !out.contains("unexpected argument"),
+        "no-cohort --repo must not be rejected as unknown: {out}"
+    );
+}
+
+/// Cohort user (client id seeded, external segment, stable channel): the
+/// flags are LIVE on a real release binary. Proven via deterministic
+/// parse-time clap errors that never reach the network: `--repo` without
+/// `--cloud` errors "requires '--cloud'" (a kill-switched build would
+/// instead reject `--repo` as an unknown argument), and a blank
+/// `--repo` value errors as invalid.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "release-profile only: debug builds force-enable all rollout features"
+)]
+fn cloud_flags_live_for_cohort_user_on_release_binary() {
+    if cfg!(debug_assertions) {
+        return;
     }
+    let th = TestHome::new();
+    th.seed_client_id();
+
+    let assert = th
+        .cmd(false)
+        .args([
+            "chat",
+            "--repo",
+            "kiro-team/banana-service",
+            "--no-interactive",
+            "say hi",
+        ])
+        .assert()
+        .failure()
+        .code(2);
+    let out = readable_output(&assert);
+    assert!(
+        out.contains("'--repo <REPO>' requires '--cloud'"),
+        "cohort --repo must take the enabled path: {out}"
+    );
+    assert!(
+        !out.contains("unexpected argument"),
+        "cohort --repo must not be rejected as unknown: {out}"
+    );
+
+    let assert = th
+        .cmd(false)
+        .args(["chat", "--cloud", "--repo", "", "--no-interactive", "say hi"])
+        .assert()
+        .failure()
+        .code(2);
+    let out = readable_output(&assert);
+    assert!(
+        out.contains("repository name must not be blank"),
+        "cohort blank --repo must take the enabled validation path: {out}"
+    );
+}
+
+/// Cohort user: the listing shows the full cloud UX — cloud rows, environment
+/// tags, status column — on a real release binary. The mocked KAS seam keeps
+/// this network-free; the unknown `remote-control` kind must read `cloud`
+/// (fail-closed classification), never `local`.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "release-profile only: debug builds force-enable all rollout features"
+)]
+fn list_sessions_cohort_shape_shows_cloud_rows_on_release_binary() {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    let th = TestHome::new();
+    th.seed_client_id();
+    th.write_v2_session("11111111-2222-4333-8444-555555555555", "plain local session");
+    let cwd = std::env::current_dir().expect("cwd");
+
+    let assert = th
+        .cmd(false)
+        .env("KIRO_TEST_MOCK_KAS_SESSIONS", mock_kas_sessions(&cwd))
+        .args(["chat", "--list-sessions"])
+        .assert()
+        .success();
+
+    let out = readable_output(&assert);
+    assert!(out.contains("banana-service (cloud)"), "cloud row must list: {out}");
+    assert!(out.contains("| cloud |"), "cloud tag missing: {out}");
+    assert!(out.contains("| local |"), "local tag missing: {out}");
+    assert!(out.contains("working"), "status word missing: {out}");
+    assert!(out.contains("plain local session"), "local row must list: {out}");
 }

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Cloud sessions are now available to all users: `kiro-cli --cloud` (or `kiro-cli chat --cloud`) runs your session in a remote sandbox, with `--repo` to bind repositories"
+}

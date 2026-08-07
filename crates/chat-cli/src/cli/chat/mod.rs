@@ -350,13 +350,12 @@ pub struct ChatArgs {
     #[arg(long, value_name = "MODE")]
     pub mode: Option<AgentMode>,
     /// Run this session in a cloud sandbox (V3/KAS only).
-    /// Hidden while the remote-sandbox feature is dark-shipped; forwarded
-    /// to the TUI, which sends `_meta.kiro.executionTarget` on `session/new`.
-    #[arg(long, hide = true)]
+    /// Forwarded to the TUI, which sends `_meta.kiro.executionTarget` on `session/new`.
+    #[arg(long)]
     pub cloud: bool,
     /// Repository to open in a cloud session, as `name` or `owner/name`
-    /// (comma-separated for multiple). Only meaningful with `--cloud`. Hidden while dark-shipped.
-    #[arg(long, value_delimiter = ',', value_name = "REPO", hide = true)]
+    /// (comma-separated for multiple). Only meaningful with `--cloud`.
+    #[arg(long, value_delimiter = ',', value_name = "REPO")]
     pub repo: Option<Vec<String>>,
     /// Internal subcommands (`_ export-session`, `_ import-session`)
     /// for tests and TUI IPC. Not user-facing.
@@ -399,40 +398,40 @@ where
 }
 
 impl ChatArgs {
-    /// Dark-ship gate for `--cloud` / `--repo`. Returns clap's genuine
-    /// `UnknownArgument` error (exit code 2, same wording and `Usage:` block as a
-    /// real unknown flag) when a remote flag was supplied but the `RemoteSandbox`
-    /// rollout feature is off (all external builds; only internal users
-    /// are ramped) -- so the dark-shipped flags are indistinguishable from a typo
-    /// and leak nothing. Returns `None` when the feature is enabled (internal
-    /// cohort on any channel, or debug / `KIRO_TEST_MODE` / E2E builds; the V3-only
-    /// conflict check then applies in `resolve_agent_engine`) or no remote flag
-    /// was passed -- except that on the enabled path a blank `--repo` value
-    /// (`--repo ""` / `--repo ,`) yields a clap `InvalidValue` error.
+    /// Rollout gate for `--cloud` / `--repo`. The feature is ramped to every
+    /// segment and channel at 100% — enabled for every user, including those
+    /// without a persisted client id — so this rejects nothing in normal
+    /// builds; it remains wired as the kill-switch — dialing
+    /// `treatment_percent` to 0 in `rollout.json` re-darkens the flags
+    /// (clap's genuine `UnknownArgument` error, exit code 2, same wording
+    /// and `Usage:` block as a real unknown flag). On the enabled path a
+    /// blank `--repo` value (`--repo ""` / `--repo ,`) yields a clap
+    /// `InvalidValue` error and `--repo` without `--cloud` yields
+    /// `MissingRequiredArgument`; the V3-only conflict check then applies in
+    /// `resolve_agent_engine`.
     ///
     /// The caller MUST invoke this at the very top of the `Chat` arm in
     /// `cli/mod.rs` -- ahead of the `command.take()` / `--list-models` /
     /// `handle_session_flags` early-returns and `cleanup_old_data` -- and
     /// `.exit()` on `Some`. Those all return (or print / mutate on-disk state)
     /// before `resolve_agent_engine` runs, so a gate only there would let
-    /// `kiro chat --list-models --cloud` silently accept the hidden flag and
-    /// `kiro chat --cloud` run cleanup first -- both observably different from
-    /// clap's parse-time error, i.e. an existence leak. Returned rather than
+    /// `kiro-cli chat --list-models --cloud` silently accept the flag on a
+    /// kill-switched build and `kiro-cli chat --cloud` run cleanup first -- both
+    /// observably different from clap's parse-time error. Returned rather than
     /// `.exit()`-ed, and taking `feature_enabled` as a parameter, so the whole
     /// decision (flag presence, gate state, `--cloud`-wins precedence, and the
     /// error shape) is unit-testable despite the rollout being force-on in tests.
     ///
-    /// REMOVE only when the rollout is ramped for every segment AND channel
-    /// (segment: all, channel: all, 100%). While any cohort is excluded --
-    /// today that is every external user -- this gate is exactly
-    /// what keeps the flags dark for them.
+    /// REMOVE (together with the listing gates) once the external ramp has
+    /// soaked and a client-side kill-switch is no longer wanted; until then
+    /// this gate is exactly what a rollout.json revert re-darkens the flags
+    /// with.
     pub fn remote_sandbox_gate_error(&self, feature_enabled: bool) -> Option<clap::Error> {
         use clap::CommandFactory;
         // A blank --repo value resolves to nothing, and --repo without --cloud
         // would be silently discarded (local sessions never send repositories) --
         // both are user errors. Checked here rather than via clap `requires` so
-        // released (gated-off) builds still fall through to UnknownArgument and
-        // never leak that `--cloud` exists.
+        // kill-switched builds still fall through to UnknownArgument.
         if feature_enabled {
             if self
                 .repo
@@ -477,7 +476,7 @@ impl ChatArgs {
     /// with `--agent-engine=kas`).
     pub fn resolve_agent_engine(&self, os: &Os) -> Result<AgentEngine> {
         // `--cloud`/`--repo` imply the KAS (V3) engine: the remote execution
-        // target exists only there, so `kiro chat --cloud` works without
+        // target exists only there, so `kiro-cli chat --cloud` works without
         // `--v3`. An explicit `--agent-engine` still wins (the V1/V2 conflict
         // is then rejected below). Rollout-gated like every remote surface.
         let cloud_implies_kas = (self.cloud || self.repo.is_some())
@@ -528,7 +527,7 @@ impl ChatArgs {
         if cloud_implies_kas && engine != AgentEngine::Kas {
             bail!(
                 "Conflicting options: --cloud/--repo run on the V3 agent and cannot be \
-                 combined with --agent-engine={}. Use `kiro chat --cloud` (V3 is implied; \
+                 combined with --agent-engine={}. Use `kiro-cli chat --cloud` (V3 is implied; \
                  --v3 and --agent-engine=v3 are also fine).",
                 engine.user_label()
             );

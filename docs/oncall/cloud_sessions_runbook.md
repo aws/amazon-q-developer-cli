@@ -3,9 +3,10 @@
 Oncall guide for cloud (remote-sandbox) sessions: `kiro chat --cloud`, `/repo`, resume of cloud
 ids, `/autonomous`. Design and architecture: [docs/design/cloud-sessions.md](../design/cloud-sessions.md).
 
-Feature state: dark-shipped; live for **all internal users on every channel** (rollout 100%).
-External builds cannot reach any cloud path, so customer-facing tickets about cloud sessions from
-non-internal users indicate something is very wrong (check `KIRO_TEST_MODE` misuse first).
+Feature state: live for **all users on every channel** (rollout 100%, internal and external).
+The `remote_sandbox` rollout entry is the kill-switch — dialing `treatment_percent` to 0
+re-darkens `--cloud`/`--repo` in the next release. Customer-facing tickets about cloud sessions
+are now expected traffic; triage them like any other feature.
 
 ## Session lifecycle semantics (what the events mean)
 
@@ -99,11 +100,14 @@ signal meanwhile.
 | `KiroCLI-CloudSandbox-StreamTruncation` | >10 in 15m | Relayed turns ending without a done frame — relay/websocket health. Engage the KAS oncall |
 | `KiroCLI-CloudSandbox-ThrottleSurge` | >100 in 15m | BFF rate-limiting cloud RPCs. Quota/capacity conversation with the backend team |
 
-Missing data = OK by design (dark-shipped feature; zero traffic is normal).
+Missing data = OK for pre-ramp builds only; with the feature live for everyone, sustained zero
+traffic is itself a signal worth checking.
 
 ## Triage: "cloud session won't start / behaves wrong"
 
-1. **Which build?** Only internal users have the feature (any channel). `kiro diagnostic` on the reporter's
+1. **Which build?** All users have the feature (any segment, any channel) — including users
+   with telemetry disabled (a fully-ramped feature needs no client id) — but only from the
+   release that ramped it. `kiro diagnostic` on the reporter's
    machine shows the rollout state, whether a remote-sessions endpoint is configured, and the
    extracted KAS versions — ask for its output first.
 2. **Classify the failure.** The CLI already labels cloud errors

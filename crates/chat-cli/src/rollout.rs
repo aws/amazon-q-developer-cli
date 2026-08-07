@@ -370,7 +370,7 @@ mod tests {
         );
         assert!(
             json.contains("\"remote_sandbox\""),
-            "remote_sandbox should be enabled for internal users: {json}"
+            "remote_sandbox should be enabled for all users: {json}"
         );
         assert!(!json.contains("\"workflows\""), "workflows must stay dark: {json}");
         assert!(
@@ -394,27 +394,21 @@ mod tests {
     }
 
     #[test]
-    fn test_remote_sandbox_enabled_for_all_internal_any_channel() {
+    fn test_remote_sandbox_enabled_for_all_users_any_channel() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(
             features.contains_key(<&str>::from(Feature::RemoteSandbox)),
             "remote_sandbox must be declared in rollout.json"
         );
 
-        // Ramped to all internal users on every channel. External users must
-        // stay dark on any channel — that is the guarantee that keeps
-        // `--cloud`/`--repo` unusable by live customers.
-        for (is_internal, is_nightly, expected) in [
-            (false, false, false),
-            (false, true, false),
-            (true, false, true),
-            (true, true, true),
-        ] {
+        // Ramped to every user on every channel (segment: all, 100%).
+        // treatment_percent in rollout.json is the kill-switch: dialing it to
+        // 0 re-darkens `--cloud`/`--repo` in the next release.
+        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
             let r = Rollout::new_for_test(is_internal, is_nightly);
-            assert_eq!(
+            assert!(
                 r.is_enabled(Feature::RemoteSandbox),
-                expected,
-                "remote_sandbox enabled={expected} for internal={is_internal}, nightly={is_nightly}"
+                "remote_sandbox must be enabled for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }
