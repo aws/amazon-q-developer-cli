@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate active-installation adoption and engine usage from KUTS metrics."""
+"""Generate a source-aware Kiro CLI adoption report."""
 
 import argparse
 import json
@@ -16,6 +16,11 @@ DEFAULT_LOG_GROUP = "/kiro/metrics"
 DEFAULT_REGION = "us-east-1"
 DEFAULT_OUTPUT = "adoption-report.md"
 ENGINES = ("v1", "v2", "v3", "unknown")
+SOURCES = ("both", "kuts", "toolkit")
+TOOLKIT_METRIC = "codewhispererterminal_recordUserTurnCompletion"
+TOOLKIT_CLI_SEGMENTS = ("int_v1", "int_v2", "ext_v1", "ext_v2")
+TOOLKIT_SEGMENTS = (*TOOLKIT_CLI_SEGMENTS, "acp")
+TOOLKIT_QUERY_SCRIPT = Path(__file__).resolve().parents[4] / "scripts" / "es-query.sh"
 TERMINAL_QUERY_STATUSES = {"Complete", "Failed", "Cancelled", "Timeout", "Unknown"}
 
 # Group by every supported cohort in one scan, then aggregate into report views locally.
@@ -42,6 +47,38 @@ fields @timestamp,
      agent_engine
 | sort day desc
 """
+
+
+def build_toolkit_query():
+    internal = {"wildcard": {"metadata.credentialStartUrl": "*amzn.awsapps.com*"}}
+    app_type_exists = {"exists": {"field": "metadata.kirocli_appType"}}
+    v2 = {"match": {"metadata.kirocli_appType": "V2"}}
+    acp = {"match": {"metadata.kirocli_appType": "ACP"}}
+    filters = {
+        "int_v1": {"must": [internal], "must_not": [app_type_exists]},
+        "int_v2": {"must": [internal, v2]},
+        "ext_v1": {"must_not": [internal, app_type_exists]},
+        "ext_v2": {"must": [v2], "must_not": [internal]},
+        "acp": {"must": [acp]},
+    }
+    return {
+        "size": 0,
+        "query": {
+            "bool": {
+                "must": [
+                    {"match_phrase": {"metadata.metricName": TOOLKIT_METRIC}},
+                    {"match_phrase": {"product": "CodeWhisperer for Terminal"}},
+                ]
+            }
+        },
+        "aggs": {
+            name: {
+                "filter": {"bool": segment_filter},
+                "aggs": {"installations": {"cardinality": {"field": "clientId"}}},
+            }
+            for name, segment_filter in filters.items()
+        },
+    }
 
 
 def parse_date(value):
@@ -72,17 +109,28 @@ def resolve_window(start, end=None, today=None):
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
-            "Generate Kiro CLI active-installation adoption and V1/V2/V3 engine usage "
-            "from production KUTS metrics."
+            "Compare Kiro CLI adoption and usage from production KUTS and legacy "
+            "Toolkit telemetry."
         ),
         epilog=(
             "Dates are UTC and inclusive. A numeric range selects the last N complete UTC days. "
             "Keep ranges narrow because Logs Insights scans the shared metrics log group."
         ),
     )
-    parser.add_argument("start", help="start date (YYYY-MM-DD) or number of complete UTC days")
+    parser.add_argument(
+        "start", help="start date (YYYY-MM-DD) or number of complete UTC days"
+    )
     parser.add_argument("end", nargs="?", help="inclusive end date (YYYY-MM-DD)")
-    parser.add_argument("-o", "--output", default=DEFAULT_OUTPUT, help="Markdown output path")
+    parser.add_argument(
+        "-o", "--output", default=DEFAULT_OUTPUT, help="Markdown output path"
+    )
+    parser.add_argument(
+        "--source",
+        choices=SOURCES,
+        help=(
+            "data source to query (default: supplied offline sources, otherwise both)"
+        ),
+    )
     parser.add_argument("--profile", help="AWS profile for the production KUTS account")
     parser.add_argument("--region", default=DEFAULT_REGION)
     parser.add_argument("--log-group", default=DEFAULT_LOG_GROUP)
@@ -95,14 +143,46 @@ def build_parser():
     parser.add_argument(
         "--query-only",
         action="store_true",
-        help="print the Logs Insights query without calling AWS",
+        help="print the selected source queries without calling either service",
+    )
+    kuts_input = parser.add_mutually_exclusive_group()
+    kuts_input.add_argument(
+        "--input-json",
+        dest="legacy_input_json",
+        type=Path,
+        help="legacy saved KUTS input (selects KUTS-only unless --source is set)",
+    )
+    kuts_input.add_argument(
+        "--kuts-input-json",
+        type=Path,
+        help="render saved KUTS get-query-results JSON instead of querying AWS",
     )
     parser.add_argument(
-        "--input-json",
+        "--toolkit-input-json",
         type=Path,
-        help="render saved aws logs get-query-results JSON instead of querying AWS",
+        help="render saved Toolkit responses keyed by date instead of querying Elasticsearch",
+    )
+    parser.add_argument(
+        "--toolkit-query-script",
+        type=Path,
+        default=TOOLKIT_QUERY_SCRIPT,
+        help=argparse.SUPPRESS,
     )
     return parser
+
+
+def effective_source(args):
+    if args.source:
+        return args.source
+    has_kuts_input = bool(args.legacy_input_json or args.kuts_input_json)
+    has_toolkit_input = bool(args.toolkit_input_json)
+    if has_kuts_input and has_toolkit_input:
+        return "both"
+    if has_kuts_input:
+        return "kuts"
+    if has_toolkit_input:
+        return "toolkit"
+    return "both"
 
 
 def choose_profile(explicit, environ, available_profiles):
@@ -129,7 +209,9 @@ def list_profiles():
     except FileNotFoundError as error:
         raise RuntimeError("AWS CLI is not installed") from error
     except subprocess.CalledProcessError as error:
-        raise RuntimeError(f"could not list AWS profiles: {error.stderr.strip()}") from error
+        raise RuntimeError(
+            f"could not list AWS profiles: {error.stderr.strip()}"
+        ) from error
     return set(result.stdout.splitlines())
 
 
@@ -177,7 +259,9 @@ def stop_query(profile, region, query_id):
 
 def query_metrics(profile, region, log_group, start_date, end_date, timeout_seconds):
     start_time = datetime.combine(start_date, datetime_time.min, timezone.utc)
-    end_time = datetime.combine(end_date + timedelta(days=1), datetime_time.min, timezone.utc)
+    end_time = datetime.combine(
+        end_date + timedelta(days=1), datetime_time.min, timezone.utc
+    )
     started = run_aws(
         profile,
         region,
@@ -215,7 +299,9 @@ def query_metrics(profile, region, log_group, start_date, end_date, timeout_seco
                 last_status = status
             if status in TERMINAL_QUERY_STATUSES:
                 if status != "Complete":
-                    raise RuntimeError(f"Logs Insights query ended with status {status}")
+                    raise RuntimeError(
+                        f"Logs Insights query ended with status {status}"
+                    )
                 return response
             time.sleep(2)
     except BaseException:
@@ -224,6 +310,84 @@ def query_metrics(profile, region, log_group, start_date, end_date, timeout_seco
 
     stop_query(profile, region, query_id)
     raise RuntimeError(f"Logs Insights query exceeded {timeout_seconds} seconds")
+
+
+def verify_toolkit_credentials(query_script, environ):
+    cookie_file = query_script.parent / ".es-cookie"
+    if environ.get("ES_COOKIE"):
+        return
+    try:
+        has_cookie_file = cookie_file.is_file() and bool(
+            cookie_file.read_text().strip()
+        )
+    except OSError as error:
+        raise RuntimeError(f"could not read Toolkit cookie file: {error}") from error
+    if not has_cookie_file:
+        raise RuntimeError(
+            "Toolkit credentials are unavailable; set ES_COOKIE or refresh scripts/.es-cookie"
+        )
+
+
+def run_toolkit_search(query_script, index, query):
+    try:
+        result = subprocess.run(
+            [str(query_script), index, json.dumps(query, separators=(",", ":"))],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Toolkit query script not found: {query_script}") from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"Toolkit query timed out for {index}") from error
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.strip() or error.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Toolkit query failed for {index}: {detail}") from error
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"Toolkit query returned invalid JSON for {index}"
+        ) from error
+    if "error" in response:
+        raise RuntimeError(f"Toolkit query failed for {index}: {response['error']}")
+    return response
+
+
+def calendar_days(start_date, end_date):
+    current = start_date
+    while current <= end_date:
+        yield current
+        current += timedelta(days=1)
+
+
+def query_toolkit(query_script, start_date, end_date):
+    verify_toolkit_credentials(query_script, os.environ)
+    query = build_toolkit_query()
+    results = {}
+    errors = {}
+    for day in calendar_days(start_date, end_date):
+        index = f"metrics-{day.isoformat()}"
+        print(f"Querying Toolkit telemetry for {day.isoformat()}", file=sys.stderr)
+        try:
+            for attempt in range(3):
+                try:
+                    response = run_toolkit_search(query_script, index, query)
+                    break
+                except RuntimeError:
+                    if attempt == 2:
+                        raise
+                    print(
+                        f"Retrying Toolkit query for {day.isoformat()} "
+                        f"({attempt + 2}/3)",
+                        file=sys.stderr,
+                    )
+                    time.sleep(5)
+            results[day] = parse_toolkit_response(response)
+        except (RuntimeError, ValueError) as error:
+            errors[day] = error
+    return results, errors
 
 
 def row_to_dict(row):
@@ -291,6 +455,55 @@ def parse_query_results(response):
     return {"heartbeats": heartbeats, "turns": turns}
 
 
+def parse_toolkit_response(response):
+    aggregations = response.get("aggregations")
+    if not isinstance(aggregations, dict):
+        raise ValueError("Toolkit response is missing aggregations")
+
+    result = {}
+    for segment in TOOLKIT_SEGMENTS:
+        bucket = aggregations.get(segment)
+        if not isinstance(bucket, dict):
+            raise ValueError(f"Toolkit response is missing {segment} aggregation")
+        installations = bucket.get("installations")
+        if not isinstance(installations, dict) or "value" not in installations:
+            raise ValueError(
+                f"Toolkit response is missing {segment} installation cardinality"
+            )
+        result[segment] = {
+            "installations": parse_integer(
+                str(installations["value"]), f"{segment} installations"
+            ),
+            "turns": parse_integer(
+                str(bucket.get("doc_count", "")), f"{segment} turns"
+            ),
+        }
+    return result
+
+
+def load_toolkit_results(path, start_date, end_date):
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if "aggregations" in payload:
+        if start_date != end_date:
+            raise ValueError(
+                "a single Toolkit response can only be used for a one-day report"
+            )
+        return {start_date: parse_toolkit_response(payload)}
+
+    responses = payload.get("responses", payload)
+    if not isinstance(responses, dict):
+        raise ValueError("Toolkit input must be a response or responses keyed by date")
+
+    results = {}
+    for raw_day, response in responses.items():
+        day = parse_date(raw_day)
+        if start_date <= day <= end_date:
+            results[day] = parse_toolkit_response(response)
+    if not results:
+        raise ValueError("Toolkit input contains no responses in the requested window")
+    return results
+
+
 def format_bytes(value):
     amount = float(value)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
@@ -301,12 +514,7 @@ def format_bytes(value):
 
 
 def report_days(start_date, end_date):
-    days = []
-    current = start_date
-    while current <= end_date:
-        days.append(current)
-        current += timedelta(days=1)
-    return list(reversed(days))
+    return list(reversed(list(calendar_days(start_date, end_date))))
 
 
 def percentage(value, total):
@@ -314,19 +522,54 @@ def percentage(value, total):
 
 
 def heartbeat_cohorts_for_day(heartbeats, day):
-    return {
-        key[1:]: value
-        for key, value in heartbeats.items()
-        if key[0] == day
-    }
+    return {key[1:]: value for key, value in heartbeats.items() if key[0] == day}
 
 
 def turn_cohorts_for_day(turns, day):
+    return {key[1:]: value for key, value in turns.items() if key[0] == day}
+
+
+def engine_turns_for_day(turns, day):
+    totals = {engine: 0 for engine in ENGINES}
+    for (_version, agent_engine, _session_interface), count in turn_cohorts_for_day(
+        turns, day
+    ).items():
+        totals[agent_engine] += count
+    return totals
+
+
+def comparison_turns_for_day(turns, day):
+    engine_totals = {engine: 0 for engine in ENGINES}
+    acp = 0
+    total = 0
+    for (_version, agent_engine, session_interface), count in turn_cohorts_for_day(
+        turns, day
+    ).items():
+        total += count
+        if session_interface == "external_acp":
+            acp += count
+        else:
+            engine_totals[agent_engine] += count
     return {
-        key[1:]: value
-        for key, value in turns.items()
-        if key[0] == day
+        "v1": engine_totals["v1"],
+        "modern": engine_totals["v2"] + engine_totals["v3"],
+        "acp": acp,
+        "total": total,
     }
+
+
+def toolkit_segment(results, day, segment):
+    return results[day][segment]
+
+
+def compact_error(error):
+    detail = " ".join(str(error).split()).replace("|", "\\|")
+    return detail if len(detail) <= 180 else f"{detail[:177]}..."
+
+
+def gap_display(kuts, toolkit):
+    gap = kuts - toolkit
+    return f"{gap:+,} ({gap / toolkit * 100:+.1f}%)" if toolkit else "n/a"
 
 
 def render_report(
@@ -337,118 +580,247 @@ def render_report(
     generated_at=None,
     region=DEFAULT_REGION,
     log_group=DEFAULT_LOG_GROUP,
+    toolkit_results=None,
+    source_errors=None,
+    kuts_source=None,
+    toolkit_source=None,
+    toolkit_day_errors=None,
 ):
     generated_at = generated_at or datetime.now(timezone.utc)
     days = report_days(start_date, end_date)
-    heartbeats = results["heartbeats"]
-    turns = results["turns"]
+    source_errors = source_errors or {}
+    toolkit_day_errors = toolkit_day_errors or {}
     lines = [
-        "# Kiro CLI Adoption and Engine Usage Report",
+        "# Kiro CLI Adoption Report",
         "",
         f"Generated: {generated_at.strftime('%Y-%m-%d %H:%M UTC')}",
         f"Window: {start_date.isoformat()} through {end_date.isoformat()} (UTC, inclusive)",
-        f"Source: AWS account `{ACCOUNT}`, `{region}`, `{log_group}`",
+        "",
+        "## Data Sources",
+        "",
     ]
-    if statistics and statistics.get("bytesScanned") is not None:
+    if results is not None:
+        source = kuts_source or f"AWS account `{ACCOUNT}`, `{region}`, `{log_group}`"
+        if statistics and statistics.get("bytesScanned") is not None:
+            source += (
+                f"; scanned {format_bytes(statistics['bytesScanned'])}, "
+                f"{int(statistics.get('recordsScanned', 0)):,} records"
+            )
+        lines.append(f"- **KUTS**: available from {source}.")
+    elif "kuts" in source_errors:
         lines.append(
-            "Query scan: "
-            f"{format_bytes(statistics['bytesScanned'])}, "
-            f"{int(statistics.get('recordsScanned', 0)):,} records"
+            f"- **KUTS**: unavailable ({compact_error(source_errors['kuts'])})."
+        )
+    if toolkit_results is not None:
+        source = toolkit_source or "the legacy telemetry Elasticsearch daily indexes"
+        if toolkit_day_errors:
+            failures = ", ".join(
+                f"`{day.isoformat()}` ({compact_error(error)})"
+                for day, error in sorted(toolkit_day_errors.items())
+            )
+            lines.append(
+                f"- **Toolkit**: partially available from {source}; "
+                f"unavailable dates: {failures}."
+            )
+        else:
+            lines.append(f"- **Toolkit**: available from {source}.")
+    elif "toolkit" in source_errors:
+        lines.append(
+            f"- **Toolkit**: unavailable ({compact_error(source_errors['toolkit'])})."
         )
 
-    lines.extend(
-        [
-            "",
-            "## Active Installation-Version Adoption",
-            "",
-            "| Date | Version | Channel | Active installations | Daily share |",
-            "|------|---------|---------|---------------------:|------------:|",
-        ]
-    )
-    for day in days:
-        cohorts = heartbeat_cohorts_for_day(heartbeats, day)
-        versions = {}
-        for (version, channel, _os_type, _install_method), count in cohorts.items():
-            key = (version, channel)
-            versions[key] = versions.get(key, 0) + count
-        total = sum(versions.values())
-        if not versions:
-            lines.append(f"| {day.isoformat()} | n/a | n/a | 0 | n/a |")
-            continue
-        for (version, channel), count in sorted(versions.items()):
-            lines.append(
-                f"| {day.isoformat()} | `{version}` | {channel} | "
-                f"{count:,} | {percentage(count, total)} |"
-            )
-
-    lines.extend(
-        [
-            "",
-            "## Installation Detail",
-            "",
-            "| Date | Version | Channel | OS | Install method | Active installations |",
-            "|------|---------|---------|----|----------------|---------------------:|",
-        ]
-    )
-    for day in days:
-        cohorts = heartbeat_cohorts_for_day(heartbeats, day)
-        if not cohorts:
-            lines.append(f"| {day.isoformat()} | n/a | n/a | n/a | n/a | 0 |")
-            continue
-        for (version, channel, os_type, install_method), count in sorted(cohorts.items()):
-            lines.append(
-                f"| {day.isoformat()} | `{version}` | {channel} | {os_type} | "
-                f"{install_method} | {count:,} |"
-            )
-
-    lines.extend(
-        [
-            "",
-            "## Engine Usage",
-            "",
-            "| Date | V1 turn share | V2 turn share | V3 turn share | Unknown share | "
-            "Modern share | Top-level turns |",
-            "|------|--------------:|--------------:|--------------:|--------------:|"
-            "-------------:|----------------:|",
-        ]
-    )
-    for day in days:
-        cohorts = turn_cohorts_for_day(turns, day)
-        engine_turns = {engine: 0 for engine in ENGINES}
-        for (_version, agent_engine, _session_interface), count in cohorts.items():
-            engine_turns[agent_engine] += count
-        total = sum(engine_turns.values())
-        lines.append(
-            f"| {day.isoformat()} | {percentage(engine_turns['v1'], total)} | "
-            f"{percentage(engine_turns['v2'], total)} | "
-            f"{percentage(engine_turns['v3'], total)} | "
-            f"{percentage(engine_turns['unknown'], total)} | "
-            f"{percentage(engine_turns['v2'] + engine_turns['v3'], total)} | "
-            f"{total:,} |"
+    if results is not None:
+        heartbeats = results["heartbeats"]
+        turns = results["turns"]
+        lines.extend(
+            [
+                "",
+                "## Active Installation-Version Adoption (KUTS)",
+                "",
+                "| Date | Version | Channel | Active installations | Daily share |",
+                "|------|---------|---------|---------------------:|------------:|",
+            ]
         )
+        for day in days:
+            cohorts = heartbeat_cohorts_for_day(heartbeats, day)
+            versions = {}
+            for (version, channel, _os_type, _install_method), count in cohorts.items():
+                key = (version, channel)
+                versions[key] = versions.get(key, 0) + count
+            total = sum(versions.values())
+            if not versions:
+                lines.append(f"| {day.isoformat()} | n/a | n/a | 0 | n/a |")
+                continue
+            for (version, channel), count in sorted(versions.items()):
+                lines.append(
+                    f"| {day.isoformat()} | `{version}` | {channel} | "
+                    f"{count:,} | {percentage(count, total)} |"
+                )
 
-    lines.extend(
-        [
-            "",
-            "## Engine and Interface Detail",
-            "",
-            "| Date | Version | Engine | Session interface | Top-level turns |",
-            "|------|---------|--------|-------------------|----------------:|",
-        ]
-    )
-    for day in days:
-        cohorts = turn_cohorts_for_day(turns, day)
-        detail = {}
-        for (version, agent_engine, session_interface), count in cohorts.items():
-            key = (version, agent_engine, session_interface)
-            detail[key] = detail.get(key, 0) + count
-        if not detail:
-            lines.append(f"| {day.isoformat()} | n/a | n/a | n/a | 0 |")
-            continue
-        for (version, agent_engine, session_interface), count in sorted(detail.items()):
+        lines.extend(
+            [
+                "",
+                "## Installation Detail (KUTS)",
+                "",
+                "| Date | Version | Channel | OS | Install method | Active installations |",
+                "|------|---------|---------|----|----------------|---------------------:|",
+            ]
+        )
+        for day in days:
+            cohorts = heartbeat_cohorts_for_day(heartbeats, day)
+            if not cohorts:
+                lines.append(f"| {day.isoformat()} | n/a | n/a | n/a | n/a | 0 |")
+                continue
+            for (version, channel, os_type, install_method), count in sorted(
+                cohorts.items()
+            ):
+                lines.append(
+                    f"| {day.isoformat()} | `{version}` | {channel} | {os_type} | "
+                    f"{install_method} | {count:,} |"
+                )
+
+        lines.extend(
+            [
+                "",
+                "## Engine Usage (KUTS)",
+                "",
+                "| Date | V1 turn share | V2 turn share | V3 turn share | Unknown share | "
+                "Modern share | Top-level turns |",
+                "|------|--------------:|--------------:|--------------:|--------------:|"
+                "-------------:|----------------:|",
+            ]
+        )
+        for day in days:
+            engine_turns = engine_turns_for_day(turns, day)
+            total = sum(engine_turns.values())
             lines.append(
-                f"| {day.isoformat()} | `{version}` | {agent_engine.upper()} | "
-                f"{session_interface} | {count:,} |"
+                f"| {day.isoformat()} | {percentage(engine_turns['v1'], total)} | "
+                f"{percentage(engine_turns['v2'], total)} | "
+                f"{percentage(engine_turns['v3'], total)} | "
+                f"{percentage(engine_turns['unknown'], total)} | "
+                f"{percentage(engine_turns['v2'] + engine_turns['v3'], total)} | "
+                f"{total:,} |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Engine and Interface Detail (KUTS)",
+                "",
+                "| Date | Version | Engine | Session interface | Top-level turns |",
+                "|------|---------|--------|-------------------|----------------:|",
+            ]
+        )
+        for day in days:
+            cohorts = turn_cohorts_for_day(turns, day)
+            if not cohorts:
+                lines.append(f"| {day.isoformat()} | n/a | n/a | n/a | 0 |")
+                continue
+            for (version, agent_engine, session_interface), count in sorted(
+                cohorts.items()
+            ):
+                lines.append(
+                    f"| {day.isoformat()} | `{version}` | {agent_engine.upper()} | "
+                    f"{session_interface} | {count:,} |"
+                )
+
+    if toolkit_results is not None:
+        lines.extend(
+            [
+                "",
+                "## V1/V2 Active Installation Segments (Toolkit)",
+                "",
+                "| Date | Internal V2 segment share | External V2 segment share |",
+                "|------|--------------------------:|--------------------------:|",
+            ]
+        )
+        for day in days:
+            if day not in toolkit_results:
+                lines.append(f"| {day.isoformat()} | n/a | n/a |")
+                continue
+            int_v1 = toolkit_segment(toolkit_results, day, "int_v1")["installations"]
+            int_v2 = toolkit_segment(toolkit_results, day, "int_v2")["installations"]
+            ext_v1 = toolkit_segment(toolkit_results, day, "ext_v1")["installations"]
+            ext_v2 = toolkit_segment(toolkit_results, day, "ext_v2")["installations"]
+            lines.append(
+                f"| {day.isoformat()} | {percentage(int_v2, int_v1 + int_v2)} | "
+                f"{percentage(ext_v2, ext_v1 + ext_v2)} |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Detailed V1/V2/ACP Usage (Toolkit)",
+                "",
+                "| Date | Int V1 est. installs | Int V1 turns | Int V2 est. installs | "
+                "Int V2 turns | Ext V1 est. installs | Ext V1 turns | "
+                "Ext V2 est. installs | Ext V2 turns | ACP est. installs | ACP turns |",
+                "|------|----------------:|-------------:|----------------:|-------------:|"
+                "----------------:|-------------:|----------------:|-------------:|"
+                "------------------:|----------:|",
+            ]
+        )
+        for day in days:
+            if day not in toolkit_results:
+                lines.append(
+                    f"| {day.isoformat()} | n/a | n/a | n/a | n/a | "
+                    "n/a | n/a | n/a | n/a | n/a | n/a |"
+                )
+                continue
+            values = [
+                value
+                for segment in TOOLKIT_SEGMENTS
+                for value in (
+                    toolkit_segment(toolkit_results, day, segment)["installations"],
+                    toolkit_segment(toolkit_results, day, segment)["turns"],
+                )
+            ]
+            lines.append(
+                f"| {day.isoformat()} | "
+                + " | ".join(f"{value:,}" for value in values)
+                + " |"
+            )
+
+    if results is not None and toolkit_results is not None:
+        lines.extend(
+            [
+                "",
+                "## Daily Turn Comparison (KUTS vs Toolkit)",
+                "",
+                "| Date | Toolkit V1 | KUTS non-ACP V1 | V1 gap | Toolkit V2 app | "
+                "KUTS non-ACP V2+V3 | V2 gap | Toolkit ACP | KUTS external ACP | "
+                "ACP gap | Toolkit all | KUTS all | Total gap |",
+                "|------|-----------:|----------------:|-------:|---------------:|"
+                "-------------------:|-------:|------------:|------------------:|"
+                "--------:|------------:|---------:|----------:|",
+            ]
+        )
+        for day in days:
+            kuts = comparison_turns_for_day(results["turns"], day)
+            if day not in toolkit_results:
+                lines.append(
+                    f"| {day.isoformat()} | n/a | {kuts['v1']:,} | n/a | "
+                    f"n/a | {kuts['modern']:,} | n/a | n/a | {kuts['acp']:,} | "
+                    f"n/a | n/a | {kuts['total']:,} | n/a |"
+                )
+                continue
+            toolkit_v1 = sum(
+                toolkit_segment(toolkit_results, day, segment)["turns"]
+                for segment in ("int_v1", "ext_v1")
+            )
+            toolkit_v2 = sum(
+                toolkit_segment(toolkit_results, day, segment)["turns"]
+                for segment in ("int_v2", "ext_v2")
+            )
+            toolkit_acp = toolkit_segment(toolkit_results, day, "acp")["turns"]
+            toolkit_total = toolkit_v1 + toolkit_v2 + toolkit_acp
+            lines.append(
+                f"| {day.isoformat()} | {toolkit_v1:,} | {kuts['v1']:,} | "
+                f"{gap_display(kuts['v1'], toolkit_v1)} | {toolkit_v2:,} | "
+                f"{kuts['modern']:,} | {gap_display(kuts['modern'], toolkit_v2)} | "
+                f"{toolkit_acp:,} | {kuts['acp']:,} | "
+                f"{gap_display(kuts['acp'], toolkit_acp)} | {toolkit_total:,} | "
+                f"{kuts['total']:,} | {gap_display(kuts['total'], toolkit_total)} |"
             )
 
     lines.extend(
@@ -456,24 +828,53 @@ def render_report(
             "",
             "## Methodology",
             "",
-            "- Active installations are daily sums of `kiro_cli_daily_heartbeat`, grouped by "
-            "exact version, release channel, OS, and install method.",
-            "- A heartbeat is one active installation-version day, not a unique person. An "
-            "installation that runs two versions in one day contributes to both versions.",
-            "- Multi-day totals are installation-version days. They are not weekly or monthly "
-            "active-installation counts because installations repeat across days.",
-            "- Engine and interface usage is the sum of completed top-level "
-            "`kiro_cli_user_turns`. Turn share weights frequent users more heavily and is not "
-            "user or installation adoption.",
-            "- Current producers suppress subagent turn counters, so the query does not depend "
-            "on the retired `is_subagent` attribute.",
-            "- Missing reviewed dimensions are rendered as `unknown`. Expect a rollout-era "
-            "unknown cohort from clients that predate the new metric contract.",
-            "- `install_method=unknown` must not be interpreted as `installation_script`; the "
-            "installer receipt is separate rollout work.",
-            "",
         ]
     )
+    if results is not None:
+        lines.extend(
+            [
+                "- **KUTS active installations** are daily sums of "
+                "`kiro_cli_daily_heartbeat`. A heartbeat is one installation-version day, "
+                "not a unique person. Multi-day sums repeat installations.",
+                "- **KUTS turns** are completed top-level `kiro_cli_user_turns`, grouped by "
+                "`agent_engine` and `session_interface`. Turn share weights frequent users.",
+                "- KUTS producers suppress subagent turn counters. Missing reviewed dimensions "
+                "appear as `unknown`, including records from older clients.",
+                "- `install_method=unknown` is unattributable and must not be relabeled as "
+                "`installation_script`.",
+            ]
+        )
+    if toolkit_results is not None:
+        lines.extend(
+            [
+                "- **Toolkit installations** are approximate daily Elasticsearch cardinality "
+                "estimates of `clientId` among completed-turn events. They are installations, "
+                "not unique people.",
+                "- Toolkit V2 requires `metadata.kirocli_appType=V2`, V1 lacks that field, "
+                "and external ACP requires `metadata.kirocli_appType=ACP`. Internal requires "
+                "`metadata.credentialStartUrl` matching `amzn.awsapps.com`.",
+                "- Toolkit installation segments can overlap when one installation uses more "
+                "than one engine in a day, so do not sum segment cardinalities as a unique total.",
+            ]
+        )
+    if results is not None and toolkit_results is not None:
+        lines.extend(
+            [
+                "- **Do not directly compare installation counts across sources.** KUTS counts "
+                "heartbeat installation-version days; Toolkit estimates distinct `clientId` "
+                "values observed on turn events.",
+                "- Turn counts are the closest overlap, but producer coverage, classification, "
+                "and rollout timing differ. Use gaps as migration-coverage signals, not proof "
+                "that either source is wrong.",
+                "- Toolkit V1/V2 app-type buckets are compared with KUTS non-ACP V1 and V2+V3 "
+                "turns because Toolkit cannot isolate V3. Toolkit ACP is compared separately "
+                "with KUTS `external_acp` turns.",
+                "- `Toolkit all` includes V1, V2, and ACP turns. `KUTS all` includes every "
+                "session interface and the `unknown` engine cohort. The signed gaps make "
+                "source-coverage differences visible; they are not correction factors.",
+            ]
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -482,41 +883,109 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         start_date, end_date = resolve_window(args.start, args.end)
+        source = effective_source(args)
         if args.timeout_seconds < 1:
             raise ValueError("--timeout-seconds must be at least 1")
         if args.query_only:
-            print(QUERY, end="")
+            if source in ("both", "kuts"):
+                print("# KUTS CloudWatch Logs Insights query")
+                print(QUERY)
+            if source in ("both", "toolkit"):
+                print("# Toolkit Elasticsearch query")
+                print(json.dumps(build_toolkit_query(), indent=2))
             return 0
 
-        if args.input_json:
-            response = json.loads(args.input_json.read_text())
-        else:
-            profile = choose_profile(args.profile, os.environ, list_profiles())
-            verify_account(profile, args.region)
-            print(
-                f"Querying {start_date} through {end_date} with AWS profile {profile}",
-                file=sys.stderr,
-            )
-            response = query_metrics(
-                profile,
-                args.region,
-                args.log_group,
-                start_date,
-                end_date,
-                args.timeout_seconds,
-            )
+        results = None
+        statistics = None
+        toolkit_results = None
+        source_errors = {}
+        kuts_source = None
+        toolkit_source = None
+        toolkit_day_errors = {}
 
-        results = parse_query_results(response)
+        if source in ("both", "kuts"):
+            try:
+                kuts_input_json = args.legacy_input_json or args.kuts_input_json
+                if kuts_input_json:
+                    response = json.loads(kuts_input_json.read_text(encoding="utf-8"))
+                    kuts_source = f"saved KUTS JSON `{kuts_input_json}`"
+                else:
+                    profile = choose_profile(args.profile, os.environ, list_profiles())
+                    verify_account(profile, args.region)
+                    print(
+                        f"Querying KUTS for {start_date} through {end_date} "
+                        f"with AWS profile {profile}",
+                        file=sys.stderr,
+                    )
+                    response = query_metrics(
+                        profile,
+                        args.region,
+                        args.log_group,
+                        start_date,
+                        end_date,
+                        args.timeout_seconds,
+                    )
+                    kuts_source = (
+                        f"AWS account `{ACCOUNT}`, `{args.region}`, `{args.log_group}`"
+                    )
+                results = parse_query_results(response)
+                statistics = response.get("statistics")
+            except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+                source_errors["kuts"] = error
+                print(f"KUTS source unavailable: {error}", file=sys.stderr)
+
+        if source in ("both", "toolkit"):
+            try:
+                if args.toolkit_input_json:
+                    toolkit_results = load_toolkit_results(
+                        args.toolkit_input_json, start_date, end_date
+                    )
+                    toolkit_day_errors = {
+                        day: "saved response is missing"
+                        for day in calendar_days(start_date, end_date)
+                        if day not in toolkit_results
+                    }
+                    toolkit_source = f"saved Toolkit JSON `{args.toolkit_input_json}`"
+                else:
+                    toolkit_results, toolkit_day_errors = query_toolkit(
+                        args.toolkit_query_script, start_date, end_date
+                    )
+                    if not toolkit_results:
+                        details = "; ".join(
+                            f"{day.isoformat()}: {compact_error(error)}"
+                            for day, error in sorted(toolkit_day_errors.items())
+                        )
+                        raise RuntimeError(
+                            f"Toolkit queries failed for every requested date ({details})"
+                        )
+                    toolkit_source = "the legacy telemetry Elasticsearch daily indexes"
+            except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+                toolkit_results = None
+                toolkit_day_errors = {}
+                source_errors["toolkit"] = error
+                print(f"Toolkit source unavailable: {error}", file=sys.stderr)
+
+        if results is None and toolkit_results is None:
+            details = "; ".join(
+                f"{source}: {error}" for source, error in source_errors.items()
+            )
+            raise RuntimeError(f"no adoption data source was available ({details})")
+
         report = render_report(
             start_date,
             end_date,
             results,
-            response.get("statistics"),
+            statistics,
             region=args.region,
             log_group=args.log_group,
+            toolkit_results=toolkit_results,
+            source_errors=source_errors,
+            kuts_source=kuts_source,
+            toolkit_source=toolkit_source,
+            toolkit_day_errors=toolkit_day_errors,
         )
         output = Path(args.output)
-        output.write_text(report)
+        output.write_text(report, encoding="utf-8")
         print(f"Report written to {output}", file=sys.stderr)
         return 0
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
