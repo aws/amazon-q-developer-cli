@@ -73,9 +73,8 @@
     "segment": "all"
   },
   "remote_changelog": {
-    "description": "Remote changelog feed fetch on stable builds (prod CloudFront). Nightly always fetches from gamma unconditionally; this gate extends remote-fetch to stable builds reading the prod feed. Ramp: internal first, then widen segment/percent for general availability.",
+    "description": "Remote changelog feed fetch on stable builds (prod CloudFront). Nightly always fetches from gamma unconditionally. GA: all stable users at 100%. To darken the fleet, set treatment_percent to 0 in a follow-up release (config is compiled in); the immediate per-user lever is KIRO_NO_REMOTE_CHANGELOG.",
     "treatment_percent": 100,
-    "segment": "internal",
     "channel": "stable"
   },
   "auto_agent_upgrade": {

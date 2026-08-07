@@ -80,6 +80,7 @@ chat.log
 !.kiro/skills/regenerate-smithy-clients/
 !.kiro/skills/slack-publish/
 !.kiro/skills/generate-changelog/
+!.kiro/skills/publish-changelog/
 !.kiro/skills/release/
 !.kiro/skills/weekly-ops-review/
 !.kiro/skills/kas-local-dev/

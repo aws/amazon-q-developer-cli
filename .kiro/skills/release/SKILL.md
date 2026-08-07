@@ -165,6 +165,8 @@ gh api repos/kiro-team/kiro-cli-autocomplete/branches/release/<version> --jq '.n
 
 Feed file: `crates/chat-cli/src/cli/feed.json`
 
+This file is both compiled into the binary (fallback copy) and published as the hosted changelog feed the CLI fetches at runtime. Publishing is automatic: the stable build writes gamma's versioned and rolling objects (Step 3), and promote-to-prod writes only the prod versioned object (Step 5). For content fixes outside a release, use the `publish-changelog` skill.
+
 The release branch's feed.json should contain **exactly two entries** (plus the hidden placeholder):
 - The `0.0.0` hidden placeholder (`entries[0]`, always present)
 - The **current** release entry (the one being shipped)
@@ -227,6 +229,13 @@ The release branch's feed.json should contain **exactly two entries** (plus the 
 gh workflow run build-and-release.yml --ref release/<version> -f increment=stable
 ```
 
+The stable build also publishes the release branch's feed.json to both gamma paths. The versioned object validates the stable release's per-version content; nightly/rc/feature clients read the rolling object because feeds are not published for every prerelease version. Verify both after the build:
+```bash
+curl -s https://download.gamma.cli.kiro.dev/stable/<version>/feed.json | jq -r '.entries[].version'
+curl -s https://download.gamma.cli.kiro.dev/stable/changelog/feed.json | jq -r '.entries[].version'
+# expect <version> listed by both
+```
+
 ### Step 4: Verify Stable on Beta
 
 The stable build auto-releases to the beta toolbox channel.
@@ -252,9 +261,10 @@ gh workflow run promote-to-prod.yml \
 ```
 
 Flow:
-1. Approve → releases to prod toolbox
-2. 15-min bake (automatic)
-3. Approve → releases to CloudFront
+1. Publishes the release branch's feed.json to the versioned **prod** changelog path and waits for success (automatic `publish-changelog` job)
+2. Approve → releases to prod toolbox
+3. 15-min bake (automatic)
+4. Approve → releases to CloudFront
 
 ### Step 6: Verify Production
 
@@ -266,6 +276,10 @@ kiro-cli diagnostics
 # CloudFront
 curl -fsSL https://cli.kiro.dev/install | bash
 kiro-cli --version
+
+# Prod changelog feed — the stable client uses only its versioned path
+curl -s https://prod.download.cli.kiro.dev/stable/<version>/feed.json | jq -r '.entries[].version'
+# expect <version> listed; /changelog on that stable install renders it
 ```
 
 ## Revert a Bad Release

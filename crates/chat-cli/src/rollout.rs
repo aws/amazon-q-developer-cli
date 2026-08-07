@@ -193,7 +193,8 @@ impl Rollout {
     ///
     /// - `Some(TREATMENT)` — gets the new behavior
     /// - `Some(CONTROL)` — in the experiment but gets the default behavior
-    /// - `None` — not in the experiment (wrong segment/channel, no client_id, or feature absent)
+    /// - `None` — not in the experiment (wrong segment/channel, feature absent, or no client_id at
+    ///   a partial percent)
     pub fn variation(&self, feature: Feature) -> Option<&'static str> {
         let config = self.features.get(<&str>::from(feature))?;
         if config.segment == Segment::Internal && !self.is_internal {
@@ -203,6 +204,12 @@ impl Rollout {
             Channel::Nightly if !self.is_nightly => return None,
             Channel::Stable if self.is_nightly => return None,
             _ => {},
+        }
+        // Fully ramped features need no bucketing id: every bucket is
+        // treatment. This is what lets users without a persisted client id
+        // (telemetry opted out) receive features at GA.
+        if config.treatment_percent >= 100 {
+            return Some(TREATMENT);
         }
         let id = self.client_id?;
         if in_rollout(<&str>::from(feature), id, config.treatment_percent) {
@@ -413,18 +420,18 @@ mod tests {
     }
 
     #[test]
-    fn test_remote_changelog_enabled_only_for_internal_stable() {
+    fn test_remote_changelog_enabled_for_all_stable() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(
             features.contains_key(<&str>::from(Feature::RemoteChangelog)),
             "remote_changelog must be declared in rollout.json"
         );
 
-        // Gated to internal stable only for the first ramp stage. Nightly does
-        // not need the gate (it fetches gamma unconditionally), and external
-        // stable users stay dark until the segment/percent is widened.
+        // GA: every stable user, internal or external. Nightly stays outside
+        // the gate (it fetches gamma unconditionally, and the rollout's
+        // channel: stable excludes it).
         for (is_internal, is_nightly, expected) in [
-            (false, false, false),
+            (false, false, true),
             (false, true, false),
             (true, false, true),
             (true, true, false),
@@ -436,6 +443,45 @@ mod tests {
                 "remote_changelog enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
+    }
+
+    #[test]
+    fn test_fully_ramped_features_need_no_client_id() {
+        // Users without a persisted client id (telemetry opted out) must
+        // still receive features at 100%: bucketing is only meaningful for
+        // partial ramps. remote_changelog at GA is the motivating case.
+        let r = Rollout {
+            client_id: None,
+            ..Rollout::new_for_test(false, false)
+        };
+        assert_eq!(r.variation(Feature::RemoteChangelog), Some(TREATMENT));
+        assert_eq!(r.variation(Feature::Tangent), Some(TREATMENT));
+    }
+
+    #[test]
+    fn test_partial_ramp_stays_dark_without_client_id() {
+        // Partial percentages cannot bucket without an id, so those users
+        // stay out of the experiment entirely (None, not CONTROL).
+        let mut features = HashMap::new();
+        features.insert("test".to_string(), FeatureRollout {
+            description: String::new(),
+            treatment_percent: 50,
+            segment: Segment::All,
+            channel: Channel::All,
+        });
+        let no_id = Rollout {
+            features: features.clone(),
+            client_id: None,
+            is_internal: true,
+            is_nightly: true,
+        };
+        assert_eq!(no_id.variation(Feature::Test), None);
+        // With an id the same state is in the experiment.
+        let with_id = Rollout {
+            client_id: Some(Uuid::from_u128(1)),
+            ..no_id
+        };
+        assert!(with_id.variation(Feature::Test).is_some());
     }
 
     #[test]

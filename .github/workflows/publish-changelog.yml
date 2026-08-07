@@ -52,7 +52,7 @@ jobs:
         run: |
           pip install --quiet jsonschema
           python3 - <<'EOF'
-          import json, os
+          import json, os, re
           from jsonschema import validate
 
           feed = json.load(open('crates/chat-cli/src/cli/feed.json'))
@@ -79,9 +79,21 @@ jobs:
           # replacing all hosted changelog content. Never publish one; skip
           # instead (the checked-out ref may carry only the placeholder).
           publish = 'true' if feed['entries'] else 'false'
+          version = ''
+          if publish == 'true':
+              versions = [entry['version'] for entry in feed['entries']]
+              for candidate in versions:
+                  assert re.fullmatch(r'\d+\.\d+\.\d+', candidate), f"invalid stable release version: {candidate!r}"
+              version = versions[0]
+              latest = max(versions, key=lambda candidate: tuple(map(int, candidate.split('.'))))
+              assert version == latest, f"first publishable entry must be the current release ({latest}), got {version}"
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write(f'publish={publish}\n')
-          print(f"validated; publishable entries: {len(feed['entries'])} (publish={publish})")
+              out.write(f'version={version}\n')
+          print(
+              f"validated; publishable entries: {len(feed['entries'])} "
+              f"(publish={publish}, version={version or 'none'})"
+          )
           EOF
 
       - name: Configure AWS credentials
@@ -95,13 +107,24 @@ jobs:
         if: steps.validate.outputs.publish == 'true'
         run: |
           aws s3 cp feed-publish.json \
-            s3://${{ secrets.CHANGELOG_BUCKET }}/stable/changelog/feed.json \
+            s3://${{ secrets.CHANGELOG_BUCKET }}/stable/${{ steps.validate.outputs.version }}/feed.json \
             --content-type application/json \
             --cache-control "public, max-age=300"
+
+          if [[ "${{ inputs.environment }}" == "gamma" ]]; then
+            aws s3 cp feed-publish.json \
+              s3://${{ secrets.CHANGELOG_BUCKET }}/stable/changelog/feed.json \
+              --content-type application/json \
+              --cache-control "public, max-age=300"
+          fi
 
       - name: Invalidate CloudFront
         if: steps.validate.outputs.publish == 'true'
         run: |
+          paths=("/stable/${{ steps.validate.outputs.version }}/feed.json")
+          if [[ "${{ inputs.environment }}" == "gamma" ]]; then
+            paths+=("/stable/changelog/feed.json")
+          fi
           aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CHANGELOG_CF_DISTRIBUTION_ID }} \
-            --paths "/stable/changelog/feed.json"
+            --paths "${paths[@]}"

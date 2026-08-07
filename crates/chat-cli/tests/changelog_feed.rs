@@ -141,6 +141,16 @@ fn changelog_cmd(version: &str, feed_url: &str, data_dir: &std::path::Path) -> C
         .env("KIRO_DATA_DIR", data_dir)
         .env("KIRO_TEST_DB_PATH", data_dir.join("test.sqlite3"))
         .env("HOME", data_dir)
+        // Scrub inherited host env (tests may run inside a Kiro session) so
+        // the sandbox is deterministic: the client-id and telemetry vars
+        // change whether a bucketing id gets persisted, and the last two
+        // would force gates on and mask a dark binary.
+        .env_remove("KIRO_TELEMETRY_CLIENT_ID")
+        .env_remove("Q_TELEMETRY_CLIENT_ID")
+        .env_remove("KIRO_DISABLE_TELEMETRY")
+        .env_remove("Q_DISABLE_TELEMETRY")
+        .env_remove("KIRO_TEST_MODE")
+        .env_remove(KIRO_ROLLOUT_FORCE_INTERNAL)
         .timeout(std::time::Duration::from_secs(30));
     cmd
 }
@@ -188,22 +198,50 @@ fn rc_and_feature_channels_fetch() {
     }
 }
 
-/// The dark direction, and the ramp-safety guarantee this gate provides: a
-/// stable build that is NOT in the rollout (no internal sign-in, no
-/// force-internal override) makes zero fetch requests even with a feed URL
-/// configured. Release-profile only: debug builds enable every gate, so the
-/// gate-off shape is only observable on a --release binary.
+/// GA pin: an EXTERNAL stable user (no internal sign-in, no force-internal
+/// override) fetches the feed, because rollout.json ships remote_changelog
+/// at segment all / 100%. Release-profile only so the assertion goes through
+/// the real rollout config rather than the debug enable-all shortcut. The
+/// per-user dark lever remains the KIRO_NO_REMOTE_CHANGELOG kill switch;
+/// fleet-wide dark is treatment_percent 0 in a follow-up release.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "real rollout gate only exists in release builds")]
-fn stable_stays_dark_without_gate() {
+fn stable_fetches_at_ga_without_internal_signin() {
     let data_dir = tempfile::tempdir().unwrap();
     let mut server = mockito::Server::new();
-    let mock = server.mock("GET", "/feed.json").expect(0).create();
+    let mock = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .create();
 
     changelog_cmd("1.5.0", &format!("{}/feed.json", server.url()), data_dir.path())
         .assert()
         .success()
-        .stdout(contains("Remote fixture entry").not());
+        .stdout(contains("Remote fixture entry"));
+    mock.assert();
+}
+
+/// A telemetry-opted-out stable user also fetches at GA. Telemetry-disabled
+/// runs never persist a client id, and fully ramped features must not
+/// require one — otherwise opting out of telemetry would silently opt users
+/// out of GA features too. Release-profile only, same reason as above.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "real rollout gate only exists in release builds")]
+fn stable_fetches_at_ga_with_telemetry_disabled() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let mock = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .create();
+
+    changelog_cmd("1.5.0", &format!("{}/feed.json", server.url()), data_dir.path())
+        .env("KIRO_DISABLE_TELEMETRY", "1")
+        .assert()
+        .success()
+        .stdout(contains("Remote fixture entry"));
     mock.assert();
 }
 
@@ -359,12 +397,17 @@ fn failed_fetch_falls_back_to_cache_then_bundled() {
     let mut server = mockito::Server::new();
     let url = format!("{}/feed.json", server.url());
 
-    // Bundled-only baseline: server errors and there is no cache yet.
+    // Bundled-only baseline: server errors and there is no cache yet. The
+    // bundle is placeholder-only; its hidden 0.0.0 entry must never print.
     let error_mock = server.mock("GET", "/feed.json").with_status(500).create();
     changelog_cmd("1.5.0-nightly.1", &url, data_dir.path())
         .assert()
         .success()
-        .stdout(contains("Remote fixture entry").not());
+        .stdout(
+            contains("No changelog information available")
+                .and(contains("Remote fixture entry").not())
+                .and(contains("0.0.0").not()),
+        );
     error_mock.assert();
 
     // Seed the cache with a successful fetch.
@@ -386,6 +429,97 @@ fn failed_fetch_falls_back_to_cache_then_bundled() {
         .success()
         .stdout(contains("Remote fixture entry"));
     error_mock.assert();
+}
+
+/// A newer rolling feed must not erase the last cache this client can render.
+#[test]
+fn newer_only_remote_feed_preserves_compatible_cache() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let url = format!("{}/feed.json", server.url());
+    let cmd = || {
+        let mut cmd = changelog_cmd("2.17.0", &url, data_dir.path());
+        cmd.env(KIRO_ROLLOUT_FORCE_INTERNAL, "1");
+        cmd
+    };
+
+    let compatible = r#"{ "entries": [
+        { "type": "release", "date": "2026-01-17", "version": "2.17.0",
+          "changes": [{ "type": "added", "description": "Client-compatible cached entry" }] },
+        { "type": "release", "date": "2026-01-16", "version": "2.16.0", "changes": [] }
+    ] }"#;
+    let seed = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(compatible)
+        .create();
+    cmd()
+        .assert()
+        .success()
+        .stdout(contains("Client-compatible cached entry"));
+    seed.assert();
+
+    let newer_only = r#"{ "entries": [
+        { "type": "release", "date": "2026-01-19", "version": "2.19.0", "changes": [] },
+        { "type": "release", "date": "2026-01-18", "version": "2.18.0", "changes": [] }
+    ] }"#;
+    let latest = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(newer_only)
+        .create();
+    cmd()
+        .assert()
+        .success()
+        .stdout(contains("Client-compatible cached entry"));
+    latest.assert();
+
+    let offline = server.mock("GET", "/feed.json").with_status(500).create();
+    cmd()
+        .assert()
+        .success()
+        .stdout(contains("Client-compatible cached entry"));
+    offline.assert();
+}
+
+/// Version capping to zero visible entries stays safe on fetch and cache fallback.
+#[test]
+fn binary_older_than_all_remote_entries_degrades_to_empty() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new();
+    let url = format!("{}/feed.json", server.url());
+
+    let empty_output = || {
+        contains("No changelog information available")
+            .and(contains("Remote fixture entry").not())
+            .and(contains("Future entry").not())
+            .and(contains("0.0.0").not())
+    };
+
+    // Both successful fetches must reapply the current binary's cap.
+    let ok = server
+        .mock("GET", "/feed.json")
+        .with_status(200)
+        .with_body(FIXTURE_FEED)
+        .expect(2)
+        .create();
+    changelog_cmd("0.5.0-nightly.1", &url, data_dir.path())
+        .assert()
+        .success()
+        .stdout(empty_output());
+    changelog_cmd("0.5.0-nightly.1", &url, data_dir.path())
+        .assert()
+        .success()
+        .stdout(empty_output());
+    ok.assert();
+
+    // A capped-to-empty cache safely falls back to the placeholder-only bundle.
+    let err = server.mock("GET", "/feed.json").with_status(500).create();
+    changelog_cmd("0.5.0-nightly.1", &url, data_dir.path())
+        .assert()
+        .success()
+        .stdout(empty_output());
+    err.assert();
 }
 
 /// Bundled feed newer than the cache (post-upgrade) wins; a newer cache wins.
@@ -419,7 +553,12 @@ fn embedded_floor_prefers_newer_of_cache_and_bundled() {
         .with_status(200)
         .with_body(seed)
         .create();
-    floor_cmd("9.9.9-nightly.1").assert().success();
+    // The blocking remote path applies the bundled floor immediately while
+    // still caching the older response for later comparisons.
+    floor_cmd("9.9.9-nightly.1")
+        .assert()
+        .success()
+        .stdout(contains("Bundled floor entry").and(contains("Old cached entry").not()));
     ok.assert();
 
     // Offline: cache 2.0.0 < bundled 3.0.0 -> bundled floor entry served.

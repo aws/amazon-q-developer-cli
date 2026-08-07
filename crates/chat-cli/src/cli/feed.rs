@@ -17,10 +17,10 @@ use crate::util::consts::env_var::{
 const EMBEDDED_FEED: &str = include_str!("./feed.json");
 
 const GAMMA_FEED_URL: &str = "https://download.gamma.cli.kiro.dev/stable/changelog/feed.json";
-const PROD_FEED_URL: &str = "https://prod.download.cli.kiro.dev/stable/changelog/feed.json";
+const PROD_BASE_URL: &str = "https://prod.download.cli.kiro.dev/stable";
 
-/// Total request budget for fetching the remote feed. Kept short because any
-/// failure falls back to the cached/bundled feed.
+/// Request budget for fetching the remote feed. Kept short because failures
+/// fall back to cached or bundled content.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Upper bound on the remote feed size, comfortably above any retained feed
@@ -133,18 +133,17 @@ impl Feed {
         std::borrow::Cow::Borrowed(EMBEDDED_FEED)
     }
 
-    /// URL of the remotely published changelog feed, if this build should
-    /// read one. Nightly, rc, and feature builds read the gamma distribution
-    /// (all three ship to gamma only); stable builds read prod only when the
-    /// `remote_changelog` rollout gate is on, so the stable ramp is
-    /// controlled centrally. Local dev builds never fetch.
-    /// KIRO_FEED_URL redirects the fetch but does not bypass the channel or
-    /// rollout gate; use KIRO_VERSION_OVERRIDE to test channel-gated behavior.
+    /// Remotely published changelog URL for this build. Stable builds use
+    /// their version-scoped release-artifact folder; prereleases use gamma's
+    /// rolling feed because feeds are not published for every prerelease.
     pub fn remote_url() -> Option<String> {
+        let current_version = crate::util::channel::cli_version()
+            .map_or_else(crate::util::channel::cli_version_string, |version| version.to_string());
         Self::resolve_remote_url(
             std::env::var_os(KIRO_NO_REMOTE_CHANGELOG).is_some_and(|v| !v.is_empty()),
             &crate::util::channel::channel(),
             crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteChangelog),
+            &current_version,
             std::env::var(KIRO_FEED_URL)
                 .ok()
                 .filter(|url| !url.is_empty())
@@ -152,43 +151,40 @@ impl Feed {
         )
     }
 
-    /// Pure resolution of the feed URL from its inputs, so the full matrix
-    /// (channel x gate x override x kill switch) is testable without touching
-    /// process env or the global rollout.
+    /// Pure URL resolution for the full channel/gate/version matrix.
     fn resolve_remote_url(
         kill_switch: bool,
         channel: &crate::util::channel::Channel,
         stable_gate_enabled: bool,
+        current_version: &str,
         url_override: Option<&str>,
     ) -> Option<String> {
-        // Kill switch: turn off remote fetching without a binary release.
         if kill_switch {
             return None;
         }
-        let cdn_url = match channel {
-            // Nightly, rc, and feature builds all ship to gamma only, so they
-            // read the gamma feed. Version capping keeps a pre-release build
-            // from advertising the release it precedes.
+        let default_url = match channel {
             crate::util::channel::Channel::Nightly
             | crate::util::channel::Channel::Rc
-            | crate::util::channel::Channel::Other(_) => GAMMA_FEED_URL,
-            // Stable remote fetch is gated behind the rollout system so it can
-            // be ramped (internal -> percentage -> 100%).
-            crate::util::channel::Channel::Stable if stable_gate_enabled => PROD_FEED_URL,
-            // Local dev builds stay hermetic: no network on launch or
-            // /changelog. KIRO_FEED_URL cannot override this -- it only
-            // redirects fetches the channel/gate already authorized.
+            | crate::util::channel::Channel::Other(_) => GAMMA_FEED_URL.to_string(),
+            crate::util::channel::Channel::Stable if stable_gate_enabled => {
+                let Ok(version) = semver::Version::parse(current_version) else {
+                    return None;
+                };
+                if !version.pre.is_empty() {
+                    return None;
+                }
+                let version = format!("{}.{}.{}", version.major, version.minor, version.patch);
+                format!("{PROD_BASE_URL}/{version}/feed.json")
+            },
             crate::util::channel::Channel::Stable | crate::util::channel::Channel::Dev => return None,
         };
         match url_override {
-            // Feed content is rendered to the user's terminal, so never allow
-            // it over plaintext transport (loopback excepted, for tests).
             Some(url) if is_allowed_feed_url(url) => Some(url.to_string()),
             Some(url) => {
                 warn!(%url, "ignoring non-https KIRO_FEED_URL");
                 None
             },
-            None => Some(cdn_url.to_string()),
+            None => Some(default_url),
         }
     }
 
@@ -201,8 +197,12 @@ impl Feed {
     pub async fn fetch_remote_json() -> Option<String> {
         let url = Self::remote_url()?;
         let client = crate::request::new_client_no_redirects().ok()?;
-        let cached_raw = Self::read_cache_raw_for(&url);
-        let mut request = client.get(&url).timeout(FETCH_TIMEOUT);
+        Self::fetch_remote_json_from(&client, &url).await
+    }
+
+    async fn fetch_remote_json_from(client: &reqwest::Client, url: &str) -> Option<String> {
+        let cached_raw = Self::read_cache_raw_for(url);
+        let mut request = client.get(url).timeout(FETCH_TIMEOUT);
         // Only revalidate an ETag whose cached body is still present.
         if cached_raw.is_some()
             && let Some(etag) = Self::read_cache_etag()
@@ -218,7 +218,8 @@ impl Feed {
         };
         if response.status() == reqwest::StatusCode::NOT_MODIFIED {
             let processed = cached_raw
-                .and_then(|raw| Self::postprocess_remote_feed(&raw, &crate::util::channel::cli_version_string()));
+                .as_deref()
+                .and_then(|raw| Self::postprocess_remote_feed(raw, &crate::util::channel::cli_version_string()));
             if processed.is_none() {
                 // A 304 whose cached body is unusable would otherwise never
                 // self-heal (the stale ETag keeps yielding 304s); drop the
@@ -260,16 +261,32 @@ impl Feed {
             }
         }
         let body = String::from_utf8(body).ok()?;
-        let Some(processed) = Self::postprocess_remote_feed(&body, &crate::util::channel::cli_version_string()) else {
+        let current_version = crate::util::channel::cli_version_string();
+        let Some(processed) = Self::postprocess_remote_feed(&body, &current_version) else {
             warn!(%url, "remote changelog feed is not valid feed JSON");
             return None;
         };
+        // Preserve compatible content when a publication accidentally removes
+        // the newest entry this client can consume.
+        if let Some(cached_processed) = cached_raw
+            .as_deref()
+            .and_then(|raw| Self::postprocess_remote_feed(raw, &current_version))
+            && Self::max_version_in_json(&processed) < Self::max_version_in_json(&cached_processed)
+        {
+            warn!(%url, "remote changelog feed has no content as recent as the cache; preserving cache");
+            return Some(cached_processed);
+        }
         // Cache the raw body, not the processed output: processing (sanitize
         // + version cap) is re-applied on every read, so a cache written by
         // one binary version is never served with another version's cap, and
         // the ETag always corresponds to the server's representation.
-        Self::write_cache(&body, etag.as_deref(), &url);
+        Self::write_cache(&body, etag.as_deref(), url);
         Some(processed)
+    }
+
+    fn max_version_in_json(json: &str) -> Option<semver::Version> {
+        let feed = serde_json::from_str(json).ok()?;
+        max_release_version(&feed, crate::util::channel::cli_version().as_ref())
     }
 
     /// Validates, sanitizes, and version-caps a fetched feed body, returning
@@ -309,7 +326,17 @@ impl Feed {
     /// [Self::load_cached] + [Self::refresh_cache_in_background] instead.
     pub async fn load_remote() -> Self {
         match Self::fetch_remote_json().await {
-            Some(json) => serde_json::from_str(&json).unwrap_or_else(|_| Self::load()),
+            Some(json) => {
+                let candidate = serde_json::from_str(&json).unwrap_or_else(|_| Self::load());
+                let bundled = Self::load();
+                if max_release_version(&candidate, crate::util::channel::cli_version().as_ref())
+                    >= max_release_version(&bundled, crate::util::channel::cli_version().as_ref())
+                {
+                    candidate
+                } else {
+                    bundled
+                }
+            },
             None => Self::load_cached(),
         }
     }
@@ -465,16 +492,14 @@ mod tests {
     }
 
     /// Full URL-resolution matrix without touching process env or the global
-    /// rollout: channel x stable gate x override x kill switch.
+    /// rollout: channel x stable gate x version x override x kill switch.
     #[test]
     fn test_resolve_remote_url_matrix() {
         use crate::util::channel::Channel;
 
-        let resolve = |kill, ch: &Channel, gate, over| Feed::resolve_remote_url(kill, ch, gate, over);
+        let resolve = |kill, ch: &Channel, gate, over| Feed::resolve_remote_url(kill, ch, gate, "2.17.0", over);
         let feature = Channel::Other("fix-foo".to_string());
 
-        // Nightly, rc, and feature builds all read gamma; the stable gate is
-        // irrelevant to them.
         for gate in [false, true] {
             for ch in [Channel::Nightly, Channel::Rc, feature.clone()] {
                 assert_eq!(
@@ -485,38 +510,40 @@ mod tests {
             }
         }
 
-        // Stable fetches prod only when the rollout gate is on.
         assert_eq!(
-            resolve(false, &Channel::Stable, true, None).as_deref(),
-            Some(PROD_FEED_URL)
+            resolve(false, &Channel::Stable, true, None),
+            Some(format!("{PROD_BASE_URL}/2.17.0/feed.json"))
         );
-        assert_eq!(resolve(false, &Channel::Stable, false, None), None);
+        assert_eq!(
+            Feed::resolve_remote_url(false, &Channel::Stable, true, "2.17.0+build.4", None),
+            Some(format!("{PROD_BASE_URL}/2.17.0/feed.json")),
+            "build metadata is not part of the artifact folder"
+        );
+        assert!(
+            Feed::resolve_remote_url(false, &Channel::Stable, true, "../changelog", None).is_none(),
+            "invalid versions cannot become URL path segments"
+        );
+        assert!(resolve(false, &Channel::Stable, false, None).is_none());
 
-        // Local dev builds never fetch, gate on or off.
         for gate in [false, true] {
-            assert_eq!(resolve(false, &Channel::Dev, gate, None), None);
+            assert!(resolve(false, &Channel::Dev, gate, None).is_none());
         }
 
-        // Kill switch beats every other input, including an explicit override.
         for ch in [Channel::Nightly, Channel::Stable] {
-            assert_eq!(resolve(true, &ch, true, None), None);
-            assert_eq!(resolve(true, &ch, true, Some("https://example.com/f.json")), None);
+            assert!(resolve(true, &ch, true, None).is_none());
+            assert!(resolve(true, &ch, true, Some("https://example.com/f.json")).is_none());
         }
 
-        // The override only redirects a fetch the gates already authorized, and
-        // must still be https (loopback excepted).
         assert_eq!(
             resolve(false, &Channel::Nightly, false, Some("https://example.com/f.json")).as_deref(),
             Some("https://example.com/f.json")
         );
-        assert_eq!(
-            resolve(false, &Channel::Stable, false, Some("https://example.com/f.json")),
-            None,
+        assert!(
+            resolve(false, &Channel::Stable, false, Some("https://example.com/f.json")).is_none(),
             "override must not bypass the stable rollout gate"
         );
-        assert_eq!(
-            resolve(false, &Channel::Nightly, true, Some("http://example.com/f.json")),
-            None,
+        assert!(
+            resolve(false, &Channel::Nightly, true, Some("http://example.com/f.json")).is_none(),
             "plaintext override is rejected"
         );
         assert_eq!(
@@ -576,6 +603,162 @@ mod tests {
         let feed: Feed = serde_json::from_str(&processed).unwrap();
         let description = &feed.entries[0].changes[0].description;
         assert_eq!(description, "evil ]0;pwned [31mred\nsafe\tok");
+    }
+
+    struct FeedTestEnv {
+        data_dir: Option<std::ffi::OsString>,
+        version: Option<std::ffi::OsString>,
+    }
+
+    impl FeedTestEnv {
+        fn set(data_dir: &std::path::Path, version: &str) -> Self {
+            let previous = Self {
+                data_dir: std::env::var_os("KIRO_DATA_DIR"),
+                version: std::env::var_os(KIRO_VERSION_OVERRIDE),
+            };
+            unsafe {
+                std::env::set_var("KIRO_DATA_DIR", data_dir);
+                std::env::set_var(KIRO_VERSION_OVERRIDE, version);
+            }
+            previous
+        }
+    }
+
+    impl Drop for FeedTestEnv {
+        fn drop(&mut self) {
+            unsafe {
+                match self.data_dir.take() {
+                    Some(value) => std::env::set_var("KIRO_DATA_DIR", value),
+                    None => std::env::remove_var("KIRO_DATA_DIR"),
+                }
+                match self.version.take() {
+                    Some(value) => std::env::set_var(KIRO_VERSION_OVERRIDE, value),
+                    None => std::env::remove_var(KIRO_VERSION_OVERRIDE),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_prerelease_client_fetches_gamma_rolling_path() {
+        let _lock = crate::util::paths::ENV_MUTATION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let data_dir = tempfile::tempdir().unwrap();
+        let _env = FeedTestEnv::set(data_dir.path(), "2.17.0-nightly.1");
+        let mut server = mockito::Server::new_async().await;
+        let gamma_url = format!("{}/stable/changelog/feed.json", server.url());
+        let gamma = server
+            .mock("GET", "/stable/changelog/feed.json")
+            .with_status(200)
+            .with_body(sample_feed_json())
+            .create_async()
+            .await;
+        let client = crate::request::new_client_no_redirects().unwrap();
+
+        let body = Feed::fetch_remote_json_from(&client, &gamma_url)
+            .await
+            .expect("gamma rolling feed should be fetched");
+
+        assert!(body.contains("Remote entry"));
+        assert_eq!(Feed::read_cache_source().as_deref(), Some(gamma_url.as_str()));
+        gamma.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_client_fetches_own_versioned_path() {
+        let _lock = crate::util::paths::ENV_MUTATION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let data_dir = tempfile::tempdir().unwrap();
+        let _env = FeedTestEnv::set(data_dir.path(), "2.17.0");
+        let mut server = mockito::Server::new_async().await;
+        let versioned_url = format!("{}/stable/2.17.0/feed.json", server.url());
+        let versioned = server
+            .mock("GET", "/stable/2.17.0/feed.json")
+            .with_status(200)
+            .with_body(sample_feed_json())
+            .create_async()
+            .await;
+        let legacy = server
+            .mock("GET", "/stable/changelog/feed.json")
+            .expect(0)
+            .create_async()
+            .await;
+        let client = crate::request::new_client_no_redirects().unwrap();
+
+        let body = Feed::fetch_remote_json_from(&client, &versioned_url)
+            .await
+            .expect("versioned feed should be fetched");
+
+        assert!(body.contains("Remote entry"));
+        assert_eq!(Feed::read_cache_source().as_deref(), Some(versioned_url.as_str()));
+        versioned.assert_async().await;
+        legacy.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_missing_versioned_path_does_not_fetch_gamma_rolling_path() {
+        let _lock = crate::util::paths::ENV_MUTATION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let data_dir = tempfile::tempdir().unwrap();
+        let _env = FeedTestEnv::set(data_dir.path(), "2.17.0");
+        let mut server = mockito::Server::new_async().await;
+        let versioned_url = format!("{}/stable/2.17.0/feed.json", server.url());
+        let versioned = server
+            .mock("GET", "/stable/2.17.0/feed.json")
+            .with_status(404)
+            .create_async()
+            .await;
+        let gamma = server
+            .mock("GET", "/stable/changelog/feed.json")
+            .expect(0)
+            .create_async()
+            .await;
+        let client = crate::request::new_client_no_redirects().unwrap();
+
+        assert_eq!(Feed::fetch_remote_json_from(&client, &versioned_url).await, None);
+
+        versioned.assert_async().await;
+        gamma.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_versioned_response_preserves_compatible_cache() {
+        let _lock = crate::util::paths::ENV_MUTATION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let data_dir = tempfile::tempdir().unwrap();
+        let _env = FeedTestEnv::set(data_dir.path(), "2.17.0");
+        let mut server = mockito::Server::new_async().await;
+        let versioned_url = format!("{}/stable/2.17.0/feed.json", server.url());
+        let compatible = r#"{ "entries": [
+            { "type": "release", "date": "2026-01-17", "version": "2.17.0", "changes": [] }
+        ] }"#;
+        let newer_only = r#"{ "entries": [
+            { "type": "release", "date": "2026-01-19", "version": "2.19.0", "changes": [] },
+            { "type": "release", "date": "2026-01-18", "version": "2.18.0", "changes": [] }
+        ] }"#;
+        Feed::write_cache(compatible, Some("\"versioned-v1\""), &versioned_url);
+        let versioned = server
+            .mock("GET", "/stable/2.17.0/feed.json")
+            .match_header("if-none-match", "\"versioned-v1\"")
+            .with_status(200)
+            .with_body(newer_only)
+            .create_async()
+            .await;
+        let client = crate::request::new_client_no_redirects().unwrap();
+
+        let body = Feed::fetch_remote_json_from(&client, &versioned_url)
+            .await
+            .expect("compatible cache should be preserved");
+
+        assert!(body.contains("2.17.0"));
+        assert!(!body.contains("2.19.0"));
+        assert_eq!(Feed::read_cache_source().as_deref(), Some(versioned_url.as_str()));
+        assert_eq!(Feed::read_cache_etag().as_deref(), Some("\"versioned-v1\""));
+        versioned.assert_async().await;
     }
 
     /// Single test covering all remote-fetch and cache cases sequentially

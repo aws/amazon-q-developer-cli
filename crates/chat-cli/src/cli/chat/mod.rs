@@ -2263,12 +2263,14 @@ impl ChatSession {
         };
 
         if should_show {
-            // Use the shared rendering function
-            // Pass true to show the tip when auto-showing changelog on startup.
             // Startup must not block on the network: render the cached feed and
             // refresh the cache in the background for the next startup.
             crate::cli::feed::Feed::refresh_cache_in_background();
             let feed = crate::cli::feed::Feed::load_cached();
+            // Preserve the show budget until remote content is available.
+            if feed.get_all_changelogs().is_empty() {
+                return Ok(false);
+            }
             ui::render_changelog_content(&mut self.stderr, &feed, true)?;
 
             // Update the database entries
@@ -7284,6 +7286,47 @@ mod tests {
             .unwrap()
         }
 
+        struct FeedEnvGuard {
+            _lock: std::sync::MutexGuard<'static, ()>,
+            _dir: Option<tempfile::TempDir>,
+        }
+
+        impl Drop for FeedEnvGuard {
+            fn drop(&mut self) {
+                // SAFETY: the env mutation lock is held until this drop completes.
+                unsafe { std::env::remove_var("KIRO_BUNDLED_FEED_FILE") };
+                unsafe { std::env::remove_var("KIRO_NO_REMOTE_CHANGELOG") };
+            }
+        }
+
+        fn feed_env(bundled: Option<&str>) -> FeedEnvGuard {
+            let lock = crate::util::paths::ENV_MUTATION_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let dir = bundled.map(|contents| {
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("bundled.json");
+                std::fs::write(&path, contents).unwrap();
+                // SAFETY: exclusive env access via the lock held above.
+                unsafe { std::env::set_var("KIRO_BUNDLED_FEED_FILE", path) };
+                dir
+            });
+            if dir.is_none() {
+                // SAFETY: exclusive env access via the lock held above.
+                unsafe { std::env::remove_var("KIRO_BUNDLED_FEED_FILE") };
+            }
+            // Keep the feed hermetic so test results never depend on the real cache.
+            unsafe { std::env::set_var("KIRO_NO_REMOTE_CHANGELOG", "1") };
+            FeedEnvGuard { _lock: lock, _dir: dir }
+        }
+
+        fn announceable_feed_env() -> FeedEnvGuard {
+            feed_env(Some(
+                r#"{ "entries": [ { "type": "release", "date": "2026-01-01", "version": "1.0.0",
+                    "changes": [{ "type": "added", "description": "entry" }] } ] }"#,
+            ))
+        }
+
         #[tokio::test]
         async fn test_new_user_first_time_shows_welcome() {
             let mut os = Os::new().await.unwrap();
@@ -7359,6 +7402,7 @@ mod tests {
         async fn test_changelog_shows_twice_per_version() {
             let mut os = Os::new().await.unwrap();
             let mut session = create_test_session(&mut os).await;
+            let _env = announceable_feed_env();
 
             let current_version = env!("CARGO_PKG_VERSION");
             os.database.set_changelog_last_version(current_version).unwrap();
@@ -7378,6 +7422,24 @@ mod tests {
             let showed = session.show_changelog_announcement(&mut os).await.unwrap();
             assert!(!showed, "Should not show changelog third time");
             assert_eq!(os.database.get_changelog_show_count().unwrap(), Some(2));
+        }
+
+        #[tokio::test]
+        async fn test_empty_feed_preserves_announcement_budget() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            let _env = feed_env(None);
+
+            let current_version = env!("CARGO_PKG_VERSION");
+            os.database.set_changelog_last_version(current_version).unwrap();
+            os.database.set_changelog_show_count(0).unwrap();
+
+            // An empty feed must not render or consume the show budget, so
+            // the announcement still fires once content arrives remotely.
+            let showed = session.show_changelog_announcement(&mut os).await.unwrap();
+            assert!(!showed, "Empty feed must not announce");
+            assert_eq!(os.database.get_changelog_show_count().unwrap(), Some(0));
         }
 
         #[tokio::test]
@@ -7432,6 +7494,7 @@ mod tests {
         async fn test_changelog_shown_after_welcome_period() {
             let mut os = Os::new().await.unwrap();
             let mut session = create_test_session(&mut os).await;
+            let _env = announceable_feed_env();
 
             // User has seen welcome twice already
             os.database.set_welcome_announcement_count(2).unwrap();
@@ -7476,6 +7539,7 @@ mod tests {
         #[tokio::test]
         async fn test_tips_suppressed_when_changelog_shown() {
             let mut os = Os::new().await.unwrap();
+            let _env = announceable_feed_env();
 
             // User past welcome period
             os.database.set_welcome_announcement_count(2).unwrap();
