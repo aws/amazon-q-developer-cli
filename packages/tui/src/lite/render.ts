@@ -33,6 +33,7 @@ import {
   toolDiffPolicy,
   type ScrollbackToolRenderer,
   type ToolCallOrigin,
+  type ToolKind,
 } from '../types/tool-capabilities.js';
 import { formatLineRange } from '../types/tool-status.js';
 import {
@@ -1084,7 +1085,7 @@ export interface ToolCallRenderInfo {
  *  "List Directory") read like v2; raw name for MCP/unknown tools. */
 export function toolDisplayName(
   name: string,
-  kind?: string,
+  kind?: ToolKind,
   origin?: ToolCallOrigin
 ): string {
   return resolveToolDisplayName(name, kind, origin);
@@ -1435,12 +1436,16 @@ export function renderVerboseOutput(
   maxCharsPerLine?: number | null,
   termCols?: number,
   glyphs?: Glyphs,
-  isMcp = false
+  kind?: string,
+  origin?: ToolCallOrigin
 ): string {
   if (!result) return '';
   // Errors always surface; the filter only gates successful output.
   const isError = result.status === 'error';
-  if (!isError && !shouldShowToolOutput(toolName, filtersOverride, isMcp))
+  if (
+    !isError &&
+    !shouldShowToolOutput(toolName, filtersOverride, kind, origin)
+  )
     return '';
   // termCols is threaded from RenderContext so all renderers agree on width
   // (and resizes don't re-flow already-flushed rows differently).
@@ -1600,12 +1605,19 @@ export function renderLiveStreamingOutputBar(
     termCols: number;
     filtersOverride?: readonly string[];
     glyphs?: Glyphs;
-    isMcp?: boolean;
+    kind?: ToolKind;
+    origin?: ToolCallOrigin;
   }
 ): string[] {
-  if (!shouldShowToolOutput(toolName, opts.filtersOverride, opts.isMcp)) {
+  if (
+    !shouldShowToolOutput(
+      toolName,
+      opts.filtersOverride,
+      opts.kind,
+      opts.origin
+    )
+  )
     return [];
-  }
   if (sourceChunks.length === 0) return [];
 
   const cols = Math.max(40, opts.termCols);
@@ -3216,7 +3228,8 @@ function verboseOutputSuffix(
     display.outputMaxChars,
     ctx.termCols,
     ctx.glyphs,
-    isMcpMessage(msg)
+    msg.kind,
+    msg.origin ?? (isMcpMessage(msg) ? 'mcp' : undefined)
   );
 }
 
@@ -3450,7 +3463,8 @@ export function renderMessageToText(
         shouldShowToolOutput(
           msg.name || '',
           ctx.filtersOverride,
-          isMcpMessage(msg)
+          msg.kind,
+          msg.origin ?? (isMcpMessage(msg) ? 'mcp' : undefined)
         )
       ) {
         return withDenial(

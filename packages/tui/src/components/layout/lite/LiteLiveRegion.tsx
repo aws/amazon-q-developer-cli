@@ -320,7 +320,8 @@ export const LiteLiveRegion: React.FC = () => {
         termCols,
         filtersOverride,
         glyphs,
-        isMcp: isMcpMessage(tool.msg),
+        kind: tool.msg.kind,
+        origin: tool.msg.origin ?? (isMcpMessage(tool.msg) ? 'mcp' : undefined),
       });
       if (bar.length > 0) out.set(tool.id, bar);
     }

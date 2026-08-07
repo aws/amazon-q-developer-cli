@@ -13,6 +13,7 @@ import {
 import { useAppStoreOptional } from '../stores/app-store.js';
 import { readCliSettings } from '../utils/cli-settings.js';
 import { Settings } from '../constants/settings.js';
+import type { ToolCallOrigin, ToolKind } from '../types/tool-capabilities.js';
 
 const getDisplaySnapshot = cacheByVerboseVersion(getVerboseDisplay);
 const getFiltersSnapshot = cacheByVerboseVersion(getVerboseFilters);
@@ -60,7 +61,8 @@ export function useThinkingDisplay(): VerboseDisplayConfig['thinkingDisplay'] {
 
 export function useShouldShowToolOutput(
   toolName: string,
-  isMcp = false
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
 ): boolean {
   const override = useContext(VerbosityOverrideContext);
   const surfaceFilters = useSurfaceValue(
@@ -70,6 +72,7 @@ export function useShouldShowToolOutput(
   return shouldShowToolOutput(
     toolName,
     override?.filters ?? surfaceFilters,
-    isMcp
+    kind,
+    origin
   );
 }

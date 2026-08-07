@@ -84,7 +84,11 @@ const PreviewRow = React.memo(function PreviewRow({
     if (msg.name && SESSION_TOOL_NAMES.has(msg.name)) {
       return (
         <VerbosityToolContext.Provider
-          value={{ outputVisible: true, argsMode: display.toolArgsMode }}
+          value={{
+            display,
+            outputVisible: true,
+            argsMode: display.toolArgsMode,
+          }}
         >
           <Box flexDirection="column">
             <StatusInfo

@@ -124,7 +124,8 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     const configuredDisplay = useVerboseDisplay();
     const configuredOutputVisible = useShouldShowToolOutput(
       name,
-      isMcpMessage({ mcpServerName })
+      kind,
+      origin ?? (isMcpMessage({ mcpServerName }) ? 'mcp' : undefined)
     );
     const isApproval = status === ToolUseStatus.Pending;
     const display = isApproval
@@ -162,6 +163,7 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
     const portActive = process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
     const toolContextValue = useMemo(
       () => ({
+        display,
         outputVisible,
         reasoning,
         elapsedMs,
@@ -172,13 +174,11 @@ export const ToolUseMessage = React.memo<ToolUseMessageProps>(
         isStatic,
       }),
       [
+        display,
         outputVisible,
         reasoning,
         elapsedMs,
         portActive,
-        display.toolArgsMode,
-        display.argsMaxLines,
-        display.argsMaxChars,
         argsExpanded,
         isStatic,
       ]

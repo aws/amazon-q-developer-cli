@@ -1,8 +1,13 @@
 import React from 'react';
-import type { ToolArgsMode } from '../../lite/verbose.js';
+import {
+  TUI_DEFAULT_DISPLAY,
+  type ToolArgsMode,
+  type VerboseDisplayConfig,
+} from '../../lite/verbose.js';
 import { useExpandableRegistration } from '../../hooks/useExpandableOutput.js';
 
-type VerbosityToolContextValue = {
+export type ToolDisplayPolicy = {
+  display: VerboseDisplayConfig;
   outputVisible: boolean;
   reasoning?: string;
   elapsedMs?: number;
@@ -13,11 +18,16 @@ type VerbosityToolContextValue = {
   isStatic?: boolean;
 };
 
-export const VerbosityToolContext =
-  React.createContext<VerbosityToolContextValue>({ outputVisible: true });
+export const VerbosityToolContext = React.createContext<ToolDisplayPolicy>({
+  display: TUI_DEFAULT_DISPLAY,
+  outputVisible: true,
+});
 
-export const useVerbosityToolContext = (): VerbosityToolContextValue =>
+export const useVerbosityToolContext = (): ToolDisplayPolicy =>
   React.useContext(VerbosityToolContext);
+
+export const useToolDisplayPolicy = (): ToolDisplayPolicy =>
+  useVerbosityToolContext();
 
 export const useToolOutputVisible = (): boolean =>
   useVerbosityToolContext().outputVisible;

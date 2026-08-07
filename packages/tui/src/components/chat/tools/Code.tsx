@@ -12,8 +12,7 @@ import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
 import { clipChars } from '../../../lite/render.js';
-import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
-import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
+import { useToolDisplayPolicy } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
@@ -62,15 +61,13 @@ export const Code = React.memo(function Code({
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
 
-  // Code doesn't use useExpandableOutput, so read verbosity caps directly.
-  const display = useVerboseDisplay();
+  const { display, outputVisible } = useToolDisplayPolicy();
   const effectivePreview =
     display.outputMaxLines ??
     (process.env.KIRO_LITE_ROLLOUT_ENABLED === '1'
       ? Number.POSITIVE_INFINITY
       : PREVIEW_LINES);
   const outputMaxChars = display.outputMaxChars;
-  const outputVisible = useToolOutputVisible();
 
   const operation = useMemo(
     () => parseToolArg(content, 'operation'),

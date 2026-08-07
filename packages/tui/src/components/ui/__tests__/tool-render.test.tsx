@@ -402,6 +402,26 @@ test('wide streaming shell output is capped at its visual-row tail', async () =>
   expect(out).not.toContain('STREAM_HEAD');
 });
 
+test('MCP provenance wins over colliding built-in names in TUI filters', async () => {
+  const mcpRead = message(
+    'fs_read',
+    { path: '/tmp/collision.ts' },
+    texts('MCP_PROVENANCE_OUTPUT'),
+    { kind: 'read', origin: 'mcp' }
+  );
+
+  config(INLINE, ['mcp']);
+  check(await render(mcpRead), {
+    has: ['fs_read', 'MCP_PROVENANCE_OUTPUT'],
+  });
+
+  config(INLINE, ['read']);
+  check(await render(mcpRead), {
+    has: ['fs_read'],
+    lacks: ['MCP_PROVENANCE_OUTPUT'],
+  });
+});
+
 test('dispatcher caps output, Ctrl+O expands it, and errors bypass caps', async () => {
   // prettier-ignore
   const capped = message('mcp__demo__ping', {}, { text: 'FIRST_ABCDEFGHIJ\nSECOND_KLMNOPQRST' });
@@ -976,7 +996,9 @@ async function renderSubagent(
     filters
   );
   return wrap(
-    <VerbosityToolContext.Provider value={{ outputVisible: true }}>
+    <VerbosityToolContext.Provider
+      value={{ display: getTuiVerboseDisplay(), outputVisible: true }}
+    >
       <SubagentDetail
         content={SUBAGENT_CONTENT}
         summaries={SUBAGENT_SUMMARIES as never}
@@ -1060,13 +1082,15 @@ test('TUI-default config hides subagent detail', async () => {
 
 test.each([
   ['session_management', 0],
-  ['subagent', 2],
+  ['subagent', 1],
 ] as const)('hidden %s subscriptions', async (name, expected) => {
   config({ subagent: { responses: false } }, []);
   let appSubscriptions = () => 0;
   const conversations = vi.spyOn(sessionConversationsStore, 'subscribe');
   await wrap(
-    <VerbosityToolContext.Provider value={{ outputVisible: false }}>
+    <VerbosityToolContext.Provider
+      value={{ display: getTuiVerboseDisplay(), outputVisible: false }}
+    >
       <SessionTool id="hidden-session" name={name} isFinished result={ok('')} />
     </VerbosityToolContext.Provider>,
     {

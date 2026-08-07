@@ -320,6 +320,45 @@ describe('tool provenance through the real render path', () => {
     expect(output).not.toContain('Write');
     expect(output).not.toContain('added 1 line');
   });
+
+  it('uses MCP provenance when gating static output for a stripped name', () => {
+    const output = stripAnsi(
+      renderMessageToText(
+        {
+          id: 'mcp-read-collision',
+          role: 'tool_use',
+          name: 'fs_read',
+          origin: 'mcp',
+          kind: 'read',
+          content: JSON.stringify({ path: '/tmp/file.ts' }),
+          isFinished: true,
+          result: { status: 'success', output: 'static MCP output' },
+        },
+        'Kiro',
+        {
+          display: DEFAULT_DISPLAY,
+          filtersOverride: ['mcp'],
+        }
+      )
+    );
+
+    expect(output).toContain('static MCP output');
+  });
+
+  it('uses MCP provenance when gating live output for a stripped name', () => {
+    const output = stripAnsi(
+      renderLiveStreamingOutputBar('fs_read', [['streaming MCP output']], {
+        outputMaxLines: null,
+        outputMaxChars: null,
+        termCols: 80,
+        filtersOverride: ['mcp'],
+        kind: 'read',
+        origin: 'mcp',
+      }).join('\n')
+    );
+
+    expect(output).toContain('streaming MCP output');
+  });
 });
 
 describe('formatToolArgLines wrap behavior', () => {

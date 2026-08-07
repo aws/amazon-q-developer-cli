@@ -10,7 +10,7 @@ import { diffLines, type Change } from 'diff';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
-import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
+import { useToolDisplayPolicy } from '../../ui/VerbosityToolContext.js';
 
 export interface WriteProps {
   /** Old text content for diff (empty string for new files). When undefined,
@@ -66,7 +66,9 @@ export const Write = React.memo<WriteProps>(function Write({
   // still evidenced) but drop the diff body. Mirrors lite's suppressDiff.
   // Off-cohort mainline ALWAYS shows the diff, so force it on there (a leaked
   // verbosity `showWriteDiffs:false` must not suppress the body off-cohort).
-  const { showWriteDiffs: showWriteDiffsCfg } = useVerboseDisplay();
+  const {
+    display: { showWriteDiffs: showWriteDiffsCfg },
+  } = useToolDisplayPolicy();
   const showWriteDiffs =
     process.env.KIRO_LITE_ROLLOUT_ENABLED === '1' ? showWriteDiffsCfg : true;
 

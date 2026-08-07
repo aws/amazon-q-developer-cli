@@ -3,13 +3,12 @@ import { Box } from './../../../renderer.js';
 import { Text } from '../../ui/text/Text.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
-import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { clipChars, wrapStyled } from '../../../lite/render.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
 import {
   useToolArgsExpanded,
-  useVerbosityToolContext,
+  useToolDisplayPolicy,
 } from '../../ui/VerbosityToolContext.js';
 
 const LEFT_MARGIN = 2;
@@ -53,9 +52,8 @@ const VerbosityToolMeta = React.memo(function VerbosityToolMeta({
 }: ToolMetaProps) {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
-  const display = useVerboseDisplay();
+  const { display, isStatic } = useToolDisplayPolicy();
   const { width: termWidth } = useTerminalSize();
-  const { isStatic } = useVerbosityToolContext();
 
   const fullText = normalizeLineEndings(params?.join(', ') ?? '');
   const clippedText = fullText

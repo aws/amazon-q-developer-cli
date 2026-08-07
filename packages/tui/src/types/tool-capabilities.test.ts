@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import {
   NON_SCROLLBACK_TOOL_IDS,
   TOOL_CAPABILITIES,
+  TOOL_RENDERER_APPROVAL,
+  TOOL_RENDERER_VERBOSITY,
   isTrivialTool,
   resolveScrollbackToolRenderer,
   resolveToolDisplayName,
@@ -9,6 +11,7 @@ import {
   toolApprovalDetail,
   toolApprovalPresentation,
   toolDiffPolicy,
+  toolVerbosityPolicy,
   type ToolDiffPolicy,
 } from './tool-capabilities.js';
 import { TOOL_LABELS } from './tool-status.js';
@@ -37,6 +40,10 @@ describe('tool capability registry', () => {
           : [];
       for (const name of capability.names) {
         expect(resolveScrollbackToolRenderer(name)).toBe(capability.renderer);
+        expect(toolVerbosityPolicy(name)).toEqual(
+          ('verbosity' in capability ? capability.verbosity : undefined) ??
+            TOOL_RENDERER_VERBOSITY[capability.renderer]
+        );
         const expectedDiff =
           capability.diff === 'none' ? 'none' : diffByName?.[name];
         if (expectedDiff === undefined) {
@@ -128,6 +135,9 @@ describe('tool capability registry', () => {
     expect(resolveScrollbackToolRenderer('Code Intelligence', 'read')).toBe(
       'read'
     );
+    expect(toolVerbosityPolicy('Code Intelligence', 'read')).toEqual({
+      category: 'read',
+    });
   });
 
   it('keeps legacy artifact aliases eligible for edit-kind diff rendering', () => {
@@ -170,6 +180,12 @@ describe('tool capability registry', () => {
     expect(toolApprovalDetail('custom_tool')).toBe('generic');
     expect(toolApprovalDetail('execute_bash', 'execute', 'mcp')).toBe(
       'generic'
+    );
+  });
+
+  it('has an explicit verbosity policy for every renderer family', () => {
+    expect(Object.keys(TOOL_RENDERER_VERBOSITY).sort()).toEqual(
+      Object.keys(TOOL_RENDERER_APPROVAL).sort()
     );
   });
 });

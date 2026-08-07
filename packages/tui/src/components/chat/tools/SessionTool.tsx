@@ -8,8 +8,7 @@ import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { parseToolArg } from '../../../utils/tool-result.js';
 import { useAppStore, type ToolResult } from '../../../stores/app-store.js';
 import { sessionConversationsStore } from '../../../stores/session-conversations.js';
-import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
-import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
+import { useToolDisplayPolicy } from '../../ui/VerbosityToolContext.js';
 import { SubagentDetail, type SubagentDetailProps } from './SubagentDetail.js';
 import { collectSubagentSummariesByParentCached } from '../../layout/lite/subagent-summaries.js';
 import type { SubagentStageSummary } from '../../../lite/render.js';
@@ -159,8 +158,7 @@ const SessionSubagentDetail = React.memo(function SessionSubagentDetail({
   finished,
   isStatic,
 }: SessionSubagentDetailProps) {
-  const display = useVerboseDisplay();
-  const showFullOutput = useToolOutputVisible();
+  const { display, outputVisible: showFullOutput } = useToolDisplayPolicy();
   const canShowDigests =
     !!id &&
     finished &&

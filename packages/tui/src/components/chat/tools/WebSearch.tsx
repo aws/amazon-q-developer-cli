@@ -7,8 +7,7 @@ import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { clipChars } from '../../../lite/render.js';
-import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
-import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
+import { useToolDisplayPolicy } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 export interface WebSearchProps {
@@ -37,9 +36,7 @@ export const WebSearch = React.memo(function WebSearch({
 }: WebSearchProps) {
   const { getColor } = useTheme();
 
-  // outputMaxLines doesn't apply to this 1-line summary; only the char cap does.
-  const display = useVerboseDisplay();
-  const outputVisible = useToolOutputVisible();
+  const { display, outputVisible } = useToolDisplayPolicy();
 
   const query = useMemo(() => parseToolArg(content, 'query'), [content]);
 

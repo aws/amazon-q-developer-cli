@@ -24,6 +24,62 @@ export type ScrollbackToolRenderer =
   | 'workflow'
   | 'generic';
 
+export type ToolOutputCategory =
+  | 'shell'
+  | 'read'
+  | 'web'
+  | 'grep'
+  | 'glob'
+  | 'code'
+  | 'introspect'
+  | 'task'
+  | 'subagent';
+
+const TOOL_OUTPUT_CATEGORY_ORDER = {
+  shell: true,
+  read: true,
+  web: true,
+  grep: true,
+  glob: true,
+  code: true,
+  introspect: true,
+  task: true,
+  subagent: true,
+} as const satisfies Record<ToolOutputCategory, true>;
+
+export const TOOL_OUTPUT_CATEGORIES = Object.keys(
+  TOOL_OUTPUT_CATEGORY_ORDER
+) as ToolOutputCategory[];
+
+export type ToolVerbosityExclusion =
+  | 'write-result-duplicates-diff'
+  | 'no-distinct-output'
+  | 'name-specific-or-mcp';
+
+export type ToolVerbosityPolicy =
+  | { category: ToolOutputCategory }
+  | { excluded: ToolVerbosityExclusion };
+
+export const TOOL_RENDERER_VERBOSITY = {
+  write: { excluded: 'write-result-duplicates-diff' },
+  read: { category: 'read' },
+  shell: { category: 'shell' },
+  web_search: { category: 'web' },
+  web_fetch: { category: 'web' },
+  grep: { category: 'grep' },
+  glob: { category: 'glob' },
+  ls: { excluded: 'no-distinct-output' },
+  code: { category: 'code' },
+  session: { category: 'subagent' },
+  introspect: { category: 'introspect' },
+  image_read: { excluded: 'no-distinct-output' },
+  goal: { excluded: 'no-distinct-output' },
+  task: { category: 'task' },
+  knowledge: { excluded: 'no-distinct-output' },
+  workflow: { excluded: 'no-distinct-output' },
+  generic: { excluded: 'name-specific-or-mcp' },
+} as const satisfies Record<ScrollbackToolRenderer, ToolVerbosityPolicy>;
+
 export type ToolApprovalPresentation = 'diff' | 'subagent' | 'arguments';
 export type ToolApprovalDetail = 'shell-command' | 'delete-path' | 'generic';
 export type ToolDiffPolicy = 'unified' | 'none';
@@ -57,6 +113,7 @@ interface ToolCapability {
   renderer: ScrollbackToolRenderer;
   diff: ToolDiffPolicy;
   diffByName?: Readonly<Record<string, ToolDiffPolicy>>;
+  verbosity?: ToolVerbosityPolicy;
   trivial?: boolean;
   artifactWriteNames?: readonly string[];
   parentNames?: readonly string[];
@@ -149,6 +206,7 @@ export const TOOL_CAPABILITIES = {
     ],
     renderer: 'generic',
     diff: 'none',
+    verbosity: { category: 'shell' },
   },
   webSearch: {
     names: ['web_search', 'Searching the web'],
@@ -405,6 +463,18 @@ export function toolDiffPolicy(
   if (namePolicy) return namePolicy;
   if (kind && capability.kinds?.includes(kind)) return capability.diff;
   return 'none';
+}
+
+export function toolVerbosityPolicy(
+  name: string,
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
+): ToolVerbosityPolicy {
+  const capability = resolveToolCapability(name, kind, origin);
+  return (
+    capability?.verbosity ??
+    TOOL_RENDERER_VERBOSITY[capability?.renderer ?? 'generic']
+  );
 }
 
 export function isTrivialTool(

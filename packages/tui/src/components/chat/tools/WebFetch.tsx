@@ -7,8 +7,7 @@ import { parseToolArg, getResultSummary } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { clipChars } from '../../../lite/render.js';
-import { useVerboseDisplay } from '../../../hooks/useVerbose.js';
-import { useToolOutputVisible } from '../../ui/VerbosityToolContext.js';
+import { useToolDisplayPolicy } from '../../ui/VerbosityToolContext.js';
 import type { ToolResult } from '../../../stores/app-store.js';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { hyperlink } from '../../../utils/terminal-capabilities.js';
@@ -39,9 +38,7 @@ export const WebFetch = React.memo(function WebFetch({
 }: WebFetchProps) {
   const { getColor } = useTheme();
 
-  // outputMaxLines doesn't apply to this 1-line summary; only the char cap does.
-  const display = useVerboseDisplay();
-  const outputVisible = useToolOutputVisible();
+  const { display, outputVisible } = useToolDisplayPolicy();
 
   const url = useMemo(() => parseToolArg(content, 'url'), [content]);
 

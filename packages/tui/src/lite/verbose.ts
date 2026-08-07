@@ -15,18 +15,12 @@ import {
 import { Settings } from '../constants/settings.js';
 import type { UiMode } from '../types/ui-mode.js';
 import {
-  READ_TOOL_NAMES,
-  SHELL_TOOL_NAMES,
-  SHELL_PROCESS_TOOL_NAMES,
-  WEB_SEARCH_TOOL_NAMES,
-  WEB_FETCH_TOOL_NAMES,
-  GREP_TOOL_NAMES,
-  GLOB_TOOL_NAMES,
-  CODE_TOOL_NAMES,
-  INTROSPECT_TOOL_NAMES,
-  TASK_TOOL_NAMES,
-  SESSION_TOOL_NAMES,
-} from '../types/agent-events.js';
+  KNOWN_TOOL_NAMES,
+  TOOL_OUTPUT_CATEGORIES,
+  toolVerbosityPolicy,
+  type ToolCallOrigin,
+  type ToolKind,
+} from '../types/tool-capabilities.js';
 
 export type ToolArgsMode = 'off' | 'inline' | 'block';
 
@@ -170,26 +164,15 @@ export const DENSITY_FILTERS: Record<DensityPreset, readonly string[]> = {
 };
 
 /**
- * Built-in filter categories (mirror the *_TOOL_NAMES sets). `mcp` matches the
- * `mcp__` prefix; `subagent` covers the pipeline tool + joiner.
+ * Built-in filter categories come from the tool capability registry. `mcp`
+ * matches either explicit MCP provenance or the legacy `mcp__` prefix.
  *
  * NO `write` CATEGORY (referenced below): a write's tool result is just a
  * one-line "Successfully ..." that duplicates the diff body, so a write filter
  * would gate only redundant chrome — and errors surface regardless. Write
  * tools always render; the diff is bounded by outputMaxLines/outputMaxChars.
  */
-export const VERBOSE_CATEGORIES = [
-  'shell',
-  'read',
-  'web',
-  'grep',
-  'glob',
-  'code',
-  'introspect',
-  'task',
-  'subagent',
-  'mcp',
-] as const;
+export const VERBOSE_CATEGORIES = [...TOOL_OUTPUT_CATEGORIES, 'mcp'] as const;
 export type VerboseCategory = (typeof VERBOSE_CATEGORIES)[number];
 
 const TUI_DEFAULT_FILTERS = ['all', '-subagent'];
@@ -256,66 +239,101 @@ export const expandFilterBaseline = (filters: readonly string[]): string[] => {
   return VERBOSE_CATEGORIES.filter((category) => !excluded.has(category));
 };
 
-// These tables define the display shape and map legacy shared cli.json keys
-// into the new surface records. New writes persist the complete record.
+// These exhaustive tables define the display shape and map legacy shared
+// cli.json keys into the new surface records. New writes persist the complete
+// record selected by VERBOSITY_VARIANTS.
+type KeysMatching<T, Value> = {
+  [Key in keyof T]-?: T[Key] extends Value ? Key : never;
+}[keyof T];
 
-type BoolDisplayKey =
-  | 'showToolReasoning'
-  | 'showElapsed'
-  | 'showWriteDiffs'
-  | 'showTasks'
-  | 'persistOutput';
-const BOOL_FIELDS: { local: BoolDisplayKey; setting: string }[] = [
-  { local: 'showToolReasoning', setting: Settings.CHAT_TOOLS_SHOW_REASONING },
-  { local: 'showElapsed', setting: Settings.CHAT_TOOLS_SHOW_ELAPSED },
-  { local: 'showWriteDiffs', setting: Settings.CHAT_TOOLS_SHOW_WRITE_DIFFS },
-  { local: 'showTasks', setting: Settings.CHAT_SHOW_TASKS },
-  { local: 'persistOutput', setting: Settings.CHAT_TOOLS_PERSIST_OUTPUT },
-];
+type BoolDisplayKey = Exclude<
+  KeysMatching<VerboseDisplayConfig, boolean>,
+  'showThinkingContent'
+>;
+const BOOL_FIELDS = {
+  showToolReasoning: Settings.CHAT_TOOLS_SHOW_REASONING,
+  showElapsed: Settings.CHAT_TOOLS_SHOW_ELAPSED,
+  showWriteDiffs: Settings.CHAT_TOOLS_SHOW_WRITE_DIFFS,
+  showTasks: Settings.CHAT_SHOW_TASKS,
+  persistOutput: Settings.CHAT_TOOLS_PERSIST_OUTPUT,
+} as const satisfies Record<BoolDisplayKey, string>;
+const BOOL_FIELD_KEYS = Object.keys(BOOL_FIELDS) as BoolDisplayKey[];
 
-type CapDisplayKey =
-  | 'argsMaxLines'
-  | 'outputMaxLines'
-  | 'argsMaxChars'
-  | 'outputMaxChars';
+type CapDisplayKey = KeysMatching<VerboseDisplayConfig, number | null>;
 // `defaultOnMissing`: char caps fall back to DEFAULT_DISPLAY when the saved
 // field is absent (so a pre-field upgrade keeps the chip cap); line caps treat
 // missing as unbounded.
-const CAP_FIELDS: {
-  local: CapDisplayKey;
-  setting: string;
-  defaultOnMissing: boolean;
-}[] = [
-  {
-    local: 'argsMaxLines',
+const CAP_FIELDS = {
+  argsMaxLines: {
     setting: Settings.CHAT_TOOLS_ARGS_MAX_LINES,
     defaultOnMissing: false,
   },
-  {
-    local: 'outputMaxLines',
+  outputMaxLines: {
     setting: Settings.CHAT_TOOLS_OUTPUT_MAX_LINES,
     defaultOnMissing: false,
   },
-  {
-    local: 'argsMaxChars',
+  argsMaxChars: {
     setting: Settings.CHAT_TOOLS_ARGS_MAX_CHARS,
     defaultOnMissing: true,
   },
-  {
-    local: 'outputMaxChars',
+  outputMaxChars: {
     setting: Settings.CHAT_TOOLS_OUTPUT_MAX_CHARS,
     defaultOnMissing: true,
   },
-];
+} as const satisfies Record<
+  CapDisplayKey,
+  { setting: string; defaultOnMissing: boolean }
+>;
+const CAP_FIELD_KEYS = Object.keys(CAP_FIELDS) as CapDisplayKey[];
 
-type SubagentKey = keyof SubagentDisplayConfig;
-const SUBAGENT_FIELDS: { local: SubagentKey; setting: string }[] = [
-  { local: 'pipeline', setting: Settings.CHAT_SUBAGENT_SHOW_PIPELINE },
-  { local: 'prompts', setting: Settings.CHAT_SUBAGENT_SHOW_PROMPTS },
-  { local: 'roles', setting: Settings.CHAT_SUBAGENT_SHOW_ROLES },
-  { local: 'deps', setting: Settings.CHAT_SUBAGENT_SHOW_DEPS },
-  { local: 'responses', setting: Settings.CHAT_SUBAGENT_SHOW_RESPONSES },
-];
+type SubagentFieldSettings = {
+  [Key in keyof SubagentDisplayConfig]: SubagentDisplayConfig[Key] extends boolean
+    ? string
+    : never;
+};
+const SUBAGENT_FIELDS = {
+  pipeline: Settings.CHAT_SUBAGENT_SHOW_PIPELINE,
+  prompts: Settings.CHAT_SUBAGENT_SHOW_PROMPTS,
+  roles: Settings.CHAT_SUBAGENT_SHOW_ROLES,
+  deps: Settings.CHAT_SUBAGENT_SHOW_DEPS,
+  responses: Settings.CHAT_SUBAGENT_SHOW_RESPONSES,
+} as const satisfies SubagentFieldSettings;
+const SUBAGENT_FIELD_KEYS = Object.keys(
+  SUBAGENT_FIELDS
+) as (keyof SubagentDisplayConfig)[];
+
+type BespokeDisplayKey = Exclude<
+  keyof VerboseDisplayConfig,
+  BoolDisplayKey | CapDisplayKey
+>;
+interface BespokeDisplayMetadata {
+  toolArgsMode: { kind: 'argsMode'; setting: string };
+  thinkingDisplay: { kind: 'thinking'; setting: string };
+  showThinkingContent: { kind: 'derivedThinking'; source: 'thinkingDisplay' };
+  subagent: { kind: 'subagent'; fields: SubagentFieldSettings };
+}
+const BESPOKE_FIELDS = {
+  toolArgsMode: {
+    kind: 'argsMode',
+    setting: Settings.CHAT_TOOLS_ARGS_MODE,
+  },
+  thinkingDisplay: {
+    kind: 'thinking',
+    setting: Settings.CHAT_SHOW_THINKING,
+  },
+  showThinkingContent: {
+    kind: 'derivedThinking',
+    source: 'thinkingDisplay',
+  },
+  subagent: {
+    kind: 'subagent',
+    fields: SUBAGENT_FIELDS,
+  },
+} as const satisfies {
+  [Key in BespokeDisplayKey]: Key extends keyof BespokeDisplayMetadata
+    ? BespokeDisplayMetadata[Key]
+    : never;
+};
 
 function legacyConfigPath(): string {
   return kiroHomePath('settings', 'lite_verbose.json');
@@ -384,7 +402,7 @@ function mergeDisplay(
   };
   if (!raw || typeof raw !== 'object') return out;
   const obj = raw as Record<string, unknown>;
-  for (const { local } of BOOL_FIELDS) {
+  for (const local of BOOL_FIELD_KEYS) {
     if (typeof obj[local] === 'boolean') out[local] = obj[local] as boolean;
   }
   if (
@@ -404,7 +422,8 @@ function mergeDisplay(
     out.thinkingDisplay = obj.showThinkingContent ? 'collapsed' : 'off';
   }
   out.showThinkingContent = out.thinkingDisplay !== 'off';
-  for (const { local, defaultOnMissing } of CAP_FIELDS) {
+  for (const local of CAP_FIELD_KEYS) {
+    const { defaultOnMissing } = CAP_FIELDS[local];
     if (obj[local] === undefined) {
       if (legacyCaps && !defaultOnMissing) out[local] = null;
       continue;
@@ -413,7 +432,7 @@ function mergeDisplay(
   }
   if (obj.subagent && typeof obj.subagent === 'object') {
     const sa = obj.subagent as Record<string, unknown>;
-    for (const { local } of SUBAGENT_FIELDS) {
+    for (const local of SUBAGENT_FIELD_KEYS) {
       if (typeof sa[local] === 'boolean')
         out.subagent[local] = sa[local] as boolean;
     }
@@ -461,11 +480,11 @@ function readLegacyLiteConfig(): VerboseConfig | null {
 
 const LEGACY_SETTINGS = [
   Settings.CHAT_TOOLS_FILTERS,
-  Settings.CHAT_TOOLS_ARGS_MODE,
-  Settings.CHAT_SHOW_THINKING,
-  ...BOOL_FIELDS.map(({ setting }) => setting),
-  ...CAP_FIELDS.map(({ setting }) => setting),
-  ...SUBAGENT_FIELDS.map(({ setting }) => setting),
+  BESPOKE_FIELDS.toolArgsMode.setting,
+  BESPOKE_FIELDS.thinkingDisplay.setting,
+  ...Object.values(BOOL_FIELDS),
+  ...CAP_FIELD_KEYS.map((key) => CAP_FIELDS[key].setting),
+  ...Object.values(SUBAGENT_FIELDS),
 ];
 
 function resolveLegacyDisplay(
@@ -484,13 +503,13 @@ function resolveLegacyDisplay(
       : fallback;
   };
   const argsMode = (fallback: ToolArgsMode): ToolArgsMode => {
-    const value = cli[Settings.CHAT_TOOLS_ARGS_MODE];
+    const value = cli[BESPOKE_FIELDS.toolArgsMode.setting];
     return value === 'off' || value === 'inline' || value === 'block'
       ? value
       : fallback;
   };
   const thinkingDisplay = resolveThinkingDisplay(
-    cli[Settings.CHAT_SHOW_THINKING],
+    cli[BESPOKE_FIELDS.thinkingDisplay.setting],
     cur.thinkingDisplay
   );
   const resolved: VerboseDisplayConfig = {
@@ -500,14 +519,17 @@ function resolveLegacyDisplay(
     thinkingDisplay,
     showThinkingContent: thinkingDisplay !== 'off',
   };
-  for (const { local, setting } of BOOL_FIELDS) {
-    resolved[local] = bool(setting, cur[local]);
+  for (const local of BOOL_FIELD_KEYS) {
+    resolved[local] = bool(BOOL_FIELDS[local], cur[local]);
   }
-  for (const { local, setting } of CAP_FIELDS) {
-    resolved[local] = cap(setting, cur[local]);
+  for (const local of CAP_FIELD_KEYS) {
+    resolved[local] = cap(CAP_FIELDS[local].setting, cur[local]);
   }
-  for (const { local, setting } of SUBAGENT_FIELDS) {
-    resolved.subagent[local] = bool(setting, cur.subagent[local]);
+  for (const local of SUBAGENT_FIELD_KEYS) {
+    resolved.subagent[local] = bool(
+      SUBAGENT_FIELDS[local],
+      cur.subagent[local]
+    );
   }
   return sameDisplay(cur, resolved) ? cur : resolved;
 }
@@ -602,9 +624,9 @@ export function sameDisplay(
 ): boolean {
   if (a.toolArgsMode !== b.toolArgsMode) return false;
   if (a.thinkingDisplay !== b.thinkingDisplay) return false;
-  for (const { local } of BOOL_FIELDS) if (a[local] !== b[local]) return false;
-  for (const { local } of CAP_FIELDS) if (a[local] !== b[local]) return false;
-  for (const { local } of SUBAGENT_FIELDS)
+  for (const local of BOOL_FIELD_KEYS) if (a[local] !== b[local]) return false;
+  for (const local of CAP_FIELD_KEYS) if (a[local] !== b[local]) return false;
+  for (const local of SUBAGENT_FIELD_KEYS)
     if (a.subagent[local] !== b.subagent[local]) return false;
   return true;
 }
@@ -674,7 +696,8 @@ export function setVerboseConfig(
           : patch.display.showThinkingContent
             ? 'collapsed'
             : 'off');
-      if (mode !== undefined) cli[Settings.CHAT_SHOW_THINKING] = mode;
+      if (mode !== undefined)
+        cli[BESPOKE_FIELDS.thinkingDisplay.setting] = mode;
     }
     writeCliSettings(cli);
   } catch (err) {
@@ -711,10 +734,11 @@ export function isMcpMessage(
 export function shouldShowToolOutput(
   toolName: string,
   filtersOverride?: readonly string[],
-  isMcp = false
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
 ): boolean {
   const filters = filtersOverride ?? getVerboseFilters();
-  const category = categorize(toolName, isMcp);
+  const category = categorize(toolName, kind, origin);
   if (
     filters.some((token) => {
       const excluded = excludedFilter(token);
@@ -730,31 +754,14 @@ export function shouldShowToolOutput(
   return category != null && filters.includes(category);
 }
 
-// `isMcp` is the authoritative MCP signal carried in the tool call's
-// `_meta.kiro.mcpServerName` (both v2 and KAS). The regular TUI stores MCP
-// tools under their BARE name (e.g. `InternalSearch`, not `mcp__…`), so the
-// prefix check alone can't recognize them — without this flag the `mcp`
-// filter category would never match a real TUI MCP tool.
 export function categorize(
   toolName: string,
-  isMcp = false
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
 ): VerboseCategory | null {
-  if (isMcp || toolName.startsWith('mcp__')) return 'mcp';
-  // KAS shell-process tools (titles on the wire) ride the shell category for
-  // verbosity, but stay out of SHELL_TOOL_NAMES so they keep their own labels.
-  if (SHELL_TOOL_NAMES.has(toolName) || SHELL_PROCESS_TOOL_NAMES.has(toolName))
-    return 'shell';
-  if (READ_TOOL_NAMES.has(toolName)) return 'read';
-  // Intentionally no WRITE_TOOL_NAMES branch — see docstring.
-  if (WEB_SEARCH_TOOL_NAMES.has(toolName) || WEB_FETCH_TOOL_NAMES.has(toolName))
-    return 'web';
-  if (GREP_TOOL_NAMES.has(toolName)) return 'grep';
-  if (GLOB_TOOL_NAMES.has(toolName)) return 'glob';
-  if (CODE_TOOL_NAMES.has(toolName)) return 'code';
-  if (INTROSPECT_TOOL_NAMES.has(toolName)) return 'introspect';
-  if (TASK_TOOL_NAMES.has(toolName)) return 'task';
-  if (SESSION_TOOL_NAMES.has(toolName)) return 'subagent';
-  return null;
+  if (origin === 'mcp' || toolName.startsWith('mcp__')) return 'mcp';
+  const policy = toolVerbosityPolicy(toolName, kind, origin);
+  return 'category' in policy ? policy.category : null;
 }
 
 export function validateTokens(tokens: string[]): {
@@ -765,7 +772,7 @@ export function validateTokens(tokens: string[]): {
   const accepted: string[] = [];
   const rejected: string[] = [];
   const unknown: string[] = [];
-  const known = new Set<string>(VERBOSE_CATEGORIES);
+  const knownCategories = new Set<string>(VERBOSE_CATEGORIES);
   for (const raw of tokens) {
     const t = raw.trim();
     if (!t) continue;
@@ -779,7 +786,11 @@ export function validateTokens(tokens: string[]): {
     }
     accepted.push(t);
     const candidate = excludedFilter(t) ?? t;
-    if (!known.has(candidate) && !candidate.startsWith('mcp__')) {
+    if (
+      !knownCategories.has(candidate) &&
+      !KNOWN_TOOL_NAMES.has(candidate) &&
+      !candidate.startsWith('mcp__')
+    ) {
       unknown.push(t);
     }
   }

@@ -40,6 +40,7 @@ import {
   subscribeVerbose,
   validateTokens,
   type VerboseConfig,
+  type VerboseDisplayConfig,
   type VerbositySurface,
 } from '../verbose.js';
 
@@ -157,6 +158,54 @@ describe('surface-specific persistence', () => {
     expect(getVerboseDisplay().outputMaxLines).toBe(8);
     expect(getTuiVerboseFilters()).toEqual(['read']);
     expect(getTuiVerboseDisplay().outputMaxLines).toBe(3);
+  });
+
+  test('complete display records round-trip without coupling UI variants', () => {
+    const display = {
+      showToolReasoning: false,
+      toolArgsMode: 'inline',
+      showElapsed: false,
+      subagent: {
+        pipeline: false,
+        prompts: false,
+        roles: false,
+        deps: false,
+        responses: false,
+      },
+      thinkingDisplay: 'off',
+      showThinkingContent: false,
+      showWriteDiffs: false,
+      showTasks: false,
+      persistOutput: false,
+      argsMaxLines: 3,
+      outputMaxLines: 11,
+      argsMaxChars: 17,
+      outputMaxChars: 29,
+    } satisfies VerboseDisplayConfig;
+    const unrelated = { nested: 'preserved' };
+    writeCliJson({ 'unrelated.setting': unrelated });
+
+    setVerboseConfig({ display, filters: ['read'] }, 'lite');
+    setVerboseConfig({ display, filters: ['mcp'] }, 'tui');
+    expect(savedSurface('lite')).toEqual({
+      display,
+      filters: ['read'],
+    });
+    expect(savedSurface('tui')).toEqual({
+      display,
+      filters: ['mcp'],
+    });
+    expect(readCliJson()['unrelated.setting']).toEqual(unrelated);
+
+    resetVerboseCache();
+    expect(getVerboseConfig('lite')).toEqual({
+      display,
+      filters: ['read'],
+    });
+    expect(getVerboseConfig('tui')).toEqual({
+      display,
+      filters: ['mcp'],
+    });
   });
 
   test.each(DENSITY_PRESETS.map((preset) => [preset] as const))(
@@ -391,18 +440,28 @@ describe('shouldShowToolOutput', () => {
     }
   });
 
-  // A bare-named MCP tool (the TUI shape) is gated by the `mcp` category ONLY
-  // when the isMcp signal is passed — the reported "disable mcp output does
-  // nothing" bug was this flag being unavailable to the filter.
-  test('isMcp routes a bare-named MCP tool through the mcp category', () => {
+  test('MCP provenance routes a bare-named tool through the mcp category', () => {
     setVerboseConfig({ filters: ['all', '-mcp'] });
-    expect(shouldShowToolOutput('InternalCodeSearch')).toBe(true); // missed
-    expect(shouldShowToolOutput('InternalCodeSearch', undefined, true)).toBe(
-      false
-    ); // hidden
+    expect(shouldShowToolOutput('InternalCodeSearch')).toBe(true);
+    expect(
+      shouldShowToolOutput('InternalCodeSearch', undefined, undefined, 'mcp')
+    ).toBe(false);
     setVerboseConfig({ filters: ['mcp'] });
-    expect(shouldShowToolOutput('InternalCodeSearch', undefined, true)).toBe(
-      true
+    expect(
+      shouldShowToolOutput('InternalCodeSearch', undefined, undefined, 'mcp')
+    ).toBe(true);
+  });
+
+  test('uses provenance before built-in names and honors negative filters', () => {
+    expect(shouldShowToolOutput('fs_read', ['mcp'], 'read', 'mcp')).toBe(true);
+    expect(shouldShowToolOutput('fs_read', ['read'], 'read', 'mcp')).toBe(
+      false
+    );
+    expect(
+      shouldShowToolOutput('fs_read', ['all', '-mcp'], 'read', 'mcp')
+    ).toBe(false);
+    expect(shouldShowToolOutput('fs_read', ['all', '-read'], 'read')).toBe(
+      false
     );
   });
 });
@@ -425,21 +484,21 @@ describe('categorize', () => {
     expect(categorize(tool)).toBe(expected);
   });
 
-  // TUI MCP tools arrive under their BARE name (no mcp__), so the prefix check
-  // alone misses them; the isMcp flag (from _meta.kiro.mcpServerName) is what
-  // makes them the `mcp` category.
-  test('isMcp flag categorizes a bare-named MCP tool', () => {
+  test('MCP provenance categorizes a bare-named MCP tool', () => {
     expect(categorize('InternalCodeSearch')).toBe(null);
-    expect(categorize('InternalCodeSearch', true)).toBe('mcp');
+    expect(categorize('InternalCodeSearch', undefined, 'mcp')).toBe('mcp');
+  });
+
+  test('categorizes stripped KAS MCP collisions by provenance', () => {
+    expect(categorize('fs_write', 'edit', 'mcp')).toBe('mcp');
+    expect(categorize('fs_read', 'read', 'mcp')).toBe('mcp');
   });
 });
 
 describe('validateTokens', () => {
-  // We don't reject typos (MCP tools load lazily): unknown non-category,
-  // non-mcp__ tokens are accepted but partitioned into `unknown` so callers can
-  // soft-warn. Only whitespace/shell-metachar tokens are rejected; empty tokens
-  // drop silently. `write` is a legacy category → accepted + unknown so a saved
-  // config survives a round-trip without erroring.
+  // We don't reject typos (MCP tools load lazily): unknown non-category/tool
+  // tokens are accepted but partitioned into `unknown` so callers can soft-warn.
+  // Only whitespace/shell-metachar tokens are rejected; empty tokens drop.
   test.each<{
     name: string;
     tokens: string[];
@@ -492,15 +551,15 @@ describe('validateTokens', () => {
     },
     {
       name: 'known categories and `all` are not flagged unknown',
-      tokens: ['all', 'shell', 'mcp', 'read', 'subagent'],
-      accepted: ['all', 'shell', 'mcp', 'read', 'subagent'],
+      tokens: ['all', 'shell', 'mcp', 'read', 'subagent', 'fs_read'],
+      accepted: ['all', 'shell', 'mcp', 'read', 'subagent', 'fs_read'],
       unknown: [],
     },
     {
-      name: 'legacy `write` token accepted but flagged unknown',
+      name: 'known `write` tool name is not flagged unknown',
       tokens: ['write'],
       accepted: ['write'],
-      unknown: ['write'],
+      unknown: [],
     },
   ])('$name', ({ tokens, accepted, rejected, unknown }) => {
     const result = validateTokens(tokens);
