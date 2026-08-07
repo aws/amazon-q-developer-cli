@@ -2,7 +2,7 @@ name: Code Review
 
 on:
   pull_request_target:
-    types: [opened]
+    types: [opened, synchronize]
     branches: [main]
   issue_comment:
     types: [created]
@@ -51,35 +51,82 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v6
+      - name: Detect review iteration
+        id: iteration
         if: steps.gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          # Fetch all bot reviews once, extract count and last timestamp
+          BOT_REVIEWS=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]")]')
+          REVIEW_COUNT=$(echo "$BOT_REVIEWS" | jq 'length')
+          echo "count=$REVIEW_COUNT" >> "$GITHUB_OUTPUT"
+
+          if [ "$REVIEW_COUNT" -eq 0 ]; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=incremental" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Debounce: skip if last bot review was < 10 min ago (unless /review command)
+          if [ "${{ github.event_name }}" != "issue_comment" ] && [ "$REVIEW_COUNT" -gt 0 ]; then
+            LAST_REVIEW_TIME=$(echo "$BOT_REVIEWS" | jq -r 'last | .submitted_at // empty')
+            if [ -n "$LAST_REVIEW_TIME" ]; then
+              # CI is Ubuntu-only; date -d is always available
+              LAST_EPOCH=$(date -d "$LAST_REVIEW_TIME" +%s)
+              NOW_EPOCH=$(date +%s)
+              DIFF_MIN=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
+              if [ "$DIFF_MIN" -lt 10 ]; then
+                echo "debounced=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "debounced=false" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              echo "debounced=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "debounced=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.skip != 'true' && steps.iteration.outputs.debounced != 'true'
         with:
-          ref: ${{ github.event.pull_request.head.sha || '' }}
-          fetch-depth: 0
-          # checkout@v6 blocks fork checkout under pull_request_target by default;
-          # this job intentionally reviews fork code, so opt back in.
-          allow-unsafe-pr-checkout: true
+          # Checkout the trusted base branch (main), NOT the PR head.
+          # The reviewer agent fetches PR diffs via `gh pr diff` API — it does
+          # not need the untrusted PR code on disk. This avoids CodeQL's
+          # "checkout of untrusted code in a privileged context" finding.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 1
 
       - name: Install Kiro CLI
-        if: steps.gate.outputs.skip != 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.iteration.outputs.debounced != 'true'
         run: |
           curl -fsSL https://cli.kiro.dev/install | bash
           kiro-cli --version
 
       - name: Configure AWS credentials
-        if: steps.gate.outputs.skip != 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.iteration.outputs.debounced != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::551670267384:role/KiroCLIReviewerQueryRole
           aws-region: us-east-1
 
       - name: Run review
-        if: steps.gate.outputs.skip != 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.iteration.outputs.debounced != 'true'
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REVIEW_MODE: ${{ steps.iteration.outputs.mode }}
+          REVIEW_ITERATION: ${{ steps.iteration.outputs.count }}
         run: |
-          kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
-            "Review PR $PR_NUMBER. Check for prior bot comments and only post if you have new findings. DO NOT wait for user input."
+          if [ "$REVIEW_MODE" = "full" ]; then
+            kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
+              "Review PR $PR_NUMBER (iteration: first). Post full high-level review with inline comments. Mark REQUEST_CHANGES if any P1 finding. DO NOT wait for user input."
+          else
+            kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
+              "Review PR $PR_NUMBER (iteration: $((REVIEW_ITERATION + 1)), mode: incremental). Only post NEW inline comments for findings not already raised. Skip the high-level review body. Mark REQUEST_CHANGES if any P1 finding remains unresolved. DO NOT wait for user input."
+          fi

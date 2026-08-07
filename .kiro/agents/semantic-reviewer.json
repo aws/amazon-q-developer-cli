@@ -93,5 +93,6 @@
     "policies": [
       "read-only-shell"
     ]
-  }
+  },
+  "model": "claude-opus-5"
 }
