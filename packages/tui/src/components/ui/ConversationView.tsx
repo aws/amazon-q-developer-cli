@@ -31,7 +31,8 @@ import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useTwinkiContext } from 'twinki';
 import { useThinkingMode } from '../../hooks/useGlyphs.js';
-import { resolveScrollbackToolRenderer } from '../../types/agent-events.js';
+import { isSubagentWrapperTool } from '../../utils/collapsed-tool-view.js';
+import { selectPanelAnchor } from '../../utils/subagent-panel-anchor.js';
 import type { ConversationTurn } from '../../stores/app-store.js';
 import {
   groupMessagesIntoTurns,
@@ -272,6 +273,12 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
     (msg) => msg.role === MessageRole.Model
   );
 
+  // The panel lists every live session, so exactly one card mounts it.
+  const { index: panelAnchorIndex, groupId: panelGroupId } = useMemo(
+    () => selectPanelAnchor(tailMessages),
+    [tailMessages]
+  );
+
   return (
     <HideToolArgsContext.Provider value={mainAgentName === 'spec'}>
       {tailMessages.map((message, index) => {
@@ -312,12 +319,15 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
           ) {
             return null;
           }
-          const isSessionTool =
-            resolveScrollbackToolRenderer(
-              message.name,
-              message.kind,
-              message.origin
-            ) === 'session';
+          // Mounts for spawn tools that own a child session, and for the KAS
+          // per-stage wrapper cards ("Sub-agent: <role>") that are the only card a
+          // dispatched sub-agent produces — without those the panel never mounts
+          // and the sub-agent's tool calls stay invisible.
+          const isSessionTool = isSubagentWrapperTool(
+            message.name,
+            message.kind,
+            message.origin
+          );
           return (
             <React.Fragment key={message.id}>
               <ToolUseMessage
@@ -339,9 +349,11 @@ const ActiveTurnTail = React.memo(function ActiveTurnTail({
                 mcpServerName={message.mcpServerName}
                 denial={message.denial}
               />
-              {isSessionTool && !message.isFinished && (
-                <SubagentToolPanel pipelineGroupId={message.pipelineGroupId} />
-              )}
+              {isSessionTool &&
+                !message.isFinished &&
+                index === panelAnchorIndex && (
+                  <SubagentToolPanel pipelineGroupId={panelGroupId} />
+                )}
             </React.Fragment>
           );
         }

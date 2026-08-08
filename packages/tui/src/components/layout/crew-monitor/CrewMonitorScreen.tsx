@@ -6,6 +6,7 @@ import { sessionConversationsStore } from '../../../stores/session-conversations
 import { useStore } from 'zustand';
 import { resolveToolId } from '../../../types/agent-events.js';
 import { getToolLabel } from '../../../types/tool-status.js';
+import { isSubagentWrapperTool } from '../../../utils/collapsed-tool-view.js';
 import type { Stage } from './types.js';
 import { mapSessionStatusToStageState } from './types.js';
 import { CrewMonitorLayout } from './CrewMonitorLayout.js';
@@ -152,6 +153,7 @@ export const CrewMonitorContent: React.FC = () => {
             for (let i = msgs.length - 1; i >= 0; i--) {
               const m = msgs[i]!;
               if (m.role === MessageRole.ToolUse && !m.isFinished) {
+                if (isSubagentWrapperTool(m.name, m.kind, m.origin)) continue;
                 const toolId = resolveToolId(m.name, m.kind, m.origin);
                 activeStatus = toolId ? getToolLabel(toolId) : m.name;
                 break;
@@ -171,6 +173,7 @@ export const CrewMonitorContent: React.FC = () => {
             for (let i = msgs.length - 1; i >= 0; i--) {
               const m = msgs[i]!;
               if (m.role === MessageRole.ToolUse && !m.isFinished) {
+                if (isSubagentWrapperTool(m.name, m.kind, m.origin)) continue;
                 const toolId = resolveToolId(m.name, m.kind, m.origin);
                 const label = toolId ? getToolLabel(toolId) : m.name;
                 let param: string | undefined;

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Sub-agent rows name the tool each running agent is executing, inline and in the `ctrl+g` monitor"
+}

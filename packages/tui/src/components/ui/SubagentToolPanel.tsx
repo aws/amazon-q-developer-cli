@@ -1,4 +1,5 @@
 import React, { useMemo, useRef } from 'react';
+import { useStore } from 'zustand';
 import { Box } from './../../renderer.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
@@ -7,7 +8,11 @@ import { Text } from '../ui/text/Text.js';
 import { Icon, IconType } from '../ui/icon/Icon.js';
 import { PieSpinner } from '../ui/spinner/PieSpinner.js';
 import { getStatusColor } from '../../utils/colorUtils.js';
-import { useAppStore, MessageRole } from '../../stores/app-store.js';
+import {
+  useAppStore,
+  MessageRole,
+  type MessageType,
+} from '../../stores/app-store.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
 import {
   resolveToolId,
@@ -15,6 +20,8 @@ import {
   type ToolKind,
 } from '../../types/agent-events.js';
 import { getToolLabel } from '../../types/tool-status.js';
+import { sessionConversationsStore } from '../../stores/session-conversations.js';
+import { isSubagentWrapperTool } from '../../utils/collapsed-tool-view.js';
 import { selectSubagentToolSessions } from './subagent-session-filter.js';
 
 interface SubagentToolPanelProps {
@@ -79,6 +86,17 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
       (state) => state.setFocusedCrewIndex
     );
     const orderRef = useRef<string[]>([]);
+    // Subscribes to the whole map, so the rows memo below recomputes on an append to
+    // any session, not just a displayed one. Left coarse deliberately: each recompute
+    // reverse-scans every session buffer only as far as its first unfinished call, and
+    // buffers are capped at 50 messages, so the work is bounded well under the React
+    // re-render the same event already causes. Narrowing it means deriving the tracked
+    // ids in the selector (they come from the memo body) and giving zustand a custom
+    // Map equality — new bug surface for no measurable gain.
+    const conversations = useStore(
+      sessionConversationsStore,
+      (s) => s.conversations
+    );
 
     const sessionsWithApproval = useMemo(
       () => new Set(approvalQueue.map((a) => a.sessionId)),
@@ -91,26 +109,57 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         pipelineGroupId,
       });
 
-      const activeToolByAgent = new Map<
-        string,
-        {
-          name: string;
-          content: string;
-          kind?: ToolKind;
-          origin?: ToolCallOrigin;
-        }
-      >();
-      for (const msg of messages) {
-        if (msg.role !== MessageRole.ToolUse) continue;
-        if (!msg.agentName) continue;
-        if (!msg.isFinished) {
-          activeToolByAgent.set(msg.agentName, {
+      interface ActiveTool {
+        name: string;
+        content: string;
+        kind?: ToolKind;
+        origin?: ToolCallOrigin;
+      }
+
+      function lastUnfinishedTool(
+        msgs: readonly MessageType[]
+      ): ActiveTool | undefined {
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          const msg = msgs[i]!;
+          if (msg.role !== MessageRole.ToolUse) continue;
+          if (msg.isFinished) continue;
+          // A wrapper card is the sub-agent itself, not work it is doing; reporting it
+          // would show `Sub-agent: <role>` in the tool column instead of the real tool.
+          if (isSubagentWrapperTool(msg.name, msg.kind, msg.origin)) continue;
+          return {
             name: msg.name,
             content: msg.content,
             kind: msg.kind,
             origin: msg.origin,
-          });
+          };
         }
+        return undefined;
+      }
+
+      // Primary lookup. KAS delivers a dispatched sub-agent's tool calls on the MAIN
+      // session id, so app-store resolves their `agentName` to the main agent — a
+      // name-keyed lookup structurally cannot match. The per-session store keeps them
+      // keyed by the id the session is actually known by.
+      const activeToolBySessionId = new Map<string, ActiveTool>();
+      for (const [id, msgs] of conversations) {
+        const tool = lastUnfinishedTool(msgs);
+        if (tool) activeToolBySessionId.set(id, tool);
+      }
+
+      // Fallback for the window the per-session store cannot cover: before a session's
+      // first event lands, and after its 50-message cap evicts the running call.
+      const activeToolByAgent = new Map<string, ActiveTool>();
+      for (const msg of messages) {
+        if (msg.role !== MessageRole.ToolUse) continue;
+        if (!msg.agentName) continue;
+        if (msg.isFinished) continue;
+        if (isSubagentWrapperTool(msg.name, msg.kind, msg.origin)) continue;
+        activeToolByAgent.set(msg.agentName, {
+          name: msg.name,
+          content: msg.content,
+          kind: msg.kind,
+          origin: msg.origin,
+        });
       }
 
       // Maintain stable insertion order across renders, reset when sessions change entirely
@@ -131,7 +180,8 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
       for (const name of orderRef.current) {
         const session = sessionByName.get(name);
         if (!session) continue;
-        const tool = activeToolByAgent.get(name);
+        const tool =
+          activeToolBySessionId.get(session.id) ?? activeToolByAgent.get(name);
         result.push({
           name,
           agentName: session.agentName ?? name,
@@ -143,7 +193,14 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         });
       }
       return result;
-    }, [sessions, sessionId, pipelineGroupId, messages, sessionsWithApproval]);
+    }, [
+      sessions,
+      sessionId,
+      pipelineGroupId,
+      messages,
+      conversations,
+      sessionsWithApproval,
+    ]);
 
     // Clamp focused index to valid range
     const clampedIndex = Math.min(focusedCrewIndex, rows.length - 1);
@@ -160,7 +217,12 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
     if (rows.length === 0) return null;
 
     const maxNameLen = Math.max(...rows.map((r) => r.name.length));
-    const maxAgentLen = Math.max(...rows.map((r) => r.agentName.length));
+    // Session name and agent name coincide for dispatched sub-agents; printing both
+    // renders the name twice per row.
+    const showAgentColumn = rows.some((r) => r.agentName !== r.name);
+    const maxAgentLen = showAgentColumn
+      ? Math.max(...rows.map((r) => r.agentName.length))
+      : 0;
 
     const allDone = rows.every(
       (r) => r.status === 'terminated' || r.status === 'failed'
@@ -223,7 +285,9 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
                       )
                     : getColor('primary')(row.name.padEnd(maxNameLen))}
                 </Text>
-                <Text>{agentColor(row.agentName.padEnd(maxAgentLen))}</Text>
+                {showAgentColumn && (
+                  <Text>{agentColor(row.agentName.padEnd(maxAgentLen))}</Text>
+                )}
                 <Text>{getColor(statusColor)(statusText)}</Text>
               </Box>
             </Box>

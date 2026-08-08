@@ -1,5 +1,6 @@
 import {
   isParentSubagentTool,
+  resolveScrollbackToolRenderer,
   resolveToolDisplayName,
   type ToolCallOrigin,
   type ToolKind,
@@ -42,6 +43,26 @@ export function isSubagentCard(
   if (name.startsWith(SUBAGENT_TITLE_PREFIX)) return true;
   if (name === ORCHESTRATE_SUBAGENT_TITLE) return true;
   return false;
+}
+
+/**
+ * Whether a tool call is a sub-agent wrapper card rather than real work: either a
+ * spawn tool that owns a child session, or a KAS per-stage wrapper card.
+ *
+ * Callers that summarize "what is this agent doing" must skip these, or they report
+ * the wrapper's own name (`Sub-agent: context-gatherer`) as the running tool and the
+ * real tool never surfaces. Shared so the conversation mount condition, the panel's
+ * scans, and the monitor all agree on what counts as a wrapper.
+ */
+export function isSubagentWrapperTool(
+  name: string,
+  kind?: ToolKind,
+  origin?: ToolCallOrigin
+): boolean {
+  return (
+    resolveScrollbackToolRenderer(name, kind, origin) === 'session' ||
+    isSubagentCard(name, kind, origin)
+  );
 }
 
 /**
