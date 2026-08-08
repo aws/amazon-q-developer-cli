@@ -63,13 +63,17 @@ frame() { curl -s -X POST "$KR/frame" -d "$(jq -cn --arg l "$1" '{label:$l}')" >
 grepscr() { curl -s "$KR/screen" | python3 -c "import sys,json;print('\n'.join(json.load(sys.stdin)['lines']))" 2>/dev/null | grep -qiE "$1"; }
 wait_scr() { local p="$1" t="${2:-60}" i; for i in $(seq 1 "$t"); do grepscr "$p" && return 0; sleep 1; done; return 1; }
 
-start_kr() { # $1 = extra chat args
+start_kr() { # $1 = extra chat args, $2 = optional --workspace dir for the PTY
   stop_kr
   kill_stale_listener "$PORT"
   sleep 1
   cd "$TUI_DIR" || return 1
+  # bash 3.2 (macOS default) + `set -u` treats an empty array expansion as
+  # unbound; the `+` parameter-expansion guard keeps it legal on both.
+  local ws_args=()
+  [ -n "${2:-}" ] && ws_args=(--workspace "$2")
   KIRO_TEST_MODE=1 KIRO_REMOTE_SESSIONS_ENDPOINT="$ENDPOINT" KIRO_API_KEY="${SMOKE_API_KEY:-}" \
-    bun run knight-rider --port "$PORT" --cmd "$BIN chat $1" >/tmp/kr-cloud-smoke.log 2>&1 &
+    bun run knight-rider --port "$PORT" ${ws_args[@]+"${ws_args[@]}"} --cmd "$BIN chat $1" >/tmp/kr-cloud-smoke.log 2>&1 &
   KR_PID=$!
   cd - >/dev/null || true
   sleep 20
@@ -79,6 +83,25 @@ start_kr() { # $1 = extra chat args
 stop_kr() {
   [ -n "$KR_PID" ] && { pkill -P "$KR_PID" 2>/dev/null; kill "$KR_PID" 2>/dev/null; wait "$KR_PID" 2>/dev/null; }
   KR_PID=""
+}
+
+# Prod teardown: each `start_kr "--cloud"` creates a REAL sandbox session,
+# and killing the PTY detaches with the agent still running. Sections that
+# don't test detach semantics end through here — /quit → "No (agent stops)"
+# (second option) — so a prod run doesn't strand one live sandbox per
+# section. Mock mode skips it (mock sessions are free; the extra keystrokes
+# just slow the run). The /quit-semantics section keeps its deliberate
+# keep-running exit.
+end_cloud_session() {
+  if [ "$MODE" = "prod" ] && [ -n "$KR_PID" ]; then
+    type_text "/quit"; enter
+    if wait_scr "continue working" 20; then
+      curl -s -X POST "$KR/keys" -d '{"keys":"Down"}' >/dev/null; sleep 0.5
+      enter
+      sleep 3
+    fi
+  fi
+  stop_kr
 }
 
 # ── endpoint setup ──────────────────────────────────────────────────────────
@@ -179,41 +202,147 @@ if [ "$MODE" = "mock" ]; then
   sleep 2
 fi
 
-# ── input-cancel steer hygiene (mock only; guards the bug #23 shape) ────────
-# ctrl+c while composing must not duplicate the next sent prompt. The mock
-# never runs a real turn, so this smokes the keystroke path only: type, ctrl+c,
-# retype, send — the transcript must show the marker exactly once.
-if [ "$MODE" = "mock" ]; then
-  if start_kr "--cloud"; then
-    wait_scr "Cloud session created" 60
-    wait_scr "ask a question" 20
-    type_text "first draft message"
-    curl -s -X POST "$KR/ctrlc" >/dev/null 2>&1 || true; sleep 1
-    type_text "MARKER_STEER_ONCE"; enter
-    sleep 5
-    COUNT=$(scr_dump | grep -c "MARKER_STEER_ONCE" || true)
-    if [ "${COUNT:-0}" -le 1 ]; then pass "no duplicate send after ctrl+c"; else fail "no duplicate send after ctrl+c (count=$COUNT)"; fi
-    frame "steer-cancel"
-  fi
-  stop_kr
+# ── input-cancel steer hygiene (both modes; guards the bug #23 shape) ───────
+# ctrl+c while composing must not duplicate the next sent prompt: type,
+# ctrl+c, retype, send — the transcript must show the marker exactly once.
+# In prod the send starts a REAL model turn, so it is cancelled (Esc)
+# immediately after the count is read; the assertion is about the keystroke
+# path, not the reply.
+if start_kr "--cloud"; then
+  wait_scr "Cloud session created" 90
+  wait_scr "ask a question" 30
+  type_text "first draft message"
+  curl -s -X POST "$KR/ctrlc" >/dev/null 2>&1 || true; sleep 1
+  type_text "MARKER_STEER_ONCE"; enter
+  sleep 5
+  COUNT=$(scr_dump | grep -c "MARKER_STEER_ONCE" || true)
+  # Exactly one: zero means the send never landed (plausible in prod where a
+  # real turn starts), which would otherwise pass the duplicate check vacuously.
+  if [ "${COUNT:-0}" -eq 1 ]; then pass "no duplicate send after ctrl+c"; else fail "no duplicate send after ctrl+c (count=${COUNT:-0})"; fi
+  frame "steer-cancel"
+  curl -s -X POST "$KR/escape" >/dev/null; sleep 1  # cancel the real turn in prod
 fi
+end_cloud_session
 
-# ── /autonomous verified mode switch (mock only) ────────────────────────────
-# KAS 0.27.8 relays session/set_mode for cloud sessions; the mock BFF plays
-# the sandbox core (applies the mode, answers the read-back), so the success
-# lines prove the VERIFIED switch — the CLI prints them only after the
-# read-back confirms the sandbox applied the mode. Prod-mode runs skip this:
-# whether the production sandbox applies set_mode durably is prod-scope.
+# ── /sessions listing renders cloud rows (both modes) ───────────────────────
+# The concurrent-row/switch matrix needs the mock's canned spaces (E2E +
+# mock-only resume section); what prod CAN answer cheaply is that /sessions
+# opens against the real BFF listing without a raw error.
+if start_kr "--cloud"; then
+  wait_scr "Cloud session created" 90
+  wait_scr "ask a question" 30
+  type_text "/sessions"; enter
+  sleep 8
+  if grepscr "Internal error"; then fail "/sessions never raw-errors"; else pass "/sessions never raw-errors"; fi
+  frame "sessions-list"
+  curl -s -X POST "$KR/escape" >/dev/null
+fi
+end_cloud_session
+
+# ── /autonomous verified mode switch (both modes) ───────────────────────────
+# KAS relays session/set_mode for cloud sessions; the success lines prove the
+# VERIFIED switch — the CLI prints them only after the read-back confirms the
+# sandbox applied the mode. Mock: the mock BFF plays the sandbox core. Prod:
+# the REAL sandbox answers — this is exactly the set_mode-durability question
+# that used to be deferred, so run it (longer waits: real relay latency).
+# Non-destructive: the section always switches back off.
+AUTONOMOUS_WAIT=15; [ "$MODE" = "prod" ] && AUTONOMOUS_WAIT=45
+if start_kr "--cloud"; then
+  wait_scr "Cloud session created" 90
+  wait_scr "ask a question" 30
+  type_text "/autonomous on"; enter
+  if wait_scr "Autonomous mode on|not supported on this session yet" "$AUTONOMOUS_WAIT"; then
+    if grepscr "not supported on this session yet"; then
+      # An honest not-supported message is a FAIL in mock (relay is modeled).
+      # In prod it is a BACKEND fact, not a CLI regression — record it
+      # loudly as a WARN so the run's exit code stays about the CLI.
+      if [ "$MODE" = "mock" ]; then fail "autonomous on (verified)"; else say "  WARN  PROD sandbox refused set_mode (relay not enabled server-side?) — CLI surfaced the honest message"; fi
+    else
+      pass "autonomous on (verified)"
+      type_text "/autonomous off"; enter
+      if wait_scr "Autonomous mode off" "$AUTONOMOUS_WAIT"; then pass "autonomous off (verified)"; else fail "autonomous off (verified)"; fi
+    fi
+  else
+    fail "autonomous on (no response)"
+  fi
+  frame "autonomous"
+fi
+end_cloud_session
+
+# ── /hooks sandbox fetch (both modes) ────────────────────────────────────────
+# Cloud /hooks bypasses the local cache and forwards _kiro/hooks/list to the
+# sandbox. Mock: the default responder answers {} → the panel's friendly
+# empty state. Prod: Hooks v2 EP enabled in beta/gamma 08/03 — the real
+# sandbox must answer with a panel or the friendly message, never the raw
+# "Internal error" the 08/04 parity sweep caught (KIRONEXT-4 shape). The
+# positive listing round-trip is the E2E (cloud-hooks.test.ts); smoke pins
+# the never-raw-error bar against the real backend.
+if start_kr "--cloud"; then
+  wait_scr "Cloud session created" 90
+  wait_scr "ask a question" 30
+  type_text "/hooks"; enter
+  sleep 8
+  if grepscr "Internal error"; then fail "/hooks never raw-errors"; else pass "/hooks never raw-errors"; fi
+  if grepscr "\.kiro/hooks"; then fail "/hooks shows no local paths"; else pass "/hooks shows no local paths"; fi
+  frame "hooks"
+fi
+end_cloud_session
+
+# ── /mcp + /tools + /agent sandbox surfaces (both modes) ────────────────────
+# Panels must open and read sandbox-side (provenance/awaiting notice or real
+# sandbox data), never raw-error and never leak this machine's config. These
+# already pass against the mock in the E2E suite; running them here in prod
+# mode is the cheap live check for the #3690 surface.
+if start_kr "--cloud"; then
+  wait_scr "Cloud session created" 90
+  wait_scr "ask a question" 30
+  type_text "/mcp"; enter
+  sleep 6
+  if grepscr "Internal error"; then fail "/mcp never raw-errors"; else pass "/mcp never raw-errors"; fi
+  frame "mcp"; curl -s -X POST "$KR/escape" >/dev/null; sleep 1
+  type_text "/tools"; enter
+  sleep 6
+  if grepscr "Internal error"; then fail "/tools never raw-errors"; else pass "/tools never raw-errors"; fi
+  frame "tools"; curl -s -X POST "$KR/escape" >/dev/null; sleep 1
+  type_text "/agent"; enter
+  if wait_scr "Select agent|Waiting for the sandbox" 20; then pass "/agent picker sandbox-owned"; else fail "/agent picker sandbox-owned"; fi
+  frame "agent"; curl -s -X POST "$KR/escape" >/dev/null
+fi
+end_cloud_session
+
+# ── /spec cloud gate with seeded local specs ────────────────────────────────
+# /spec reads the LOCAL .kiro/specs tree, not the sandbox clone, so it must
+# refuse in a cloud session — and the seeded local spec must never leak onto
+# the screen. Runs in BOTH modes: against prod the gate contract is the same.
+SPEC_WS=$(mktemp -d "${TMPDIR:-/tmp}/kr-smoke-spec-ws.XXXXXX")
+mkdir -p "$SPEC_WS/.kiro/specs/checkout-flow"
+printf '# Tasks\n\n- [ ] 1. Wire the cart API\n' > "$SPEC_WS/.kiro/specs/checkout-flow/tasks.md"
+if start_kr "--cloud" "$SPEC_WS"; then
+  wait_scr "Cloud session created" 60
+  wait_scr "ask a question" 20
+  type_text "/spec"; enter
+  if wait_scr "is not available for a cloud session" 15; then pass "spec gate refuses in cloud"; else fail "spec gate refuses in cloud"; fi
+  if scr_dump | grep -Ev "/spec( |$)" | grep -q "checkout-flow"; then fail "seeded spec never leaks"; else pass "seeded spec never leaks"; fi
+  frame "spec-gate"
+fi
+end_cloud_session
+rm -rf "$SPEC_WS"
+
+# ── subagent view on cloud replay (mock only) ───────────────────────────────
+# Replays a canned transcript containing a completed invoke_sub_agent
+# delegation; the cloud-only adapter must render the role, not a flat row
+# (bug #12 shape). Mock-only: prod replay content isn't deterministic.
 if [ "$MODE" = "mock" ]; then
-  if start_kr "--cloud"; then
-    wait_scr "Cloud session created" 60
-    wait_scr "ask a question" 20
-    type_text "/autonomous on"; enter
-    if wait_scr "Autonomous mode on" 15; then pass "autonomous on (verified)"; else fail "autonomous on (verified)"; fi
-    if grepscr "not supported on this session yet"; then fail "no not-supported fallback"; else pass "no not-supported fallback"; fi
-    type_text "/autonomous off"; enter
-    if wait_scr "Autonomous mode off" 15; then pass "autonomous off (verified)"; else fail "autonomous off (verified)"; fi
-    frame "autonomous"
+  kill "$BFF_PID" 2>/dev/null; wait "$BFF_PID" 2>/dev/null
+  kill_stale_listener "$BFF_PORT"
+  ( cd "$TUI_DIR" && MOCK_BFF_PORT=$BFF_PORT MOCK_BFF_HISTORY=1 MOCK_BFF_SUBAGENT=1 exec bun e2e_tests/cloud/mock-bff.mjs >>/tmp/mock-bff-smoke.log 2>&1 ) &
+  BFF_PID=$!
+  sleep 2
+  if start_kr "--cloud --resume-id $BANANA_ID"; then
+    if wait_scr "Audit complete" 60; then pass "subagent turn replays"; else fail "subagent turn replays"; fi
+    if grepscr "api-auditor"; then pass "subagent role renders"; else fail "subagent role renders"; fi
+    if grepscr "Cancelled"; then fail "subagent stays completed"; else pass "subagent stays completed"; fi
+    frame "subagent-replay"
   fi
   stop_kr
 fi

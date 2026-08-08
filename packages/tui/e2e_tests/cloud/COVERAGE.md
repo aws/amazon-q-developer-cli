@@ -46,6 +46,11 @@ Tiers:
 | Delete sessions (full id + unique prefix, ambiguity)                                             | rust-integ       | cloud_sessions_gating.rs delete tests                       |
 | Opt-in: same env without --cloud stays local                                                     | e2e              | cloud-sessions.test.ts t7                                   |
 | /autonomous on/off: picker + [current] tag, verified mode switch (#3653 CLI; KAS 0.27.8 relay)   | e2e + smoke      | cloud-autonomous.test.ts; smoke "autonomous"; KR S15        |
+| /spec gate: pre-fed local specs refuse + never leak; local control proves cloud scope            | e2e + smoke      | cloud-spec.test.ts; smoke "spec gate"; KR S17               |
+| Pre-fed local config (.kiro/agents, workflows, mcp.json) never leaks; create/edit refuse         | e2e              | cloud-prefed-config.test.ts                                 |
+| Subagent view on replay: invoke_sub_agent renders role + completed (bug #12 seam, #3657 port)    | e2e + smoke      | cloud-subagent-view.test.ts; smoke "subagent"; KR S18       |
+| /spec A/B parity behind the gate: identical script local vs cloud (seam), deep-equal observations; mode+prompts relay, spec ext-methods pinned KAS-local | e2e | cloud-spec-parity.test.ts (scope note in the file header)   |
+| /hooks positive round-trip: sandbox hooks render via forwarded _kiro/hooks/list; seeded local .kiro/hooks never leak; local control lists them | e2e | cloud-hooks.test.ts (negative bar: cloud-panels.test.ts) |
 
 ## Kill-switch boundary (release safety)
 
@@ -78,7 +83,7 @@ Legend: ✅ covered by this change · ▶ covered when the named open PR merges 
 | 9           | Footer "(+1 others)" plural                               | CLI fixed #3552                           | ✅ unit                                               | cloud-status.test.ts (exists)                                                                                                                    |
 | 10          | Steer/queue mid-turn failed                               | Fixed                                     | ▶ e2e (#3691 guards) + 📋 smoke mid-turn              |
 | 11          | Tool success reported failed                              | KAS relay                                 | ⛔ + ✅ e2e seam                                      | replay asserts completed status maps completed (t1)                                                                                              |
-| 12          | Subagent/tasks view flattened                             | KAS meta strip; CLI ready #3657           | ⛔ seam; unit kas-subagent-routing (exists)           |
+| 12          | Subagent/tasks view flattened                             | KAS meta strip; CLI ready #3657           | ✅ e2e replay (cloud-subagent-view.test.ts) + KR S18 + smoke; unit kas-subagent-routing (exists); live-delegation path 📋 smoke prod |
 | 13          | "Open in browser" on headless                             | CLI fixed #3599                           | ✅ unit                                               | (merged with #3599's tests)                                                                                                                      |
 | 14/24       | /knowledge "Session not found" (+ pre-prompt variant #24) | KAS transport                             | ⛔ (invariant)                                        | per-decision no dedicated test; the KR sweep's global no-error check fails on any raw wire error in any scenario                                 |
 | 15          | /effort "not available on model"                          | KAS configOptions gap                     | ⛔ e2e seam                                           | /effort output is the friendly message; never raw error                                                                                          |
@@ -104,6 +109,7 @@ Legend: ✅ covered by this change · ▶ covered when the named open PR merges 
 | —           | /sessions current session not listed                      | UX decision pending                       | 📋                                                    |
 | —           | ghost /disconnect print after detach                      | UX                                        | ▶ #3699 wipe covers                                   |
 | —           | pink/white checkmark mismatch in /repo                    | CLI fixed #3656                           | ✅ e2e repo-picker accent assertion                   |
+| —           | /spec reads local .kiro/specs in cloud (scope mismatch)   | CLI gated (runSpec refusal)               | ✅ e2e (cloud-spec.test.ts, pre-fed spec + local control) + KR S17 + smoke | gate message on every form; seeded feature never renders; nothing crosses the BFF wire |
 
 ## Open-PR-gated scenarios (add when each merges)
 

@@ -211,10 +211,13 @@ function sessionStatusFor(sessionId) {
 const sessionModes = new Map(); // spaceId -> KAS wire mode id ('vibe'|'autonomous'|...)
 
 // The sandbox's config surface: a mode select shaped like KAS's own
-// buildSessionConfigOptions output. Both modes are marked bundled (matching
-// prod, where `autonomous` is hidden from the /agent picker by the CLI's
-// allowlist); `currentValue` is the register's mode, defaulting to the
-// default agent's wire id 'vibe'.
+// buildSessionConfigOptions output. All modes are marked bundled (matching
+// prod); `currentValue` is the register's mode, defaulting to the default
+// agent's wire id 'vibe'. The `spec` option is OPT-IN (MOCK_BFF_SPEC_MODE=1,
+// set by the /spec cloud-parity E2E, which relays
+// `setConfigOption('mode','spec')` and needs the read-back to carry the
+// applied value): `spec` is on the CLI's bundled-agent allowlist, so an
+// unconditional row would add a picker entry to EVERY cloud suite.
 function configOptionsFor(sessionId) {
   return [
     {
@@ -234,6 +237,15 @@ function configOptionsFor(sessionId) {
           name: 'Autonomous',
           _meta: { kiro: { source: 'bundled' } },
         },
+        ...(process.env.MOCK_BFF_SPEC_MODE === '1'
+          ? [
+              {
+                value: 'spec',
+                name: 'Spec',
+                _meta: { kiro: { source: 'bundled' } },
+              },
+            ]
+          : []),
       ],
     },
   ];
@@ -255,6 +267,32 @@ function handleForwardedAcp(sessionId, method, params) {
       sessionModes.set(sessionId, params.value);
     }
     return { configOptions: configOptionsFor(sessionId) };
+  }
+  // /hooks in a cloud session: `_kiro/hooks/list` is sessionLive-classified
+  // in KAS, so the relay forwards it here. Opt-in (MOCK_BFF_HOOKS=1) the
+  // mock plays a sandbox that HAS hooks — the positive round-trip the
+  // hooks E2E pins (the default `{}` fall-through keeps the existing
+  // panel test's empty/friendly path). Shape matches executeHooks's parse
+  // in kas.ts (hooks[].name/trigger/matcher/action).
+  if (method === '_kiro/hooks/list' && process.env.MOCK_BFF_HOOKS === '1') {
+    return {
+      hooks: [
+        {
+          name: 'SANDBOX_HOOK_PROBE',
+          trigger: 'agentSpawn',
+          matcher: '*',
+          action: { type: 'askAgent', prompt: 'Review the change.' },
+        },
+      ],
+    };
+  }
+  // `_kiro/spec/invoke` is sessionLive-classified, so IF the CLI ever
+  // relays it (today resolveSpecSession is localOnly and /spec run stays
+  // KAS-local; the parity E2E documents that split), answer the invoke
+  // ack shape rather than the blanket `{}` — keeps the seam honest when
+  // spec ops start forwarding.
+  if (method === '_kiro/spec/invoke') {
+    return { sessionId: params?.sessionId, executionId: 'mock-exec-1' };
   }
   return {};
 }
@@ -440,6 +478,57 @@ function cannedTurnsFor(sessionId) {
           { text: 'Added GET /health returning 200 OK.', messageId: 'm-5' },
         ],
       ],
+      // Opt-in subagent turn (MOCK_BFF_SUBAGENT=1): the sandbox KAS
+      // registers invoke_sub_agent as its top-level delegation tool, and
+      // on replay the fold maps the persisted payload's `toolName` to the
+      // ACP `title` with NO _meta — the exact meta-stripped
+      // "Sub-agent: <role>" shape the CLI's InvokeSubagentPipelineAdapter
+      // claims for cloud sessions (invoke-subagent-pipeline.ts). This turn
+      // pins that rendering path end-to-end: parent card claimed, stage
+      // label derived from the explanation, completed status honored.
+      ...(process.env.MOCK_BFF_SUBAGENT === '1'
+        ? [
+            [
+              [
+                'user_message_chunk',
+                { text: 'audit the API layer for gaps', messageId: 'm-6' },
+              ],
+              [
+                'agent_message_chunk',
+                { text: 'Delegating the audit now.', messageId: 'm-7' },
+              ],
+              [
+                'tool_call',
+                {
+                  toolCallId: 'tc-sub-1',
+                  toolName: 'Sub-agent: api-auditor',
+                  kind: 'other',
+                  status: 'in_progress',
+                  args: {
+                    name: 'api-auditor',
+                    explanation: 'Audit REST handlers for missing auth',
+                    prompt: 'Audit every REST handler for missing auth checks.',
+                  },
+                },
+              ],
+              [
+                'tool_call_update',
+                {
+                  toolCallId: 'tc-sub-1',
+                  status: 'completed',
+                  result: 'Audit finished: 2 handlers lack auth.',
+                },
+              ],
+              [
+                'agent_message_chunk',
+                {
+                  text: 'Audit complete: 2 handlers need auth added.',
+                  messageId: 'm-8',
+                },
+              ],
+            ],
+          ]
+        : []),
     ];
   }
   if (sessionId === SPACE_WORKING) {

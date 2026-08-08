@@ -92,13 +92,23 @@ start_bff() { # $@ = extra env KEY=VAL...
   sleep 2
 }
 
-start_kr() { # $1 = chat args
+start_kr() { # $1 = chat args, $2 = optional --workspace dir for the PTY
   stop_kr
   kill_stale_listener "$PORT"
   sleep 1
   cd "$TUI_DIR" || return 1
-  KIRO_TEST_MODE=1 KIRO_REMOTE_SESSIONS_ENDPOINT="http://127.0.0.1:$BFF_PORT" KIRO_API_KEY="review-mock-key" \
-    bun run knight-rider --port "$PORT" --out "$OUT/frames" --cmd "$BIN chat $1" >>"$OUT/kr.log" 2>&1 &
+  # bash 3.2 (macOS default) + `set -u` treats an empty array expansion as
+  # unbound; the `+` parameter-expansion guard keeps it legal on both.
+  local ws_args=()
+  [ -n "${2:-}" ] && ws_args=(--workspace "$2")
+  # KR_ENGINE=kas forces the KAS engine for LOCAL (no --cloud) boots — cloud
+  # boots auto-select it, but a plain local control run would otherwise get
+  # the default engine, where KAS-only commands like /spec go to chat. The
+  # assignment goes through `env` because a parameter expansion is not
+  # parsed as a lexical VAR=val command prefix.
+  env KIRO_TEST_MODE=1 KIRO_REMOTE_SESSIONS_ENDPOINT="http://127.0.0.1:$BFF_PORT" KIRO_API_KEY="review-mock-key" \
+    ${KR_ENGINE:+KIRO_AGENT_ENGINE="$KR_ENGINE"} \
+    bun run knight-rider --port "$PORT" --out "$OUT/frames" ${ws_args[@]+"${ws_args[@]}"} --cmd "$BIN chat $1" >>"$OUT/kr.log" 2>&1 &
   KR_PID=$!
   cd - >/dev/null || true
   sleep 20
@@ -417,6 +427,66 @@ if start_kr "--cloud"; then
   if grepscr "Update kiro"; then pass "guidance names the recovery action"; else fail "guidance names the recovery action"; fi
   if grepscr "Cloud session created"; then fail "no phantom created line"; else pass "no phantom created line"; fi
   frame "guidance"
+fi
+stop_kr
+
+# ── S17 /spec gate: pre-fed local specs never leak into a cloud session ─────
+# /spec reads the LOCAL .kiro/specs tree (not the sandbox clone), so every
+# form refuses in cloud. The workspace is seeded with a real spec first —
+# the refusal is only meaningful with actual local state to leak — and the
+# local control (same seeded workspace, no --cloud) proves the gate is
+# cloud-scoped rather than /spec being broken.
+scenario "S17" "/spec refuses in cloud; seeded local specs never leak; local control works" "scope-mismatch class of #3690/bug 19; cloud-spec.test.ts mirror"
+SPEC_WS=$(mktemp -d "${TMPDIR:-/tmp}/kr-spec-ws.XXXXXX")
+mkdir -p "$SPEC_WS/.kiro/specs/checkout-flow"
+printf '# Requirements\n\nWHEN the cart changes THE checkout page SHALL recompute totals.\n' > "$SPEC_WS/.kiro/specs/checkout-flow/requirements.md"
+printf '# Tasks\n\n- [ ] 1. Wire the cart API\n- [ ] 2. Render order totals\n' > "$SPEC_WS/.kiro/specs/checkout-flow/tasks.md"
+start_bff
+if start_kr "--cloud" "$SPEC_WS"; then
+  wait_scr "Cloud session created" 60
+  wait_scr "ask a question" 20
+  type_text "/spec"; enter
+  if wait_scr "is not available for a cloud session" 15; then pass "bare /spec refuses"; else fail "bare /spec refuses"; fi
+  # The seeded feature name may appear only in the typed command echo, never
+  # from a .kiro/specs read (picker row / document list). The echo filter
+  # matches `/spec` as a command token — a bare substring would also drop
+  # real leak rows like `.kiro/specs/checkout-flow/`.
+  if scr_dump | grep -Ev "/spec( |$)" | grep -q "checkout-flow"; then fail "seeded spec never leaks"; else pass "seeded spec never leaks"; fi
+  frame "spec-gate"
+  type_text "/spec run checkout-flow"; enter
+  if wait_scr "is not available for a cloud session" 15; then pass "/spec run refuses"; else fail "/spec run refuses"; fi
+  no_error_check
+  frame "spec-run-gate"
+fi
+stop_kr
+# Local control: same seeded workspace, no --cloud — the picker must list
+# the seeded feature and the gate must not fire. KAS engine forced: /spec is
+# KAS-only, and a local boot doesn't auto-select KAS the way --cloud does.
+if KR_ENGINE=kas start_kr "" "$SPEC_WS"; then
+  wait_scr "ask a question" 60
+  type_text "/spec"; enter
+  if wait_scr "checkout-flow" 15; then pass "local control: picker lists seeded spec"; else fail "local control: picker lists seeded spec"; fi
+  if grepscr "is not available for a cloud session"; then fail "local control: no cloud gate"; else pass "local control: no cloud gate"; fi
+  frame "spec-local-control"
+fi
+stop_kr
+rm -rf "$SPEC_WS"
+
+# ── S18 subagent view on cloud replay (invoke_sub_agent, bug #12 shape) ─────
+# The sandbox KAS delegates via invoke_sub_agent; on replay the fold strips
+# _meta, leaving the "Sub-agent: <role>" title shape. The cloud-only
+# invoke-subagent adapter (#3657 port) must claim it and render the role —
+# a bare flat tool row is the flattened view bug #12 reported.
+scenario "S18" "Replayed invoke_sub_agent renders with role, completed, turns intact" "bug #12 seam; #3657 port; mirrors cloud-subagent-view.test.ts"
+start_bff MOCK_BFF_HISTORY=1 MOCK_BFF_SUBAGENT=1
+if start_kr "--cloud --resume-id $BANANA_ID"; then
+  wait_scr "audit the API layer for gaps" 60
+  wait_scr "Audit complete" 20
+  if grepscr "api-auditor"; then pass "delegation renders with its role"; else fail "delegation renders with its role"; fi
+  if grepscr "Cancelled|interrupted"; then fail "completed delegation stays completed"; else pass "completed delegation stays completed"; fi
+  if grepscr "now add a health check endpoint"; then pass "surrounding turns replay intact"; else fail "surrounding turns replay intact"; fi
+  no_error_check
+  frame "subagent-replay"
 fi
 stop_kr
 

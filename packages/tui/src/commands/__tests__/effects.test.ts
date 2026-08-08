@@ -1883,6 +1883,52 @@ describe('/spec cloud-session guard', () => {
       expect(ctx._spies.sendMessage).not.toHaveBeenCalled();
     });
   }
+
+  it('the KIRO_TEST_SPEC_CLOUD_PARITY seam is inert unless the value is exactly "1"', async () => {
+    // The cloud-parity E2E lifts the gate with this env var; any other
+    // value (including truthy-looking ones) must leave the gate armed so
+    // a stray ambient variable can't change user-visible behavior.
+    for (const value of ['true', 'yes', '0', '']) {
+      process.env.KIRO_TEST_SPEC_CLOUD_PARITY = value;
+      try {
+        const ctx = createMockCommandContext({
+          slashCommands: [specCmd],
+          cloudSessionActive: true,
+        });
+        await runEffect(specCmd, null, ctx, '');
+        expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+          '/spec is not available for a cloud session yet.',
+          'error',
+          5000
+        );
+      } finally {
+        delete process.env.KIRO_TEST_SPEC_CLOUD_PARITY;
+      }
+    }
+  });
+
+  it('KIRO_TEST_SPEC_CLOUD_PARITY="1" lifts the gate (the seam is alive)', async () => {
+    // The positive half: without it, a rename of the env var would leave
+    // the seam permanently inert with this suite green, and only the
+    // (skippable) cloud E2E would notice. With the gate lifted and no
+    // specs in cwd, the bare form falls through to the local empty-state
+    // path instead of the cloud refusal.
+    process.env.KIRO_TEST_SPEC_CLOUD_PARITY = '1';
+    try {
+      const ctx = createMockCommandContext({
+        slashCommands: [specCmd],
+        cloudSessionActive: true,
+      });
+      await runEffect(specCmd, null, ctx, '');
+      expect(ctx._spies.showAlert).not.toHaveBeenCalledWith(
+        '/spec is not available for a cloud session yet.',
+        'error',
+        5000
+      );
+    } finally {
+      delete process.env.KIRO_TEST_SPEC_CLOUD_PARITY;
+    }
+  });
 });
 
 describe('/spec analyze_requirements effect', () => {

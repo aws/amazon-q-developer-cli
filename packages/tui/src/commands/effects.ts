@@ -753,8 +753,14 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
   runSpec: async (_result, ctx, cmd, args) => {
     // Cloud sessions: every /spec form reads the LOCAL .kiro/specs tree,
     // which is not the sandbox filesystem the session runs on — refuse up
-    // front instead of showing stale local specs.
-    if (ctx.cloudSessionActive) {
+    // front instead of showing stale local specs. The env override is a
+    // test-only seam (inert unless exactly '1') that lets the cloud-parity
+    // E2E exercise the flows behind the gate without changing what users
+    // see.
+    if (
+      ctx.cloudSessionActive &&
+      process.env.KIRO_TEST_SPEC_CLOUD_PARITY !== '1'
+    ) {
       ctx.showAlert(
         '/spec is not available for a cloud session yet.',
         'error',

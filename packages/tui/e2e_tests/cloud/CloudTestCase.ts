@@ -47,6 +47,18 @@ export interface CloudHarnessOptions {
   cliArgs?: string[];
   /** Terminal size; defaults sized for the cloud connect checklist. */
   terminal?: { width: number; height: number };
+  /**
+   * Working directory for the spawned CLI. Local-workspace surfaces
+   * (`.kiro/specs`, steering docs, @prompts) resolve from here, so tests
+   * that pre-feed workspace config point this at a seeded temp dir.
+   */
+  cwd?: string;
+  /**
+   * Extra env for the CLI/TUI process (e.g. KIRO_TEST_* seams). Harness
+   * wiring (KIRO_REMOTE_SESSIONS_ENDPOINT, KIRO_API_KEY, engine paths) is
+   * not overridable — tests state seams here, not transport.
+   */
+  env?: Record<string, string>;
   testName: string;
 }
 
@@ -79,9 +91,14 @@ export class CloudHarness {
       const builder: E2ETestCaseBuilder = E2ETestCase.builder()
         .withTerminal(opts.terminal ?? { width: 140, height: 42 })
         .withTestName(opts.testName)
-        .withKasEngine()
+        .withKasEngine();
+      if (opts.cwd) builder.withCwd(opts.cwd);
+      builder
         .withCliArgs(...(opts.cliArgs ?? ['--cloud']))
         .withEnv({
+          // Test seams first so the harness wiring below cannot be
+          // overridden — mirrors startBff stripping ambient MOCK_BFF_*.
+          ...(opts.env ?? {}),
           // KAS engine, spawning the published server from node_modules.
           KIRO_AGENT_ENGINE: 'kas',
           KIRO_KAS_SERVER_PATH: KAS_SERVER,
