@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Disabled registry MCP servers stay visible in `/mcp` registry mode instead of disappearing"
+}

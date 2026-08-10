@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Remote sessions and cloud config now respect `HTTP_PROXY` environment settings"
+}

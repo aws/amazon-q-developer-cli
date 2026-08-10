@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "[V3] Nested `AGENTS.md` files across the workspace tree are loaded as steering context"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "[V3] Sessions now stay listed per workspace folder, so changing the folder set no longer hides chat history"
+}

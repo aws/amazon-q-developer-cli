@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Skill file watching no longer recurses into vendored `node_modules` inside skills"
+}

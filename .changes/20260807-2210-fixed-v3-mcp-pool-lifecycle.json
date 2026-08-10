@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] MCP servers no longer get stuck in a failed retry loop at startup"
+}

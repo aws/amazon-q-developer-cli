@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Spec sub-agents dispatched from a spec run regain access to the spec tool pool"
+}

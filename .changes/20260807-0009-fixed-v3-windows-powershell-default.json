@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Windows shell commands default to PowerShell instead of COMSPEC"
+}

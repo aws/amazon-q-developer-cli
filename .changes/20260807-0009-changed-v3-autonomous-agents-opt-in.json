@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "[V3] Autonomous agents (cloud sessions) are now opt-in: disabled unless the admin toggle is explicitly ON"
+}
