@@ -54,7 +54,9 @@ Percentage of requests succeeding, excluding user failures. Formula: `100 - (sys
 
 **Data source**:
 * `total` = SUM of `QCLIMessageCount`
-* `systemFailures` = all `QCLIMessageResponseError` minus these user failure reasons: `Interrupted`, `ContextWindowOverflow`, `MonthlyLimitReached`, `QuotaBreachError`, `NonInteractiveToolApproval`, `dispatch failure`, `AccessDeniedException`, `ThrottlingException`
+* `systemFailures` = all `QCLIMessageResponseError` minus these excluded (user/benign, non-system) failure reasons: `Interrupted`, `ContextWindowOverflow`, `MonthlyLimitReached`, `QuotaBreachError`, `NonInteractiveToolApproval`, `dispatch failure`, `AccessDenied`, `AccessDeniedException`, `ThrottlingException`, `ServiceQuotaExceededException`, `InvalidModelId`, `EmptyResponse`, `RecvErrorEmptyResponse`
+  * The authoritative list is the `userFailureReasons` array in `ToolkitTelemetryInfrastructure` (`src/monitoring/metrics/qcli-metrics.ts`); keep this doc in sync with it.
+  * `EmptyResponse` (V2/V3 agent loop) and `RecvErrorEmptyResponse` (V1 parser) are **client-synthesized reasons, not backend error codes**: the `GenerateAssistantResponse` (GAR) call returns HTTP 200 with a metering/metadata-only stream and no content events, which the CLI classifies as a retryable empty response (the fingerprint of Bedrock `stopReason=content_filtered`). Both are excluded because they are benign/retryable and were riding the 99% threshold overnight.
 
 **Investigation**:
 1. Check "System Failure Rate %" and "System Failures by Type" dashboard widgets
