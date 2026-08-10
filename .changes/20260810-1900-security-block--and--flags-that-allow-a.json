@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "Block `tar --use-compress-program` and `--to-command` flags that allow arbitrary command execution"
+}

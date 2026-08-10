@@ -5,7 +5,7 @@
     "sort": ["--compress-program"],
     "man": ["--html", "--pager", "-H", "-P"],
     "rg": ["--pre"],
-    "tar": ["--checkpoint-action"],
+    "tar": ["--checkpoint-action", "--use-compress-program", "--to-command"],
     "zip": ["-TT", "--unzip-command"],
     "git": ["--upload-pack", "--receive-pack", "--exec", "core.sshCommand", "core.gitProxy"]
   },

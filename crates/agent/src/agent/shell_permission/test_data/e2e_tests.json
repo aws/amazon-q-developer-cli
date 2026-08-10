@@ -149,6 +149,18 @@
     ]
   },
   {
+    "name": "trusted_tar_dangerous_flags",
+    "settings": {"allowed_commands": ["tar .*"], "auto_allow_readonly": true},
+    "cases": [
+      {"input": "tar -cf backup.tar ./src", "expected": "Allow"},
+      {"input": "tar -xf backup.tar", "expected": "Allow"},
+      {"input": "tar -c -f out.tar --use-compress-program evil.sh ./README.md", "expected": "Ask"},
+      {"input": "tar -c -f out.tar --use-compress-program=evil.sh ./README.md", "expected": "Ask"},
+      {"input": "tar -cf backup.tar --checkpoint-action=exec=sh", "expected": "Ask"},
+      {"input": "tar -cf backup.tar --to-command='sh -c evil' ./src", "expected": "Ask"}
+    ]
+  },
+  {
     "name": "env_poisoning",
     "settings": {"allowed_commands": ["git .*"], "auto_allow_readonly": true},
     "cases": [
