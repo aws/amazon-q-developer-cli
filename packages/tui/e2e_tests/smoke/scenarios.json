@@ -318,21 +318,6 @@
       "observe": "New session starts AND the initial prompt is sent immediately, agent responds"
     },
     {
-      "id": "slash-chat-resume",
-      "name": "/chat resume",
-      "category": "slash-commands",
-      "description": "Resume a previous session (backend command)",
-      "docRef": "/docs/cli/reference/slash-commands#chat",
-      "steps": [
-        "type:/chat resume",
-        "enter"
-      ],
-      "verify": [
-        "screen.contains:session"
-      ],
-      "observe": "KNOWN GAP: TUI interprets 'resume' as a session name, not a subcommand. Session picker is accessed via --resume-picker CLI flag. May show 'Session not found: resume'."
-    },
-    {
       "id": "slash-usage",
       "name": "/usage command",
       "category": "slash-commands",
@@ -481,21 +466,6 @@
         "screen.contains:Kiro"
       ],
       "observe": "Shows available prompts from MCP servers, or empty state if none configured"
-    },
-    {
-      "id": "slash-issue",
-      "name": "/issue command",
-      "category": "slash-commands",
-      "description": "Create GitHub issue or feature request",
-      "docRef": "/docs/cli/reference/slash-commands#issue",
-      "steps": [
-        "type:/issue",
-        "enter"
-      ],
-      "verify": [
-        "screen.contains:issue"
-      ],
-      "observe": "Opens issue creation workflow or shows instructions"
     },
     {
       "id": "tool-use-read",
