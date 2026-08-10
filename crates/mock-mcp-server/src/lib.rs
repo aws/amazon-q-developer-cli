@@ -115,6 +115,7 @@ pub struct MockMcpServerBuilder {
     oauth_token_ttl_secs: Option<u64>,
     oauth_no_refresh_token: bool,
     oauth_refresh_fails: bool,
+    oauth_resource_origin_only: bool,
 }
 
 impl MockMcpServerBuilder {
@@ -168,6 +169,18 @@ impl MockMcpServerBuilder {
     pub fn oauth_refresh_fails(mut self) -> Self {
         self.oauth = true;
         self.oauth_refresh_fails = true;
+        self
+    }
+
+    /// Declare the RFC 9728 protected-resource-metadata `resource` as the server
+    /// *origin* (`http://127.0.0.1:{port}`) instead of the full `/mcp` base URL.
+    /// Both are valid RFC 8707 resource identifiers for the base URL, but they are
+    /// different strings — which lets a test distinguish "honor the PRM-declared
+    /// resource" (rmcp 3.0) from "derive resource from the base URL" (the rmcp 2.0
+    /// bug that broke Microsoft Entra ID v2). Implies `oauth()`.
+    pub fn oauth_resource_origin_only(mut self) -> Self {
+        self.oauth = true;
+        self.oauth_resource_origin_only = true;
         self
     }
 
@@ -249,6 +262,9 @@ impl MockMcpServerBuilder {
         }
         if self.oauth_refresh_fails {
             args.push("--oauth-refresh-fails");
+        }
+        if self.oauth_resource_origin_only {
+            args.push("--oauth-resource-origin-only");
         }
 
         let child = Command::new(program)

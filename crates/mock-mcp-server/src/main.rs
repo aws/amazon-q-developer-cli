@@ -84,6 +84,13 @@ struct Args {
     /// client must surface a clear error. Only used with `--oauth`.
     #[arg(long)]
     oauth_refresh_fails: bool,
+
+    /// Declare the RFC 9728 protected-resource-metadata `resource` as the server origin
+    /// (`http://127.0.0.1:{port}`) rather than the full `/mcp` base URL. Used to verify
+    /// the client honors the PRM-declared RFC 8707 resource indicator instead of
+    /// deriving it from the base URL. Only used with `--oauth`.
+    #[arg(long)]
+    oauth_resource_origin_only: bool,
 }
 
 #[derive(Clone)]
@@ -288,6 +295,9 @@ struct OAuthMockConfig {
     issue_refresh_token: bool,
     /// Whether `grant_type=refresh_token` requests should fail with HTTP 400.
     refresh_fails: bool,
+    /// When true, the protected-resource-metadata `resource` is the server origin
+    /// (`http://127.0.0.1:{port}`) rather than the full `/mcp` base URL.
+    resource_origin_only: bool,
 }
 
 /// Shared state for the OAuth mock: a registry of currently-valid access tokens
@@ -397,9 +407,19 @@ async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) 
             "token_endpoint_auth_methods_supported": ["none"]
         })
     };
+    let resource_origin_only = runtime.cfg.resource_origin_only;
     let protected_resource_metadata = move |port: u16| {
+        // Both forms are valid RFC 8707 resource identifiers for the `/mcp` base
+        // URL; the origin-only form is a *different* string, so a client that
+        // honors this PRM `resource` produces an authorize request distinguishable
+        // from one that derives `resource` from the base URL.
+        let resource = if resource_origin_only {
+            format!("http://127.0.0.1:{port}")
+        } else {
+            format!("http://127.0.0.1:{port}/mcp")
+        };
         serde_json::json!({
-            "resource": format!("http://127.0.0.1:{port}/mcp"),
+            "resource": resource,
             "authorization_servers": [format!("http://127.0.0.1:{port}")]
         })
     };
@@ -548,6 +568,7 @@ async fn main() -> Result<()> {
                 token_ttl_secs: args.oauth_token_ttl_secs,
                 issue_refresh_token: !args.oauth_no_refresh_token,
                 refresh_fails: args.oauth_refresh_fails,
+                resource_origin_only: args.oauth_resource_origin_only,
             })
             .await
         },

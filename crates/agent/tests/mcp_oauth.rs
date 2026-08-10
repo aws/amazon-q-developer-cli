@@ -19,6 +19,9 @@
 //!   - Test B: token expiry mid-session triggers a silent **refresh** (refresh token present).
 //!   - Test C: token expiry with **no refresh token** falls back to re-authorization.
 //!   - Test D: a **failed refresh** surfaces a clear user-facing error instead of hanging.
+//!   - Test E: a persisted token is reused on relaunch instead of prompting again.
+//!   - Test F: the authorization request's `resource` indicator is the protected-resource-metadata
+//!     resource, not the server base URL.
 //!
 //! The test process plays the role of the user's browser: when the agent emits
 //! an `OauthRequest`, a background task fetches the authorization URL, which
@@ -90,7 +93,15 @@ impl McpRegistry for OAuthResolvingRegistry {
 /// placeholder, then run the registry resolution pass and return the resulting
 /// concrete config. Panics unless the placeholder was resolved into a `Remote`
 /// variant — that assertion is itself part of the "registry-resolved" coverage.
-fn registry_resolved_remote(server_name: &str, url: String) -> McpServerConfig {
+///
+/// `oauth_scopes` and `force_auth` are threaded onto the resolved `Remote`
+/// config so tests can request a scope set or skip the unauthenticated probe.
+fn registry_resolved_remote(
+    server_name: &str,
+    url: String,
+    oauth_scopes: Vec<String>,
+    force_auth: bool,
+) -> McpServerConfig {
     let mut inner = AgentConfigV2025_08_22 {
         name: "oauth-e2e".to_string(),
         ..Default::default()
@@ -117,11 +128,11 @@ fn registry_resolved_remote(server_name: &str, url: String) -> McpServerConfig {
         url,
         headers: HashMap::new(),
         timeout_ms: 30_000,
-        oauth_scopes: vec![],
+        oauth_scopes,
         oauth: None,
         disabled: false,
         disabled_tools: vec![],
-        force_auth: false,
+        force_auth,
     };
     OAuthResolvingRegistry {
         server_name: server_name.to_string(),
@@ -151,10 +162,15 @@ fn registry_resolved_remote(server_name: &str, url: String) -> McpServerConfig {
 /// `max_drives` caps how many authorization URLs are actually fetched. `None`
 /// drives every request; `Some(n)` drives only the first `n` (used to prevent
 /// a background re-auth from racing a test that asserts a failure).
+///
+/// When `recorder` is `Some`, each authorization URL is captured (before it is
+/// driven, so a completed handshake guarantees the capture is present) for
+/// tests that inspect the `/authorize` query parameters.
 fn spawn_oauth_browser(
     mut handle: McpManagerHandle,
     oauth_request_count: Arc<AtomicUsize>,
     max_drives: Option<usize>,
+    recorder: Option<Arc<std::sync::Mutex<Vec<String>>>>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let client = reqwest::Client::new();
@@ -163,6 +179,9 @@ fn spawn_oauth_browser(
             match handle.recv().await {
                 Ok(McpServerEvent::OauthRequest { oauth_url, .. }) => {
                     oauth_request_count.fetch_add(1, Ordering::SeqCst);
+                    if let Some(recorder) = &recorder {
+                        recorder.lock().unwrap().push(oauth_url.clone());
+                    }
                     let should_drive = max_drives.is_none_or(|max| driven < max);
                     if should_drive {
                         driven += 1;
@@ -283,9 +302,9 @@ async fn initial_oauth_against_registry_resolved_server() {
     let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
 
     let oauth_requests = Arc::new(AtomicUsize::new(0));
-    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None);
+    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None, None);
 
-    let config = registry_resolved_remote("oauth-mcp", server.url());
+    let config = registry_resolved_remote("oauth-mcp", server.url(), vec![], false);
 
     launch_and_wait(&mut handle, "oauth-mcp", config, Duration::from_secs(30))
         .await
@@ -341,9 +360,9 @@ async fn token_expiry_triggers_silent_refresh_with_refresh_token() {
     let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
 
     let oauth_requests = Arc::new(AtomicUsize::new(0));
-    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None);
+    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None, None);
 
-    let config = registry_resolved_remote("refresh-mcp", server.url());
+    let config = registry_resolved_remote("refresh-mcp", server.url(), vec![], false);
     launch_and_wait(&mut handle, "refresh-mcp", config, Duration::from_secs(30))
         .await
         .expect("server should initialize");
@@ -396,9 +415,9 @@ async fn token_expiry_without_refresh_token_reauthorizes() {
     let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
 
     let oauth_requests = Arc::new(AtomicUsize::new(0));
-    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None);
+    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None, None);
 
-    let config = registry_resolved_remote("reauth-mcp", server.url());
+    let config = registry_resolved_remote("reauth-mcp", server.url(), vec![], false);
     launch_and_wait(&mut handle, "reauth-mcp", config, Duration::from_secs(30))
         .await
         .expect("server should initialize");
@@ -456,9 +475,9 @@ async fn failed_refresh_surfaces_clear_error() {
 
     let oauth_requests = Arc::new(AtomicUsize::new(0));
     // Only drive the initial handshake so a background re-auth can't rescue the failing call.
-    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), Some(1));
+    let _browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), Some(1), None);
 
-    let config = registry_resolved_remote("badrefresh-mcp", server.url());
+    let config = registry_resolved_remote("badrefresh-mcp", server.url(), vec![], false);
     launch_and_wait(&mut handle, "badrefresh-mcp", config, Duration::from_secs(30))
         .await
         .expect("server should initialize");
@@ -519,9 +538,9 @@ async fn cached_token_is_reused_on_relaunch() {
     let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
 
     let oauth_requests = Arc::new(AtomicUsize::new(0));
-    let browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None);
+    let browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None, None);
 
-    let config = registry_resolved_remote("cached-mcp", server.url());
+    let config = registry_resolved_remote("cached-mcp", server.url(), vec![], false);
 
     // First launch performs the full OAuth handshake and persists the token.
     launch_and_wait(&mut handle, "cached-mcp", config.clone(), Duration::from_secs(30))
@@ -565,6 +584,87 @@ async fn cached_token_is_reused_on_relaunch() {
         1,
         "relaunch must reuse the cached token rather than re-authorize; saw {} request(s)",
         oauth_requests.load(Ordering::SeqCst)
+    );
+
+    handle.shutdown().await;
+}
+
+/// Test F — Regression guard: the OAuth authorization request must carry the RFC
+/// 9728 protected-resource-metadata `resource`, not the MCP server base URL (rmcp
+/// 2.0 derived it from the base URL, which Entra ID v2 rejects; rmcp 3.0 honors
+/// the PRM value). The mock declares its PRM `resource` as the server origin — a
+/// valid RFC 8707 identifier for the `/mcp` base URL but a distinct string — so a
+/// client honoring the PRM emits a `resource` different from the base URL.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authorize_resource_indicator_uses_protected_resource_metadata_not_base_url() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .oauth_resource_origin_only()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    // The mock declares its PRM `resource` as the origin — the base URL with the
+    // `/mcp` path stripped — so deriving the expectation from `base_url` keeps the
+    // two in sync and makes explicit that they differ only by that path.
+    let base_url = server.url(); // http://127.0.0.1:{port}/mcp
+    let expected_resource = base_url
+        .strip_suffix("/mcp")
+        .expect("mock base URL ends with /mcp")
+        .to_string();
+
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+
+    let oauth_requests = Arc::new(AtomicUsize::new(0));
+    let captured_urls = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let _browser = spawn_oauth_browser(
+        handle.clone(),
+        oauth_requests.clone(),
+        None,
+        Some(captured_urls.clone()),
+    );
+
+    // `force_auth` skips the unauthenticated probe and goes straight to OAuth so a
+    // single authorization request is emitted; the non-empty scope mirrors the
+    // customer's `oauthScopes` (Entra v2 requires `scope` on the authorize request).
+    let config = registry_resolved_remote("entra-mcp", base_url.clone(), vec!["openid".to_string()], true);
+
+    launch_and_wait(&mut handle, "entra-mcp", config, Duration::from_secs(30))
+        .await
+        .expect("server should complete OAuth and initialize");
+
+    let urls = captured_urls.lock().unwrap().clone();
+    assert_eq!(
+        urls.len(),
+        1,
+        "exactly one authorization request expected; got {urls:?}"
+    );
+    let parsed = reqwest::Url::parse(&urls[0]).expect("authorization URL should parse");
+    let params: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
+
+    let resource = params
+        .get("resource")
+        .expect("authorization request must include a resource indicator");
+
+    // Regression signal: `resource` is the protected-resource-metadata identifier
+    // (the origin), which differs from the base URL. rmcp 2.0 derived it from the
+    // base URL and Microsoft Entra ID v2 rejected that.
+    assert_eq!(
+        resource, &expected_resource,
+        "resource must be the protected-resource-metadata identifier `{expected_resource}`; got `{resource}`"
+    );
+
+    // Entra v2 requires `scope`; the requested scope must be carried through.
+    assert!(
+        params.get("scope").is_some_and(|s| s.contains("openid")),
+        "authorization request must carry the requested scope; params: {params:?}"
     );
 
     handle.shutdown().await;
