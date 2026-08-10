@@ -4,7 +4,7 @@ doc_meta:
   description: Start voice input using local Whisper speech-to-text transcription
   category: slash_command
   keywords: [voice, speech, whisper, microphone, dictation, ptt, push-to-talk, recording, integrity, sha256]
-  related: [settings]
+  related: [voice-mode, voice-settings, settings]
   validated: 2026-07-30
   commit: 6395639f9
   status: validated

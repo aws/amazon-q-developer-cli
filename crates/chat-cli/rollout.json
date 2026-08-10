@@ -15,9 +15,9 @@
     "segment": "all"
   },
   "voice": {
-    "description": "Voice input mode - all internal users",
+    "description": "Voice input mode - generally available to all users",
     "treatment_percent": 100,
-    "segment": "internal"
+    "segment": "all"
   },
   "infra_safety": {
     "description": "ICECAP infrastructure-safety gate (monitor/enforce). Internal-only initially; launcher exports KIRO_INFRA_SAFETY_ROLLOUT_ENABLED and the TUI advertises the capability + honors the infraSafety settings only when enabled. Ramp via treatment_percent.",

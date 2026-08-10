@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "The `/voice` command introduces a new way to interact with Kiro using voice dictation to speak your prompts. Learn more -> kiro.dev/docs/cli/voice"
+}

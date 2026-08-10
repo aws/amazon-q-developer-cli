@@ -594,33 +594,17 @@ mod tests {
     }
 
     #[test]
-    fn test_voice_enabled_for_all_internal() {
-        // Nightly + internal → voice enabled
-        let rollout = Rollout {
-            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
-            client_id: Some(Uuid::from_u128(1)),
-            is_internal: true,
-            is_nightly: true,
-        };
-        assert_eq!(rollout.variation(Feature::Voice), Some(TREATMENT));
-
-        // Stable + internal → voice enabled (no channel gate)
-        let rollout_stable = Rollout {
-            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
-            client_id: Some(Uuid::from_u128(1)),
-            is_internal: true,
-            is_nightly: false,
-        };
-        assert_eq!(rollout_stable.variation(Feature::Voice), Some(TREATMENT));
-
-        // Nightly + external → voice NOT enabled (segment=internal)
-        let rollout_external = Rollout {
-            features: serde_json::from_str(EMBEDDED_CONFIG).unwrap(),
-            client_id: Some(Uuid::from_u128(1)),
-            is_internal: false,
-            is_nightly: true,
-        };
-        assert_eq!(rollout_external.variation(Feature::Voice), None);
+    fn test_voice_enabled_for_all_segments_and_channels() {
+        // Voice is GA (segment=all, 100%): every combination of segment and
+        // channel gets TREATMENT.
+        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
+            let rollout = Rollout::new_for_test(is_internal, is_nightly);
+            assert_eq!(
+                rollout.variation(Feature::Voice),
+                Some(TREATMENT),
+                "voice should be enabled for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
     }
 
     #[test]
