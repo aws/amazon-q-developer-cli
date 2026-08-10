@@ -931,6 +931,7 @@ async fn launch_acp_interactive(
 #[derive(Debug, Default, PartialEq)]
 struct KasTurnCompletion {
     status: Option<String>,
+    request_id: Option<String>,
     model: Option<String>,
     turn_duration_seconds: i64,
     uncached_input_tokens: Option<i64>,
@@ -971,6 +972,29 @@ fn parse_kas_turn_completion(meta: Option<&agent_client_protocol::Meta>) -> Opti
     };
 
     let prompt_turn_summaries = payload.get("promptTurnSummaries").and_then(serde_json::Value::as_array);
+    let request_id = payload
+        .get("requestIds")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .rev()
+        .filter_map(serde_json::Value::as_str)
+        .find(|request_id| !request_id.trim().is_empty())
+        .or_else(|| {
+            payload
+                .get("requestId")
+                .and_then(serde_json::Value::as_str)
+                .filter(|request_id| !request_id.trim().is_empty())
+        })
+        .or_else(|| {
+            prompt_turn_summaries.into_iter().flatten().rev().find_map(|summary| {
+                summary
+                    .get("requestId")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|request_id| !request_id.trim().is_empty())
+            })
+        })
+        .map(str::to_string);
     let model_invocation_count = prompt_turn_summaries.map_or(0, |summaries| summaries.len() as u64);
     let metering_usage = prompt_turn_summaries
         .into_iter()
@@ -1007,6 +1031,7 @@ fn parse_kas_turn_completion(meta: Option<&agent_client_protocol::Meta>) -> Opti
             .get("status")
             .and_then(serde_json::Value::as_str)
             .map(str::to_string),
+        request_id,
         model: payload
             .get("modelId")
             .and_then(serde_json::Value::as_str)
@@ -1075,6 +1100,9 @@ async fn emit_kas_noninteractive_turn(
 ) {
     let completion = completion.unwrap_or_default();
     let result = kas_turn_result(completion.status.as_deref(), stop_reason);
+    let log_properties = kiro_telemetry::MetricLogProperties::default()
+        .with_session_id(session_id.clone())
+        .with_request_id(completion.request_id.clone());
     let args = kas_turn_completion_args(&completion, configured_model, result);
     let model = args.model.clone();
     if let Err(err) = os
@@ -1087,6 +1115,7 @@ async fn emit_kas_noninteractive_turn(
             agent_mode,
             Engine::V3,
             args,
+            log_properties.clone(),
         )
         .await
     {
@@ -1104,6 +1133,7 @@ async fn emit_kas_noninteractive_turn(
                 usage.unit,
                 usage.unit_plural,
                 Engine::V3,
+                log_properties.clone(),
             )
             .await
         {
@@ -1801,6 +1831,8 @@ mod tests {
             serde_json::json!({
                 "kind": "turn_completion",
                 "status": "success",
+                "requestIds": ["request-old", " ", "request-1"],
+                "requestId": "legacy-request",
                 "modelId": "model-1",
                 "elapsedTime": 1234,
                 "tokenUsage": {
@@ -1828,6 +1860,7 @@ mod tests {
             parse_kas_turn_completion(Some(&meta)),
             Some(KasTurnCompletion {
                 status: Some("success".to_string()),
+                request_id: Some("request-1".to_string()),
                 model: Some("model-1".to_string()),
                 turn_duration_seconds: 2,
                 uncached_input_tokens: Some(10),
@@ -1854,6 +1887,7 @@ mod tests {
     #[test]
     fn kas_turn_completion_args_carry_model_invocation_count() {
         let completion = KasTurnCompletion {
+            request_id: Some("request-1".to_string()),
             model: Some("model-1".to_string()),
             model_invocation_count: 3,
             ..Default::default()
@@ -1866,6 +1900,7 @@ mod tests {
         );
 
         assert_eq!(args.model.as_deref(), Some("model-1"));
+        assert_eq!(args.request_ids, Vec::<Option<String>>::new());
         assert_eq!(args.model_invocation_count, 3);
     }
 

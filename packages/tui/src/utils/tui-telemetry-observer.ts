@@ -18,6 +18,7 @@ import {
   histogram as meterHistogram,
   forceFlushMetrics,
   type MetricAttributes,
+  type MetricLogProperties,
 } from './meter';
 import type { ProcessHealthSnapshot } from './process-health-collector';
 import {
@@ -193,7 +194,12 @@ function histogramFn(deps?: TuiTelemetryDeps): typeof meterHistogram {
 
 /** A session began (`kiro_cli_chat_session_started_total`). One per session (caller dedupes). */
 export function recordTuiSessionStarted(
-  args: { mode: string; version: string; engine?: Engine },
+  args: {
+    mode: string;
+    version: string;
+    engine?: Engine;
+    logProperties?: MetricLogProperties;
+  },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
@@ -206,7 +212,8 @@ export function recordTuiSessionStarted(
       agent_mode: modeFromId(args.mode),
       agent_engine: args.engine ?? DEFAULT_ENGINE,
     },
-    TUI_SCOPE
+    TUI_SCOPE,
+    args.logProperties
   );
 }
 
@@ -229,7 +236,12 @@ export function recordTuiUiModeSessionStarted(
 }
 
 export function recordTuiSlashCommand(
-  args: { command: string; version: string; engine?: Engine },
+  args: {
+    command: string;
+    version: string;
+    engine?: Engine;
+    logProperties?: MetricLogProperties;
+  },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
@@ -241,7 +253,8 @@ export function recordTuiSlashCommand(
       agent_engine: args.engine ?? DEFAULT_ENGINE,
       command: canonicalSlashCommandName(args.command),
     },
-    TUI_SCOPE
+    TUI_SCOPE,
+    args.logProperties
   );
 }
 
@@ -708,6 +721,7 @@ export function recordTuiUserTurn(
      */
     durationSeconds?: number;
     engine?: Engine;
+    logProperties?: MetricLogProperties;
   },
   deps?: TuiTelemetryDeps
 ): void {
@@ -721,16 +735,29 @@ export function recordTuiUserTurn(
     agent_engine: engine,
   };
 
-  counterFn(deps)('kiro_cli_user_turns', 1, attrs, TUI_SCOPE);
+  counterFn(deps)(
+    'kiro_cli_user_turns',
+    1,
+    attrs,
+    TUI_SCOPE,
+    args.logProperties
+  );
 
   if (args.result === 'cancelled') {
-    counterFn(deps)('kiro_cli_turn_cancelled_total', 1, attrs, TUI_SCOPE);
+    counterFn(deps)(
+      'kiro_cli_turn_cancelled_total',
+      1,
+      attrs,
+      TUI_SCOPE,
+      args.logProperties
+    );
   } else if (args.result === 'failed') {
     counterFn(deps)(
       'kiro_cli_turn_failure_total',
       1,
       { ...attrs, turn_failure_reason: args.failureReason ?? 'unknown' },
-      TUI_SCOPE
+      TUI_SCOPE,
+      args.logProperties
     );
   }
 
@@ -745,7 +772,8 @@ export function recordTuiUserTurn(
       args.durationSeconds,
       attrs,
       TUI_SCOPE,
-      USER_TURN_DURATION_BOUNDS
+      USER_TURN_DURATION_BOUNDS,
+      args.logProperties
     );
   }
 }
@@ -762,6 +790,7 @@ export function recordTuiTokensConsumed(
     model: string;
     tokens: Partial<Record<TokenType, number>>;
     engine?: Engine;
+    logProperties?: MetricLogProperties;
   },
   deps?: TuiTelemetryDeps
 ): void {
@@ -780,7 +809,8 @@ export function recordTuiTokensConsumed(
         model: args.model || 'unknown',
         token_type: tokenType,
       },
-      TUI_SCOPE
+      TUI_SCOPE,
+      args.logProperties
     );
   }
 }
@@ -791,6 +821,7 @@ export function recordTuiModelInvocations(
     model: string;
     count: number;
     engine?: Engine;
+    logProperties?: MetricLogProperties;
   },
   deps?: TuiTelemetryDeps
 ): void {
@@ -804,12 +835,18 @@ export function recordTuiModelInvocations(
       agent_engine: args.engine ?? DEFAULT_ENGINE,
       model: args.model || 'unknown',
     },
-    TUI_SCOPE
+    TUI_SCOPE,
+    args.logProperties
   );
 }
 
 export function recordTuiCreditsConsumed(
-  args: { version: string; model: string; credits: number },
+  args: {
+    version: string;
+    model: string;
+    credits: number;
+    logProperties?: MetricLogProperties;
+  },
   deps?: TuiTelemetryDeps
 ): void {
   if (suppressedInTest(deps)) return;
@@ -821,7 +858,8 @@ export function recordTuiCreditsConsumed(
       version_full: args.version,
       model: args.model || 'unknown',
     },
-    TUI_SCOPE
+    TUI_SCOPE,
+    args.logProperties
   );
 }
 

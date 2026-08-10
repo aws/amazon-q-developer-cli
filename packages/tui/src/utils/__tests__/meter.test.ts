@@ -162,7 +162,7 @@ describe('meter (c) gauge recording', () => {
   });
 });
 
-describe('meter (d) user_id datapoint attribute', () => {
+describe('meter (d) identity log properties', () => {
   let originalUserId: string | undefined;
 
   beforeEach(() => {
@@ -181,18 +181,39 @@ describe('meter (d) user_id datapoint attribute', () => {
     return m?.dataPoints[0]?.attributes as Record<string, unknown> | undefined;
   }
 
-  it('stamps user_id on counter, histogram, and gauge datapoints when set', async () => {
+  it('stamps V3 user_id, session_id, and request_id on OTLP datapoints', async () => {
     process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
     delete process.env['KIRO_DISABLE_TELEMETRY'];
     process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
     process.env['KIRO_USER_ID'] = 'test-user-id';
     const exporter = injectInMemory();
 
-    counter('kiro_cli_user_turns', 1, { agent_engine: 'v2' });
-    histogram('kiro_cli_tool_execution_duration_ms', 42, {
-      agent_engine: 'v2',
-    });
-    gauge('kiro_cli_tui_heap_used_bytes', 50, { agent_engine: 'v2' });
+    const logProperties = {
+      sessionId: 'test-session-id',
+      requestId: 'test-request-id',
+    };
+    counter(
+      'kiro_cli_user_turns',
+      1,
+      { agent_engine: 'v3' },
+      'kiro.tui',
+      logProperties
+    );
+    histogram(
+      'kiro_cli_tool_execution_duration_ms',
+      42,
+      { agent_engine: 'v3' },
+      'kiro.tui',
+      undefined,
+      logProperties
+    );
+    gauge(
+      'kiro_cli_tui_heap_used_bytes',
+      50,
+      { agent_engine: 'v3' },
+      'kiro.tui',
+      logProperties
+    );
     await forceFlushMetrics();
 
     for (const name of [
@@ -202,8 +223,39 @@ describe('meter (d) user_id datapoint attribute', () => {
     ]) {
       const attrs = attrsOf(name, exporter);
       expect(attrs?.['user_id']).toBe('test-user-id');
-      expect(attrs?.['agent_engine']).toBe('v2');
+      expect(attrs?.['session_id']).toBe('test-session-id');
+      expect(attrs?.['request_id']).toBe('test-request-id');
+      expect(attrs?.['agent_engine']).toBe('v3');
     }
+  });
+
+  it('rejects invalid values and strips reserved keys from schema attributes', async () => {
+    process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
+    delete process.env['KIRO_DISABLE_TELEMETRY'];
+    process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
+    process.env['KIRO_USER_ID'] = 'invalid\nuser';
+    const exporter = injectInMemory();
+
+    counter(
+      'kiro_cli_user_turns',
+      1,
+      {
+        agent_engine: 'v3',
+        user_id: 'schema-user',
+        session_id: 'schema-session',
+        request_id: 'schema-request',
+      },
+      'kiro.tui',
+      { sessionId: ' ', requestId: 'x'.repeat(257) }
+    );
+    await forceFlushMetrics();
+
+    const attrs = attrsOf('kiro_cli_user_turns', exporter);
+    expect(attrs).toBeDefined();
+    expect('user_id' in attrs!).toBe(false);
+    expect('session_id' in attrs!).toBe(false);
+    expect('request_id' in attrs!).toBe(false);
+    expect(attrs?.['agent_engine']).toBe('v3');
   });
 
   it('omits user_id when KIRO_USER_ID is unset', async () => {

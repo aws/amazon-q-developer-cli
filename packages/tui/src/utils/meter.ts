@@ -38,8 +38,17 @@ import {
 } from './telemetry-identity.js';
 import { recordEmitDrop } from './otlp-emit.js';
 
-/** A single metric data point's attributes (string/number/boolean values). */
+/** A single metric data point's schema attributes (string/number/boolean values). */
 export type MetricAttributes = Record<string, string | number | boolean>;
+
+/**
+ * High-cardinality correlation fields carried on an OTLP datapoint without
+ * becoming registered metric attributes or CloudWatch dimensions.
+ */
+export interface MetricLogProperties {
+  sessionId?: string;
+  requestId?: string;
+}
 
 /** Re-export the shared drop counter so callers have one import surface. */
 export { getEmitFailedTotal } from './otlp-emit.js';
@@ -122,15 +131,43 @@ function attrsKey(attrs: MetricAttributes | undefined): string {
 
 const DEFAULT_SCOPE = 'kiro.tui';
 
+const MAX_LOG_PROPERTY_BYTES = 256;
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
+function validatedLogProperty(value: unknown): string | undefined {
+  if (
+    typeof value !== 'string' ||
+    value.trim().length === 0 ||
+    Buffer.byteLength(value, 'utf8') > MAX_LOG_PROPERTY_BYTES ||
+    CONTROL_CHARACTER.test(value)
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
 /**
- * Stamp user identity on every datapoint. KUTS drops OTLP resource attributes
- * on ingest, so user_id must ride per-datapoint to be queryable downstream.
- * Injected centrally — callers never pass identity attributes themselves.
+ * Attach queryable identity/correlation fields after call sites have assembled
+ * schema attributes. Reserved keys are stripped from caller attributes first,
+ * so they can only enter through this validated channel.
  */
-function withUserId(attrs?: MetricAttributes): MetricAttributes | undefined {
-  const userId = process.env['KIRO_USER_ID'];
-  if (!userId) return attrs;
-  return { ...attrs, user_id: userId };
+function withLogProperties(
+  attrs?: MetricAttributes,
+  properties?: MetricLogProperties
+): MetricAttributes | undefined {
+  const result = { ...attrs };
+  delete result['user_id'];
+  delete result['session_id'];
+  delete result['request_id'];
+
+  for (const [key, value] of [
+    ['user_id', validatedLogProperty(process.env['KIRO_USER_ID'])],
+    ['session_id', validatedLogProperty(properties?.sessionId)],
+    ['request_id', validatedLogProperty(properties?.requestId)],
+  ] as const) {
+    if (value !== undefined) result[key] = value;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 /**
@@ -218,7 +255,8 @@ export function counter(
   name: string,
   value: number,
   attrs?: MetricAttributes,
-  scope: string = DEFAULT_SCOPE
+  scope: string = DEFAULT_SCOPE,
+  logProperties?: MetricLogProperties
 ): void {
   try {
     const s = ensureProvider();
@@ -229,7 +267,10 @@ export function counter(
       inst = sc.meter.createCounter(name);
       sc.counters.set(name, inst);
     }
-    inst.add(value, withUserId(attrs) as Attributes | undefined);
+    inst.add(
+      value,
+      withLogProperties(attrs, logProperties) as Attributes | undefined
+    );
   } catch (err) {
     swallow(`counter:${name}`, err);
   }
@@ -245,7 +286,8 @@ export function histogram(
   value: number,
   attrs?: MetricAttributes,
   scope: string = DEFAULT_SCOPE,
-  bounds?: number[]
+  bounds?: number[],
+  logProperties?: MetricLogProperties
 ): void {
   try {
     const s = ensureProvider();
@@ -259,7 +301,10 @@ export function histogram(
       );
       sc.histograms.set(name, inst);
     }
-    inst.record(value, withUserId(attrs) as Attributes | undefined);
+    inst.record(
+      value,
+      withLogProperties(attrs, logProperties) as Attributes | undefined
+    );
   } catch (err) {
     swallow(`histogram:${name}`, err);
   }
@@ -275,7 +320,8 @@ export function gauge(
   name: string,
   value: number,
   attrs?: MetricAttributes,
-  scope: string = DEFAULT_SCOPE
+  scope: string = DEFAULT_SCOPE,
+  logProperties?: MetricLogProperties
 ): void {
   try {
     const s = ensureProvider();
@@ -291,9 +337,10 @@ export function gauge(
       entry = { gauge: g, values };
       sc.gauges.set(name, entry);
     }
-    entry.values.set(attrsKey(attrs), {
+    const datapointAttributes = withLogProperties(attrs, logProperties) ?? {};
+    entry.values.set(attrsKey(datapointAttributes), {
       value,
-      attrs: (withUserId(attrs) ?? {}) as Attributes,
+      attrs: datapointAttributes as Attributes,
     });
   } catch (err) {
     swallow(`gauge:${name}`, err);

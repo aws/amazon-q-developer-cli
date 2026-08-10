@@ -84,6 +84,40 @@ impl MetricRecord {
     }
 }
 
+/// High-cardinality correlation fields that travel with a metric datapoint but
+/// are never part of its registered metric attributes or CloudWatch dimensions.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MetricLogProperties {
+    session_id: Option<String>,
+    request_id: Option<String>,
+}
+
+impl MetricLogProperties {
+    pub fn with_session_id(mut self, session_id: impl Into<Option<String>>) -> Self {
+        self.session_id = validated_log_property(session_id);
+        self
+    }
+
+    pub fn with_request_id(mut self, request_id: impl Into<Option<String>>) -> Self {
+        self.request_id = validated_log_property(request_id);
+        self
+    }
+
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
+    }
+}
+
+pub(crate) fn validated_log_property(value: impl Into<Option<String>>) -> Option<String> {
+    value.into().filter(|value| {
+        !value.trim().is_empty() && value.len() <= 256 && value.chars().all(|character| !character.is_control())
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum MetricValue {
     Counter(u64),

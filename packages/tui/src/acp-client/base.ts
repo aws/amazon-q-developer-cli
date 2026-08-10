@@ -270,6 +270,7 @@ export type SessionResult = {
 };
 
 type KasPromptTurnSummary = {
+  requestId?: unknown;
   usage?: unknown;
   unit?: unknown;
   unitPlural?: unknown;
@@ -304,6 +305,8 @@ type KasSessionInfoMeta = KasTokenUsageMeta & {
   error?: unknown;
   stopReason?: string;
   promptTurnSummaries?: KasPromptTurnSummary[];
+  requestIds?: unknown;
+  requestId?: unknown;
   tokenUsage?: unknown;
   usage?: unknown;
   metrics?: unknown;
@@ -335,6 +338,7 @@ function isKasNotificationSteering(meta: KasSessionInfoMeta): boolean {
 
 type KasTurnCompletionTelemetryPayload = {
   sessionId?: string;
+  requestId?: string;
   modelId?: string;
   modelInvocationCount?: number;
   meteringUsage: MeteringUsage[];
@@ -383,6 +387,23 @@ function normalizeKasTurnCompletionStatus(status: unknown): string | undefined {
   return typeof status === 'string' ? status : undefined;
 }
 
+function normalizeKasRequestId(meta: KasSessionInfoMeta): string | undefined {
+  const requestIds = Array.isArray(meta.requestIds)
+    ? [...meta.requestIds].reverse()
+    : [];
+  const candidates = [
+    ...requestIds,
+    meta.requestId,
+    ...(meta.promptTurnSummaries ?? [])
+      .map((summary) => summary.requestId)
+      .reverse(),
+  ];
+  return candidates.find(
+    (value): value is string =>
+      typeof value === 'string' && value.trim().length > 0
+  );
+}
+
 function normalizeKasContextUsagePercentage(
   meta: KasSessionInfoMeta
 ): number | undefined {
@@ -429,6 +450,7 @@ function normalizeKasTurnTokenCounts(
 ): Omit<
   KasTurnCompletionTelemetryPayload,
   | 'sessionId'
+  | 'requestId'
   | 'modelId'
   | 'meteringUsage'
   | 'turnDurationMs'
@@ -500,6 +522,7 @@ export function normalizeKasTurnCompletion(
   const contextUsagePercentage = normalizeKasContextUsagePercentage(meta);
   const tokenCounts = normalizeKasTurnTokenCounts(meta);
   const status = normalizeKasTurnCompletionStatus(meta.status);
+  const requestId = normalizeKasRequestId(meta);
   const usedTools = normalizeKasUsedTools(meta);
   if (
     modelInvocationCount === 0 &&
@@ -507,6 +530,7 @@ export function normalizeKasTurnCompletion(
     contextUsagePercentage == null &&
     Object.keys(tokenCounts).length === 0 &&
     !status &&
+    !requestId &&
     usedTools.length === 0
   ) {
     return undefined;
@@ -514,6 +538,7 @@ export function normalizeKasTurnCompletion(
 
   return {
     ...(sessionId ? { sessionId } : {}),
+    ...(requestId ? { requestId } : {}),
     ...(modelId ? { modelId } : {}),
     ...(modelInvocationCount > 0 ? { modelInvocationCount } : {}),
     meteringUsage,

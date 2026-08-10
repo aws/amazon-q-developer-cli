@@ -18,6 +18,7 @@ use crate::cardinality::{
 };
 use crate::drop_store::ExportDropStore;
 use crate::{
+    MetricLogProperties,
     MetricRecord,
     TelemetryConfig,
 };
@@ -93,13 +94,30 @@ impl TelemetryClient {
     }
 
     pub fn emit(&self, record: MetricRecord) -> Result<EmitOutcome, TelemetryError> {
-        self.emit_with_class(record, EventClass::Metric)
+        self.emit_with_class_and_log_properties(record, EventClass::Metric, &MetricLogProperties::default())
+    }
+
+    pub fn emit_with_log_properties(
+        &self,
+        record: MetricRecord,
+        properties: &MetricLogProperties,
+    ) -> Result<EmitOutcome, TelemetryError> {
+        self.emit_with_class_and_log_properties(record, EventClass::Metric, properties)
     }
 
     pub fn emit_with_class(
         &self,
+        record: MetricRecord,
+        event_class: EventClass,
+    ) -> Result<EmitOutcome, TelemetryError> {
+        self.emit_with_class_and_log_properties(record, event_class, &MetricLogProperties::default())
+    }
+
+    fn emit_with_class_and_log_properties(
+        &self,
         mut record: MetricRecord,
         _event_class: EventClass,
+        properties: &MetricLogProperties,
     ) -> Result<EmitOutcome, TelemetryError> {
         if !self.config.exports_enabled() {
             return Ok(EmitOutcome { emitted: false });
@@ -114,11 +132,17 @@ impl TelemetryClient {
             return Err(err.into());
         }
 
-        // Injected after schema validation: user_id is identity, not a metric
-        // dimension — unbounded by nature, so it must never enter the
-        // closed-enum registry or be settable by callers.
-        if let Some(user_id) = &self.config.user_id {
-            record = record.with_attribute("user_id", user_id.clone());
+        // Injected only after schema validation: these values are queryable
+        // fields in the KUTS EMF log record, not registered metric attributes.
+        // KUTS metric declarations independently allowlist CloudWatch dimensions.
+        for (key, value) in [
+            ("user_id", self.config.user_id.as_deref()),
+            ("session_id", properties.session_id()),
+            ("request_id", properties.request_id()),
+        ] {
+            if let Some(value) = value {
+                record = record.with_attribute(key, value);
+            }
         }
 
         for sink in &self.sinks {
@@ -221,6 +245,63 @@ mod tests {
             .find(|attribute| attribute.key == "user_id")
             .map(|attribute| attribute.value.as_str());
         assert_eq!(user_id, Some("test-user-id"));
+    }
+
+    #[test]
+    fn log_properties_are_injected_after_schema_validation() {
+        let sink = Arc::new(InMemorySink::default());
+        let config = TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir())
+            .with_user_id("test-user-id".to_string());
+        let client = TelemetryClient::new(config).with_sink(sink.clone());
+        let properties = MetricLogProperties::default()
+            .with_session_id("test-session-id".to_string())
+            .with_request_id("test-request-id".to_string());
+
+        client
+            .emit_with_log_properties(
+                metric::record_model_invocation(metric::Engine::V2, Some("claude-sonnet-4")),
+                &properties,
+            )
+            .expect("emit should not fail");
+
+        let attributes = &sink.records()[0].attributes;
+        for (key, expected) in [
+            ("user_id", "test-user-id"),
+            ("session_id", "test-session-id"),
+            ("request_id", "test-request-id"),
+        ] {
+            assert_eq!(
+                attributes
+                    .iter()
+                    .find(|attribute| attribute.key == key)
+                    .map(|attribute| attribute.value.as_str()),
+                Some(expected),
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_log_properties_are_ignored() {
+        let sink = Arc::new(InMemorySink::default());
+        let config = TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir());
+        let client = TelemetryClient::new(config).with_sink(sink.clone());
+        let properties = MetricLogProperties::default()
+            .with_session_id(" \n".to_string())
+            .with_request_id("x".repeat(257));
+
+        client
+            .emit_with_log_properties(
+                metric::record_model_invocation(metric::Engine::V2, Some("claude-sonnet-4")),
+                &properties,
+            )
+            .expect("emit should not fail");
+
+        assert!(
+            sink.records()[0]
+                .attributes
+                .iter()
+                .all(|attribute| attribute.key != "session_id" && attribute.key != "request_id")
+        );
     }
 
     #[test]

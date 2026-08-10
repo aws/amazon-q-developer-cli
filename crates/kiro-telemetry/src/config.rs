@@ -76,9 +76,7 @@ impl TelemetryConfig {
     }
 
     pub fn with_user_id(mut self, user_id: impl Into<Option<String>>) -> Self {
-        self.user_id = user_id.into().filter(|value| {
-            !value.trim().is_empty() && value.len() <= 256 && value.chars().all(|character| !character.is_control())
-        });
+        self.user_id = crate::record::validated_log_property(user_id);
         self
     }
 

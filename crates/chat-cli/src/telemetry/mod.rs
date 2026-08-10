@@ -665,6 +665,7 @@ impl TelemetryThread {
             agent_mode,
             metric::Engine::V1,
             args,
+            kiro_telemetry::MetricLogProperties::default(),
         )
         .await
     }
@@ -679,6 +680,7 @@ impl TelemetryThread {
         agent_mode: metric::AgentMode,
         engine: metric::Engine,
         args: RecordUserTurnCompletionArgs,
+        log_properties: kiro_telemetry::MetricLogProperties,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::RecordUserTurnCompletion {
             conversation_id,
@@ -688,6 +690,7 @@ impl TelemetryThread {
         telemetry_event.set_session_interface(session_interface);
         telemetry_event.set_engine(engine);
         telemetry_event.metric_context.agent_mode = Some(agent_mode);
+        telemetry_event.metric_context.log_properties = log_properties;
         set_event_metadata(database, &mut telemetry_event).await;
         self.send(telemetry_event)
     }
@@ -709,6 +712,7 @@ impl TelemetryThread {
             unit,
             unit_plural,
             metric::Engine::V1,
+            kiro_telemetry::MetricLogProperties::default(),
         )
         .await
     }
@@ -723,6 +727,7 @@ impl TelemetryThread {
         unit: String,
         unit_plural: String,
         engine: metric::Engine,
+        log_properties: kiro_telemetry::MetricLogProperties,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::MeteringEvent {
             request_id,
@@ -732,6 +737,7 @@ impl TelemetryThread {
             unit_plural,
         });
         telemetry_event.set_engine(engine);
+        telemetry_event.metric_context.log_properties = log_properties;
         set_event_metadata(database, &mut telemetry_event).await;
         self.send(telemetry_event)
     }
@@ -1300,7 +1306,12 @@ impl TelemetryClient {
             return;
         }
 
-        self.emit_otel_records(records);
+        let properties = event.metric_log_properties();
+        for record in records {
+            if let Err(err) = self.otel_telemetry_client.emit_with_log_properties(record, &properties) {
+                trace!(%err, "failed to emit OTel legacy metric record");
+            }
+        }
     }
 
     fn emit_otel_records(&self, records: impl IntoIterator<Item = MetricRecord>) {

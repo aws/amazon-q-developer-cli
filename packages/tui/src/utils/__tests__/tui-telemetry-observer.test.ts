@@ -44,6 +44,7 @@ type MetricCall = {
   attrs?: Attrs;
   scope?: string;
   bounds?: number[];
+  logProperties?: { sessionId?: string; requestId?: string };
 };
 
 let counterCalls: MetricCall[];
@@ -51,8 +52,20 @@ let histogramCalls: MetricCall[];
 let gaugeCalls: MetricCall[];
 
 const counter = mock(
-  (name: string, value: number, attrs?: Attrs, scope?: string) => {
-    counterCalls.push({ name, value, attrs, scope });
+  (
+    name: string,
+    value: number,
+    attrs?: Attrs,
+    scope?: string,
+    logProperties?: { sessionId?: string; requestId?: string }
+  ) => {
+    counterCalls.push({
+      name,
+      value,
+      attrs,
+      scope,
+      ...(logProperties ? { logProperties } : {}),
+    });
   }
 );
 const histogram = mock(
@@ -61,9 +74,17 @@ const histogram = mock(
     value: number,
     attrs?: Attrs,
     scope?: string,
-    bounds?: number[]
+    bounds?: number[],
+    logProperties?: { sessionId?: string; requestId?: string }
   ) => {
-    histogramCalls.push({ name, value, attrs, scope, bounds });
+    histogramCalls.push({
+      name,
+      value,
+      attrs,
+      scope,
+      bounds,
+      ...(logProperties ? { logProperties } : {}),
+    });
   }
 );
 const gauge = mock(
@@ -141,6 +162,29 @@ describe('session and turn metrics', () => {
       agent_mode: 'plan',
       agent_engine: DEFAULT_ENGINE,
     });
+  });
+
+  it('forwards V3 correlation fields outside schema attributes', () => {
+    const logProperties = {
+      sessionId: 'kas-session-1',
+      requestId: 'kas-request-1',
+    };
+    recordTuiUserTurn(
+      {
+        result: 'success',
+        isSubagent: false,
+        mode: 'default',
+        version: '2.4.0',
+        durationSeconds: 1,
+        logProperties,
+      },
+      deps
+    );
+
+    expect(counterCalls[0]?.logProperties).toEqual(logProperties);
+    expect(histogramCalls[0]?.logProperties).toEqual(logProperties);
+    expect(counterCalls[0]?.attrs).not.toHaveProperty('session_id');
+    expect(counterCalls[0]?.attrs).not.toHaveProperty('request_id');
   });
 
   it('splits failures and cancellations without timing either', () => {

@@ -831,7 +831,8 @@ mod tests {
     #[test]
     fn otlp_http_exporter_sends_decodable_metric_payloads() {
         let collector = OtlpTestCollector::start(1);
-        let config = test_config(true, OtelMode::DualWrite, Some(collector.endpoint()));
+        let config =
+            test_config(true, OtelMode::DualWrite, Some(collector.endpoint())).with_user_id("test-user-id".to_string());
         let providers = init_otel(&config);
         assert_eq!(providers.pipeline_kind(), OtelPipelineKind::OtlpHttp);
 
@@ -846,9 +847,16 @@ mod tests {
             metric::RunOutcome::Success,
         );
 
+        let properties = crate::MetricLogProperties::default()
+            .with_session_id("test-session-id".to_string())
+            .with_request_id("test-request-id".to_string());
         client
-            .emit(expected_metric.clone())
+            .emit_with_log_properties(expected_metric.clone(), &properties)
             .expect("metric emit should succeed");
+        let expected_metric = expected_metric
+            .with_attribute("user_id", "test-user-id")
+            .with_attribute("session_id", "test-session-id")
+            .with_attribute("request_id", "test-request-id");
 
         providers.force_flush().expect("otlp provider flush should succeed");
         let requests = collector.collect();

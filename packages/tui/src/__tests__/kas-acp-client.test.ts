@@ -2115,6 +2115,7 @@ describe('KasAcpClient', () => {
       command: '/chat',
       version: '9.9.9-test',
       engine: 'v3',
+      logProperties: { sessionId: 'kas-session-1' },
     });
     expect(mockKiroSendExtMethod).not.toHaveBeenCalled();
     expect(mockKiroSendExtNotification).not.toHaveBeenCalled();
@@ -4642,6 +4643,8 @@ describe('KasAcpClient', () => {
         _meta: {
           kiro: {
             kind: 'turn_completion',
+            requestIds: ['kas-request-old', ' ', 'kas-request-1'],
+            requestId: 'legacy-kas-request',
             promptTurnSummaries: [
               {
                 usage: 1.5,
@@ -4684,11 +4687,19 @@ describe('KasAcpClient', () => {
       version: 'test-version',
       failureReason: undefined,
       durationSeconds: 1.234,
+      logProperties: {
+        sessionId: 'kas-session-1',
+        requestId: 'kas-request-1',
+      },
     });
     expect(mockRecordTuiModelInvocations).toHaveBeenCalledWith({
       version: 'test-version',
       model: 'm1',
       count: 2,
+      logProperties: {
+        sessionId: 'kas-session-1',
+        requestId: 'kas-request-1',
+      },
     });
     expect(mockRecordTuiTokensConsumed).toHaveBeenCalledWith({
       version: 'test-version',
@@ -4698,11 +4709,19 @@ describe('KasAcpClient', () => {
         input_cache_read: 2,
         output: 5,
       },
+      logProperties: {
+        sessionId: 'kas-session-1',
+        requestId: 'kas-request-1',
+      },
     });
     expect(mockRecordTuiCreditsConsumed).toHaveBeenCalledWith({
       version: 'test-version',
       model: 'm1',
       credits: 1.5,
+      logProperties: {
+        sessionId: 'kas-session-1',
+        requestId: 'kas-request-1',
+      },
     });
   });
 
@@ -4774,6 +4793,7 @@ describe('KasAcpClient', () => {
       version: 'test-version',
       failureReason: 'model_error',
       durationSeconds: undefined,
+      logProperties: { sessionId: 'kas-session-1' },
     });
     expect(mockRecordTuiModelInvocations).toHaveBeenCalledWith(
       expect.objectContaining({ count: 0 })

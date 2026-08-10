@@ -3068,6 +3068,9 @@ export class KasAcpClient extends BaseAcpClient {
       command,
       version: this.version,
       engine: 'v3',
+      ...(this.sessionId
+        ? { logProperties: { sessionId: this.sessionId } }
+        : {}),
     });
   }
 
@@ -3078,6 +3081,7 @@ export class KasAcpClient extends BaseAcpClient {
     recordTuiSessionStarted({
       mode,
       version: this.version,
+      logProperties: { sessionId },
     });
   }
 
@@ -3100,6 +3104,10 @@ export class KasAcpClient extends BaseAcpClient {
     const mode = modeFromId(this.telemetryCurrentModeId);
     const model = payload.modelId ?? 'unknown';
     const isSubagent = false;
+    const logProperties = {
+      sessionId,
+      ...(payload.requestId ? { requestId: payload.requestId } : {}),
+    };
     recordTuiUserTurn({
       result: resultFromStatus(payload.status),
       isSubagent,
@@ -3110,12 +3118,14 @@ export class KasAcpClient extends BaseAcpClient {
         payload.turnDurationMs != null
           ? payload.turnDurationMs / 1000
           : undefined,
+      logProperties,
     });
 
     recordTuiModelInvocations({
       version: this.version,
       model,
       count: payload.modelInvocationCount ?? 0,
+      logProperties,
     });
     recordTuiTokensConsumed({
       version: this.version,
@@ -3125,6 +3135,7 @@ export class KasAcpClient extends BaseAcpClient {
         input_cache_read: payload.cacheReadInputTokens,
         output: payload.outputTokens,
       },
+      logProperties,
     });
     for (const usage of payload.meteringUsage) {
       const unit = (usage.unitPlural || usage.unit).trim().toLowerCase();
@@ -3133,6 +3144,7 @@ export class KasAcpClient extends BaseAcpClient {
         version: this.version,
         model,
         credits: usage.value,
+        logProperties,
       });
     }
   }

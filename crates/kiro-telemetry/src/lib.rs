@@ -54,6 +54,7 @@ pub use otel::{
 pub use pricing::TokenUsage;
 pub use record::{
     Attribute,
+    MetricLogProperties,
     MetricRecord,
     MetricValue,
 };

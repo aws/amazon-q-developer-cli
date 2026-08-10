@@ -169,7 +169,12 @@ impl OtelEmitter {
             }
             return;
         }
-        self.emit_records(records);
+        let properties = event.metric_log_properties();
+        for record in records {
+            if let Err(err) = self.client.emit_with_log_properties(record, &properties) {
+                trace!(%err, "failed to emit OTel metric record");
+            }
+        }
     }
 
     fn emit_records(&self, records: impl IntoIterator<Item = kiro_telemetry::MetricRecord>) {

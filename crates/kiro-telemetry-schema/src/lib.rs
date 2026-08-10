@@ -579,6 +579,7 @@ mod tests {
         let registry = Registry::parse().expect("schema should load");
         let forbidden = [
             "anonymous_client_id",
+            "user_id",
             "session_id",
             "conversation_id",
             "request_id",

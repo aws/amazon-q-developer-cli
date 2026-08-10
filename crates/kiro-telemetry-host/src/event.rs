@@ -12,6 +12,7 @@ use std::time::{
 
 use kiro_telemetry::{
     LegacyEventType,
+    MetricLogProperties,
     metric,
 };
 use serde::{
@@ -54,6 +55,7 @@ pub struct EventMetricContext {
     pub install_method: Option<metric::InstallSource>,
     pub canonical_tool_name: Option<String>,
     pub run_outcome: Option<metric::RunOutcome>,
+    pub log_properties: MetricLogProperties,
 }
 
 impl Event {
@@ -96,6 +98,76 @@ impl Event {
 
     pub fn set_session_interface(&mut self, session_interface: metric::SessionInterface) {
         self.session_interface = Some(session_interface);
+    }
+
+    /// Correlation fields retained as queryable KUTS EMF log properties.
+    /// They are deliberately separate from the registered metric attributes.
+    pub fn metric_log_properties(&self) -> MetricLogProperties {
+        let properties = MetricLogProperties::default();
+        let mut properties = match &self.ty {
+            EventType::RefreshCredentials { request_id, .. } => properties.with_request_id(request_id.clone()),
+            EventType::ChatAddedMessage {
+                conversation_id, data, ..
+            } => properties
+                .with_session_id(conversation_id.clone())
+                .with_request_id(data.request_id.clone()),
+            EventType::MessageResponseError {
+                conversation_id,
+                request_id,
+                ..
+            } => properties
+                .with_session_id(conversation_id.clone())
+                .with_request_id(request_id.clone()),
+            EventType::ChatSlashCommandExecuted { conversation_id, .. }
+            | EventType::ChatStart { conversation_id, .. }
+            | EventType::ChatEnd { conversation_id, .. }
+            | EventType::TangentModeSession { conversation_id, .. }
+            | EventType::ToolUseSuggested { conversation_id, .. }
+            | EventType::AgentContribution { conversation_id, .. }
+            | EventType::McpServerInit { conversation_id, .. }
+            | EventType::AgentConfigInit { conversation_id, .. } => properties.with_session_id(conversation_id.clone()),
+            EventType::RecordUserTurnCompletion {
+                conversation_id, args, ..
+            } => properties
+                .with_session_id(conversation_id.clone())
+                .with_request_id(args.request_ids.iter().rev().find_map(Clone::clone)),
+            EventType::SubagentInvocation {
+                parent_conversation_id, ..
+            } => properties.with_session_id(parent_conversation_id.clone()),
+            EventType::VoiceInput { conversation_id, .. } | EventType::GoalCompleted { conversation_id, .. } => {
+                properties.with_session_id(conversation_id.clone())
+            },
+            EventType::ProcessHealthMetric { session_id, .. }
+            | EventType::ModeChanged { session_id, .. }
+            | EventType::UiModeSessionStart { session_id, .. }
+            | EventType::UiModeChanged { session_id, .. }
+            | EventType::UiModeDefaultChanged { session_id, .. } => properties.with_session_id(session_id.clone()),
+            EventType::MeteringEvent { request_id, .. } => properties.with_request_id(request_id.clone()),
+            EventType::UserLoggedIn {}
+            | EventType::CliSessionStarted { .. }
+            | EventType::CliSessionCompleted { .. }
+            | EventType::StartupDuration { .. }
+            | EventType::StartupFailure { .. }
+            | EventType::AuthFailed { .. }
+            | EventType::CliSubcommandExecuted { .. }
+            | EventType::ChatSessionStarted { .. }
+            | EventType::DidSelectProfile { .. }
+            | EventType::ProfileState { .. }
+            | EventType::DailyHeartbeat { .. }
+            | EventType::ProcessHealth { .. }
+            | EventType::ContextUsagePercentage { .. }
+            | EventType::ModelInvocation { .. }
+            | EventType::EmptyResponseRetry { .. }
+            | EventType::AutomaticRetryCompleted { .. } => properties,
+        };
+
+        if let Some(session_id) = self.metric_context.log_properties.session_id() {
+            properties = properties.with_session_id(session_id.to_string());
+        }
+        if let Some(request_id) = self.metric_context.log_properties.request_id() {
+            properties = properties.with_request_id(request_id.to_string());
+        }
+        properties
     }
 }
 
@@ -615,5 +687,71 @@ mod tests {
         test_ser_deser!(ModeChangeSource, ModeChangeSource::ShiftTab, "shiftTab");
         test_ser_deser!(ModeChangeSource, ModeChangeSource::SlashCommand, "slashCommand");
         test_ser_deser!(ModeChangeSource, ModeChangeSource::SettingsPanel, "settingsPanel");
+    }
+
+    #[test]
+    fn chat_message_exposes_session_and_request_log_properties() {
+        let event = Event::new(EventType::ChatAddedMessage {
+            conversation_id: "session-123".to_string(),
+            result: TelemetryResult::Succeeded,
+            data: ChatAddedMessageParams {
+                request_id: Some("request-456".to_string()),
+                ..Default::default()
+            },
+        });
+
+        let properties = event.metric_log_properties();
+        assert_eq!(properties.session_id(), Some("session-123"));
+        assert_eq!(properties.request_id(), Some("request-456"));
+    }
+
+    #[test]
+    fn event_log_properties_support_session_only_request_only_and_empty_events() {
+        let session = Event::new(EventType::ChatStart {
+            conversation_id: "session-123".to_string(),
+            model: None,
+        })
+        .metric_log_properties();
+        assert_eq!(session.session_id(), Some("session-123"));
+        assert_eq!(session.request_id(), None);
+
+        let request = Event::new(EventType::MeteringEvent {
+            request_id: Some("request-456".to_string()),
+            model: None,
+            usage: 1.0,
+            unit: "credit".to_string(),
+            unit_plural: "credits".to_string(),
+        })
+        .metric_log_properties();
+        assert_eq!(request.session_id(), None);
+        assert_eq!(request.request_id(), Some("request-456"));
+
+        let mut v3_turn = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id: "v3-session-123".to_string(),
+            result: TelemetryResult::Succeeded,
+            args: RecordUserTurnCompletionArgs {
+                request_ids: vec![None, Some("v3-request-456".to_string())],
+                ..Default::default()
+            },
+        });
+        v3_turn.set_engine(metric::Engine::V3);
+        let v3_properties = v3_turn.metric_log_properties();
+        assert_eq!(v3_properties.session_id(), Some("v3-session-123"));
+        assert_eq!(v3_properties.request_id(), Some("v3-request-456"));
+
+        let mut kuts_only_v3_turn = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id: "v3-session-789".to_string(),
+            result: TelemetryResult::Succeeded,
+            args: RecordUserTurnCompletionArgs::default(),
+        });
+        kuts_only_v3_turn.metric_context.log_properties = MetricLogProperties::default()
+            .with_session_id("v3-session-789".to_string())
+            .with_request_id("kuts-request-789".to_string());
+        let kuts_only_properties = kuts_only_v3_turn.metric_log_properties();
+        assert_eq!(kuts_only_properties.session_id(), Some("v3-session-789"));
+        assert_eq!(kuts_only_properties.request_id(), Some("kuts-request-789"));
+
+        let empty = Event::new(EventType::UserLoggedIn {}).metric_log_properties();
+        assert_eq!(empty, MetricLogProperties::default());
     }
 }
