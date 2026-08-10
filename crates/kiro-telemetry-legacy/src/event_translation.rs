@@ -908,7 +908,12 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
                 .metric_context
                 .agent_mode
                 .unwrap_or_else(|| turn_agent_mode(&args.message_meta_tags));
-            records.push(metric::record_user_turn(session_interface, agent_mode, engine));
+            records.push(metric::record_user_turn_for_acp_client(
+                session_interface,
+                agent_mode,
+                engine,
+                event.acp_client_name.as_deref(),
+            ));
             match result {
                 TelemetryResult::Succeeded => {
                     records.extend(metric::record_user_turn_duration_seconds(
@@ -1397,6 +1402,27 @@ mod tests {
         assert_eq!(attribute(record, "session_interface"), Some("interactive_cli"));
         assert_eq!(attribute(record, "agent_mode"), Some("spec"));
         assert_eq!(attribute(record, "agent_engine"), Some("v1"));
+    }
+
+    #[test]
+    fn external_acp_turn_carries_reported_client_name() {
+        let mut event = turn_event(
+            metric::Engine::V2,
+            metric::SessionInterface::ExternalAcp,
+            TelemetryResult::Succeeded,
+            RecordUserTurnCompletionArgs::default(),
+        );
+        event.acp_client_name = Some("Sugarmaker".to_string());
+
+        let records = event_to_otel_metric_records(&event);
+        let record = records
+            .iter()
+            .find(|record| record.name == "kiro_cli_user_turns")
+            .unwrap();
+
+        assert_eq!(attribute(record, "session_interface"), Some("external_acp"));
+        assert_eq!(attribute(record, "acp_client_name"), Some("Sugarmaker"));
+        assert_eq!(attribute(record, "agent_engine"), Some("v2"));
     }
 
     #[test]

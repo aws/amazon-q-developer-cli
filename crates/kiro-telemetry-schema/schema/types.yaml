@@ -4,6 +4,8 @@ attributes:
   - name: session_interface
     description: Interface through which the agent session is used.
     allowed_values: [interactive_cli, noninteractive_cli, external_acp]
+  - name: acp_client_name
+    description: Sanitized name reported by an ACP client, capped at 64 characters.
   - name: agent_engine
     description: Agent runtime responsible for the measured operation.
     allowed_values: [v1, v2, v3, unknown]

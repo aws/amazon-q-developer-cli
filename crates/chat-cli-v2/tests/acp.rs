@@ -17,8 +17,12 @@ use kiro_telemetry::metric;
 use kiro_telemetry::testing::{
     expect_metric,
     expect_metric_attrs,
+    expect_metric_record,
 };
-use kiro_telemetry_legacy::event_to_otel_metric_record;
+use kiro_telemetry_legacy::{
+    event_to_otel_metric_record,
+    event_to_otel_metric_records,
+};
 use ntest::timeout;
 use serial_test::serial;
 use tokio::time::sleep;
@@ -3672,6 +3676,63 @@ async fn effort_command_e2e() {
         additional_fields["output_config"]["effort"], "low",
         "effort should be 'low' in the request"
     );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn external_acp_client_name_reaches_user_turn_metric() {
+    let mut harness = AcpTestHarness::new("external_acp_client_name_reaches_user_turn_metric").await;
+    let (stdin, stdout) = harness.take_stdio();
+    let client = AcpTestClient::spawn(stdin, stdout, true);
+
+    client
+        .initialize_as("Sugarmaker", "3.0.0")
+        .await
+        .expect("initialize failed");
+    harness.wait_for_ipc().await;
+
+    let cwd = harness.paths.cwd.clone();
+    let session_id = client.new_session(cwd).await.expect("new_session failed").session_id;
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/simple_text.jsonl")
+        .await;
+
+    client.prompt_text(session_id, "hello").await.expect("prompt failed");
+
+    let events = harness
+        .wait_for_telemetry_events(Duration::from_secs(5), |events| {
+            events.iter().any(|event| {
+                event.acp_client_name.as_deref() == Some("Sugarmaker")
+                    && matches!(
+                        &event.ty,
+                        chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+                    )
+            })
+        })
+        .await;
+    let event = events
+        .iter()
+        .find(|event| {
+            event.acp_client_name.as_deref() == Some("Sugarmaker")
+                && matches!(
+                    &event.ty,
+                    chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+                )
+        })
+        .expect("expected a Sugarmaker turn-completion event");
+
+    assert_eq!(event.app_type.as_deref(), Some("ACP"));
+    assert_eq!(event.session_interface, Some(metric::SessionInterface::ExternalAcp));
+
+    let records = event_to_otel_metric_records(event);
+    let turn = expect_metric_record(&records, "kiro_cli_user_turns");
+    expect_metric_attrs(turn, &[
+        ("session_interface", "external_acp"),
+        ("agent_mode", "default"),
+        ("agent_engine", "v2"),
+        ("acp_client_name", "Sugarmaker"),
+    ]);
 }
 
 #[tokio::test]

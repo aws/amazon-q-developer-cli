@@ -1088,8 +1088,18 @@ pub fn record_mcp_server_init(
 }
 
 pub fn record_user_turn(session_interface: SessionInterface, agent_mode: AgentMode, engine: Engine) -> MetricRecord {
+    record_user_turn_for_acp_client(session_interface, agent_mode, engine, None)
+}
+
+pub fn record_user_turn_for_acp_client(
+    session_interface: SessionInterface,
+    agent_mode: AgentMode,
+    engine: Engine,
+    acp_client_name: Option<&str>,
+) -> MetricRecord {
     with_common_product_dimensions(counter("kiro_cli_user_turns", 1), session_interface, engine, None)
         .attribute("agent_mode", agent_mode.as_str())
+        .optional_attribute("acp_client_name", acp_client_name)
         .expect_valid()
 }
 

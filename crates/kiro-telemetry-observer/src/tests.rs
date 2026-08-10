@@ -970,7 +970,7 @@ fn test_turn_completion_attempts_is_none_when_transport_does_not_report() {
 #[test]
 fn test_acp_client_app_type() {
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let client_info = Some(AcpClientInfo::new("external-client".into(), "2.0".into()));
+    let client_info = Some(AcpClientInfo::new("Sugarmaker".into(), "2.0".into()));
     let ctx = TelemetryContext::new(model_provider("claude-4-sonnet"), client_info, false);
     let mut obs = TelemetryObserver::new_for_test(tx, ctx);
     obs.handle_event("test-session", &make_loop_event(success_stream_end()));
@@ -978,7 +978,7 @@ fn test_acp_client_app_type() {
     let event = rx.try_recv().unwrap();
     assert_eq!(event.app_type.as_deref(), Some("ACP"));
     assert_eq!(event.engine, Some(metric::Engine::V2));
-    assert_eq!(event.acp_client_name.as_deref(), Some("external-client"));
+    assert_eq!(event.acp_client_name.as_deref(), Some("Sugarmaker"));
     assert_eq!(event.client_application.as_deref(), Some("acp_external"));
     assert_eq!(event.session_interface, Some(metric::SessionInterface::ExternalAcp));
 }
@@ -1176,4 +1176,17 @@ fn test_external_client_is_acp() {
     assert_eq!(info.app_type(), AppType::Acp);
     assert_eq!(info.name, ClientName::Other("external-editor".into()));
     assert_eq!(info.session_interface(), metric::SessionInterface::ExternalAcp);
+}
+
+#[test]
+fn test_external_client_name_is_sanitized_for_telemetry() {
+    let info = AcpClientInfo::new("  Sugar\u{2028}maker\u{200b}  ".into(), "2.0".into());
+    assert_eq!(info.name, ClientName::Other("Sugarmaker".into()));
+
+    let long = format!("{} ", "a".repeat(64));
+    let info = AcpClientInfo::new(long, "2.0".into());
+    assert_eq!(info.name, ClientName::Other("a".repeat(64)));
+
+    let info = AcpClientInfo::new("\u{0}\u{2028}".into(), "2.0".into());
+    assert_eq!(info.name, ClientName::Unknown);
 }

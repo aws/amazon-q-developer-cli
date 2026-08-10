@@ -68,6 +68,8 @@ pub struct SpawnSessionResponse {
 /// Commands sent to the ACP actor.
 enum Command {
     Initialize {
+        name: String,
+        version: String,
         reply: oneshot::Sender<acp::Result<acp::InitializeResponse>>,
     },
     NewSession {
@@ -277,8 +279,19 @@ impl AcpTestClient {
     }
 
     pub async fn initialize(&self) -> acp::Result<acp::InitializeResponse> {
+        self.initialize_as("test-client", "0.1.0").await
+    }
+
+    pub async fn initialize_as(&self, name: &str, version: &str) -> acp::Result<acp::InitializeResponse> {
         let (reply, rx) = oneshot::channel();
-        self.tx.send(Command::Initialize { reply }).await.ok();
+        self.tx
+            .send(Command::Initialize {
+                name: name.to_string(),
+                version: version.to_string(),
+                reply,
+            })
+            .await
+            .ok();
         rx.await.unwrap()
     }
 
@@ -565,13 +578,13 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
 
     while let Some(cmd) = rx.recv().await {
         match cmd {
-            Command::Initialize { reply } => {
+            Command::Initialize { name, version, reply } => {
                 tokio::task::spawn_local({
                     let conn = conn.clone();
                     async move {
                         let result = conn
                             .initialize(acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
-                                acp::Implementation::new("test-client", "0.1.0").title(Some("Test Client".to_string())),
+                                acp::Implementation::new(name, version).title(Some("Test Client".to_string())),
                             )))
                             .await;
                         let _ = reply.send(result);

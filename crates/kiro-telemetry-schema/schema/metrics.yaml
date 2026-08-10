@@ -333,7 +333,7 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, session_interface, agent_mode, agent_engine]
+    attributes: [version_full, session_interface, agent_mode, agent_engine, acp_client_name]
     cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
   - name: kiro_cli_goal_outcome_total
     description: Observed terminal outcomes of explicit goal workflows.

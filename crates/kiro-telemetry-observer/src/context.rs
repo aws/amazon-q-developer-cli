@@ -12,9 +12,7 @@ use std::sync::Arc;
 use kiro_telemetry::metric;
 use kiro_telemetry_host::Event;
 
-/// Stable client name used by the built-in Kiro TUI. Mirrors V2's
-/// `crate::constants::KIRO_ACP_CLIENT_NAME` so the observer crate doesn't take
-/// a dep on V2's constants module.
+/// Stable client name used by the built-in Kiro TUI.
 pub const KIRO_ACP_CLIENT_NAME: &str = "kiro-tui";
 pub const KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME: &str = "kiro-cli-non-interactive";
 
@@ -63,16 +61,16 @@ impl ClientName {
         } else if s == KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME {
             Self::KiroCliNonInteractive
         } else {
-            Self::Other(s.to_string())
+            agent::util::sanitize_acp_client_name(s).map_or(Self::Unknown, Self::Other)
         }
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn reported_name(&self) -> Option<&str> {
         match self {
-            Self::Kiro => KIRO_ACP_CLIENT_NAME,
-            Self::KiroCliNonInteractive => KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME,
-            Self::Other(s) => s,
-            Self::Unknown => "Unknown",
+            Self::Kiro => Some(KIRO_ACP_CLIENT_NAME),
+            Self::KiroCliNonInteractive => Some(KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME),
+            Self::Other(s) => Some(s),
+            Self::Unknown => None,
         }
     }
 }
@@ -183,7 +181,7 @@ impl TelemetryContext {
         }
         event.is_subagent = self.is_subagent;
         if let Some(ci) = &self.client_info {
-            event.acp_client_name = Some(ci.name.as_str().to_string());
+            event.acp_client_name = ci.name.reported_name().map(str::to_string);
             event.acp_client_version = Some(ci.version.as_str().to_string());
         }
     }
