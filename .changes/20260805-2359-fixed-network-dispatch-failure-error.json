@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Network \"dispatch failure\" errors after long tool runs by keeping pooled connections alive"
+}
