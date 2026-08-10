@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Enter in Display Settings panel no longer double-toggles the focused row, preserving the value set by arrow keys"
+}

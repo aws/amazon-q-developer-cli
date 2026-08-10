@@ -11,6 +11,7 @@ import { Settings } from '../../../constants/settings.js';
 import { DisplaySettingsPanel } from '../DisplaySettingsPanel.js';
 
 const RIGHT = '\x1b[C';
+const DOWN = '\x1b[B';
 const ENTER = '\r';
 const ESCAPE = '\x1b';
 
@@ -159,7 +160,7 @@ describe('DisplaySettingsPanel UI mode switch', () => {
     expect(sendUiModeChanged).not.toHaveBeenCalled();
   });
 
-  it('applies the highlighted UI mode and closes on Enter', async () => {
+  it('closes on Enter without re-toggling the focused row', async () => {
     const kiro = new Kiro();
     const setSetting = mock(async () => {});
     const sendUiModeChanged = mock(() => {});
@@ -191,16 +192,58 @@ describe('DisplaySettingsPanel UI mode switch', () => {
     terminal.sendInput(ENTER);
     await flush();
 
-    expect(setUiMode).toHaveBeenCalledWith('lite');
-    expect(setSetting).toHaveBeenCalledWith(Settings.CHAT_UI_MODE, 'lite');
-    expect(sendUiModeChanged).toHaveBeenCalledWith({
-      from: 'tui',
-      to: 'lite',
-      source: ModeChangeSource.SettingsPanel,
-      sessionId: undefined,
-    });
+    // Enter is 'apply and close': arrows do the toggling+persist, so a bare
+    // Enter must NOT flip or re-persist the focused row's value.
+    expect(setUiMode).not.toHaveBeenCalled();
+    expect(setSetting).not.toHaveBeenCalled();
+    expect(sendUiModeChanged).not.toHaveBeenCalled();
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not revert a boolean row committed via arrows when Enter closes', async () => {
+    const kiro = new Kiro();
+    const setSetting = mock(async () => {});
+    (kiro as any).setSetting = setSetting;
+    (kiro as any).sendUiModeChanged = mock(() => {});
+    (kiro as any).sendUiModeDefaultChanged = mock(() => {});
+
+    const store = createAppStore({ kiro, agentEngine: 'v2', uiMode: 'tui' });
+    store.setState({ setUiMode: mock(() => {}) });
+    const onDismiss = mock(() => {});
+    const terminal = new MockTerminal();
+
+    active = render(
+      React.createElement(
+        AppStoreContext.Provider,
+        { value: store },
+        React.createElement(DisplaySettingsPanel, {
+          surface: 'tui',
+          onClose: mock(() => {}),
+          onDismiss,
+        })
+      ),
+      { terminal, exitOnCtrlC: false }
+    );
+    await flush();
+
+    // Focus the Animations row (index 1: Default UI, then Animations).
+    terminal.sendInput(DOWN);
+    await flush();
+
+    // Arrow toggles Animations on -> off and persists it once.
+    terminal.sendInput(RIGHT);
+    await flush();
+    expect(setSetting).toHaveBeenCalledTimes(1);
+    expect(setSetting).toHaveBeenCalledWith(Settings.CHAT_ANIMATIONS, false);
+
+    // Enter must apply+close WITHOUT flipping Animations back to on.
+    terminal.sendInput(ENTER);
+    await flush();
+
+    expect(setSetting).toHaveBeenCalledTimes(1);
+    expect(setSetting).not.toHaveBeenCalledWith(Settings.CHAT_ANIMATIONS, true);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('closes without changing the UI mode on Escape', async () => {

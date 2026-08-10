@@ -261,9 +261,7 @@ export const DisplaySettingsPanel: React.FC<DisplaySettingsPanelProps> = ({
       if (key.leftArrow || key.rightArrow || key.return) onOpenStatusLine?.();
     } else if (key.leftArrow || key.rightArrow) toggle(item.key);
     else if (key.return) {
-      // Enter applies the highlighted row then closes; #2634 dropped the
-      // toggle so Enter silently closed without switching the value.
-      toggle(item.key);
+      // Arrow keys already toggled+persisted the value, so Enter only closes.
       (onDismiss ?? onClose)();
     }
   });
