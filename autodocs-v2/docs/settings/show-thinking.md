@@ -1,13 +1,13 @@
 ---
 doc_meta:
   validated: 2026-06-03
-  commit: 54d1f048f
+  commit: 87dc02c1a
   status: validated
   testable_headless: true
   category: setting
   title: chat.showThinking
   description: Control how agent reasoning blocks are displayed in chat
-  keywords: [setting, thinking, reasoning, extended thinking, debug, collapsed, expanded]
+  keywords: [setting, thinking, reasoning, extended thinking, debug, collapsed, expanded, comfort messages]
   related: [cmd-settings]
 ---
 
@@ -38,6 +38,19 @@ When a reasoning block completes, it displays "Thought for Ns" showing how long 
 Legacy boolean values are still accepted:
 - `true` → `collapsed`
 - `false` → `off`
+
+## Comfort Messages
+
+When `showThinking` is set to `off`, the TUI displays progressively reassuring messages during long-running requests where no content has arrived yet:
+
+| Elapsed Time | Message |
+|--------------|---------|
+| < 60s | "Thinking..." |
+| 60s | "Still thinking..." |
+| 120s | "Still thinking, this is a tricky one..." |
+| 180s+ | "Still thinking, complex requests can take me longer. Show thinking in settings to see progress." |
+
+When `showThinking` is `expanded` or `collapsed`, you already see the agent's reasoning progress, so only the base "Thinking..." message is shown regardless of elapsed time.
 
 ## Usage
 
@@ -139,6 +152,7 @@ Once a turn scrolls into history (static buffer), the reasoning block shows only
 - Watch the agent's reasoning in real-time
 - Debug agent behavior and understand its approach
 - Learn how the agent tackles complex problems
+- See real-time progress instead of comfort messages during long requests
 
 **Use `collapsed`** when you want to:
 - Keep output clean but have reasoning available on demand
@@ -179,3 +193,9 @@ Once a turn scrolls into history (static buffer), the reasoning block shows only
 **Symptom**: Had `chat.showThinking: true` but now it behaves differently  
 **Cause**: `true` now maps to `collapsed` (header only by default)  
 **Solution**: To get always-visible reasoning, set explicitly to `expanded`: `kiro-cli settings chat.showThinking expanded`
+
+### Issue: Seeing "Show thinking in settings" Message
+
+**Symptom**: After 3 minutes of waiting, the comfort message suggests enabling thinking  
+**Cause**: This is normal behavior for long-running requests when thinking is set to `off`  
+**Solution**: If you want to see real-time progress instead of comfort messages, set `chat.showThinking` to `expanded` or `collapsed`: `kiro-cli settings chat.showThinking expanded`
