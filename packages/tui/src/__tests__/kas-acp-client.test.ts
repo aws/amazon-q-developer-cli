@@ -565,6 +565,24 @@ describe('KasAcpClient', () => {
     expect(args).toContain('--transport=stdio');
   });
 
+  it('omits --endpoint when KIRO_KAS_ENDPOINT is unset', () => {
+    delete process.env.KIRO_KAS_ENDPOINT;
+    const _client = new KasAcpClient();
+    const [_cmd, args] = mockSpawn.mock.calls[0]!;
+    expect(args.some((a: string) => a.startsWith('--endpoint='))).toBe(false);
+  });
+
+  it('passes --endpoint to the KAS server when KIRO_KAS_ENDPOINT is set', () => {
+    process.env.KIRO_KAS_ENDPOINT = 'http://127.0.0.1:19999';
+    try {
+      const _client = new KasAcpClient();
+      const [_cmd, args] = mockSpawn.mock.calls[0]!;
+      expect(args).toContain('--endpoint=http://127.0.0.1:19999');
+    } finally {
+      delete process.env.KIRO_KAS_ENDPOINT;
+    }
+  });
+
   it('factory forwards the required app-store routing actions for KAS', () => {
     const client = createAcpClient('/unused', [], {
       agentEngine: 'kas',

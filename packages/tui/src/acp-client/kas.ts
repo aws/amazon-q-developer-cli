@@ -579,6 +579,18 @@ export class KasAcpClient extends BaseAcpClient {
     const nodeBin = process.env.KIRO_KAS_NODE_PATH || 'node';
     logger.info(`[acp-client] Spawning KAS agent: ${nodeBin} ${kasServerPath}`);
 
+    // Test/dev hook: route KAS's model traffic (KRS GenerateAssistantResponse)
+    // to an alternate endpoint. KAS only reads this as the `--endpoint` CLI
+    // flag — there is no env fallback on the KAS side — so it must be plumbed
+    // here at the spawn site. Loud on stderr: a stray value in a user's shell
+    // would silently redirect model traffic.
+    const kasEndpointOverride = process.env.KIRO_KAS_ENDPOINT;
+    if (kasEndpointOverride) {
+      process.stderr.write(
+        `[acp-client] KIRO_KAS_ENDPOINT set — KAS model endpoint overridden: ${kasEndpointOverride}\n`
+      );
+    }
+
     // Resolved before `super()` because the user-agent below is baked into
     // the subprocess env at spawn time, which precedes the `super()` call
     // that unblocks `this` access. Stored on the instance afterwards.
@@ -595,6 +607,7 @@ export class KasAcpClient extends BaseAcpClient {
         // registered on `KiroClient` below). The refresh token stays in
         // chat-cli's SQLite store; KAS only ever sees access tokens.
         '--auth=acp-callback',
+        ...(kasEndpointOverride ? [`--endpoint=${kasEndpointOverride}`] : []),
       ],
       {
         stdio: ['pipe', 'pipe', 'pipe'],
