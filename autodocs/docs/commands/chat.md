@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-29
-  commit: 32a300b94
+  validated: 2026-08-11
+  commit: b505d986b
   status: validated
   testable_headless: true
   category: command
@@ -265,7 +265,8 @@ Use `--no-interactive` for automation and scripts:
 
 **Keyboard Shortcuts**:
 - `Ctrl+R`: Search command history (case-insensitive)
-- `Ctrl+C`: Cancel current operation or exit
+- `Ctrl+C`: Cancel current operation or exit (press twice to confirm)
+- `Ctrl+D`: Exit on empty input (press twice to confirm)
 - `Ctrl+T`: Toggle tangent mode (if enabled)
 - `Up/Down`: Navigate command history
 

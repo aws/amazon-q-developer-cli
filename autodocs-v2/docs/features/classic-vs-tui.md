@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-07-13
-  commit: ac7cc5a34
+  validated: 2026-08-11
+  commit: b505d986b
   status: validated
   testable_headless: false
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, suspend, ctrl-z]
   related: [help, theme, spawn, feedback]
 ---
 
@@ -47,6 +47,10 @@ Track task list progress and queued messages. Type your next message while the a
 - Shift+Enter for multi-line input (terminal-dependent)
 - Segment-based input with file and paste chips
 - Async @ file search with debounce
+
+### Suspend Confirmation
+
+Ctrl+Z requires a double-press to suspend the process. The first press shows "Press Ctrl+Z again to suspend" and arms the suspend. The second press (within 2 seconds) actually suspends. This prevents accidental suspension while the agent is streaming a response. Non-modified keypresses (no Ctrl/Meta) cancel the armed state; handled Ctrl chords (e.g., Ctrl+G, Ctrl+X, Ctrl+O) do not disarm it. Note: the lite subagent panel rebinds Ctrl+Z entirely. On Windows, the suspend gate is a no-op (the dispatcher returns early before arming).
 
 ### Paste Chips
 
@@ -103,7 +107,7 @@ This is the biggest behavioral change:
 
 | Command | Missing in TUI |
 |---------|---------------|
-| `/agent` | generate, schema, set-default, delete |
+| `/agent` | generate, schema, set-default |
 | `/tools` | schema |
 | `/prompts` | create, edit, remove, details (selection only) |
 | `/knowledge` | fix |
