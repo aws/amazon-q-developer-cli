@@ -31,6 +31,12 @@ export interface CliArgs extends AcpSpawnArgs {
   /** Interactively select a conversation to resume (--resume-picker / --list). TUI-only. */
   resumePicker: boolean;
   /**
+   * Launch straight into the session dashboard (--sessions). TUI-only. No
+   * session is created — the dashboard is a reader — and closing it exits
+   * the process rather than dropping into an empty chat.
+   */
+  sessions?: boolean;
+  /**
    * Run the session in a cloud sandbox (--cloud). TUI-only: not forwarded
    * to the KAS subprocess as a flag — instead the TUI sends
    * `_meta.kiro.executionTarget` on `session/new`. Dark-shipped (flag hidden in Rust).
@@ -95,6 +101,11 @@ const FLAG_DEFS: FlagDef[] = [
     type: 'boolean',
     key: 'resumePicker',
     flags: ['--resume-picker', '--list'],
+  },
+  {
+    type: 'boolean',
+    key: 'sessions',
+    flags: ['--sessions'],
   },
   // Cloud sandbox (dark-shipped). Parsed by the TUI to set the KasAcpClient
   // executionTarget; intentionally NO `acp:` mapping — executionTarget rides

@@ -49,6 +49,33 @@ export function truncateToWidth(
 }
 
 /**
+ * Truncate a string to fit within `maxCols` visible columns, keeping the
+ * TAIL. For live input fields: the edit point is at the end, so overflow
+ * must scroll the head out of view rather than hide what is being typed.
+ */
+export function truncateToWidthTail(
+  s: string,
+  maxCols: number,
+  ellipsis = '…'
+): string {
+  const w = visibleWidth(s);
+  if (w <= maxCols) return s;
+  const ellipsisW = visibleWidth(ellipsis);
+  const target = maxCols - ellipsisW;
+  if (target <= 0) return ellipsis.slice(0, maxCols);
+  const segments = [...segmenter.segment(s)].map(({ segment }) => segment);
+  let used = 0;
+  let result = '';
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const gw = visibleWidth(segments[i]!);
+    if (used + gw > target) break;
+    result = segments[i] + result;
+    used += gw;
+  }
+  return ellipsis + result;
+}
+
+/**
  * Pad a string with spaces to exactly `targetCols` visible columns.
  * If the string is already wider, returns it unchanged.
  */

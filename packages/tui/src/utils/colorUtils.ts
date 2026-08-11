@@ -152,6 +152,20 @@ export const getTerminalChalkColor = (
  * @param fallbackHex - Optional fallback hex color (defaults to '#ffffff')
  * @returns The hex color string
  */
+/**
+ * Hex string for a theme color path, with a guard against the renderer's
+ * black/inherit placeholders. Named-color (safe-mode) themes carry no hex —
+ * the fallback fires there.
+ */
+export const themeHex = (
+  getColor: (colorPath: string) => unknown,
+  colorPath: string,
+  fallback: string
+): string => {
+  const hex = (getColor(colorPath) as { hex?: string })?.hex;
+  return hex && hex !== '#000000' && hex !== 'inherit' ? hex : fallback;
+};
+
 export const getColorHex = (
   colorFunc: any,
   fallbackHex: string = '#ffffff'
