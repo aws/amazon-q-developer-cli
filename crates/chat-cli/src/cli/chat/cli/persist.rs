@@ -444,14 +444,13 @@ impl serde::Serialize for SessionSource {
 }
 
 /// JSON envelope for `--list-sessions --format json`. The outer wrapper
-/// is an array carrying one entry per cwd. Today the listing is always
-/// scoped to the current cwd, so the array is single-element; the
-/// shape leaves room for a future `--all-cwds` flag without a breaking
-/// rename.
+/// is an array carrying one entry per cwd: single-element for the default
+/// current-cwd listing, one per workspace under `--all-cwds`.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct SessionListingJson<'a> {
     pub cwd: String,
     pub sessions: Vec<SessionEntryJson<'a>>,
+    pub complete: bool,
 }
 
 /// Per-session JSON shape, matching the camelCase fields used on
@@ -501,7 +500,13 @@ impl<'a> SessionListingJson<'a> {
         Self {
             cwd: canonical.display().to_string(),
             sessions,
+            complete: true,
         }
+    }
+
+    fn with_complete(mut self, complete: bool) -> Self {
+        self.complete = complete;
+        self
     }
 }
 
@@ -592,6 +597,86 @@ fn collect_all_sessions_impl(
     entries
 }
 
+/// Collect local (V1 + V2) sessions across EVERY workspace, grouped by cwd
+/// and sorted most-recent-first within each group. KAS sessions are
+/// deliberately absent: the TUI consumer owns a live KAS listing and merges
+/// by session id, so including them here would only duplicate rows behind a
+/// slower spawn.
+fn collect_all_sessions_all_cwds(
+    db: &crate::database::Database,
+    v2_sessions_dir: Option<&std::path::Path>,
+) -> (Vec<(std::path::PathBuf, Vec<SessionEntry>)>, bool) {
+    use std::collections::BTreeMap;
+    let mut by_cwd: BTreeMap<std::path::PathBuf, Vec<SessionEntry>> = BTreeMap::new();
+    let mut complete = true;
+
+    // V1 sessions from SQLite, keyed by their stored path. One history entry
+    // is one user/assistant exchange, so `len()` counts user turns — the
+    // meaning the dashboard's messages column carries for every engine.
+    match db.list_all_conversations() {
+        Ok((conversations, conversations_complete)) => {
+            complete &= conversations_complete;
+            for (path, conv_id, conv_state, updated_at) in conversations {
+                by_cwd
+                    .entry(std::path::PathBuf::from(path))
+                    .or_default()
+                    .push(SessionEntry {
+                        session_id: conv_id,
+                        summary: format_conversation_summary(&conv_state),
+                        msg_count: Some(conv_state.history().len()),
+                        updated_at_ms: updated_at,
+                        source: SessionSource::V1,
+                        execution_target: None, // V1 sessions are always local
+                        activity_status: None,
+                    });
+            }
+        },
+        Err(error) => {
+            complete = false;
+            tracing::warn!(%error, "Failed to enumerate classic sessions");
+        },
+    }
+
+    // V2 sessions from the filesystem, all cwds. Metadata-only: counting log
+    // lines opens every transcript, which dominates the walk on large stores,
+    // and this consumer derives counts from its own content index.
+    match v2_sessions_dir {
+        Some(sessions_dir) => match chat_cli_v2::agent::session::list_sessions_metadata_only(sessions_dir, None) {
+            Ok(v2_sessions) => {
+                let probe_activity = crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox);
+                for s in v2_sessions {
+                    let activity_status = (probe_activity
+                        && chat_cli_v2::agent::session::is_session_locked(sessions_dir, &s.session_id))
+                    .then(|| "in_progress".to_string());
+                    by_cwd.entry(s.cwd.clone()).or_default().push(SessionEntry {
+                        session_id: s.session_id,
+                        summary: s.title.unwrap_or_else(|| "(no title)".to_string()),
+                        msg_count: None,
+                        updated_at_ms: s.updated_at.timestamp_millis(),
+                        source: SessionSource::V2,
+                        execution_target: None, // V2 sessions are always local
+                        activity_status,
+                    });
+                }
+            },
+            Err(error) => {
+                complete = false;
+                tracing::warn!(%error, "Failed to enumerate V2 sessions");
+            },
+        },
+        None => {
+            complete = false;
+            tracing::warn!("V2 sessions directory is unavailable");
+        },
+    }
+
+    let mut groups: Vec<(std::path::PathBuf, Vec<SessionEntry>)> = by_cwd.into_iter().collect();
+    for (_, entries) in &mut groups {
+        entries.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    }
+    (groups, complete)
+}
+
 /// A session id shorter than a full UUID is treated as a deletable prefix
 /// only from eight characters — the truncated length `--list-sessions`
 /// displays. Anything shorter must match a stored id exactly.
@@ -650,12 +735,59 @@ fn delete_any_session_impl(
 ///   the [`SessionListingJson`] envelope, intended for the TUI to consume via `KIRO_CHAT_CLI_BIN`.
 pub async fn handle_list_delete_session_flags(
     list_sessions: bool,
+    all_cwds: bool,
     delete_session: Option<&str>,
     delete_source: Option<SessionSource>,
     cloud_sessions_enabled: bool,
     format: crate::cli::OutputFormat,
     os: &Os,
 ) -> Option<ExitCode> {
+    if list_sessions && all_cwds {
+        // Local stores only (V1 + V2), every workspace, one envelope per cwd.
+        // The single-cwd path spawns KAS for V3 rows; here the consumer (the
+        // TUI dashboard) already holds a live KAS listing and merges by id.
+        let v2_dir = chat_cli_v2::util::paths::sessions_dir().ok();
+        let (groups, complete) = collect_all_sessions_all_cwds(&os.database, v2_dir.as_deref());
+        match format {
+            crate::cli::OutputFormat::Plain => {
+                for (cwd, entries) in &groups {
+                    if let Err(e) = render_session_entries(&mut std::io::stderr(), &cwd.display().to_string(), entries)
+                    {
+                        eprintln!("Error: {e:#}");
+                        return Some(ExitCode::FAILURE);
+                    }
+                }
+            },
+            crate::cli::OutputFormat::Json | crate::cli::OutputFormat::JsonPretty => {
+                let mut listing: Vec<SessionListingJson<'_>> = groups
+                    .iter()
+                    .map(|(cwd, entries)| {
+                        SessionListingJson::from_entries(cwd, entries, cloud_sessions_enabled).with_complete(complete)
+                    })
+                    .collect();
+                if listing.is_empty() && !complete {
+                    listing.push(SessionListingJson {
+                        cwd: String::new(),
+                        sessions: Vec::new(),
+                        complete: false,
+                    });
+                }
+                let out = match format {
+                    crate::cli::OutputFormat::JsonPretty => serde_json::to_string_pretty(&listing),
+                    _ => serde_json::to_string(&listing),
+                };
+                match out {
+                    Ok(s) => println!("{s}"),
+                    Err(e) => {
+                        eprintln!("Error: {e:#}");
+                        return Some(ExitCode::FAILURE);
+                    },
+                }
+            },
+        }
+        return Some(ExitCode::SUCCESS);
+    }
+
     if list_sessions {
         let cwd = match std::env::current_dir() {
             Ok(p) => p,
@@ -777,6 +909,43 @@ async fn collect_kas_sessions<C: KasSessionClient>(client: &C, cwd: &std::path::
     Ok(kas_sessions.into_iter().map(SessionEntry::from).collect())
 }
 
+async fn delete_kas_session<C: KasSessionClient>(
+    client: &C,
+    cwd: &std::path::Path,
+    session_id: &str,
+    cloud_sessions_enabled: bool,
+) -> Result<bool> {
+    let local_deleted = client.delete_session(session_id, None).await?;
+    let remote_deleted = if cloud_sessions_enabled {
+        match client.delete_session(session_id, Some("remote")).await {
+            Ok(deleted) => deleted,
+            // A remote-store failure must not erase a completed local delete:
+            // reporting "not found" for a session that was just removed sends
+            // the user chasing a phantom. Surface the error only when nothing
+            // was deleted anywhere.
+            Err(e) if local_deleted => {
+                tracing::warn!("remote session delete failed after local delete succeeded: {e:#}");
+                false
+            },
+            Err(e) => return Err(e),
+        }
+    } else {
+        false
+    };
+    let deleted = local_deleted || remote_deleted;
+    if !deleted || !cloud_sessions_enabled {
+        return Ok(deleted);
+    }
+
+    match client.list_sessions(cwd).await {
+        Ok(entries) => Ok(!entries.iter().any(|entry| entry.session_id == session_id)),
+        Err(e) => {
+            tracing::warn!("delete verification listing unavailable: {e:#}");
+            Ok(true)
+        },
+    }
+}
+
 /// Delete a session from V1, V2, and/or KAS based on the optional `source`
 /// filter. With no filter: tries V1+V2 unconditionally and KAS best-effort
 /// (KAS launch failure is logged via `tracing::warn` and does not surface).
@@ -863,25 +1032,7 @@ async fn handle_delete_session(
     if target_kas {
         let cwd = cwd.clone();
         match with_kas_session_client(os, |client| async move {
-            // Default (local) store, plus the cloud store when enabled, so a bare
-            // delete removes a cloud session too. KAS has no combined-store delete
-            // and rejects "all", so this is two calls.
-            client.delete_session(session_id, None).await?;
-            if cloud_sessions_enabled {
-                client.delete_session(session_id, Some("remote")).await?;
-                // KAS reports delete success unconditionally, so verify: the
-                // delete counts only when the id no longer appears in the
-                // listing. A listing failure degrades to trusting the delete.
-                match client.list_sessions(&cwd).await {
-                    Ok(entries) => Ok(!entries.iter().any(|e| e.session_id == session_id)),
-                    Err(e) => {
-                        tracing::warn!("delete verification listing unavailable: {e:#}");
-                        Ok(true)
-                    },
-                }
-            } else {
-                Ok(true)
-            }
+            delete_kas_session(&client, &cwd, session_id, cloud_sessions_enabled).await
         })
         .await
         {
@@ -1807,6 +1958,60 @@ mod kas_tests {
         let client = KasMockSessionClient::new().with_list_err("rpc timeout");
         let err = collect_kas_sessions(&client, Path::new("/tmp")).await.unwrap_err();
         assert!(format!("{err:#}").contains("rpc timeout"));
+    }
+
+    #[tokio::test]
+    async fn delete_kas_session_preserves_backend_rejection() {
+        let client = KasMockSessionClient::new().with_delete_result(false);
+        let deleted = delete_kas_session(&client, Path::new("/tmp/project"), "sess_abc", false)
+            .await
+            .unwrap();
+        assert!(!deleted);
+    }
+
+    #[tokio::test]
+    async fn delete_kas_session_keeps_local_success_when_remote_delete_errors() {
+        let client = KasMockSessionClient::new()
+            .with_delete_result(true)
+            .with_delete_err("remote store unreachable")
+            .with_list(vec![]);
+        let deleted = delete_kas_session(&client, Path::new("/tmp/project"), "sess_abc", true)
+            .await
+            .unwrap();
+        assert!(deleted, "a remote failure must not erase the completed local delete");
+    }
+
+    #[tokio::test]
+    async fn delete_kas_session_surfaces_remote_error_when_nothing_was_deleted() {
+        let client = KasMockSessionClient::new()
+            .with_delete_result(false)
+            .with_delete_err("remote store unreachable");
+        let err = delete_kas_session(&client, Path::new("/tmp/project"), "sess_abc", true)
+            .await
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("remote store unreachable"));
+    }
+
+    #[tokio::test]
+    async fn delete_kas_session_verifies_removal_against_the_listing() {
+        let entry = kas_entry("sess_abc", Some("still here"), None);
+        let client = KasMockSessionClient::new()
+            .with_delete_result(true)
+            .with_delete_result(false)
+            .with_list(vec![entry]);
+        let deleted = delete_kas_session(&client, Path::new("/tmp/project"), "sess_abc", true)
+            .await
+            .unwrap();
+        assert!(!deleted, "a session still present after delete must not report success");
+    }
+
+    #[tokio::test]
+    async fn session_listing_json_is_incomplete_when_v2_directory_is_unavailable() {
+        let os = Os::new().await.unwrap();
+
+        let (_, complete) = collect_all_sessions_all_cwds(&os.database, None);
+
+        assert!(!complete);
     }
 
     /// Pins the `--list-sessions --format json` envelope shape. The

@@ -161,6 +161,14 @@ metrics:
     temporality: delta
     attributes: [version_full, ui_mode]
     cloudwatch_dimensions: [version_full, ui_mode]
+  - name: kiro_cli_session_dashboard_total
+    description: Session dashboard visits grouped by terminal outcome, discovery path, entry point, and selected agent engine.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, outcome, via, entry]
+    cloudwatch_dimensions: [version_full, agent_engine, outcome, via, entry]
   - name: kiro_cli_daily_heartbeat
     description: At-most-daily active installation heartbeat for the emitted full version.
     dashboard: true

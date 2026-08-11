@@ -581,6 +581,7 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
     {
         err.exit();
     }
+    args.validate_sessions_mode()?;
 
     if let Some(command) = args.command.take() {
         return command.execute().await;
@@ -645,6 +646,7 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
     let is_tui_supported = crate::util::system_info::is_tui_supported();
 
     tracing::debug!(?engine, is_tui_supported, tui_available, "launch decision");
+    ensure_dashboard_tui_available(&args, is_tui_supported, tui_available)?;
     let fallback_to_v1 = !args.no_interactive && (!is_tui_supported || !tui_available);
     match engine {
         chat::AgentEngine::V1 => crate::launch::launch_v1(args, os, telemetry_name).await,
@@ -663,6 +665,26 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
     }
 }
 
+fn ensure_dashboard_tui_available(args: &ChatArgs, is_tui_supported: bool, tui_available: bool) -> Result<()> {
+    if !args.sessions {
+        return Ok(());
+    }
+    if !tui_available {
+        bail!("--sessions requires the TUI, but TUI assets are not available in this build");
+    }
+    if !is_tui_supported {
+        bail!("--sessions requires an interactive TUI supported by the current platform");
+    }
+    Ok(())
+}
+
+fn ensure_dashboard_interactive(args: &ChatArgs, non_interactive: bool) -> Result<()> {
+    if args.sessions && non_interactive {
+        bail!("--sessions requires an interactive terminal and cannot run with --no-interactive or piped stdin");
+    }
+    Ok(())
+}
+
 /// Build [`LaunchOptions`] and launch the ACP session.
 /// When `--no-interactive` is set, resolves the prompt input from CLI args or
 /// stdin and selects the non-interactive variant; otherwise runs the
@@ -677,6 +699,7 @@ async fn launch_acp_session(
     // Render headless when the session is non-interactive: explicit `--no-interactive`,
     // or stdin that isn't interactive. Avoids rendering the TUI on a pipe.
     let non_interactive = args.no_interactive || !crate::util::stdin_is_interactive();
+    ensure_dashboard_interactive(args, non_interactive)?;
     // The non-interactive path never sends an execution target or the
     // remote-sessions endpoint, so `--cloud` there would silently run a local
     // session. Reject it until that path supports cloud.
@@ -954,6 +977,7 @@ async fn handle_session_flags(args: &ChatArgs, os: &Os) -> Option<Result<ExitCod
     }
     crate::cli::chat::cli::persist::handle_list_delete_session_flags(
         args.list_sessions,
+        args.all_cwds,
         args.delete_session.as_deref(),
         args.session_source.map(|s| match s {
             SessionSourceArg::V1 => SessionSource::V1,
@@ -1288,6 +1312,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1344,6 +1370,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1372,6 +1400,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1400,6 +1430,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1428,6 +1460,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1452,6 +1486,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1480,6 +1516,8 @@ mod test {
                 resume_id: Some("abc-123".to_string()),
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1508,6 +1546,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1536,6 +1576,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1564,6 +1606,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1592,6 +1636,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1620,6 +1666,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1644,6 +1692,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1668,6 +1718,8 @@ mod test {
                 resume_id: None,
                 resume_picker: false,
                 list_sessions: false,
+                all_cwds: false,
+                sessions: false,
                 list_models: false,
                 format: OutputFormat::Plain,
                 delete_session: None,
@@ -1723,6 +1775,53 @@ mod test {
     fn test_v3_conflicts_with_agent_engine() {
         // --v3 is a shorthand for --agent-engine=kas, so combining them is rejected.
         assert!(Cli::try_parse_from([CHAT_BINARY_NAME, "chat", "--v3", "--agent-engine=v2"]).is_err());
+    }
+
+    #[test]
+    fn sessions_flag_rejects_other_chat_actions_during_parsing() {
+        for incompatible in [
+            vec!["--resume"],
+            vec!["--resume-id", "session-id"],
+            vec!["--resume-picker"],
+            vec!["--no-interactive"],
+            vec!["--list-sessions"],
+            vec!["--list-models"],
+            vec!["--delete-session", "session-id"],
+            vec!["prompt"],
+        ] {
+            let mut argv = vec![CHAT_BINARY_NAME, "chat", "--sessions"];
+            argv.extend(incompatible);
+            let error = Cli::try_parse_from(argv).unwrap_err();
+            assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
+    }
+
+    #[test]
+    fn sessions_mode_validation_precedes_programmatic_early_actions() {
+        let args = ChatArgs {
+            sessions: true,
+            list_models: true,
+            ..Default::default()
+        };
+        let error = args.validate_sessions_mode().unwrap_err().to_string();
+        assert!(error.contains("--list-models"), "{error}");
+    }
+
+    #[test]
+    fn sessions_mode_requires_an_available_interactive_tui() {
+        let args = ChatArgs {
+            sessions: true,
+            ..Default::default()
+        };
+        assert!(ensure_dashboard_tui_available(&args, true, false).is_err());
+        assert!(ensure_dashboard_tui_available(&args, false, true).is_err());
+        assert!(ensure_dashboard_tui_available(&args, true, true).is_ok());
+        assert!(ensure_dashboard_interactive(&args, true).is_err());
+        assert!(ensure_dashboard_interactive(&args, false).is_ok());
+
+        let regular_chat = ChatArgs::default();
+        assert!(ensure_dashboard_tui_available(&regular_chat, false, false).is_ok());
+        assert!(ensure_dashboard_interactive(&regular_chat, true).is_ok());
     }
 
     #[test]
@@ -1807,6 +1906,30 @@ mod test {
             };
             assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
             assert_eq!(args.resolve_non_interactive_input().unwrap(), "hello");
+        }
+
+        #[tokio::test]
+        async fn sessions_flag_implies_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                sessions: true,
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
+        }
+
+        #[tokio::test]
+        async fn sessions_flag_rejects_explicit_incompatible_engine() {
+            let os = make_os().await;
+            for engine in [chat::AgentEngine::V1, chat::AgentEngine::V2] {
+                let args = ChatArgs {
+                    sessions: true,
+                    agent_engine: Some(engine),
+                    ..Default::default()
+                };
+                let error = args.resolve_agent_engine(&os).unwrap_err().to_string();
+                assert!(error.contains("--sessions requires the V3 agent"), "{error}");
+            }
         }
 
         #[tokio::test]
