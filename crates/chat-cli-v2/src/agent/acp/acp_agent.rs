@@ -179,6 +179,7 @@ use crate::os::Os;
 use crate::telemetry::core::Event;
 use crate::telemetry::{
     AcpClientInfo,
+    ClientName,
     EventType,
     TelemetryContext,
     TelemetryObserver,
@@ -987,6 +988,40 @@ impl<'a> AcpSessionBuilder<'a> {
     }
 }
 
+/// V1-parity fallback for one-shot runs when `mcp.noInteractiveTimeout` is unset.
+const DEFAULT_MCP_NO_INTERACTIVE_TIMEOUT_MS: u64 = 30_000;
+
+/// V1-parity pin for delegated turns, which must not start without their tools.
+const SUBAGENT_MCP_INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(86_400);
+
+/// Resolves the MCP init deadline for a session from the `mcp.initTimeout` /
+/// `mcp.noInteractiveTimeout` settings. Both are milliseconds. `None` means the
+/// caller keeps the built-in default.
+///
+/// A client that never identified itself is resolved as one-shot: assuming a
+/// human is present is the unsafe direction, since nobody would see a premature
+/// deadline or be able to retry it.
+fn resolve_mcp_init_timeout(
+    is_subagent: bool,
+    client_name: Option<&ClientName>,
+    init_timeout_ms: Option<i64>,
+    no_interactive_timeout_ms: Option<i64>,
+) -> Option<std::time::Duration> {
+    if is_subagent {
+        return Some(SUBAGENT_MCP_INIT_TIMEOUT);
+    }
+    if !matches!(client_name, Some(ClientName::Kiro | ClientName::Other(_))) {
+        return Some(std::time::Duration::from_millis(
+            no_interactive_timeout_ms
+                .and_then(|ms| u64::try_from(ms).ok())
+                .unwrap_or(DEFAULT_MCP_NO_INTERACTIVE_TIMEOUT_MS),
+        ));
+    }
+    init_timeout_ms
+        .and_then(|ms| u64::try_from(ms).ok())
+        .map(std::time::Duration::from_millis)
+}
+
 /// An actor representing an active ACP session.
 ///
 /// Each session owns:
@@ -1694,6 +1729,14 @@ impl AcpSession {
                 .settings
                 .get_value(Setting::ToolSearchMinTokens)
                 .and_then(|v| v.as_u64());
+            if let Some(timeout) = resolve_mcp_init_timeout(
+                builder.is_subagent,
+                builder.acp_client_info.as_ref().map(|info| &info.name),
+                os.database.settings.get_int(Setting::McpInitTimeout),
+                os.database.settings.get_int(Setting::McpNoInteractiveTimeout),
+            ) {
+                s.settings.mcp_init_timeout = timeout;
+            }
             s
         };
 
@@ -5499,5 +5542,96 @@ mod slash_command_metric_tests {
                 .map(|attribute| attribute.value.as_str());
             assert_ne!(value, Some("/custom"), "missing metric identity for {}", command.name());
         }
+    }
+}
+
+#[cfg(test)]
+mod mcp_init_timeout_tests {
+    use std::time::Duration;
+
+    use super::{
+        ClientName,
+        resolve_mcp_init_timeout,
+    };
+
+    #[test]
+    fn interactive_session_honors_configured_milliseconds() {
+        assert_eq!(
+            resolve_mcp_init_timeout(false, Some(&ClientName::Kiro), Some(10_000), None),
+            Some(Duration::from_millis(10_000))
+        );
+    }
+
+    #[test]
+    fn interactive_session_keeps_default_when_unset_or_negative() {
+        assert_eq!(
+            resolve_mcp_init_timeout(false, Some(&ClientName::Kiro), None, None),
+            None
+        );
+        assert_eq!(
+            resolve_mcp_init_timeout(false, Some(&ClientName::Kiro), Some(-1), None),
+            None
+        );
+    }
+
+    #[test]
+    fn external_acp_client_is_treated_as_interactive() {
+        assert_eq!(
+            resolve_mcp_init_timeout(
+                false,
+                Some(&ClientName::Other("zed".to_string())),
+                Some(7_000),
+                Some(30_000)
+            ),
+            Some(Duration::from_millis(7_000))
+        );
+    }
+
+    #[test]
+    fn non_interactive_session_uses_its_own_setting() {
+        assert_eq!(
+            resolve_mcp_init_timeout(false, Some(&ClientName::KiroCliNonInteractive), Some(200), Some(45_000)),
+            Some(Duration::from_millis(45_000))
+        );
+    }
+
+    #[test]
+    fn non_interactive_session_falls_back_without_borrowing_interactive_value() {
+        assert_eq!(
+            resolve_mcp_init_timeout(false, Some(&ClientName::KiroCliNonInteractive), Some(200), None),
+            Some(Duration::from_millis(30_000))
+        );
+    }
+
+    #[test]
+    fn subagent_session_is_pinned_regardless_of_settings() {
+        assert_eq!(
+            resolve_mcp_init_timeout(true, Some(&ClientName::Kiro), Some(200), Some(200)),
+            Some(Duration::from_secs(86_400))
+        );
+        assert_eq!(
+            resolve_mcp_init_timeout(true, Some(&ClientName::KiroCliNonInteractive), Some(200), Some(200)),
+            Some(Duration::from_secs(86_400))
+        );
+    }
+
+    #[test]
+    fn unidentified_client_is_resolved_as_one_shot() {
+        assert_eq!(
+            resolve_mcp_init_timeout(false, None, Some(200), None),
+            Some(Duration::from_millis(30_000))
+        );
+        assert_eq!(
+            resolve_mcp_init_timeout(false, Some(&ClientName::Unknown), Some(200), Some(45_000)),
+            Some(Duration::from_millis(45_000))
+        );
+    }
+
+    #[test]
+    fn zero_is_honored_as_an_immediate_deadline() {
+        assert_eq!(
+            resolve_mcp_init_timeout(false, Some(&ClientName::Kiro), Some(0), None),
+            Some(Duration::ZERO)
+        );
     }
 }

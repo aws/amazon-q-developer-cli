@@ -22,24 +22,30 @@ MCP server initialization timeout.
 
 Sets the timeout duration for Model Context Protocol (MCP) server initialization. Controls how long to wait for MCP servers to start up and become ready.
 
+Applies to interactive sessions. One-shot non-interactive runs use
+[`mcp.noInteractiveTimeout`](#mcpnointeractivetimeout) instead.
+
+`0` stops the wait immediately, so servers that have not finished starting are
+not awaited. A negative value is ignored and the default applies.
+
 ### Usage
 
 ```bash
-kiro-cli settings mcp.initTimeout 10
+kiro-cli settings mcp.initTimeout 10000
 ```
 
 **Type**: Number  
-**Default**: `10`  
-**Unit**: Seconds
+**Default**: `5000`  
+**Unit**: Milliseconds
 
 ### Examples
 
 ```bash
-# Increase for slow servers
-kiro-cli settings mcp.initTimeout 30
+# Increase for slow servers (30 seconds)
+kiro-cli settings mcp.initTimeout 30000
 
-# Decrease for fast servers
-kiro-cli settings mcp.initTimeout 5
+# Decrease for fast servers (2 seconds)
+kiro-cli settings mcp.initTimeout 2000
 
 # Check current timeout
 kiro-cli settings mcp.initTimeout
@@ -53,17 +59,17 @@ Non-interactive MCP timeout.
 
 ### Overview
 
-Sets the timeout duration for MCP operations in non-interactive mode (batch processing, automated scripts). Typically shorter than interactive timeouts to prevent hanging in automated workflows.
+Sets the timeout duration for MCP operations in non-interactive mode (batch processing, automated scripts). Defaults higher than the interactive timeout, since an automated run has no user to retry a turn whose servers had not finished loading.
 
 ### Usage
 
 ```bash
-kiro-cli settings mcp.noInteractiveTimeout 5
+kiro-cli settings mcp.noInteractiveTimeout 30000
 ```
 
 **Type**: Number  
-**Default**: `5`  
-**Unit**: Seconds
+**Default**: `30000`  
+**Unit**: Milliseconds
 
 ### Use Cases
 
