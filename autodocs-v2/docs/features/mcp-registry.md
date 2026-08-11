@@ -113,7 +113,7 @@ Use `"type": "registry"` with optional `env`, `headers`, and `timeout` fields:
     "github": {
       "type": "registry",
       "env": {
-        "GITHUB_TOKEN": "$GITHUB_TOKEN",
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
         "GITHUB_ORG": "my-org"
       },
       "timeout": 60000
@@ -201,12 +201,14 @@ In your `agent.json`, use registry type with env overrides:
     "github": {
       "type": "registry",
       "env": {
-        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       }
     }
   }
 }
 ```
+
+Environment variables support two expansion syntaxes: `${VAR_NAME}` (simple) or `${env:VAR_NAME}` (explicit). Both resolve to the same value when the variable is set. If the variable is unset, the `env:` prefix is stripped and the simple form `${VAR_NAME}` is left behind (e.g., `${env:MY_TOKEN}` becomes `${MY_TOKEN}`).
 
 Your token is merged with registry defaults. The server uses registry's command/args but your environment variable.
 

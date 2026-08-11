@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-01
-  commit: 626ab640
+  validated: 2026-05-21
+  commit: 5027e7bc0
   status: validated
   testable_headless: true
   category: feature
@@ -316,9 +316,30 @@ MCP server configurations. Supports both local (stdio) and remote (HTTP) servers
 **Local Server Fields**:
 - `command` (required): Command to start server
 - `args` (optional): Command arguments
-- `env` (optional): Environment variables
+- `env` (optional): Environment variables (supports variable expansion, see below)
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
+
+**Environment Variable Expansion**: Values in the `env` field and HTTP `headers` values can reference system environment variables using two syntaxes:
+- `${VAR_NAME}` - Simple syntax
+- `${env:VAR_NAME}` - Explicit env prefix syntax
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "mcp-server-github",
+      "args": ["--stdio"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "API_KEY": "${env:MY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+Both syntaxes are equivalent. Variables are expanded from your shell environment at server startup.
 
 #### Remote (HTTP) Servers
 
@@ -609,7 +630,7 @@ Checks JSON syntax and schema compliance.
       "command": "mcp-server-github",
       "args": ["--stdio"],
       "env": {
-        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       }
     }
   }

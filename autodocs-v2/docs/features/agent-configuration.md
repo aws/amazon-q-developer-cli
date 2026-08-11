@@ -7,7 +7,7 @@ doc_meta:
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, clientSecret, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources, forceAuth, redirectUri]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, clientSecret, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources, forceAuth, redirectUri, env, headers]
   related: [agent-create, agent-edit, agent-swap, mcp-registry, settings, config-hot-reload]
 ---
 
@@ -392,7 +392,7 @@ MCP server configurations. Supports local (stdio), remote (HTTP), and registry s
     "remote-api": {
       "url": "https://mcp.example.com/sse",
       "headers": {
-        "Authorization": "Bearer $API_TOKEN"
+        "Authorization": "Bearer ${API_TOKEN}"
       },
       "oauthScopes": ["mcp", "profile"]
     }
@@ -461,7 +461,7 @@ Local (stdio) registry server with `env` overrides:
     "github": {
       "type": "registry",
       "env": {
-        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       },
       "timeout": 60000
     }
@@ -477,7 +477,7 @@ Remote (HTTP) registry server with `headers` overrides:
     "slack": {
       "type": "registry",
       "headers": {
-        "Authorization": "Bearer $API_TOKEN"
+        "Authorization": "Bearer ${API_TOKEN}"
       },
       "timeout": 60000
     }
@@ -490,10 +490,36 @@ Registry servers are resolved from the organization's MCP registry. Override fie
 **Local Server Fields**:
 - `command` (required): Command to start server
 - `args` (optional): Command arguments
-- `env` (optional): Environment variables
+- `env` (optional): Environment variables (supports variable expansion, see below)
 - `timeout` (optional): Request timeout in milliseconds (default: 120000)
 - `disabled` (optional): Set to `true` to skip loading this server (default: false)
 - `disabledTools` (optional): List of tool names from this server to disable
+
+**Environment Variable Expansion**:
+
+Values in `env` and `headers` fields support environment variable expansion using two syntaxes:
+
+- `${VAR_NAME}` - Simple syntax (recommended)
+- `${env:VAR_NAME}` - Explicit syntax
+
+Both syntaxes are equivalent and expand to the value of the environment variable at runtime.
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "mcp-server-github",
+      "args": ["--stdio"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "API_KEY": "${env:MY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+If the environment variable is not set, the `env:` prefix is stripped and the simple form `${VAR_NAME}` is left behind (e.g., `${env:MY_VAR}` becomes `${MY_VAR}`).
 
 **Remote Server Fields**:
 - `url` (required): HTTP endpoint URL
@@ -753,7 +779,7 @@ Checks JSON syntax and schema compliance.
       "command": "mcp-server-github",
       "args": ["--stdio"],
       "env": {
-        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       }
     }
   }

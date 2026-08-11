@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-22
-  commit: 57090ffe
+  validated: 2026-05-21
+  commit: 5027e7bc0
   status: validated
   testable_headless: false
   category: feature
@@ -140,14 +140,14 @@ Adds git-server to rust-dev agent configuration.
       "command": "mcp-server-github",
       "args": ["--stdio"],
       "env": {
-        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       }
     }
   }
 }
 ```
 
-Your token overrides registry defaults.
+Environment variables can be referenced using `${VAR_NAME}` or `${env:VAR_NAME}` syntax. Your token overrides registry defaults.
 
 ## Troubleshooting
 
