@@ -11,7 +11,10 @@ import { kiroSafe } from './kiroSafe';
 import type { Theme } from './types';
 import type { TerminalColor } from '../types/themeTypes';
 import { getTerminalChalkColor } from '../utils/colorUtils';
-import { detectTerminalThemeWithDetails } from '../utils/terminal-theme';
+import {
+  detectTerminalThemeWithDetails,
+  type DetectionResult,
+} from '../utils/terminal-theme';
 import { logger } from '../utils/logger.js';
 import {
   loadUserThemePrefs,
@@ -155,7 +158,9 @@ export const createThemeContext = (
  * and no definitive light/dark signal is available — e.g., SSH into headless Linux.
  */
 /** @internal Exported for testing */
-export const getAutoTheme = (): Theme => {
+export const getAutoTheme = (
+  detect: () => DetectionResult = detectTerminalThemeWithDetails
+): Theme => {
   // Deterministic override: forces the base theme and skips detection
   // entirely (including the OSC-11 tty query). Used by E2E tests to pin a
   // theme path, and an escape hatch for terminals that defeat detection.
@@ -169,7 +174,7 @@ export const getAutoTheme = (): Theme => {
         : kiroSafe;
   }
 
-  const result = detectTerminalThemeWithDetails();
+  const result = detect();
   // Debugging theme issues (e.g. unreadable diff colors) needs to know which
   // detection path fired — it's invisible from the UI otherwise.
   logger.info(

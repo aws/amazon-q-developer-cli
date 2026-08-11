@@ -1,28 +1,15 @@
-import { describe, it, expect, mock, afterAll, afterEach } from 'bun:test';
+import { describe, it, expect, mock, afterEach } from 'bun:test';
 import { kiroDark } from '../kiroDark';
 import { kiroLight } from '../kiroLight';
 import { kiroSafe } from '../kiroSafe';
-import { createThemeContext } from '../ThemeProvider';
+import { createThemeContext, getAutoTheme } from '../ThemeProvider';
 import type { ChalkColorName, TerminalColor } from '../../types/themeTypes';
 
-// --- getAutoTheme mocking: must be at module top level ---
 const mockDetect = mock(() => ({
   theme: 'dark' as 'dark' | 'light',
   method: 'test',
   confidence: 'high' as 'high' | 'medium' | 'low',
 }));
-
-mock.module('../../utils/terminal-theme', () => ({
-  detectTerminalThemeWithDetails: mockDetect,
-  detectTerminalTheme: () => mockDetect().theme,
-}));
-
-afterAll(() => {
-  mock.restore();
-});
-
-// Dynamic import after mock so getAutoTheme uses the mocked module
-const { getAutoTheme } = await import('../ThemeProvider');
 
 describe('createThemeContext', () => {
   const noopSetUserColors = () => {};
@@ -205,7 +192,7 @@ describe('getAutoTheme', () => {
       method: 'test',
       confidence: 'high',
     });
-    const result = getAutoTheme();
+    const result = getAutoTheme(mockDetect);
     expect(result).toBe(kiroDark);
   });
 
@@ -215,7 +202,7 @@ describe('getAutoTheme', () => {
       method: 'test',
       confidence: 'high',
     });
-    const result = getAutoTheme();
+    const result = getAutoTheme(mockDetect);
     expect(result).toBe(kiroLight);
   });
 
@@ -225,7 +212,7 @@ describe('getAutoTheme', () => {
       method: 'test',
       confidence: 'medium',
     });
-    const result = getAutoTheme();
+    const result = getAutoTheme(mockDetect);
     expect(result).toBe(kiroDark);
   });
 
@@ -235,7 +222,7 @@ describe('getAutoTheme', () => {
       method: 'test',
       confidence: 'low',
     });
-    const result = getAutoTheme();
+    const result = getAutoTheme(mockDetect);
     expect(result).toBe(kiroSafe);
   });
 
@@ -245,7 +232,7 @@ describe('getAutoTheme', () => {
       method: 'test',
       confidence: 'low',
     });
-    const result = getAutoTheme();
+    const result = getAutoTheme(mockDetect);
     expect(result).toBe(kiroSafe);
   });
 
@@ -269,7 +256,7 @@ describe('getAutoTheme', () => {
         method: 'test',
         confidence: 'high',
       });
-      expect(getAutoTheme()).toBe(expected);
+      expect(getAutoTheme(mockDetect)).toBe(expected);
     });
 
     it('ignores unrecognized values and falls through to detection', () => {
@@ -279,12 +266,12 @@ describe('getAutoTheme', () => {
         method: 'test',
         confidence: 'high',
       });
-      expect(getAutoTheme()).toBe(kiroLight);
+      expect(getAutoTheme(mockDetect)).toBe(kiroLight);
     });
 
     it('keeps forced-safe prompt chip colors explicit and adaptive', () => {
       process.env.KIRO_TERMINAL_THEME = 'safe';
-      const chip = getAutoTheme().colors.components.promptChip;
+      const chip = getAutoTheme(mockDetect).colors.components.promptChip;
 
       expect(chip).toEqual({
         background: { named: 'magentaBright' },

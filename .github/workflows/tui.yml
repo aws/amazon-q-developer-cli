@@ -105,6 +105,8 @@ jobs:
     if: needs.check-paths.outputs.tui-changed == 'true' && needs.check-paths.outputs.is-fork != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      KIRO_TUI_FORCE_COLOR: '3'
     steps:
       - uses: actions/checkout@v4
       - name: Read pinned Bun version
@@ -232,7 +234,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
       fail-fast: false
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 

@@ -2,8 +2,7 @@ import React, { useMemo } from 'react';
 import { useStore, type StoreApi } from 'zustand';
 import { Box, Tabs, Text, useInput } from '../../../renderer.js';
 import { TASK_DONE_MARKER } from '../../../constants/tasks.js';
-import { wrapAtWords } from '../../../lite/render.js';
-import { visibleWidth } from '../../../utils/text-width.js';
+import { visibleWidth, wrapAtWords } from '../../../utils/text-width.js';
 import { useTaskState, useQueueState } from '../../../stores/selectors.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import {

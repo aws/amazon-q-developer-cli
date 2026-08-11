@@ -63,6 +63,8 @@ jobs:
       fail-fast: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      KIRO_TUI_FORCE_COLOR: '3'
     steps:
       - uses: actions/checkout@v4
         with:
