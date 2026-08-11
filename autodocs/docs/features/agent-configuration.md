@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-21
-  commit: 5027e7bc0
+  validated: 2026-05-07
+  commit: 9f2cca6b
   status: validated
   testable_headless: true
   category: feature
@@ -40,12 +40,13 @@ Local agents take precedence over global with same name.
       "allowedPaths": ["~/projects/**"]
     }
   },
-  "resources": ["src/**/*.rs", "Cargo.toml"],
+  "resources": ["file://src/**/*.rs", "file://Cargo.toml"],
   "hooks": {
-    "agentSpawn": {
-      "command": "git status",
-      "description": "Show git status"
-    }
+    "agentSpawn": [
+      {
+        "command": "git status"
+      }
+    ]
   },
   "mcpServers": {
     "git": {
@@ -207,34 +208,29 @@ Commands executed at trigger points.
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
-        "description": "Show repository status"
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "date",
-        "description": "Current timestamp"
+        "command": "date"
       }
     ],
     "preToolUse": [
       {
         "matcher": "fs_write",
-        "command": "git diff",
-        "description": "Show changes before write"
+        "command": "git diff"
       }
     ],
     "postToolUse": [
       {
         "matcher": "execute_bash",
-        "command": "echo 'Command executed'",
-        "description": "Log after execution"
+        "command": "echo 'Command executed'"
       }
     ],
     "stop": [
       {
-        "command": "echo 'Response complete'",
-        "description": "Log completion"
+        "command": "echo 'Response complete'"
       }
     ]
   }
@@ -251,7 +247,9 @@ Commands executed at trigger points.
 **Hook Fields**:
 - `command` (required): Command to execute
 - `matcher` (optional): Pattern for preToolUse/postToolUse
-- `description` (optional): Human-readable description
+- `timeout_ms` (optional): Max execution time in ms (default: 30000)
+- `max_output_size` (optional): Max output bytes before truncation (default: 10240)
+- `cache_ttl_seconds` (optional): Cache duration for hook output (default: 0)
 
 ### toolAliases
 
@@ -412,7 +410,7 @@ Specify model ID for this agent.
 }
 ```
 
-If not specified, uses default model. Falls back to default if specified model unavailable.
+If not specified, uses default model. If the specified model is not available, you'll see an error message prompting you to use `/model` to select a different model.
 
 ### keyboardShortcut
 
@@ -503,14 +501,12 @@ Appears after agent switch confirmation to orient users to agent's purpose.
   "hooks": {
     "agentSpawn": [
       {
-        "command": "cargo --version && rustc --version",
-        "description": "Show Rust toolchain versions"
+        "command": "cargo --version && rustc --version"
       }
     ],
     "stop": [
       {
-        "command": "echo 'Response complete'",
-        "description": "Log completion"
+        "command": "echo 'Response complete'"
       }
     ]
   },
@@ -588,12 +584,13 @@ Checks JSON syntax and schema compliance.
       "autoAllowReadonly": true
     }
   },
-  "resources": ["src/**/*.rs", "Cargo.toml"],
+  "resources": ["file://src/**/*.rs", "file://Cargo.toml"],
   "hooks": {
-    "agentSpawn": {
-      "command": "cargo --version",
-      "description": "Show Rust version"
-    }
+    "agentSpawn": [
+      {
+        "command": "cargo --version"
+      }
+    ]
   }
 }
 ```
@@ -754,6 +751,12 @@ Services like Slack, GitHub, and Figma require pre-registered OAuth apps.
 **Symptom**: Error loading prompt from file URI  
 **Cause**: Invalid file path  
 **Solution**: Use absolute path with `file://` prefix. Verify file exists.
+
+### Issue: Agent Model Not Available
+
+**Symptom**: Error "The model 'X' is not available. Please use '/model' to select a different model and try again."  
+**Cause**: Agent specifies a model ID that the backend doesn't support  
+**Solution**: Use `/model` to see available models and update the agent's `model` field with a valid model ID.
 
 ## Related
 

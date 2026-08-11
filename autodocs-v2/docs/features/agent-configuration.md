@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-07-31
-  commit: 5e7c93bcd
+  commit: 9f2cca6b
   status: validated
   testable_headless: true
   category: feature
@@ -311,7 +311,7 @@ Commands executed at trigger points. Accepts two formats: an **object** keyed by
 **Object format hook fields**:
 - `command` (required): Command to execute
 - `matcher` (optional): Pattern for preToolUse/postToolUse
-- `timeout_ms` (optional): Max execution time in ms (default: 10000)
+- `timeout_ms` (optional): Max execution time in ms (default: 30000)
 - `max_output_size` (optional): Max output bytes before truncation (default: 10240)
 - `cache_ttl_seconds` (optional): Cache duration for hook output (default: 0)
 
@@ -360,7 +360,7 @@ Specify model ID for agent.
 }
 ```
 
-If not specified, uses default model. Falls back to default if model unavailable.
+If not specified, uses default model. The model ID is passed directly to the backend for validation. If the backend rejects the model (e.g., model removed or not available), you'll see an error: "The model '{id}' is not available. Please use '/model' to select a different model and try again."
 
 ### mcpServers
 

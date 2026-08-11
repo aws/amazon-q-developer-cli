@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-29
-  commit: f8d8fae5
+  validated: 2026-05-07
+  commit: 9f2cca6b
   status: validated
   testable_headless: true
   category: slash_command
@@ -112,7 +112,17 @@ Model 'claud-sonet' not found. Did you mean claude-sonnet-4? Run /model to brows
 
 Fuzzy matching suggests similar model names when the exact name isn't found.
 
-### Example 4: Set as Default
+### Example 4: Invalid Model Error from Agent
+
+If an agent specifies an invalid model, you'll see:
+
+```
+The model 'invalid-model-id' is not available. Please use '/model' to select a different model and try again.
+```
+
+Use `/model` to pick a valid model, then update the agent configuration.
+
+### Example 5: Set as Default
 
 ```
 /model set-current-as-default
