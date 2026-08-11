@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-13
-  commit: be9ce792
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -206,3 +206,9 @@ I'll help you create comprehensive documentation. Please provide:
 **Symptom**: Errors in `/code logs`  
 **Cause**: LSP server errors or incompatibility  
 **Solution**: Check server version. Try `/code init -f` to restart.
+
+### Issue: "Cannot generate overview for home or root directory"
+
+**Symptom**: `/code overview` or `/code summary` fails with error about home or root directory  
+**Cause**: Running from home directory (`~`) or filesystem root (`/`) — these are too large for codebase scans  
+**Solution**: Navigate to a project directory first, then run the command

@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -78,6 +78,14 @@ Tries `backup` first, then `backup.json` if not found.
 ```
 /chat load ~/backups/important-conversation.json
 ```
+
+### Example 4: Load from Path with Spaces
+
+```
+/chat load "/Users/me/My Documents/session backup.json"
+```
+
+Paths containing spaces can be wrapped in quotes (single or double).
 
 ## Advanced: Script-Based Load
 

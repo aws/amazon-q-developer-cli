@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2026-04-24
-  commit: ddff51f6
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -37,7 +37,17 @@ Shows picker with all available agents.
 
 Switches directly to named agent.
 
-**Aliases**: `/agent swap`, `/agent set`
+**Aliases**: `/agent swap`
+
+### Tab Completion
+
+Type `/agent` and press Tab to see a dropdown of available subcommands:
+
+- `create <name>` - create new agent
+- `edit [name]` - edit agent configuration
+- `swap <name>` - switch to agent
+
+Subcommands with argument hints (like `<name>`) prefill the command and wait for input. Select a subcommand to continue.
 
 ## Subcommands
 
@@ -122,7 +132,7 @@ Global:    ~/.kiro/agents
   code-reviewer     Workspace     Code review agent focused on security and best practices
   python-dev        Global        Python development assistant
   kiro_default      (Built-in)    Default agent
-  kiro_help         (Built-in)    Help agent that answers questions about Kiro CLI features
+  kiro_guide        (Built-in)    Guide agent that answers questions about Kiro CLI features
   kiro_planner      (Built-in)    Specialized planning agent for implementation plans
 ```
 
@@ -170,13 +180,12 @@ Local agents take precedence over global.
 - Context files from previous agent remain as temporary context
 - Tool permissions reset to new agent's configuration
 - MCP servers reconnect with new agent's configuration
-- If the new agent specifies a model, it overrides your current model selection
 
 ## Technical Details
 
 **Agent Loading**: Local (`.kiro/agents/`) checked first, then global (`~/.kiro/agents/`), then built-in.
 
-**State Preservation**: Message history and conversation state preserved when switching agents. Your current model selection is also preserved unless the new agent explicitly specifies a model.
+**State Preservation**: Message history and conversation state preserved when switching agents.
 
 **Context Handling**: Previous agent's context files added as temporary context. New agent's permanent context also loaded.
 

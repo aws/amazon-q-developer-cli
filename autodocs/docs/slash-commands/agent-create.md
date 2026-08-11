@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-18
-  commit: d42228e9
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -100,7 +100,15 @@ Creates agent in the global `~/.kiro/agents/` directory.
 
 Creates agent in a custom directory path.
 
-### Example 7: Manual Mode (Simple Creation)
+### Example 7: Create in Path with Spaces
+
+```
+/agent create my-agent -d "/path/with spaces/agents"
+```
+
+Directory paths containing spaces can be wrapped in quotes.
+
+### Example 8: Manual Mode (Simple Creation)
 
 ```
 /agent create my-agent --manual
@@ -108,7 +116,7 @@ Creates agent in a custom directory path.
 
 Opens editor for manual agent configuration (like traditional create).
 
-### Example 8: Create from Template
+### Example 9: Create from Template
 
 ```
 /agent create my-agent --from python-dev
@@ -116,7 +124,7 @@ Opens editor for manual agent configuration (like traditional create).
 
 Creates new agent in editor using `python-dev` as a template. Note: `--from` automatically implies `--manual` mode.
 
-### Example 9: Full AI-Assisted with All Options
+### Example 10: Full AI-Assisted with All Options
 
 ```
 /agent create code-reviewer -D "Reviews code for security issues" -d workspace -m filesystem -m git

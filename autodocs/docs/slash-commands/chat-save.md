@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-27
-  commit: 85403a86
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -34,6 +34,16 @@ The `/chat save` command exports the current conversation state to a JSON file. 
 ```
 
 **Aliases**: `/save` (deprecated - use `/chat save`)
+
+### Tab Completion
+
+Type `/chat` and press Tab to see a dropdown of available subcommands:
+
+- `save [--force] <path>` - save conversation
+- `load <path>` - load conversation
+- `new [prompt]` - start new conversation
+
+Subcommands with argument hints prefill the command and wait for you to provide the path or prompt.
 
 ## Parameters
 
