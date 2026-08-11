@@ -314,14 +314,14 @@ export function histogram(
  * Record a gauge value (last-value). No-op when disabled; never throws. Backed
  * by an ObservableGauge because the SDK pull model fires the callback at export
  * time and re-reads the stored value, keyed by attribute set so distinct label
- * combinations report independently.
+ * combinations report independently. Session and request properties are
+ * excluded because each attribute set is retained for the provider lifetime.
  */
 export function gauge(
   name: string,
   value: number,
   attrs?: MetricAttributes,
-  scope: string = DEFAULT_SCOPE,
-  logProperties?: MetricLogProperties
+  scope: string = DEFAULT_SCOPE
 ): void {
   try {
     const s = ensureProvider();
@@ -337,7 +337,7 @@ export function gauge(
       entry = { gauge: g, values };
       sc.gauges.set(name, entry);
     }
-    const datapointAttributes = withLogProperties(attrs, logProperties) ?? {};
+    const datapointAttributes = withLogProperties(attrs) ?? {};
     entry.values.set(attrsKey(datapointAttributes), {
       value,
       attrs: datapointAttributes as Attributes,

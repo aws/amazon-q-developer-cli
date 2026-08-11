@@ -181,7 +181,7 @@ describe('meter (d) identity log properties', () => {
     return m?.dataPoints[0]?.attributes as Record<string, unknown> | undefined;
   }
 
-  it('stamps V3 user_id, session_id, and request_id on OTLP datapoints', async () => {
+  it('limits gauge identity to process-stable log properties', async () => {
     process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
     delete process.env['KIRO_DISABLE_TELEMETRY'];
     process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
@@ -210,16 +210,19 @@ describe('meter (d) identity log properties', () => {
     gauge(
       'kiro_cli_tui_heap_used_bytes',
       50,
-      { agent_engine: 'v3' },
-      'kiro.tui',
-      logProperties
+      {
+        agent_engine: 'v3',
+        user_id: 'schema-user',
+        session_id: 'schema-session',
+        request_id: 'schema-request',
+      },
+      'kiro.tui'
     );
     await forceFlushMetrics();
 
     for (const name of [
       'kiro_cli_user_turns',
       'kiro_cli_tool_execution_duration_ms',
-      'kiro_cli_tui_heap_used_bytes',
     ]) {
       const attrs = attrsOf(name, exporter);
       expect(attrs?.['user_id']).toBe('test-user-id');
@@ -227,6 +230,12 @@ describe('meter (d) identity log properties', () => {
       expect(attrs?.['request_id']).toBe('test-request-id');
       expect(attrs?.['agent_engine']).toBe('v3');
     }
+
+    const gaugeAttrs = attrsOf('kiro_cli_tui_heap_used_bytes', exporter);
+    expect(gaugeAttrs?.['user_id']).toBe('test-user-id');
+    expect('session_id' in gaugeAttrs!).toBe(false);
+    expect('request_id' in gaugeAttrs!).toBe(false);
+    expect(gaugeAttrs?.['agent_engine']).toBe('v3');
   });
 
   it('rejects invalid values and strips reserved keys from schema attributes', async () => {
