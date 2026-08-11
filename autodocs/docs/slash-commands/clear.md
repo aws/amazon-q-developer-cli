@@ -1,31 +1,29 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-05-06
+  commit: 004e29fd
   status: validated
   testable_headless: false
   category: slash_command
   title: /clear
-  description: Erase conversation history and context from current session
-  keywords: [clear, erase, reset, history]
-  related: [compact]
+  description: Clear the conversation history within the current session
+  keywords: [clear, erase, reset, history, fresh]
+  related: [compact, chat-new]
 ---
 
 # /clear
 
-Erase conversation history and context from current session.
+Clear the conversation history within the current session.
 
 ## Overview
 
-The `/clear` command erases all conversation history and context from hooks for the current session. Requires confirmation. Unlike `/compact`, does not create summary - completely clears conversation.
+The `/clear` command clears all conversation history within the current session. Unlike `/compact`, does not create a summary - completely clears the conversation messages and resets state. Executes immediately without confirmation.
 
 ## Usage
 
 ```
 /clear
 ```
-
-Prompts for confirmation before clearing.
 
 ## Examples
 
@@ -37,10 +35,6 @@ Prompts for confirmation before clearing.
 
 **Output**:
 ```
-Are you sure? This will erase the conversation history and context from hooks for the current session. [y/n]:
-
-> y
-
 ✔ Conversation cleared
 ```
 
@@ -48,23 +42,23 @@ Are you sure? This will erase the conversation history and context from hooks fo
 
 - [/compact](compact.md) - Summarize before clearing
 - [/tangent](tangent.md) - Temporary branch without clearing
+- [/chat new](chat-new.md) - Start a new named session
 
 ## Limitations
 
 - Cannot be undone
 - Clears all history (no selective clearing)
-- Requires confirmation
 
 ## Technical Details
-
-**Confirmation Required**: Prevents accidental clearing.
 
 **What's Cleared**:
 - All message history
 - Hook-generated context
-- Conversation state
+- Conversation metadata and tool state
 
 **What's Preserved**:
+- Current session (the session is kept, only messages are cleared)
 - Agent configuration
 - Tool permissions
 - MCP connections
+- Current model selection
