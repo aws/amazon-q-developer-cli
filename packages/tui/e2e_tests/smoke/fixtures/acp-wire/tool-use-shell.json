@@ -1,0 +1,342 @@
+{
+  "schemaVersion": 2,
+  "scenarioId": "tool-use-shell",
+  "backend": "acp-mock",
+  "engine": "kas",
+  "contractHash": "dad61227cdd657c0ceaa561699066e6cd3fd8faf782fc418204fc73b8d4d5216",
+  "turns": [
+    {
+      "stepIndex": 0,
+      "promptText": "run echo hello world using the shell",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "500fccce-bb84-4eb9-9e71-1a252c69e316",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "title": "echo hello world using the shell",
+              "_meta": {
+                "kiro": {
+                  "focus": {
+                    "title": "echo hello world using the shell"
+                  },
+                  "kind": "focus_update",
+                  "title": "echo hello world using the shell"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+                "title": "echo hello world using the shell",
+                "updatedAt": "2026-08-11T02:02:30.094Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:02:30.101Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "steeringDocuments": [
+                    "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-internal-systems.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-inclusivity-scanner.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-brazil.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-production-safety.md"
+                  ],
+                  "kind": "steering_inclusion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "run_command_toolu_bdrk_013Gs7ZU26rGftbw7DRHJzk7",
+              "title": "Run Command",
+              "kind": "execute",
+              "status": "pending",
+              "rawInput": {
+                "command": "echo hello world",
+                "run_in_background": false
+              },
+              "_meta": {
+                "kiro": {
+                  "toolOrigin": "default"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.104300498962402
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.104300498962402
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.104300498962402
+                  },
+                  "breakdown": {
+                    "contextFiles": {
+                      "tokens": 4248,
+                      "percent": 0.4,
+                      "items": [
+                        {
+                          "name": "AGENTS.md",
+                          "uri": "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                          "tokens": 4248,
+                          "matched": true,
+                          "percent": 0.4,
+                          "progressivelyLoaded": false
+                        },
+                        {
+                          "name": "~/.kiro/skills/artifactory-design/SKILL.md",
+                          "uri": "file:///Users/kennvene/.kiro/skills/artifactory-design/SKILL.md",
+                          "tokens": 0,
+                          "matched": true,
+                          "percent": 0,
+                          "progressivelyLoaded": true
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "tokens": 18558,
+                      "percent": 1.9,
+                      "mcp": {
+                        "tokens": 11771,
+                        "percent": 1.2
+                      },
+                      "builtin": {
+                        "tokens": 6787,
+                        "percent": 0.7
+                      }
+                    },
+                    "kiroResponses": {
+                      "tokens": 0,
+                      "percent": 0
+                    },
+                    "yourPrompts": {
+                      "tokens": 0,
+                      "percent": 6.8
+                    },
+                    "sessionFiles": {
+                      "tokens": 0,
+                      "percent": 0,
+                      "items": []
+                    }
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.104300498962402
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "pendingInteraction": {
+                    "toolCallId": "run_command_toolu_bdrk_013Gs7ZU26rGftbw7DRHJzk7",
+                    "interactionType": "tool_approval",
+                    "question": "echo hello world",
+                    "options": [
+                      {
+                        "optionId": "accept",
+                        "name": "Allow",
+                        "kind": "allow_once"
+                      },
+                      {
+                        "optionId": "always-accept",
+                        "name": "Always allow",
+                        "kind": "allow_always"
+                      },
+                      {
+                        "optionId": "reject",
+                        "name": "Deny",
+                        "kind": "reject_once"
+                      },
+                      {
+                        "optionId": "always-reject",
+                        "name": "Always deny",
+                        "kind": "reject_always"
+                      }
+                    ]
+                  },
+                  "kind": "pending_interaction",
+                  "toolCallId": "run_command_toolu_bdrk_013Gs7ZU26rGftbw7DRHJzk7",
+                  "interactionType": "tool_approval",
+                  "question": "echo hello world",
+                  "options": [
+                    {
+                      "optionId": "accept",
+                      "name": "Allow",
+                      "kind": "allow_once"
+                    },
+                    {
+                      "optionId": "always-accept",
+                      "name": "Always allow",
+                      "kind": "allow_always"
+                    },
+                    {
+                      "optionId": "reject",
+                      "name": "Deny",
+                      "kind": "reject_once"
+                    },
+                    {
+                      "optionId": "always-reject",
+                      "name": "Always deny",
+                      "kind": "reject_always"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "request",
+          "method": "session/request_permission",
+          "params": {
+            "sessionId": "sess_9c41f710-3b21-4ac0-9213-b14fbea07ca1",
+            "toolCall": {
+              "toolCallId": "run_command_toolu_bdrk_013Gs7ZU26rGftbw7DRHJzk7",
+              "status": "pending",
+              "title": "echo hello world"
+            },
+            "options": [
+              {
+                "optionId": "accept",
+                "name": "Allow",
+                "kind": "allow_once"
+              },
+              {
+                "optionId": "always-accept",
+                "name": "Always allow",
+                "kind": "allow_always"
+              },
+              {
+                "optionId": "reject",
+                "name": "Deny",
+                "kind": "reject_once"
+              },
+              {
+                "optionId": "always-reject",
+                "name": "Always deny",
+                "kind": "reject_always"
+              }
+            ],
+            "_meta": {
+              "kiro": {
+                "toolId": "run_command",
+                "command": "echo hello world",
+                "consent": {
+                  "capability": "shell",
+                  "resource": "echo hello world",
+                  "askType": "implicit",
+                  "triggeringResource": "echo hello world",
+                  "workspaceRoot": "/Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui"
+                },
+                "consentRound": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

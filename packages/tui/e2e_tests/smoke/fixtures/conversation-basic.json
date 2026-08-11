@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "conversation-basic",
+  "recordedAt": "2026-08-10T19:45:01.456Z",
+  "engineVersion": "977aee5bd",
+  "contractHash": "109c1ed24c2d4f227113d104b1ac45a72241a19743b28d11234322be532e42f6",
+  "prompts": [
+    {
+      "stepIndex": 0,
+      "promptText": "what is the capital of France?",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Paris."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 2097
+    },
+    {
+      "stepIndex": 2,
+      "promptText": "and what about Germany?",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Berlin."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 1491
+    }
+  ]
+}

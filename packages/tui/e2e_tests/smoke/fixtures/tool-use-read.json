@@ -1,0 +1,289 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "tool-use-read",
+  "recordedAt": "2026-08-10T19:42:51.355Z",
+  "engineVersion": "977aee5bd",
+  "contractHash": "def3f5f08ca4f22109d4244d78a40e7c36d119c1ed499e7a5ede235f1f6bc88c",
+  "prompts": [
+    {
+      "stepIndex": 0,
+      "promptText": "list the files in the current directory",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ToolUseEvent",
+            "data": {
+              "tool_use_id": "toolu_bdrk_01LQePgid4Si18hjvqq7nLdM",
+              "name": "Reading listing tui",
+              "input": "{\"__tool_use_purpose\":\"List the contents of the current directory\",\"operations\":[{\"mode\":\"Directory\",\"path\":\"/Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui\"}]}",
+              "stop": true
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Cont"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ents of `packages/tui"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`:"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n\nDirectories"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n- `.kiro`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ", `src`, `sc"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ripts`, `docs`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n- `e2e_t"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ests`, `integ_t"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ests`, `acp_integ"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "_tests`\n- `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "reports`, `smoke"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "-results`\n\nFiles\n-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `package"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ".json`, `b"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "unfig.toml`,"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `tsconfig.json"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`\n- `vite.config"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ".ts`, `vit"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "est.config.ts`,"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `coverage-config.json"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`\n- `eslint."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "config.js`, `.pr"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ettierignore`, `."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "gitignore`\n- `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "AGENTS.md`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ", `TESTING.md"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 9432
+    }
+  ]
+}

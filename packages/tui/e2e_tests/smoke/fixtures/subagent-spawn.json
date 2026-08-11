@@ -1,0 +1,2155 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "subagent-spawn",
+  "recordedAt": "2026-08-10T21:51:04.284Z",
+  "engineVersion": "977aee5bd",
+  "contractHash": "b130eb31f7f31a9ead274674c90cf9ca94b3af6b3eb48050d7be4d14f97bd339",
+  "prompts": [
+    {
+      "stepIndex": 0,
+      "promptText": "use a subagent to list the files in /tmp",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "I"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "'ll use"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " a subagent to list the"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " files in /tmp."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ToolUseEvent",
+            "data": {
+              "tool_use_id": "toolu_bdrk_01DRPXRc5w6aWxkKoeMimpEG",
+              "name": "Spawning agent crew",
+              "input": "{\"__tool_use_purpose\":\"Delegate the /tmp directory listing to a subagent as requested.\",\"task\":\"List the files in /tmp\",\"stages\":[{\"name\":\"list_tmp\",\"role\":\"kiro_default\",\"prompt_template\":\"List the contents of the /tmp directory. Report back the file and directory names you find, and note the total count. Do not modify or delete anything.\"}],\"mode\":\"blocking\"}",
+              "stop": true
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "I'll list"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " the contents of /"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "tmp."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ToolUseEvent",
+            "data": {
+              "tool_use_id": "toolu_bdrk_01Xq9Ub9uMoqSivvCdD6fKq1",
+              "name": "Reading listing tmp",
+              "input": "{\"operations\":[{\"mode\":\"Directory\",\"path\":\"/tmp\"}],\"__tool_use_purpose\":\"List contents of /tmp directory\"}",
+              "stop": true
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "I"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " need"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " to count"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " the files"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " in this"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " listing"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " to verify"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " the total,"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " so"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " I"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "'ll use a"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " shell command to get an"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " accurate count including"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " hidden files."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ToolUseEvent",
+            "data": {
+              "tool_use_id": "toolu_bdrk_01GrYbNjNR6nWYrxRRWcAEgH",
+              "name": "Running: ls -A /tmp | wc -l; echo \"---dirs---\"; ls -A /tmp | wc -l; find /tmp -maxdepth 1 -mindepth 1 -type d | wc -l; find /tmp -maxdepth 1 -mindepth 1 -type f | wc -l; find /tmp -maxdepth 1 -mindepth 1 ! ...",
+              "input": "{\"__tool_use_purpose\":\"Count entries in /tmp including hidden files to verify the total\",\"command\":\"ls -A /tmp | wc -l; echo \\\"---dirs---\\\"; ls -A /tmp | wc -l; find /tmp -maxdepth 1 -mindepth 1 -type d | wc -l; find /tmp -maxdepth 1 -mindepth 1 -type f | wc -l; find /tmp -maxdepth 1 -mindepth 1 ! -type d ! -type f | wc -l; echo \\\"---telemetry counts---\\\"; ls -A /tmp | grep -c '^mcs-telemetry-l1'; ls -A /tmp | grep -c '^toolbox-telemetry-emf'; echo \\\"---non-telemetry---\\\"; ls -A /tmp | grep -v '^mcs-telemetry-l1' | grep -v '^toolbox-telemetry-emf'\"}",
+              "stop": true
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "The"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " issue"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " is that /"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "tmp is a symlink pointing"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " to /private/tmp, so"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " find"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " isn"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "'t travers"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "ing it"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " properly with"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " the"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " current"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " path. I"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " need to use /private/tmp directly"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " to"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " get"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " accurate"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " type"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " counts."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ToolUseEvent",
+            "data": {
+              "tool_use_id": "toolu_bdrk_016mPeUbb45nbKhiy45RV4H9",
+              "name": "Running: cd /private/tmp && echo \"dirs: $(find . -maxdepth 1 -mindepth 1 -type d | wc -l)\" && echo \"files: $(find . -maxdepth 1 -mindepth 1 -type f | wc -l)\" && echo \"other: $(find . -maxdepth 1 -mindepth 1...",
+              "input": "{\"__tool_use_purpose\":\"Break down /tmp entries by type using the real path /private/tmp\",\"command\":\"cd /private/tmp && echo \\\"dirs: $(find . -maxdepth 1 -mindepth 1 -type d | wc -l)\\\" && echo \\\"files: $(find . -maxdepth 1 -mindepth 1 -type f | wc -l)\\\" && echo \\\"other: $(find . -maxdepth 1 -mindepth 1 ! -type d ! -type f | wc -l)\\\"\"}",
+              "stop": true
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "/"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "tmp ("
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "symlink"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " to /private/tmp)"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " hol"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ds **209 entries**:"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " 35 directories, 165"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " reg"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ular files, and 9 s"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ockets/F"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "IFOs."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " Nothing was modified."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n\nThe"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " bulk is telemetry"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " noise \u2014"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " 155"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `mcs-telem"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "etry-l1-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "<timestamp>_<p"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "id>.log` files and "
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "25 `toolbox-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "telemetry-emf"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "<number>` directories, most"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " written"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " today"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " between"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " 20"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ":28"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " and 21:49"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ".\n\nThe rem"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "aining 29 dist"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "inct entries:\n\n|"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " Name | Type |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n|---|---|\n|"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `.dotnet` |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " dir |\n| `boost"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "_interprocess` | d"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ir |\n| `b"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "un-node-0"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "d9b296af` | d"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ir |\n| `Centau"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ri` | dir |\n|"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `FTABHarvest"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "` | dir |\n| `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "k"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "c-bundler-env`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " | dir |\n| `k"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "c-toolbox-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ws` | dir |\n|"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `MacSpooler"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Service` | dir |\n|"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `mwinit` | d"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ir |\n| `powerl"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "og` | dir |\n|"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `__fish_git_"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ready` | file ("
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "0 B"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ") |\n| `c"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "mux-last-socket-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "path` | file |\n| `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "composer-session.log` |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " file (33 KB) |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n| `kc-bar"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ".out"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "` /"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `kc-bar.err"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "` | files |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n| `kc-bund"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ler-env.dep` |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " file |\n| `kc-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "bundler-env-braz"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "il-bootstrap."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "lock` | file ("
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "0 B) |\n| `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "kiro-smoke-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "test.json` | file |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n| `m"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "cs-telemetry-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "keysprocess-1786"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "393715.291542_1414"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ".log` | file (303"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " KB) |\n| `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "MozillaUpdate"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Lock-2656FF1"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "E876E9973` | file"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " |\n| `clr-deb"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ug-pipe-{"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "555,3322}-*"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "-{in,out}` |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " "
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "4 FIFOs |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n| `dotnet-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "diagnostic-{555"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ",3322}-*-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "socket` | 2 s"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ockets |\n| `com."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "pharos.PrintA"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "gent.sock` | soc"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ket |\n| `mcs"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "-agent.sock` |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " socket |\n| `ze"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "b_def_ipc_"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "907` | soc"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ket/I"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "PC |"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n\nNote that `find /tmp"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " -maxdepth 1"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "` retur"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ns n"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "othing since"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `/tmp` is a"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " symlink \u2014 the type"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " breakdown above came"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " from `/private/tmp"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ToolUseEvent",
+            "data": {
+              "tool_use_id": "toolu_bdrk_01B5kE3dHvrVHU3YyYqGcX4c",
+              "name": "Summarizing",
+              "input": "{\"__tool_use_purpose\":\"Report the /tmp directory listing results back to the orchestrator\",\"taskDescription\":\"List the contents of /tmp, report file and directory names plus total count, without modifying or deleting anything.\",\"contextSummary\":\"/tmp on macOS is a symlink to /private/tmp; `find /tmp -maxdepth 1` returns zero results because find does not follow the symlink, so the type breakdown was gathered by running find inside /private/tmp. Listing captured at 2026-08-10 ~21:50 local; timestamps on entries range from 20:28 to 21:49 the same day. Only read-only operations were used (directory read + ls/find/grep/wc). No files or directories were created, modified, or removed.\",\"taskResult\":\"Total: 209 entries in /tmp \u2014 35 directories, 165 regular files, 9 sockets/FIFOs.\\n\\nDominated by telemetry artifacts:\\n- 155 files matching `mcs-telemetry-l1-<epoch>_<pid>.log` (each ~380\u20131200 bytes)\\n- 25 directories matching `toolbox-telemetry-emf<number>`\\n\\nThe 29 remaining distinct entries:\\n\\nDirectories (10): .dotnet, boost_interprocess, bun-node-0d9b296af, Centauri, FTABHarvest, kc-bundler-env, kc-toolbox-ws, MacSpoolerService, mwinit, powerlog\\n\\nFiles (10): __fish_git_ready (0 B), cmux-last-socket-path (44 B), composer-session.log (33 KB), kc-bar.out (14 KB), kc-bar.err (51 B), kc-bundler-env.dep (7.6 KB), kc-bundler-env-brazil-bootstrap.lock (0 B), kiro-smoke-test.json (1.2 KB), mcs-telemetry-keysprocess-1786393715.291542_1414.log (303 KB), MozillaUpdateLock-2656FF1E876E9973 (0 B)\\n\\nSockets/FIFOs (9): clr-debug-pipe-555-1786393696-in, clr-debug-pipe-555-1786393696-out, clr-debug-pipe-3322-1786393878-in, clr-debug-pipe-3322-1786393878-out, dotnet-diagnostic-555-1786393696-socket, dotnet-diagnostic-3322-1786393878-socket, com.pharos.PrintAgent.sock, mcs-agent.sock, zeb_def_ipc_907\\n\\nNothing was modified or deleted.\"}",
+              "stop": true
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Listed /tmp read"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "-only: 209 entries"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " total (35 directories, "
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "165 files"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ", 9 sockets/"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "FIFOs), over"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "whelmingly telem"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "etry log"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "s."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " Full"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " breakdown re"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ported above"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "The"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " sub"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "agent found"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " 209 entries in /t"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "mp \u2014 35 directories"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ", 165 files"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ", "
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "9 sockets/"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "FIFOs."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n\nMost of it is telemetry"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " noise: 155 `m"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "cs-telemetry-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "l1-*.log` files"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " pl"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "us 25 `toolb"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ox-telemetry-em"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "f*` directories. The not"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "able rem"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ainder:\n\n- **Direct"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ories:** `.dotn"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "et`, `boost_inter"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "process`, `bun"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "-node-0d9b296"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "af`, `Centauri"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`, `FTABHar"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "vest`, `kc-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "bundler-env`, `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "kc-toolbox-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ws`, `MacS"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "poolerService`, `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "mwinit`, `pow"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "erlog`\n- **"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Files:** `composer-session"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ".log` (33 KB"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "), `kc-bar."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "out`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " (14 KB), `k"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "c-bar.err`,"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `kc-bundler-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "env.dep`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " (7.6 KB),"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " `ki"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ro-smoke-test."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "json`, `c"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "mux-last-socket-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "path`, pl"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "us a"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " 303 KB `mc"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "s-telemetry-ke"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ysprocess-*.log"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`\n- **Sockets"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ":** dotnet di"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "agnostic/debug p"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ipes for P"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "IDs 555 and "
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "3322, `mcs-"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "agent.sock`, `"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "com.pharos.Pr"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "intAgent.sock`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": ", `zeb_def_"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ipc_907`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "\n\nNothing was modified."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 46780
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "scenarios.schema.json",
+  "title": "Knight Rider Smoke Test Scenarios",
+  "description": "Schema for TUI smoke test scenarios driven by Knight Rider",
+  "type": "object",
+  "required": ["version", "scenarios"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Self-reference to this schema file"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semver version of the scenarios format"
+    },
+    "generatedFrom": {
+      "type": "string",
+      "format": "uri",
+      "description": "Documentation URL this scenario set was generated from"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Human-readable notes about this scenario file"
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "List of smoke test scenarios",
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    }
+  },
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "required": ["id", "name", "category", "description", "steps", "verify"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Unique kebab-case identifier for the scenario"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable scenario name"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "basic",
+            "slash-commands",
+            "conversation",
+            "keyboard",
+            "permissions",
+            "tool-use",
+            "subagents"
+          ],
+          "description": "Grouping category for the scenario"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this scenario tests"
+        },
+        "docRef": {
+          "type": "string",
+          "description": "URL path to relevant documentation"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ordered execution steps",
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "verify": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Machine-checkable assertions run after steps complete",
+          "items": {
+            "$ref": "#/$defs/verifyPredicate"
+          }
+        },
+        "observe": {
+          "type": "string",
+          "description": "Free-form checklist for LLM or human visual review"
+        },
+        "engine": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["v2", "kas"]
+          },
+          "uniqueItems": true,
+          "default": ["v2", "kas"],
+          "description": "Which agent engines this scenario runs on"
+        },
+        "backend": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["live", "acp-mock"]
+          },
+          "uniqueItems": true,
+          "default": ["live", "acp-mock"],
+          "description": "Which scenario backends can execute this scenario"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1000,
+          "default": 30000,
+          "description": "Per-scenario timeout in milliseconds"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "description": "Freeform tags for filtering scenarios"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["p0", "p1", "p2"],
+          "description": "Priority level for CI gating (p0 = must pass)"
+        }
+      }
+    },
+    "step": {
+      "type": "string",
+      "description": "A test step in the format 'action' or 'action:argument'",
+      "pattern": "^(type|waitForText|prompt|sleep|frame):.+$|^(enter|waitForIdle|ctrlc|ctrlc-twice|ctrlj|ctrls|arrowUp|arrowDown|escape|tab)$"
+    },
+    "verifyPredicate": {
+      "type": "string",
+      "description": "An assertion in the format 'namespace.predicate:argument' or bare predicate",
+      "pattern": "^(screen\\.(contains|notContains)|process\\.exited):.+$|^(process\\.exited|store\\.sessionId\\.changed)$"
+    }
+  }
+}

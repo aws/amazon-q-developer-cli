@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "tool-use-shell",
+  "recordedAt": "2026-08-11T00:31:03.969Z",
+  "engine": "v2",
+  "engineVersion": "d7953e2ae",
+  "contractHash": "dad61227cdd657c0ceaa561699066e6cd3fd8faf782fc418204fc73b8d4d5216",
+  "prompts": [
+    {
+      "stepIndex": 0,
+      "promptText": "run echo hello world using the shell",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "I"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "'ll run that"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " now"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ToolUseEvent",
+            "data": {
+              "tool_use_id": "toolu_bdrk_01563Hr5t15MWAAaYtDkX8w6",
+              "name": "execute",
+              "input": "{\"command\":\"echo hello world\",\"__tool_use_purpose\":\"Run the echo command the user requested\"}",
+              "stop": true
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "hello world`"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 7362
+    }
+  ]
+}

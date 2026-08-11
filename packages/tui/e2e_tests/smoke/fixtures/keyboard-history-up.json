@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "keyboard-history-up",
+  "recordedAt": "2026-08-10T19:45:14.186Z",
+  "engineVersion": "977aee5bd",
+  "contractHash": "afea8ebd0d7a8e881c11111e5c00133f2518cd56ff0c53fc4cd65ffe5cb9c087",
+  "prompts": [
+    {
+      "stepIndex": 0,
+      "promptText": "hello world",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": "The"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " user"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " wants"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " a"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " brief"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " response"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " to"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "ReasoningEvent",
+            "data": {
+              "text": " a simple greeting."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "H"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ello."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " What"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " are"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " we"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " working on in"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " the TUI package"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " today"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "?"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 3370
+    }
+  ]
+}

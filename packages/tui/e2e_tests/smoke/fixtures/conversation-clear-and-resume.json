@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "conversation-clear-and-resume",
+  "recordedAt": "2026-08-10T21:49:08.467Z",
+  "engineVersion": "977aee5bd",
+  "contractHash": "5ae40f37d6ed266cac97c980021d07a2986a0dc0674215a4ceb1703545bd556c",
+  "prompts": [
+    {
+      "stepIndex": 0,
+      "promptText": "remember the code word is ALPHA",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Got"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " it \u2014 ALPHA."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 3838
+    },
+    {
+      "stepIndex": 4,
+      "promptText": "what is the code word?",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "ALPHA"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 3048
+    }
+  ]
+}

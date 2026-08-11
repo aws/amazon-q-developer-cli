@@ -10,13 +10,18 @@
       "category": "basic",
       "description": "TUI launches and shows the prompt input",
       "docRef": "/docs/cli/chat",
+      "priority": "p0",
       "steps": [
         "waitForText:ask a question"
       ],
       "verify": [
         "screen.contains:ask a question"
       ],
-      "observe": "Kiro logo renders cleanly, welcome message visible, status bar shows agent name + model + cwd, prompt input ready with placeholder text"
+      "observe": "Kiro logo renders cleanly, welcome message visible, status bar shows agent name + model + cwd, prompt input ready with placeholder text",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-autocomplete",
@@ -24,13 +29,18 @@
       "category": "slash-commands",
       "description": "Typing / shows autocomplete with available commands",
       "docRef": "/docs/cli/reference/slash-commands",
+      "priority": "p0",
       "steps": [
         "type:/"
       ],
       "verify": [
         "screen.contains:/clear"
       ],
-      "observe": "Dropdown appears below input, shows command names with descriptions, (+N more) count at bottom, no visual glitches in the dropdown border"
+      "observe": "Dropdown appears below input, shows command names with descriptions, (+N more) count at bottom, no visual glitches in the dropdown border",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-help",
@@ -38,6 +48,7 @@
       "category": "slash-commands",
       "description": "Show available commands panel",
       "docRef": "/docs/cli/reference/slash-commands#help",
+      "priority": "p0",
       "steps": [
         "type:/help",
         "enter"
@@ -45,7 +56,11 @@
       "verify": [
         "screen.contains:/<COMMAND>"
       ],
-      "observe": "Help panel opens with all commands listed, subcommands shown with \u2319 prefix, search filter at top, ESC to close hint at bottom, scrollable with \u2193 more indicator"
+      "observe": "Help panel opens with all commands listed, subcommands shown with \u2319 prefix, search filter at top, ESC to close hint at bottom, scrollable with \u2193 more indicator",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-clear",
@@ -53,6 +68,7 @@
       "category": "slash-commands",
       "description": "Clear conversation history",
       "docRef": "/docs/cli/reference/slash-commands#clear",
+      "priority": "p0",
       "steps": [
         "type:/clear",
         "enter"
@@ -60,7 +76,11 @@
       "verify": [
         "screen.contains:ask a question"
       ],
-      "observe": "Conversation messages disappear, prompt returns to initial state, no error message"
+      "observe": "Conversation messages disappear, prompt returns to initial state, no error message",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-model-picker",
@@ -68,14 +88,19 @@
       "category": "slash-commands",
       "description": "Open interactive model picker",
       "docRef": "/docs/cli/reference/slash-commands#model",
+      "priority": "p0",
       "steps": [
         "type:/model",
         "enter"
       ],
       "verify": [
-        "screen.contains:auto"
+        "screen.contains:Select model:"
       ],
-      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (\u276f marker), search filter at top, ESC to cancel"
+      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (\u276f marker), search filter at top, ESC to cancel",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-model-select",
@@ -84,13 +109,17 @@
       "description": "Select a model by typing its name",
       "docRef": "/docs/cli/reference/slash-commands#model",
       "steps": [
-        "type:/model claude-sonnet-4",
+        "type:/model claude-opus-4.7",
         "enter"
       ],
       "verify": [
-        "screen.contains:sonnet"
+        "screen.contains:Opus"
       ],
-      "observe": "Model switches, status bar updates to show new model name"
+      "observe": "Model switches, status bar updates to show new model name",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-agent-picker",
@@ -105,7 +134,11 @@
       "verify": [
         "screen.contains:agent"
       ],
-      "observe": "Agent picker shows all agents (built-in + global + workspace), descriptions visible, search filter at top"
+      "observe": "Agent picker shows all agents (built-in + global + workspace), descriptions visible, search filter at top",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-agent-swap",
@@ -120,7 +153,11 @@
       "verify": [
         "screen.contains:plan"
       ],
-      "observe": "Agent swaps to kiro_planner, status bar updates to show [plan] prefix. Use Shift+Tab to return to previous agent."
+      "observe": "Agent swaps to kiro_planner, status bar updates to show [plan] prefix. Use Shift+Tab to return to previous agent.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-context-show",
@@ -135,7 +172,11 @@
       "verify": [
         "screen.contains:context"
       ],
-      "observe": "Context panel shows active agent name, file rules with token percentages, session rules section, tips at bottom, Tab to switch to /usage"
+      "observe": "Context panel shows active agent name, file rules with token percentages, session rules section, tips at bottom, Tab to switch to /usage",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-context-add",
@@ -150,7 +191,11 @@
       "verify": [
         "screen.contains:context"
       ],
-      "observe": "Confirmation that rule was added, /context show should now list the new rule"
+      "observe": "Confirmation that rule was added, /context show should now list the new rule",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-context-remove",
@@ -165,7 +210,11 @@
       "verify": [
         "screen.contains:context"
       ],
-      "observe": "Confirmation that rule was removed"
+      "observe": "Confirmation that rule was removed",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-context-clear",
@@ -180,7 +229,11 @@
       "verify": [
         "screen.contains:context"
       ],
-      "observe": "All session rules cleared, /context show should show empty session rules"
+      "observe": "All session rules cleared, /context show should show empty session rules",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-tools-panel",
@@ -195,7 +248,11 @@
       "verify": [
         "screen.contains:built-in"
       ],
-      "observe": "Tools panel shows all tools with Name, Source, Status, Description columns. All default to 'approval required'. Search filter at top. ESC to close."
+      "observe": "Tools panel shows all tools with Name, Source, Status, Description columns. All default to 'approval required'. Search filter at top. ESC to close.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-tools-trust",
@@ -210,7 +267,10 @@
       "verify": [
         "screen.contains:trusted"
       ],
-      "observe": "Confirmation message 'read now trusted', /tools panel should show read as Trusted"
+      "observe": "Confirmation message 'read now trusted', /tools panel should show read as Trusted",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "slash-tools-untrust",
@@ -225,7 +285,10 @@
       "verify": [
         "screen.contains:untrust"
       ],
-      "observe": "Confirmation that read is back to per-request, /tools panel should show approval required"
+      "observe": "Confirmation that read is back to per-request, /tools panel should show approval required",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "slash-tools-trust-all",
@@ -240,7 +303,10 @@
       "verify": [
         "screen.contains:trust"
       ],
-      "observe": "All tools trusted, /tools panel should show all as Trusted"
+      "observe": "All tools trusted, /tools panel should show all as Trusted",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "slash-tools-reset",
@@ -255,7 +321,10 @@
       "verify": [
         "screen.contains:reset"
       ],
-      "observe": "All tools back to default, /tools panel should show approval required"
+      "observe": "All tools back to default, /tools panel should show approval required",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "slash-mcp-panel",
@@ -270,7 +339,11 @@
       "verify": [
         "screen.contains:configured"
       ],
-      "observe": "MCP panel shows configured servers with Name, Status (\u25cf running), Details (tool count). Search filter at top."
+      "observe": "MCP panel shows configured servers with Name, Status (\u25cf running), Details (tool count). Search filter at top.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-compact",
@@ -285,7 +358,11 @@
       "verify": [
         "screen.contains:compact"
       ],
-      "observe": "On empty conversation: 'Conversation too short to compact'. After conversation: shows compaction summary with token savings."
+      "observe": "On empty conversation: 'Conversation too short to compact'. After conversation: shows compaction summary with token savings.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-chat-new",
@@ -300,7 +377,11 @@
       "verify": [
         "screen.contains:ask a question"
       ],
-      "observe": "Conversation resets, messages cleared, new session ID assigned, prompt ready"
+      "observe": "Conversation resets, messages cleared, new session ID assigned, prompt ready",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-chat-new-with-prompt",
@@ -315,7 +396,11 @@
       "verify": [
         "screen.contains:Kiro"
       ],
-      "observe": "New session starts AND the initial prompt is sent immediately, agent responds"
+      "observe": "New session starts AND the initial prompt is sent immediately, agent responds",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-usage",
@@ -330,7 +415,11 @@
       "verify": [
         "screen.contains:Credits"
       ],
-      "observe": "Usage panel shows credits bar, plan info, overage status, estimated cost. Tab to switch to /context."
+      "observe": "Usage panel shows credits bar, plan info, overage status, estimated cost. Tab to switch to /context.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-hooks",
@@ -345,7 +434,11 @@
       "verify": [
         "screen.contains:hooks"
       ],
-      "observe": "Hooks panel shows configured hooks count. If none: 'No hooks configured'."
+      "observe": "Hooks panel shows configured hooks count. If none: 'No hooks configured'.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-code-status",
@@ -360,7 +453,11 @@
       "verify": [
         "screen.contains:Workspace"
       ],
-      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (\u25cf running, \u25cb not_installed, \u25cb available)"
+      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (\u25cf running, \u25cb not_installed, \u25cb available)",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-code-overview",
@@ -375,7 +472,11 @@
       "verify": [
         "screen.contains:overview"
       ],
-      "observe": "Workspace overview renders with directory tree and file descriptions"
+      "observe": "Workspace overview renders with directory tree and file descriptions",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-quit",
@@ -383,6 +484,7 @@
       "category": "slash-commands",
       "description": "Exit the interactive chat session",
       "docRef": "/docs/cli/reference/slash-commands#quit",
+      "priority": "p0",
       "steps": [
         "type:/quit",
         "enter"
@@ -390,7 +492,11 @@
       "verify": [
         "process.exited"
       ],
-      "observe": "TUI exits cleanly, no error output. Run this last or restart Knight Rider after."
+      "observe": "TUI exits cleanly, no error output. Run this last or restart Knight Rider after.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-save",
@@ -399,13 +505,20 @@
       "description": "Save current session to a file",
       "docRef": "/docs/cli/reference/slash-commands#save",
       "steps": [
-        "type:/chat save /tmp/kiro-smoke-test.json",
+        "type:/chat save {{tmpFile:session.json}}",
         "enter"
       ],
       "verify": [
-        "screen.contains:save"
+        "screen.contains:Saved session to"
       ],
-      "observe": "Confirmation that session was saved to the specified path"
+      "observe": "Confirmation that session was saved to the specified path",
+      "backend": [
+        "live"
+      ],
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-load",
@@ -414,13 +527,23 @@
       "description": "Load a previously saved conversation",
       "docRef": "/docs/cli/reference/slash-commands#load",
       "steps": [
-        "type:/chat load /tmp/kiro-smoke-test.json",
+        "type:/chat save {{tmpFile:session.json}}",
+        "enter",
+        "waitForText:Saved session to",
+        "type:/chat load {{tmpFile:session.json}}",
         "enter"
       ],
       "verify": [
-        "screen.contains:load"
+        "store.sessionId.changed"
       ],
-      "observe": "Session loaded from file, previous messages restored in conversation"
+      "observe": "Session loaded from file, previous messages restored in conversation",
+      "backend": [
+        "live"
+      ],
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-plan",
@@ -435,7 +558,11 @@
       "verify": [
         "screen.contains:plan"
       ],
-      "observe": "Agent switches to kiro_planner, status bar updates. Use Shift+Tab to return."
+      "observe": "Agent switches to kiro_planner, status bar updates. Use Shift+Tab to return.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-knowledge-show",
@@ -450,7 +577,11 @@
       "verify": [
         "screen.contains:knowledge"
       ],
-      "observe": "Shows knowledge base entries or empty state. Experimental feature."
+      "observe": "Shows knowledge base entries or empty state. Experimental feature.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-prompts-list",
@@ -465,7 +596,11 @@
       "verify": [
         "screen.contains:Kiro"
       ],
-      "observe": "Shows available prompts from MCP servers, or empty state if none configured"
+      "observe": "Shows available prompts from MCP servers, or empty state if none configured",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "tool-use-read",
@@ -473,6 +608,7 @@
       "category": "tool-use",
       "description": "Agent uses read tool to list directory",
       "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
       "steps": [
         "prompt:list the files in the current directory",
         "waitForIdle"
@@ -480,7 +616,11 @@
       "verify": [
         "screen.contains:Read"
       ],
-      "observe": "Read tool indicator appears (\u25d4 Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom"
+      "observe": "Read tool indicator appears (\u25d4 Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "tool-use-shell",
@@ -488,6 +628,7 @@
       "category": "tool-use",
       "description": "Agent uses shell tool",
       "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
       "steps": [
         "prompt:run echo hello world using the shell",
         "waitForText:requires approval"
@@ -495,7 +636,11 @@
       "verify": [
         "screen.contains:requires approval"
       ],
-      "observe": "Shell tool shows approval dialog with command preview, trust tier picker (Full command / Partial / Base / Entire Tool)"
+      "observe": "Shell tool shows approval dialog with command preview, trust tier picker (Full command / Partial / Base / Entire Tool)",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "tool-use-write-approval",
@@ -510,7 +655,10 @@
       "verify": [
         "screen.contains:requires approval"
       ],
-      "observe": "Write tool shows approval dialog with file path, diff preview showing new content, approve/deny options"
+      "observe": "Write tool shows approval dialog with file path, diff preview showing new content, approve/deny options",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "tool-cancel",
@@ -518,6 +666,7 @@
       "category": "tool-use",
       "description": "Ctrl+C cancels in-progress request",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
+      "priority": "p1",
       "steps": [
         "prompt:explain quantum computing in extreme detail",
         "ctrlc"
@@ -525,7 +674,11 @@
       "verify": [
         "screen.contains:Cancelled"
       ],
-      "observe": "Streaming stops, 'Cancelled streaming' message appears, prompt returns to ready state, no state desync"
+      "observe": "Streaming stops, 'Cancelled streaming' message appears, prompt returns to ready state, no state desync",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "tool-cancel-recovery",
@@ -539,9 +692,14 @@
         "prompt:what is 1+1"
       ],
       "verify": [
-        "screen.contains:ask a question"
+        "screen.contains:what is 1+1",
+        "screen.notContains:Prompt already in progress"
       ],
-      "observe": "Second prompt is accepted and processed normally, no 'Prompt already in progress' error"
+      "observe": "Second prompt is accepted and processed normally, no 'Prompt already in progress' error",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "conversation-basic",
@@ -549,6 +707,7 @@
       "category": "conversation",
       "description": "Send a prompt, get response, send follow-up",
       "docRef": "/docs/cli/chat",
+      "priority": "p0",
       "steps": [
         "prompt:what is the capital of France?",
         "waitForIdle",
@@ -558,7 +717,11 @@
       "verify": [
         "screen.contains:Berlin"
       ],
-      "observe": "First response mentions Paris, second response mentions Berlin. Agent maintains context from first question. Both messages visible in conversation history."
+      "observe": "First response mentions Paris, second response mentions Berlin. Agent maintains context from first question. Both messages visible in conversation history.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "conversation-context-retention",
@@ -575,7 +738,11 @@
       "verify": [
         "screen.contains:SmokeTest"
       ],
-      "observe": "Agent remembers the name from the first message and uses it in the second response"
+      "observe": "Agent remembers the name from the first message and uses it in the second response",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "conversation-clear-and-resume",
@@ -594,7 +761,11 @@
       "verify": [
         "screen.contains:ask a question"
       ],
-      "observe": "After /clear, agent should NOT know the code word. Response should indicate it doesn't have that context."
+      "observe": "After /clear, agent should NOT know the code word. Response should indicate it doesn't have that context.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "conversation-long-response",
@@ -609,7 +780,11 @@
       "verify": [
         "screen.contains:Python"
       ],
-      "observe": "Response streams in progressively, scroll works, all 10 languages visible (may need scrolling), credits shown at end"
+      "observe": "Response streams in progressively, scroll works, all 10 languages visible (may need scrolling), credits shown at end",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "conversation-markdown",
@@ -624,7 +799,11 @@
       "verify": [
         "screen.contains:print"
       ],
-      "observe": "Code block renders with syntax highlighting, proper indentation, language label visible. Markdown bold/italic renders correctly."
+      "observe": "Code block renders with syntax highlighting, proper indentation, language label visible. Markdown bold/italic renders correctly.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "permissions-trust-flow",
@@ -641,7 +820,10 @@
       "verify": [
         "screen.contains:untrust"
       ],
-      "observe": "Trust: 'shell now trusted'. Untrust: shell reverts to per-request. Full lifecycle works without errors."
+      "observe": "Trust: 'shell now trusted'. Untrust: shell reverts to per-request. Full lifecycle works without errors.",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "permissions-trust-all-reset",
@@ -658,7 +840,10 @@
       "verify": [
         "screen.contains:reset"
       ],
-      "observe": "Trust-all: all tools trusted. Reset: all tools back to approval required. No stale state."
+      "observe": "Trust-all: all tools trusted. Reset: all tools back to approval required. No stale state.",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "subagent-spawn",
@@ -673,7 +858,11 @@
       "verify": [
         "screen.contains:Kiro"
       ],
-      "observe": "Subagent spawns with progress indicator, live status updates visible, results returned to main agent. May show subagent approval dialog."
+      "observe": "Subagent spawns with progress indicator, live status updates visible, results returned to main agent. May show subagent approval dialog.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "keyboard-ctrlc-exit",
@@ -681,13 +870,18 @@
       "category": "keyboard",
       "description": "Double Ctrl+C exits the TUI",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
+      "priority": "p0",
       "steps": [
         "ctrlc-twice"
       ],
       "verify": [
         "process.exited"
       ],
-      "observe": "First Ctrl+C may show cancel hint, second exits cleanly. Run last or restart Knight Rider after."
+      "observe": "First Ctrl+C may show cancel hint, second exits cleanly. Run last or restart Knight Rider after.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "keyboard-history-up",
@@ -695,6 +889,7 @@
       "category": "keyboard",
       "description": "Up arrow recalls previous input",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
+      "priority": "p0",
       "steps": [
         "prompt:hello world",
         "waitForIdle",
@@ -703,7 +898,11 @@
       "verify": [
         "screen.contains:hello"
       ],
-      "observe": "Previous input 'hello world' appears in the prompt input field after pressing up arrow"
+      "observe": "Previous input 'hello world' appears in the prompt input field after pressing up arrow",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "keyboard-ctrlj-newline",
@@ -719,7 +918,11 @@
       "verify": [
         "screen.contains:line"
       ],
-      "observe": "Input field expands to show two lines, cursor on second line. Both lines visible in the prompt area."
+      "observe": "Input field expands to show two lines, cursor on second line. Both lines visible in the prompt area.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "keyboard-ctrls-search",
@@ -733,7 +936,10 @@
       "verify": [
         "screen.contains:search"
       ],
-      "observe": "Fuzzy search overlay opens, can type to filter commands and context files, Tab to select multiple"
+      "observe": "Fuzzy search overlay opens, can type to filter commands and context files, Tab to select multiple",
+      "engine": [
+        "v2"
+      ]
     },
     {
       "id": "slash-goal-set",
@@ -749,7 +955,11 @@
       "verify": [
         "screen.contains:goal"
       ],
-      "observe": "Goal is acknowledged and agent begins iterating. Status shows goal progress or iteration count."
+      "observe": "Goal is acknowledged and agent begins iterating. Status shows goal progress or iteration count.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-goal-clear",
@@ -765,7 +975,11 @@
       "verify": [
         "screen.notContains:error"
       ],
-      "observe": "Goal is cleared. No error message. Prompt returns to normal state."
+      "observe": "Goal is cleared. No error message. Prompt returns to normal state.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-rewind",
@@ -781,7 +995,10 @@
       "verify": [
         "screen.notContains:Unknown command"
       ],
-      "observe": "Rewind picker opens showing previous turns, or shows empty state if no history. No error."
+      "observe": "Rewind picker opens showing previous turns, or shows empty state if no history. No error.",
+      "engine": [
+        "kas"
+      ]
     },
     {
       "id": "slash-effort",
@@ -797,7 +1014,11 @@
       "verify": [
         "screen.notContains:error"
       ],
-      "observe": "Effort level is acknowledged. No error message."
+      "observe": "Effort level is acknowledged. No error message.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-guide",
@@ -813,7 +1034,11 @@
       "verify": [
         "screen.notContains:Unknown command"
       ],
-      "observe": "Agent swaps to guide mode. Welcome message or mode indicator changes."
+      "observe": "Agent swaps to guide mode. Welcome message or mode indicator changes.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     },
     {
       "id": "slash-stats",
@@ -829,7 +1054,11 @@
       "verify": [
         "screen.notContains:Unknown command"
       ],
-      "observe": "Stats output renders showing timing data or empty state if no requests yet."
+      "observe": "Stats output renders showing timing data or empty state if no requests yet.",
+      "engine": [
+        "v2",
+        "kas"
+      ]
     }
   ]
 }

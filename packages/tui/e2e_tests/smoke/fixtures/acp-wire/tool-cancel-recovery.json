@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 2,
+  "scenarioId": "tool-cancel-recovery",
+  "backend": "acp-mock",
+  "engine": "kas",
+  "contractHash": "e8b6e2e584d7db7c2f0f49a133d023c54c67cf55a7d8d8dd199da18bfca62717",
+  "turns": [
+    {
+      "stepIndex": 0,
+      "promptText": "explain quantum computing",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "dc31bf82-fc43-4eb6-80e8-a42546cf20d5",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "title": "ain quantum computing",
+              "_meta": {
+                "kiro": {
+                  "focus": {
+                    "title": "ain quantum computing"
+                  },
+                  "kind": "focus_update",
+                  "title": "ain quantum computing"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+                "title": "ain quantum computing",
+                "updatedAt": "2026-08-11T02:02:56.881Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:02:56.886Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "steeringDocuments": [
+                    "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-internal-systems.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-inclusivity-scanner.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-brazil.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-production-safety.md"
+                  ],
+                  "kind": "steering_inclusion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/hooks/cancel",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32"
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "promptTurnSummaries": [],
+                  "elapsedTime": 289,
+                  "status": "aborted",
+                  "kind": "turn_completion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+                "status": "idle",
+                "updatedAt": "2026-08-11T02:02:57.175Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnEnd": {
+                    "stopReason": "cancelled"
+                  },
+                  "kind": "turn_end",
+                  "stopReason": "cancelled"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "promptResponse": {
+        "result": {
+          "stopReason": "cancelled"
+        }
+      },
+      "durationMs": 305
+    },
+    {
+      "stepIndex": 2,
+      "promptText": "what is 1+1",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "5dcf6a16-50b0-44fb-bf7b-393bf1ff3085",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:02:58.940Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_2d8cc214-56df-41c0-b8a9-cf8e9cb71b32",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

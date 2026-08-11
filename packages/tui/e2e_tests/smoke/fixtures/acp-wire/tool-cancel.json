@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 2,
+  "scenarioId": "tool-cancel",
+  "backend": "acp-mock",
+  "engine": "kas",
+  "contractHash": "3cd3e23c9882ae35f8c3fc120691b5511a028d2e5cc466455eea2f4aa5431cba",
+  "turns": [
+    {
+      "stepIndex": 0,
+      "promptText": "explain quantum computing in extreme detail",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "0db90826-a076-40d6-ba4c-0c15fc51675f",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "title": "ain quantum computing in extreme detail",
+              "_meta": {
+                "kiro": {
+                  "focus": {
+                    "title": "ain quantum computing in extreme detail"
+                  },
+                  "kind": "focus_update",
+                  "title": "ain quantum computing in extreme detail"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+                "title": "ain quantum computing in extreme detail",
+                "updatedAt": "2026-08-11T02:02:52.214Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:02:52.219Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "steeringDocuments": [
+                    "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-internal-systems.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-inclusivity-scanner.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-brazil.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-production-safety.md"
+                  ],
+                  "kind": "steering_inclusion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/hooks/cancel",
+          "params": {
+            "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02"
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "promptTurnSummaries": [],
+                  "elapsedTime": 292,
+                  "status": "aborted",
+                  "kind": "turn_completion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+                "status": "idle",
+                "updatedAt": "2026-08-11T02:02:52.511Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_9f25bbfa-55f8-448f-8998-d49dd094ca02",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnEnd": {
+                    "stopReason": "cancelled"
+                  },
+                  "kind": "turn_end",
+                  "stopReason": "cancelled"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "promptResponse": {
+        "result": {
+          "stopReason": "cancelled"
+        }
+      },
+      "durationMs": 308
+    }
+  ]
+}

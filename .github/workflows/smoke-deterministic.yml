@@ -1,0 +1,320 @@
+name: Smoke Tests (Runner)
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+    paths-ignore:
+      - 'docs/**'
+      - '.changes/**'
+      - 'scripts/testing-cert-status/**'
+      - '*.md'
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: 'Live engine(s) to test'
+        type: choice
+        default: 'both'
+        options:
+          - v2
+          - kas
+          - both
+      priority:
+        description: 'Scenario priority filter'
+        type: choice
+        default: 'p0'
+        options:
+          - p0
+          - all
+
+concurrency:
+  group: smoke-runner-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  CI: '1'
+  TERM: xterm-256color
+  COLORTERM: truecolor
+  FORCE_COLOR: '3'
+
+jobs:
+  resolve:
+    name: Resolve Smoke Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      priority: ${{ steps.resolve.outputs.priority }}
+      run_det_kas: ${{ steps.resolve.outputs.run_det_kas }}
+      live_engines: ${{ steps.resolve.outputs.live_engines }}
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if [ "${{ github.event.pull_request.head.repo.fork || false }}" = "true" ]; then
+              echo "priority=" >> "$GITHUB_OUTPUT"
+              echo "run_det_kas=false" >> "$GITHUB_OUTPUT"
+              echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "priority=" >> "$GITHUB_OUTPUT"
+            echo "run_det_kas=true" >> "$GITHUB_OUTPUT"
+            echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "priority=" >> "$GITHUB_OUTPUT"
+            echo "run_det_kas=true" >> "$GITHUB_OUTPUT"
+            echo 'live_engines=["v2","kas"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ inputs.priority }}" = "all" ]; then
+            echo "priority=" >> "$GITHUB_OUTPUT"
+          else
+            echo "priority=${{ inputs.priority }}" >> "$GITHUB_OUTPUT"
+          fi
+
+          case "${{ inputs.engine }}" in
+            v2)
+              echo "run_det_kas=false" >> "$GITHUB_OUTPUT"
+              echo 'live_engines=["v2"]' >> "$GITHUB_OUTPUT"
+              ;;
+            kas)
+              echo "run_det_kas=true" >> "$GITHUB_OUTPUT"
+              echo 'live_engines=["kas"]' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "run_det_kas=true" >> "$GITHUB_OUTPUT"
+              echo 'live_engines=["v2","kas"]' >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  deterministic-kas:
+    name: Deterministic Smoke (acp-mock/kas/${{ matrix.os }})
+    needs: resolve
+    if: needs.resolve.outputs.run_det_kas == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            smoke_timeout: 30
+          - os: macos-latest
+            smoke_timeout: 30
+          - os: windows-x64-latest-16-cores
+            smoke_timeout: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: 'v0.16.0'
+
+      - name: Set Rust compiler wrapper
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-smoke-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-smoke-${{ runner.os }}-
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build chat_cli
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo build -p chat_cli --release --no-default-features
+          else
+            cargo build -p chat_cli --release
+          fi
+
+      - name: Build TUI
+        shell: bash
+        run: |
+          cd packages/twinki/packages/twinki && bun run build && cd ../../../..
+          cd packages/tui && bun run build && cd ../..
+
+      - name: Run deterministic smoke tests
+        id: smoke
+        timeout-minutes: ${{ matrix.smoke_timeout }}
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+        run: |
+          ARGS="--ci --backend acp-mock --engine kas"
+          if [ -n "${{ needs.resolve.outputs.priority }}" ]; then
+            ARGS="$ARGS --priority ${{ needs.resolve.outputs.priority }}"
+          fi
+          echo "Running: bun packages/tui/e2e_tests/smoke/run-smoke.ts $ARGS"
+          bun packages/tui/e2e_tests/smoke/run-smoke.ts $ARGS
+
+      - name: Upload failure artifacts
+        if: failure() && steps.smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-runner-deterministic-${{ matrix.os }}
+          path: ./smoke-results/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Deterministic Smoke — ${{ matrix.os }}"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Backend** | acp-mock |"
+            echo "| **Engine** | kas |"
+            echo "| **Priority** | ${{ needs.resolve.outputs.priority || 'all' }} |"
+            echo "| **Outcome** | ${{ steps.smoke.outcome }} |"
+            echo "| **Trigger** | ${{ github.event_name }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-parity:
+    name: Live Smoke (live/${{ matrix.engine }}/${{ matrix.os }})
+    needs: resolve
+    if: needs.resolve.outputs.live_engines != '[]'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        engine: ${{ fromJSON(needs.resolve.outputs.live_engines) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: 'v0.16.0'
+
+      - name: Set Rust compiler wrapper
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-smoke-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-smoke-${{ runner.os }}-
+
+      - name: Install system dependencies (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build chat_cli
+        run: cargo build -p chat_cli --release
+
+      - name: Build TUI
+        shell: bash
+        run: |
+          cd packages/twinki/packages/twinki && bun run build && cd ../../../..
+          cd packages/tui && bun run build && cd ../..
+
+      - name: Run live smoke tests
+        id: smoke
+        timeout-minutes: 45
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+        run: |
+          ARGS="--ci --backend live --engine ${{ matrix.engine }}"
+          if [ -n "${{ needs.resolve.outputs.priority }}" ]; then
+            ARGS="$ARGS --priority ${{ needs.resolve.outputs.priority }}"
+          fi
+          echo "Running: bun packages/tui/e2e_tests/smoke/run-smoke.ts $ARGS"
+          bun packages/tui/e2e_tests/smoke/run-smoke.ts $ARGS
+
+      - name: Upload failure artifacts
+        if: failure() && steps.smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-runner-live-${{ matrix.engine }}-${{ matrix.os }}
+          path: ./smoke-results/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Live Smoke — ${{ matrix.engine }} / ${{ matrix.os }}"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Backend** | live |"
+            echo "| **Engine** | ${{ matrix.engine }} |"
+            echo "| **Priority** | ${{ needs.resolve.outputs.priority || 'all' }} |"
+            echo "| **Outcome** | ${{ steps.smoke.outcome }} |"
+            echo "| **Trigger** | ${{ github.event_name }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

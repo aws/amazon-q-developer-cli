@@ -1,0 +1,2588 @@
+{
+  "schemaVersion": 2,
+  "scenarioId": "conversation-long-response",
+  "backend": "acp-mock",
+  "engine": "kas",
+  "contractHash": "7e96fe84b06333b88a223d012504b11115dbb85a3379782e8c6f25478f15c0d4",
+  "turns": [
+    {
+      "stepIndex": 0,
+      "promptText": "list 10 programming languages with a one-sentence description of each",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "477d5094-6478-4bc6-b374-d17025ad573d",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "title": "10 programming languages with a one-sentence description of each",
+              "_meta": {
+                "kiro": {
+                  "focus": {
+                    "title": "10 programming languages with a one-sentence description of each"
+                  },
+                  "kind": "focus_update",
+                  "title": "10 programming languages with a one-sentence description of each"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+                "title": "10 programming languages with a one-sentence description of each",
+                "updatedAt": "2026-08-11T02:03:56.431Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:03:56.436Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "steeringDocuments": [
+                    "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-internal-systems.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-inclusivity-scanner.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-brazil.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-production-safety.md"
+                  ],
+                  "kind": "steering_inclusion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": "I"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "8d2e2ab2-f5ca-4464-b6b1-52d1a955b4a5-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " should"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "8d2e2ab2-f5ca-4464-b6b1-52d1a955b4a5-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " keep"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "8d2e2ab2-f5ca-4464-b6b1-52d1a955b4a5-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " my response straight"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "8d2e2ab2-f5ca-4464-b6b1-52d1a955b4a5-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": "forward and concise."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "8d2e2ab2-f5ca-4464-b6b1-52d1a955b4a5-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "**"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "Python** — A"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " high-level, dynamically"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " typed language known"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " for read"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "able syntax and a"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " v"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ast library"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " ecosystem, widely"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " used in"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " sc"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ripting, data science,"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " and "
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ML.\n\n**J"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "avaScript** — The"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " language"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " of the web"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " brow"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ser, now"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " also common"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " server"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "-side via"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " Node."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "js, with"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " an event-driven, pr"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ototype-based object"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " model.\n\n**TypeSc"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ript** — A superset of J"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "avaScript that adds static"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " types"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ","
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " comp"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "iling"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " down"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " to pl"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ain JS"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " for saf"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "er large"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "-scale cod"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ebases.\n\n**Rust"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "** — A"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " systems language"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " that"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " guarantees memory safety"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " without a"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " garbage collector via own"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ership and borrow"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ing rules en"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "forced at compile time."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "\n\n**Go** — A stat"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ically typed, compi"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "led language from"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " Google design"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ed for simplicity,"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " fast builds, and eas"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "y concurrency through"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " goroutines and channels."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "\n\n**C"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "** — A"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " minimal, low"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "-level comp"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "iled language that"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " ma"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ps clos"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ely to"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " hardware and under"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "pins oper"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ating systems, emb"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "edded fir"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "mware, and most"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " other language"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " runtimes.\n\n**C"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "++** — An"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " extension of C ad"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ding class"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "es, templ"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ates, and R"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "AII, used"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " where"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " both"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " high"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " perform"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ance and ab"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "straction are needed ("
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "games, brow"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "sers, tr"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ading syst"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ems).\n\n**Java** —"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " A stat"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ically typed, object-ori"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ented language running on the JVM"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ", val"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ued for port"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ability and its"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " dominance in enterprise"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " backends"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " and"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " Android.\n\n**C"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "#** —"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " Microsoft's stat"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ically typed,"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " object"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "-oriented language for"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " the .NET run"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "time, sp"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "anning web services"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ", des"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ktop apps, and Un"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ity game development.\n\n**Ha"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "skell** — A pur"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ely functional, lazily"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " evaluated language with a"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " strong static"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " type system, often"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " used for research and corre"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ctness-critical software"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "3ba3fa1c-d918-47a8-9789-d23087df9a24-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.14840030670166
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.14840030670166
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.14840030670166
+                  },
+                  "breakdown": {
+                    "contextFiles": {
+                      "tokens": 4248,
+                      "percent": 0.4,
+                      "items": [
+                        {
+                          "name": "AGENTS.md",
+                          "uri": "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                          "tokens": 4248,
+                          "matched": true,
+                          "percent": 0.4,
+                          "progressivelyLoaded": false
+                        },
+                        {
+                          "name": "~/.kiro/skills/artifactory-design/SKILL.md",
+                          "uri": "file:///Users/kennvene/.kiro/skills/artifactory-design/SKILL.md",
+                          "tokens": 0,
+                          "matched": true,
+                          "percent": 0,
+                          "progressivelyLoaded": true
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "tokens": 18558,
+                      "percent": 1.9,
+                      "mcp": {
+                        "tokens": 11771,
+                        "percent": 1.2
+                      },
+                      "builtin": {
+                        "tokens": 6787,
+                        "percent": 0.7
+                      }
+                    },
+                    "kiroResponses": {
+                      "tokens": 0,
+                      "percent": 0
+                    },
+                    "yourPrompts": {
+                      "tokens": 0,
+                      "percent": 6.8
+                    },
+                    "sessionFiles": {
+                      "tokens": 0,
+                      "percent": 0,
+                      "items": []
+                    }
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.14840030670166
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "promptTurnSummaries": [
+                    {
+                      "unit": "credit",
+                      "unitPlural": "credits",
+                      "usage": 0.4513823326368159
+                    }
+                  ],
+                  "elapsedTime": 9064,
+                  "status": "success",
+                  "kind": "turn_completion",
+                  "requestIds": [
+                    "c2031e4c-f446-474a-acc0-975d6a40c197"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+                "status": "idle",
+                "updatedAt": "2026-08-11T02:04:05.500Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e6b8f1c5-0d9c-48f1-b7f1-cdd80e4142e6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnEnd": {
+                    "stopReason": "end_turn"
+                  },
+                  "kind": "turn_end",
+                  "stopReason": "end_turn"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "promptResponse": {
+        "result": {
+          "stopReason": "end_turn"
+        }
+      },
+      "durationMs": 9084
+    }
+  ]
+}

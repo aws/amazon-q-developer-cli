@@ -1,0 +1,1843 @@
+{
+  "schemaVersion": 2,
+  "scenarioId": "conversation-context-retention",
+  "backend": "acp-mock",
+  "engine": "kas",
+  "contractHash": "eeba8a69ba10bf4955ebef729b6a9293d3e3580ecd9a46d442c2b53ecb22d390",
+  "turns": [
+    {
+      "stepIndex": 0,
+      "promptText": "my name is SmokeTest",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "abd1105d-4fc1-4bbe-9637-eaf1826c22b8",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "title": "ame is SmokeTest",
+              "_meta": {
+                "kiro": {
+                  "focus": {
+                    "title": "ame is SmokeTest"
+                  },
+                  "kind": "focus_update",
+                  "title": "ame is SmokeTest"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+                "title": "ame is SmokeTest",
+                "updatedAt": "2026-08-11T02:03:17.203Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:03:17.207Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "steeringDocuments": [
+                    "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-internal-systems.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-inclusivity-scanner.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-brazil.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-production-safety.md"
+                  ],
+                  "kind": "steering_inclusion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": "The"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " message"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " appears trunc"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": "ated or gar"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": "bled, so"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " I'm"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " not"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " entirely"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " sure"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " what's"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " being asked. I"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " should"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " ask for clarification about what they"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": "'re"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " trying"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " to do"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " with"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": " S"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_thought_chunk",
+              "content": {
+                "type": "text",
+                "text": "mokeTest."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "1fb4f6e6-7e0a-4045-a1db-fed7e4c35cfd-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "Your message came"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " through tru"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ncated — I only"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " see \"ame is Smok"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "eTest\". What would"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " you like me"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " to do with S"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "mokeTest?\n\nFor"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " context, I do"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " see sm"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "oke-test"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " art"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ifacts in this"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " workspace (`smoke"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "-results/`"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " with failure re"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ports for"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " things"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " like `conversation-basic"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "--v2`"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ", `perm"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "issions-trust-flow"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "--v2`, `tool"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "-use-write-approval--"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "v2`). If"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " you me"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "ant something"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " about ren"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "aming,"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " running"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ", or invest"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "igating those,"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " let me know which"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "2543462d-36d8-4290-bbcc-bfd0629f5666-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.126300811767578
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.126300811767578
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.126300811767578
+                  },
+                  "breakdown": {
+                    "contextFiles": {
+                      "tokens": 4248,
+                      "percent": 0.4,
+                      "items": [
+                        {
+                          "name": "AGENTS.md",
+                          "uri": "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                          "tokens": 4248,
+                          "matched": true,
+                          "percent": 0.4,
+                          "progressivelyLoaded": false
+                        },
+                        {
+                          "name": "~/.kiro/skills/artifactory-design/SKILL.md",
+                          "uri": "file:///Users/kennvene/.kiro/skills/artifactory-design/SKILL.md",
+                          "tokens": 0,
+                          "matched": true,
+                          "percent": 0,
+                          "progressivelyLoaded": true
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "tokens": 18558,
+                      "percent": 1.9,
+                      "mcp": {
+                        "tokens": 11771,
+                        "percent": 1.2
+                      },
+                      "builtin": {
+                        "tokens": 6787,
+                        "percent": 0.7
+                      }
+                    },
+                    "kiroResponses": {
+                      "tokens": 0,
+                      "percent": 0
+                    },
+                    "yourPrompts": {
+                      "tokens": 0,
+                      "percent": 6.8
+                    },
+                    "sessionFiles": {
+                      "tokens": 0,
+                      "percent": 0,
+                      "items": []
+                    }
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.126300811767578
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "promptTurnSummaries": [
+                    {
+                      "unit": "credit",
+                      "unitPlural": "credits",
+                      "usage": 0.399112755920398
+                    }
+                  ],
+                  "elapsedTime": 6426,
+                  "status": "success",
+                  "kind": "turn_completion",
+                  "requestIds": [
+                    "b89930df-27fa-4a63-a508-acef5386e80d"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+                "status": "idle",
+                "updatedAt": "2026-08-11T02:03:23.632Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnEnd": {
+                    "stopReason": "end_turn"
+                  },
+                  "kind": "turn_end",
+                  "stopReason": "end_turn"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "promptResponse": {
+        "result": {
+          "stopReason": "end_turn"
+        }
+      },
+      "durationMs": 6442
+    },
+    {
+      "stepIndex": 2,
+      "promptText": "what is my name?",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "48645764-7925-4ae9-9152-d9b50630b7c0",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:03:26.140Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "I"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " don't know"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " your name — you"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " haven't told me,"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " and I don't have access"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " to any"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " user"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " profile information"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ".\n\nIf"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " you'"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "d like, I can check"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " something"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " in the workspace ("
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "like git config)"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " but that"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "'s a"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " guess at"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " what you're"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " after."
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "d03bc5d9-571f-4337-8652-2adf9bb5c978-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.133200645446777
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.133200645446777
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.133200645446777
+                  },
+                  "breakdown": {
+                    "contextFiles": {
+                      "tokens": 4248,
+                      "percent": 0.4,
+                      "items": [
+                        {
+                          "name": "AGENTS.md",
+                          "uri": "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                          "tokens": 4248,
+                          "matched": true,
+                          "percent": 0.4,
+                          "progressivelyLoaded": false
+                        },
+                        {
+                          "name": "~/.kiro/skills/artifactory-design/SKILL.md",
+                          "uri": "file:///Users/kennvene/.kiro/skills/artifactory-design/SKILL.md",
+                          "tokens": 0,
+                          "matched": true,
+                          "percent": 0,
+                          "progressivelyLoaded": true
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "tokens": 18558,
+                      "percent": 1.9,
+                      "mcp": {
+                        "tokens": 11771,
+                        "percent": 1.2
+                      },
+                      "builtin": {
+                        "tokens": 6787,
+                        "percent": 0.7
+                      }
+                    },
+                    "kiroResponses": {
+                      "tokens": 103,
+                      "percent": 6.6
+                    },
+                    "yourPrompts": {
+                      "tokens": 4,
+                      "percent": 0.2
+                    },
+                    "sessionFiles": {
+                      "tokens": 0,
+                      "percent": 0,
+                      "items": []
+                    }
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.133200645446777
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "promptTurnSummaries": [
+                    {
+                      "unit": "credit",
+                      "unitPlural": "credits",
+                      "usage": 0.35732094043117746
+                    }
+                  ],
+                  "elapsedTime": 4287,
+                  "status": "success",
+                  "kind": "turn_completion",
+                  "requestIds": [
+                    "0274cfd6-880d-4413-abb3-dcf7d96ed3c8"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+                "status": "idle",
+                "updatedAt": "2026-08-11T02:03:30.427Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_e45a82ec-7913-4c38-bf2b-811c128c71d6",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnEnd": {
+                    "stopReason": "end_turn"
+                  },
+                  "kind": "turn_end",
+                  "stopReason": "end_turn"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "promptResponse": {
+        "result": {
+          "stopReason": "end_turn"
+        }
+      },
+      "durationMs": 4298
+    }
+  ]
+}

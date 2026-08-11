@@ -1,7 +1,7 @@
 /**
  * TUI-side mock transport for acp_integ_tests.
  *
- * Connects to a Unix socket controlled by a test-side `AcpMockServer` and
+ * Connects to a local IPC endpoint controlled by a test-side `AcpMockServer` and
  * exposes the same `Stream` shape (`{ readable, writable }`) that
  * `@kiro/client` / `@agentclientprotocol/sdk` consume for stdio transports.
  * Enables tests to drive the real `KasAcpClient` end-to-end without
@@ -16,7 +16,7 @@ import { logger } from '../../utils/logger';
 import { encodeFrame, FrameDecoder } from './framing';
 
 /**
- * Connects to a Unix socket and returns a `Stream` wiring:
+ * Connects to a local IPC endpoint and returns a `Stream` wiring:
  *   - Bytes received on the socket are decoded and enqueued on `readable`
  *     as individual `AnyMessage` objects.
  *   - Messages written to `writable` are JSON-encoded, newline-framed, and

@@ -1,7 +1,7 @@
 /**
  * Test-side ACP mock server for acp_integ_tests.
  *
- * Listens on a Unix socket; accepts a single connection from a TUI process
+ * Listens on a local IPC endpoint; accepts a single connection from a TUI process
  * running with `KIRO_ACP_MOCK_SOCKET=<path>`. Routes JSON-RPC messages in
  * both directions:
  *

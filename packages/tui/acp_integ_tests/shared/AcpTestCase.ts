@@ -6,7 +6,7 @@
  * `TestCase` handles all the generic TUI-under-PTY scaffolding (spawn,
  * IPC, snapshots, keys). This class layers on the wire-level mock:
  *
- *   1. Starts an `AcpMockServer` on a Unix socket before the TUI spawns.
+ *   1. Starts an `AcpMockServer` on a local IPC endpoint before the TUI spawns.
  *   2. Constructs the inner `TestCase` with env vars that make the TUI
  *      select the real `KasAcpClient` and route its transport at that
  *      socket instead of spawning a KAS subprocess.
@@ -37,6 +37,7 @@
  * invest in mock-transport test infrastructure for it.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SerializedAppState } from '../../src/test-utils/shared/ipc-types';
@@ -66,11 +67,10 @@ export interface AcpTestCaseOptions extends TestCaseOptions {
 export class AcpTestCase {
   public readonly mock: AcpMockServer;
   private readonly inner: TestCase;
-  private readonly mockSocketDir: string;
+  private mockSocketDir?: string;
 
   constructor(options: AcpTestCaseOptions = {}) {
-    this.mockSocketDir = mkdtempSync(join(tmpdir(), 'kiro-acp-mock-'));
-    const mockSocketPath = join(this.mockSocketDir, 'acp.sock');
+    const mockSocketPath = this.createMockSocketPath();
     this.mock = new AcpMockServer(mockSocketPath);
     const { mockKasSessionListResult, extraEnv, ...rest } = options;
     this.inner = new TestCase({
@@ -94,6 +94,17 @@ export class AcpTestCase {
         ),
       },
     });
+  }
+
+  private createMockSocketPath(): string {
+    if (process.platform === 'win32') {
+      return `\\\\.\\pipe\\kiro-acp-mock-${randomUUID()}`;
+    }
+
+    const socketBaseDir =
+      process.platform === 'darwin' ? '/private/tmp' : tmpdir();
+    this.mockSocketDir = mkdtempSync(join(socketBaseDir, 'kiro-acp-mock-'));
+    return join(this.mockSocketDir, 'acp.sock');
   }
 
   /**
@@ -135,10 +146,12 @@ export class AcpTestCase {
     } catch {
       /* ignore close errors during teardown */
     }
-    try {
-      rmSync(this.mockSocketDir, { recursive: true, force: true });
-    } catch {
-      /* ignore */
+    if (this.mockSocketDir) {
+      try {
+        rmSync(this.mockSocketDir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
     }
   }
 

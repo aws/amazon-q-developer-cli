@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 2,
+  "scenarioId": "conversation-markdown",
+  "backend": "acp-mock",
+  "engine": "kas",
+  "contractHash": "e483bbcd78e8be53e791e874938930adc01ccb324f18b0f1a302c29f4f46e042",
+  "turns": [
+    {
+      "stepIndex": 0,
+      "promptText": "show me a hello world in python with a code block",
+      "serverMessages": [
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "userMessageId": "e90af016-2e2e-459d-8b4f-5f30ebc08a31",
+                  "kind": "user_message_id_assigned"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "title": "me a hello world in python with a code block",
+              "_meta": {
+                "kiro": {
+                  "focus": {
+                    "title": "me a hello world in python with a code block"
+                  },
+                  "kind": "focus_update",
+                  "title": "me a hello world in python with a code block"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+                "title": "me a hello world in python with a code block",
+                "updatedAt": "2026-08-11T02:04:13.007Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+                "status": "in_progress",
+                "updatedAt": "2026-08-11T02:04:13.013Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnStart": true,
+                  "kind": "turn_start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "steeringDocuments": [
+                    "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-internal-systems.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-inclusivity-scanner.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-brazil.md",
+                    "file:///Users/kennvene/.kiro/steering/amazon-builder/amazon-builder-production-safety.md"
+                  ],
+                  "kind": "steering_inclusion"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "```"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "49d55edb-e022-4169-b155-9dcb5191ee67-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "python\nprint"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "49d55edb-e022-4169-b155-9dcb5191ee67-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "(\"Hello, world!\")"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "49d55edb-e022-4169-b155-9dcb5191ee67-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "\n```"
+              },
+              "_meta": {
+                "kiro": {
+                  "replayId": "49d55edb-e022-4169-b155-9dcb5191ee67-say"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.100799560546875
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.100799560546875
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "contextUsage": {
+                    "usagePercentage": 9.100799560546875
+                  },
+                  "breakdown": {
+                    "contextFiles": {
+                      "tokens": 4248,
+                      "percent": 0.4,
+                      "items": [
+                        {
+                          "name": "AGENTS.md",
+                          "uri": "file:///Users/kennvene/workspace-ci/kiro-cli-testing-improvements/packages/tui/AGENTS.md",
+                          "tokens": 4248,
+                          "matched": true,
+                          "percent": 0.4,
+                          "progressivelyLoaded": false
+                        },
+                        {
+                          "name": "~/.kiro/skills/artifactory-design/SKILL.md",
+                          "uri": "file:///Users/kennvene/.kiro/skills/artifactory-design/SKILL.md",
+                          "tokens": 0,
+                          "matched": true,
+                          "percent": 0,
+                          "progressivelyLoaded": true
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "tokens": 18558,
+                      "percent": 1.9,
+                      "mcp": {
+                        "tokens": 11771,
+                        "percent": 1.2
+                      },
+                      "builtin": {
+                        "tokens": 6787,
+                        "percent": 0.7
+                      }
+                    },
+                    "kiroResponses": {
+                      "tokens": 0,
+                      "percent": 0
+                    },
+                    "yourPrompts": {
+                      "tokens": 0,
+                      "percent": 6.8
+                    },
+                    "sessionFiles": {
+                      "tokens": 0,
+                      "percent": 0,
+                      "items": []
+                    }
+                  },
+                  "kind": "context_usage",
+                  "usagePercentage": 9.100799560546875
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "promptTurnSummaries": [
+                    {
+                      "unit": "credit",
+                      "unitPlural": "credits",
+                      "usage": 0.33672008862354885
+                    }
+                  ],
+                  "elapsedTime": 3372,
+                  "status": "success",
+                  "kind": "turn_completion",
+                  "requestIds": [
+                    "4473780b-f895-4f9c-8505-1b9d93f44724"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "_kiro/sessions/changed",
+          "params": {
+            "upserted": [
+              {
+                "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+                "status": "idle",
+                "updatedAt": "2026-08-11T02:04:16.384Z"
+              }
+            ],
+            "deleted": []
+          }
+        },
+        {
+          "kind": "notification",
+          "method": "session/update",
+          "params": {
+            "sessionId": "sess_20be999c-3e8b-43a0-8599-4f6215e68556",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "_meta": {
+                "kiro": {
+                  "turnEnd": {
+                    "stopReason": "end_turn"
+                  },
+                  "kind": "turn_end",
+                  "stopReason": "end_turn"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "promptResponse": {
+        "result": {
+          "stopReason": "end_turn"
+        }
+      },
+      "durationMs": 3391
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "conversation-context-retention",
+  "recordedAt": "2026-08-10T21:48:48.091Z",
+  "engineVersion": "977aee5bd",
+  "contractHash": "eeba8a69ba10bf4955ebef729b6a9293d3e3580ecd9a46d442c2b53ecb22d390",
+  "prompts": [
+    {
+      "stepIndex": 0,
+      "promptText": "my name is SmokeTest",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "Got"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " it,"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " SmokeTest. What"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " can I help you"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": " with?"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 3039
+    },
+    {
+      "stepIndex": 2,
+      "promptText": "what is my name?",
+      "events": [
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "S"
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "AssistantResponseEvent",
+            "data": {
+              "content": "mokeTest."
+            }
+          }
+        },
+        {
+          "kind": "event",
+          "data": {
+            "kind": "MetadataEvent",
+            "data": {
+              "stop_reason": "end_turn"
+            }
+          }
+        }
+      ],
+      "durationMs": 2387
+    }
+  ]
+}
