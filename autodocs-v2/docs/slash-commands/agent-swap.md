@@ -1,13 +1,13 @@
 ---
 doc_meta:
   validated: 2026-06-16
-  commit: 619568c59
+  commit: bc00aa376
   status: validated
   testable_headless: false
   category: slash_command
   title: /agent
   description: Switch to different agent configuration during chat session
-  keywords: [agent, switch, swap, profile, description, model, autocomplete, display-name]
+  keywords: [agent, switch, swap, profile, description, model, autocomplete, display-name, built-in, global, workspace]
   related: [agent-create, agent-edit, agent-configuration, model]
 ---
 
@@ -45,7 +45,7 @@ Switches directly to named agent.
 
 Use `swap` to switch to agents named after subcommands (e.g., `/agent swap create` switches to an agent named "create").
 
-Note: `/agent swap` without a name tries to switch to an agent named "swap" and will fail if none exists.
+Note: `/agent swap` without a name attempts to switch to an agent literally named "swap" and fails if no such agent exists (e.g., `Unknown agent: swap. Run /agent to browse available agents.`).
 
 ### Tab Completion
 

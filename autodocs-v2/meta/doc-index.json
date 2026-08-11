@@ -666,7 +666,11 @@
         "profile",
         "description",
         "model",
-        "autocomplete"
+        "autocomplete",
+        "display-name",
+        "built-in",
+        "global",
+        "workspace"
       ],
       "related": [
         "agent-create",
@@ -674,7 +678,7 @@
         "agent-configuration",
         "model"
       ],
-      "validated": "2026-04-29",
+      "validated": "2026-06-16",
       "status": "validated"
     },
     {
