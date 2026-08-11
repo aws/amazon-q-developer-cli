@@ -8,7 +8,7 @@ doc_meta:
   title: MCP Registry
   description: Enterprise MCP server security allowing administrators to control which servers users can access
   keywords: [mcp, registry, security, enterprise, admin, pro, governance, env, headers, timeout, override, oauth, clientId, clientSecret, redirectUri]
-  related: [cmd-mcp, slash-mcp, agent-configuration]
+  related: [cmd-mcp, slash-mcp, agent-configuration, config-hot-reload]
 ---
 
 # MCP Registry

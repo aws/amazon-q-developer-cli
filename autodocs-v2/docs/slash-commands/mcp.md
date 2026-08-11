@@ -8,7 +8,7 @@ doc_meta:
   title: /mcp
   description: View MCP server status, authentication requirements, and available tools
   keywords: [mcp, servers, status, auth, tools, governance, add, remove, persist, oauth, authenticate, clipboard, logout, cancel-auth, force-auth, reauth, credentials]
-  related: [cmd-mcp, agent-config, mcp-registry]
+  related: [cmd-mcp, agent-config, mcp-registry, config-hot-reload]
 ---
 
 # /mcp

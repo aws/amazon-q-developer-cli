@@ -8,7 +8,7 @@ doc_meta:
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
   keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, denyByDefault, allowedCommands, oauth, clientId, clientSecret, registry, web_fetch, trusted, blocked, disableInheritingDefaultResources, forceAuth, redirectUri]
-  related: [agent-create, agent-edit, agent-swap, mcp-registry, settings]
+  related: [agent-create, agent-edit, agent-swap, mcp-registry, settings, config-hot-reload]
 ---
 
 # Agent Configuration
@@ -18,6 +18,8 @@ Complete guide to agent configuration format including tools, settings, resource
 ## Overview
 
 Agent configurations are JSON files that define agent behavior, available tools, context files, and integrations. Stored in `.kiro/agents/` (local) or `~/.kiro/agents/` (global). Filename (without `.json`) becomes agent name.
+
+Changes to agent configuration files are automatically detected and applied to running sessions without restart. See [Config Hot-Reload](config-hot-reload.md) for details.
 
 ## File Location
 
