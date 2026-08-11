@@ -1,23 +1,23 @@
 ---
 doc_meta:
-  validated: 2026-05-22
-  commit: 127ec7961
+  validated: 2026-05-07
+  commit: dbc6e7ec
   status: validated
   testable_headless: false
   category: slash_command
   title: /changelog
-  description: View Kiro CLI changelog and version history with recent updates
-  keywords: [changelog, version, history, releases, updates, whats new]
-  related: [chat]
+  description: Show recent release notes inline in the terminal
+  keywords: [changelog, version, history, releases, updates, release notes, what's new]
+  related: [help]
 ---
 
 # /changelog
 
-View Kiro CLI changelog and version history with recent updates.
+Show recent release notes inline in the terminal.
 
 ## Overview
 
-The `/changelog` command displays recent version changes, new features, bug fixes, and improvements from Kiro CLI releases. Changes are grouped by type (Added, Changed, Fixed, etc.) for easier scanning.
+The `/changelog` command prints the two most recent Kiro CLI releases with their changes directly to the terminal. Each release shows the version number, date, and a categorized list of changes (added features, fixes, etc.). Output is printed inline and returns immediately — there is no interactive panel or scrolling.
 
 ## Usage
 
@@ -25,22 +25,42 @@ The `/changelog` command displays recent version changes, new features, bug fixe
 /changelog
 ```
 
-Shows recent changelog entries in a scrollable panel.
+No arguments or options.
 
 ## Output
 
-Displays for each version:
-- Version number and release date
-- Changes grouped by type:
-  - **Added** - New features
-  - **Changed** - Behavior changes
-  - **Fixed** - Bug fixes
-  - **Security** - Security updates
-  - **Deprecated** - Deprecated features
+The command prints for each release:
+- Version number and release date in the header
+- Change bullets grouped by type (Added, Fixed, Changed, etc.)
+- Changes sorted alphabetically by type
 
 ## Examples
 
-### Example 1: View Changelog
+### Example 1: View Recent Releases
+
+```
+/changelog
+```
+
+**Output** (printed inline):
+```
+✨ What's new in 2.2.0 (2026-04-27)
+
+✔ Added: Support adaptive thinking for complex tasks
+✔ Added: New /compact command for context management
+✔ Fixed: Fix API key authentication in certain regions
+
+---
+
+✨ What's new in 2.1.0 (2026-04-21)
+
+✔ Added: Code intelligence with LSP support
+✔ Fixed: Improved error handling in file operations
+```
+
+### Example 2: No Changelog Available
+
+When release information is unavailable:
 
 ```
 /changelog
@@ -48,33 +68,25 @@ Displays for each version:
 
 **Output**:
 ```
-**✨ What's new in 2.2.0 (2026-04-27)**
-
-**Added**
-- Support adaptive thinking
-- New /compact command
-
-**Fixed**
-- Fix API key auth
-- Improved error handling
+No changelog information available.
 ```
 
-### Example 2: Scroll Through Changelog
+## Troubleshooting
 
-Use arrow keys to scroll through longer changelogs. Press `q` or `Escape` to close.
+### Issue: "No changelog information available"
 
-## Welcome Message
-
-When you start Kiro CLI, a condensed changelog appears showing only **Added** items from recent releases. Press `Ctrl+O` to expand and see all change types (Fixed, Changed, etc.).
+**Symptom**: Output shows no changelog data  
+**Cause**: Release feed not embedded in the current build  
+**Solution**: This is normal in development builds. Production releases include embedded changelog data.
 
 ## Related Features
 
-- [kiro-cli chat](../commands/chat.md) - Start chat sessions
+- [/help](help.md) - List all available commands
 
 ## Technical Details
 
-**Source**: Changelog from feed.json
+**Display Limit**: Shows the 2 most recent releases
 
-**Display**: Groups changes by type (Added, Changed, Fixed, Security, Deprecated)
+**Content Source**: Embedded at build time via `include_str!("./feed.json")` — compiled into the binary, not fetched at runtime
 
-**Welcome bar**: Shows only Added items by default; Ctrl+O expands to full changelog
+**Output**: Printed inline to stderr using crossterm formatting
