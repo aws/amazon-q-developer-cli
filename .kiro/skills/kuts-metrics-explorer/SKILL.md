@@ -113,7 +113,7 @@ Use the same UTC window to compare CloudWatch series with direct EMF:
 
 | Question | Base metrics |
 |---|---|
-| Active installation and version adoption | Run `.kiro/skills/adoption-report/scripts/adoption-report.py`; it derives adoption from `kiro_cli_daily_heartbeat` |
+| Active user adoption by engine/interface | Run `.kiro/skills/telemetry/scripts/adoption-report.py`; installation adoption uses `kiro_cli_daily_heartbeat` |
 | V1, V2, V3, interactive, one-shot, or external ACP usage | `kiro_cli_user_turns` |
 | Chat sessions created | `kiro_cli_chat_session_started_total` |
 | Client-turn availability | `kiro_cli_user_turns`, `kiro_cli_turn_failure_total`, `kiro_cli_turn_cancelled_total` |

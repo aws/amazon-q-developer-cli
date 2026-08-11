@@ -169,11 +169,11 @@ QUERY_ID=$(
 aws logs get-query-results --query-id "$QUERY_ID"
 ```
 
-Repeat `get-query-results` until `status` is `Complete`. For the standard active-installation and
+Repeat `get-query-results` until `status` is `Complete`. For the standard user adoption and
 agent-engine usage report, run:
 
 ```bash
-python3 .kiro/skills/adoption-report/scripts/adoption-report.py 7
+python3 .kiro/skills/telemetry/scripts/adoption-report.py 7
 ```
 
 CloudWatch can split a metric only by its declared `cloudwatch_dimensions`. Additional diagnostic
