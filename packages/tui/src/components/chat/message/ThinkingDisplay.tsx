@@ -7,6 +7,7 @@ import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { useGlyphs } from '../../../hooks/useGlyphs.js';
 import type { ThinkingMode } from '../../../hooks/useGlyphs.js';
+import { getTerminalChalkColor } from '../../../utils/colorUtils.js';
 
 export interface ThinkingDisplayProps {
   /** Reasoning/thinking text emitted by the agent. */
@@ -48,6 +49,12 @@ export const ThinkingDisplay = React.memo(function ThinkingDisplay({
 }: ThinkingDisplayProps) {
   const { getColor } = useTheme();
   const dim = getColor('secondary');
+  // Match the spinner's color: the active agent's bar color when one is set
+  // (e.g. a non-default agent's hashed color), falling back to brand — same
+  // fallback StatusBar itself uses for the spinner icon.
+  const titleColor = barColor
+    ? getTerminalChalkColor({ truecolor: barColor })
+    : getColor('brand');
   const keybindings = useKeybindings();
   const glyphs = useGlyphs();
 
@@ -88,7 +95,7 @@ export const ThinkingDisplay = React.memo(function ThinkingDisplay({
     <StatusBar status={done ? 'success' : 'thinking'} barColor={barColor}>
       <Box flexDirection="column">
         <Text>
-          {dim(title)}
+          {done ? dim(title) : titleColor(title)}
           {dim(hint)}
         </Text>
         {expanded && (
