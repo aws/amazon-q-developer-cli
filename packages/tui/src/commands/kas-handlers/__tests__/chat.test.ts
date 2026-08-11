@@ -103,7 +103,7 @@ mock.module('../../../agent-engine', () => ({
   resolveAgentEngine: () => mockResolveAgentEngine(),
 }));
 
-import { handleChat } from '../chat';
+import { handleChat, loadExistingSession } from '../chat';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
 import type { KasCommand } from '../../../kas-commands';
 import { KasCommandName } from '../../../kas-commands';
@@ -147,6 +147,40 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(rows.map((r: any) => r.sessionId)).toEqual(['aaaa1111']);
     });
 
+    it('excludes the current KAS session under its sess_ alias', async () => {
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'active',
+            source: 'v3',
+            title: 'Current alias',
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            sessionId: 'other',
+            source: 'v3',
+            title: 'Other',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          sessionId: 'sess_active',
+          listSessions: async () => ({ sessions: [] }),
+        } as any,
+      });
+
+      await handleChat(CHAT_CMD, '', ctx);
+
+      const showPicker = ctx._spies.setShowSessionPicker as any;
+      const rows = showPicker.mock.calls[0][1];
+      expect(rows.map((row: any) => row.sessionId)).toEqual(['other']);
+    });
+
     it('dark-ship: feature OFF keeps the legacy selection menu (no columnar panel, no live overlay)', async () => {
       delete process.env.KIRO_ENABLED_FEATURES;
       features._resetForTests();
@@ -187,6 +221,30 @@ describe('handleChat (KAS-mode dispatch)', () => {
       });
       await handleChat(CHAT_CMD, 'other', ctx, { argIsSynthetic: true });
       expect(ctx._spies.resetCloudSessionScope).toHaveBeenCalled();
+    });
+
+    it('passes the selected storage engine to local session conversion', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          sessionId: 'cur',
+          loadSession: async () => ({ sessionId: 'classic-session' }),
+        } as any,
+      });
+
+      const loaded = await loadExistingSession(ctx, 'classic-session', {
+        source: 'local',
+        sourceFormat: 'classic',
+      });
+
+      expect(loaded).toBe(true);
+      expect(mockEnsureSession).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          sourceSessionId: 'classic-session',
+          sourceFormat: 'classic',
+          targetFormat: 'kas',
+        })
+      );
     });
 
     it('surfaces cloud rows from the live client that the shell-out omitted', async () => {

@@ -3,6 +3,13 @@ import { resolveAgentEngine } from './agent-engine';
 import { logger } from './utils/logger';
 import { extractRpcErrorMessage } from './utils/error-handling';
 import {
+  acquireSessionLock,
+  beginSessionLockTransfer,
+  commitSessionLockTransfer,
+  registerLockCleanup,
+  rollbackSessionLockTransfer,
+} from './utils/session-lock';
+import {
   AgentEventType,
   type AgentStreamEvent,
   type KasModelConfigUpdateEvent,
@@ -23,6 +30,7 @@ import type {
   KasContextShowResponse,
   KasContextMutationResponse,
   CreatedReason,
+  SessionDiscoverySource,
 } from './types/session-client';
 import type {
   ModeChangedNotification,
@@ -177,6 +185,7 @@ export class Kiro {
     () => void
   >();
   private initializeGeneration = 0;
+  private sessionTransition: Promise<void> = Promise.resolve();
   private pendingPrompt: Promise<void> | null = null;
   private activePromptToken?: symbol;
   private _promptActive = false;
@@ -1006,40 +1015,84 @@ export class Kiro {
     this._settings = settings;
   }
 
-  async createSession(resumeSessionId?: string): Promise<void> {
-    const sessionClient = this.sessionClient;
-    if (!sessionClient) throw new Error('connect() must be called first');
-
-    // Use loadSession if resuming, otherwise create new session
-    const sessionResult = resumeSessionId
-      ? await sessionClient.loadSession(resumeSessionId)
-      : await sessionClient.newSession();
-
-    if (this.sessionClient !== sessionClient) {
-      throw new Error('Session creation superseded by a newer client');
-    }
-
-    if (this.subagentListHandler && sessionClient.onSubagentListUpdate) {
-      this.replaceClientSubscription('subagentList', () =>
-        sessionClient.onSubagentListUpdate!(this.subagentListHandler!)
-      );
-    }
-
-    // Notify about current model if available
-    if (sessionResult.currentModel && this.modelHandler) {
-      this.modelHandler(sessionResult.currentModel);
-    }
-
-    // Notify about current agent if available
-    if (sessionResult.currentAgent && this.agentHandler) {
-      this.agentHandler(sessionResult.currentAgent);
-    }
-
-    logger.debug(
-      resumeSessionId
-        ? `Kiro initialized with resumed session: ${resumeSessionId}`
-        : 'Kiro initialized successfully'
+  private runSessionTransition<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.sessionTransition.then(operation, operation);
+    this.sessionTransition = result.then(
+      () => undefined,
+      () => undefined
     );
+    return result;
+  }
+
+  private adoptNewSessionLock(sessionId: string): void {
+    registerLockCleanup();
+    acquireSessionLock(sessionId);
+  }
+
+  async createSession(resumeSessionId?: string): Promise<void> {
+    return this.runSessionTransition(async () => {
+      const sessionClient = this.sessionClient;
+      if (!sessionClient) throw new Error('connect() must be called first');
+
+      registerLockCleanup();
+
+      const lockTransfer = resumeSessionId
+        ? beginSessionLockTransfer(resumeSessionId)
+        : null;
+      let sessionResult: Awaited<ReturnType<SessionClient['newSession']>>;
+      try {
+        sessionResult = resumeSessionId
+          ? await sessionClient.loadSession(resumeSessionId)
+          : await sessionClient.newSession();
+      } catch (error) {
+        if (lockTransfer) rollbackSessionLockTransfer(lockTransfer);
+        throw error;
+      }
+
+      if (this.sessionClient !== sessionClient) {
+        if (lockTransfer) rollbackSessionLockTransfer(lockTransfer);
+        throw new Error('Session creation superseded by a newer client');
+      }
+      if (lockTransfer) commitSessionLockTransfer(lockTransfer);
+
+      if (!resumeSessionId) {
+        try {
+          this.adoptNewSessionLock(sessionResult.sessionId);
+        } catch (error) {
+          try {
+            await sessionClient.terminateSession(sessionResult.sessionId);
+          } catch (terminateError) {
+            logger.error('[kiro] failed to retire unlocked session', {
+              sessionId: sessionResult.sessionId,
+              terminateError,
+            });
+          }
+          throw error;
+        }
+      }
+
+      if (this.subagentListHandler && sessionClient.onSubagentListUpdate) {
+        this.replaceClientSubscription('subagentList', () =>
+          sessionClient.onSubagentListUpdate!(this.subagentListHandler!)
+        );
+      }
+
+      // Notify about current model if available
+      if (sessionResult.currentModel && this.modelHandler) {
+        this.modelHandler(sessionResult.currentModel);
+      }
+
+      // Notify about current agent if available
+      if (sessionResult.currentAgent && this.agentHandler) {
+        this.agentHandler(sessionResult.currentAgent);
+      }
+
+      logger.debug(
+        resumeSessionId
+          ? `Kiro initialized with resumed session: ${resumeSessionId}`
+          : 'Kiro initialized successfully'
+      );
+    });
   }
 
   /**
@@ -1362,6 +1415,40 @@ export class Kiro {
     return this.sessionClient.listSessions(cwd);
   }
 
+  async listAllWorkspaceSessions(): Promise<ListSessionsResponse> {
+    if (!this.sessionClient) {
+      return { sessions: [] };
+    }
+    return this.sessionClient.listAllWorkspaceSessions
+      ? this.sessionClient.listAllWorkspaceSessions()
+      : this.sessionClient.listSessions(process.cwd());
+  }
+
+  /**
+   * Agent-routed session delete. False when the client (or agent) lacks the
+   * RPC or refuses — callers fall back to direct store deletion.
+   */
+  async deleteSessionById(
+    sessionId: string,
+    options?: { source?: 'local' | 'remote' }
+  ): Promise<boolean> {
+    if (!this.sessionClient?.deleteSessionById) return false;
+    return this.sessionClient.deleteSessionById(sessionId, options);
+  }
+
+  /**
+   * Agent-routed session rename, persisting the title on the session record.
+   * False when unsupported — callers keep their local title override.
+   */
+  async renameSessionById(
+    sessionId: string,
+    title: string,
+    options?: { source?: SessionDiscoverySource }
+  ): Promise<boolean> {
+    if (!this.sessionClient?.renameSessionById) return false;
+    return this.sessionClient.renameSessionById(sessionId, title, options);
+  }
+
   /**
    * Whether the active session is actually running on a cloud sandbox — true only for
    * a genuine cloud-sandbox session (not a `--cloud` that degraded to local).
@@ -1436,22 +1523,50 @@ export class Kiro {
     currentModel?: { id: string; name: string };
     currentAgent?: { name: string; welcomeMessage?: string };
   }> {
-    if (!this.sessionClient) {
-      throw new Error('Kiro not initialized');
-    }
-    const previousSessionId = this.sessionId;
-    logger.debug('[kiro] creating new session');
-    const result = await this.sessionClient.newSession();
-    logger.debug('[kiro] new session created', {
-      sessionId: result.sessionId,
-    });
-    if (previousSessionId) {
-      logger.debug('[kiro] terminating previous session', {
-        previousSessionId,
+    return this.runSessionTransition(async () => {
+      const sessionClient = this.sessionClient;
+      if (!sessionClient) throw new Error('Kiro not initialized');
+      const previousSessionId = sessionClient.sessionId;
+      logger.debug('[kiro] creating new session');
+      const result = await sessionClient.newSession();
+      if (this.sessionClient !== sessionClient) {
+        throw new Error('New session superseded by a newer client');
+      }
+      try {
+        this.adoptNewSessionLock(result.sessionId);
+      } catch (error) {
+        if (previousSessionId) {
+          try {
+            await sessionClient.loadSession(previousSessionId);
+          } catch (rollbackError) {
+            logger.error('[kiro] failed to roll back unlocked new session', {
+              sessionId: result.sessionId,
+              previousSessionId,
+              rollbackError,
+            });
+          }
+        }
+        try {
+          await sessionClient.terminateSession(result.sessionId);
+        } catch (terminateError) {
+          logger.error('[kiro] failed to retire unlocked session', {
+            sessionId: result.sessionId,
+            terminateError,
+          });
+        }
+        throw error;
+      }
+      logger.debug('[kiro] new session created', {
+        sessionId: result.sessionId,
       });
-      await this.sessionClient.terminateSession(previousSessionId);
-    }
-    return result;
+      if (previousSessionId) {
+        logger.debug('[kiro] terminating previous session', {
+          previousSessionId,
+        });
+        await sessionClient.terminateSession(previousSessionId);
+      }
+      return result;
+    });
   }
 
   async loadSession(
@@ -1466,44 +1581,93 @@ export class Kiro {
     createdReason?: CreatedReason;
     title?: string;
   }> {
-    if (!this.sessionClient) {
-      throw new Error('Kiro not initialized');
-    }
-    const previousSessionId = this.sessionId;
-    // Register a direct onUpdate subscriber to capture history events
-    // that arrive before the loadSession RPC response.
-    let unsubscribe: (() => void) | undefined;
-    if (onHistoryEvent) {
-      this.historyReplaySubscribers += 1;
-      try {
-        unsubscribe = this.sessionClient.onUpdate(onHistoryEvent);
-      } catch (error) {
-        this.historyReplaySubscribers -= 1;
-        throw error;
+    return this.runSessionTransition(async () => {
+      const sessionClient = this.sessionClient;
+      if (!sessionClient) {
+        throw new Error('Kiro not initialized');
       }
-    }
-    try {
-      logger.debug('[kiro] calling loadSession', { sessionId });
-      const result = await this.sessionClient.loadSession(sessionId, options);
-      logger.debug('[kiro] loadSession returned', { sessionId });
-      // Only terminate the previous session after successful load
-      if (previousSessionId) {
-        logger.debug('[kiro] terminating previous session', {
-          previousSessionId,
-        });
-        await this.sessionClient.terminateSession(previousSessionId);
-      }
-      return result;
-    } finally {
-      if (unsubscribe) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      const previousSessionId = sessionClient.sessionId;
+      // Register a direct onUpdate subscriber to capture history events
+      // that arrive before the loadSession RPC response.
+      let unsubscribe: (() => void) | undefined;
+      if (onHistoryEvent) {
+        this.historyReplaySubscribers += 1;
         try {
-          unsubscribe();
-        } finally {
+          unsubscribe = sessionClient.onUpdate(onHistoryEvent);
+        } catch (error) {
           this.historyReplaySubscribers -= 1;
+          throw error;
         }
       }
-    }
+      try {
+        // Acquire the target while retaining the outgoing session's lock. The
+        // transfer commits only after session/load succeeds, so a failed local
+        // or remote switch cannot leave the still-active session unguarded.
+        const lockTransfer = beginSessionLockTransfer(
+          sessionId,
+          options?.source ?? 'local'
+        );
+        logger.debug('[kiro] calling loadSession', { sessionId });
+        let result: Awaited<ReturnType<SessionClient['loadSession']>>;
+        // Deadline: a never-settling load would otherwise chain every future
+        // session transition behind it and latch the caller's resume guard,
+        // wedging the process until restart.
+        const LOAD_TIMEOUT_MS =
+          Number(process.env.KIRO_SESSION_LOAD_TIMEOUT_MS) || 120_000;
+        let loadTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          result = await Promise.race([
+            sessionClient.loadSession(sessionId, options),
+            new Promise<never>((_, reject) => {
+              loadTimer = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      `Session load timed out after ${LOAD_TIMEOUT_MS}ms`
+                    )
+                  ),
+                LOAD_TIMEOUT_MS
+              );
+            }),
+          ]);
+        } catch (err) {
+          rollbackSessionLockTransfer(lockTransfer);
+          throw err;
+        } finally {
+          clearTimeout(loadTimer);
+        }
+        if (this.sessionClient !== sessionClient) {
+          rollbackSessionLockTransfer(lockTransfer);
+          throw new Error('Session load superseded by a newer client');
+        }
+        commitSessionLockTransfer(lockTransfer);
+        logger.debug('[kiro] loadSession returned', { sessionId });
+        // Only terminate a distinct previous session after successful load.
+        if (previousSessionId && previousSessionId !== result.sessionId) {
+          logger.debug('[kiro] terminating previous session', {
+            previousSessionId,
+          });
+          try {
+            await sessionClient.terminateSession(previousSessionId);
+          } catch (err) {
+            logger.warn('[kiro] failed to terminate previous session', {
+              previousSessionId,
+              err,
+            });
+          }
+        }
+        return result;
+      } finally {
+        if (unsubscribe) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          try {
+            unsubscribe();
+          } finally {
+            this.historyReplaySubscribers -= 1;
+          }
+        }
+      }
+    });
   }
 
   async cancel(): Promise<void> {

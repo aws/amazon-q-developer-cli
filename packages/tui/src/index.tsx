@@ -31,6 +31,8 @@ import {
   sourceFormatFor,
 } from './utils/cross-engine-session-id';
 import { listAllSessions } from './utils/list-all-sessions-cli';
+import { getCachedAllWorkspaceSessions } from './utils/all-workspace-sessions';
+import { markLaunchedIntoSessionDashboard } from './utils/session-dashboard-boot';
 import {
   isFullSessionId,
   resolveResumeTarget,
@@ -189,6 +191,11 @@ const resetTerminal = () => {
   try {
     disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
+    // Leave the alternate screen and restore the cursor unconditionally:
+    // signal exits bypass React unmount, so a full-screen surface would
+    // otherwise strand the shell in the alt buffer with a hidden cursor.
+    // Both writes are no-ops when already on the main screen.
+    process.stdout.write('\x1b[?1049l\x1b[?25h');
     resetKeyboardModes?.();
     process.stdin.setRawMode?.(false);
     clearTerminalProgress();
@@ -946,6 +953,47 @@ const startInitialization = (resumePickerSessionId?: string) => {
         }
       } else {
         appStore.getState().setCloudProviderChecked(true);
+      }
+
+      // `--sessions`: launch straight into the dashboard WITHOUT
+      // creating a session — the dashboard is a reader, and this entry
+      // point must not add an empty session to the store it displays.
+      // Opening a row goes through the normal resume machinery; closing
+      // the dashboard exits the process (no chat exists to fall back to).
+      if (
+        cliArgs.sessions &&
+        !resolvedSessionId &&
+        resolveAgentEngine() === 'kas'
+      ) {
+        markLaunchedIntoSessionDashboard();
+        appStore
+          .getState()
+          .setShowSessionDashboard(
+            true,
+            getCachedAllWorkspaceSessions(),
+            'boot'
+          );
+        process.stdout.write('\x1b[?1049h');
+        appStore.getState().setMode('session-dashboard');
+        appStore
+          .getState()
+          .setBootStage('session_create', 'browsing sessions', 'ready');
+        // The dashboard is the whole boot — the chat surface must be ready
+        // the moment a row is resumed, or it hangs on "initializing" (the
+        // normal boot tail that flips this flag never runs on this path).
+        appStore.setState({ isInitialized: true });
+        startProcessHealthCollector(
+          (payload) => {
+            kiro.sendProcessHealthMetrics(payload);
+          },
+          () => kiro.sessionId ?? null,
+          {
+            // This branch is gated on the KAS engine.
+            emitMetrics: (payload) => recordTuiProcessHealth(payload, 'v3'),
+            flushMetrics: forceFlushMetrics,
+          }
+        );
+        return;
       }
 
       // Begin session tracking before the session RPC: origin (new vs resumed)

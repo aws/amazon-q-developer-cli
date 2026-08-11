@@ -175,6 +175,8 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
   surface,
 }) => {
   const glyphs = useGlyphs();
+  // Wide terminals render the session dashboard as a pinned left panel (the
+  // layout owns it); the overlay here is the narrow-terminal fallback only.
   const {
     showContextBreakdown,
     contextBreakdown,

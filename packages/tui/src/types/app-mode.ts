@@ -3,4 +3,5 @@ export type AppMode =
   | 'expanded'
   | 'crew-monitor'
   | 'workflow-monitor'
-  | 'session-view';
+  | 'session-view'
+  | 'session-dashboard';

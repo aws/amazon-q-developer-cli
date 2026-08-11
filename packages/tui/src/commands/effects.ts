@@ -3,6 +3,7 @@
  */
 
 import type { CommandContext } from './types.js';
+import { logger } from '../utils/logger.js';
 import {
   armCloudScrollbackReconcile,
   cancelCloudScrollbackReconcile,
@@ -31,6 +32,14 @@ import { runSessionLoad } from './session-load.js';
 import { Kiro } from '../kiro.js';
 import { getActiveGlyphs } from '../hooks/useGlyphs.js';
 import { isVoiceInputAvailable } from '../features.js';
+import {
+  getCachedAllWorkspaceSessions,
+  scanAllWorkspaceSessions,
+  invalidateAllWorkspaceSessionsCache,
+} from '../utils/all-workspace-sessions.js';
+import { gcScan, gcEmptySessions } from '../utils/session-mutations.js';
+import { getSessionSearchIndex } from '../utils/session-search.js';
+import { getSessionBookmarkStore } from '../utils/session-bookmarks.js';
 import {
   describeSpecDocuments,
   findSpecFeature,
@@ -1069,6 +1078,114 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
       );
     }
     return true;
+  },
+
+  openSessionDashboard: (_result, ctx, _cmd, args) => {
+    // KAS-only — the dashboard + session stores are a V3 surface.
+    if (ctx.agentEngine !== 'kas') {
+      ctx.showAlert(
+        'Session dashboard is available on the V3 (KAS) engine only',
+        'warning',
+        3000
+      );
+      return;
+    }
+    const sub = (args ?? '').trim().toLowerCase();
+    // `/sessions rename <name>` — names the CURRENT session, the moment you
+    // usually realize a conversation is worth keeping. Case is preserved
+    // from the raw args; an empty name reports usage rather than clearing.
+    if (sub === 'rename' || sub.startsWith('rename ')) {
+      const name = (args ?? '').trim().slice('rename'.length).trim();
+      const sessionId = ctx.kiro.sessionId;
+      if (!sessionId) {
+        ctx.showAlert('No active session to rename', 'warning', 3000);
+        return;
+      }
+      if (!name) {
+        ctx.showAlert('Usage: /sessions rename <name>', 'warning', 3000);
+        return;
+      }
+      const saved = getSessionBookmarkStore().setTitle(sessionId, name);
+      if (!saved.ok) {
+        ctx.showAlert(
+          `Session rename was not saved (${saved.reason})`,
+          'error',
+          5000
+        );
+        return;
+      }
+      ctx.kiro
+        .renameSessionById(sessionId, name, {
+          source: ctx.kiro.isCloudSessionActive() ? 'remote' : 'local',
+        })
+        .catch(() => {
+          logger.debug('[sessions] rename RPC failed for', sessionId);
+        });
+      ctx.showAlert(`Session renamed to "${name}"`, 'success', 3000);
+      return;
+    }
+    // `/sessions clean` — reports the plan; `/sessions clean --yes` executes.
+    // Marked (bookmarked/tagged/archived), active, locked and recent
+    // sessions are exempt.
+    if (sub === 'clean' || sub === 'gc' || sub.startsWith('clean ')) {
+      const confirmed = /(^|\s)(--yes|-y|confirm)(\s|$)/.test(sub);
+      const store = getSessionBookmarkStore();
+      void (async () => {
+        const scan = await gcScan(
+          ctx.kiro.sessionId ?? null,
+          new Set(store.allUserTouched())
+        );
+        if (scan.candidates.length === 0) {
+          ctx.showAlert('No empty sessions to clean', 'success', 3000);
+          return;
+        }
+        const n = scan.candidates.length;
+        const plural = n === 1 ? '' : 's';
+        if (!confirmed) {
+          const s = scan.skipped;
+          const exempt =
+            `${s.active} active, ${s.locked} in use, ` +
+            `${s.recent} recently active, ${s.userTouched} marked, ` +
+            `${s.hasParent} derived`;
+          ctx.showAlert(
+            `${n} empty session${plural} would be deleted permanently ` +
+              `(${exempt} exempt). This cannot be undone — ` +
+              `run "/sessions clean --yes" to proceed.`,
+            'warning',
+            12000
+          );
+          return;
+        }
+        const result = await gcEmptySessions(
+          scan.candidates,
+          ctx.kiro.sessionId ?? null,
+          undefined,
+          (id) => ctx.kiro.deleteSessionById(id)
+        );
+        invalidateAllWorkspaceSessionsCache();
+        void scanAllWorkspaceSessions();
+        // Deletions take effect in search at once.
+        const index = getSessionSearchIndex();
+        for (const c of scan.candidates) {
+          index.update(c.sessionId, c.store === 'kas' ? 'v3' : 'v2');
+        }
+        const notes = [
+          result.failed > 0 ? `${result.failed} failed` : null,
+          result.stale > 0 ? `${result.stale} no longer empty` : null,
+        ].filter(Boolean);
+        ctx.showAlert(
+          `Deleted ${result.deleted} empty session${result.deleted === 1 ? '' : 's'}` +
+            (notes.length > 0 ? ` (${notes.join(', ')})` : ''),
+          'success',
+          4000
+        );
+      })();
+      return;
+    }
+    // Bare `/sessions` — open the full-screen dashboard.
+    ctx.setShowSessionDashboard(true, getCachedAllWorkspaceSessions(), 'slash');
+    process.stdout.write('\x1b[?1049h'); // enter alt screen before re-render
+    ctx.setMode('session-dashboard');
   },
 
   showThemeMenu: (_result, ctx, cmd, args) => {

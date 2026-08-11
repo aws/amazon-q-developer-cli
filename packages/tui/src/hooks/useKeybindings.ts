@@ -9,6 +9,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '../stores/app-store.js';
 import {
   formatKeybinding,
+  keybindingsEqual,
   matchesKeybinding,
   resolveKeybinding,
   type Keybinding,
@@ -20,15 +21,26 @@ export interface ResolvedKeybindings {
   closeMenu: Keybinding;
   quit: Keybinding;
   toggleInterruptMode: Keybinding;
+  toggleSessionDashboard: Keybinding;
   /** Convenience: does `input`/`key` match the named binding? */
   matches: (
-    name: 'cancelStream' | 'closeMenu' | 'quit' | 'toggleInterruptMode',
+    name:
+      | 'cancelStream'
+      | 'closeMenu'
+      | 'quit'
+      | 'toggleInterruptMode'
+      | 'toggleSessionDashboard',
     input: string,
     key: Key
   ) => boolean;
   /** Convenience: human-readable label for the named binding. */
   label: (
-    name: 'cancelStream' | 'closeMenu' | 'quit' | 'toggleInterruptMode'
+    name:
+      | 'cancelStream'
+      | 'closeMenu'
+      | 'quit'
+      | 'toggleInterruptMode'
+      | 'toggleSessionDashboard'
   ) => string;
 }
 
@@ -43,12 +55,27 @@ export function useKeybindings(): ResolvedKeybindings {
       settings,
       'toggleInterruptMode'
     );
+    let toggleSessionDashboard = resolveKeybinding(
+      settings,
+      'toggleSessionDashboard'
+    );
+    if (
+      [cancelStream, closeMenu, quit, toggleInterruptMode].some((binding) =>
+        keybindingsEqual(binding, toggleSessionDashboard)
+      )
+    ) {
+      toggleSessionDashboard = resolveKeybinding(
+        undefined,
+        'toggleSessionDashboard'
+      );
+    }
 
     const bindings = {
       cancelStream,
       closeMenu,
       quit,
       toggleInterruptMode,
+      toggleSessionDashboard,
     };
 
     return {
