@@ -1,0 +1,149 @@
+{
+  "program": "testing-certification",
+  "goal": "Remove the manual bug bash from the Kiro CLI release process by absorbing its coverage into automated gates.",
+  "hld": "00-hld.md",
+  "plan": "02-implementation-plan.md",
+  "lead": "Kenneth Sanchez",
+  "reference_implementation": "https://github.com/kirodotdev/KiroCrew",
+  "status_vocabulary": [
+    "not-started",
+    "drafting",
+    "in-review",
+    "approved",
+    "implementing",
+    "done"
+  ],
+  "foundations": [
+    {
+      "id": "F1",
+      "name": "Scenario schema + Scenario type",
+      "artifact": "packages/tui/e2e_tests/smoke/scenarios.schema.json",
+      "doc": "20-scenario-schema-reference.md",
+      "owner": "Kenneth Sanchez",
+      "status": "not-started",
+      "blocks": [
+        "10",
+        "12",
+        "13",
+        "14",
+        "16"
+      ],
+      "note": "Freeze before corpus authoring starts. Schema churn after that is the program's top risk."
+    },
+    {
+      "id": "F2",
+      "name": "KAS mock-LLM (fake model endpoint)",
+      "artifact": "TBD \u2014 KAS mock mode",
+      "doc": "11-lld-kas-mock-and-contract.md",
+      "owner": "Felix Ding",
+      "status": "not-started",
+      "blocks": [
+        "13",
+        "16"
+      ],
+      "note": "Requires KAS-side changes. Feasibility of the fake model endpoint is an open HLD question and must be resolved in Phase 0."
+    },
+    {
+      "id": "F3",
+      "name": "Knight Rider act-react / goal-seeking driver",
+      "artifact": "packages/tui/e2e_tests (Knight Rider harness)",
+      "doc": "10-lld-scenario-framework.md",
+      "owner": "Kenneth Sanchez",
+      "status": "not-started",
+      "blocks": [
+        "12",
+        "15"
+      ],
+      "note": "Shared by live-mode scenarios and Auto-UX frame capture."
+    },
+    {
+      "id": "F4",
+      "name": "Design-system rubric",
+      "artifact": "23-design-system.md",
+      "doc": "23-design-system.md",
+      "owner": "TBD",
+      "status": "not-started",
+      "blocks": [
+        "15"
+      ],
+      "note": "Does not exist today. Authoring task, not a coding task \u2014 can run fully parallel to F1/F2."
+    }
+  ],
+  "workstreams": [
+    {
+      "id": "10",
+      "doc": "10-lld-scenario-framework.md",
+      "owner": "Kenneth Sanchez",
+      "phase": 0,
+      "status": "not-started"
+    },
+    {
+      "id": "11",
+      "doc": "11-lld-kas-mock-and-contract.md",
+      "owner": "Felix Ding",
+      "phase": 0,
+      "status": "not-started"
+    },
+    {
+      "id": "12",
+      "doc": "12-lld-user-story-scenarios.md",
+      "owner": "Zixuan (Zoe) Lin",
+      "phase": 1,
+      "status": "not-started"
+    },
+    {
+      "id": "13",
+      "doc": "13-lld-deterministic-smoke-and-gates.md",
+      "owner": "Kenneth Sanchez",
+      "phase": 1,
+      "status": "not-started"
+    },
+    {
+      "id": "14",
+      "doc": "14-lld-auto-review.md",
+      "owner": "TBD",
+      "phase": 2,
+      "status": "not-started"
+    },
+    {
+      "id": "15",
+      "doc": "15-lld-auto-ux-review.md",
+      "owner": "TBD",
+      "phase": 3,
+      "status": "not-started"
+    },
+    {
+      "id": "16",
+      "doc": "16-lld-fuzz.md",
+      "owner": "TBD",
+      "phase": 3,
+      "status": "not-started"
+    },
+    {
+      "id": "17",
+      "doc": "17-lld-compatibility-matrix.md",
+      "owner": "TBD",
+      "phase": 3,
+      "status": "not-started"
+    },
+    {
+      "id": "18",
+      "doc": "18-lld-static-analysis-coverage.md",
+      "owner": "Adam Cervantes",
+      "phase": 2,
+      "status": "not-started"
+    },
+    {
+      "id": "19",
+      "doc": "19-lld-agents-steering-renewal.md",
+      "owner": "TBD",
+      "phase": 0,
+      "status": "drafting"
+    }
+  ],
+  "assumed_ownership_unconfirmed": [
+    "Zixuan (Zoe) Lin \u2014 user-story scenario corpus, taxonomy, drift guardrails",
+    "Felix Ding \u2014 KAS mock mode and ACP contract enforcement",
+    "Adam Cervantes \u2014 static analysis rules"
+  ]
+}

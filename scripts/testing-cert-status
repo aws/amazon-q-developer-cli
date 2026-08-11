@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Validate and report on the testing-certification design docs.
+
+Makes the program machine-checkable rather than prose-only: verifies every doc's
+frontmatter against the contract, cross-checks it against program.json, and prints
+the blocking graph.
+
+Usage:
+    scripts/testing-cert-status              # validate + summary table
+    scripts/testing-cert-status --blocked    # show the blocking graph
+Exit status: 0 = consistent, 1 = contract violation.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+DOCS = Path(__file__).resolve().parents[1] / "docs" / "design" / "testing-certification"
+STATUSES = {"not-started", "drafting", "in-review", "approved", "implementing", "done"}
+REQUIRED = {"program", "doc_type", "id", "title", "owner", "status"}
+LLD_REQUIRED = REQUIRED | {"depends_on", "unblocks", "foundations_used", "plan_phase"}
+# The index has no position in the numbered sequence, so it carries no id.
+INDEX_REQUIRED = REQUIRED - {"id"}
+
+
+def parse_frontmatter(path: Path) -> dict | None:
+    """Extract the leading YAML-ish frontmatter block. Minimal on purpose: the fields
+    are flat scalars and JSON-style lists, so a real YAML dependency is not warranted."""
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"^---\n(.*?)\n---\n", text, re.DOTALL | re.MULTILINE)
+    if not match:
+        return None
+    fields: dict[str, object] = {}
+    for line in match.group(1).splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        key, _, raw = line.partition(":")
+        value = raw.split("#", 1)[0].strip().strip('"').strip("'")
+        if value.startswith("["):
+            try:
+                value = json.loads(raw.split("#", 1)[0].strip())
+            except json.JSONDecodeError:
+                pass
+        fields[key.strip()] = value
+    return fields
+
+
+def main() -> int:
+    if not DOCS.is_dir():
+        print(f"error: {DOCS} not found", file=sys.stderr)
+        return 1
+
+    manifest = json.loads((DOCS / "program.json").read_text(encoding="utf-8"))
+    by_id = {w["id"]: w for w in manifest["workstreams"]}
+    errors: list[str] = []
+    rows: list[tuple[str, str, str, str, int]] = []
+
+    for path in sorted(DOCS.glob("*.md")):
+        if path.name == "LLD-TEMPLATE.md" or path.name == "AGENTS.md":
+            continue
+        fm = parse_frontmatter(path)
+        if fm is None:
+            errors.append(f"{path.name}: missing frontmatter block")
+            continue
+
+        doc_type = fm.get("doc_type")
+        if doc_type == "lld":
+            required = LLD_REQUIRED
+        elif doc_type == "index":
+            required = INDEX_REQUIRED
+        else:
+            required = REQUIRED
+        for key in sorted(required - set(fm)):
+            errors.append(f"{path.name}: missing frontmatter key '{key}'")
+
+        status = fm.get("status")
+        if status not in STATUSES:
+            errors.append(f"{path.name}: status '{status}' not in {sorted(STATUSES)}")
+
+        fills = len(re.findall(r"^> FILL:", path.read_text(encoding="utf-8"), re.MULTILINE))
+        if fills and status in {"in-review", "approved", "implementing", "done"}:
+            errors.append(
+                f"{path.name}: status '{status}' but {fills} FILL section(s) remain"
+            )
+
+        doc_id = str(fm.get("id", ""))
+        if fm.get("doc_type") == "lld":
+            entry = by_id.get(doc_id)
+            if entry is None:
+                errors.append(f"{path.name}: id '{doc_id}' absent from program.json")
+            else:
+                if entry["owner"] != fm.get("owner"):
+                    errors.append(
+                        f"{path.name}: owner '{fm.get('owner')}' != program.json "
+                        f"'{entry['owner']}'"
+                    )
+                if entry["status"] != status:
+                    errors.append(
+                        f"{path.name}: status '{status}' != program.json "
+                        f"'{entry['status']}'"
+                    )
+
+        rows.append((doc_id, fm.get("doc_type", "?"), str(fm.get("owner")), str(status), fills))
+
+    if "--blocked" in sys.argv:
+        print("Foundations")
+        for f in manifest["foundations"]:
+            print(f"  {f['id']}  {f['status']:<12} blocks {','.join(f['blocks']) or '-'}"
+                  f"  ({f['owner']})")
+        print("\nWorkstreams")
+        for path in sorted(DOCS.glob("1*-lld-*.md")):
+            fm = parse_frontmatter(path) or {}
+            deps = fm.get("depends_on") or []
+            deps_s = ",".join(map(str, deps)) if isinstance(deps, list) else str(deps)
+            print(f"  {fm.get('id')}  phase {fm.get('plan_phase')}  "
+                  f"{str(fm.get('status')):<12} depends on {deps_s or '-'}")
+        print()
+
+    print(f"{'ID':<5} {'TYPE':<11} {'OWNER':<20} {'STATUS':<13} FILL")
+    for doc_id, doc_type, owner, status, fills in rows:
+        print(f"{doc_id:<5} {doc_type:<11} {owner[:20]:<20} {status:<13} {fills}")
+
+    if errors:
+        print(f"\n{len(errors)} contract violation(s):", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 1
+
+    print(f"\nOK — {len(rows)} docs consistent with program.json")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
