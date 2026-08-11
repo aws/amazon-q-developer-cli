@@ -7,7 +7,7 @@ doc_meta:
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, require-mcp-startup, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, resume, list, enterprise, AppLocker]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -72,32 +72,35 @@ kiro-cli chat --trust-all-tools "Run tests and analyze results"
 #### Use Case 6: Trust Specific Tools
 
 ```bash
-kiro-cli chat --trust-tools=fs_read,grep "Find all TODOs"
+kiro-cli chat --trust-tools=read,grep "Find all TODOs"
 ```
 
-**What this does**: Auto-approves only fs_read and grep tools.
+**What this does**: Auto-approves only read and grep tools.
 
 #### Use Case 7: Resume Last Conversation
 
 ```bash
-kiro-cli chat --resume
+kiro-cli --resume
 ```
 
 **What this does**: Resumes most recent conversation from current directory. Restores the model that was active when the session was saved (e.g., if you switched models with `/model`).
 
+**Note**: Resume flags (`--resume`, `--resume-id`, `--resume-picker`) are available at the root level. You can also use `kiro-cli chat --resume`.
+
 #### Use Case 8: Select Conversation to Resume
 
 ```bash
-kiro-cli chat --resume-picker
+kiro-cli --list
 ```
 
-**What this does**: Shows interactive picker to select conversation to resume.
+**What this does**: Shows interactive picker to select conversation to resume. `--list` is a root-level alias for `--resume-picker`.
 
 ## Options
 
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
 | `--resume` | `-r` | flag | Resume most recent conversation (restores saved model) |
+| `--resume-id` | | string | Resume specific conversation by session ID |
 | `--resume-picker` | | flag | Interactively select conversation to resume |
 | `--agent` | | string | Agent to use (default: default agent) |
 | `--model` | | string | Model to use (default: default model) |
@@ -106,12 +109,18 @@ kiro-cli chat --resume-picker
 | `--trust-tools` | | list | Auto-approve specific tools (comma-separated) |
 | `--no-interactive` | | flag | Run without user input (headless mode) |
 | `--list-sessions` | `-l` | flag | List saved conversations |
+| `--list-models` | | flag | List available models and exit |
+| `--format` | `-f` | enum | Output format for list commands (plain/json/json-pretty, default: plain) |
 | `--delete-session` | `-d` | string | Delete conversation by ID |
 | `--wrap` | `-w` | enum | Line wrapping (always/never/auto) |
+| `--tui` | | flag | Use the new terminal UI |
+| `--legacy-ui` | | flag | Use the legacy harness (alias: `--classic`) |
 | `--require-mcp-startup` | | flag | Exit with code 3 if any MCP server fails to start |
 | `--verbose` | `-v` | flag | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | flag | Print help information |
 | `[INPUT]` | | string | Initial query to send |
+
+**Root-level flags**: `--resume`, `--resume-id`, `--resume-picker`, and `--list` can be used directly with `kiro-cli` (e.g., `kiro-cli --resume` instead of `kiro-cli chat --resume`). Note: `--list` is a root-level-only alias for `--resume-picker` and does not work under `kiro-cli chat`.
 
 ## Examples
 

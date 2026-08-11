@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-22
-  commit: 773c796e6
+  validated: 2026-05-23
+  commit: e972d677a
   status: validated
   testable_headless: false
   category: feature
   title: Session Management
   description: Automatic session saving, resumption, and file-based storage
-  keywords: [session, save, load, resume, auto-save, storage, history, conversation, KIRO_SESSION_ID, environment]
+  keywords: [session, save, load, resume, auto-save, storage, history, conversation, KIRO_SESSION_ID, environment, list]
   related: [chat-save, chat-load, chat, hooks]
 ---
 
@@ -57,24 +57,37 @@ The variable is updated when:
 
 ```bash
 # Resume most recent session
+kiro-cli --resume
+# or
 kiro-cli chat --resume
 
 # Interactive picker
+kiro-cli --list
+# or
+kiro-cli --resume-picker
+# or
 kiro-cli chat --resume-picker
 
 # Resume specific session by ID
+kiro-cli --resume-id f2946a26-3735-4b08-8d05-c928010302d5
+# or
 kiro-cli chat --resume-id f2946a26-3735-4b08-8d05-c928010302d5
 
-# List all sessions
+# List all sessions (non-interactive)
 kiro-cli chat --list-sessions
 
 # Delete session
 kiro-cli chat --delete-session <SESSION_ID>
 ```
 
+**Note**: `--resume`, `--resume-id`, and `--resume-picker`/`--list` are available at the root level (e.g., `kiro-cli --resume`) as shortcuts for `kiro-cli chat --resume`.
+
 ### From Chat
 
 ```bash
+# Resume session (interactive)
+/chat resume
+
 # Save to file
 /chat save <path>
 
@@ -107,6 +120,8 @@ Continues most recent conversation, restoring the model that was active when the
 ### Example 2: Pick Session
 
 ```bash
+kiro-cli --list
+# or
 kiro-cli chat --resume-picker
 ```
 

@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-03-24
-  commit: 21e95839
+  validated: 2026-05-23
+  commit: e972d677a
   status: validated
   testable_headless: false
   category: feature
   title: Session Management
   description: Automatic session saving, resumption, and custom storage via scripts
-  keywords: [session, save, load, resume, auto-save, storage]
+  keywords: [session, save, load, resume, auto-save, storage, list]
   related: [chat-save, chat-load, cmd-chat]
 ---
 
@@ -34,10 +34,14 @@ Kiro CLI automatically saves all chat sessions on every conversation turn. Sessi
 
 ```bash
 # Resume most recent session
-kiro-cli chat --resume
+kiro-cli --resume
 
-# Interactive picker
-kiro-cli chat --resume-picker
+# Resume specific session by ID
+kiro-cli --resume-id <SESSION_ID>
+
+# Interactive picker (--list is an alias)
+kiro-cli --list
+kiro-cli --resume-picker
 
 # List all sessions
 kiro-cli chat --list-sessions
@@ -45,6 +49,8 @@ kiro-cli chat --list-sessions
 # Delete session
 kiro-cli chat --delete-session <SESSION_ID>
 ```
+
+**Note**: Resume flags (`--resume`, `--resume-id`, `--resume-picker`) are available at the root level. You can also use `--resume`, `--resume-id`, and `--resume-picker` under `kiro-cli chat`. Note: `--list` is a root-level-only alias for `--resume-picker` and does not work under `kiro-cli chat`.
 
 ### From Chat
 
@@ -112,20 +118,28 @@ git notes --ref=kiro/notes show "$COMMIT"
 ### Example 1: Resume Last Session
 
 ```bash
-kiro-cli chat --resume
+kiro-cli --resume
 ```
 
 Continues most recent conversation, restoring the model that was active when the session was saved.
 
-### Example 2: Pick Session
+### Example 2: Resume Specific Session
 
 ```bash
-kiro-cli chat --resume-picker
+kiro-cli --resume-id f2946a26-3735-4b08-8d05-c928010302d5
 ```
 
-Shows list of sessions to choose from.
+Resumes a specific session by its ID.
 
-### Example 3: Export to File
+### Example 3: Pick Session
+
+```bash
+kiro-cli --list
+```
+
+Shows list of sessions to choose from. `--list` is an alias for `--resume-picker`.
+
+### Example 4: Export to File
 
 ```
 /chat save backup.json
@@ -133,7 +147,7 @@ Shows list of sessions to choose from.
 
 Exports current session to file.
 
-### Example 4: Version Control Integration
+### Example 5: Version Control Integration
 
 ```bash
 # Save to git notes

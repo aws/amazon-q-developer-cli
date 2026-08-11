@@ -7,7 +7,7 @@ doc_meta:
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, enterprise, AppLocker]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, list, enterprise, AppLocker]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -89,9 +89,30 @@ kiro-cli chat --resume
 
 ```bash
 kiro-cli chat --resume-picker
+# or use the --list alias
+kiro-cli --list
 ```
 
 **What this does**: Shows interactive picker to select conversation to resume.
+
+## Root-Level Shortcuts
+
+The resume flags are also available at the root level for convenience:
+
+```bash
+# These are equivalent:
+kiro-cli --resume
+kiro-cli chat --resume
+
+# --list is a root-level-only alias for --resume-picker:
+kiro-cli --list
+kiro-cli --resume-picker
+kiro-cli chat --resume-picker
+
+# These are equivalent:
+kiro-cli --resume-id <SESSION_ID>
+kiro-cli chat --resume-id <SESSION_ID>
+```
 
 ## Options
 
