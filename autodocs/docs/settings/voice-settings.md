@@ -5,8 +5,8 @@ doc_meta:
   category: setting
   keywords: [voice, settings, whisper, model, timeout, language, transcription, microphone]
   related: [voice-mode, voice-command]
-  validated: 2026-05-21
-  commit: 69ae7a5f5
+  validated: 2026-06-04
+  commit: 26fb1cd7f
   status: validated
   testable_headless: true
 ---
@@ -33,13 +33,13 @@ Voice input language for transcription.
 
 ```bash
 # Get current value
-kiro-cli settings get voice.language
+kiro-cli settings voice.language
 
 # Set to Spanish
-kiro-cli settings set voice.language es
+kiro-cli settings voice.language es
 
 # Reset to default
-kiro-cli settings reset voice.language
+kiro-cli settings --delete voice.language
 ```
 
 ### voice.modelSize
@@ -65,13 +65,13 @@ Available models:
 
 ```bash
 # Use smaller model for speed
-kiro-cli settings set voice.modelSize tiny
+kiro-cli settings voice.modelSize tiny
 
 # Use larger model for accuracy
-kiro-cli settings set voice.modelSize small
+kiro-cli settings voice.modelSize small
 
 # Use turbo for best speed/accuracy balance
-kiro-cli settings set voice.modelSize turbo
+kiro-cli settings voice.modelSize turbo
 ```
 
 ### voice.silenceTimeout
@@ -86,10 +86,10 @@ Seconds of silence before recording automatically stops.
 
 ```bash
 # Increase for slower speakers
-kiro-cli settings set voice.silenceTimeout 10
+kiro-cli settings voice.silenceTimeout 10
 
 # Decrease for faster auto-stop
-kiro-cli settings set voice.silenceTimeout 3
+kiro-cli settings voice.silenceTimeout 3
 ```
 
 ### voice.maxSessionTime
@@ -104,10 +104,10 @@ Maximum recording duration in seconds. Recording stops automatically after this 
 
 ```bash
 # Allow longer recordings
-kiro-cli settings set voice.maxSessionTime 600
+kiro-cli settings voice.maxSessionTime 600
 
 # Limit to 1 minute
-kiro-cli settings set voice.maxSessionTime 60
+kiro-cli settings voice.maxSessionTime 60
 ```
 
 ### voice.serverUrl
@@ -122,10 +122,10 @@ URL of a remote voice server for cloud desktop use. When set, voice mode falls b
 
 ```bash
 # Configure remote voice server
-kiro-cli settings set voice.serverUrl http://localhost:19876
+kiro-cli settings voice.serverUrl http://localhost:19876
 
 # Clear remote server
-kiro-cli settings reset voice.serverUrl
+kiro-cli settings --delete voice.serverUrl
 ```
 
 ### voice.autoSubmit
@@ -140,7 +140,7 @@ Whether to automatically submit transcribed text without review.
 
 ```bash
 # Disable auto-submit (review before sending)
-kiro-cli settings set voice.autoSubmit false
+kiro-cli settings voice.autoSubmit false
 ```
 
 ## Examples
@@ -148,22 +148,30 @@ kiro-cli settings set voice.autoSubmit false
 ### Optimize for Speed
 
 ```bash
-kiro-cli settings set voice.modelSize tiny
-kiro-cli settings set voice.silenceTimeout 3
+kiro-cli settings voice.modelSize tiny
+kiro-cli settings voice.silenceTimeout 3
 ```
 
 ### Optimize for Accuracy
 
 ```bash
-kiro-cli settings set voice.modelSize small
-kiro-cli settings set voice.silenceTimeout 8
+kiro-cli settings voice.modelSize small
+kiro-cli settings voice.silenceTimeout 8
 ```
 
 ### Cloud Desktop Setup
 
+For cloud desktops, use `voice-cloud-setup` from your local machine (preferred):
+
+```bash
+kiro-cli voice-cloud-setup <your-cloud-hostname>
+```
+
+This automatically configures `voice.serverUrl` on the cloud desktop. For manual configuration:
+
 ```bash
 # On cloud desktop, point to local voice server
-kiro-cli settings set voice.serverUrl http://localhost:19876
+kiro-cli settings voice.serverUrl http://localhost:19876
 ```
 
 ### View All Voice Settings
@@ -179,7 +187,7 @@ kiro-cli settings list | grep voice
 Use a smaller model:
 
 ```bash
-kiro-cli settings set voice.modelSize tiny
+kiro-cli settings voice.modelSize tiny
 ```
 
 ### Recording stops too early
@@ -187,7 +195,7 @@ kiro-cli settings set voice.modelSize tiny
 Increase silence timeout:
 
 ```bash
-kiro-cli settings set voice.silenceTimeout 10
+kiro-cli settings voice.silenceTimeout 10
 ```
 
 ### Transcription is inaccurate
@@ -195,13 +203,13 @@ kiro-cli settings set voice.silenceTimeout 10
 Try a larger model:
 
 ```bash
-kiro-cli settings set voice.modelSize small
+kiro-cli settings voice.modelSize small
 ```
 
 Or use the turbo model for good accuracy with reasonable speed:
 
 ```bash
-kiro-cli settings set voice.modelSize turbo
+kiro-cli settings voice.modelSize turbo
 ```
 
 ## Related

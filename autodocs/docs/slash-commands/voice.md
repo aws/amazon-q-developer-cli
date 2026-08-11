@@ -5,8 +5,8 @@ doc_meta:
   category: slash_command
   keywords: [voice, speech, microphone, recording, transcription, whisper, dictation]
   related: [voice-mode, voice-settings]
-  validated: 2026-05-21
-  commit: 69ae7a5f5
+  validated: 2026-06-04
+  commit: 26fb1cd7f
   status: validated
   testable_headless: false
 ---
@@ -150,13 +150,13 @@ Voice behavior is controlled by settings:
 
 ```bash
 # Adjust silence timeout (seconds before auto-stop)
-kiro-cli settings set voice.silenceTimeout 8
+kiro-cli settings voice.silenceTimeout 8
 
 # Change Whisper model size
-kiro-cli settings set voice.modelSize small
+kiro-cli settings voice.modelSize small
 
 # Set transcription language
-kiro-cli settings set voice.language en
+kiro-cli settings voice.language en
 ```
 
 See [Voice Settings](../settings/voice-settings.md) for all options.
@@ -165,10 +165,10 @@ See [Voice Settings](../settings/voice-settings.md) for all options.
 
 ### "No microphone detected"
 
-Voice mode requires a microphone. On cloud desktops, configure a remote voice server:
+Voice mode requires a microphone. On cloud desktops, run `voice-cloud-setup` from your local machine:
 
 ```bash
-kiro-cli settings set voice.serverUrl http://localhost:19876
+kiro-cli voice-cloud-setup <your-cloud-hostname>
 ```
 
 ### Recording stops too quickly
@@ -176,7 +176,7 @@ kiro-cli settings set voice.serverUrl http://localhost:19876
 Increase the silence timeout:
 
 ```bash
-kiro-cli settings set voice.silenceTimeout 10
+kiro-cli settings voice.silenceTimeout 10
 ```
 
 ### Poor transcription quality
@@ -184,7 +184,7 @@ kiro-cli settings set voice.silenceTimeout 10
 Try a larger Whisper model:
 
 ```bash
-kiro-cli settings set voice.modelSize small
+kiro-cli settings voice.modelSize small
 ```
 
 ### First use is slow

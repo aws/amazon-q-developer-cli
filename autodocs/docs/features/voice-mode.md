@@ -5,8 +5,8 @@ doc_meta:
   category: feature
   keywords: [voice, speech, transcription, whisper, microphone, hands-free, dictation, audio, recording]
   related: [voice-command, voice-settings]
-  validated: 2026-05-21
-  commit: 69ae7a5f5
+  validated: 2026-06-04
+  commit: 26fb1cd7f
   status: validated
   testable_headless: false
 ---
@@ -78,29 +78,16 @@ Uses whisper-rs (Rust bindings for whisper.cpp) for fully local transcription:
 Configure the model size:
 
 ```bash
-kiro-cli settings set voice.modelSize base
+kiro-cli settings voice.modelSize base
 ```
 
 ### Remote Voice Server (Cloud Desktops)
 
-When running on a cloud desktop without a microphone, voice mode can use a remote server running on your local machine:
+When running on a cloud desktop without a microphone, use a remote voice server running on your local machine. The recommended approach is the one-step `voice-cloud-setup` command.
 
-```bash
-# On your local machine (with microphone):
-kiro-cli voice-serve
+### One-Step Cloud Setup (Recommended)
 
-# SSH to cloud desktop with reverse port forwarding:
-ssh -R 19876:localhost:19876 cloud-desktop
-
-# On the cloud desktop, configure the server URL:
-kiro-cli settings set voice.serverUrl http://localhost:19876
-```
-
-Voice mode automatically falls back to the remote server when no local microphone is detected.
-
-### One-Step Cloud Setup
-
-For easier setup, use the `voice-cloud-setup` command from your local machine:
+From your local machine (with a microphone), run:
 
 ```bash
 kiro-cli voice-cloud-setup <cloud-hostname>
@@ -116,6 +103,25 @@ Options:
 - `--port <port>` - Port for voice server (default: 19876)
 - `--remote-bin <path>` - Path to kiro-cli on cloud desktop
 - `-i <identity>` - SSH identity file
+
+The command supports both Linux/macOS and Windows cloud desktops.
+
+### Manual Setup
+
+If `voice-cloud-setup` doesn't work for your environment, you can set up manually:
+
+```bash
+# On your local machine (with microphone):
+kiro-cli voice-serve
+
+# SSH to cloud desktop with reverse port forwarding:
+ssh -R 19876:localhost:19876 cloud-desktop
+
+# On the cloud desktop, configure the server URL:
+kiro-cli settings voice.serverUrl http://localhost:19876
+```
+
+When `voice.serverUrl` is configured, voice mode uses the remote server directly instead of attempting local microphone access.
 
 ## Voice Activity Detection
 
@@ -152,13 +158,13 @@ Configure voice settings with `kiro-cli settings`:
 
 ```bash
 # Use a larger model for better accuracy
-kiro-cli settings set voice.modelSize small
+kiro-cli settings voice.modelSize small
 
 # Increase silence timeout for slower speakers
-kiro-cli settings set voice.silenceTimeout 8
+kiro-cli settings voice.silenceTimeout 8
 
 # Set language for non-English transcription
-kiro-cli settings set voice.language es
+kiro-cli settings voice.language es
 ```
 
 ## Examples
@@ -205,15 +211,14 @@ Recording, press ENTER when done... 2.3sec ░░░████████
 
 ### No microphone detected
 
-Voice mode requires a microphone. On cloud desktops, set up the remote voice server:
+Voice mode requires a microphone. On cloud desktops, run `voice-cloud-setup` from your local machine:
 
 ```bash
-# Local machine
-kiro-cli voice-serve
-
-# Cloud desktop
-kiro-cli settings set voice.serverUrl http://localhost:19876
+# From your local machine with a microphone
+kiro-cli voice-cloud-setup <your-cloud-hostname>
 ```
+
+This sets up everything automatically. If you need manual control, see the "Manual Setup" section above.
 
 ### Model download fails
 
@@ -221,7 +226,7 @@ The Whisper model downloads automatically on first use. If it fails:
 
 1. Check internet connectivity
 2. Ensure `~/.local/share/kiro/models/` is writable
-3. Try a smaller model: `kiro-cli settings set voice.modelSize tiny`
+3. Try a smaller model: `kiro-cli settings voice.modelSize tiny`
 
 ### Poor transcription accuracy
 
