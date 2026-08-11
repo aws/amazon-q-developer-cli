@@ -12,9 +12,9 @@ body:
     options:
     - label: "I have searched [github.com/aws/amazon-q-developer-cli/issues](https://github.com/aws/amazon-q-developer-cli/issues?q=) and there are no duplicates of my issue"
       required: true
-    - label: "I have run `q doctor` in the affected terminal session"
+    - label: "I have run `kiro-cli doctor` in the affected terminal session"
       required: true
-    - label: "I have run `q restart` and replicated the issue again"
+    - label: "I have run `kiro-cli restart` and replicated the issue again"
       required: true
 
 - type: input
@@ -50,5 +50,5 @@ body:
   id: "environment"
   attributes:
     label: "Environment"
-    description: "If possible, run `q diagnostic` and paste the output below."
+    description: "If possible, run `kiro-cli diagnostic` and paste the output below."
     render: yaml
