@@ -48,6 +48,9 @@ export const WorkflowMessageComposer = React.memo(
         <Text wrap="truncate">
           {value}
           {CURSOR_MARKER}
+          {/* Painted unconditionally: the frame's cursor cell loses its
+              inversion whenever the terminal draws its own cursor there. */}
+          <Text inverse> </Text>
         </Text>
         <Text wrap="truncate">
           {getColor('secondary')(
