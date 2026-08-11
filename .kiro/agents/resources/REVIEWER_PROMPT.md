@@ -70,7 +70,7 @@ The sub-agent will produce the full review document at `./semantic-review/<date>
 
 ## Step 3b: Append Memory Context and Suggested Reviewers
 
-After reading the sub-agent's review, append these sections to the end of the review body (before the signature):
+After reading the sub-agent's review, append these sections to the end of the full review body:
 
 **🧠 Memory Context** — synthesize the memory search results from step 2:
 - Which prior PRs are related (cite PR number, author, what was flagged)
@@ -81,7 +81,7 @@ After reading the sub-agent's review, append these sections to the end of the re
 - List reviewers with their review count in this area
 - Format: `**reviewer** (N reviews in this area)`
 
-These sections are mandatory in every posted review. The sub-agent does not produce them — the orchestrator must add them.
+These sections are for full reviews only. Incremental reviews must omit both. The sub-agent does not produce them; the orchestrator must add them when used.
 
 ## Step 3c: Assign severity to findings and determine verdict
 
@@ -94,20 +94,27 @@ Each finding in the review must be assigned a priority:
 | **P3** | Missing test coverage, non-blocking design concern, possible issue | Untested branch, suboptimal abstraction, possible race condition |
 | **P4** | Style, naming, nit | Naming convention, comment wording |
 
-**Verdict rules:**
-- If ANY finding is **P1** (confirmed) → `REQUEST_CHANGES`
-- If ANY finding is **P2** (confirmed) → `REQUEST_CHANGES`
-- If findings are P2 (likely) or P3/P4 only → `COMMENT`
-- If no findings → `APPROVE` (skip posting, exit cleanly)
+Each published finding must also carry a merge-impact label:
 
-**Move verdict to bottom** — the sub-agent emits a `**Verdict**:` line. Remove it and place at the end:
+| Label | Criteria |
+|-------|----------|
+| **Blocking** | Confirmed P1 or confirmed P2 |
+| **Non-blocking** | P2 (likely) and all P3/P4 findings |
+
+**Verdict rules:**
+- Define `UNRESOLVED_FINDINGS` as every prior bot finding still open on this PR plus every new finding from this pass.
+- A prior bot finding stays open until its targeted line changed or was removed from the diff.
+- Define `BLOCKING_FINDINGS` as the confirmed P1/P2 entries inside `UNRESOLVED_FINDINGS`.
+- If `BLOCKING_FINDINGS` is non-empty → `REQUEST_CHANGES`
+- Else if `REVIEW_MODE=incremental` and `REVIEW_ITERATION >= 2` and every entry in `UNRESOLVED_FINDINGS` is non-blocking → `APPROVE`
+- Else if `UNRESOLVED_FINDINGS` is non-empty → `COMMENT`
+- Else → `APPROVE`
+
+**Use a short recommendation block** instead of the sub-agent's raw `**Verdict**:` line:
 
 ```
----
-
-### 🏷️ Recommendation: **Approve** | **Request Changes**
-
-One sentence explaining why.
+**Recommendation**
+Approve. All remaining findings are non-blocking.
 ```
 
 ## Step 4: Publish — iteration-aware
@@ -116,22 +123,37 @@ Read and follow `.kiro/skills/publish-pr-review/SKILL.md` with these mode-specif
 
 ### Mode: `full` (first review, REVIEW_MODE=full)
 
-- Submit one GitHub review with the complete semantic review as the parent body
+- Submit one GitHub review with a concise parent body
+- Keep the parent body to:
+  - `Description` — 1-2 lines
+  - `Recommendation` — 1 line
+  - `Watch For` — only if inline comments cannot cover the concern
+  - `Memory Context` — short, relevant bullets only
+  - `Suggested Reviewers` — optional, short
+- Label every issue as `Blocking` or `Non-blocking`
 - Attach each actionable finding as an inline comment
-- Use `"event": "REQUEST_CHANGES"` if any P1/P2 (confirmed) finding exists, otherwise `"event": "COMMENT"`
+- Use `"event": "REQUEST_CHANGES"` if any blocking finding exists, otherwise `"event": "COMMENT"`
 - Post to Slack (full summary in channel, detail in thread)
 
 ### Mode: `incremental` (subsequent reviews, REVIEW_MODE=incremental)
 
 - **Do NOT post the full high-level review body again** — reviewers already saw it
 - Compare new findings against prior bot inline comments (from Step 1). Suppress findings already raised.
+- Keep the parent review body succinct. Do not include Memory Context, Suggested Reviewers, or any appendix.
 - For truly NEW findings only:
-  - Submit a review with a brief parent body: `"Re-review (iteration N): X new findings, Y previously raised findings now resolved."`
+  - Submit a review with a brief parent body.
+  - Use only this compact structure:
+    - `Description` — 1-2 lines
+    - `Recommendation` — 1 line
+    - `Watch For` — optional, short
+  - Label each item as `Blocking` or `Non-blocking`
   - Attach only new inline comments
-  - Use `"event": "REQUEST_CHANGES"` if any unresolved P1/P2 finding exists, otherwise `"event": "COMMENT"`
-- If previously raised findings are now fixed (code changed in the relevant lines): note them as resolved in the brief body
+  - Use `"event": "REQUEST_CHANGES"` if any blocking finding remains unresolved on the PR
+  - Use `"event": "APPROVE"` if `REVIEW_ITERATION >= 2` and every unresolved finding on the PR is non-blocking
+  - Otherwise use `"event": "COMMENT"`
+- If previously raised findings are now fixed (code changed in the relevant lines): mention that in `Description`
 - **Do NOT post to Slack on incremental reviews** — only the first review goes to Slack
-- If no new findings and all prior findings resolved: submit `"event": "APPROVE"` with body: `"All previously raised findings have been addressed. ✅"`
+- If no unresolved findings remain: submit `"event": "APPROVE"` with body: `"All previously raised findings have been addressed. ✅"`
 
 ### Deduplication rules (both modes)
 

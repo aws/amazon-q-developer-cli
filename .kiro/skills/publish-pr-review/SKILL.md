@@ -1,6 +1,6 @@
 ---
 name: publish-pr-review
-description: Publish a semantic review as one GitHub review. Supports full mode (complete review body + inline) and incremental mode (new findings only). Supports REQUEST_CHANGES verdict for P1/P2 findings.
+description: Publish a semantic review as one GitHub review. Supports full mode (concise parent body + inline) and incremental mode (new findings only). Supports REQUEST_CHANGES verdict for P1/P2 findings.
 ---
 
 # Publish Semantic Findings Inline
@@ -20,12 +20,19 @@ Each finding ID must be unique and match `^[a-z0-9][a-z0-9-]{0,63}$`.
 
 Each finding must include a `priority` field: `P1`, `P2`, `P3`, or `P4`.
 
+Map each finding to a merge-impact label before publishing:
+
+- **Blocking**: confirmed `P1` or confirmed `P2`
+- **Non-blocking**: `P2` (likely) and all `P3`/`P4`
+
 ## Iteration Mode
 
 The environment variable `REVIEW_MODE` determines the publish behavior:
 
-- **`full`** (default, first review): Post the complete semantic review as parent body with all inline findings
+- **`full`** (default, first review): Post a concise parent body with all inline findings
 - **`incremental`** (subsequent reviews): Post only NEW findings not already raised, with a brief summary body
+
+`REVIEW_ITERATION` is the number of prior bot reviews on the PR. Treat `REVIEW_ITERATION >= 2` as a third-or-later review pass.
 
 ## 1. Validate and deduplicate
 
@@ -40,31 +47,53 @@ Before any GitHub write:
 5. Compare each finding against prior bot inline comments on this PR. A finding is a DUPLICATE if an existing bot comment targets the same `path` and addresses the same concern (normalized title + code token match).
 6. Identify RESOLVED findings: prior bot comments where the targeted line has been modified or removed in the current diff. List these in the summary body.
 
+Before choosing the review event, build:
+
+- `NEW_FINDINGS`: findings left after deduplication in this pass
+- `UNRESOLVED_FINDINGS`: `NEW_FINDINGS` plus every prior bot finding whose target line is still unchanged in the current diff
+- `BLOCKING_FINDINGS`: confirmed P1/P2 entries inside `UNRESOLVED_FINDINGS`
+
 If no new inline or summary finding remains:
 - **Full mode:** exit cleanly without creating a review.
 - **Incremental mode:** if all prior findings are resolved, submit an `APPROVE` review (see section 3).
 
 ## 2. Determine review event
 
-Based on finding priorities:
+Evaluate these rules top-down against `UNRESOLVED_FINDINGS`:
 
 | Condition | Event |
 |-----------|-------|
-| Any P1 finding (confirmed) present and unresolved | `REQUEST_CHANGES` |
-| Any P2 finding (confirmed) present and unresolved | `REQUEST_CHANGES` |
-| P2 (likely) or P3/P4 findings only | `COMMENT` |
-| No new findings, all prior resolved (incremental only) | `APPROVE` |
+| Any blocking finding remains unresolved on the PR | `REQUEST_CHANGES` |
+| Incremental mode, `REVIEW_ITERATION >= 2`, and every unresolved finding is non-blocking | `APPROVE` |
+| Any unresolved finding remains on the PR | `COMMENT` |
+| No unresolved findings remain | `APPROVE` |
 
 ## 3. Render the review
 
 ### Full mode
 
-The parent body starts with the canonical signature and preserves the complete high-level review:
+The parent body starts with the canonical signature and stays short. Synthesize it from `review_path`; do not paste the full review body.
 
 ```markdown
 **AI Generated - Semantic Reviewer**
 
-<complete contents of review_path>
+**Description**
+1-2 lines on what the PR changes and the overall risk.
+
+**Recommendation**
+Request changes. 2 blocking findings remain.
+
+**Watch For**
+- [Blocking] Short finding title
+- [Non-blocking] Short follow-up title
+
+**Memory Context**
+- Related PR or known pattern relevant to this diff
+- If none: No prior patterns flagged for this area.
+
+**Suggested Reviewers**
+- reviewer1
+- reviewer2
 
 <!-- robertobot:<summary-finding-id> -->
 ```
@@ -78,28 +107,48 @@ The parent body is a brief summary:
 ```markdown
 **AI Generated - Semantic Reviewer**
 
-**Re-review (iteration N):** X new finding(s), Y previously raised finding(s) now resolved.
+**Description**
+1-2 lines on what changed in this pass and what remains open.
 
-**New findings:**
-- [P1, confirmed] Finding title — `path/to/file.rs:42`
-- [P2, likely] Finding title — `path/to/file.ts:108`
+**Recommendation**
+Request changes. Blocking findings remain unresolved on the PR.
 
-**Resolved (addressed since last review):**
-- ~~Byte-slice panic~~ — `path/to/file.rs:38` (line removed/modified) ✅
+**Watch For**
+- [Blocking] Finding title — `path/to/file.rs:42`
+- [Non-blocking] Finding title — `path/to/file.ts:108`
 
 <!-- robertobot:<summary-finding-id> -->
 ```
+
+Do not append Memory Context, Suggested Reviewers, or any other appendix in incremental mode.
 
 If approving (all resolved, no new findings):
 
 ```markdown
 **AI Generated - Semantic Reviewer**
 
-All previously raised findings have been addressed. ✅
+**Description**
+All previously raised findings have been addressed.
 
-**Resolved:**
-- ~~Finding title~~ — `path/to/file.rs:38` ✅
-- ~~Finding title~~ — `path/to/file.ts:108` ✅
+**Recommendation**
+Approve.
+```
+
+If approving with only non-blocking findings still open:
+
+```markdown
+**AI Generated - Semantic Reviewer**
+
+**Description**
+Blocking findings are resolved. Remaining open items are non-blocking.
+
+**Recommendation**
+Approve. Remaining findings are non-blocking.
+
+**Watch For**
+- [Non-blocking] Finding title — `path/to/file.ts:108`
+
+<!-- robertobot:<summary-finding-id> -->
 ```
 
 ### Inline comment format (both modes)
@@ -109,7 +158,7 @@ Render each inline finding as:
 ````markdown
 **AI Generated - Semantic Reviewer**
 
-**[P1, confirmed] Short finding title**
+**[Blocking | P1, confirmed] Short finding title**
 
 Evidence and impact.
 
@@ -121,6 +170,8 @@ exact complete replacement for the anchored range
 
 <!-- robertobot:<inline-finding-id> -->
 ````
+
+Use `Non-blocking` instead of `Blocking` when the finding is advisory.
 
 Keep the suggestion block only when it is mechanically apply-ready: preserve indentation and provide the exact complete replacement for the anchored line range. Otherwise publish only the prose remediation.
 

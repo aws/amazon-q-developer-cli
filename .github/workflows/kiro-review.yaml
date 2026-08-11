@@ -125,8 +125,12 @@ jobs:
         run: |
           if [ "$REVIEW_MODE" = "full" ]; then
             kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
-              "Review PR $PR_NUMBER (iteration: first). Post full high-level review with inline comments. Mark REQUEST_CHANGES if any P1 finding. DO NOT wait for user input."
+              "Review PR $PR_NUMBER (iteration: first). Keep the parent review body to Description (1-2 lines), Recommendation (1 line), Watch For (only if inline comments cannot cover it), Memory Context (short, relevant bullets only), and Suggested Reviewers. Label issues as Blocking or Non-blocking. Mark REQUEST_CHANGES if any blocking finding exists. DO NOT wait for user input."
           else
+            APPROVE_CLAUSE=""
+            if [ "$REVIEW_ITERATION" -ge 2 ]; then
+              APPROVE_CLAUSE=" If no blocking findings remain and every unresolved finding on the PR is non-blocking, approve."
+            fi
             kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
-              "Review PR $PR_NUMBER (iteration: $((REVIEW_ITERATION + 1)), mode: incremental). Only post NEW inline comments for findings not already raised. Skip the high-level review body. Mark REQUEST_CHANGES if any P1 finding remains unresolved. DO NOT wait for user input."
+              "Review PR $PR_NUMBER (iteration: $((REVIEW_ITERATION + 1)), mode: incremental). Only post NEW inline comments for findings not already raised. Keep the parent review body to Description (1-2 lines), Recommendation (1 line), and Watch For (optional). Do not include memory context, suggested reviewers, or appendices. Label issues as Blocking or Non-blocking. Mark REQUEST_CHANGES if any blocking finding remains unresolved on the PR.${APPROVE_CLAUSE} DO NOT wait for user input."
           fi
