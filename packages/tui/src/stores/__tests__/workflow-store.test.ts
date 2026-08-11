@@ -664,4 +664,519 @@ describe('workflow store', () => {
       totalSteps: 4,
     });
   });
+
+  it('keeps a not-yet-started node pending when node_paused names it', () => {
+    // A boundary park names the node KAS is about to start, so flipping it to
+    // paused would claim work that never began.
+    const store = createWorkflowStore();
+    store.getState().applyEvent(startEvent('boundary'));
+    store.getState().applyEvent({
+      type: 'node_paused',
+      workflowId: 'boundary',
+      parentSessionId: 'parent-1',
+      nodeId: 'two',
+      nodePath: ['root', 'two'],
+      reason: 'paused before step two',
+    });
+
+    const node = store.getState().workflows.get('boundary')!.nodes[1]!;
+    expect(node.status).toBe('pending');
+    expect(node.pauseReason).toBe('paused before step two');
+  });
+
+  it('keeps a boundary-parked node pending through the run_complete snapshot', () => {
+    // A boundary park is three events, not one: node_paused, `paused`, then
+    // run_complete carrying a snapshot that records the never-started node as
+    // `paused`. Reconciling that verbatim would undo the node_paused guard.
+    const store = createWorkflowStore();
+    store.getState().applyEvent(startEvent('boundary-settle'));
+    store.getState().applyEvent({
+      type: 'node_complete',
+      workflowId: 'boundary-settle',
+      parentSessionId: 'parent-1',
+      nodeId: 'one',
+      nodePath: ['root', 'one'],
+      status: 'completed',
+    });
+    store.getState().applyEvent({
+      type: 'node_paused',
+      workflowId: 'boundary-settle',
+      parentSessionId: 'parent-1',
+      nodeId: 'two',
+      nodePath: ['root', 'two'],
+      reason: "Workflow paused before node 'two'.",
+    });
+    store.getState().applyEvent({
+      type: 'paused',
+      workflowId: 'boundary-settle',
+      parentSessionId: 'parent-1',
+      pauseReason: "Workflow paused before node 'two'.",
+      initiator: 'user',
+    });
+    store.getState().applyEvent({
+      type: 'run_complete',
+      workflowId: 'boundary-settle',
+      parentSessionId: 'parent-1',
+      status: 'paused',
+      finalState: {
+        workflowId: 'boundary-settle',
+        workflowName: 'Workflow boundary-settle',
+        status: 'paused',
+        inputs: {},
+        artifacts: {},
+        capturedOutputs: {},
+        parentSessionId: 'parent-1',
+        pauseReason: "Workflow paused before node 'two'.",
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'running',
+          children: [
+            {
+              nodeId: 'one',
+              type: 'step',
+              status: 'completed',
+              sessionId: 'session-one',
+              startedAt: '2026-08-10T00:00:00.000Z',
+              endedAt: '2026-08-10T00:00:01.000Z',
+            },
+            // No `startedAt` — the park happened before this node ran.
+            { nodeId: 'two', type: 'step', status: 'paused' },
+          ],
+        },
+      },
+    });
+
+    const nodes = store.getState().workflows.get('boundary-settle')!.nodes;
+    expect(nodes[0]!.status).toBe('completed');
+    expect(nodes[1]!.status).toBe('pending');
+    expect(nodes[1]!.pauseReason).toBe("Workflow paused before node 'two'.");
+  });
+
+  it('adopts paused from the snapshot for a node that had started', () => {
+    // The mirror case: a mid-flight park did run, so its `paused` is authoritative.
+    const store = createWorkflowStore();
+    store.getState().applyEvent(startEvent('mid-settle'));
+    store.getState().applyEvent({
+      type: 'node_start',
+      workflowId: 'mid-settle',
+      parentSessionId: 'parent-1',
+      nodeId: 'two',
+      nodePath: ['root', 'two'],
+      nodeType: 'step',
+      sessionId: 'session-two',
+    });
+    store.getState().applyEvent({
+      type: 'run_complete',
+      workflowId: 'mid-settle',
+      parentSessionId: 'parent-1',
+      status: 'paused',
+      finalState: {
+        workflowId: 'mid-settle',
+        workflowName: 'Workflow mid-settle',
+        status: 'paused',
+        inputs: {},
+        artifacts: {},
+        capturedOutputs: {},
+        parentSessionId: 'parent-1',
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'running',
+          children: [
+            { nodeId: 'one', type: 'step', status: 'completed' },
+            {
+              nodeId: 'two',
+              type: 'step',
+              status: 'paused',
+              sessionId: 'session-two',
+              startedAt: '2026-08-10T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+
+    const nodes = store.getState().workflows.get('mid-settle')!.nodes;
+    expect(nodes[1]!.status).toBe('paused');
+  });
+
+  it('marks a started node paused when node_paused names it', () => {
+    const store = createWorkflowStore();
+    store.getState().applyEvent(startEvent('mid-step'));
+    store.getState().applyEvent({
+      type: 'node_start',
+      workflowId: 'mid-step',
+      parentSessionId: 'parent-1',
+      nodeId: 'one',
+      nodePath: ['root', 'one'],
+      nodeType: 'step',
+    });
+    store.getState().applyEvent({
+      type: 'node_paused',
+      workflowId: 'mid-step',
+      parentSessionId: 'parent-1',
+      nodeId: 'one',
+      nodePath: ['root', 'one'],
+      reason: 'awaiting answer',
+    });
+
+    expect(store.getState().workflows.get('mid-step')!.nodes[0]).toMatchObject({
+      status: 'paused',
+      pauseReason: 'awaiting answer',
+    });
+  });
+
+  it('records who stopped the run so the banner can attribute it', () => {
+    const store = createWorkflowStore();
+    store.getState().applyEvent(startEvent('attributed'));
+    store.getState().applyEvent({
+      type: 'paused',
+      workflowId: 'attributed',
+      parentSessionId: 'parent-1',
+      pauseReason: 'paused by request',
+      initiator: 'user',
+      initiatorReason: 'switching branches',
+    });
+
+    expect(store.getState().workflows.get('attributed')).toMatchObject({
+      stopInitiator: 'user',
+      stopReason: 'switching branches',
+    });
+
+    store.getState().applyEvent({
+      type: 'run_complete',
+      workflowId: 'attributed',
+      parentSessionId: 'parent-1',
+      status: 'aborted',
+      finalState: snapshot('attributed', 'aborted'),
+    });
+
+    // The terminal event carries no attribution, so the pause's has to survive.
+    expect(store.getState().archivedWorkflows.get('attributed')).toMatchObject({
+      status: 'aborted',
+      stopInitiator: 'user',
+      stopReason: 'switching branches',
+    });
+  });
+
+  it('carries stop attribution through a session restore', () => {
+    // A restored run keeps its "Stopped by you." banner rather than regressing to
+    // the mechanical pause reason the attribution exists to replace.
+    const store = createWorkflowStore();
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'restored-stop',
+      parentSessionId: 'parent-1',
+      state: {
+        ...snapshot('restored-stop', 'paused'),
+        pauseReason: "Workflow paused before node 'two'.",
+        stopInitiator: 'user',
+        stopReason: 'switching branches',
+      },
+      stepSessions: [],
+    });
+
+    expect(store.getState().workflows.get('restored-stop')).toMatchObject({
+      status: 'paused',
+      stopInitiator: 'user',
+      stopReason: 'switching branches',
+    });
+  });
+
+  it('drops pause attribution once a step runs again', () => {
+    // Without clearing the stale stop, a later autonomous failure inherits
+    // `'user'` and reads "Stopped by you." on a run the user did not stop.
+    const store = createWorkflowStore();
+    store.getState().applyEvent(startEvent('resumed'));
+    store.getState().applyEvent({
+      type: 'paused',
+      workflowId: 'resumed',
+      parentSessionId: 'parent-1',
+      pauseReason: 'paused by request',
+      initiator: 'user',
+      initiatorReason: 'switching branches',
+    });
+    store.getState().applyEvent({
+      type: 'node_start',
+      workflowId: 'resumed',
+      parentSessionId: 'parent-1',
+      nodeId: 'two',
+      nodePath: ['root', 'two'],
+      nodeType: 'step',
+      sessionId: 'session-two',
+    });
+
+    expect(store.getState().workflows.get('resumed')).toMatchObject({
+      status: 'running',
+      stopInitiator: undefined,
+      stopReason: undefined,
+      pauseReason: undefined,
+    });
+
+    store.getState().applyEvent({
+      type: 'run_complete',
+      workflowId: 'resumed',
+      parentSessionId: 'parent-1',
+      status: 'failed',
+      finalState: snapshot('resumed', 'failed'),
+    });
+
+    expect(store.getState().archivedWorkflows.get('resumed')).toMatchObject({
+      status: 'failed',
+      stopInitiator: undefined,
+    });
+  });
+
+  it('parks only the matching loop iteration, not a pending sibling', () => {
+    // `node_paused` carries no `iteration`, so an unrolled repeat matches more
+    // than one row: decided per node, or one pending sibling suppresses the park
+    // on the instance that actually stopped.
+    const store = createWorkflowStore();
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'loop-park',
+      parentSessionId: 'parent-1',
+      state: {
+        workflowId: 'loop-park',
+        workflowName: 'Loop park',
+        status: 'running',
+        inputs: {},
+        artifacts: {},
+        capturedOutputs: {},
+        parentSessionId: 'parent-1',
+        root: {
+          nodeId: 'root',
+          type: 'repeat',
+          status: 'running',
+          children: [
+            {
+              nodeId: 'review',
+              type: 'step',
+              status: 'running',
+              iteration: 1,
+              sessionId: 'session-review-1',
+            },
+            { nodeId: 'review', type: 'step', status: 'pending', iteration: 2 },
+          ],
+        },
+      },
+      stepSessions: [],
+    });
+    store.getState().applyEvent({
+      type: 'node_paused',
+      workflowId: 'loop-park',
+      parentSessionId: 'parent-1',
+      nodeId: 'review',
+      nodePath: ['root', 'iter-1'],
+      reason: 'awaiting answer',
+    });
+
+    const nodes = store.getState().workflows.get('loop-park')!.nodes;
+    const parked = nodes.find((node) => node.iteration === 1);
+    const sibling = nodes.find((node) => node.iteration === 2);
+    expect(parked).toMatchObject({
+      status: 'paused',
+      pauseReason: 'awaiting answer',
+    });
+    expect(sibling?.status).toBe('pending');
+  });
+
+  it('keeps a boundary-parked step pending when a restore carries no plan', () => {
+    // `nodePlan` is optional, and without it nodes come from `flattenState`, which
+    // copies the snapshot status verbatim — so this path needs the same guard
+    // `reconcileNodes` applies or the phantom-paused step is back on screen.
+    const store = createWorkflowStore();
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'restore-park',
+      parentSessionId: 'parent-1',
+      state: {
+        ...snapshot('restore-park', 'paused'),
+        pauseReason: "Workflow paused before node 'two'.",
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'paused',
+          children: [
+            {
+              nodeId: 'one',
+              type: 'step',
+              status: 'completed',
+              startedAt: '2026-08-10T00:00:00.000Z',
+              sessionId: 'session-one',
+            },
+            // Parked before it ever ran: no startedAt, no sessionId.
+            { nodeId: 'two', type: 'step', status: 'paused' },
+          ],
+        },
+      },
+      stepSessions: [],
+    });
+
+    const nodes = store.getState().workflows.get('restore-park')!.nodes;
+    expect(nodes.find((node) => node.id === 'two')?.status).toBe('pending');
+    // A step that genuinely parked mid-flight still restores as paused.
+    expect(nodes.find((node) => node.id === 'one')?.status).toBe('completed');
+  });
+
+  it('restores a parked step with its question when only the run carries one', () => {
+    // `WorkflowNodeState` has no `pauseReason`, so the run-level one is all a
+    // reload can offer — without it `s respond` outlives its question.
+    const store = createWorkflowStore();
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'restore-question',
+      parentSessionId: 'parent-1',
+      state: {
+        ...snapshot('restore-question', 'paused'),
+        pauseReason: 'Ship the release candidate?',
+      },
+      stepSessions: [],
+    });
+
+    const parked = store
+      .getState()
+      .workflows.get('restore-question')!
+      .nodes.find((node) => node.id === 'two');
+    expect(parked).toMatchObject({
+      status: 'paused',
+      pauseReason: 'Ship the release candidate?',
+    });
+  });
+
+  it('leaves a parked container at the status the snapshot gives it', () => {
+    // A container never owns a step session, so the guard's `!sessionId` half is
+    // free for one — without the step filter a paused `parallel` is dragged back
+    // to `pending`, above children that have already finished.
+    const store = createWorkflowStore();
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'restore-container',
+      parentSessionId: 'parent-1',
+      state: {
+        ...snapshot('restore-container', 'paused'),
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'paused',
+          children: [
+            {
+              nodeId: 'group',
+              type: 'parallel',
+              status: 'paused',
+              children: [
+                {
+                  nodeId: 'one',
+                  type: 'step',
+                  status: 'completed',
+                  startedAt: '2026-08-10T00:00:00.000Z',
+                  sessionId: 'session-one',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      stepSessions: [],
+    });
+
+    const nodes = store.getState().workflows.get('restore-container')!.nodes;
+    expect(nodes.find((node) => node.id === 'root')?.status).toBe('paused');
+    expect(nodes.find((node) => node.id === 'group')?.status).toBe('paused');
+    expect(nodes.find((node) => node.id === 'one')?.status).toBe('completed');
+  });
+
+  it('does not repeat one run-level question across every parked node', () => {
+    // One reason can describe only one park: fanning it onto two branches claims
+    // both wait on the same question, and onto a container it offers a reply the
+    // composer refuses for want of a conversation.
+    const store = createWorkflowStore();
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'restore-fanout',
+      parentSessionId: 'parent-1',
+      state: {
+        ...snapshot('restore-fanout', 'paused'),
+        pauseReason: 'Ship the release candidate?',
+        root: {
+          nodeId: 'root',
+          type: 'parallel',
+          status: 'paused',
+          startedAt: '2026-08-10T00:00:00.000Z',
+          children: [
+            {
+              nodeId: 'left',
+              type: 'step',
+              status: 'paused',
+              startedAt: '2026-08-10T00:00:00.000Z',
+              sessionId: 'session-left',
+            },
+            {
+              nodeId: 'right',
+              type: 'step',
+              status: 'paused',
+              startedAt: '2026-08-10T00:00:00.000Z',
+              sessionId: 'session-right',
+            },
+          ],
+        },
+      },
+      stepSessions: [],
+    });
+
+    const nodes = store.getState().workflows.get('restore-fanout')!.nodes;
+    // Ambiguous which branch the reason belongs to, so neither claims it.
+    expect(
+      nodes.find((node) => node.id === 'left')?.pauseReason
+    ).toBeUndefined();
+    expect(
+      nodes.find((node) => node.id === 'right')?.pauseReason
+    ).toBeUndefined();
+    // A container could never answer it in the first place.
+    expect(
+      nodes.find((node) => node.id === 'root')?.pauseReason
+    ).toBeUndefined();
+  });
+
+  it('gives the run-level question only to a parked step that can answer it', () => {
+    // The unambiguous case: one paused step owning a session, so the composer has
+    // somewhere to send the answer.
+    const store = createWorkflowStore();
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'restore-container-only',
+      parentSessionId: 'parent-1',
+      state: {
+        ...snapshot('restore-container-only', 'paused'),
+        pauseReason: 'Ship the release candidate?',
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'paused',
+          startedAt: '2026-08-10T00:00:00.000Z',
+          children: [
+            {
+              nodeId: 'only',
+              type: 'step',
+              status: 'paused',
+              startedAt: '2026-08-10T00:00:00.000Z',
+              sessionId: 'session-only',
+            },
+          ],
+        },
+      },
+      stepSessions: [],
+    });
+
+    const nodes = store
+      .getState()
+      .workflows.get('restore-container-only')!.nodes;
+    expect(nodes.find((node) => node.id === 'only')?.pauseReason).toBe(
+      'Ship the release candidate?'
+    );
+    expect(
+      nodes.find((node) => node.id === 'root')?.pauseReason
+    ).toBeUndefined();
+  });
 });

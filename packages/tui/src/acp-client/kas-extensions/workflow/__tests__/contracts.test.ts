@@ -4,8 +4,18 @@ import type {
   WorkflowLoadResponse,
 } from '../../../../types/workflow.js';
 import {
+  WORKFLOW_ACTION_REASON_MAX_LENGTH,
+  workflowUserAction,
+} from '../../../../types/workflow-history.js';
+import {
+  WORKFLOW_CANCEL_CONTRACT,
   WORKFLOW_CREATE_CONTRACT,
+  WORKFLOW_INVOKE_CONTRACT,
+  WORKFLOW_LIST_CONTRACT,
   WORKFLOW_NOTIFICATION_METHODS,
+  WORKFLOW_PAUSE_CONTRACT,
+  WORKFLOW_RESUME_CONTRACT,
+  agentServesWorkflowControl,
   parseWorkflowCancelResponse,
   parseWorkflowCreateResponse,
   parseWorkflowInspectResponse,
@@ -701,5 +711,212 @@ describe('workflow protocol boundary', () => {
 
     // No modelId key when the caller passes none (session model was 'auto').
     expect(WORKFLOW_CREATE_CONTRACT.encode(base)).not.toHaveProperty('modelId');
+  });
+});
+
+describe('control-action attribution', () => {
+  it('encodes initiator and reason on pause, resume, and cancel', () => {
+    const attributed = { workflowId: 'wf-1', ...workflowUserAction('done') };
+
+    expect(WORKFLOW_PAUSE_CONTRACT.encode(attributed)).toEqual({
+      workflowId: 'wf-1',
+      initiator: 'user',
+      reason: 'done',
+    });
+    expect(WORKFLOW_RESUME_CONTRACT.encode(attributed)).toEqual({
+      workflowId: 'wf-1',
+      initiator: 'user',
+      reason: 'done',
+    });
+    expect(
+      WORKFLOW_CANCEL_CONTRACT.encode({
+        ...attributed,
+        targetStatus: 'aborted',
+      })
+    ).toEqual({
+      workflowId: 'wf-1',
+      targetStatus: 'aborted',
+      initiator: 'user',
+      reason: 'done',
+    });
+  });
+
+  it('omits both keys entirely when the action is unattributed', () => {
+    // Byte-identical to the pre-attribution request shape.
+    expect(WORKFLOW_PAUSE_CONTRACT.encode({ workflowId: 'wf-1' })).toEqual({
+      workflowId: 'wf-1',
+    });
+    expect(WORKFLOW_CANCEL_CONTRACT.encode({ workflowId: 'wf-1' })).toEqual({
+      workflowId: 'wf-1',
+    });
+  });
+
+  it('never sends a bare reason, which KAS rejects', () => {
+    expect(
+      WORKFLOW_PAUSE_CONTRACT.encode({
+        workflowId: 'wf-1',
+        reason: 'orphaned',
+      })
+    ).toEqual({ workflowId: 'wf-1' });
+  });
+
+  it('caps a reason at the length KAS accepts and drops an empty one', () => {
+    const long = 'x'.repeat(WORKFLOW_ACTION_REASON_MAX_LENGTH + 50);
+    expect(workflowUserAction(long).reason).toHaveLength(
+      WORKFLOW_ACTION_REASON_MAX_LENGTH
+    );
+    expect(workflowUserAction('   ')).toEqual({ initiator: 'user' });
+    expect(workflowUserAction()).toEqual({ initiator: 'user' });
+  });
+
+  it('accepts attribution on paused notifications', () => {
+    expect(
+      parseWorkflowNotification('_kiro/workflow/paused', {
+        workflowId: 'wf-1',
+        parentSessionId: PARENT_SESSION_ID,
+        pauseReason: 'paused before node',
+        initiator: 'user',
+        initiatorReason: 'switching branches',
+      })
+    ).toMatchObject({
+      type: 'paused',
+      initiator: 'user',
+      initiatorReason: 'switching branches',
+    });
+
+    // Degrades the field, not the event: the pause still reaches the monitor,
+    // merely unattributed. Dropping it leaves a stopped run rendering as running.
+    const unknownInitiator = parseWorkflowNotification(
+      '_kiro/workflow/paused',
+      {
+        workflowId: 'wf-1',
+        parentSessionId: PARENT_SESSION_ID,
+        pauseReason: 'paused',
+        initiator: 'agent',
+      }
+    );
+    expect(unknownInitiator).toMatchObject({
+      type: 'paused',
+      pauseReason: 'paused',
+    });
+    expect(unknownInitiator).not.toHaveProperty('initiator');
+  });
+
+  it('drops the reason along with an initiator it cannot name', () => {
+    // The pair is one attribution. Keeping the reason alone lets it attach to
+    // whatever initiator was carried forward, so a scheduler's reason on a
+    // previously user-paused run renders as "Stopped by you: <their reason>".
+    const orphaned = parseWorkflowNotification('_kiro/workflow/paused', {
+      workflowId: 'wf-1',
+      parentSessionId: PARENT_SESSION_ID,
+      pauseReason: 'paused',
+      initiator: 'scheduler',
+      initiatorReason: 'nightly budget exceeded',
+    });
+    expect(orphaned).toMatchObject({ type: 'paused' });
+    expect(orphaned).not.toHaveProperty('initiator');
+    expect(orphaned).not.toHaveProperty('initiatorReason');
+  });
+
+  it('drops a snapshot stopReason whose stopInitiator is unknown', () => {
+    const response = validLoadResponse();
+    const parsed = parseWorkflowLoadResponse({
+      ...response,
+      state: {
+        ...response.state,
+        stopInitiator: 'scheduler',
+        stopReason: 'nightly budget exceeded',
+      },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.state).not.toHaveProperty('stopInitiator');
+    expect(parsed?.state).not.toHaveProperty('stopReason');
+  });
+
+  it('accepts stopInitiator and stopReason on a persisted snapshot', () => {
+    const response = validLoadResponse();
+    expect(
+      parseWorkflowLoadResponse({
+        ...response,
+        state: {
+          ...response.state,
+          stopInitiator: 'user',
+          stopReason: 'not needed any more',
+        },
+      })
+    ).not.toBeNull();
+  });
+
+  it('accepts completionSignalSource on a node state', () => {
+    const response = validLoadResponse();
+    expect(
+      parseWorkflowLoadResponse({
+        ...response,
+        state: {
+          ...response.state,
+          root: {
+            ...response.state.root,
+            completionSignalSource: 'status_update',
+          },
+        },
+      })
+    ).not.toBeNull();
+    // Costs the field, not the response — rejecting here would blank the run.
+    const unknownSource = parseWorkflowLoadResponse({
+      ...response,
+      state: {
+        ...response.state,
+        root: { ...response.state.root, completionSignalSource: 'telepathy' },
+      },
+    });
+    expect(unknownSource).not.toBeNull();
+    expect(unknownSource?.state.root).not.toHaveProperty(
+      'completionSignalSource'
+    );
+  });
+
+  it('keeps a snapshot whose stopInitiator this build does not know', () => {
+    const response = validLoadResponse();
+    const restored = parseWorkflowLoadResponse({
+      ...response,
+      state: { ...response.state, stopInitiator: 'scheduler' },
+    });
+    expect(restored).not.toBeNull();
+    expect(restored?.state).not.toHaveProperty('stopInitiator');
+  });
+});
+
+describe('agentServesWorkflowControl', () => {
+  it('trusts an agent that advertises nothing (pre-discovery KAS builds)', () => {
+    expect(agentServesWorkflowControl(undefined)).toBe(true);
+    expect(agentServesWorkflowControl([])).toBe(true);
+  });
+
+  // From the contracts, not by hand: KAS advertises create as
+  // `_kiro/workflow/new`, and a hand-written 'create' let the gate reject a
+  // capable agent while this test still passed.
+  it('accepts an agent advertising the workflow control methods', () => {
+    expect(
+      agentServesWorkflowControl([
+        WORKFLOW_CREATE_CONTRACT.method,
+        WORKFLOW_INVOKE_CONTRACT.method,
+        WORKFLOW_LIST_CONTRACT.method,
+        WORKFLOW_PAUSE_CONTRACT.method,
+      ])
+    ).toBe(true);
+  });
+
+  it('refuses an agent missing the create method the client actually sends', () => {
+    expect(
+      agentServesWorkflowControl([
+        '_kiro/workflow/create',
+        WORKFLOW_INVOKE_CONTRACT.method,
+        WORKFLOW_LIST_CONTRACT.method,
+      ])
+    ).toBe(false);
+  });
+
+  it('refuses an agent that advertises other extensions but no workflows', () => {
+    expect(agentServesWorkflowControl(['_kiro/session/list'])).toBe(false);
   });
 });

@@ -46,6 +46,7 @@ import type {
   WorkflowResumeResponse,
   WorkflowRunSummary,
 } from './types/workflow-history';
+import { workflowUserAction } from './types/workflow-history';
 import type {
   WorkflowCreateRequest,
   WorkflowCreateResponse,
@@ -511,17 +512,29 @@ export class Kiro {
     return this.workflowControl.inspectRun(workflowId);
   }
 
-  pauseWorkflow(workflowId: string): Promise<WorkflowPauseResponse> {
+  /**
+   * Pause/resume/cancel from the TUI is always a deliberate human act, so these
+   * attribute as `initiator: 'user'` — without it KAS wakes the parent session
+   * with a misleading "the workflow aborted" nudge.
+   */
+  pauseWorkflow(
+    workflowId: string,
+    reason?: string
+  ): Promise<WorkflowPauseResponse> {
     return this.observeWorkflowControl(
       'pause',
-      () => this.workflowControl.pauseRun(workflowId),
+      () =>
+        this.workflowControl.pauseRun(workflowId, workflowUserAction(reason)),
       (response) => response.paused
     );
   }
 
-  resumeWorkflow(workflowId: string): Promise<WorkflowResumeResponse> {
+  resumeWorkflow(
+    workflowId: string,
+    reason?: string
+  ): Promise<WorkflowResumeResponse> {
     return this.observeWorkflowControl('resume', () =>
-      this.workflowControl.resumeRun(workflowId)
+      this.workflowControl.resumeRun(workflowId, workflowUserAction(reason))
     );
   }
 
@@ -534,11 +547,17 @@ export class Kiro {
 
   cancelWorkflow(
     workflowId: string,
-    targetStatus?: 'aborted' | 'completed'
+    targetStatus?: 'aborted' | 'completed',
+    reason?: string
   ): Promise<WorkflowCancelResponse> {
     return this.observeWorkflowControl(
       'cancel',
-      () => this.workflowControl.cancelRun(workflowId, targetStatus),
+      () =>
+        this.workflowControl.cancelRun(
+          workflowId,
+          targetStatus,
+          workflowUserAction(reason)
+        ),
       (response) => response.ok
     );
   }

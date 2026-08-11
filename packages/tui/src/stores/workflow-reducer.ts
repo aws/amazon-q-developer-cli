@@ -3,6 +3,7 @@ import type {
   WorkflowNodeState,
   WorkflowNodeStatus,
   WorkflowProgressEvent,
+  WorkflowStateSnapshot,
   WorkflowStatus,
 } from '../types/workflow.js';
 import type {
@@ -76,7 +77,7 @@ function flattenState(root: WorkflowNodeState): WorkflowMonitorNode[] {
     ({ state, parentId, nodePath, depth }) => ({
       id: state.nodeId,
       type: state.type,
-      status: state.status,
+      status: pausedBeforeStart(state) ? 'pending' : state.status,
       label: state.agentName ?? state.nodeId,
       parentId,
       depth,
@@ -90,11 +91,53 @@ function flattenState(root: WorkflowNodeState): WorkflowMonitorNode[] {
       failureReason: state.failureReason,
       capturedOutput: state.capturedOutput,
       completionSignal: state.completionSignal,
-      pauseReason:
-        state.completionSignal === 'need_input'
-          ? 'Waiting for your input'
-          : undefined,
+      completionSignalSource: state.completionSignalSource,
     })
+  );
+}
+
+/**
+ * A boundary park marks the node the run stopped *before* as `paused` even
+ * though it never ran. KAS stamps `startedAt` and opens the step session only
+ * after that pause check, so an unstarted park is uniquely `paused` with
+ * neither — a mid-flight park always carries at least one. Steps only: a
+ * container never owns a session, so for one the test would collapse to
+ * `paused && !startedAt` and drag it back to `pending`.
+ */
+function pausedBeforeStart(state: WorkflowNodeState): boolean {
+  return (
+    state.type === 'step' &&
+    state.status === 'paused' &&
+    state.startedAt === undefined &&
+    state.sessionId === undefined
+  );
+}
+
+/**
+ * `WorkflowNodeState` has no `pauseReason`, so after a reload the run-level one
+ * is the only park text left — without it the footer offers `s respond` for a
+ * question that is nowhere on screen. The run record holds exactly one reason,
+ * so only one node can claim it: a `paused` step owning a session, which is also
+ * the only node the composer will send an answer into. Ambiguous matches take
+ * none, since a missing reason reads as unknown where a wrong one reads as fact.
+ */
+function restoreParkReason(
+  nodes: readonly WorkflowMonitorNode[],
+  state: WorkflowStateSnapshot
+): WorkflowMonitorNode[] {
+  const reason = state.pauseReason?.trim();
+  if (state.status !== 'paused' || !reason) return [...nodes];
+  const candidates = nodes.filter(
+    (node) =>
+      node.type === 'step' &&
+      node.status === 'paused' &&
+      node.sessionId !== undefined &&
+      node.pauseReason === undefined
+  );
+  if (candidates.length !== 1) return [...nodes];
+  const parked = candidates[0];
+  return nodes.map((node) =>
+    node === parked ? { ...node, pauseReason: reason } : node
   );
 }
 
@@ -117,7 +160,7 @@ function reconcileNodes(
     const state = match.state;
     return {
       ...node,
-      status: state.status,
+      status: pausedBeforeStart(state) ? 'pending' : state.status,
       sessionId: state.sessionId ?? node.sessionId,
       nodePath: match.nodePath,
       agentName: state.agentName ?? node.agentName,
@@ -128,10 +171,13 @@ function reconcileNodes(
       failureReason: state.failureReason ?? node.failureReason,
       capturedOutput: state.capturedOutput ?? node.capturedOutput,
       completionSignal: state.completionSignal ?? node.completionSignal,
+      completionSignalSource:
+        state.completionSignalSource ?? node.completionSignalSource,
+      // Carried, never invented, and dropped once the step is no longer parked.
       pauseReason:
-        state.completionSignal === 'need_input'
-          ? (node.pauseReason ?? 'Waiting for your input')
-          : node.pauseReason,
+        state.status === 'paused' || state.status === 'failed'
+          ? node.pauseReason
+          : undefined,
     };
   });
 }
@@ -428,7 +474,10 @@ export function reduceWorkflowEvent(
 ): WorkflowCollectionState {
   if (event.type === 'run_snapshot') {
     const previous = state.workflows.get(event.workflowId);
-    const nodes = buildWorkflowNodesFromState(event.nodePlan, event.state.root);
+    const nodes = restoreParkReason(
+      buildWorkflowNodesFromState(event.nodePlan, event.state.root),
+      event.state
+    );
     const stepSessions = mergeSessions(
       event.stepSessions,
       collectWorkflowSessions(event.state.root)
@@ -444,6 +493,8 @@ export function reduceWorkflowEvent(
         previous?.startedAt ?? parseTimestampOr(event.state.createdAt, now),
       completedAt: null,
       pauseReason: event.state.pauseReason,
+      stopInitiator: event.state.stopInitiator,
+      stopReason: event.state.stopReason,
     };
     const selectedIndex = previous ? undefined : restoredSelectionIndex(nodes);
     const restoredState = replaceRun(state, restored, selectedIndex);
@@ -546,9 +597,20 @@ export function reduceWorkflowEvent(
         : nodes.findIndex(
             (node) => node.id === event.nodeId && node.type === event.nodeType
           );
+      // Clearing the attribution keeps a later autonomous abort from inheriting
+      // `'user'` and reading "Stopped by you."
+      const resumed =
+        run.status === 'paused'
+          ? {
+              status: 'running' as const,
+              pauseReason: undefined,
+              stopInitiator: undefined,
+              stopReason: undefined,
+            }
+          : {};
       return replaceRun(
         state,
-        { ...run, nodes, stepSessions },
+        { ...run, ...resumed, nodes, stepSessions },
         selectedIndex !== undefined && selectedIndex >= 0
           ? selectedIndex
           : undefined
@@ -583,12 +645,24 @@ export function reduceWorkflowEvent(
         iteration: event.iteration,
         branchId: event.branchId,
       };
+      // A boundary park names the node the run stopped *before*, which hasn't
+      // started, so record the reason but leave a pending node pending. Decided
+      // per node because `node_paused` carries no `iteration`: in an unrolled
+      // loop one pending sibling must not suppress the park on the instance
+      // that really stopped.
       return replaceRun(state, {
         ...run,
-        nodes: patchNodes(run.nodes, identity, {
-          status: 'paused',
-          pauseReason: event.reason,
-        }),
+        nodes: run.nodes.map((node) =>
+          nodeMatches(node, identity)
+            ? {
+                ...node,
+                ...(node.status === 'pending'
+                  ? {}
+                  : { status: 'paused' as const }),
+                pauseReason: event.reason,
+              }
+            : node
+        ),
         stepSessions: patchLatestSession(run.stepSessions, identity, {
           status: 'paused',
         }),
@@ -621,7 +695,13 @@ export function reduceWorkflowEvent(
             event.workflowId
           ),
         },
-        { ...run, status: 'paused', pauseReason: event.pauseReason }
+        {
+          ...run,
+          status: 'paused',
+          pauseReason: event.pauseReason,
+          stopInitiator: event.initiator,
+          stopReason: event.initiatorReason,
+        }
       );
     case 'run_complete': {
       const snapshot = event.finalState;
@@ -660,15 +740,17 @@ export function reduceWorkflowEvent(
         completedAt: paused ? run.completedAt : now,
         pauseReason:
           snapshot?.pauseReason ?? (paused ? run.pauseReason : undefined),
+        stopInitiator:
+          event.initiator ?? snapshot?.stopInitiator ?? run.stopInitiator,
+        stopReason:
+          event.initiatorReason ?? snapshot?.stopReason ?? run.stopReason,
       };
       if (paused) {
+        // Any parked step, `need_input` or not: a completion-gated park is
+        // equally waiting on the user.
         const selectedIndex = state.selectionLocked
           ? undefined
-          : nodes.findIndex(
-              (node) =>
-                node.status === 'paused' &&
-                node.completionSignal === 'need_input'
-            );
+          : nodes.findIndex((node) => node.status === 'paused');
         return replaceRun(
           {
             ...state,

@@ -287,7 +287,8 @@ describe('WorkflowMonitorScreen', () => {
     await flush();
 
     expect(retryWorkflow).toHaveBeenCalledTimes(1);
-    expect(retryWorkflow).toHaveBeenCalledWith('workflow-1');
+    // Chat alone can't restart a terminal run, so `r` names the selected node.
+    expect(retryWorkflow).toHaveBeenCalledWith('workflow-1', 'step-1');
 
     resolveRetry({
       workflowId: 'workflow-1',
@@ -295,6 +296,141 @@ describe('WorkflowMonitorScreen', () => {
       retriedNodeIds: ['step-1'],
     });
     await flush();
+  });
+
+  it('retries the whole run for a failed step inside a loop', async () => {
+    // A bare nodeId resolved first-DFS can't name one iteration. Retrying more
+    // than asked is recoverable; retrying a different iteration is not.
+    const store = createWorkflowStore();
+    store.getState().openHistoricalWorkflow({
+      workflowId: 'workflow-1',
+      parentSessionId: 'parent-1',
+      name: 'Loop retry validation',
+      status: 'failed',
+      nodes: [
+        {
+          id: 'review',
+          type: 'step',
+          status: 'failed',
+          label: 'reviewer',
+          parentId: 'loop',
+          depth: 1,
+          iteration: 2,
+          sessionId: 'child-1',
+          agentName: 'reviewer',
+        },
+      ],
+      stepSessions: [],
+      startedAt: Date.now(),
+      completedAt: Date.now(),
+    });
+    const retryWorkflow = mock(async () => ({
+      workflowId: 'workflow-1',
+      status: 'running' as const,
+      retriedNodeIds: ['review'],
+    }));
+    const kiro = new Kiro();
+    kiro.retryWorkflow = retryWorkflow;
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowMonitorScreen store={store} />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, patchConsole: false, mouse: true }
+    );
+    await flush();
+
+    terminal.sendInput('r');
+    await flush();
+
+    expect(retryWorkflow).toHaveBeenCalledWith('workflow-1', undefined);
+  });
+
+  it('asks nothing of the user on a run they stopped themselves', async () => {
+    // Already explained by the header banner — calling the same mechanical reason
+    // a question says two contradictory things about one stop.
+    const store = createWorkflowStore();
+    store.getState().openHistoricalWorkflow({
+      workflowId: 'workflow-1',
+      parentSessionId: 'parent-1',
+      name: 'Stop attribution validation',
+      status: 'paused',
+      pauseReason: "Workflow paused before node 'review'.",
+      stopInitiator: 'user',
+      nodes: [
+        {
+          id: 'review',
+          type: 'step',
+          status: 'paused',
+          label: 'reviewer',
+          parentId: null,
+          depth: 0,
+          sessionId: 'child-1',
+          agentName: 'reviewer',
+          pauseReason: "Workflow paused before node 'review'.",
+        },
+      ],
+      stepSessions: [],
+      startedAt: Date.now(),
+      completedAt: null,
+    });
+    const appStore = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowMonitorScreen store={store} />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, patchConsole: false, mouse: true }
+    );
+    await flush();
+
+    const output = stripAnsi(terminal.output);
+    expect(output).toContain('Stopped by you.');
+    expect(output).not.toContain('Waiting on you');
+  });
+
+  it('surfaces the question a step is parked on', async () => {
+    const store = createWorkflowStore();
+    store.getState().openHistoricalWorkflow({
+      workflowId: 'workflow-1',
+      parentSessionId: 'parent-1',
+      name: 'Question validation',
+      status: 'paused',
+      nodes: [
+        {
+          id: 'review',
+          type: 'step',
+          status: 'paused',
+          label: 'reviewer',
+          parentId: null,
+          depth: 0,
+          sessionId: 'child-1',
+          agentName: 'reviewer',
+          pauseReason: 'Ship the release candidate?',
+        },
+      ],
+      stepSessions: [],
+      startedAt: Date.now(),
+      completedAt: null,
+    });
+    const appStore = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowMonitorScreen store={store} />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, patchConsole: false, mouse: true }
+    );
+    await flush();
+
+    const output = stripAnsi(terminal.output);
+    // The mock terminal is narrow enough to wrap the banner, so match the
+    // prefix rather than the whole reason.
+    expect(output).toContain('Waiting on you: Ship the release');
   });
 
   it('keeps successful workflow messages out of the main alert bar', async () => {

@@ -16,6 +16,11 @@ export type WorkflowNodeType = NodeType;
 export type WorkflowCompletionSignal = NonNullable<
   StopCondition['completionSignal']
 >;
+/**
+ * Which channel a step used to announce it was done. Declared locally rather
+ * than re-exported from the covenant because the pinned covenant predates it.
+ */
+export type WorkflowCompletionSignalSource = 'send_message' | 'status_update';
 export type WorkflowJoinPolicy = JoinPolicy;
 export type WorkflowMaxIterationPolicy = OnMaxIterations;
 export type WorkflowWatchOutcome = WatchOutcome;
@@ -80,6 +85,8 @@ export interface WorkflowNodeState {
   watchTerminal?: boolean;
   failureReason?: string;
   completionSignal?: WorkflowCompletionSignal;
+  /** How the step signalled completion — a message to the parent, or a status update. */
+  completionSignalSource?: WorkflowCompletionSignalSource;
   continuationAttempts?: number;
 }
 
@@ -93,6 +100,9 @@ export interface WorkflowStateSnapshot {
   capturedOutputs: Record<string, string>;
   root: WorkflowNodeState;
   pauseReason?: string;
+  /** Set when a human deliberately stopped the run, with their optional reason. */
+  stopInitiator?: 'user';
+  stopReason?: string;
   parentSessionId?: string;
   workspacePath?: string;
   additionalDirectories?: string[];
@@ -214,11 +224,15 @@ export type WorkflowEvent =
   | (WorkflowEventBase & {
       type: 'paused';
       pauseReason: string;
+      initiator?: 'user';
+      initiatorReason?: string;
     })
   | (WorkflowEventBase & {
       type: 'run_complete';
       status: WorkflowRunCompleteStatus;
       finalState: WorkflowStateSnapshot;
+      initiator?: 'user';
+      initiatorReason?: string;
     })
   | WorkflowStepsQueuedEvent;
 

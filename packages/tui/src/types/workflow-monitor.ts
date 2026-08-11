@@ -1,5 +1,6 @@
 import type {
   WorkflowCompletionSignal,
+  WorkflowCompletionSignalSource,
   WorkflowNodeSessionTarget,
   WorkflowNodeStatus,
   WorkflowNodeType,
@@ -32,6 +33,7 @@ export interface WorkflowMonitorNode {
   failureReason?: string;
   capturedOutput?: string;
   completionSignal?: WorkflowCompletionSignal;
+  completionSignalSource?: WorkflowCompletionSignalSource;
   pauseReason?: string;
 }
 
@@ -52,6 +54,9 @@ export interface WorkflowRunView {
   startedAt: number | null;
   completedAt: number | null;
   pauseReason?: string;
+  /** Set when the user deliberately stopped this run, with their optional reason. */
+  stopInitiator?: 'user';
+  stopReason?: string;
 }
 
 export interface WorkflowNodeConversation {

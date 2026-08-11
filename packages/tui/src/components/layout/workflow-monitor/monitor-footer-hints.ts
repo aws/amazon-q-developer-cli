@@ -7,6 +7,8 @@ import {
   isRetryableWorkflowStatus,
   isTerminalWorkflowStatus,
 } from '../../../types/workflow-status.js';
+import { messageModeForNode } from './workflow-message-mode.js';
+import { retryIsStepScoped } from './workflow-retry-scope.js';
 
 export interface MonitorFooterContext {
   selectedNode?: WorkflowMonitorNode | null;
@@ -25,17 +27,19 @@ export function buildMonitorFooterHints(ctx: MonitorFooterContext): string {
 
   const hints: string[] = [];
   const node = ctx.selectedNode;
-  if (node?.status === 'running') hints.push('s steer');
-  if (node?.status === 'paused' && node.completionSignal === 'need_input') {
-    hints.push('s respond');
-  }
-  if (node?.status === 'completed') hints.push('s message');
+  // Asking the composer itself, so the footer can't advertise a send it refuses:
+  // `s respond` on a container is a dead key, since a message needs a session.
+  const messageMode = messageModeForNode(node);
+  if (messageMode === 'steer') hints.push('s steer');
+  // `respond`/`message` match the composer's own labels.
+  if (messageMode === 'respond') hints.push('s respond');
+  if (messageMode === 'message') hints.push('s message');
 
   if (!isTerminalWorkflowStatus(ctx.status)) {
     hints.push(ctx.status === 'paused' ? 'r resume' : 'p pause');
     hints.push('Ctrl+X stop');
   } else if (isRetryableWorkflowStatus(ctx.status)) {
-    hints.push('r retry');
+    hints.push(retryIsStepScoped(node) ? 'r retry step' : 'r retry');
   }
   if (node) hints.push('Up/Down nodes');
   hints.push('Left/Right workflows');

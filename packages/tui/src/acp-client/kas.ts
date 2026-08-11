@@ -125,7 +125,10 @@ import {
 } from './base';
 import { KasWorkflowExtension } from './kas-extensions/workflow/controller';
 import type { WorkflowExtensionHost } from './kas-extensions/workflow/ports';
-import { parsePersistedWorkflowProgress } from './kas-extensions/workflow/contracts';
+import {
+  agentServesWorkflowControl,
+  parsePersistedWorkflowProgress,
+} from './kas-extensions/workflow/contracts';
 import {
   WORKFLOW_NOTIFICATION_DELIVERY_CONTRACT,
   WORKFLOW_NOTIFICATION_DELIVERY_METHOD,
@@ -685,7 +688,16 @@ export class KasAcpClient extends BaseAcpClient {
     return this.workflowExtension;
   }
 
+  /**
+   * The workflow control plane, or `undefined` when this agent doesn't serve it.
+   * Detected up front from the advertised extension methods, so the caller gets
+   * "Workflow controls are not supported by this engine" rather than a raw
+   * method-not-found from the first RPC.
+   */
   get workflowControl(): WorkflowControlApi | undefined {
+    if (!agentServesWorkflowControl(this.kiroCapabilities.extensionMethods)) {
+      return undefined;
+    }
     return this.workflowExtension;
   }
 

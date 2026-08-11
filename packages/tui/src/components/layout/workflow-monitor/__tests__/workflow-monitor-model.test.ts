@@ -158,6 +158,7 @@ describe('workflow monitor view model', () => {
         label: 'coder',
         parentId: null,
         depth: 0,
+        sessionId: 'done-session',
       },
       status: 'completed',
       monitorLayout: 'side-by-side',
@@ -168,6 +169,142 @@ describe('workflow monitor view model', () => {
 
     expect(hints).toContain('s message');
     expect(hints).not.toContain('Ctrl+X stop');
+  });
+
+  it('names the two motions a failed step needs', () => {
+    // Chatting fixes nothing on its own, so the footer advertises both motions.
+    const hints = buildMonitorFooterHints({
+      selectedNode: {
+        id: 'broken',
+        type: 'step',
+        status: 'failed',
+        label: 'coder',
+        parentId: null,
+        depth: 0,
+        sessionId: 'broken-session',
+      },
+      status: 'failed',
+      monitorLayout: 'side-by-side',
+      mouseModeEnabled: false,
+      stopConfirmationArmed: false,
+      inputOpen: false,
+    });
+
+    expect(hints).toContain('s message');
+    expect(hints).toContain('r retry step');
+  });
+
+  it('does not promise a step-scoped retry inside a loop', () => {
+    // A loop-body step retries the whole run, since the request cannot name one
+    // iteration, so the footer must not promise a step-scoped retry.
+    const hints = buildMonitorFooterHints({
+      selectedNode: {
+        id: 'broken',
+        type: 'step',
+        status: 'failed',
+        label: 'coder',
+        parentId: 'loop',
+        depth: 1,
+        iteration: 2,
+        sessionId: 'broken-session',
+      },
+      status: 'failed',
+      monitorLayout: 'side-by-side',
+      mouseModeEnabled: false,
+      stopConfirmationArmed: false,
+      inputOpen: false,
+    });
+
+    expect(hints).toContain('r retry');
+    expect(hints).not.toContain('r retry step');
+  });
+
+  it('offers a reply at a paused step regardless of completion signal', () => {
+    const hints = buildMonitorFooterHints({
+      selectedNode: {
+        id: 'parked',
+        type: 'step',
+        status: 'paused',
+        label: 'reviewer',
+        parentId: null,
+        depth: 0,
+        sessionId: 'parked-session',
+      },
+      status: 'paused',
+      monitorLayout: 'side-by-side',
+      mouseModeEnabled: false,
+      stopConfirmationArmed: false,
+      inputOpen: false,
+    });
+
+    expect(hints).toContain('s respond');
+    expect(hints).toContain('r resume');
+  });
+
+  it('does not offer a reply at a parked container', () => {
+    // A message is addressed to a session and a container owns none, so the
+    // composer refuses it — advertising `s respond` there is a dead key.
+    const hints = buildMonitorFooterHints({
+      selectedNode: {
+        id: 'branches',
+        type: 'parallel',
+        status: 'paused',
+        label: 'branches',
+        parentId: null,
+        depth: 0,
+      },
+      status: 'paused',
+      monitorLayout: 'side-by-side',
+      mouseModeEnabled: false,
+      stopConfirmationArmed: false,
+      inputOpen: false,
+    });
+
+    expect(hints).not.toContain('s respond');
+    expect(hints).toContain('r resume');
+  });
+
+  it('does not offer a fix message at a failed container', () => {
+    const hints = buildMonitorFooterHints({
+      selectedNode: {
+        id: 'loop',
+        type: 'repeat',
+        status: 'failed',
+        label: 'loop',
+        parentId: null,
+        depth: 0,
+      },
+      status: 'failed',
+      monitorLayout: 'side-by-side',
+      mouseModeEnabled: false,
+      stopConfirmationArmed: false,
+      inputOpen: false,
+    });
+
+    expect(hints).not.toContain('s message');
+    // The whole run, since a container is not a step KAS can rerun on its own.
+    expect(hints).toContain('r retry');
+    expect(hints).not.toContain('r retry step');
+  });
+
+  it('does not offer a message at a step with no session yet', () => {
+    const hints = buildMonitorFooterHints({
+      selectedNode: {
+        id: 'queued',
+        type: 'step',
+        status: 'paused',
+        label: 'reviewer',
+        parentId: null,
+        depth: 0,
+      },
+      status: 'paused',
+      monitorLayout: 'side-by-side',
+      mouseModeEnabled: false,
+      stopConfirmationArmed: false,
+      inputOpen: false,
+    });
+
+    expect(hints).not.toContain('s respond');
   });
 
   it('shows optimistic graceful pause state', () => {

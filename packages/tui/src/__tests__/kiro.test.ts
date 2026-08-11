@@ -664,11 +664,19 @@ describe('Kiro', () => {
       nodeTarget,
       'private message'
     );
-    expect(mockWorkflowControl.pauseRun).toHaveBeenCalledWith('workflow-1');
-    expect(mockWorkflowControl.resumeRun).toHaveBeenCalledWith('workflow-1');
+    // Every control path out of the TUI is a deliberate human act, so each one
+    // attributes itself — otherwise KAS nudges the parent session about an
+    // "aborted" run the user stopped on purpose.
+    expect(mockWorkflowControl.pauseRun).toHaveBeenCalledWith('workflow-1', {
+      initiator: 'user',
+    });
+    expect(mockWorkflowControl.resumeRun).toHaveBeenCalledWith('workflow-1', {
+      initiator: 'user',
+    });
     expect(mockWorkflowControl.cancelRun).toHaveBeenCalledWith(
       'workflow-1',
-      'completed'
+      'completed',
+      { initiator: 'user' }
     );
     expect(recordTuiWorkflowControl.mock.calls).toEqual([
       ['message', 'success', expect.any(String)],
@@ -676,6 +684,19 @@ describe('Kiro', () => {
       ['resume', 'success', expect.any(String)],
       ['cancel', 'success', expect.any(String)],
     ]);
+  });
+
+  it('forwards an explanation for a stop the user gave a reason for', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+
+    await kiro.cancelWorkflow('workflow-1', 'aborted', 'wrong branch');
+
+    expect(mockWorkflowControl.cancelRun).toHaveBeenCalledWith(
+      'workflow-1',
+      'aborted',
+      { initiator: 'user', reason: 'wrong branch' }
+    );
   });
 
   it('records every rejected workflow control and preserves its error', async () => {

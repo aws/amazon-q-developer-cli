@@ -21,6 +21,7 @@ import {
 } from '../../../types/workflow-status.js';
 import { logger } from '../../../utils/logger.js';
 import type {
+  WorkflowActionAttribution,
   WorkflowCancelResponse,
   WorkflowInspectResponse,
   WorkflowListResponse,
@@ -85,6 +86,72 @@ const NODE_TYPES: ReadonlySet<WorkflowNodeType> = new Set([
 ]);
 
 const COMPLETION_SIGNALS = new Set(['success', 'need_input', 'error']);
+const COMPLETION_SIGNAL_SOURCES = new Set(['send_message', 'status_update']);
+
+/**
+ * Whether the connected agent serves the workflow control plane. Silence counts
+ * as capable, since only newer KAS builds publish the list and refusing would
+ * break every agent predating it. A non-empty list that lacks the methods is a
+ * real answer, and we honor it.
+ */
+export function agentServesWorkflowControl(
+  extensionMethods: readonly string[] | undefined
+): boolean {
+  if (extensionMethods === undefined || extensionMethods.length === 0) {
+    return true;
+  }
+  return WORKFLOW_CONTROL_METHODS.every((method) =>
+    extensionMethods.includes(method)
+  );
+}
+
+/** `'user'` is the only initiator KAS attributes today. */
+const INITIATORS = new Set(['user']);
+
+/**
+ * Drop an optional enum-valued field whose value this build doesn't recognise.
+ *
+ * The rule for this boundary: an unknown enum value degrades the *field*, never
+ * the enclosing event. KAS can legitimately add a value ahead of the pinned
+ * covenant, and one unrecognised node would otherwise invalidate the whole
+ * snapshot — losing a hint field costs a label, losing the event costs the run's
+ * lifecycle. Mutates in place; every caller owns a freshly parsed payload.
+ *
+ * Logged at debug: one unknown value in a plan reaches here once per field per
+ * node, so warning turns a single upgrade into a wall of duplicate output.
+ */
+function degradeUnknownEnum(
+  value: Record<string, unknown>,
+  key: string,
+  allowed: ReadonlySet<string>
+): boolean {
+  const candidate = value[key];
+  if (candidate === undefined) return false;
+  if (typeof candidate === 'string' && allowed.has(candidate)) return false;
+  logger.debug('[acp-client] Ignored unknown KAS workflow enum value', {
+    field: key,
+    value: String(candidate),
+  });
+  delete value[key];
+  return true;
+}
+
+/**
+ * An attribution is the initiator *and* its reason, so degrade them together.
+ * They resolve through independent `??` chains downstream, so dropping only the
+ * unknown initiator lets the reason survive and attach to whatever initiator was
+ * carried forward — a scheduler's "nightly budget exceeded" rendered as
+ * "Stopped by you: nightly budget exceeded". No attribution beats a wrong one.
+ */
+function degradeUnknownInitiator(
+  value: Record<string, unknown>,
+  initiatorKey: string,
+  reasonKey: string
+): void {
+  if (degradeUnknownEnum(value, initiatorKey, INITIATORS)) {
+    delete value[reasonKey];
+  }
+}
 const JOIN_POLICIES: ReadonlySet<WorkflowJoinPolicy> = new Set([
   'all',
   'allSettled',
@@ -281,12 +348,12 @@ function isWorkflowNodeState(
   ) {
     return false;
   }
-  if (
-    value.completionSignal !== undefined &&
-    !COMPLETION_SIGNALS.has(value.completionSignal as string)
-  ) {
-    return false;
-  }
+  degradeUnknownEnum(value, 'completionSignal', COMPLETION_SIGNALS);
+  degradeUnknownEnum(
+    value,
+    'completionSignalSource',
+    COMPLETION_SIGNAL_SOURCES
+  );
   return (
     value.children === undefined ||
     (Array.isArray(value.children) &&
@@ -301,6 +368,7 @@ function isWorkflowStateSnapshot(
   if (!isRecord(value)) return false;
   const root = value.root;
   if (!isWorkflowNodeState(root)) return false;
+  degradeUnknownInitiator(value, 'stopInitiator', 'stopReason');
   const structurallyValid =
     isNonEmptyString(value.workflowId) &&
     typeof value.workflowName === 'string' &&
@@ -312,6 +380,7 @@ function isWorkflowStateSnapshot(
     isOptionalStringMap(value.capturedOutputs) &&
     value.capturedOutputs !== undefined &&
     isOptionalString(value.pauseReason) &&
+    isOptionalString(value.stopReason) &&
     isOptionalString(value.parentSessionId) &&
     isOptionalString(value.workspacePath) &&
     isOptionalStringArray(value.additionalDirectories) &&
@@ -374,8 +443,10 @@ function isCanonicalRunComplete(payload: Record<string, unknown>): boolean {
     typeof payload.parentSessionId === 'string'
       ? payload.parentSessionId
       : undefined;
+  degradeUnknownInitiator(payload, 'initiator', 'initiatorReason');
   if (
     !isRunCompleteWorkflowStatus(payload.status) ||
+    !isOptionalString(payload.initiatorReason) ||
     !isWorkflowStateSnapshot(payload.finalState, envelopeParentSessionId)
   ) {
     return false;
@@ -454,7 +525,11 @@ function isWorkflowEvent(value: unknown): value is WorkflowEvent {
         typeof payload.at === 'string'
       );
     case 'paused':
-      return typeof payload.pauseReason === 'string';
+      degradeUnknownInitiator(payload, 'initiator', 'initiatorReason');
+      return (
+        typeof payload.pauseReason === 'string' &&
+        isOptionalString(payload.initiatorReason)
+      );
     case 'run_complete':
       return isCanonicalRunComplete(payload);
     case 'steps_queued':
@@ -844,6 +919,18 @@ export const WORKFLOW_LIST_CONTRACT: RpcContract<
   decode: parseWorkflowListResponse,
 };
 
+/**
+ * Taken from the contracts that call them, so the gate can never name a method
+ * the client doesn't send. An agent serving workflows advertises all fourteen
+ * `_kiro/workflow/*` methods; these three separate "serves workflows" from
+ * "doesn't" without breaking if the served set grows.
+ */
+const WORKFLOW_CONTROL_METHODS: readonly string[] = [
+  WORKFLOW_CREATE_CONTRACT.method,
+  WORKFLOW_INVOKE_CONTRACT.method,
+  WORKFLOW_LIST_CONTRACT.method,
+];
+
 export const WORKFLOW_INSPECT_CONTRACT: RpcContract<
   { workflowId: string },
   WorkflowInspectResponse
@@ -853,21 +940,42 @@ export const WORKFLOW_INSPECT_CONTRACT: RpcContract<
   decode: parseWorkflowInspectResponse,
 };
 
+/**
+ * Serialize control-action attribution, omitting both keys when absent so
+ * unattributed calls keep their previous byte-identical request shape.
+ */
+function encodeAttribution({
+  initiator,
+  reason,
+}: WorkflowActionAttribution): Record<string, string> {
+  return {
+    ...(initiator === undefined ? {} : { initiator }),
+    // KAS rejects a `reason` that arrives without an `initiator`.
+    ...(initiator !== undefined && reason !== undefined ? { reason } : {}),
+  };
+}
+
 export const WORKFLOW_PAUSE_CONTRACT: RpcContract<
-  { workflowId: string },
+  { workflowId: string } & WorkflowActionAttribution,
   WorkflowPauseResponse
 > = {
   method: '_kiro/workflow/pause',
-  encode: ({ workflowId }) => ({ workflowId }),
+  encode: ({ workflowId, ...attribution }) => ({
+    workflowId,
+    ...encodeAttribution(attribution),
+  }),
   decode: parseWorkflowPauseResponse,
 };
 
 export const WORKFLOW_RESUME_CONTRACT: RpcContract<
-  { workflowId: string },
+  { workflowId: string } & WorkflowActionAttribution,
   WorkflowResumeResponse
 > = {
   method: '_kiro/workflow/resume',
-  encode: ({ workflowId }) => ({ workflowId }),
+  encode: ({ workflowId, ...attribution }) => ({
+    workflowId,
+    ...encodeAttribution(attribution),
+  }),
   decode: parseWorkflowResumeResponse,
 };
 
@@ -884,13 +992,17 @@ export const WORKFLOW_RETRY_CONTRACT: RpcContract<
 };
 
 export const WORKFLOW_CANCEL_CONTRACT: RpcContract<
-  { workflowId: string; targetStatus?: 'aborted' | 'completed' },
+  {
+    workflowId: string;
+    targetStatus?: 'aborted' | 'completed';
+  } & WorkflowActionAttribution,
   WorkflowCancelResponse
 > = {
   method: '_kiro/workflow/cancel',
-  encode: ({ workflowId, targetStatus }) => ({
+  encode: ({ workflowId, targetStatus, ...attribution }) => ({
     workflowId,
     ...(targetStatus === undefined ? {} : { targetStatus }),
+    ...encodeAttribution(attribution),
   }),
   decode: parseWorkflowCancelResponse,
 };

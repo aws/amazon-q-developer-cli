@@ -43,12 +43,14 @@ import {
   workflowDigitToIndex,
 } from './workflow-tabs.js';
 import { classifyWorkflowStopKey } from './workflow-stop-confirmation.js';
+import { runStopNotice } from './run-stop-notice.js';
+import { messageModeForNode } from './workflow-message-mode.js';
+import { retryIsStepScoped } from './workflow-retry-scope.js';
 import { workflowControlShortcut } from './workflow-control-shortcut.js';
 import {
   isRetryableWorkflowStatus,
   isTerminalWorkflowStatus,
 } from '../../../types/workflow-status.js';
-import type { WorkflowMonitorNode } from '../../../types/workflow-monitor.js';
 import type { WorkflowNodeSessionTarget } from '../../../types/workflow.js';
 import { setMouseCaptureEnabled } from '../../../utils/mouse-capture.js';
 import {
@@ -82,17 +84,6 @@ function elapsedLabel(startedAt: number | null, now: number): string {
   return minutes > 0
     ? `${minutes}m ${seconds.toString().padStart(2, '0')}s`
     : `${seconds}s`;
-}
-
-function messageModeForNode(
-  node: WorkflowMonitorNode | null | undefined
-): WorkflowMessageMode | null {
-  if (node?.status === 'running') return 'steer';
-  if (node?.status === 'paused' && node.completionSignal === 'need_input') {
-    return 'respond';
-  }
-  if (node?.status === 'completed') return 'message';
-  return null;
 }
 
 function messageDraftKey(target: WorkflowNodeSessionTarget): string {
@@ -353,8 +344,26 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
     const submittedDraftKey = messageDraftKey(submittedTarget);
     const submissionRevision = ++composerRevisionRef.current;
     messageDraftsRef.current.delete(submittedDraftKey);
+    // Chatting no longer rehydrates the run, so name retry or it looks stuck.
+    // Only on success, and named at the scope `retryWorkflow` will really use, so
+    // the alert can't promise a landed send that was rejected or a step-scoped
+    // retry that reruns the whole run.
+    const retryHint =
+      selectedNode?.status === 'failed'
+        ? retryIsStepScoped(selectedNode)
+          ? 'Sent. Press r to retry this step — chat alone won’t resume the run.'
+          : 'Sent. Press r to retry the run — chat alone won’t resume it, and a step inside a loop can’t be retried on its own.'
+        : null;
     void kiro
       .messageWorkflowNode(submittedTarget, content)
+      .then(() => {
+        if (retryHint === null) return;
+        showTransientAlert({
+          message: retryHint,
+          status: 'info',
+          autoHideMs: 6000,
+        });
+      })
       .catch((error: unknown) => {
         showError(error, 'Could not message workflow step');
         const state = store.getState();
@@ -407,8 +416,11 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
     const workflowId = workflow.workflowId;
     if (pendingRetryWorkflowIdsRef.current.has(workflowId)) return;
     pendingRetryWorkflowIdsRef.current.add(workflowId);
+    const nodeId = retryIsStepScoped(selectedNode)
+      ? selectedNode?.id
+      : undefined;
     void kiro
-      .retryWorkflow(workflowId)
+      .retryWorkflow(workflowId, nodeId)
       .catch((error: unknown) => showError(error, 'Could not retry workflow'))
       .finally(() => pendingRetryWorkflowIdsRef.current.delete(workflowId));
   };
@@ -574,8 +586,9 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
     );
   }
 
+  const stopNotice = runStopNotice(workflow);
   const headerRows =
-    2 + Number(workflowList.length > 1) + Number(Boolean(workflow.pauseReason));
+    2 + Number(workflowList.length > 1) + Number(Boolean(stopNotice));
   const ruleRows = 2;
   const footerRows = inputMode === 'none' ? 2 : 0;
   const contentHeight = Math.max(
@@ -594,10 +607,19 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   // #13: the actionable question a paused step is waiting on. Surfaced in a
   // dedicated wrapping banner (below) that lives OUTSIDE the scrollable output
   // pane, so it can never be clipped at "...if" like the raw transcript tail.
+  // Any parked step, since KAS parks interactive ones with no `need_input`.
+  // Excludes the two parks that aren't questions: a user-initiated stop, already
+  // explained by `stopNotice`, and a park that resumes on its own.
+  const awaitingAnswer =
+    workflow.status === 'paused' && workflow.stopInitiator !== 'user';
+  // The reason can genuinely be absent — KAS parks some interactive steps without
+  // one, and after a reload an ambiguous run-level reason is deliberately given to
+  // nobody. The affordance still works, so say so rather than offering `s respond`
+  // against blank space.
   const pausedQuestion =
-    selectedNode?.status === 'paused' &&
-    selectedNode.completionSignal === 'need_input'
-      ? selectedNode.pauseReason?.trim()
+    awaitingAnswer && messageModeForNode(selectedNode) === 'respond'
+      ? selectedNode?.pauseReason?.trim() ||
+        'Waiting on you. The step did not say what for — press s to reply.'
       : undefined;
   const questionBannerRows = pausedQuestion ? QUESTION_BANNER_ROWS : 0;
   // #13: jump the output pane to its end whenever the selected step (or its
@@ -680,9 +702,9 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
         </Text>
       </Box>
 
-      {workflow.pauseReason && (
+      {stopNotice && (
         <Box paddingX={1}>
-          <Text>{getColor('warning')(workflow.pauseReason)}</Text>
+          <Text wrap="truncate">{getColor('warning')(stopNotice)}</Text>
         </Box>
       )}
 

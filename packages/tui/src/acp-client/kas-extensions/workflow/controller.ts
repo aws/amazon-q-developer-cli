@@ -11,6 +11,7 @@ import type {
   WorkflowRestoreSummary,
 } from '../../../types/workflow.js';
 import type {
+  WorkflowActionAttribution,
   WorkflowCancelResponse,
   WorkflowControlApi,
   WorkflowInspectResponse,
@@ -300,12 +301,24 @@ export class KasWorkflowExtension
     return this.runtime.request(WORKFLOW_INSPECT_CONTRACT, { workflowId });
   }
 
-  pauseRun(workflowId: string): Promise<WorkflowPauseResponse> {
-    return this.runtime.request(WORKFLOW_PAUSE_CONTRACT, { workflowId });
+  pauseRun(
+    workflowId: string,
+    attribution?: WorkflowActionAttribution
+  ): Promise<WorkflowPauseResponse> {
+    return this.runtime.request(WORKFLOW_PAUSE_CONTRACT, {
+      workflowId,
+      ...attribution,
+    });
   }
 
-  resumeRun(workflowId: string): Promise<WorkflowResumeResponse> {
-    return this.runtime.request(WORKFLOW_RESUME_CONTRACT, { workflowId });
+  resumeRun(
+    workflowId: string,
+    attribution?: WorkflowActionAttribution
+  ): Promise<WorkflowResumeResponse> {
+    return this.runtime.request(WORKFLOW_RESUME_CONTRACT, {
+      workflowId,
+      ...attribution,
+    });
   }
 
   retryRun(
@@ -320,11 +333,13 @@ export class KasWorkflowExtension
 
   cancelRun(
     workflowId: string,
-    targetStatus?: 'aborted' | 'completed'
+    targetStatus?: 'aborted' | 'completed',
+    attribution?: WorkflowActionAttribution
   ): Promise<WorkflowCancelResponse> {
     return this.runtime.request(WORKFLOW_CANCEL_CONTRACT, {
       workflowId,
       targetStatus,
+      ...attribution,
     });
   }
 
