@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-05T12:45:57.955899",
-  "total_docs": 70,
+  "generated_at": "2026-08-11T17:32:47.132707",
+  "total_docs": 72,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -65,7 +65,8 @@
       "slash-commands/theme.md",
       "slash-commands/tools.md",
       "slash-commands/transcript.md",
-      "slash-commands/usage.md"
+      "slash-commands/usage.md",
+      "slash-commands/changelog.md"
     ],
     "tool": [
       "tools/code.md",
@@ -1606,6 +1607,28 @@
         "web-fetch"
       ],
       "validated": "2026-04-09",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/changelog.md",
+      "title": "/changelog",
+      "description": "View recent Kiro CLI release notes and updates",
+      "category": "slash_command",
+      "keywords": [
+        "changelog",
+        "release",
+        "notes",
+        "updates",
+        "version",
+        "history",
+        "news",
+        "features"
+      ],
+      "related": [
+        "help"
+      ],
+      "validated": "2026-05-14",
+      "commit": "6a6aa55cc",
       "status": "validated"
     }
   ]

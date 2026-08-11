@@ -1,25 +1,25 @@
 ---
 doc_meta:
   title: /changelog
-  description: Show recent release notes for Kiro CLI
+  description: View recent Kiro CLI release notes and updates
   category: slash_command
-  keywords: [changelog, release, notes, updates, version, whats-new]
+  keywords: [changelog, release, notes, updates, version, history, news, features]
   related: [help]
-  validated: 2026-05-07
-  commit: dbc6e7ec
+  validated: 2026-05-14
+  commit: 6a6aa55cc
   status: validated
-  testable_headless: false
+  testable_headless: true
 ---
 
 # /changelog
 
-Show recent release notes for Kiro CLI.
+View recent Kiro CLI release notes and updates.
 
 ## Overview
 
-The `/changelog` command prints the most recent release notes inline in the terminal. It shows the last 2 releases with their version numbers, dates, and categorized change lists (Added, Fixed, Changed, etc.).
+The `/changelog` command displays recent release notes directly in the TUI. It shows the last two releases with their version numbers, dates, and categorized changes.
 
-This is useful for discovering new features after an update or reviewing what changed in recent versions.
+This is the same content shown in the startup announcement when a new version is detected, but available on demand.
 
 ## Usage
 
@@ -27,14 +27,54 @@ This is useful for discovering new features after an update or reviewing what ch
 /changelog
 ```
 
-## Output
+No arguments or options.
 
-Prints inline to the terminal:
-- Version headers with release dates (e.g., "✨ What's new in 2.2.0 (2026-04-27)")
-- Categorized bullet lists of changes (Added, Fixed, Changed, etc.)
-- Horizontal separators between releases
+## Output Format
 
-Output is printed directly and returns immediately — there is no interactive panel or scrolling.
+The changelog renders differently depending on the engine:
+
+### V1 (CLI)
+
+The output uses a sparkle header followed by entries formatted with a checkmark and change type:
+
+```
+✨ What's New in Kiro CLI
+
+2.4.0 (2026-05-13)
+✔ Added: /rewind to jump back to an earlier prompt in a conversation
+✔ Changed: Shell escape (!) commands now use $SHELL instead of hardcoded bash
+✔ Fixed: Fixed MCP server env variables being overridden by shell env
+```
+
+### V2 (TUI)
+
+The output renders as markdown with a sparkle-decorated heading per release and bold-labeled bullets, separated by horizontal rules:
+
+```
+## ✨ What's new in 2.4.0 (2026-05-13)
+
+- **Added**: /rewind to jump back to an earlier prompt
+- **Changed**: Shell escape (!) commands now use $SHELL
+- **Fixed**: Fixed MCP server env variables being overridden
+- **Security**: Upgraded dependency to patch CVE-XXXX
+
+---
+
+## ✨ What's new in 2.3.0 (2026-05-06)
+...
+```
+
+### Change Types
+
+Both engines support five change type categories:
+
+| Type | Description |
+|------|-------------|
+| Added | New features and capabilities |
+| Changed | Modifications to existing behavior |
+| Fixed | Bug fixes and corrections |
+| Security | Security-related patches and updates |
+| Deprecated | Features scheduled for removal |
 
 ## Examples
 
@@ -44,42 +84,58 @@ Output is printed directly and returns immediately — there is no interactive p
 /changelog
 ```
 
-**Output** (printed inline):
+Displays the last two releases with all their categorized changes.
+
+### Example 2: Check After Update
+
+After running `kiro-cli update`, use `/changelog` to see what's new:
 
 ```
-✨ What's new in 2.2.0 (2026-04-27)
-
-✔ Added: Support adaptive thinking for complex tasks
-✔ Fixed: Fix API key authentication edge case
-
----
-
-✨ What's new in 2.1.0 (2026-04-21)
-
-✔ Added: New /spawn command for parallel agent sessions
-✔ Changed: Improved context window management
+/changelog
 ```
+
+Review the changes to learn about new features and improvements.
+
+### Example 3: CLI Version Subcommand
+
+You can also view the changelog from the command line:
+
+```bash
+kiro-cli version --changelog
+```
+
+Or for a specific version:
+
+```bash
+kiro-cli version --changelog=2.4.0
+```
+
+Or all versions:
+
+```bash
+kiro-cli version --changelog=all
+```
+
+## Startup Announcement
+
+When you start Kiro CLI after an update, a changelog announcement automatically appears showing what's new. The `/changelog` command lets you revisit this information at any time.
+
+The startup announcement shows up to three times per version, then stops appearing automatically.
 
 ## Troubleshooting
 
-### Issue: "No changelog information available"
+### Issue: Changelog shows old versions
 
-**Symptom**: Output shows "No changelog information available" message  
-**Cause**: Release feed data is not available in the current build  
-**Solution**: This is expected in development builds. Production releases include embedded changelog data.
+**Cause**: The changelog is embedded at build time.
 
-### Issue: Shows Old Releases
+**Solution**: Reinstall or update to the latest version using your package manager or the installation script.
 
-**Symptom**: Changelog doesn't show expected recent releases  
-**Cause**: You may be running an older version of Kiro CLI  
-**Solution**: Update to the latest version with your package manager
+### Issue: No changelog displayed
 
-## Limitations
+**Cause**: Rare edge case with corrupted installation.
 
-- Shows only the 2 most recent releases
-- Available only in classic mode (not TUI mode)
-- Changelog data is embedded at build time via `include_str!`; it does not fetch from the network
+**Solution**: Reinstall Kiro CLI or update to the latest version.
 
 ## Related
 
-- [/help](help.md) — List all available commands
+- [/help](help.md) — View available commands and usage
