@@ -1,13 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-05-22
+  commit: 127ec7961
   status: validated
   testable_headless: false
   category: slash_command
   title: /changelog
   description: View Kiro CLI changelog and version history with recent updates
-  keywords: [changelog, version, history, releases, updates]
+  keywords: [changelog, version, history, releases, updates, whats new]
+  related: [chat]
 ---
 
 # /changelog
@@ -16,7 +17,7 @@ View Kiro CLI changelog and version history with recent updates.
 
 ## Overview
 
-The `/changelog` command displays recent version changes, new features, bug fixes, and improvements from Kiro CLI releases.
+The `/changelog` command displays recent version changes, new features, bug fixes, and improvements from Kiro CLI releases. Changes are grouped by type (Added, Changed, Fixed, etc.) for easier scanning.
 
 ## Usage
 
@@ -24,17 +25,18 @@ The `/changelog` command displays recent version changes, new features, bug fixe
 /changelog
 ```
 
-Shows recent changelog entries.
+Shows recent changelog entries in a scrollable panel.
 
 ## Output
 
 Displays for each version:
-- Version number
-- Release date
-- New features
-- Bug fixes
-- Improvements
-- Breaking changes
+- Version number and release date
+- Changes grouped by type:
+  - **Added** - New features
+  - **Changed** - Behavior changes
+  - **Fixed** - Bug fixes
+  - **Security** - Security updates
+  - **Deprecated** - Deprecated features
 
 ## Examples
 
@@ -46,29 +48,33 @@ Displays for each version:
 
 **Output**:
 ```
-Kiro CLI Changelog
+**✨ What's new in 2.2.0 (2026-04-27)**
 
-## v1.5.0 (2025-12-15)
-- Feature: Added code intelligence with LSP
-- Feature: New /compact command
-- Fix: Improved error handling in fs_write
-...
+**Added**
+- Support adaptive thinking
+- New /compact command
+
+**Fixed**
+- Fix API key auth
+- Improved error handling
 ```
 
-## Alternative
+### Example 2: Scroll Through Changelog
 
-```bash
-kiro-cli --version --changelog
-kiro-cli --version --changelog=all
-kiro-cli --version --changelog=1.4.0
-```
+Use arrow keys to scroll through longer changelogs. Press `q` or `Escape` to close.
+
+## Welcome Message
+
+When you start Kiro CLI, a condensed changelog appears showing only **Added** items from recent releases. Press `Ctrl+O` to expand and see all change types (Fixed, Changed, etc.).
 
 ## Related Features
 
-- [kiro-cli --version](../commands/chat.md) - Version information
+- [kiro-cli chat](../commands/chat.md) - Start chat sessions
 
 ## Technical Details
 
 **Source**: Changelog from feed.json
 
-**Display**: Shows recent entries by default
+**Display**: Groups changes by type (Added, Changed, Fixed, Security, Deprecated)
+
+**Welcome bar**: Shows only Added items by default; Ctrl+O expands to full changelog
