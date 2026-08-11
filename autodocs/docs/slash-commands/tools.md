@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-02-09
-  commit: c1055bde
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: slash_command
@@ -208,6 +208,8 @@ The `~Tokens` column shows estimated token usage for each tool's schema. Values 
 MCP server tools shown with `@server-name` prefix:
 - `@git/git_status` - git_status tool from git server
 - Format: `@server-name/tool-name`
+
+MCP tool descriptions are automatically prefixed with `(MCP tool from server-name)` to help the AI assistant identify which server each tool belongs to.
 
 ## Troubleshooting
 

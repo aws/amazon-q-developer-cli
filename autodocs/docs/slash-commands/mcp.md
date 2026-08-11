@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-01-28
-  commit: 0fce279f
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -70,7 +70,7 @@ Print help message or help for specific subcommand.
 Shows for each server:
 - Server name and command
 - Status (initialized, loading, needs auth)
-- Available tools
+- Available tools (descriptions prefixed with server name for AI identification)
 - OAuth URL (if authentication required)
 
 ## Related

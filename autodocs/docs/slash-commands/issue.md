@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -46,6 +46,14 @@ Opens browser with issue form.
 
 Browser opens with pre-filled issue template.
 
+### Example 2: Browser Unavailable
+
+If the browser cannot be opened (e.g., on a remote machine), the issue URL is printed to the terminal so you can copy it manually:
+
+```
+Issue Url: https://github.com/...
+```
+
 ## Related Features
 
 - [report_issue](../tools/report-issue.md) - Tool version
@@ -55,6 +63,12 @@ Browser opens with pre-filled issue template.
 - Requires browser
 - Not available in headless mode
 - Requires GitHub account
+
+## Troubleshooting
+
+### Browser won't open
+
+If your system browser cannot be launched or the session is remote, the command prints the full URL to the terminal. Copy the URL and paste it into a browser manually.
 
 ## Technical Details
 

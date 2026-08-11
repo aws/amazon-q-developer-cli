@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-03-06
-  commit: 0551dddb
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -24,6 +24,18 @@ The `/knowledge` command provides slash command interface for knowledge base man
 ```
 /knowledge <subcommand>
 ```
+
+### Tab Completion
+
+Type `/knowledge` and press Tab to see a dropdown of available subcommands:
+
+- `add <name> <path>` - add content to knowledge base
+- `remove <name|path>` - remove entry
+- `update <path>` - re-index entry
+- `show` - list entries (no arguments needed)
+- `clear` - clear knowledge base (no arguments needed)
+
+Subcommands with argument hints prefill the command and wait for input.
 
 ## Subcommands
 

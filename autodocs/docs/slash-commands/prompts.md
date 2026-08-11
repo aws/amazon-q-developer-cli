@@ -53,6 +53,24 @@ File-based prompts take precedence over MCP prompts with the same name.
 /prompts <subcommand>
 ```
 
+## Interactive Menu Navigation
+
+When you run `/prompts` without arguments, an interactive selection menu appears. Use these keys:
+
+| Key | Action |
+| --- | --- |
+| ↑↓ | Navigate the list |
+| → | View prompt details (description, arguments, usage) |
+| ↵ (Enter) | Run the selected prompt |
+| ESC | Cancel and close menu |
+
+In the details view:
+| Key | Action |
+| --- | --- |
+| ↑↓ | Scroll content |
+| ↵ (Enter) | Run the prompt |
+| ESC | Go back to list |
+
 ## Prompt Locations
 
 **Local (workspace)**: `.kiro/prompts/` in current directory  
@@ -227,7 +245,33 @@ Description: Generate commit message
 Arguments: changes* (required)
 ```
 
-### Example 10: Use File Prompt with Arguments
+### Example 10: Preview Prompt in Menu
+
+When browsing prompts with `/prompts`, press → on any prompt to see its details before running:
+
+```
+/prompts
+```
+
+Navigate to a prompt and press →:
+```
+Name: /code-review · Server: local
+ 
+Description:
+  Review code for potential issues and suggest improvements
+ 
+Usage: /code-review <file> [language]
+ 
+Arguments:
+  (required) file - Path to file to review
+  (optional) language - Programming language hint
+
+ESC to go back · ↑↓ to scroll · ↵ to run
+```
+
+Press Enter to run the prompt, or ESC to return to the list.
+
+### Example 11: Use File Prompt with Arguments
 
 ```
 /review-file src/main.rs "error handling"
