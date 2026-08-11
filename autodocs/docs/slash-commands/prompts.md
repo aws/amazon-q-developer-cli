@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-08-05
-  commit: d14212fed
+  validated: 2026-08-11
+  commit: 5528f8d1f
   status: validated
   testable_headless: false
   category: slash_command
@@ -19,13 +19,53 @@ Manage local and MCP prompts with list, get, create, edit, and remove operations
 
 The `/prompts` command manages prompt templates from local files, global files, and MCP servers. Create reusable prompts, edit them, retrieve with arguments, and list available prompts from all sources.
 
+## Selection Mode
+
+When using KAS, `/prompts` shows an interactive selection menu of available items. These include:
+
+- **Prompts** - File prompts from `.kiro/prompts/` (workspace) and `~/.kiro/prompts/` (global), plus MCP server prompts
+- **Skills** - Available skills advertised by the agent engine
+- **Steering** - Steering entries from the active session
+
+Select an item from the menu to execute it. Items are grouped by category:
+- MCP prompts are grouped by server name (e.g. `github`)
+- File prompts are grouped by scope (`workspace` or `global`)
+- Skills use the group label `skill`
+- Steering entries use the group label `steering`
+
+Groups are sorted alphabetically, and entries within each group are sorted alphabetically by label.
+
+```
+/prompts
+```
+
+**Output**:
+```
+Select prompt:
+  github
+    /commit-message      Generate commit message
+  context7
+    /resolve-library-id  Resolve library ID
+  skill
+    /tdd                 Test-driven development
+  steering
+    /conventions         Project conventions
+  workspace
+    /plan                Create a plan
+    /review              Review code
+```
+
+If the prompt accepts arguments, a hint shows required (`<arg>`) and optional (`[arg]`) parameters.
+
+The full subcommand system described below is available with the agent engine.
+
 ## Quick Access with @ and /
 
 Both the `@` menu (for prompts) and `/` menu (for slash commands) support **substring matching** — type any part of the name to find it.
 
 ### @ Menu (Prompts)
 
-Type `@` followed by text to filter prompts from all sources (local, global, MCP):
+Type `@` followed by text to filter prompts from all sources (workspace, global, MCP):
 
 ```
 @<Tab>           # Shows all available prompts
