@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'bun:test';
-import { visibleWidth, truncateToWidth, padToWidth } from '../text-width';
+import {
+  visibleWidth,
+  truncateToWidth,
+  truncateToWidthTail,
+  padToWidth,
+} from '../text-width';
 
 describe('visibleWidth', () => {
   it('returns length for ASCII string', () => {
@@ -70,5 +75,28 @@ describe('padToWidth', () => {
     const result = padToWidth('', 5);
     expect(result).toBe('     ');
     expect(visibleWidth(result)).toBe(5);
+  });
+});
+
+describe('truncateToWidthTail', () => {
+  it('returns string unchanged if it fits', () => {
+    expect(truncateToWidthTail('hi', 10)).toBe('hi');
+  });
+
+  it('keeps the tail so the edit point stays visible', () => {
+    const result = truncateToWidthTail('abcdefghij', 6);
+    expect(result).toBe('\u2026fghij');
+    expect(visibleWidth(result)).toBeLessThanOrEqual(6);
+  });
+
+  it('never splits a grapheme at the cut point', () => {
+    const result = truncateToWidthTail('xx\u{1F600}tail', 5);
+    expect(result.endsWith('tail')).toBe(true);
+    expect(result).not.toContain('\uFFFD');
+    expect(visibleWidth(result)).toBeLessThanOrEqual(5);
+  });
+
+  it('degenerate budget returns only the ellipsis', () => {
+    expect(truncateToWidthTail('abcdef', 1)).toBe('\u2026');
   });
 });

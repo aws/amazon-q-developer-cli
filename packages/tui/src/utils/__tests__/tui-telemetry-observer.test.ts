@@ -31,6 +31,7 @@ const {
   recordTuiTokensConsumed,
   recordTuiToolCall,
   recordTuiUiModeSessionStarted,
+  recordTuiSessionDashboard,
   recordTuiUserTurn,
   recordTuiWorkflowControl,
   recordTuiWorkflowObservations,
@@ -311,6 +312,65 @@ describe('TUI-owned usage metrics', () => {
     expect(counterCalls.map((call) => call.attrs?.['ui_mode'])).toEqual([
       'lite',
       'unknown',
+    ]);
+  });
+
+  it('records a dashboard visit with cataloged dimensions', () => {
+    recordTuiSessionDashboard(
+      {
+        outcome: 'resumed_cross_workspace',
+        via: 'search',
+        entry: 'slash',
+        engine: 'v3',
+        version: '2.4.0',
+      },
+      deps
+    );
+
+    expect(counterCalls).toEqual([
+      {
+        name: 'kiro_cli_session_dashboard_total',
+        value: 1,
+        attrs: {
+          version_full: '2.4.0',
+          agent_engine: 'v3',
+          outcome: 'resumed_cross_workspace',
+          via: 'search',
+          entry: 'slash',
+        },
+        scope: TUI_SCOPE,
+      },
+    ]);
+  });
+
+  it('bounds dashboard attributes at the emission boundary', () => {
+    recordTuiSessionDashboard({ outcome: 'closed', version: '2.4.0' }, deps);
+    recordTuiSessionDashboard(
+      {
+        outcome: 'future-outcome' as never,
+        via: 'future-via' as never,
+        entry: 'startup-flag' as never,
+        engine: 'future-engine' as never,
+        version: '2.4.0',
+      },
+      deps
+    );
+
+    expect(counterCalls.map((call) => call.attrs)).toEqual([
+      {
+        version_full: '2.4.0',
+        agent_engine: 'unknown',
+        outcome: 'closed',
+        via: '_none_',
+        entry: '_other_',
+      },
+      {
+        version_full: '2.4.0',
+        agent_engine: 'unknown',
+        outcome: '_other_',
+        via: '_other_',
+        entry: '_other_',
+      },
     ]);
   });
 });

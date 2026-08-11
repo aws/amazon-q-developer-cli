@@ -2365,3 +2365,77 @@ describe('sendSpecRevision', () => {
     expect(onSent).not.toHaveBeenCalled();
   });
 });
+
+describe('/sessions rename discovery source', () => {
+  const sessionsCmd: SlashCommand = {
+    name: '/sessions',
+    description: '',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  let sandbox: string;
+  let previousSessionsDir: string | undefined;
+  let activeWriteSpy = mockWriteFileSync;
+
+  beforeEach(() => {
+    // The sidecar title write must really happen or the effect returns
+    // before the rename RPC, so the file-wide writeFileSync no-op is
+    // suspended per test and a fresh no-op spy is reinstated afterward.
+    activeWriteSpy.mockRestore();
+    sandbox = require('fs').mkdtempSync(
+      require('path').join(require('os').tmpdir(), 'sessions-rename-')
+    );
+    previousSessionsDir = process.env.KIRO_TEST_SESSIONS_DIR;
+    process.env.KIRO_TEST_SESSIONS_DIR = sandbox;
+    require('../../utils/session-bookmarks.js').resetSessionBookmarkStore();
+  });
+
+  afterEach(() => {
+    activeWriteSpy = spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    if (previousSessionsDir === undefined) {
+      delete process.env.KIRO_TEST_SESSIONS_DIR;
+    } else {
+      process.env.KIRO_TEST_SESSIONS_DIR = previousSessionsDir;
+    }
+    require('../../utils/session-bookmarks.js').resetSessionBookmarkStore();
+    require('fs').rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  function renameCtx(cloudActive: boolean) {
+    const renameSessionById = mock(() => Promise.resolve(true));
+    const ctx = createMockCommandContext({
+      kiro: {
+        sessionId: 'active-session',
+        isCloudSessionActive: () => cloudActive,
+        renameSessionById,
+      },
+    });
+    (ctx as { agentEngine: string }).agentEngine = 'kas';
+    return { ctx, renameSessionById };
+  }
+
+  it('qualifies a local active session rename with source local', () => {
+    const { ctx, renameSessionById } = renameCtx(false);
+
+    runEffect(sessionsCmd, null, ctx, 'rename kept conversation');
+
+    expect(renameSessionById).toHaveBeenCalledWith(
+      'active-session',
+      'kept conversation',
+      { source: 'local' }
+    );
+  });
+
+  it('qualifies a cloud-active session rename with source remote', () => {
+    const { ctx, renameSessionById } = renameCtx(true);
+
+    runEffect(sessionsCmd, null, ctx, 'rename remote work');
+
+    expect(renameSessionById).toHaveBeenCalledWith(
+      'active-session',
+      'remote work',
+      { source: 'remote' }
+    );
+  });
+});

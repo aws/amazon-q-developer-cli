@@ -148,6 +148,7 @@ export function createMockCommandContext(
     hooksList: opts.hooksList ?? [],
     setShowRepoPicker: spy('setShowRepoPicker') as any,
     setShowSessionPicker: spy('setShowSessionPicker') as any,
+    setShowSessionDashboard: spy('setShowSessionDashboard') as any,
     resetCloudSessionScope: spy('resetCloudSessionScope') as any,
     stashCloudSessionScope: spy('stashCloudSessionScope') as any,
     restoreCloudSessionScope: spy('restoreCloudSessionScope') as any,
