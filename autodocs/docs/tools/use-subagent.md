@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-21
-  commit: 69ae7a5f5
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: tool
   title: use_subagent
   description: Delegate tasks to specialized subagents running in parallel with isolated context
-  keywords: [use_subagent, subagent, delegate, parallel, multi-agent, availableAgents, trustedAgents]
+  keywords: [use_subagent, subagent, delegate, parallel, multi-agent, availableAgents, trustedAgents, crew]
   related: [delegate, slash-agent]
 ---
 
@@ -120,7 +120,7 @@ Control which agents can be used as subagents via toolsSettings in your agent co
 
 **availableAgents** (array, optional): Controls which agents appear in ListAgents and can be invoked. Supports exact names and glob patterns (e.g., `"test-*"`). If not set, all agents are available.
 
-**trustedAgents** (array, optional): Controls which available agents are auto-approved without user confirmation. Supports exact names and glob patterns. Alias: `allowedAgents` for backwards compatibility. If not set, all invocations require approval.
+**trustedAgents** (array, optional): Controls which available agents are auto-approved without user confirmation. Supports exact names and glob patterns. If not set, all invocations require approval.
 
 **Permission Flow**:
 1. Check if agent is in `availableAgents` → If not, deny with error
@@ -176,13 +176,19 @@ Invoking 3 subagents in parallel
 ```
 
 **Controls**:
-- `j/↓` - Navigate down
-- `k/↑` - Navigate up
-- `y` - Approve tool use
-- `n` - Deny tool use
-- `Enter` - Copy OAuth URL
+- `[` or `←` - Select previous agent
+- `]` or `→` - Select next agent
+- `1-9` - Jump to agent by number
+- `j/k` - Scroll worker output
+- `Ctrl+d/Ctrl+u` - Page scroll (half-page)
+- `Ctrl+x` - Kill selected session (press twice to confirm)
+- `Ctrl+g` - Return to main chat
 - `Ctrl+C` - Interrupt all
-- `Esc` - Deselect
+
+**Tool Approval** (when prompted):
+- `y` - Allow once
+- `n` - Deny
+- `t` - Trust (allow always for session)
 
 ## Examples
 

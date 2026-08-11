@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: tool
   title: todo_list
   description: Create and manage TODO lists for tracking multi-step tasks with progress and context
-  keywords: [todo_list, todo, task, checklist, tracking]
-  related: [slash-todo]
+  keywords: [todo_list, todo, task, checklist, tracking, activity tray]
+  related: [slash-todo, key-bindings-settings]
 ---
 
 # todo_list
@@ -19,7 +19,7 @@ Create and manage TODO lists for tracking multi-step tasks with progress and con
 
 > **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to track multi-step tasks.
 
-The todo_list tool creates persistent TODO lists for multi-step tasks. Lists are stored in `.kiro/cli-todo-lists/` and track task completion, context, and modified files. Essential for complex tasks requiring multiple steps. Lists can be resumed across sessions.
+The todo_list tool creates persistent TODO lists for multi-step tasks. Lists are stored in the application data directory (`todo-lists/<workspace-hash>/`) and track task completion, context, and modified files. Essential for complex tasks requiring multiple steps. Lists can be resumed across sessions.
 
 ## How It Works
 
@@ -290,3 +290,29 @@ List all existing TODO list IDs.
 **Best Practice**: Create TODO list BEFORE executing steps. Mark tasks AS YOU COMPLETE THEM. Complete tasks in order provided.
 
 **Display**: DO NOT display your own tasks or todo list - this is done automatically by the system.
+
+## Activity Tray
+
+When tasks are active, an Activity Tray appears above the prompt showing task progress.
+
+**Collapsed view** (default): Shows summary with done/remaining counts.
+```
+◐ Tasks · 2 done · 3 remaining                    ctrl+x to expand
+```
+
+**Expanded view**: Shows full task list with status indicators.
+```
+◐ Tasks (5)                                       ctrl+x to collapse
+├── ● 1. Set up Express server
+├── ● 2. Create user endpoints
+├── ◐ 3. Add authentication
+├── ○ 4. Write tests
+└── ○ 5. Update documentation
+```
+
+**Status indicators**:
+- `●` (green) - Completed
+- `◐` (blue) - In progress (next task)
+- `○` (gray) - Pending
+
+**Toggle**: Press `Ctrl+X` to expand/collapse the Activity Tray.
