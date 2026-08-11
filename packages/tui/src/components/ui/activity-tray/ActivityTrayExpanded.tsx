@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
 import { useStore, type StoreApi } from 'zustand';
 import { Box, Tabs, Text, useInput } from '../../../renderer.js';
+import { TASK_DONE_MARKER } from '../../../constants/tasks.js';
+import { wrapAtWords } from '../../../lite/render.js';
+import { visibleWidth } from '../../../utils/text-width.js';
 import { useTaskState, useQueueState } from '../../../stores/selectors.js';
 import { useAppStore } from '../../../stores/app-store.js';
 import {
@@ -323,6 +326,7 @@ function TaskList({
   termWidth,
 }: TaskListProps) {
   const glyphs = useGlyphs();
+  const { getColor } = useTheme();
   const { allowIcons } = useAllowIcons();
   const nextIndex = tasks.findIndex((t) => t.status !== 'completed');
   const visible = tasks.slice(scrollOffset, scrollOffset + maxVisible);
@@ -345,6 +349,20 @@ function TaskList({
           allowIcons
         );
         const connector = isLast ? glyphs.treeCorner : glyphs.treeBranch;
+        const subject =
+          task.status === 'completed'
+            ? doneSubject(
+                task.subject,
+                termWidth -
+                  2 -
+                  visibleWidth(connector) -
+                  visibleWidth(icon) -
+                  2 -
+                  visibleWidth(task.id) -
+                  2,
+                getColor('muted')
+              )
+            : getColor('primary')(task.subject);
 
         return (
           <Box
@@ -363,13 +381,7 @@ function TaskList({
             <Text backgroundColor={bg} color={fg}>
               {task.id}.{' '}
             </Text>
-            <Text
-              backgroundColor={bg}
-              color={task.status === 'completed' ? mutedHex : fg}
-              strikethrough={task.status === 'completed'}
-            >
-              {task.subject}
-            </Text>
+            <Text backgroundColor={bg}>{subject}</Text>
           </Box>
         );
       })}
@@ -445,6 +457,33 @@ function QueueList({
 }
 
 // --- Helpers ---
+
+/**
+ * Strike the subject through and trail it with the completion marker, wrapped
+ * so the marker shares the subject's last row: its width comes out of every
+ * row's budget, or the renderer floats it onto a row of its own. The marker
+ * itself stays out of the strikethrough — struck through, the word reads as
+ * retracted rather than as the state it reports.
+ *
+ * The floor keeps a pane too narrow for the marker from wrapping the subject
+ * one column at a time, which would grow the row without bound; the row
+ * overflows instead.
+ */
+function doneSubject(
+  subject: string,
+  width: number,
+  muted: { (s: string): string; strikethrough(s: string): string }
+): string {
+  const budget = Math.max(20, width - TASK_DONE_MARKER.length - 1);
+  const lines = wrapAtWords(subject, budget, budget);
+  return lines
+    .map(
+      (line, index) =>
+        muted.strikethrough(line) +
+        (index === lines.length - 1 ? ` ${muted(TASK_DONE_MARKER)}` : '')
+    )
+    .join('\n');
+}
 
 function getStatusIcon(
   status: 'pending' | 'completed',

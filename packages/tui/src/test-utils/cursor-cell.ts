@@ -14,6 +14,8 @@ export interface CellState {
   char: string;
   /** Whether the app painted the cell reverse-video (SGR 7). */
   inverse: boolean;
+  /** Whether the app struck the cell through (SGR 9). */
+  strikethrough: boolean;
   row: number;
   col: number;
 }
@@ -31,6 +33,7 @@ function readCell(terminal: Terminal, row: number, col: number): CellState {
   return {
     char: cell?.getChars() || ' ',
     inverse: (cell?.isInverse() ?? 0) !== 0,
+    strikethrough: (cell?.isStrikethrough() ?? 0) !== 0,
     row,
     col,
   };

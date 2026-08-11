@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import type { StoreApi } from 'zustand';
 import { useStore } from 'zustand';
 import { Box, Text } from '../../../renderer.js';
+import { TASK_DONE_MARKER } from '../../../constants/tasks.js';
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
@@ -296,11 +297,22 @@ function TaskRow({
     return isNext ? getColor('primary').bold(line) : getColor('primary')(line);
   };
   const prefixWidth = 9 + visibleWidth(task.id);
-  const availableWidth = Math.max(20, width - prefixWidth);
+  const marker =
+    task.status === 'completed'
+      ? ` ${getColor('secondary')(TASK_DONE_MARKER)}`
+      : '';
+  // The marker shares the subject's last row, so its width comes out of the
+  // subject's budget rather than widening the row past the pane.
+  const markerWidth = marker ? TASK_DONE_MARKER.length + 1 : 0;
+  const availableWidth = Math.max(20, width - prefixWidth) - markerWidth;
   const wrapped = wrapAtWords(task.subject, availableWidth, availableWidth);
   const indent = ' '.repeat(prefixWidth);
-  const head = `  ${getColor('secondary')(connector)} ${icon} ${getColor('secondary')(`${task.id}.`)} ${styleLine(wrapped[0] ?? '')}`;
-  const tail = wrapped.slice(1).map((line) => `${indent}${styleLine(line)}`);
+  const styled = wrapped.map(
+    (line, index) =>
+      styleLine(line) + (index === wrapped.length - 1 ? marker : '')
+  );
+  const head = `  ${getColor('secondary')(connector)} ${icon} ${getColor('secondary')(`${task.id}.`)} ${styled[0]}`;
+  const tail = styled.slice(1).map((line) => `${indent}${line}`);
 
   return (
     <Text wrap="overflow">

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Completed tasks in the activity tray now say [done] so screen readers can announce completion"
+}
