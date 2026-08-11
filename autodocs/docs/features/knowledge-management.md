@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-22
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: feature
   title: Knowledge Management
   description: Persistent knowledge base with semantic search, agent isolation, and auto-sync capabilities
   keywords: [knowledge, base, semantic, search, persistent, agent, isolation]
-  related: [knowledge-tool, slash-knowledge, enable-knowledge]
+  related: [knowledge-tool, slash-knowledge, enable-knowledge, agent-configuration]
 ---
 
 # Knowledge Management

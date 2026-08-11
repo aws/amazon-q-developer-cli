@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-05-23
-  commit: e972d677a
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: feature
   title: Session Management
   description: Automatic session saving, resumption, and custom storage via scripts
-  keywords: [session, save, load, resume, auto-save, storage, list]
+  keywords: [session, save, load, resume, auto-save, storage, queue, queuing]
   related: [chat-save, chat-load, cmd-chat]
 ---
 
@@ -190,6 +190,26 @@ Exports current session to file.
 - Session IDs are UUIDs (not human-readable)
 - No cloud sync (use scripts for custom storage)
 - No session search by content
+
+## Message Queuing
+
+While the assistant is processing a request, you can type additional messages that will be queued and sent automatically when the current task completes.
+
+**What can be queued**:
+- Regular messages and questions
+- Follow-up instructions
+
+**What cannot be queued**:
+- Slash commands (e.g., `/help`, `/context`, `/model`)
+
+If you try to queue a slash command while processing, you'll see a warning:
+```
+Slash commands can't be queued — wait for the current task to finish
+```
+
+**Why**: Slash commands often require immediate UI interaction or state changes that can't be deferred.
+
+**Workaround**: Wait for the current task to complete, then run your slash command.
 
 ## Technical Details
 

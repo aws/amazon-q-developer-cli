@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-21
-  commit: 5027e7bc0
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: feature
@@ -200,5 +200,7 @@ Environment variables can be referenced using `${VAR_NAME}` or `${env:VAR_NAME}`
 **Customization**: Environment variables and HTTP headers can be customized even in registry mode
 
 **Fallback**: If registry unavailable, MCP functionality disabled
+
+**Tool Descriptions**: MCP tool descriptions are automatically prefixed with `(MCP tool from server-name)` to help the AI assistant identify which server each tool belongs to.
 
 **Documentation**: For administrators, see [MCP Governance Documentation](https://kiro.dev/docs/cli/mcp/governance/)
