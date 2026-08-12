@@ -115,6 +115,9 @@ mock-mcp-server = { path = "../mock-mcp-server" }
 mockito.workspace = true
 paste.workspace = true
 predicates.workspace = true
+# `time::pause()` lets a test run the clock ahead of a bound that is minutes long
+# by design, instead of waiting it out.
+tokio = { workspace = true, features = ["test-util"] }
 tracing-test.workspace = true
 
 [lints]

@@ -50,6 +50,7 @@ use agent::agent_config::{
     ResolvedGlobalPrompt,
 };
 use agent::mcp::{
+    LaunchOutcome,
     McpManager,
     McpManagerHandle,
     McpRegistry,
@@ -199,21 +200,44 @@ fn spawn_oauth_browser(
 
 /// Launch a server and wait for it to finish initializing (which includes the
 /// full OAuth handshake). Returns an error string on failure or timeout.
+///
+/// A launch that stops at an authorization prompt reports back before the grant
+/// lands, so keep waiting on the server's own events for the real outcome.
 async fn launch_and_wait(
     handle: &mut McpManagerHandle,
     server_name: &str,
     config: McpServerConfig,
     timeout: Duration,
 ) -> Result<(), String> {
+    let mut events = handle.clone();
     let rx = handle
         .launch_server(server_name.to_string(), config, McpServerConfigSource::Registry)
         .await
         .map_err(|e| format!("launch dispatch failed: {e}"))?;
-    tokio::time::timeout(timeout, rx)
+    let outcome = tokio::time::timeout(timeout, rx)
         .await
         .map_err(|_elapsed| "timed out waiting for MCP server to initialize".to_string())?
         .map_err(|_recv| "launch result channel dropped".to_string())?
-        .map_err(|e| format!("server failed to initialize: {e}"))
+        .map_err(|e| format!("server failed to initialize: {e}"))?;
+    if outcome == LaunchOutcome::Initialized {
+        return Ok(());
+    }
+    tokio::time::timeout(timeout, async {
+        loop {
+            match events.recv().await {
+                Ok(McpServerEvent::Initialized { server_name: n, .. }) if n == server_name => return Ok(()),
+                Ok(McpServerEvent::InitializeError {
+                    server_name: n, error, ..
+                }) if n == server_name => {
+                    return Err(format!("server failed to initialize: {error}"));
+                },
+                Ok(_) | Err(RecvError::Lagged(_)) => {},
+                Err(RecvError::Closed) => return Err("event channel closed".to_string()),
+            }
+        }
+    })
+    .await
+    .map_err(|_elapsed| "timed out waiting for MCP server to initialize".to_string())?
 }
 
 /// Invoke the mock's `echo` tool once. `Ok(())` on success; `Err(message)` with

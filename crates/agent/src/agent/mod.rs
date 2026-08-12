@@ -195,6 +195,7 @@ use crate::agent::consts::{
     REPEATED_UNEXECUTABLE_TOOL_MESSAGE,
 };
 use crate::agent::mcp::{
+    LaunchOutcome,
     McpManager,
     McpManagerHandle,
 };
@@ -842,6 +843,29 @@ fn steer_snapshot(steers: &[QueuedSteer]) -> String {
     steers.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("\n\n")
 }
 
+/// Where a server's launch stands when its outcome can no longer be read off the
+/// event stream.
+#[derive(Debug, PartialEq, Eq)]
+enum SettledLaunchState {
+    Initialized,
+    Failed,
+    StillInitializing,
+}
+
+/// Read a launch state back out of a manager query aimed at a single server: the
+/// error is the answer, so any query works and its payload is ignored.
+fn settled_launch_state<T>(queried: Result<T, mcp::McpManagerError>) -> SettledLaunchState {
+    match queried {
+        // The manager only forwards a request to a server it has already recorded as
+        // initialized, so a failure raised by that server is not a launch failure.
+        Ok(_) | Err(mcp::McpManagerError::McpActor(_)) => SettledLaunchState::Initialized,
+        Err(mcp::McpManagerError::ServerCurrentlyInitializing { .. }) => SettledLaunchState::StillInitializing,
+        // Anything else — failed, unknown, or a manager that is gone — is out of the
+        // wait's reach, and holding for it would cost the caller its whole deadline.
+        Err(_) => SettledLaunchState::Failed,
+    }
+}
+
 impl Agent {
     /// Prefix for the hidden "shadow" MCP server used to run a forced
     /// (re-)authentication flow alongside a still-running original. Shadow servers
@@ -1036,6 +1060,10 @@ impl Agent {
     #[inline]
     async fn launch_mcp_servers(&mut self) {
         let mut results = FuturesUnordered::new();
+        // Subscribed before the first launch is dispatched, so no outcome that lands
+        // while the launches are still going out can be missed.
+        let mut server_events = self.mcp_manager_handle.clone();
+        let wait_for_authorization = self.settings.mcp_wait_for_authorization;
 
         for config in self
             .cached_mcp_configs
@@ -1060,7 +1088,10 @@ impl Agent {
         let (success_tx, mut success_rx) = mpsc::channel(8);
         let mut failed_servers = Vec::new();
         let (failed_tx, mut failed_rx) = mpsc::channel(8);
+        let mut pending_auth_servers = Vec::new();
+        let (pending_auth_tx, mut pending_auth_rx) = mpsc::channel(8);
         let init_results_handle = tokio::spawn(async move {
+            let mut awaiting_authorization = HashSet::new();
             while let Some((name, res)) = results.next().await {
                 debug!(?name, ?res, "received result from LaunchServer request");
                 let Ok(res) = res else {
@@ -1069,13 +1100,58 @@ impl Agent {
                     continue;
                 };
                 match res {
-                    Ok(_) => {
+                    Ok(LaunchOutcome::Initialized) => {
                         let _ = success_tx.send(name).await;
+                    },
+                    Ok(LaunchOutcome::AwaitingAuthorization) if wait_for_authorization => {
+                        info!(?name, "MCP server is awaiting authorization; holding startup for it");
+                        awaiting_authorization.insert(name);
+                    },
+                    Ok(LaunchOutcome::AwaitingAuthorization) => {
+                        let _ = pending_auth_tx.send(name).await;
                     },
                     Err(err) => {
                         error!(?name, ?err, "failed to launch MCP server");
                         let _ = failed_tx.send(name).await;
                     },
+                }
+            }
+            // An authorization-pending server has not reported a real outcome yet, so
+            // keep the senders alive and translate the server's own terminal event
+            // instead. Dropping them here would release the wait tool-less.
+            while !awaiting_authorization.is_empty() {
+                match server_events.recv().await {
+                    Ok(McpServerEvent::Initialized { server_name, .. }) => {
+                        if awaiting_authorization.remove(&server_name) {
+                            let _ = success_tx.send(server_name).await;
+                        }
+                    },
+                    Ok(McpServerEvent::InitializeError { server_name, .. }) => {
+                        if awaiting_authorization.remove(&server_name) {
+                            let _ = failed_tx.send(server_name).await;
+                        }
+                    },
+                    Ok(_) => {},
+                    // Lagging drops events permanently, possibly the very outcome this
+                    // wait exists for, so ask the manager where each server stands
+                    // rather than wait for an event that will not be re-sent.
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        for name in std::mem::take(&mut awaiting_authorization) {
+                            let queried = server_events.get_tool_specs(name.clone()).await;
+                            match settled_launch_state(queried) {
+                                SettledLaunchState::Initialized => {
+                                    let _ = success_tx.send(name).await;
+                                },
+                                SettledLaunchState::Failed => {
+                                    let _ = failed_tx.send(name).await;
+                                },
+                                SettledLaunchState::StillInitializing => {
+                                    awaiting_authorization.insert(name);
+                                },
+                            }
+                        }
+                    },
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
         });
@@ -1085,7 +1161,7 @@ impl Agent {
             tokio::select! {
                 name = success_rx.recv() => {
                     let Some(name) = name else {
-                        // If None is returned in either success/failed receivers, then the
+                        // If None is returned in any of the receivers, then the
                         // senders have dropped, meaning initialization has completed.
                         break;
                     };
@@ -1099,13 +1175,25 @@ impl Agent {
                     warn!(?name, "MCP server failed initialization");
                     failed_servers.push(name);
                 },
+                name = pending_auth_rx.recv() => {
+                    let Some(name) = name else {
+                        break;
+                    };
+                    info!(?name, "MCP server is awaiting authorization; continuing without it");
+                    pending_auth_servers.push(name);
+                },
                 _ = tokio::time::sleep_until(timeout_at) => {
                     warn!("timed out before all MCP servers could be initialized");
                     break;
                 },
             }
         }
-        info!(?launched_servers, ?failed_servers, "MCP server initialization finished");
+        info!(
+            ?launched_servers,
+            ?failed_servers,
+            ?pending_auth_servers,
+            "MCP server initialization finished"
+        );
         init_results_handle.abort();
     }
 
@@ -5579,6 +5667,36 @@ fn recover_pending_summary(name: &str, input: &serde_json::Value) -> Option<Summ
 mod tests {
     use super::*;
     use crate::util::test::TestBase;
+
+    /// A wait that lost its events must release a server the manager can still
+    /// answer for, and must not hold for one it can never answer for.
+    #[test]
+    fn a_launch_state_is_recoverable_from_a_manager_query() {
+        let name = || "srv".to_string();
+        assert_eq!(settled_launch_state(Ok(())), SettledLaunchState::Initialized);
+        assert_eq!(
+            settled_launch_state::<()>(Err(mcp::McpManagerError::McpActor(
+                mcp::actor::McpServerActorError::Channel
+            ))),
+            SettledLaunchState::Initialized
+        );
+        assert_eq!(
+            settled_launch_state::<()>(Err(mcp::McpManagerError::ServerCurrentlyInitializing { name: name() })),
+            SettledLaunchState::StillInitializing
+        );
+        assert_eq!(
+            settled_launch_state::<()>(Err(mcp::McpManagerError::ServerFailed { name: name() })),
+            SettledLaunchState::Failed
+        );
+        assert_eq!(
+            settled_launch_state::<()>(Err(mcp::McpManagerError::ServerNotInitialized { name: name() })),
+            SettledLaunchState::Failed
+        );
+        assert_eq!(
+            settled_launch_state::<()>(Err(mcp::McpManagerError::Channel)),
+            SettledLaunchState::Failed
+        );
+    }
 
     /// A pending summary tool use carries the model's real result in its input;
     /// the salvage path must recover it verbatim so a turn torn down by an error

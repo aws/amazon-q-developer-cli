@@ -58,6 +58,20 @@ use crate::util::providers::RealProvider;
 
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// Least a local server's whole launch — handshake, tool listing and prompt
+/// listing — is ever given before it fails instead of reporting no outcome at
+/// all. The bound exists to catch a server that has stopped answering, not to
+/// pace a healthy one.
+const LOCAL_LAUNCH_TIMEOUT_FLOOR_MS: u64 = 120_000;
+
+/// The whole-launch bound for a local server: never less than two minutes, and
+/// longer when the server is configured to tolerate longer requests, which is the
+/// remedy for a first-run `npx`/`uvx` fetch that outruns the floor. `timeout_ms: 0`
+/// ("no limit") and any value under the floor land on the floor.
+fn local_launch_bound(timeout_ms: u64) -> Duration {
+    Duration::from_millis(timeout_ms.max(LOCAL_LAUNCH_TIMEOUT_FLOOR_MS))
+}
+
 /// Sentinel message returned when MCP OAuth token refresh and re-authentication both fail.
 /// Detected downstream to produce a user-facing error that mentions `/mcp`.
 pub const MCP_AUTH_REFRESH_FAILED: &str = "MCP_AUTH_REFRESH_FAILED";
@@ -93,6 +107,30 @@ impl McpService {
     /// Launches the provided MCP server, returning a client handle to the server for sending
     /// requests.
     pub async fn launch(
+        self,
+        event_tx: &mpsc::Sender<McpServerActorEvent>,
+    ) -> eyre::Result<(RunningMcpService, LaunchMetadata)> {
+        let launch_bound = match &self.config {
+            McpServerConfig::Local(config) => Some(local_launch_bound(config.timeout_ms)),
+            // Remote launches are already bounded: the HTTP client applies the server's
+            // request timeout to every call the launch makes, handshake included.
+            _ => None,
+        };
+        let Some(launch_bound) = launch_bound else {
+            return self.launch_inner(event_tx).await;
+        };
+
+        let server_name = self.server_name.clone();
+        match tokio::time::timeout(launch_bound, self.launch_inner(event_tx)).await {
+            Ok(res) => res,
+            Err(_elapsed) => eyre::bail!(
+                "MCP server '{server_name}' is not responding: gave up waiting for it to finish launching after {}s",
+                launch_bound.as_secs()
+            ),
+        }
+    }
+
+    async fn launch_inner(
         self,
         event_tx: &mpsc::Sender<McpServerActorEvent>,
     ) -> eyre::Result<(RunningMcpService, LaunchMetadata)> {
@@ -818,6 +856,18 @@ mod tests {
     #[test]
     fn test_shutdown_timeout_constant() {
         assert_eq!(SHUTDOWN_TIMEOUT, Duration::from_secs(3));
+    }
+
+    #[test]
+    fn a_low_or_unlimited_request_timeout_lands_on_the_launch_floor() {
+        assert_eq!(local_launch_bound(0), Duration::from_secs(120));
+        assert_eq!(local_launch_bound(30_000), Duration::from_secs(120));
+        assert_eq!(local_launch_bound(120_000), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn a_generous_request_timeout_raises_the_launch_bound() {
+        assert_eq!(local_launch_bound(600_000), Duration::from_secs(600));
     }
 
     #[tokio::test]

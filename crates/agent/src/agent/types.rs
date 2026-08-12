@@ -187,6 +187,13 @@ pub struct AgentSettings {
     /// agent — mirrors the Kiro console `MCP` toggle (governance) for enterprise / API-key users.
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
+    /// Hold session startup until an authorization-pending MCP server has finished
+    /// authorizing, rather than starting without its tools. Delegated turns have
+    /// nobody to re-prompt once they are under way, so they wait; interactive
+    /// sessions proceed and pick the server up when it arrives.
+    #[typeshare(skip)]
+    #[serde(default)]
+    pub mcp_wait_for_authorization: bool,
     /// When true, MCP tools are hidden until activated via search_tools.
     #[serde(default)]
     pub tool_search_enabled: bool,
@@ -228,6 +235,7 @@ impl Default for AgentSettings {
             trust_all_tools: false,
             web_tools_enabled: true,
             mcp_enabled: true,
+            mcp_wait_for_authorization: false,
             tool_search_enabled: false,
             mandatory_mcp_names: Vec::new(),
             tool_search_min_pct: default_tool_search_min_pct(),

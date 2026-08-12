@@ -403,11 +403,14 @@ pub struct McpManager {
 
     cred_path: PathBuf,
 
+    /// Servers between launch and a terminal outcome. The notifier is consumed by
+    /// whichever terminal signal lands first, but the entry stays until the server
+    /// initializes or fails — an authorization-pending server is still on its way.
     initializing_servers: HashMap<
         String,
         (
             McpServerActorHandle,
-            oneshot::Sender<LaunchServerResult>,
+            Option<oneshot::Sender<LaunchServerResult>>,
             McpServerConfigSource,
         ),
     >,
@@ -502,7 +505,7 @@ impl McpManager {
                 let handle = McpServerActor::spawn(name.clone(), config, self.cred_path.clone(), event_tx);
                 let (tx, rx) = oneshot::channel();
 
-                self.initializing_servers.insert(name, (handle, tx, source));
+                self.initializing_servers.insert(name, (handle, Some(tx), source));
                 Ok(McpManagerResponse::LaunchServer(rx))
             },
             McpManagerRequest::GetToolSpecs { server_name } => match self.servers.get(&server_name) {
@@ -568,9 +571,11 @@ impl McpManager {
                     // The actor's request loop isn't running yet, so abort the task to
                     // cancel the in-flight launch and tear down the OAuth loopback.
                     handle.abort();
-                    let _ = result_tx.send(Err(McpManagerError::Custom(format!(
-                        "server '{server_name}' was shut down before initialization completed"
-                    ))));
+                    if let Some(result_tx) = result_tx {
+                        let _ = result_tx.send(Err(McpManagerError::Custom(format!(
+                            "server '{server_name}' was shut down before initialization completed"
+                        ))));
+                    }
                 } else {
                     debug!(server_name = %server_name, "ShutdownServer requested for unknown server, treating as no-op");
                 }
@@ -678,7 +683,9 @@ impl McpManager {
                 };
                 source = server_source;
 
-                if let Err(e) = result_tx.send(Ok(())) {
+                if let Some(result_tx) = result_tx
+                    && let Err(e) = result_tx.send(Ok(LaunchOutcome::Initialized))
+                {
                     warn!(?server_name, ?e, "failed to send server initialized message");
                 }
 
@@ -689,7 +696,9 @@ impl McpManager {
             McpServerActorEvent::InitializeError { server_name, error } => {
                 if let Some((_, result_tx, server_source)) = self.initializing_servers.remove(server_name) {
                     source = server_source;
-                    if let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone()))) {
+                    if let Some(result_tx) = result_tx
+                        && let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone())))
+                    {
                         warn!(?server_name, ?e, "failed to send server initialized message");
                     }
                 }
@@ -697,6 +706,14 @@ impl McpManager {
             },
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
                 info!(?server_name, ?oauth_url, "received oauth request");
+                // The launch is now paced by the user, so report it terminally rather
+                // than let callers block on a grant that may never come. The entry
+                // stays put: the flow continues toward `Initialized`.
+                if let Some((_, result_tx, _)) = self.initializing_servers.get_mut(server_name)
+                    && let Some(result_tx) = result_tx.take()
+                {
+                    let _ = result_tx.send(Ok(LaunchOutcome::AwaitingAuthorization));
+                }
             },
             McpServerActorEvent::ToolListChanged { server_name } => {
                 info!(?server_name, "MCP server tool list changed");
@@ -811,7 +828,18 @@ pub enum McpManagerResponse {
 
 pub type ExecuteToolResult = Result<CallToolResult, McpServerActorError>;
 
-type LaunchServerResult = Result<(), McpManagerError>;
+/// Terminal outcome of a launch request, reported once per launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchOutcome {
+    /// The server completed its handshake and its tools are available.
+    Initialized,
+    /// The server needs the user to grant authorization. Nothing further will
+    /// happen until they do, so waiting on this launch is unbounded; the flow
+    /// continues in the background and reports `Initialized` once granted.
+    AwaitingAuthorization,
+}
+
+pub type LaunchServerResult = Result<LaunchOutcome, McpManagerError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
 pub enum McpManagerError {
@@ -1216,8 +1244,10 @@ mod tests {
             event_tx,
         );
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers
-            .insert("test-server".to_string(), (handle, tx, McpServerConfigSource::Registry));
+        mgr.initializing_servers.insert(
+            "test-server".to_string(),
+            (handle, Some(tx), McpServerConfigSource::Registry),
+        );
 
         // Handle Initialized event
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
@@ -1254,7 +1284,7 @@ mod tests {
         let (tx, _rx) = oneshot::channel();
         mgr.initializing_servers.insert(
             "fail-server".to_string(),
-            (handle, tx, McpServerConfigSource::WorkspaceMcpJson),
+            (handle, Some(tx), McpServerConfigSource::WorkspaceMcpJson),
         );
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
@@ -1354,7 +1384,7 @@ mod tests {
         let (tx, _rx) = oneshot::channel();
         mgr.initializing_servers.insert(
             "init-server".to_string(),
-            (handle, tx, McpServerConfigSource::AgentConfig),
+            (handle, Some(tx), McpServerConfigSource::AgentConfig),
         );
 
         let result = mgr
@@ -1422,7 +1452,7 @@ mod tests {
             "__reauth__srv".to_string(),
             (
                 McpServerActorHandle::new_dummy("__reauth__srv"),
-                tx,
+                Some(tx),
                 McpServerConfigSource::AgentConfig,
             ),
         );
@@ -1580,7 +1610,7 @@ mod tests {
             "pending".to_string(),
             (
                 McpServerActorHandle::new_dummy("pending"),
-                tx,
+                Some(tx),
                 McpServerConfigSource::Unknown,
             ),
         );
@@ -1616,8 +1646,10 @@ mod tests {
             event_tx,
         );
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers
-            .insert("dup-server".to_string(), (handle, tx, McpServerConfigSource::Unknown));
+        mgr.initializing_servers.insert(
+            "dup-server".to_string(),
+            (handle, Some(tx), McpServerConfigSource::Unknown),
+        );
 
         let result = mgr
             .handle_mcp_manager_request(McpManagerRequest::LaunchServer {
@@ -1741,7 +1773,7 @@ mod tests {
         let handle = McpServerActorHandle::new_dummy("srv");
         let (tx, mut rx) = oneshot::channel();
         mgr.initializing_servers
-            .insert("srv".to_string(), (handle, tx, McpServerConfigSource::Registry));
+            .insert("srv".to_string(), (handle, Some(tx), McpServerConfigSource::Registry));
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
             server_name: "srv".to_string(),
@@ -1760,8 +1792,35 @@ mod tests {
                 ..
             })
         ));
-        // The oneshot should have received Ok(())
-        assert!(rx.try_recv().unwrap().is_ok());
+        assert_eq!(rx.try_recv().unwrap().unwrap(), LaunchOutcome::Initialized);
+    }
+
+    #[test]
+    fn test_oauth_request_reports_outcome_but_keeps_server_pending() {
+        let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
+        let handle = McpServerActorHandle::new_dummy("srv");
+        let (tx, mut rx) = oneshot::channel();
+        mgr.initializing_servers
+            .insert("srv".to_string(), (handle, Some(tx), McpServerConfigSource::Registry));
+
+        mgr.handle_mcp_actor_event(McpServerActorEvent::OauthRequest {
+            server_name: "srv".to_string(),
+            oauth_url: "https://example.com/authorize".to_string(),
+        });
+
+        assert_eq!(rx.try_recv().unwrap().unwrap(), LaunchOutcome::AwaitingAuthorization);
+        assert!(mgr.initializing_servers.contains_key("srv"));
+        assert!(!mgr.failed_servers.contains("srv"));
+
+        mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
+            server_name: "srv".to_string(),
+            serve_duration: Duration::from_millis(50),
+            list_tools_duration: None,
+            list_prompts_duration: None,
+        });
+
+        assert!(mgr.servers.contains_key("srv"));
+        assert!(!mgr.initializing_servers.contains_key("srv"));
     }
 
     #[test]
@@ -1769,8 +1828,10 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let handle = McpServerActorHandle::new_dummy("bad");
         let (tx, mut rx) = oneshot::channel();
-        mgr.initializing_servers
-            .insert("bad".to_string(), (handle, tx, McpServerConfigSource::AcpInjected));
+        mgr.initializing_servers.insert(
+            "bad".to_string(),
+            (handle, Some(tx), McpServerConfigSource::AcpInjected),
+        );
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::InitializeError {
             server_name: "bad".to_string(),
@@ -1825,7 +1886,7 @@ mod tests {
         let handle = McpServerActorHandle::new_dummy("init");
         let (tx, mut rx) = oneshot::channel();
         mgr.initializing_servers
-            .insert("init".to_string(), (handle, tx, McpServerConfigSource::Unknown));
+            .insert("init".to_string(), (handle, Some(tx), McpServerConfigSource::Unknown));
         let res = mgr
             .handle_mcp_manager_request(McpManagerRequest::ShutdownServer {
                 server_name: "init".to_string(),
@@ -1868,7 +1929,7 @@ mod tests {
         let handle = McpServerActorHandle::new_dummy("dup");
         let (tx, _rx) = oneshot::channel();
         mgr.initializing_servers
-            .insert("dup".to_string(), (handle, tx, McpServerConfigSource::Unknown));
+            .insert("dup".to_string(), (handle, Some(tx), McpServerConfigSource::Unknown));
 
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
             server_name: "dup".to_string(),
@@ -1888,8 +1949,10 @@ mod tests {
         let handle = McpServerActorHandle::new_dummy("dropped");
         let (tx, rx) = oneshot::channel();
         drop(rx); // Drop receiver before sending
-        mgr.initializing_servers
-            .insert("dropped".to_string(), (handle, tx, McpServerConfigSource::Unknown));
+        mgr.initializing_servers.insert(
+            "dropped".to_string(),
+            (handle, Some(tx), McpServerConfigSource::Unknown),
+        );
 
         // Should not panic even though receiver is dropped
         mgr.handle_mcp_actor_event(McpServerActorEvent::Initialized {
@@ -1909,8 +1972,10 @@ mod tests {
         let mut mgr = McpManager::new(PathBuf::from("/tmp/creds"));
         let handle = McpServerActorHandle::new_dummy("init-srv");
         let (tx, _rx) = oneshot::channel();
-        mgr.initializing_servers
-            .insert("init-srv".to_string(), (handle, tx, McpServerConfigSource::Unknown));
+        mgr.initializing_servers.insert(
+            "init-srv".to_string(),
+            (handle, Some(tx), McpServerConfigSource::Unknown),
+        );
 
         let result = mgr
             .handle_mcp_manager_request(McpManagerRequest::GetToolSpecs {
@@ -1953,7 +2018,7 @@ mod tests {
         let handle = McpServerActorHandle::new_dummy("dup");
         let (tx, _rx) = oneshot::channel();
         mgr.initializing_servers
-            .insert("dup".to_string(), (handle, tx, McpServerConfigSource::Unknown));
+            .insert("dup".to_string(), (handle, Some(tx), McpServerConfigSource::Unknown));
 
         let config = McpServerConfig::Local(LocalMcpServerConfig {
             command: "echo".to_string(),

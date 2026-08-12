@@ -385,6 +385,9 @@ impl<'a> Subagent<'a> {
             settings: AgentSettings {
                 // one day
                 mcp_init_timeout: std::time::Duration::from_secs(86400),
+                // Nobody can answer an authorization prompt on a delegated turn's
+                // behalf once it has started, so wait for the grant here too.
+                mcp_wait_for_authorization: true,
                 disable_auto_compact: Default::default(),
                 trust_all_tools: false,
                 web_tools_enabled: self.web_tools_enabled,
