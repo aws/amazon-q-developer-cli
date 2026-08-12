@@ -3293,3 +3293,192 @@ async fn test_unexecutable_tool_breaker_resets_after_success() {
         "expected EndTurn after the breaker eventually trips"
     );
 }
+
+/// Regression: a config-file change triggers a surgical MCP reconcile that
+/// adopts a freshly-loaded config. Resources attached at runtime (`/context
+/// add`) exist only in the live in-memory config, so the adoption used to
+/// silently drop them — both on a no-op reconcile (unrelated config touch)
+/// and, together with their session-scoped classification, on a
+/// plan-changing one.
+#[tokio::test]
+async fn test_reconcile_mcp_servers_preserves_session_resources() {
+    use agent::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+        LocalMcpServerConfig,
+        McpServerConfig,
+    };
+    use agent::agent_config::types::ResourcePath;
+    use agent::agent_config::{
+        ConfigSource,
+        LoadedAgentConfig,
+        ResolvedGlobalPrompt,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let test = TestCase::builder()
+        .test_name("reconcile_preserves_session_resources")
+        .with_default_agent_config()
+        .build()
+        .await
+        .unwrap();
+
+    test.add_resource("/tmp/session-notes.md")
+        .await
+        .expect("add_resource failed");
+    let attached = "file:///tmp/session-notes.md";
+    assert!(
+        test.get_resources().await.iter().any(|r| r == attached),
+        "session resource must be attached before reconcile"
+    );
+
+    // No-op reconcile: same agent re-loaded from disk, no MCP changes.
+    let fresh = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(AgentConfigV2025_08_22::default()),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh).await.expect("no-op reconcile failed");
+
+    assert!(
+        test.get_resources().await.iter().any(|r| r == attached),
+        "no-op reconcile must not drop session-attached resources"
+    );
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        snapshot.session_resource_paths.contains(attached),
+        "no-op reconcile must keep the session-scoped classification"
+    );
+
+    // Plan-changing reconcile: the fresh config introduces an MCP server, so
+    // the launch plan is non-empty and the tool-spec cache is invalidated.
+    let mut inner = AgentConfigV2025_08_22::default();
+    inner.mcp_servers.insert(
+        "hot-added".to_string(),
+        McpServerConfig::Local(LocalMcpServerConfig {
+            command: "/bin/echo".to_string(),
+            args: vec!["hot".to_string()],
+            env: None,
+            timeout_ms: 30_000,
+            disabled: false,
+            disabled_tools: vec![],
+        }),
+    );
+    let fresh_with_mcp = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(inner),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh_with_mcp)
+        .await
+        .expect("plan-changing reconcile failed");
+
+    assert!(
+        test.get_resources().await.iter().any(|r| r == attached),
+        "plan-changing reconcile must not drop session-attached resources"
+    );
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        snapshot.session_resource_paths.contains(attached),
+        "plan-changing reconcile must keep the session-scoped classification"
+    );
+
+    // Promotion: the fresh config now declares the attached path itself. The
+    // resource must appear exactly once, and it is no longer session-scoped.
+    let mut promoted_inner = AgentConfigV2025_08_22::default();
+    promoted_inner.resources = vec![ResourcePath::FilePath(attached.to_string())];
+    let fresh_promoted = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(promoted_inner),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh_promoted)
+        .await
+        .expect("promotion reconcile failed");
+
+    let resources = test.get_resources().await;
+    assert_eq!(
+        resources.iter().filter(|r| *r == attached).count(),
+        1,
+        "a config-declared duplicate of a session attachment must dedup to one entry, got: {resources:?}"
+    );
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        !snapshot.session_resource_paths.contains(attached),
+        "a path promoted to config-declared must lose its session classification"
+    );
+}
+
+/// Regression: detaching a config-declared resource via `/context remove` is
+/// runtime-only state, so a reconcile adopting the freshly-loaded config used
+/// to silently resurrect it. The detachment must hold, and a later re-add must
+/// cancel it.
+#[tokio::test]
+async fn test_reconcile_mcp_servers_preserves_runtime_removals() {
+    use agent::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+    };
+    use agent::agent_config::types::ResourcePath;
+    use agent::agent_config::{
+        ConfigSource,
+        LoadedAgentConfig,
+        ResolvedGlobalPrompt,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let declared = "file:///tmp/declared-notes.md";
+    let mut inner = AgentConfigV2025_08_22::default();
+    inner.resources = vec![ResourcePath::FilePath(declared.to_string())];
+
+    let test = TestCase::builder()
+        .test_name("reconcile_preserves_runtime_removals")
+        .with_agent_config(AgentConfig::V2025_08_22(inner.clone()))
+        .build()
+        .await
+        .unwrap();
+
+    assert!(
+        test.get_resources().await.iter().any(|r| r == declared),
+        "config-declared resource must be present initially"
+    );
+
+    test.remove_resource("/tmp/declared-notes.md")
+        .await
+        .expect("remove_resource failed");
+    assert!(
+        !test.get_resources().await.iter().any(|r| r == declared),
+        "resource must be detached after remove"
+    );
+
+    // Reconcile re-loads the same config from disk — the detachment must hold.
+    let fresh = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(inner.clone()),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh).await.expect("reconcile failed");
+    assert!(
+        !test.get_resources().await.iter().any(|r| r == declared),
+        "reconcile must not resurrect a runtime-detached resource"
+    );
+
+    // Re-adding cancels the detachment, and the re-add survives another reconcile.
+    test.add_resource("/tmp/declared-notes.md")
+        .await
+        .expect("re-add after remove failed");
+    let fresh = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(inner),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh).await.expect("reconcile failed");
+    let resources = test.get_resources().await;
+    assert_eq!(
+        resources.iter().filter(|r| *r == declared).count(),
+        1,
+        "re-added resource must survive reconcile exactly once, got: {resources:?}"
+    );
+}

@@ -499,6 +499,32 @@ impl TestCase {
         self.agent.create_snapshot().await.expect("failed to create snapshot")
     }
 
+    /// Attach a resource at runtime, as `/context add` does.
+    pub async fn add_resource(&self, path: impl Into<String>) -> std::result::Result<(), agent::protocol::AgentError> {
+        self.agent.add_resource(path.into()).await
+    }
+
+    pub async fn get_resources(&self) -> Vec<String> {
+        self.agent.get_resources().await.expect("failed to get resources")
+    }
+
+    /// Detach a resource at runtime, as `/context remove` does.
+    pub async fn remove_resource(
+        &self,
+        path: impl Into<String>,
+    ) -> std::result::Result<(), agent::protocol::AgentError> {
+        self.agent.remove_resource(path.into()).await
+    }
+
+    /// Push a freshly-loaded agent config through the surgical MCP reconcile,
+    /// as the config file watcher does on an agent/mcp.json change.
+    pub async fn reconcile_mcp_servers(
+        &self,
+        config: agent::agent_config::LoadedAgentConfig,
+    ) -> std::result::Result<(), agent::protocol::AgentError> {
+        self.agent.reconcile_mcp_servers(Box::new(config)).await
+    }
+
     pub fn requests(&self) -> &[SentRequest] {
         &self.sent_requests
     }

@@ -409,7 +409,8 @@ impl AgentHandle {
     ///
     /// Unlike [`swap_agent`](Self::swap_agent), this does not tear down and
     /// relaunch every server — it only touches servers whose presence or config
-    /// changed. Used by the config file watcher for live, low-churn updates.
+    /// changed. Resources attached at runtime survive the config adoption.
+    /// Used by the config file watcher for live, low-churn updates.
     /// Returns [`AgentError::NotIdle`] if the agent is not idle.
     pub async fn reconcile_mcp_servers(&self, config: Box<LoadedAgentConfig>) -> Result<(), AgentError> {
         match self
@@ -775,6 +776,9 @@ pub struct Agent {
     task_store: Option<Arc<TaskStore>>,
     /// Paths added via /context add during this session (not from agent config)
     session_resource_paths: HashSet<String>,
+    /// Config-declared resources detached via /context remove during this
+    /// session. Tracked so a config reload doesn't silently resurrect them.
+    session_removed_paths: HashSet<String>,
     /// All available agent configs, used for dynamic tool spec generation (e.g. AgentCrew)
     available_agent_configs: Vec<LoadedAgentConfig>,
     /// MCP registry to apply to the agent config before launching MCP servers.
@@ -931,6 +935,7 @@ impl Agent {
             knowledge_provider,
             task_store,
             session_resource_paths: HashSet::new(),
+            session_removed_paths: HashSet::new(),
             available_agent_configs,
             mcp_registry,
             tool_search_index: ToolIndex::default(),
@@ -1621,18 +1626,28 @@ impl Agent {
                 };
                 if self.agent_config.add_resource(resource) {
                     self.session_resource_paths.insert(format!("file://{path}"));
+                    // Re-adding a previously detached resource cancels the tombstone.
+                    self.session_removed_paths.remove(&path);
+                    self.session_removed_paths.remove(&format!("file://{path}"));
                     Ok(AgentResponse::Success)
                 } else {
                     Err(AgentError::Custom(format!("Rule '{path}' already exists.")))
                 }
             },
             AgentRequest::RemoveResource(path) => {
+                let was_session_added = self.session_resource_paths.contains(&path)
+                    || self.session_resource_paths.contains(&format!("file://{path}"));
                 // Try both with and without file:// prefix
                 let removed = self.agent_config.remove_resource(&path)
                     || self.agent_config.remove_resource(&format!("file://{path}"));
                 if removed {
                     self.session_resource_paths.remove(&path);
                     self.session_resource_paths.remove(&format!("file://{path}"));
+                    // Detaching a config-declared resource must hold across config
+                    // reloads, which would otherwise resurrect it.
+                    if !was_session_added {
+                        self.session_removed_paths.insert(path);
+                    }
                     Ok(AgentResponse::Success)
                 } else {
                     Err(AgentError::Custom(format!("Resource not found: {path}")))
@@ -1819,6 +1834,7 @@ impl Agent {
         }
         self.cached_tool_specs = None;
         self.session_resource_paths.clear();
+        self.session_removed_paths.clear();
 
         // 4. Reload MCP configs from new agent config
         self.cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(
@@ -2004,15 +2020,41 @@ impl Agent {
             }
         }
 
-        // Adopt the new config. Only invalidate the tool-spec and resource
-        // caches when the plan actually changed something — a no-op reconcile
-        // (e.g. an unrelated mcp.json touch) must not drop resource
-        // subscriptions or force a tool-spec rebuild.
+        // Re-attach session-scoped resources before adopting: the freshly-loaded
+        // config knows nothing about runtime attachments, so adopting it
+        // wholesale would silently drop them. Sorted so the resource order is
+        // deterministic. A path the fresh config now declares itself has been
+        // promoted to config-scoped, so its session classification is pruned.
+        let mut session_paths: Vec<String> = self.session_resource_paths.iter().cloned().collect();
+        session_paths.sort();
+        for path in session_paths {
+            match path.parse::<agent_config::types::ResourcePath>() {
+                Ok(resource) => {
+                    if !config.add_resource(resource) {
+                        self.session_resource_paths.remove(&path);
+                    }
+                },
+                Err(e) => {
+                    warn!(%path, error = %e, "failed to re-attach session resource during reconcile");
+                },
+            }
+        }
+
+        // Runtime detachments of config-declared resources must hold as well —
+        // the freshly-loaded config would silently resurrect them.
+        for path in &self.session_removed_paths {
+            if !config.remove_resource(path) {
+                config.remove_resource(&format!("file://{path}"));
+            }
+        }
+
+        // Adopt the new config. Only invalidate the tool-spec cache when the
+        // plan actually changed something — a no-op reconcile (e.g. an
+        // unrelated mcp.json touch) must not force a tool-spec rebuild.
         self.agent_config = config;
         self.cached_mcp_configs = new_mcp_configs;
         if !plan.is_empty() {
             self.cached_tool_specs = None;
-            self.session_resource_paths.clear();
         }
 
         Ok(AgentResponse::Success)

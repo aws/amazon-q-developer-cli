@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "`/context` entries no longer disappear when agent or MCP config files change mid-session"
+}
