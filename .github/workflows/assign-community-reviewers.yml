@@ -1,7 +1,8 @@
 # .github/workflows/assign-community-reviewers.yml
 # Round-robin a reviewer from `kiro-cli-community-reviewer` onto every PR whose
-# author is NOT in `kiro-cli-core`. Native team review-assignment can't branch on
-# author team membership, so the condition lives here; GitHub does the rest.
+# author is NOT in `kiro-cli-core`. Labels the PR as `community-contribution` and
+# posts a Slack notification to #kiro-cli-community-reviewers tagging the assigned
+# reviewer.
 name: Assign community reviewers
 
 on:
@@ -20,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v7
+        id: assign-reviewer
         with:
           # Dedicated fine-grained PAT: org Members:read (kiro-cli-core check + team roster)
           # + repo Pull requests:write (request reviewer). GITHUB_TOKEN can't read org teams.
@@ -48,12 +50,76 @@ jobs:
 
             if (members.length === 0) return core.warning('No eligible community reviewers.');
 
-            // ponytail: stateless round-robin via PR number. Ceiling: not a strict least-recently-used
-            // cycle. Upgrade path: enable native "Round robin" review assignment on the team and swap
-            // the block below for `team_reviewers: ['kiro-cli-community-reviewer']`.
+            // Stateless round-robin via PR number.
             const pick = members[pr.number % members.length];
 
+            // 1. Request review from the selected community reviewer.
             await github.rest.pulls.requestReviewers({
               owner: org, repo, pull_number: pr.number, reviewers: [pick],
             });
             core.info(`Requested review from ${pick} (author: ${author}).`);
+
+            // 2. Label the PR as a community contribution.
+            try {
+              await github.rest.issues.addLabels({
+                owner: org, repo, issue_number: pr.number,
+                labels: ['community-contribution'],
+              });
+              core.info('Added community-contribution label.');
+            } catch (e) {
+              core.warning(`Failed to add label: ${e.message}`);
+            }
+
+            // 3. Output for the Slack notification step.
+            core.setOutput('reviewer', pick);
+            core.setOutput('pr_number', pr.number);
+            core.setOutput('pr_title', pr.title);
+            core.setOutput('pr_url', pr.html_url);
+            core.setOutput('author', author);
+            core.setOutput('should_notify', 'true');
+
+      - name: Notify Slack
+        if: steps.assign-reviewer.outputs.should_notify == 'true'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
+          REVIEWER: ${{ steps.assign-reviewer.outputs.reviewer }}
+          PR_NUMBER: ${{ steps.assign-reviewer.outputs.pr_number }}
+          PR_TITLE: ${{ steps.assign-reviewer.outputs.pr_title }}
+          PR_URL: ${{ steps.assign-reviewer.outputs.pr_url }}
+          AUTHOR: ${{ steps.assign-reviewer.outputs.author }}
+        run: |
+          # GitHub username -> Slack user ID mapping for community reviewers.
+          # Keep in sync with the kiro-cli-community-reviewer GitHub team.
+          # Source: .kiro/skills/github-alias-resolver/alias-cache.json (PR #3915)
+          # and #kiro-cli-community-reviewers (C0B629WDWSE) channel members.
+          declare -A SLACK_IDS=(
+            ["rubencu"]="W018ARV7NUQ"
+            ["tommy-amzn"]="W018ALXRK24"
+            ["jguoamz"]="W017AHACEHL"
+            ["AMZN-hgoffin"]="U025Q1X3R52"
+            ["avgvi"]="U08D91S3077"
+            ["aNerdFromDuval"]="U04CGL2UKAP"
+          )
+
+          SLACK_USER_ID="${SLACK_IDS[$REVIEWER]:-}"
+
+          if [ -n "$SLACK_USER_ID" ]; then
+            MENTION="<@${SLACK_USER_ID}>"
+          else
+            MENTION="\`${REVIEWER}\`"
+          fi
+
+          # Post to #kiro-cli-community-reviewers (C0B629WDWSE)
+          PAYLOAD=$(cat <<EOF
+          {
+            "channel": "C0B629WDWSE",
+            "unfurl_links": false,
+            "text": ":rotating_light: *New community PR for review*\n\n${MENTION} — you've been assigned to review <${PR_URL}|#${PR_NUMBER}: ${PR_TITLE}> by \`${AUTHOR}\`.\n\nPlease aim for a first response within 48h. If you're unavailable, reply here and we'll rotate to the next reviewer."
+          }
+          EOF
+          )
+
+          curl -sf -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
