@@ -7,7 +7,7 @@ doc_meta:
   category: command
   title: kiro-cli chat
   description: Start AI assistant session with support for agents, models, tool trust, and conversation management
-  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, list, enterprise, AppLocker]
+  keywords: [chat, conversation, agent, model, effort, interactive, headless, mcp, log, logging, history, KIRO_LOG_NO_COLOR, KIRO_HOME, KIRO_DATA_DIR, config-directory, list, enterprise, AppLocker, trust-all-tools]
   related: [slash-chat-save, slash-chat-load, slash-agent, exit-codes]
 ---
 
@@ -59,7 +59,7 @@ kiro-cli chat --no-interactive "List all Rust files in src/"
 kiro-cli chat --trust-all-tools "Run tests and analyze results"
 ```
 
-**What this does**: Allows agent to use any tool without approval prompts.
+**What this does**: Allows agent to use any tool without approval prompts. Shows a confirmation gate on startup requiring explicit acceptance. A warning banner remains visible throughout the session.
 
 #### Use Case 5: Trust Specific Tools
 
@@ -124,7 +124,7 @@ kiro-cli chat --resume-id <SESSION_ID>
 | `--agent` | | string | Agent to use (default: default agent) |
 | `--model` | | string | Model to use (default: default model) |
 | `--effort` | | string | Initial effort level (low, medium, high, xhigh, max) |
-| `--trust-all-tools` | `-a` | flag | Auto-approve all tool uses |
+| `--trust-all-tools` | `-a` | flag | Auto-approve all tool uses (requires confirmation) |
 | `--trust-tools` | | list | Auto-approve specific tools (comma-separated) |
 | `--no-interactive` | | flag | Run without user input (headless mode) |
 | `--list-sessions` | `-l` | flag | List saved conversations |
@@ -280,7 +280,7 @@ Use `--no-interactive` for automation and scripts:
 **Model Selection**: Uses specified model or default from settings. Can be changed mid-session with `/model`, which automatically saves your choice as the default for future sessions. When resuming a session with `--resume`, the model active when the session was saved is restored (unless overridden with `--model`).
 
 **Tool Trust**: 
-- `--trust-all-tools`: Bypasses all tool approval prompts
+- `--trust-all-tools`: Bypasses all tool approval prompts. In interactive mode, displays a confirmation gate on startup requiring explicit acceptance before the session proceeds. A persistent warning banner ("Trust All Tools active, confirmations are off") remains visible above the prompt throughout the session. In `--no-interactive` mode, the confirmation is auto-accepted.
 - `--trust-tools=`: Empty list trusts no tools
 - `--trust-tools=a,b`: Trusts only tools a and b
 - Without flags: Prompts for each tool use (unless in agent's allowedTools)

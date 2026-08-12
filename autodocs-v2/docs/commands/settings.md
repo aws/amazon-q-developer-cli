@@ -114,13 +114,10 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 | `chat.allowAsciiArt` | boolean | Enable Unicode symbols (arrows, dots, blocks, box-drawing) throughout the TUI; when false, all degrade to plain ASCII (default: true) |
 | `chat.allowIcons` | boolean | Show status indicator icons (default: true) |
 | `chat.disableAutoCompaction` | boolean | Disable automatic summarization |
-| `chat.disableGranularTrust` | boolean | Disable granular trust options |
+| `chat.disableGranularTrust` | boolean | Disable granular trust options for file/command approvals |
 | `chat.disableInheritingDefaultResources` | boolean | Disable inheriting default resources — global/workspace steering, skills, and project marker files like AGENTS.md — in custom (user-defined) agents (default: false). Set to true so custom agents only use resources they explicitly declare; built-in agents always inherit |
 | `chat.autoExpandToolOutput` | boolean | Always show full tool output |
 | `chat.disableWrap` | boolean | Disable word-wrapping in chat output; long lines soft-wrap visually but stay as a single logical line for clean copy-paste |
-| `chat.keybindings.cancelStream` | string | Key to cancel streaming (default: `esc`) |
-| `chat.keybindings.closeMenu` | string | Key to close slash menus and panels (default: `esc`) |
-| `chat.keybindings.quit` | string | Key to quit (double-press required, default: `ctrl+c`) |
 | `telemetry.enabled` | boolean | Enable/disable telemetry |
 | `knowledge.defaultIncludePatterns` | array | File patterns to include |
 | `knowledge.defaultExcludePatterns` | array | File patterns to exclude |
