@@ -180,7 +180,12 @@ export const SessionDashboardScreen: React.FC = () => {
     turns: SessionTurn[];
   } | null>(null);
   useEffect(() => {
-    if (!highlightedId || !highlightedIdentity) return;
+    // The preview pane is opt-in and hidden by default; loading preview and
+    // turn-tree data for it costs real file I/O (transcript + up to 64
+    // sub-execution reads) per cursor settle, which reads as arrow-key lag
+    // on large stores. Do nothing until the pane is actually shown, and
+    // build the turn tree only for the view that renders it.
+    if (!showPreview || !highlightedId || !highlightedIdentity) return;
     const timer = setTimeout(() => {
       setPreviewState({
         identity: highlightedIdentity,
@@ -190,6 +195,7 @@ export const SessionDashboardScreen: React.FC = () => {
           highlightedSession?.source
         ),
       });
+      if (previewView !== 'turns') return;
       const dir =
         highlightedSession?.source !== 'remote' &&
         (highlightedSession?.engine === 'v3' ||
@@ -207,6 +213,8 @@ export const SessionDashboardScreen: React.FC = () => {
     }, 150);
     return () => clearTimeout(timer);
   }, [
+    showPreview,
+    previewView,
     highlightedId,
     highlightedIdentity,
     highlightedSession?.engine,

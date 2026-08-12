@@ -880,6 +880,10 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
   const previewProvider = useMemo(() => getSessionPreviewProvider(), []);
 
   useEffect(() => {
+    // The inline pane may be hidden (host-owned wide preview, or toggled
+    // off); reading preview files for an invisible pane is pure keystroke
+    // cost on large stores.
+    if (hidePreview || !showInlinePreview) return;
     if (!selectedSessionId || !selectedSessionIdentity) return;
     const timer = setTimeout(() => {
       setPreviewState({
@@ -893,6 +897,8 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     }, 150);
     return () => clearTimeout(timer);
   }, [
+    hidePreview,
+    showInlinePreview,
     selectedSessionId,
     selectedSessionIdentity,
     selectedSession?.engine,
