@@ -9,7 +9,7 @@ import type {
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { requireChatCliBin } from '../src/test-utils/chat-cli-bin';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 
 const DOWN = '\x1b[B';

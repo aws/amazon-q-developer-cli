@@ -406,7 +406,7 @@ async function main(): Promise<void> {
 
   const backend =
     cli.backend === 'acp-mock'
-      ? createAcpMockBackend()
+      ? createAcpMockBackend(cli.engine)
       : createLiveBackend(cli.engine);
 
   const runOpts: RunOptions = {

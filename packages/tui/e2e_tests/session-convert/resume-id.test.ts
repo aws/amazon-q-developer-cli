@@ -46,7 +46,7 @@ import { join, resolve } from 'node:path';
 import type { LoadSessionRequest } from '@agentclientprotocol/sdk';
 import { computeWorkspaceHash, SessionPersistence } from '@kiro/agent';
 
-import { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
+import { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import { KAS_DEFAULT_AGENT_ID } from '../../src/constants/agents';
 import { requireChatCliBin } from '../../src/test-utils/chat-cli-bin';
 import type { CliInternalOutput } from '../../src/types/generated/chat-internal';

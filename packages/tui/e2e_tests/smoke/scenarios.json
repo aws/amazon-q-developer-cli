@@ -957,8 +957,7 @@
       ],
       "observe": "Goal is acknowledged and agent begins iterating. Status shows goal progress or iteration count.",
       "engine": [
-        "v2",
-        "kas"
+        "v2"
       ]
     },
     {
@@ -977,8 +976,7 @@
       ],
       "observe": "Goal is cleared. No error message. Prompt returns to normal state.",
       "engine": [
-        "v2",
-        "kas"
+        "v2"
       ]
     },
     {

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AcpTestCase } from '../shared/AcpTestCase';
+import { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from '../shared/default-agent';
 
 describe('shell escape rendering', () => {

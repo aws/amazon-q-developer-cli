@@ -93,6 +93,53 @@
           "type": "string",
           "description": "Free-form checklist for LLM or human visual review"
         },
+        "acpMock": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional ACP mock backend configuration for deterministic scenario execution.",
+          "properties": {
+            "fixture": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": ["acp-wire"]
+                },
+                "ref": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "kas": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ext": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "session": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "local": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "upstream": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            },
+            "v2": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
         "engine": {
           "type": "array",
           "items": {

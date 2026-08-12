@@ -44,7 +44,7 @@ bun run --cwd packages/twinki/packages/twinki build
 
 ```ts
 import { describe, it, expect, afterEach } from 'bun:test';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 
 describe('my feature', () => {
   let tc: AcpTestCase | null = null;

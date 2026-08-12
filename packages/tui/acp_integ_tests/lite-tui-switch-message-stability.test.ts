@@ -7,7 +7,7 @@ import type {
   PromptRequest,
   PromptResponse,
 } from '@agentclientprotocol/sdk';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 import { CMD_TUI } from '../integ_tests/helpers/commands';
 import { visibleCount, visibleIndex } from '../integ_tests/helpers/mode-swap';

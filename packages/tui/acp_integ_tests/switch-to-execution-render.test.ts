@@ -18,7 +18,7 @@ import type {
   PromptRequest,
   PromptResponse,
 } from '@agentclientprotocol/sdk';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 import {
   DEFAULT_KAS_MODE,
   KAS_DEFAULT_AGENT_ID,

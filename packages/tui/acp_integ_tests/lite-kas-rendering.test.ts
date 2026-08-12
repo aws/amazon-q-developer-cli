@@ -21,7 +21,7 @@ import type {
   PromptRequest,
   PromptResponse,
 } from '@agentclientprotocol/sdk';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 import { MessageRole } from '../src/stores/app-store';
 import type { SerializedAppState } from '../src/test-utils/shared/ipc-types';

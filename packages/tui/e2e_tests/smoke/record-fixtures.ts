@@ -562,7 +562,10 @@ async function main(): Promise<void> {
     scenarios = allScenarios;
   } else {
     scenarios = filterScenarios(allScenarios, {
-      backend: { ...FILTER_BACKEND, engine: opts.engine },
+      backend: {
+        ...FILTER_BACKEND,
+        engine: opts.engine,
+      },
       scenarios: opts.scenario ? [opts.scenario] : undefined,
       categories: opts.category ? [opts.category] : undefined,
     });

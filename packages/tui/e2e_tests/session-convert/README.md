@@ -31,7 +31,7 @@ Fixture-specific schema assertions (decoupled from any one flow):
 
 ## Test infrastructure
 
-`AcpTestCase` (in `../../acp_integ_tests/shared/AcpTestCase.ts`) is
+`AcpTestCase` (in `../../src/test-utils/acp-mock/AcpTestCase.ts`) is
 reused for every test: it owns the PTY, the in-process mock ACP server,
 and the per-test sandbox `KIRO_HOME`. Reuse it for any test that is
 purely UI-driven or runs in KAS mode. Tests that need V2 storage on

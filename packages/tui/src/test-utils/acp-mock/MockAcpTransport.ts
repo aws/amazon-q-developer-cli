@@ -26,7 +26,7 @@ import { encodeFrame, FrameDecoder } from './framing';
  * are closed/aborted so the ACP client surfaces a natural disconnect.
  */
 export function connectMockTransport(socketPath: string): Stream {
-  const socket = createConnection(socketPath);
+  const socket = connect(socketPath);
   socket.setEncoding('utf8');
 
   let readCtrl: ReadableStreamDefaultController<AnyMessage> | null = null;
@@ -111,3 +111,15 @@ export function connectMockTransport(socketPath: string): Stream {
 
 // Exposed for tests that want to inspect or influence socket lifecycle.
 export type { Socket };
+
+function connect(endpoint: string): Socket {
+  if (!endpoint.startsWith('tcp://')) {
+    return createConnection(endpoint);
+  }
+
+  const url = new URL(endpoint);
+  return createConnection({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 0,
+  });
+}

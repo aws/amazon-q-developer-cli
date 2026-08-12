@@ -10,7 +10,7 @@ import type {
   PromptRequest,
   PromptResponse,
 } from '@agentclientprotocol/sdk';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 
 function setupHandshake(tc: AcpTestCase): void {

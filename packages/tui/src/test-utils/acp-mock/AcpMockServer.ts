@@ -1,9 +1,9 @@
 /**
- * Test-side ACP mock server for acp_integ_tests.
+ * Test-side ACP mock server for acp_integ_tests and scenario runner KAS mocks.
  *
- * Listens on a local IPC endpoint; accepts a single connection from a TUI process
- * running with `KIRO_ACP_MOCK_SOCKET=<path>`. Routes JSON-RPC messages in
- * both directions:
+ * Listens on a local IPC endpoint; accepts a single connection from a TUI
+ * process running with `KIRO_ACP_MOCK_SOCKET=<path>`. Routes JSON-RPC messages
+ * in both directions:
  *
  *   - Requests from TUI   -> registered `.on(method, handler)` functions
  *   - Notifications       -> observed (via `.receivedNotifications`)
@@ -14,17 +14,9 @@
  *
  * The server buffers outbound traffic until the TUI connects so tests don't
  * need to race on connection establishment.
- *
- * Driving a server `request('session/request_permission', ...)` all the way
- * through a TUI confirmation dialog and back is supported today: tests script
- * the approval menu via the `AcpTestCase` key/wait helpers and the returned
- * promise resolves with the TUI's reply (see `permission-consent.test.ts`).
  */
 import { createServer, type Server, type Socket } from 'node:net';
-import {
-  encodeFrame,
-  FrameDecoder,
-} from '../../src/test-utils/acp-mock/framing';
+import { encodeFrame, FrameDecoder } from './framing';
 
 export type RequestHandler<Req = unknown, Resp = unknown> = (
   params: Req
@@ -33,10 +25,6 @@ export type RequestHandler<Req = unknown, Resp = unknown> = (
 export type ObservedRequest = { method: string; params: unknown };
 export type ObservedNotification = { method: string; params: unknown };
 
-// JSON-RPC message types. We add explicit `undefined` on absent discriminant
-// fields so TypeScript narrows cleanly in control-flow: `'method' in m` and
-// `'id' in m` are too ambiguous for `AnyJsonRpc` otherwise (all three shapes
-// share `jsonrpc: '2.0'`, so there's no discriminant property).
 type JsonRpcRequest = {
   jsonrpc: '2.0';
   id: number | string;
@@ -102,17 +90,10 @@ export class AcpMockServer {
     });
   }
 
-  /**
-   * Resolves once a TUI process has connected. Useful when a test needs to
-   * wait before calling `notify()` or `request()` to ensure the message
-   * isn't buffered indefinitely (buffered messages flush automatically on
-   * connect anyway, but waiting makes ordering deterministic).
-   */
   async awaitConnection(): Promise<void> {
     await this.connectionPromise;
   }
 
-  /** Register a handler for requests with the given method name. */
   on<Req = unknown, Resp = unknown>(
     method: string,
     handler: RequestHandler<Req, Resp>
@@ -121,16 +102,10 @@ export class AcpMockServer {
     return this;
   }
 
-  /** Send a notification to the TUI (fire-and-forget). */
   notify(method: string, params: unknown): void {
     this.send({ jsonrpc: '2.0', method, params });
   }
 
-  /**
-   * Send a request to the TUI and return a promise resolving with its
-   * response. Used for agent -> client calls like
-   * `session/request_permission`.
-   */
   request<Resp = unknown>(method: string, params: unknown): Promise<Resp> {
     const id = this.nextRequestId++;
     const promise = new Promise<unknown>((resolve, reject) => {
@@ -140,14 +115,12 @@ export class AcpMockServer {
     return promise as Promise<Resp>;
   }
 
-  /** Snapshot of observed inbound requests (method + params). Test helper. */
   receivedRequests(method?: string): ObservedRequest[] {
     return method
       ? this.observedRequests.filter((r) => r.method === method)
       : [...this.observedRequests];
   }
 
-  /** Snapshot of observed inbound notifications. Test helper. */
   receivedNotifications(method?: string): ObservedNotification[] {
     return method
       ? this.observedNotifications.filter((n) => n.method === method)
@@ -157,7 +130,6 @@ export class AcpMockServer {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    // Reject any in-flight requests so tests don't hang.
     for (const pending of this.pendingRequests.values()) {
       pending.reject(new Error('AcpMockServer closed before response arrived'));
     }
@@ -168,11 +140,8 @@ export class AcpMockServer {
     }
   }
 
-  // ─── Internal ────────────────────────────────────────────────────
-
   private onConnection(sock: Socket): void {
     if (this.socket) {
-      // Only one TUI connection at a time.
       sock.destroy(new Error('AcpMockServer already has a client'));
       return;
     }
@@ -181,13 +150,10 @@ export class AcpMockServer {
     sock.on('data', (chunk: string) => this.onData(chunk));
     sock.on('end', () => this.onEnd());
     sock.on('error', (err) => {
-      // Ignore EPIPE etc. on shutdown; surface anything else to stderr for
-      // visibility in test runs.
       if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
         console.error('[acp-mock-server] socket error:', err);
       }
     });
-    // Flush any buffered outbound messages now that we have a connection.
     for (const frame of this.outboundBuffer) sock.write(frame);
     this.outboundBuffer = [];
     this.resolveConnection();

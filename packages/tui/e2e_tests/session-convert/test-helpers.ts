@@ -21,7 +21,7 @@ import type {
   NewSessionRequest,
   NewSessionResponse,
 } from '@agentclientprotocol/sdk';
-import type { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
+import type { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import {
   KAS_DEFAULT_AGENT_ID,
   KAS_DEFAULT_AGENT_NAME,

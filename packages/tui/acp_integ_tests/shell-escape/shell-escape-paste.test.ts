@@ -15,7 +15,7 @@ import { afterEach, describe, it } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AcpTestCase } from '../shared/AcpTestCase';
+import { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from '../shared/default-agent';
 
 const ALT_SCREEN_EXIT = '\x1b[?1049l';

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AcpTestCase } from '../shared/AcpTestCase';
+import { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from '../shared/default-agent';
 
 function setupHandshake(tc: AcpTestCase): void {

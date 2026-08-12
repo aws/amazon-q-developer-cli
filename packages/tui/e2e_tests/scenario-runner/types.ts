@@ -12,6 +12,7 @@ export interface Scenario {
   steps: string[];
   verify: string[];
   observe?: string;
+  acpMock?: Record<string, unknown>;
   engine?: Engine[];
   backend?: ScenarioBackendId[];
   timeout?: number;

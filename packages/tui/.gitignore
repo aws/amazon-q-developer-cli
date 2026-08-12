@@ -40,5 +40,7 @@ samples
 .acp-harness/
 .kiro
 profiles/
+!e2e_tests/scenario-runner/backends/acp-mock/profiles/
+!e2e_tests/scenario-runner/backends/acp-mock/profiles/**
 reports/
 e2e_tests/test-outputs/

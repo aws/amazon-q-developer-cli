@@ -246,6 +246,7 @@ export async function runScenario(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const normalizedMessage = message.toLowerCase();
     if (captureFrames && harness) {
       try {
         frames.push(captureFrame(harness, 'error'));
@@ -257,7 +258,7 @@ export async function runScenario(
     let exitReason: ScenarioResult['exitReason'] = 'crash';
     if (message.includes('timed out') || message.includes('Timeout')) {
       exitReason = 'timeout';
-    } else if (message.includes('fixture')) {
+    } else if (normalizedMessage.includes('fixture')) {
       exitReason = 'fixture-missing';
     }
 

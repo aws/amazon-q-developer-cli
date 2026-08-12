@@ -28,7 +28,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { AcpTestCase } from './AcpTestCase';
+import { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from './default-agent';
 
 export interface SelectEntry {

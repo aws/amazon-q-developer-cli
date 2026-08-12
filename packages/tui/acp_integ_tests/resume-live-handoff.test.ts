@@ -8,7 +8,7 @@ import type {
   LoadSessionRequest,
   LoadSessionResponse,
 } from '@agentclientprotocol/sdk';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 
 const SESSION_ID = 'resume-live-handoff';

@@ -14,7 +14,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SessionPersistence } from '@kiro/agent';
-import { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
+import { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import { assertConvertedSession } from './assertions';
 import { assertBasicFsToolsConverted } from './basic-fs-tools-assertions';
 import { setupAcpHandshake } from './test-helpers';

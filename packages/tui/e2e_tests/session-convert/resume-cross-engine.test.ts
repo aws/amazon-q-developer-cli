@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LoadSessionRequest } from '@agentclientprotocol/sdk';
 import { computeWorkspaceHash } from '@kiro/agent';
-import { AcpTestCase } from '../../acp_integ_tests/shared/AcpTestCase';
+import { AcpTestCase } from '../../src/test-utils/acp-mock/AcpTestCase';
 import { kasSessionIdPatternFor, setupAcpHandshake } from './test-helpers';
 import {
   BASIC_FS_TOOLS,
