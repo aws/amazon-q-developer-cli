@@ -1103,7 +1103,7 @@
     {
       "path": "settings/greeting-enabled.md",
       "file": "greeting-enabled.md",
-      "title": "chat.greetingEnabled",
+      "title": "chat.greeting.enabled",
       "description": "Show or hide greeting message when starting chat sessions",
       "category": "setting",
       "keywords": [

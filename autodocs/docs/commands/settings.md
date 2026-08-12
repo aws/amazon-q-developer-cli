@@ -202,7 +202,7 @@ kiro-cli settings --delete [--global|--workspace] <SETTING_NAME>
 | `chat.enableCheckpoint` | boolean | false | Enable checkpoint feature |
 | `chat.enableDelegate` | boolean | false | Enable delegate tool |
 | `chat.introspectTangentMode` | boolean | false | Auto-tangent for introspect |
-| `chat.greetingEnabled` | boolean | true | Show greeting on start |
+| `chat.greeting.enabled` | boolean | true | Show greeting on start |
 | `chat.disableMarkdownRendering` | boolean | false | Disable markdown formatting |
 | `chat.enableContextUsageIndicator` | boolean | false | Show context usage in prompt |
 

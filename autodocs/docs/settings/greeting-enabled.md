@@ -1,41 +1,41 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: setting
-  title: chat.greetingEnabled
-  description: Show or hide greeting message when starting chat sessions
-  keywords: [setting, greeting, welcome, message]
+  title: chat.greeting.enabled
+  description: Show or hide the welcome screen when starting chat sessions
+  keywords: [setting, greeting, welcome, message, welcome screen]
 ---
 
-# chat.greetingEnabled
+# chat.greeting.enabled
 
-Show or hide greeting message when starting chat sessions.
+Show or hide the welcome screen when starting chat sessions.
 
 ## Overview
 
-Controls whether Kiro CLI displays a greeting message when starting new chat sessions.
+Controls whether Kiro CLI displays the welcome screen when starting new chat sessions. When disabled, the chat interface loads directly without showing the "Welcome to the new Kiro CLI" message.
 
 ## Usage
 
-### Disable Greeting
+### Disable Welcome Screen
 
 ```bash
-kiro-cli settings chat.greetingEnabled false
+kiro-cli settings chat.greeting.enabled false
 ```
 
-### Enable Greeting
+### Enable Welcome Screen
 
 ```bash
-kiro-cli settings chat.greetingEnabled true
+kiro-cli settings chat.greeting.enabled true
 ```
 
-### Check Status
+### Check Current Value
 
 ```bash
-kiro-cli settings chat.greetingEnabled
+kiro-cli settings chat.greeting.enabled
 ```
 
 ## Value
@@ -45,22 +45,35 @@ kiro-cli settings chat.greetingEnabled
 
 ## Examples
 
-### Example 1: Disable Greeting
+### Example 1: Disable Welcome Screen
 
 ```bash
-kiro-cli settings chat.greetingEnabled false
+kiro-cli settings chat.greeting.enabled false
 ```
 
-No greeting shown on chat start.
+The chat interface loads directly without the welcome screen.
 
-### Example 2: Re-enable
+### Example 2: Re-enable Welcome Screen
 
 ```bash
-kiro-cli settings chat.greetingEnabled true
+kiro-cli settings chat.greeting.enabled true
+```
+
+The welcome screen appears when starting new sessions.
+
+### Example 3: Check Status
+
+```bash
+kiro-cli settings chat.greeting.enabled
+# Output: true
 ```
 
 ## Technical Details
 
-**Scope**: User-wide setting
+**Scope**: User-wide setting  
+**Effect**: Applies to all new chat sessions  
+**Storage**: `~/.kiro/settings/cli.json`
 
-**Effect**: Applies to all new chat sessions
+## Related
+
+- [chat-interface-settings](chat-interface-settings.md)
