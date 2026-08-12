@@ -916,6 +916,7 @@ async fn delete_kas_session<C: KasSessionClient>(
     cloud_sessions_enabled: bool,
 ) -> Result<bool> {
     let local_deleted = client.delete_session(session_id, None).await?;
+    let mut remote_errored = false;
     let remote_deleted = if cloud_sessions_enabled {
         match client.delete_session(session_id, Some("remote")).await {
             Ok(deleted) => deleted,
@@ -925,6 +926,7 @@ async fn delete_kas_session<C: KasSessionClient>(
             // was deleted anywhere.
             Err(e) if local_deleted => {
                 tracing::warn!("remote session delete failed after local delete succeeded: {e:#}");
+                remote_errored = true;
                 false
             },
             Err(e) => return Err(e),
@@ -935,6 +937,14 @@ async fn delete_kas_session<C: KasSessionClient>(
     let deleted = local_deleted || remote_deleted;
     if !deleted || !cloud_sessions_enabled {
         return Ok(deleted);
+    }
+
+    // The cross-store verification listing requests `all` sources, so a remote
+    // row that failed to delete is still present and would mask a completed
+    // local delete as a failure. Trust the local success in that case rather
+    // than reporting a phantom.
+    if local_deleted && remote_errored {
+        return Ok(true);
     }
 
     match client.list_sessions(cwd).await {
@@ -1979,6 +1989,25 @@ mod kas_tests {
             .await
             .unwrap();
         assert!(deleted, "a remote failure must not erase the completed local delete");
+    }
+
+    #[tokio::test]
+    async fn delete_kas_session_trusts_local_delete_when_remote_errors_and_row_persists() {
+        // Local delete succeeded, the remote delete errored, and the cross-store
+        // verification listing (sources: all) still shows the surviving remote
+        // row. That must not mask the completed local delete as a failure.
+        let entry = kas_entry("sess_abc", Some("remote copy still here"), None);
+        let client = KasMockSessionClient::new()
+            .with_delete_result(true)
+            .with_delete_err("remote store unreachable")
+            .with_list(vec![entry]);
+        let deleted = delete_kas_session(&client, Path::new("/tmp/project"), "sess_abc", true)
+            .await
+            .unwrap();
+        assert!(
+            deleted,
+            "a completed local delete must be reported even if the remote row survives"
+        );
     }
 
     #[tokio::test]

@@ -3222,7 +3222,7 @@ export class KasAcpClient extends BaseAcpClient {
         (s) =>
           s.source === 'remote' || s.executionTarget?.kind === 'cloud-sandbox'
       ).length;
-      logger.info('[sessions-debug] KAS session/list', {
+      logger.debug('[kas] session/list', {
         cwd,
         requestKind,
         sessionSources: caps.sessionSources ?? [],

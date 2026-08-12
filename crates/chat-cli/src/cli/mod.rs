@@ -647,18 +647,15 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
 
     tracing::debug!(?engine, is_tui_supported, tui_available, "launch decision");
     if args.sessions
-        && let Some(reason) = session_dashboard_unavailable(engine)
+        && let Some(reason) = session_dashboard_unavailable()
     {
-        let metric_engine = match engine {
-            chat::AgentEngine::V1 => Engine::V1,
-            chat::AgentEngine::V2 => Engine::V2,
-            chat::AgentEngine::Kas => Engine::V3,
-        };
+        // `--sessions` forces the KAS (v3) engine in `resolve_agent_engine`
+        // (non-Kas already errored there), so the engine is always V3 here.
         crate::launch::emit_cli_invocation_telemetry(
             &os.telemetry,
             &os.database,
             Some(telemetry_name.clone()),
-            metric_engine,
+            Engine::V3,
         )
         .await;
         eprintln!("{reason}");
@@ -684,20 +681,14 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
 }
 
 /// A friendly, non-error reason the `--sessions` dashboard can't launch, or
-/// `None` when it may proceed. The dashboard is a nightly-gated v3 preview:
-/// the rollout decides availability (enabled in debug/test builds and on
-/// nightly) and it only runs on the KAS (v3) engine.
-fn session_dashboard_unavailable(engine: chat::AgentEngine) -> Option<String> {
+/// `None` when it may proceed. The dashboard is a nightly-gated preview, so
+/// this is purely the rollout gate — the engine is already forced to KAS (v3)
+/// by `resolve_agent_engine` (a non-Kas `--sessions` errors there), so no
+/// engine check is needed or reachable here.
+fn session_dashboard_unavailable() -> Option<String> {
     if !crate::rollout::rollout().is_enabled(crate::rollout::Feature::SessionDashboard) {
         return Some(
             "The session dashboard is a preview that's currently only available in nightly builds.".to_string(),
-        );
-    }
-    if !matches!(engine, chat::AgentEngine::Kas) {
-        return Some(
-            "The session dashboard is only available on the v3 agent engine. \
-             Re-run with `--agent-engine=kas` to use it."
-                .to_string(),
         );
     }
     None
