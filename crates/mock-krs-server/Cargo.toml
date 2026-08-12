@@ -1,0 +1,44 @@
+[package]
+name = "mock-krs-server"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Fake Kiro Runtime Service (KRS) for deterministic KAS/TUI integration tests"
+publish = false
+
+[lib]
+name = "mock_krs_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mock-krs-server"
+path = "src/main.rs"
+
+[dependencies]
+# The generated KRS *server* SDK. Request deserialization, response
+# serialization and event-stream framing all come from the model, so a KRS
+# model change that renames or drops a member is a compile error here rather
+# than a silent loss of test fidelity.
+amzn-kiro-runtime-service-server-sdk.workspace = true
+anyhow.workspace = true
+async-stream.workspace = true
+aws-smithy-http = { version = "0.63.5", features = ["event-stream"] }
+aws-smithy-http-server = "0.66.2"
+aws-smithy-types.workspace = true
+axum = "0.8"
+bytes.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = "0.3"
+http-body-util = "0.1.3"
+regex.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tower = "0.4"
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+aws-smithy-eventstream = "0.60.19"
+reqwest.workspace = true
