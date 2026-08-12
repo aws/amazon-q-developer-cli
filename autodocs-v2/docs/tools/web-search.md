@@ -7,8 +7,8 @@ doc_meta:
   category: tool
   title: web_search
   description: Search the web for current information with automatic source citation
-  keywords: [web_search, search, web, internet, research, governance, admin, disabled]
-  related: [web-fetch, tools]
+  keywords: [web_search, search, web, internet, research, governance, enterprise]
+  related: [web-fetch]
 ---
 
 # web_search
@@ -20,6 +20,12 @@ Search the web for current information with automatic source citation.
 > **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to search the web as needed.
 
 The web_search tool searches the internet and returns titles, URLs, snippets, and publication dates. Automatically used when AI needs current information. Results include source citations with strict content compliance rules.
+
+## Enterprise Governance
+
+For enterprise users (IDC/ExternalIDP) and API key users, web tools availability is controlled by your organization's governance settings. If your administrator has disabled web tools, this tool will not be available even if explicitly configured in an agent.
+
+Social login and Builder ID users are not subject to governance restrictions—web tools are enabled by default.
 
 ## Usage
 
@@ -145,17 +151,11 @@ This applies to enterprise users (IAM Identity Center) and API key users. Builde
 
 ## Troubleshooting
 
-### Issue: Web Tools Disabled by Administrator
+### Issue: Web Tools Disabled by Governance
 
-**Symptom**: "Web tools have been disabled by your administrator" warning  
-**Cause**: Your organization's administrator has disabled web tools via the Kiro console  
-**Solution**: Contact your administrator to enable web tools
-
-### Issue: Failed to Retrieve Web Tools Settings
-
-**Symptom**: "Failed to retrieve web tools settings — web tools disabled" warning  
-**Cause**: Could not reach the governance API to check web tools settings. For security, web tools are disabled when settings cannot be verified (fail-closed).  
-**Solution**: Check network connectivity. If the issue persists, contact your administrator.
+**Symptom**: web_search tool not available  
+**Cause**: Organization administrator disabled web tools  
+**Solution**: Contact your administrator to enable web tools in governance settings
 
 ### Issue: Tool Requires Approval
 
@@ -180,6 +180,7 @@ This applies to enterprise users (IAM Identity Center) and API key users. Builde
 - Results quality depends on search service
 - No control over result ranking
 - Publication dates may be missing
+- Enterprise/API key users: subject to organization governance settings
 
 ## Technical Details
 

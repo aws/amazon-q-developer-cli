@@ -22,16 +22,23 @@ The subagent tool (also known as `agent_crew`) spawns and coordinates multiple A
 Use this when you need multi-step work with specialized agents:
 - Research → Implement → Review pipelines
 - Parallel research tracks that feed into a single implementer
+- Per-service ownership: one agent per service/module, each owning implementation AND tests
+- Map-reduce: same operation applied to many independent units in parallel
 - Any workflow where stages have dependencies
 
 Each stage becomes a session you can monitor via `ctrl+g` in the TUI.
+
+### Best Practices
+
+- **Maximize parallelism**: Prefer one agent per service/module/component, where each agent owns both implementation AND tests for its assigned unit. Avoid defaulting to "one coder + one tester" working sequentially.
+- **Always include a review stage**: Reviewers should depend on all implementation stages, run the build and test suite, and clearly report pass/fail with specific feedback.
 
 ## Usage
 
 ### Parameters
 
 - `task` (string, required) — Overall task description
-- `mode` (string, optional) — Execution mode. Currently only `blocking` (wait for all stages to complete). Default: `blocking`
+- `mode` (string, optional) — Execution mode: `blocking` (wait for all stages to complete). Default: `blocking`
 - `stages` (array, required) — Pipeline stages, each with:
   - `name` (string, required) — Unique stage name
   - `role` (string, required) — Agent config name to use for this stage
@@ -77,6 +84,22 @@ All three stages run in parallel since none have dependencies.
 ```
 
 `research` starts immediately → when done, `implement` starts → when done, `review` starts.
+
+### Per-service parallel implementation
+
+```json
+{
+  "task": "Add logging to all microservices",
+  "stages": [
+    {"name": "auth-service", "role": "code-agent", "prompt_template": "Add logging to auth-service for {task}"},
+    {"name": "user-service", "role": "code-agent", "prompt_template": "Add logging to user-service for {task}"},
+    {"name": "payment-service", "role": "code-agent", "prompt_template": "Add logging to payment-service for {task}"},
+    {"name": "review", "role": "review-agent", "prompt_template": "Review all logging implementations for {task}", "depends_on": ["auth-service", "user-service", "payment-service"]}
+  ]
+}
+```
+
+Each service agent owns both implementation and tests. The review stage runs after all implementations complete.
 
 ### Fan-out / fan-in pattern
 

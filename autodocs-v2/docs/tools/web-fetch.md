@@ -7,8 +7,8 @@ doc_meta:
   category: tool
   title: web_fetch
   description: Fetch and extract content from specific URLs with selective, truncated, or full modes
-  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, url-permission, governance, admin, disabled]
-  related: [web-search, trust-configuration, agent-configuration, tools]
+  keywords: [web_fetch, fetch, url, web, content, extract, governance, enterprise]
+  related: [web-search]
 ---
 
 # web_fetch
@@ -20,6 +20,12 @@ Fetch and extract content from specific URLs with selective, truncated, or full 
 > **Note**: This tool is used by the AI assistant to fulfill your requests. You don't invoke it directly - simply ask questions naturally, and the assistant will use this tool to fetch web content as needed.
 
 The web_fetch tool retrieves content from web pages. Supports three extraction modes: selective (smart extraction around search terms), truncated (first 8000 characters), and full (complete content up to 10MB). Use selective mode to read specific parts without filling context.
+
+## Enterprise Governance
+
+For enterprise users (IDC/ExternalIDP) and API key users, web tools availability is controlled by your organization's governance settings. If your administrator has disabled web tools, this tool will not be available even if explicitly configured in an agent.
+
+Social login and Builder ID users are not subject to governance restrictions—web tools are enabled by default.
 
 ## Usage
 
@@ -206,17 +212,11 @@ This applies to enterprise users (IAM Identity Center) and API key users. Builde
 
 ## Troubleshooting
 
-### Issue: Web Tools Disabled by Administrator
+### Issue: Web Tools Disabled by Governance
 
-**Symptom**: "Web tools have been disabled by your administrator" warning  
-**Cause**: Your organization's administrator has disabled web tools via the Kiro console  
-**Solution**: Contact your administrator to enable web tools
-
-### Issue: Failed to Retrieve Web Tools Settings
-
-**Symptom**: "Failed to retrieve web tools settings — web tools disabled" warning  
-**Cause**: Could not reach the governance API to check web tools settings. For security, web tools are disabled when settings cannot be verified (fail-closed).  
-**Solution**: Check network connectivity. If the issue persists, contact your administrator.
+**Symptom**: web_fetch tool not available  
+**Cause**: Organization administrator disabled web tools  
+**Solution**: Contact your administrator to enable web tools in governance settings
 
 ### Issue: Fetch Failed
 
@@ -250,6 +250,7 @@ This applies to enterprise users (IAM Identity Center) and API key users. Builde
 - 3 automatic retries with exponential backoff (1s, 2s)
 - No JavaScript execution
 - No authentication support
+- Enterprise/API key users: subject to organization governance settings
 
 ## Technical Details
 

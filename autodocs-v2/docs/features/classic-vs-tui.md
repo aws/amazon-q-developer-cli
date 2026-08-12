@@ -7,8 +7,8 @@ doc_meta:
   category: feature
   title: Classic Mode vs New TUI
   description: Differences between classic mode (V1) and the new TUI experience, including what changed, what's new, and how to switch
-  keywords: [classic, tui, v1, v2, migration, legacy, differences, new, paste, chip, suspend, ctrl-z]
-  related: [help, theme, spawn, feedback]
+  keywords: [classic, tui, v1, v2, migration, legacy, differences, new]
+  related: [help, theme, spawn, feedback, shell-escape]
 ---
 
 ## Overview
@@ -82,10 +82,9 @@ Tool permission prompts appear as a snackbar above your input. y/n/t with granul
 
 ### Shell Tool Behavior
 
-This is the biggest behavioral change:
+The execute_bash tool buffers output — commands like `npm install`, `cargo build` show no output until they complete. The command IS running — you just won't see progress.
 
-1. **Output is buffered, not streamed** — Commands like `npm install`, `cargo build` show no output until they complete. The command IS running — you just won't see progress.
-2. **Interactive commands don't work** — `rm -i`, `npm init`, `sudo`, `ssh` host key prompts will not receive input. Use non-interactive alternatives: `npm init -y`, `rm` without `-i`, `ssh -o StrictHostKeyChecking=accept-new`.
+For interactive commands, use shell escape (`!command`) instead. See [Shell Escape](shell-escape.md).
 
 ### Help System
 
@@ -96,11 +95,11 @@ This is the biggest behavioral change:
 
 | Command | Notes |
 |---------|-------|
-| `/changelog` | Not ported |
+| `/changelog` | Available in TUI (V3/KAS) |
 | `/logdump` | Not ported |
 | `/experiment` | No runtime experiment framework in TUI |
 | `/issue` | Replaced by `/feedback` |
-| `/tangent` | Was experiment-gated in classic |
+| `/tangent` | Feature-gated in TUI (requires `KIRO_ENABLED_FEATURES`) |
 | `/checkpoint` | Was experiment-gated in classic |
 
 ### Subcommands with Reduced Coverage
