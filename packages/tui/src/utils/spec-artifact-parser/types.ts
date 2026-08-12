@@ -8,7 +8,7 @@
  * a `detailBody` (verbatim source slice) on demand.
  */
 
-export type ArtifactKind = 'requirements' | 'design' | 'tasks';
+export type ArtifactKind = 'requirements' | 'design' | 'tasks' | 'bugfix';
 
 export interface RequirementItem {
   /** Verbatim integer captured from `### Requirement N:`. */
@@ -46,6 +46,21 @@ export interface HighLevelTask {
   detailBody: string;
 }
 
+export interface BugfixClause {
+  /** Verbatim `X.Y` numbering: the section, then the clause within it. */
+  number: string;
+  /** The clause text after its number. */
+  text: string;
+}
+
+export interface BugfixSection {
+  /** H3 heading text, e.g. "Current Behavior (Defect)". */
+  title: string;
+  clauses: BugfixClause[];
+  /** Verbatim slice from this heading to the next one or EOF. */
+  detailBody: string;
+}
+
 export type ArtifactSummary =
   | { kind: 'requirements'; items: RequirementItem[] }
   | {
@@ -54,7 +69,8 @@ export type ArtifactSummary =
       overviewTruncated: boolean;
       sections: DesignSection[];
     }
-  | { kind: 'tasks'; items: HighLevelTask[] };
+  | { kind: 'tasks'; items: HighLevelTask[] }
+  | { kind: 'bugfix'; overview: string; sections: BugfixSection[] };
 
 /** Maximum overview length before truncation with ellipsis. */
 export const DESIGN_OVERVIEW_MAX_CHARS = 600;

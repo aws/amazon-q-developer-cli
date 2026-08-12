@@ -4,7 +4,8 @@
  * comment, and the lifecycle that ties staged comments to their checkpoint.
  */
 import { describe, it, expect, mock } from 'bun:test';
-import { createAppStore } from '../app-store';
+import { createAppStore, commentsForCheckpoint } from '../app-store';
+import type { ReviewAction } from '../../utils/spec-review/review-actions.js';
 
 function makeStore() {
   const kiro = {
@@ -18,11 +19,15 @@ function makeStore() {
   return store;
 }
 
-/** The nested surface and comments, so tests read them the way the app does. */
+/** The surface and the open document's comments, as the app reads them. */
 const review = (store: ReturnType<typeof makeStore>) =>
-  store.getState().specPhaseCheckpoint?.review ?? null;
+  store.getState().specReviewView;
+/**
+ * Comments staged against the document `openReview` seeds. Read by key rather
+ * than through the surface, so closing it doesn't hide what stayed staged.
+ */
 const comments = (store: ReturnType<typeof makeStore>) =>
-  store.getState().specPhaseCheckpoint?.comments ?? [];
+  store.getState().specReviewComments['web-clock/requirements'] ?? [];
 
 const LINES = [
   '# Requirements',
@@ -39,13 +44,14 @@ function openReview(store: ReturnType<typeof makeStore>, lineIndex = 0) {
       featureName: 'web-clock',
       phase: 'requirements',
       artifactPath: '/w/.kiro/specs/web-clock/requirements.md',
-      comments: store.getState().specPhaseCheckpoint?.comments ?? [],
-      review: {
-        lines: LINES,
-        cursor: { lineIndex, commentId: null },
-        composing: null,
-        error: null,
-      },
+    },
+    specReviewView: {
+      featureName: 'web-clock',
+      document: 'requirements',
+      lines: LINES,
+      cursor: { lineIndex, commentId: null },
+      composing: null,
+      error: null,
     },
   });
 }
@@ -100,7 +106,7 @@ describe('spec review surface', () => {
     expect(review(store)?.composing?.draft).toBe('original wording');
     store.getState().commitSpecReviewComment('revised wording');
 
-    const bodies = comments(store).map((a) => a.body);
+    const bodies = comments(store).map((a: ReviewAction) => a.body);
     expect(bodies).toEqual(['revised wording']);
   });
 
@@ -121,12 +127,9 @@ describe('spec review surface', () => {
     openReview(store, 4);
     comment(store, 'first on line four');
     store.setState((state) => ({
-      specPhaseCheckpoint: {
-        ...state.specPhaseCheckpoint!,
-        review: {
-          ...state.specPhaseCheckpoint!.review!,
-          cursor: { lineIndex: 4, commentId: null },
-        },
+      specReviewView: {
+        ...state.specReviewView!,
+        cursor: { lineIndex: 4, commentId: null },
       },
     }));
     comment(store, 'second on line four');
@@ -135,7 +138,7 @@ describe('spec review surface', () => {
 
     store.getState().removeSpecReviewCommentAtCursor();
 
-    const bodies = comments(store).map((a) => a.body);
+    const bodies = comments(store).map((a: ReviewAction) => a.body);
     expect(bodies).toEqual(['first on line four']);
   });
 
@@ -144,12 +147,9 @@ describe('spec review surface', () => {
     openReview(store, 4);
     comment(store, 'keep me');
     store.setState((state) => ({
-      specPhaseCheckpoint: {
-        ...state.specPhaseCheckpoint!,
-        review: {
-          ...state.specPhaseCheckpoint!.review!,
-          cursor: { lineIndex: 4, commentId: null },
-        },
+      specReviewView: {
+        ...state.specReviewView!,
+        cursor: { lineIndex: 4, commentId: null },
       },
     }));
 
@@ -164,12 +164,9 @@ describe('spec review surface', () => {
     comment(store, 'a note on four');
     const noteId = comments(store)[0]!.id;
     store.setState((state) => ({
-      specPhaseCheckpoint: {
-        ...state.specPhaseCheckpoint!,
-        review: {
-          ...state.specPhaseCheckpoint!.review!,
-          cursor: { lineIndex: 4, commentId: null },
-        },
+      specReviewView: {
+        ...state.specReviewView!,
+        cursor: { lineIndex: 4, commentId: null },
       },
     }));
 
@@ -298,7 +295,7 @@ describe('spec review surface', () => {
     return question;
   };
 
-  it('takes the surface and comments with it when the question is cancelled', () => {
+  it('closes the surface when the question is cancelled but keeps the comments', () => {
     const store = makeStore();
     openReview(store, 4);
     comment(store, 'unsent');
@@ -306,12 +303,16 @@ describe('spec review surface', () => {
 
     store.getState().cancelQuestion();
 
+    // Cancelling abandons the turn, not the user's typing: requirements.md still
+    // exists, so the comments stay staged for `/spec view` to reopen and send.
     expect(store.getState().specPhaseCheckpoint).toBeNull();
-    expect(comments(store)).toHaveLength(0);
     expect(review(store)).toBeNull();
+    expect(
+      store.getState().specReviewComments['web-clock/requirements']
+    ).toHaveLength(1);
   });
 
-  it('takes them with it when the owning session terminates', () => {
+  it('stops offering them once the owning session dies with the checkpoint', () => {
     const store = makeStore();
     openReview(store, 4);
     comment(store, 'unsent');
@@ -319,38 +320,90 @@ describe('spec review surface', () => {
 
     store.getState().cleanupTerminatedSession('test-session');
 
+    // The comments themselves may outlive the checkpoint — a review opened from
+    // `/spec view` has no checkpoint at all. What must not survive is any way to
+    // send them as an answer, and the document they name is what decides that.
     expect(store.getState().specPhaseCheckpoint).toBeNull();
-    expect(comments(store)).toHaveLength(0);
-    expect(review(store)).toBeNull();
+    expect(commentsForCheckpoint(store.getState())).toHaveLength(0);
   });
 
-  it('drops a document that finished loading after the checkpoint moved on', async () => {
+  it('will not let one checkpoint send a review written against another document', async () => {
     const store = makeStore();
     store.setState({
       specPhaseCheckpoint: {
         featureName: 'web-clock',
         phase: 'requirements',
         artifactPath: '/w/.kiro/specs/web-clock/requirements.md',
-        comments: [],
-        review: null,
       },
     });
 
-    const opening = store.getState().openSpecReview();
+    const opening = store
+      .getState()
+      .openSpecReview('web-clock', 'requirements');
     // The next phase lands while the read is still in flight.
     store.setState({
       specPhaseCheckpoint: {
         featureName: 'web-clock',
         phase: 'design',
         artifactPath: '/w/.kiro/specs/web-clock/design.md',
-        comments: [],
-        review: null,
       },
     });
     await opening;
 
-    // requirements.md must not be shown under the design checkpoint.
+    // The review is for requirements; the live checkpoint is design. Neither the
+    // staged count nor the send option may reach across that.
+    expect(store.getState().specReviewView?.document).toBe('requirements');
     expect(store.getState().specPhaseCheckpoint?.phase).toBe('design');
-    expect(review(store)).toBeNull();
+    expect(commentsForCheckpoint(store.getState())).toHaveLength(0);
+  });
+
+  it('keeps comments when the checkpoint they were staged at expires', () => {
+    // Comments belong to the document they quote, not to a checkpoint: the
+    // review surface can be opened with no checkpoint at all, so an unrelated
+    // turn ending must not throw away what the user typed.
+    const store = makeStore();
+    openReview(store, 4);
+    comment(store, 'drop this criterion');
+
+    store.setState({ specPhaseCheckpoint: null });
+
+    expect(comments(store)).toHaveLength(1);
+    // With no checkpoint there is nothing to send them to, so they are staged
+    // but unreachable rather than counted into someone else's phase.
+    expect(commentsForCheckpoint(store.getState())).toHaveLength(0);
+  });
+
+  it('offers them again when the same document comes back for review', () => {
+    const store = makeStore();
+    openReview(store, 4);
+    comment(store, 'drop this criterion');
+    store.setState({ specPhaseCheckpoint: null });
+
+    store.setState({
+      specPhaseCheckpoint: {
+        featureName: 'web-clock',
+        phase: 'requirements',
+        artifactPath: '/w/.kiro/specs/web-clock/requirements.md',
+      },
+    });
+
+    expect(commentsForCheckpoint(store.getState())).toHaveLength(1);
+  });
+
+  it('withholds them from a different document that comes back instead', () => {
+    const store = makeStore();
+    openReview(store, 4);
+    comment(store, 'drop this criterion');
+    store.setState({ specPhaseCheckpoint: null });
+
+    store.setState({
+      specPhaseCheckpoint: {
+        featureName: 'web-clock',
+        phase: 'design',
+        artifactPath: '/w/.kiro/specs/web-clock/design.md',
+      },
+    });
+
+    expect(commentsForCheckpoint(store.getState())).toHaveLength(0);
   });
 });

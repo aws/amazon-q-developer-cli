@@ -77,6 +77,7 @@ import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useInteractionReady } from '../../../hooks/useInteractionReady.js';
 import { usePlanModeToggle } from '../../../hooks/usePlanModeToggle.js';
 import { useKeybindings } from '../../../hooks/useKeybindings.js';
+import { useCheckpointAnswer } from '../../../hooks/useCheckpointAnswer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import {
   useGlyphs,
@@ -164,7 +165,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const specDescriptionFeature = useAppStore(
     (s) => s.pendingSpecDescription?.featureName ?? null
   );
-  const respondToQuestion = useAppStore((s) => s.respondToQuestion);
+  const { checkpointOptions, answerCheckpoint } = useCheckpointAnswer();
   const voiceDownloadConfirm = useAppStore((s) => s.voiceDownloadConfirm);
   const mainSessionId = useAppStore((s) => s.sessionId);
   const currentModel = useAppStore((s) => s.currentModel);
@@ -1726,9 +1727,9 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         <Question
           key={`${showQuestion.sessionId}:${showQuestion.toolCallId}`}
           question={showQuestion.question}
-          options={showQuestion.options}
+          options={checkpointOptions(showQuestion.options)}
           onAnswer={(answer, answerForAgent) =>
-            respondToQuestion(answer, showQuestion, answerForAgent)
+            answerCheckpoint(answer, answerForAgent, showQuestion)
           }
           onCancel={() => void cancelMessage()}
           titlePrefix={

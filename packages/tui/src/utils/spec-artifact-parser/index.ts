@@ -21,6 +21,7 @@
 import { extractRequirements } from './extract-requirements.js';
 import { extractDesign } from './extract-design.js';
 import { extractTasks } from './extract-tasks.js';
+import { extractBugfix } from './extract-bugfix.js';
 import type { ArtifactKind, ArtifactSummary } from './types.js';
 
 export { extractRequirements, extractDesign, extractTasks };
@@ -30,6 +31,8 @@ export type {
   ArtifactSummary,
   RequirementItem,
   DesignSection,
+  BugfixSection,
+  BugfixClause,
   HighLevelTask,
   SubTask,
 } from './types.js';
@@ -61,5 +64,24 @@ export function parseArtifact(
     }
     case 'tasks':
       return { kind: 'tasks', items: extractTasks(source) };
+    case 'bugfix': {
+      const { overview, sections } = extractBugfix(source);
+      return { kind: 'bugfix', overview, sections };
+    }
   }
+}
+
+/**
+ * The verbatim source slice for the item at `index`, or null when there is no
+ * such item. Every kind carries one, so a caller can find where the item sits
+ * in the document without the parser tracking line numbers.
+ */
+export function detailBodyAt(
+  summary: ArtifactSummary,
+  index: number
+): string | null {
+  if (summary.kind === 'design' || summary.kind === 'bugfix') {
+    return summary.sections[index]?.detailBody ?? null;
+  }
+  return summary.items[index]?.detailBody ?? null;
 }

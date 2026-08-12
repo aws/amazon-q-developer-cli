@@ -296,7 +296,7 @@ export interface CommandContext {
    */
   openArtifactView: (
     featureName: string,
-    artifact: 'requirements' | 'design' | 'tasks'
+    artifact: 'requirements' | 'design' | 'tasks' | 'bugfix'
   ) => Promise<void>;
   /**
    * Run a feature's tasks. `makeAllRequired` promotes every optional task to

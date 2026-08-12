@@ -94,9 +94,7 @@ describe('spec review surface', () => {
     expect(open).toContain('### Requirement 1: Mode Selection');
     expect(open).toContain(FIRST_CRITERION);
     expect(open).toContain('to comment');
-    expect(
-      (await testCase.getStore()).specPhaseCheckpoint?.review
-    ).toBeTruthy();
+    expect((await testCase.getStore()).specReviewView).toBeTruthy();
 
     await testCase.pressEscape();
     await testCase.sleepMs(400);
@@ -104,7 +102,7 @@ describe('spec review surface', () => {
     // Back at the checkpoint, which never stopped waiting.
     const back = await testCase.getStore();
     expect(back.mode).toBe('inline');
-    expect(back.specPhaseCheckpoint?.review).toBeNull();
+    expect(back.specReviewView).toBeNull();
     expect(back.pendingQuestion).not.toBeNull();
     expect(testCase.getSnapshot().join('\n')).toContain(CONTINUE_OPTION);
   }, 40000);
@@ -120,8 +118,7 @@ describe('spec review surface', () => {
     }
     await testCase.sleepMs(200);
     const cursorLine =
-      (await testCase.getStore()).specPhaseCheckpoint?.review?.cursor
-        .lineIndex ?? 0;
+      (await testCase.getStore()).specReviewView?.cursor.lineIndex ?? 0;
 
     await testCase.pressEnter();
     await testCase.sleepMs(200);
@@ -137,7 +134,7 @@ describe('spec review surface', () => {
     await testCase.sleepMs(300);
 
     const store = await testCase.getStore();
-    const [action] = store.specPhaseCheckpoint?.comments ?? [];
+    const [action] = store.specReviewComments['web-clock/requirements'] ?? [];
     expect(action?.body).toBe('drop the second criterion');
     expect(action?.anchor.range.start).toBe(cursorLine);
     // The anchor carries what the document says, so the agent can locate it.
@@ -156,24 +153,19 @@ describe('spec review surface', () => {
     await testCase.sendKeys('n');
     await testCase.sleepMs(200);
     const first = await testCase.getStore();
-    const firstLine = first.specPhaseCheckpoint?.review?.cursor.lineIndex ?? -1;
-    expect(first.specPhaseCheckpoint?.review?.lines[firstLine]).toContain(
-      'Introduction'
-    );
+    const firstLine = first.specReviewView?.cursor.lineIndex ?? -1;
+    expect(first.specReviewView?.lines[firstLine]).toContain('Introduction');
 
     await testCase.sendKeys('n');
     await testCase.sleepMs(200);
     const second = await testCase.getStore();
-    const secondLine =
-      second.specPhaseCheckpoint?.review?.cursor.lineIndex ?? -1;
-    expect(second.specPhaseCheckpoint?.review?.lines[secondLine]).toContain(
-      'Requirement 1'
-    );
+    const secondLine = second.specReviewView?.cursor.lineIndex ?? -1;
+    expect(second.specReviewView?.lines[secondLine]).toContain('Requirement 1');
 
     await testCase.sendKeys('N');
     await testCase.sleepMs(200);
     const back = await testCase.getStore();
-    expect(back.specPhaseCheckpoint?.review?.cursor.lineIndex).toBe(firstLine);
+    expect(back.specReviewView?.cursor.lineIndex).toBe(firstLine);
 
     // The footer names the primary path; `?` carries the rest.
     const snap = testCase.getSnapshot().join('\n');
@@ -210,9 +202,11 @@ describe('spec review surface', () => {
     await testCase.sleepMs(500);
 
     const store = await testCase.getStore();
-    // Answering clears the checkpoint and its comments together.
+    // Answering sent them, so the checkpoint and its comments both go.
     expect(store.pendingQuestion).toBeNull();
-    expect(store.specPhaseCheckpoint?.comments ?? []).toHaveLength(0);
+    expect(
+      store.specReviewComments['web-clock/requirements'] ?? []
+    ).toHaveLength(0);
     // The transcript shows the choice the user made. What the agent receives is
     // the composed request, asserted against the router's unit tests — this can
     // only see the display string.
@@ -245,7 +239,9 @@ describe('spec review surface', () => {
     // The question is still waiting and the comment is still staged.
     const store = await testCase.getStore();
     expect(store.pendingQuestion).not.toBeNull();
-    expect(store.specPhaseCheckpoint?.comments ?? []).toHaveLength(1);
+    expect(
+      store.specReviewComments['web-clock/requirements'] ?? []
+    ).toHaveLength(1);
     expect(testCase.getSnapshot().join('\n')).toContain(
       '1 comment staged \u2014 pick'
     );

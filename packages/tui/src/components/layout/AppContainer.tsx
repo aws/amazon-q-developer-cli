@@ -123,9 +123,7 @@ export const AppContainer: React.FC = () => {
   const reverseSearchActive = useAppStore((state) => state.reverseSearchActive);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
   const pendingQuestion = useAppStore((state) => state.pendingQuestion);
-  const specReviewOpen = useAppStore(
-    (state) => state.specPhaseCheckpoint?.review != null
-  );
+  const specReviewOpen = useAppStore((state) => state.specReviewView != null);
   const editingQueueIndex = useAppStore((state) => state.editingQueueIndex);
   const editingSteerLineIndex = useAppStore(
     (state) => state.editingSteerLineIndex

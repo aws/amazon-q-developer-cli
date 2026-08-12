@@ -1543,10 +1543,21 @@ import {
 } from '../theme/user-theme.js';
 import { spawnSync } from 'child_process';
 
+/** Every document `/spec view` can open, for validating an explicit argument. */
+const VIEWABLE_DOCUMENTS: readonly ArtifactKind[] = [
+  'requirements',
+  'design',
+  'tasks',
+  'bugfix',
+] as const;
+
+function isViewableDocument(name: string): name is ArtifactKind {
+  return (VIEWABLE_DOCUMENTS as readonly string[]).includes(name);
+}
+
 /**
- * Pick the most-recently-modified artifact among requirements/design/tasks
- * under `.kiro/specs/<feature>/`. Returns null when none of the three
- * artifact files exist.
+ * Pick the most-recently-modified viewable document under
+ * `.kiro/specs/<feature>/`. Returns null when the feature has none of them yet.
  *
  * Used for `/spec view <feature>` (no explicit artifact arg) so the user
  * lands on the most-active document by default.
@@ -1555,9 +1566,8 @@ function pickMostRecentArtifact(
   workspaceRoot: string,
   featureName: string
 ): ArtifactKind | null {
-  const candidates: ArtifactKind[] = ['requirements', 'design', 'tasks'];
   let best: { kind: ArtifactKind; mtime: number } | null = null;
-  for (const kind of candidates) {
+  for (const kind of VIEWABLE_DOCUMENTS) {
     const path = resolveArtifactPath(workspaceRoot, featureName, kind);
     try {
       const s = statSync(path);
@@ -1629,13 +1639,9 @@ async function openSpecView(
 
   let artifact: ArtifactKind;
   if (explicitArtifact !== undefined) {
-    if (
-      explicitArtifact !== 'requirements' &&
-      explicitArtifact !== 'design' &&
-      explicitArtifact !== 'tasks'
-    ) {
+    if (!isViewableDocument(explicitArtifact)) {
       ctx.showAlert(
-        `Unknown artifact "${explicitArtifact}". Use one of: requirements, design, tasks.`,
+        `Unknown artifact "${explicitArtifact}". Use one of: ${VIEWABLE_DOCUMENTS.join(', ')}.`,
         'error',
         5000
       );
@@ -1646,7 +1652,7 @@ async function openSpecView(
     const picked = pickMostRecentArtifact(workspaceRoot, name);
     if (!picked) {
       ctx.showAlert(
-        `No artifact files in .kiro/specs/${name}/ — generate requirements/design/tasks first.`,
+        `No spec documents in .kiro/specs/${name}/ yet.`,
         'error',
         5000
       );
@@ -1674,7 +1680,11 @@ async function openSpecView(
 export interface ResumeSpecDeps {
   kiro: Kiro;
   setCurrentAgent: (agent: { name: string } | null) => void;
-  sendMessage: (content: string) => Promise<void> | void;
+  sendMessage: (
+    content: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+    displayContent?: string
+  ) => Promise<void> | void;
   showAlert: (
     message: string,
     status: 'error' | 'success' | 'warning',
@@ -1701,6 +1711,74 @@ export async function resumeSpecFeature(
     `Continue working on the "${feature.featureName}" spec. The existing documents are: ${feature.documents.join(', ')}.`
   );
 }
+
+export interface SendRevisionDeps extends ResumeSpecDeps {
+  /**
+   * Whether the agent can take a message. Re-checked after the mode switch,
+   * which awaits and so can straddle a turn starting.
+   */
+  isBusy: () => boolean;
+}
+
+/**
+ * Send comments staged against a spec document as an ordinary prompt.
+ *
+ * A checkpoint sends its comments by answering the question it is waiting on.
+ * Outside one — `/spec view` can be opened at any time — there is no question to
+ * answer, so the composed request goes as a message. It stands alone: it names
+ * the document and quotes the lines each comment annotates.
+ *
+ * The transcript shows `summary` instead, because the request is written for the
+ * agent: reading a wall of tagged quotes back is no way to see what you sent.
+ *
+ * Returns whether the agent actually received the request. A false means the
+ * caller must keep the comments staged: they are hand-typed, and a send that was
+ * accepted-but-transformed is as lossy as one that threw.
+ */
+export async function sendSpecRevision(
+  deps: SendRevisionDeps,
+  request: string,
+  summary: string,
+  onSent?: () => void
+): Promise<boolean> {
+  if (deps.isBusy()) {
+    deps.showAlert(
+      'The agent is busy — comments are still staged, press S again when it finishes',
+      'warning',
+      5000
+    );
+    return false;
+  }
+  try {
+    await deps.kiro.setConfigOption('mode', 'spec');
+  } catch (err) {
+    deps.showAlert(
+      extractRpcErrorMessage(err, 'Failed to switch to spec mode'),
+      'error',
+      5000
+    );
+    return false;
+  }
+  // Both halves of "we are in spec mode" apply together so a refusal below
+  // cannot leave the backend switched while the transcript names the old agent.
+  deps.setCurrentAgent({ name: 'spec' });
+  // Re-check: the await above can straddle a turn starting.
+  if (deps.isBusy()) {
+    deps.showAlert(
+      'The agent is busy — comments are still staged, press S again when it finishes',
+      'warning',
+      5000
+    );
+    return false;
+  }
+  // Clear now: the re-check just confirmed sendMessage will dispatch (not
+  // queue), and once it does the comments are part of the outgoing turn. Waiting
+  // for the full stream to end would leave them visible to a mid-turn checkpoint.
+  onSent?.();
+  await deps.sendMessage(request, undefined, summary);
+  return true;
+}
+
 /**
  * Copy text to the system clipboard using platform-native tools.
  * Returns true if a clipboard tool was found and executed without error.

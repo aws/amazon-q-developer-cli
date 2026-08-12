@@ -24,7 +24,7 @@ afterAll(() => {
   mock.restore();
 });
 
-import { runEffect } from '../effects.js';
+import { runEffect, sendSpecRevision } from '../effects.js';
 import {
   noteCloudScrollbackRepaint,
   cancelCloudScrollbackReconcile,
@@ -2071,5 +2071,255 @@ describe('quit effect (/quit cloud prompt)', () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
     expect(ctx._spies.setShowCloudQuitPrompt!).not.toHaveBeenCalled();
     exitSpy.mockRestore();
+  });
+});
+
+describe('/spec view — which document it opens', () => {
+  const specCmd: SlashCommand = {
+    name: '/spec',
+    description: 'Spec commands',
+    source: 'local' as const,
+    meta: { local: true, subcommands: ['new', 'run', 'view'] },
+  };
+
+  let workspaceRoot: string;
+  let originalCwd: typeof process.cwd;
+
+  beforeEach(() => {
+    const { mkdtempSync } = require('fs');
+    const { tmpdir } = require('os');
+    const { join } = require('path');
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'spec-view-test-'));
+    originalCwd = process.cwd;
+    process.cwd = () => workspaceRoot;
+  });
+
+  afterEach(() => {
+    process.cwd = originalCwd;
+    const { rmSync } = require('fs');
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  });
+
+  function makeSpec(featureName: string, files: string[]) {
+    const { mkdirSync, writeFileSync } = require('fs');
+    const { join } = require('path');
+    const dir = join(workspaceRoot, '.kiro', 'specs', featureName);
+    mkdirSync(dir, { recursive: true });
+    for (const file of files) {
+      writeFileSync(join(dir, file), '# content');
+    }
+  }
+
+  it('opens the panel for a document the parser can summarize', async () => {
+    makeSpec('alpha', ['requirements.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+
+    await runEffect(specCmd, null, ctx, 'view alpha requirements');
+
+    expect(ctx._spies.openArtifactView).toHaveBeenCalledWith(
+      'alpha',
+      'requirements'
+    );
+  });
+
+  it('opens a bugfix document like any other', async () => {
+    makeSpec('a-bug', ['bugfix.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+
+    await runEffect(specCmd, null, ctx, 'view a-bug bugfix');
+
+    expect(ctx._spies.openArtifactView).toHaveBeenCalledWith('a-bug', 'bugfix');
+  });
+
+  it('picks bugfix.md when it is the only document, rather than refusing', async () => {
+    // Before, the candidate list held the three feature documents, so a bugfix
+    // spec was told to "generate requirements first" — naming documents its
+    // workflow never writes.
+    makeSpec('a-bug', ['bugfix.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+
+    await runEffect(specCmd, null, ctx, 'view a-bug');
+
+    expect(ctx._spies.openArtifactView).toHaveBeenCalledWith('a-bug', 'bugfix');
+    expect(ctx._spies.showAlert).not.toHaveBeenCalled();
+  });
+
+  it('names bugfix among the documents it accepts', async () => {
+    makeSpec('alpha', ['requirements.md']);
+    const ctx = createMockCommandContext({ slashCommands: [specCmd] });
+
+    await runEffect(specCmd, null, ctx, 'view alpha nonsense');
+
+    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain('bugfix');
+  });
+});
+
+describe('sendSpecRevision', () => {
+  function makeDeps(setConfigOption: () => Promise<void>, busy = false) {
+    const sendMessage = mock(
+      async (
+        _content: string,
+        _images?: Array<{ base64: string; mimeType: string }>,
+        _displayContent?: string
+      ) => {}
+    );
+    const setCurrentAgent = mock((_agent: { name: string } | null) => {});
+    const showAlert = mock(
+      (
+        _message: string,
+        _status: 'error' | 'success' | 'warning',
+        _autoHideMs?: number
+      ) => {}
+    );
+    return {
+      sendMessage,
+      setCurrentAgent,
+      showAlert,
+      deps: {
+        kiro: { setConfigOption } as never,
+        setCurrentAgent,
+        sendMessage,
+        showAlert,
+        isBusy: () => busy,
+      },
+    };
+  }
+
+  it('sends the request to the agent and the summary to the transcript', async () => {
+    const { deps, sendMessage, setCurrentAgent } = makeDeps(async () => {});
+
+    const sent = await sendSpecRevision(
+      deps,
+      '<comment on="Glossary" quote="- **Duration**">drop it</comment>',
+      'Reviewed requirements.md and left 1 comment:\n- drop it (Glossary)'
+    );
+
+    expect(sent).toBe(true);
+    expect(setCurrentAgent).toHaveBeenCalledWith({ name: 'spec' });
+    // The tagged request is what the agent acts on; the summary is what the
+    // transcript shows in its place.
+    expect(sendMessage.mock.calls[0]![0]).toContain('<comment on="Glossary"');
+    expect(sendMessage.mock.calls[0]![2]).toBe(
+      'Reviewed requirements.md and left 1 comment:\n- drop it (Glossary)'
+    );
+  });
+
+  it('refuses while the agent is busy, so the comments stay staged', async () => {
+    // A message sent while a turn is in flight is queued as the text the
+    // transcript shows, dropping the tagged request — so this must not report
+    // success, or the caller would clear comments the agent never received.
+    const { deps, sendMessage, showAlert } = makeDeps(async () => {}, true);
+
+    const sent = await sendSpecRevision(deps, 'request', 'summary');
+
+    expect(sent).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(showAlert.mock.calls[0]![0]).toContain('busy');
+  });
+
+  it('refuses when a turn starts during the mode switch', async () => {
+    // The mode switch awaits, so a turn can start between the first check and
+    // the re-check. Both halves of "we are in spec mode" must have landed
+    // before the re-check, so a refusal does not strand the mode without the
+    // agent name.
+    let busy = false;
+    const setConfigOption = mock(async () => {
+      busy = true;
+    });
+    const { deps, sendMessage, showAlert, setCurrentAgent } = makeDeps(
+      setConfigOption as never,
+      false
+    );
+    deps.isBusy = () => busy;
+
+    const sent = await sendSpecRevision(deps, 'request', 'summary');
+
+    expect(sent).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(showAlert.mock.calls[0]![0]).toContain('busy');
+    // The agent name was set before the re-check, so mode and agent agree.
+    expect(setCurrentAgent).toHaveBeenCalledWith({ name: 'spec' });
+    expect(setConfigOption).toHaveBeenCalled();
+  });
+
+  it('reports a failed mode switch instead of sending', async () => {
+    // The caller keeps hand-typed comments staged on a false return, so this is
+    // the signal that stops them being discarded for a message that never went.
+    const { deps, sendMessage, showAlert } = makeDeps(async () => {
+      throw new Error('rpc down');
+    });
+
+    const sent = await sendSpecRevision(deps, 'request', 'summary');
+
+    expect(sent).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(showAlert.mock.calls[0]![0]).toContain('rpc down');
+  });
+
+  it('calls onSent before dispatching, so the clear is synchronous with the send', async () => {
+    const order: string[] = [];
+    const onSent = mock(() => {
+      order.push('onSent');
+    });
+    const sendMessage = mock(
+      async (
+        _content: string,
+        _images?: Array<{ base64: string; mimeType: string }>,
+        _displayContent?: string
+      ) => {
+        order.push('sendMessage');
+      }
+    );
+    const setCurrentAgent = mock((_agent: { name: string } | null) => {});
+    const showAlert = mock(
+      (
+        _message: string,
+        _status: 'error' | 'success' | 'warning',
+        _autoHideMs?: number
+      ) => {}
+    );
+
+    const sent = await sendSpecRevision(
+      {
+        kiro: { setConfigOption: async () => {} } as never,
+        setCurrentAgent,
+        sendMessage,
+        showAlert,
+        isBusy: () => false,
+      },
+      'request',
+      'summary',
+      onSent
+    );
+
+    expect(sent).toBe(true);
+    expect(onSent).toHaveBeenCalledTimes(1);
+    // The ordering is what prevents the mid-turn checkpoint from seeing stale
+    // comments: onSent (= clear) must run before sendMessage starts the turn.
+    expect(order).toEqual(['onSent', 'sendMessage']);
+  });
+
+  it('does not call onSent when the mode switch fails', async () => {
+    const onSent = mock(() => {});
+    const { deps } = makeDeps(async () => {
+      throw new Error('rpc down');
+    });
+
+    await sendSpecRevision(deps, 'request', 'summary', onSent);
+
+    expect(onSent).not.toHaveBeenCalled();
+  });
+
+  it('does not call onSent when the busy re-check fires', async () => {
+    let busy = false;
+    const onSent = mock(() => {});
+    const { deps } = makeDeps(async () => {
+      busy = true;
+    }, false);
+    deps.isBusy = () => busy;
+
+    await sendSpecRevision(deps, 'request', 'summary', onSent);
+
+    expect(onSent).not.toHaveBeenCalled();
   });
 });

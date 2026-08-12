@@ -4,7 +4,7 @@ import { Text } from './text/Text.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
-import { useAppStore } from '../../stores/app-store.js';
+import { commentsForCheckpoint, useAppStore } from '../../stores/app-store.js';
 import { commentCount } from '../../utils/spec-review/review-actions.js';
 import { logger } from '../../utils/logger.js';
 import type { SpecCheckpointPhase } from '../../types/agent-events.js';
@@ -34,9 +34,7 @@ export const SpecCheckpointChip: React.FC<{
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const checkpoint = useAppStore((s) => s.specPhaseCheckpoint);
-  const staged = useAppStore(
-    (s) => s.specPhaseCheckpoint?.comments.length ?? 0
-  );
+  const staged = useAppStore((s) => commentsForCheckpoint(s).length);
   const openReview = useAppStore((s) => s.openSpecReview);
 
   useKeypress((input, key) => {
@@ -44,7 +42,7 @@ export const SpecCheckpointChip: React.FC<{
     // part of that question, not of the session.
     if (!checkpoint || !questionVisible) return;
     if (key.ctrl && input === 'x') {
-      void openReview().catch((err) => {
+      void openReview(checkpoint.featureName, checkpoint.phase).catch((err) => {
         logger.error('[spec-checkpoint] opening the review threw', {
           err: err instanceof Error ? err.message : String(err),
         });

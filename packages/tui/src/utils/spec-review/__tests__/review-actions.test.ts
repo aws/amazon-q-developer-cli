@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import {
   anchorFor,
   composeRevisionRequest,
+  summarizeRevision,
   findEnclosingHeading,
   navigableStops,
   nextHeadingLine,
@@ -199,5 +200,55 @@ describe('nextHeadingLine', () => {
 
   it('ignores a hash that is not a heading', () => {
     expect(nextHeadingLine(['a', '#no-space', '## real'], 0, 1)).toBe(2);
+  });
+});
+
+describe('summarizeRevision', () => {
+  it('shows the comments as they were typed, under their section', () => {
+    const lines = [
+      '## Glossary',
+      '- **Duration**: A user-specified amount of time',
+      '## Requirements',
+      '1. WHEN the timer starts',
+    ];
+    const text = summarizeRevision('requirements.md', [
+      {
+        kind: 'comment',
+        id: 'b',
+        anchor: anchorFor(lines, { start: 3, end: 3 }),
+        body: 'tighten this',
+      },
+      {
+        kind: 'comment',
+        id: 'a',
+        anchor: anchorFor(lines, { start: 1, end: 1 }),
+        body: 'drop the hour field',
+      },
+    ]);
+
+    expect(text).toBe(
+      [
+        'Reviewed requirements.md and left 2 comments:',
+        '- drop the hour field (Glossary)',
+        '- tighten this (Requirements)',
+      ].join('\n')
+    );
+  });
+
+  it('carries none of the request written for the agent', () => {
+    const text = summarizeRevision('design.md', [
+      {
+        kind: 'comment',
+        id: 'a',
+        anchor: anchorFor(['## Overview', 'text'], { start: 1, end: 1 }),
+        body: 'say why',
+      },
+    ]);
+
+    // The tagged form is unreadable in a transcript; that is the whole point of
+    // showing this instead.
+    expect(text).not.toContain('<comment');
+    expect(text).not.toContain('quote=');
+    expect(text).toContain('say why');
   });
 });

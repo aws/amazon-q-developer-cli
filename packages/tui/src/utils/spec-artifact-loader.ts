@@ -42,7 +42,8 @@ export type LoadError =
     };
 
 export type LoadResult =
-  | { ok: true; summary: ArtifactSummary }
+  /** `source` comes along so a caller can locate a parsed item's own lines. */
+  | { ok: true; summary: ArtifactSummary; source: string }
   | { ok: false; error: LoadError };
 
 /** The document's own text, for surfaces that show it rather than a summary. */
@@ -181,5 +182,9 @@ export async function loadArtifactSummary(
 ): Promise<LoadResult> {
   const read = await loadArtifactSource(workspaceRoot, featureName, artifact);
   if (!read.ok) return read;
-  return { ok: true, summary: parseArtifact(artifact, read.source) };
+  return {
+    ok: true,
+    summary: parseArtifact(artifact, read.source),
+    source: read.source,
+  };
 }

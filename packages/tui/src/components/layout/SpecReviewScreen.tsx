@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import { Box, Input, useTwinkiContext } from '../../renderer.js';
 import { Text } from '../ui/text/Text.js';
-import { useAppStore } from '../../stores/app-store.js';
+import { commentsForDocument, useAppStore } from '../../stores/app-store.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -30,21 +30,24 @@ const CHROME_ROWS = 3;
 /** Stable identity, so the row layout isn't rebuilt on every render. */
 const NO_COMMENTS: readonly ReviewAction[] = [];
 /**
- * Reads a spec phase document and collects comments on it.
- *
- * Opened from a phase checkpoint whose question stays pending underneath, so
- * `esc` returns to that question with the comments still staged — sending them
- * is a choice the user makes there, not here.
+ * Reads a spec document and stages comments against it. Opened from a phase
+ * checkpoint (ctrl+X) or from the `/spec view` panel (Enter); `esc` returns to
+ * whatever opened it.
  */
 export const SpecReviewScreen: React.FC = () => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const { height, width } = useTerminalSize();
   const { tui } = useTwinkiContext();
-  const checkpoint = useAppStore((s) => s.specPhaseCheckpoint);
-  const review = checkpoint?.review ?? null;
-  const actions = useAppStore(
-    (s) => s.specPhaseCheckpoint?.comments ?? NO_COMMENTS
+  const review = useAppStore((s) => s.specReviewView);
+  const actions = useAppStore((s) =>
+    s.specReviewView
+      ? commentsForDocument(
+          s,
+          s.specReviewView.featureName,
+          s.specReviewView.document
+        )
+      : NO_COMMENTS
   );
   const moveCursor = useAppStore((s) => s.moveSpecReviewCursor);
   const moveToSection = useAppStore((s) => s.moveSpecReviewCursorToSection);
@@ -170,7 +173,7 @@ export const SpecReviewScreen: React.FC = () => {
     }
   });
 
-  if (!checkpoint || !review) return null;
+  if (!review) return null;
 
   const primary = getColor('primary');
   const secondary = getColor('secondary');
@@ -184,8 +187,8 @@ export const SpecReviewScreen: React.FC = () => {
     <Box flexDirection="column" width="100%">
       <Box>
         <Text>
-          {primary(`Review ${checkpoint.phase}.md`)}
-          {secondary(` ${glyphs.smallDot} ${checkpoint.featureName}`)}
+          {primary(`Review ${review.document}.md`)}
+          {secondary(` ${glyphs.smallDot} ${review.featureName}`)}
           {staged > 0 &&
             success(
               ` ${glyphs.smallDot} ${staged} comment${

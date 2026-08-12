@@ -48,6 +48,30 @@ export function commentCount(n: number): string {
   return `${n} comment${n === 1 ? '' : 's'}`;
 }
 
+/**
+ * What the transcript shows for a review that was sent.
+ *
+ * The request itself is written for the agent — tagged, quoting whole lines — so
+ * reading it back is no way to see what you said. This shows the comments as
+ * they were typed, under the section each one is against.
+ */
+export function summarizeRevision(
+  documentName: string,
+  actions: readonly ReviewAction[]
+): string {
+  const lines = [...actions]
+    .sort((a, b) => a.anchor.range.start - b.anchor.range.start)
+    .map((action) =>
+      action.anchor.heading
+        ? `- ${action.body} (${action.anchor.heading})`
+        : `- ${action.body}`
+    );
+  return [
+    `Reviewed ${documentName} and left ${commentCount(actions.length)}:`,
+    ...lines,
+  ].join('\n');
+}
+
 /** Nearest markdown heading at or above `lineIndex`, without its `#` marker. */
 export function findEnclosingHeading(
   lines: readonly string[],

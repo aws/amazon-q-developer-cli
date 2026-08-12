@@ -1,13 +1,14 @@
 /**
- * Pure helper: given a workflow type, return the ordered list of
- * artifact stages the user is expected to move through.
+ * Pure helper: given a spec's config, return the ordered list of artifact stages
+ * the user is expected to move through.
  *
- * The order is the same set in both workflows; only the position of
- * `requirements` vs `design` differs. `tasks` is always last.
+ * A bugfix spec opens with `bugfix.md` in place of requirements; the two feature
+ * workflows differ only in whether requirements or design comes first, and tasks
+ * is always last.
  */
 
 import type { ArtifactKind } from './spec-artifact-loader.js';
-import type { WorkflowType } from './spec-config.js';
+import type { SpecType, WorkflowType } from './spec-config.js';
 
 const REQUIREMENTS_FIRST: readonly ArtifactKind[] = [
   'requirements',
@@ -21,9 +22,13 @@ const DESIGN_FIRST: readonly ArtifactKind[] = [
   'tasks',
 ] as const;
 
+const BUGFIX: readonly ArtifactKind[] = ['bugfix', 'design', 'tasks'] as const;
+
 export function workflowStages(
-  workflowType: WorkflowType
+  workflowType: WorkflowType,
+  specType: SpecType = 'feature'
 ): readonly ArtifactKind[] {
+  if (specType === 'bugfix') return BUGFIX;
   switch (workflowType) {
     case 'design-first':
       return DESIGN_FIRST;

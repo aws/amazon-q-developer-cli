@@ -5,6 +5,7 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 import { RequirementSummaryItem } from './RequirementSummaryItem.js';
 import { DesignSummaryItem } from './DesignSummaryItem.js';
 import { TaskSummaryItem } from './TaskSummaryItem.js';
+import { BugfixSummaryItem } from './BugfixSummaryItem.js';
 import { EmptyState } from './EmptyState.js';
 import type { OpenArtifactView } from '../../../stores/app-store.js';
 
@@ -47,6 +48,28 @@ export const SummaryView: React.FC<Props> = ({ view }) => {
             key={`${section.title}-${i}`}
             section={section}
             selected={view.cursor === i}
+          />
+        ))}
+      </Box>
+    );
+  }
+
+  if (summary.kind === 'bugfix') {
+    if (summary.sections.length === 0) return <EmptyState kind="bugfix" />;
+    return (
+      <Box flexDirection="column">
+        {summary.overview.length > 0 && (
+          <Box marginBottom={1} marginLeft={1} flexDirection="column">
+            <Text>{dim('The bug')}</Text>
+            <Text>{summary.overview}</Text>
+          </Box>
+        )}
+        {summary.sections.map((section, i) => (
+          <BugfixSummaryItem
+            key={`${section.title}-${i}`}
+            section={section}
+            selected={view.cursor === i}
+            expanded={!!view.expanded[i]}
           />
         ))}
       </Box>

@@ -16,6 +16,7 @@ export const EmptyState: React.FC<Props> = ({ kind }) => {
       'No requirements found. Look for blocks beginning with "### Requirement N:".',
     design:
       'No design sections found. Add H2 headings (## Title) to populate this view.',
+    bugfix: 'No behaviour sections found in bugfix.md.',
     tasks: 'No tasks found. Add checkbox items like "- [ ] 1. Title".',
   };
   return (

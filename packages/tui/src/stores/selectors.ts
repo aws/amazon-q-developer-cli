@@ -250,8 +250,6 @@ export const useUIActions = () =>
       closeArtifactView: state.closeArtifactView,
       moveArtifactCursor: state.moveArtifactCursor,
       toggleArtifactExpand: state.toggleArtifactExpand,
-      enterArtifactDetail: state.enterArtifactDetail,
-      leaveArtifactDetail: state.leaveArtifactDetail,
     }))
   );
 

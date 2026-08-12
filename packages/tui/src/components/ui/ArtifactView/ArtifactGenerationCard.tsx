@@ -17,6 +17,7 @@ const KIND_LABELS: Record<ArtifactKind, string> = {
   requirements: 'Requirements',
   design: 'Design',
   tasks: 'Tasks',
+  bugfix: 'Bug analysis',
 };
 
 /**
@@ -140,6 +141,22 @@ const SummaryStrip: React.FC<{ summary: ArtifactSummary | null }> = ({
       <Box>
         <Text>
           {dim(`  ${sectionCount} section${sectionCount === 1 ? '' : 's'}`)}
+        </Text>
+      </Box>
+    );
+  }
+
+  if (summary.kind === 'bugfix') {
+    const clauses = summary.sections.reduce(
+      (acc, section) => acc + section.clauses.length,
+      0
+    );
+    return (
+      <Box>
+        <Text>
+          {dim(
+            `${summary.sections.length} section${summary.sections.length === 1 ? '' : 's'}, ${clauses} clause${clauses === 1 ? '' : 's'}`
+          )}
         </Text>
       </Box>
     );

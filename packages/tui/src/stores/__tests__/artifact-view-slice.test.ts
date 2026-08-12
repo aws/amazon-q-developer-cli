@@ -4,6 +4,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { createAppStore } from '../app-store';
+import { detailBodyAt } from '../../utils/spec-artifact-parser/index.js';
+import { commentsForDocument } from '../app-store';
 
 /**
  * Tests for the artifactView slice navigation state machine.
@@ -75,7 +77,6 @@ describe('artifactView slice — openArtifactView', () => {
     expect(view).not.toBeNull();
     expect(view!.featureName).toBe('login');
     expect(view!.artifact).toBe('requirements');
-    expect(view!.mode).toBe('summary');
     expect(view!.cursor).toBe(0);
     expect(view!.error).toBeNull();
     if (view!.summary.kind !== 'requirements') throw new Error('kind mismatch');
@@ -198,8 +199,8 @@ describe('artifactView slice — expand/collapse', () => {
   });
 });
 
-describe('artifactView slice — detail mode', () => {
-  it('enters detail and back to summary preserving cursor', async () => {
+describe('artifactView slice — opening the document at an item', () => {
+  it('lands the review cursor on the item the summary cursor was on', async () => {
     makeSpec('a', {
       'requirements.md': ['### Requirement 1: A', '### Requirement 2: B'].join(
         '\n'
@@ -208,20 +209,131 @@ describe('artifactView slice — detail mode', () => {
     const store = createAppStore({ kiro: makeFakeKiro() });
     await store.getState().openArtifactView('a', 'requirements');
     store.getState().moveArtifactCursor('next');
-    expect(store.getState().artifactViewOpen!.cursor).toBe(1);
-    store.getState().enterArtifactDetail();
-    expect(store.getState().artifactViewOpen!.mode).toBe('detail');
-    store.getState().leaveArtifactDetail();
-    expect(store.getState().artifactViewOpen!.mode).toBe('summary');
-    expect(store.getState().artifactViewOpen!.cursor).toBe(1);
+
+    const view = store.getState().artifactViewOpen!;
+    await store
+      .getState()
+      .openSpecReview(
+        'a',
+        'requirements',
+        detailBodyAt(view.summary, view.cursor)
+      );
+
+    const review = store.getState().specReviewView!;
+    expect(review.document).toBe('requirements');
+    expect(review.cursor.lineIndex).toBe(1);
+    expect(review.lines[1]).toBe('### Requirement 2: B');
   });
 
-  it('does not enter detail when there are no items', async () => {
-    makeSpec('empty', { 'requirements.md': '# Requirements\n' });
+  it('locates the item in the text it just read, not in a stale snapshot', async () => {
+    makeSpec('a', {
+      'requirements.md': ['### Requirement 1: A', '### Requirement 2: B'].join(
+        '\n'
+      ),
+    });
     const store = createAppStore({ kiro: makeFakeKiro() });
-    await store.getState().openArtifactView('empty', 'requirements');
-    store.getState().enterArtifactDetail();
-    expect(store.getState().artifactViewOpen!.mode).toBe('summary');
+    await store.getState().openArtifactView('a', 'requirements');
+    const view = store.getState().artifactViewOpen!;
+    const slice = detailBodyAt(view.summary, 1);
+
+    // The document grows a preamble while the panel sits open, so the item's
+    // line in the panel's snapshot is no longer its line in the file.
+    makeSpec('a', {
+      'requirements.md': [
+        '# Requirements',
+        '',
+        '### Requirement 1: A',
+        '### Requirement 2: B',
+      ].join('\n'),
+    });
+    await store.getState().openSpecReview('a', 'requirements', slice);
+
+    const review = store.getState().specReviewView!;
+    expect(review.cursor.lineIndex).toBe(3);
+    expect(review.lines[review.cursor.lineIndex]).toBe('### Requirement 2: B');
+  });
+
+  it('parks another document’s comments instead of discarding them', async () => {
+    makeSpec('a', {
+      'requirements.md': '### Requirement 1: A',
+      'design.md': '## Overview',
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openSpecReview('a', 'requirements', null);
+    store.getState().startSpecReviewComment();
+    store.getState().commitSpecReviewComment('tighten this');
+
+    // Opening another document for review must not throw away what was typed
+    // against the first: comments are hand-made, and only sending or deleting
+    // them should remove them.
+    await store.getState().openSpecReview('a', 'design', null);
+
+    expect(
+      commentsForDocument(store.getState(), 'a', 'requirements')
+    ).toHaveLength(1);
+    expect(commentsForDocument(store.getState(), 'a', 'design')).toHaveLength(
+      0
+    );
+
+    // And they are still there to send when the user comes back to it.
+    await store.getState().openSpecReview('a', 'requirements', null);
+    expect(
+      commentsForDocument(store.getState(), 'a', 'requirements')
+    ).toHaveLength(1);
+  });
+
+  it('offers a document’s comments only to that document', async () => {
+    makeSpec('a', {
+      'requirements.md': '### Requirement 1: A',
+      'design.md': '## Overview',
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openSpecReview('a', 'requirements', null);
+    store.getState().startSpecReviewComment();
+    store.getState().commitSpecReviewComment('tighten this');
+
+    // They quote lines requirements.md has and design.md does not.
+    expect(commentsForDocument(store.getState(), 'a', 'design')).toHaveLength(
+      0
+    );
+    expect(
+      commentsForDocument(store.getState(), 'b', 'requirements')
+    ).toHaveLength(0);
+  });
+
+  it('drops only the sent document’s comments', async () => {
+    makeSpec('a', {
+      'requirements.md': '### Requirement 1: A',
+      'design.md': '## Overview',
+    });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openSpecReview('a', 'requirements', null);
+    store.getState().startSpecReviewComment();
+    store.getState().commitSpecReviewComment('tighten this');
+    await store.getState().openSpecReview('a', 'design', null);
+    store.getState().startSpecReviewComment();
+    store.getState().commitSpecReviewComment('say why');
+
+    store.getState().clearSpecReview('a', 'requirements');
+
+    expect(
+      commentsForDocument(store.getState(), 'a', 'requirements')
+    ).toHaveLength(0);
+    expect(commentsForDocument(store.getState(), 'a', 'design')).toHaveLength(
+      1
+    );
+  });
+
+  it('leaves the panel open underneath, so closing the review returns to it', async () => {
+    makeSpec('a', { 'requirements.md': '### Requirement 1: A' });
+    const store = createAppStore({ kiro: makeFakeKiro() });
+    await store.getState().openArtifactView('a', 'requirements');
+    await store.getState().openSpecReview('a', 'requirements', null);
+
+    store.getState().closeSpecReview();
+
+    expect(store.getState().specReviewView).toBeNull();
+    expect(store.getState().artifactViewOpen).not.toBeNull();
   });
 });
 

@@ -86,7 +86,7 @@ export const REVIEW_KEY_HINTS: readonly ReviewKeyHint[] = [
   { keys: 'enter / e', action: 'comment on this line' },
   { keys: 'del', action: 'delete the comment under the cursor' },
   { keys: '?', action: 'this list' },
-  { keys: 'esc / q', action: 'back to the checkpoint' },
+  { keys: 'esc / q', action: 'back' },
 ];
 
 export interface ReviewFooterHint {

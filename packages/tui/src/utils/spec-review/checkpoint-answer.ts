@@ -13,9 +13,9 @@ import {
   type ReviewAction,
 } from './review-actions.js';
 
-/** Just enough of a checkpoint to route an answer. */
-export interface AnsweringCheckpoint {
-  phase: string;
+/** Just enough of a staged review to route an answer. */
+export interface AnsweringReview {
+  document: string;
   comments: readonly ReviewAction[];
 }
 
@@ -24,7 +24,7 @@ export type CheckpointAnswer =
   | { kind: 'send'; answerForAgent: string }
   /** Refuse: advancing would drop comments with nothing left to send them to. */
   | { kind: 'refuse'; message: string }
-  /** Nothing staged, or no checkpoint — answer as any other question. */
+  /** Nothing staged for this document — answer as any other question. */
   | { kind: 'pass' };
 
 /**
@@ -32,31 +32,31 @@ export type CheckpointAnswer =
  * when there is nothing to send.
  */
 export function stagedCommentsOption(
-  checkpoint: AnsweringCheckpoint | null
+  review: AnsweringReview | null
 ): string | null {
-  const staged = checkpoint?.comments.length ?? 0;
+  const staged = review?.comments.length ?? 0;
   return staged > 0 ? `Send ${commentCount(staged)} and revise` : null;
 }
 
 export function routeCheckpointAnswer(
-  checkpoint: AnsweringCheckpoint | null,
+  review: AnsweringReview | null,
   answer: string
 ): CheckpointAnswer {
-  const option = stagedCommentsOption(checkpoint);
-  if (!option || !checkpoint) return { kind: 'pass' };
+  const option = stagedCommentsOption(review);
+  if (!option || !review) return { kind: 'pass' };
   if (answer === option) {
     return {
       kind: 'send',
       answerForAgent: composeRevisionRequest(
-        `${checkpoint.phase}.md`,
-        checkpoint.comments
+        `${review.document}.md`,
+        review.comments
       ),
     };
   }
   return {
     kind: 'refuse',
     message: `${commentCount(
-      checkpoint.comments.length
-    )} staged — pick "${option}" to send, or ctrl+X to review and remove`,
+      review.comments.length
+    )} staged — pick "${option}" to send, or review and remove them first`,
   };
 }

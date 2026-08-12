@@ -334,10 +334,11 @@ export interface OpenArtifactView {
   featureName: string;
   artifact: ArtifactKind;
   summary: ArtifactSummary;
-  mode: 'summary' | 'detail';
+  /** The document's own text, so Enter can open it at the item under the cursor. */
+  source: string;
   /** Index into the displayed item list. */
   cursor: number;
-  /** Tasks-only expansion state, keyed by item index. */
+  /** Expansion state for the kinds whose rows have children, by item index. */
   expanded: Record<number, boolean>;
   /** Non-fatal load error to surface inline; null on success. */
   error: { message: string } | null;
@@ -406,6 +407,7 @@ import {
   nextReviewActionId,
   type ReviewAction,
 } from '../utils/spec-review/review-actions.js';
+import { lineOfSlice } from '../utils/spec-review/locate.js';
 import { CommandHistory } from '../utils/command-history.js';
 import { Settings } from '../constants/settings.js';
 import { isUserDeniedReason } from '../constants/tool-failure-reasons.js';
@@ -452,6 +454,8 @@ function countArtifactItems(summary: ArtifactSummary): number {
       return summary.sections.length;
     case 'tasks':
       return summary.items.length;
+    case 'bugfix':
+      return summary.sections.length;
   }
 }
 
@@ -467,38 +471,111 @@ function expiredCheckpoint<
   return state.pendingQuestion ? state.specPhaseCheckpoint : null;
 }
 
-type SpecCheckpoint = NonNullable<AppState['specPhaseCheckpoint']>;
+type SpecReviewView = NonNullable<AppState['specReviewView']>;
 
-/** The review surface and its staged comments, absent a checkpoint or both. */
+/**
+ * Shared empty list, so a document with nothing staged yields a stable
+ * reference and selectors reading it don't re-render on every store change.
+ */
+const NO_STAGED_COMMENTS: ReviewAction[] = [];
+
+/** Key under which one document's staged comments live. */
+function reviewKey(featureName: string, document: string): string {
+  return `${featureName}/${document}`;
+}
+
+/** The surface and the comments staged against the document it has open. */
 function specReviewState(get: () => AppState): {
-  review: SpecCheckpoint['review'];
+  view: SpecReviewView | null;
   comments: ReviewAction[];
 } {
-  const checkpoint = get().specPhaseCheckpoint;
+  const view = get().specReviewView;
   return {
-    review: checkpoint?.review ?? null,
-    comments: checkpoint?.comments ?? [],
+    view,
+    comments: view
+      ? commentsForDocument(get(), view.featureName, view.document)
+      : NO_STAGED_COMMENTS,
   };
 }
 
-function patchSpecCheckpoint(
-  set: (patch: Partial<AppState>) => void,
-  get: () => AppState,
-  patch: Partial<SpecCheckpoint>
-): void {
-  const checkpoint = get().specPhaseCheckpoint;
-  if (!checkpoint) return;
-  set({ specPhaseCheckpoint: { ...checkpoint, ...patch } });
+/**
+ * Comments staged against one document.
+ *
+ * A lookup cannot return another document's comments, so nothing can be sent
+ * quoting lines the named document does not contain — whichever path retired the
+ * checkpoint or panel they were written under.
+ */
+export function commentsForDocument(
+  state: { specReviewComments: AppState['specReviewComments'] },
+  featureName: string,
+  document: string
+): ReviewAction[] {
+  return (
+    state.specReviewComments[reviewKey(featureName, document)] ??
+    NO_STAGED_COMMENTS
+  );
 }
 
-function patchSpecReview(
+/** Comments this checkpoint's question can send: those against its own phase. */
+export function commentsForCheckpoint(state: {
+  specPhaseCheckpoint: AppState['specPhaseCheckpoint'];
+  specReviewComments: AppState['specReviewComments'];
+}): ReviewAction[] {
+  const checkpoint = state.specPhaseCheckpoint;
+  if (!checkpoint) return NO_STAGED_COMMENTS;
+  return commentsForDocument(state, checkpoint.featureName, checkpoint.phase);
+}
+
+/** The map without the comments staged against `document`, if any were. */
+function withoutStagedComments(
+  staged: Record<string, ReviewAction[]>,
+  document: { featureName: string; phase: string } | null
+): Record<string, ReviewAction[]> {
+  if (!document) return staged;
+  const key = reviewKey(document.featureName, document.phase);
+  if (!(key in staged)) return staged;
+  const next = { ...staged };
+  delete next[key];
+  return next;
+}
+
+/** Replace one document's staged comments, dropping the key when none remain. */
+function setStagedComments(
   set: (patch: Partial<AppState>) => void,
   get: () => AppState,
-  patch: Partial<NonNullable<SpecCheckpoint['review']>>
+  featureName: string,
+  document: string,
+  comments: ReviewAction[]
 ): void {
-  const review = get().specPhaseCheckpoint?.review;
-  if (!review) return;
-  patchSpecCheckpoint(set, get, { review: { ...review, ...patch } });
+  const key = reviewKey(featureName, document);
+  const next = { ...get().specReviewComments };
+  if (comments.length === 0) {
+    delete next[key];
+  } else {
+    next[key] = comments;
+  }
+  set({ specReviewComments: next });
+}
+
+/** Replace the comments staged against the document the surface has open. */
+function patchOpenDocumentComments(
+  set: (patch: Partial<AppState>) => void,
+  get: () => AppState,
+  comments: ReviewAction[]
+): void {
+  const view = get().specReviewView;
+  if (!view) return;
+  setStagedComments(set, get, view.featureName, view.document, comments);
+}
+
+function patchSpecReviewView(
+  set: (patch: Partial<AppState>) => void,
+  get: () => AppState,
+  patch: Partial<SpecReviewView>
+): void {
+  const view = get().specReviewView;
+  if (!view) return;
+  set({ specReviewView: { ...view, ...patch } });
 }
 
 function describeLoadError(err: LoadError): string {
@@ -535,6 +612,8 @@ function emptySummaryFor(artifact: ArtifactKind): ArtifactSummary {
       };
     case 'tasks':
       return { kind: 'tasks', items: [] };
+    case 'bugfix':
+      return { kind: 'bugfix', overview: '', sections: [] };
   }
 }
 
@@ -1583,8 +1662,6 @@ interface BaseAppActions {
   closeArtifactView: () => void;
   moveArtifactCursor: (direction: 'prev' | 'next') => void;
   toggleArtifactExpand: (index: number) => void;
-  enterArtifactDetail: () => void;
-  leaveArtifactDetail: () => void;
   /**
    * Reset all artifact-view state on engine switch. The agent engine in
    * Kiro CLI is fixed at startup (see `kas-commands.ts`), so this is
@@ -1919,33 +1996,44 @@ export interface AppState {
   /**
    * The most recent spec phase checkpoint reported by the agent: the phase whose
    * document just completed.
-   *
-   * Everything the review surface owns hangs off this one field — the comments
-   * staged against the document and the surface itself — so the several paths
-   * that retire a checkpoint cannot leave either behind. Comments outliving
-   * their checkpoint would be counted into the next one and sent quoting a
-   * document the agent never wrote.
    */
   specPhaseCheckpoint: {
     featureName: string;
     phase: SpecCheckpointPhase;
     artifactPath: string;
-    /**
-     * Staged against this checkpoint's document. Held outside `review` so
-     * closing the surface keeps them: the user reviews, closes, and sends from
-     * the checkpoint menu.
-     */
-    comments: ReviewAction[];
-    /** The surface, while it is on screen. */
-    review: {
-      lines: string[];
-      cursor: { lineIndex: number; commentId: string | null };
-      composing: { editingId: string | null; draft: string } | null;
-      error: string | null;
-    } | null;
   } | null;
-  openSpecReview: () => Promise<void>;
+  /**
+   * Comments staged against spec documents, keyed `${featureName}/${document}`.
+   *
+   * Keyed rather than held one-at-a-time so moving between documents parks a
+   * document's comments instead of dropping them: they are hand-typed, and only
+   * sending them or deleting them in the surface should remove them. Keying also
+   * makes misattribution impossible rather than merely guarded — a lookup cannot
+   * return comments belonging to another document.
+   */
+  specReviewComments: Record<string, ReviewAction[]>;
+  /**
+   * The document currently open in the review surface, opened either from a
+   * phase checkpoint or from `/spec view`. Null when the surface is closed;
+   * staged comments outlive it.
+   */
+  specReviewView: {
+    featureName: string;
+    document: SpecCheckpointPhase;
+    lines: string[];
+    cursor: { lineIndex: number; commentId: string | null };
+    composing: { editingId: string | null; draft: string } | null;
+    error: string | null;
+  } | null;
+  /** Reads the document and shows the surface, landing on the slice's line. */
+  openSpecReview: (
+    featureName: string,
+    document: SpecCheckpointPhase,
+    atSlice?: string | null
+  ) => Promise<void>;
   closeSpecReview: () => void;
+  /** Drops one document's comments, once they have been sent. */
+  clearSpecReview: (featureName: string, document: string) => void;
   moveSpecReviewCursor: (delta: number) => void;
   moveSpecReviewCursorToSection: (direction: 1 | -1) => void;
   moveSpecReviewCursorToComment: (direction: 1 | -1) => void;
@@ -2980,6 +3068,8 @@ export const createAppStore = (props: AppStoreProps) => {
     pendingQuestion: null,
     questionQueue: [],
     specPhaseCheckpoint: null,
+    specReviewComments: {},
+    specReviewView: null,
     pendingSpecRun: null,
     pendingSpecDescription: null,
     approvalMode: 'dropdown',
@@ -4555,8 +4645,6 @@ export const createAppStore = (props: AppStoreProps) => {
                 featureName: event.featureName,
                 phase: event.phase,
                 artifactPath: event.artifactPath,
-                comments: [],
-                review: null,
               },
             });
             break;
@@ -6014,9 +6102,15 @@ export const createAppStore = (props: AppStoreProps) => {
           messages,
           questionQueue: remainingQueue,
           pendingQuestion: remainingQueue[0] ?? null,
-          // The checkpoint marks one question only; the surface and comments
-          // it carries go with it.
+          // Reaching here with comments staged against this phase means they
+          // were just sent as the answer, since the router refuses any other
+          // answer while they are staged. Other documents' comments stay.
           specPhaseCheckpoint: null,
+          specReviewView: null,
+          specReviewComments: withoutStagedComments(
+            state.specReviewComments,
+            state.specPhaseCheckpoint
+          ),
           ...(queuedRun ? { pendingSpecRun: queuedRun } : {}),
         };
       });
@@ -6040,6 +6134,10 @@ export const createAppStore = (props: AppStoreProps) => {
         pendingQuestion: null,
         questionQueue: [],
         specPhaseCheckpoint: null,
+        // The surface goes with the question, but the comments do not: they are
+        // hand-typed and the document they annotate still exists, so they stay
+        // staged for `/spec view` to reopen and send.
+        specReviewView: null,
         messages: state.messages.map((message) =>
           message.role === MessageRole.ToolUse &&
           questionIds.has(message.id) &&
@@ -6101,80 +6199,76 @@ export const createAppStore = (props: AppStoreProps) => {
       }
     },
 
-    openSpecReview: async () => {
-      const checkpoint = get().specPhaseCheckpoint;
-      if (!checkpoint) return;
+    openSpecReview: async (featureName, document, atSlice) => {
       const read = await loadArtifactSource(
         process.cwd(),
-        checkpoint.featureName,
-        checkpoint.phase
+        featureName,
+        document
       );
-      set((state) => {
-        // A phase completing during the read replaces the checkpoint. Attaching
-        // this document to it would show one phase's text under another's name,
-        // and any comment would be sent quoting lines the named document lacks.
-        const current = state.specPhaseCheckpoint;
-        if (
-          current?.featureName !== checkpoint.featureName ||
-          current.phase !== checkpoint.phase
-        ) {
-          return {};
-        }
-        return {
-          specPhaseCheckpoint: {
-            ...current,
-            review: {
-              lines: read.ok ? read.source.split('\n') : [],
-              cursor: { lineIndex: 0, commentId: null },
-              composing: null,
-              error: read.ok ? null : describeLoadError(read.error),
-            },
+      const lines = read.ok ? read.source.split('\n') : [];
+      // Locate against the text just read, not a caller's snapshot: a document
+      // rewritten while a panel sat open would otherwise land the cursor on a
+      // line computed from text that is no longer there.
+      const atLine = read.ok ? lineOfSlice(read.source, atSlice ?? null) : 0;
+      set({
+        specReviewView: {
+          featureName,
+          document,
+          lines,
+          cursor: {
+            lineIndex: Math.max(0, Math.min(atLine, lines.length - 1)),
+            commentId: null,
           },
-        };
+          composing: null,
+          error: read.ok ? null : describeLoadError(read.error),
+        },
       });
     },
 
-    closeSpecReview: () => patchSpecCheckpoint(set, get, { review: null }),
+    closeSpecReview: () => set({ specReviewView: null }),
+
+    clearSpecReview: (featureName, document) =>
+      setStagedComments(set, get, featureName, document, []),
 
     moveSpecReviewCursor: (delta) => {
-      const { review, comments } = specReviewState(get);
-      if (!review || review.lines.length === 0) return;
-      const stops = navigableStops(review.lines.length, comments);
+      const { view, comments } = specReviewState(get);
+      if (!view || view.lines.length === 0) return;
+      const stops = navigableStops(view.lines.length, comments);
       const at = stops.findIndex(
         (stop) =>
-          stop.lineIndex === review.cursor.lineIndex &&
-          stop.commentId === review.cursor.commentId
+          stop.lineIndex === view.cursor.lineIndex &&
+          stop.commentId === view.cursor.commentId
       );
       const next = Math.max(0, Math.min(stops.length - 1, at + delta));
-      patchSpecReview(set, get, { cursor: stops[next]! });
+      patchSpecReviewView(set, get, { cursor: stops[next]! });
     },
 
     moveSpecReviewCursorToSection: (direction) => {
-      const { review } = specReviewState(get);
-      if (!review) return;
+      const { view } = specReviewState(get);
+      if (!view) return;
       const line = nextHeadingLine(
-        review.lines,
-        review.cursor.lineIndex,
+        view.lines,
+        view.cursor.lineIndex,
         direction
       );
       if (line === null) {
         get().moveSpecReviewCursorToEdge(direction === 1 ? 'end' : 'start');
         return;
       }
-      patchSpecReview(set, get, {
+      patchSpecReviewView(set, get, {
         cursor: { lineIndex: line, commentId: null },
       });
     },
 
     moveSpecReviewCursorToComment: (direction) => {
-      const { review, comments } = specReviewState(get);
-      if (!review) return;
+      const { view, comments } = specReviewState(get);
+      if (!view) return;
       const staged = [...comments].sort(
         (a, b) => a.anchor.range.start - b.anchor.range.start
       );
       if (staged.length === 0) return;
       const at = staged.findIndex(
-        (action) => action.id === review.cursor.commentId
+        (action) => action.id === view.cursor.commentId
       );
       // Off a comment, the nearest one in the direction of travel; on one, its
       // neighbour, stopping at the ends rather than wrapping.
@@ -6183,108 +6277,108 @@ export const createAppStore = (props: AppStoreProps) => {
           ? staged[Math.max(0, Math.min(staged.length - 1, at + direction))]
           : direction === 1
             ? (staged.find(
-                (action) => action.anchor.range.start > review.cursor.lineIndex
+                (action) => action.anchor.range.start > view.cursor.lineIndex
               ) ?? staged[staged.length - 1])
             : ([...staged]
                 .reverse()
                 .find(
-                  (action) =>
-                    action.anchor.range.start < review.cursor.lineIndex
+                  (action) => action.anchor.range.start < view.cursor.lineIndex
                 ) ?? staged[0]);
       if (!target) return;
-      patchSpecReview(set, get, {
+      patchSpecReviewView(set, get, {
         cursor: { lineIndex: target.anchor.range.start, commentId: target.id },
       });
     },
 
     moveSpecReviewCursorToEdge: (edge) => {
-      const { review } = specReviewState(get);
-      if (!review || review.lines.length === 0) return;
-      patchSpecReview(set, get, {
+      const { view } = specReviewState(get);
+      if (!view || view.lines.length === 0) return;
+      patchSpecReviewView(set, get, {
         cursor: {
-          lineIndex: edge === 'start' ? 0 : review.lines.length - 1,
+          lineIndex: edge === 'start' ? 0 : view.lines.length - 1,
           commentId: null,
         },
       });
     },
 
     startSpecReviewComment: () => {
-      const { review, comments } = specReviewState(get);
-      if (!review || review.error) return '';
-      const editingId = review.cursor.commentId;
+      const { view, comments } = specReviewState(get);
+      if (!view || view.error) return '';
+      const editingId = view.cursor.commentId;
       const editing = editingId
         ? comments.find((action) => action.id === editingId)
         : undefined;
       const draft = editing?.body ?? '';
-      patchSpecReview(set, get, {
+      patchSpecReviewView(set, get, {
         composing: { editingId: editing?.id ?? null, draft },
       });
       return draft;
     },
 
     cancelSpecReviewComment: () =>
-      patchSpecReview(set, get, { composing: null }),
+      patchSpecReviewView(set, get, { composing: null }),
 
     commitSpecReviewComment: (body) => {
-      const { review, comments } = specReviewState(get);
-      if (!review) return;
+      const { view, comments } = specReviewState(get);
+      if (!view) return;
       const trimmed = body.trim();
-      const editingId = review.composing?.editingId ?? null;
+      const editingId = view.composing?.editingId ?? null;
       if (!trimmed) {
         // An emptied comment is a removed one; a blank new one never existed.
-        patchSpecCheckpoint(set, get, {
-          comments: editingId
-            ? comments.filter((action) => action.id !== editingId)
-            : comments,
-          review: {
-            ...review,
-            composing: null,
-            cursor: editingId
-              ? { lineIndex: review.cursor.lineIndex, commentId: null }
-              : review.cursor,
-          },
+        if (editingId) {
+          patchOpenDocumentComments(
+            set,
+            get,
+            comments.filter((action) => action.id !== editingId)
+          );
+        }
+        patchSpecReviewView(set, get, {
+          composing: null,
+          cursor: editingId
+            ? { lineIndex: view.cursor.lineIndex, commentId: null }
+            : view.cursor,
         });
         return;
       }
       if (editingId) {
-        patchSpecCheckpoint(set, get, {
-          comments: comments.map((action) =>
+        patchOpenDocumentComments(
+          set,
+          get,
+          comments.map((action) =>
             action.id === editingId ? { ...action, body: trimmed } : action
-          ),
-          review: { ...review, composing: null },
-        });
+          )
+        );
+        patchSpecReviewView(set, get, { composing: null });
         return;
       }
       const action: ReviewAction = {
         kind: 'comment',
         id: nextReviewActionId(),
-        anchor: anchorFor(review.lines, {
-          start: review.cursor.lineIndex,
-          end: review.cursor.lineIndex,
+        anchor: anchorFor(view.lines, {
+          start: view.cursor.lineIndex,
+          end: view.cursor.lineIndex,
         }),
         body: trimmed,
       };
-      patchSpecCheckpoint(set, get, {
-        comments: [...comments, action],
-        review: {
-          ...review,
-          composing: null,
-          // Land on the new comment so it can be edited or dropped at once.
-          cursor: { lineIndex: review.cursor.lineIndex, commentId: action.id },
-        },
+      patchOpenDocumentComments(set, get, [...comments, action]);
+      patchSpecReviewView(set, get, {
+        composing: null,
+        // Land on the new comment so it can be edited or dropped at once.
+        cursor: { lineIndex: view.cursor.lineIndex, commentId: action.id },
       });
     },
 
     removeSpecReviewCommentAtCursor: () => {
-      const { review, comments } = specReviewState(get);
-      const commentId = review?.cursor.commentId;
-      if (!review || !commentId) return;
-      patchSpecCheckpoint(set, get, {
-        comments: comments.filter((action) => action.id !== commentId),
-        review: {
-          ...review,
-          cursor: { lineIndex: review.cursor.lineIndex, commentId: null },
-        },
+      const { view, comments } = specReviewState(get);
+      const commentId = view?.cursor.commentId;
+      if (!view || !commentId) return;
+      patchOpenDocumentComments(
+        set,
+        get,
+        comments.filter((action) => action.id !== commentId)
+      );
+      patchSpecReviewView(set, get, {
+        cursor: { lineIndex: view.cursor.lineIndex, commentId: null },
       });
     },
 
@@ -8239,7 +8333,7 @@ export const createAppStore = (props: AppStoreProps) => {
             featureName,
             artifact,
             summary: emptySummaryFor(artifact),
-            mode: 'summary',
+            source: '',
             cursor: 0,
             expanded: {},
             error: { message: describeLoadError(result.error) },
@@ -8253,7 +8347,7 @@ export const createAppStore = (props: AppStoreProps) => {
           featureName,
           artifact,
           summary: result.summary,
-          mode: 'summary',
+          source: result.source,
           cursor: 0,
           expanded: {},
           error: null,
@@ -8270,7 +8364,7 @@ export const createAppStore = (props: AppStoreProps) => {
     moveArtifactCursor: (direction: 'prev' | 'next') => {
       set((state) => {
         const open = state.artifactViewOpen;
-        if (!open || open.mode !== 'summary') return state;
+        if (!open) return state;
         const count = countArtifactItems(open.summary);
         if (count === 0) return state;
         const cursor =
@@ -8289,33 +8383,6 @@ export const createAppStore = (props: AppStoreProps) => {
         const next = { ...open.expanded };
         next[index] = !next[index];
         return { artifactViewOpen: { ...open, expanded: next } };
-      });
-    },
-
-    enterArtifactDetail: () => {
-      set((state) => {
-        const open = state.artifactViewOpen;
-        if (!open || open.mode !== 'summary') return state;
-        // Guard: don't enter detail if there are no items to drill into.
-        if (countArtifactItems(open.summary) === 0) return state;
-        return {
-          artifactViewOpen: { ...open, mode: 'detail' },
-        };
-      });
-    },
-
-    leaveArtifactDetail: () => {
-      set((state) => {
-        const open = state.artifactViewOpen;
-        if (!open || open.mode !== 'detail') return state;
-        // Spec: pressing Escape returns cursor to the item that was open
-        // in detail. If the item is no longer valid (eg. the file shrank
-        // externally), clamp to first.
-        const count = countArtifactItems(open.summary);
-        const cursor = count === 0 ? 0 : Math.min(open.cursor, count - 1);
-        return {
-          artifactViewOpen: { ...open, mode: 'summary', cursor },
-        };
       });
     },
 
