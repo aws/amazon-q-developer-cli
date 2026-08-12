@@ -963,7 +963,8 @@ const startInitialization = (resumePickerSessionId?: string) => {
       if (
         cliArgs.sessions &&
         !resolvedSessionId &&
-        resolveAgentEngine() === 'kas'
+        resolveAgentEngine() === 'kas' &&
+        features.isEnabled(Feature.SessionDashboard)
       ) {
         markLaunchedIntoSessionDashboard();
         appStore
@@ -1193,6 +1194,19 @@ const startInitialization = (resumePickerSessionId?: string) => {
 
 // We wrap the entire startup in an async IIFE.
 const startApp = async () => {
+  // v3 + nightly: `--resume-picker` opens the full session dashboard instead
+  // of the legacy inline picker. Route it through the same boot path as
+  // `--sessions` (the dashboard is the picker now); closing it exits, and a
+  // picked row resumes through the normal machinery.
+  if (
+    cliArgs.resumePicker &&
+    resolveAgentEngine() === 'kas' &&
+    features.isEnabled(Feature.SessionDashboard)
+  ) {
+    cliArgs.sessions = true;
+    cliArgs.resumePicker = false;
+  }
+
   // Handle --resume-picker before Twinki renders: the interactive picker needs
   // raw terminal access that can't coexist with Twinki's input handling.
   // If --resume-picker is passed, list all sessions, run the picker, then

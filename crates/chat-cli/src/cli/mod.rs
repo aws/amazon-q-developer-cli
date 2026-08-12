@@ -646,6 +646,24 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
     let is_tui_supported = crate::util::system_info::is_tui_supported();
 
     tracing::debug!(?engine, is_tui_supported, tui_available, "launch decision");
+    if args.sessions
+        && let Some(reason) = session_dashboard_unavailable(engine)
+    {
+        let metric_engine = match engine {
+            chat::AgentEngine::V1 => Engine::V1,
+            chat::AgentEngine::V2 => Engine::V2,
+            chat::AgentEngine::Kas => Engine::V3,
+        };
+        crate::launch::emit_cli_invocation_telemetry(
+            &os.telemetry,
+            &os.database,
+            Some(telemetry_name.clone()),
+            metric_engine,
+        )
+        .await;
+        eprintln!("{reason}");
+        return Ok(ExitCode::SUCCESS);
+    }
     ensure_dashboard_tui_available(&args, is_tui_supported, tui_available)?;
     let fallback_to_v1 = !args.no_interactive && (!is_tui_supported || !tui_available);
     match engine {
@@ -663,6 +681,26 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
             launch_acp_session(os, &mut args, engine, telemetry_name).await
         },
     }
+}
+
+/// A friendly, non-error reason the `--sessions` dashboard can't launch, or
+/// `None` when it may proceed. The dashboard is a nightly-gated v3 preview:
+/// the rollout decides availability (enabled in debug/test builds and on
+/// nightly) and it only runs on the KAS (v3) engine.
+fn session_dashboard_unavailable(engine: chat::AgentEngine) -> Option<String> {
+    if !crate::rollout::rollout().is_enabled(crate::rollout::Feature::SessionDashboard) {
+        return Some(
+            "The session dashboard is a preview that's currently only available in nightly builds.".to_string(),
+        );
+    }
+    if !matches!(engine, chat::AgentEngine::Kas) {
+        return Some(
+            "The session dashboard is only available on the v3 agent engine. \
+             Re-run with `--agent-engine=kas` to use it."
+                .to_string(),
+        );
+    }
+    None
 }
 
 fn ensure_dashboard_tui_available(args: &ChatArgs, is_tui_supported: bool, tui_available: bool) -> Result<()> {

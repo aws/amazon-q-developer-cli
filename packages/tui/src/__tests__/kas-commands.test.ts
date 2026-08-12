@@ -216,18 +216,18 @@ describe('kas-commands', () => {
       ]);
     });
 
-    it('/sessions is a cloud-gated alias of /chat: same handler, same meta plus cloudOnly', async () => {
+    it('/sessions is a nightly-gated dashboard command with its own handler', async () => {
       const { KAS_COMMANDS, KasCommandName } = await import('../kas-commands');
       const { kasHandlers } = await import('../commands/kas-handlers');
-      const chatCmd = KAS_COMMANDS.find(
-        (cmd: KasCommand) => cmd.name === '/chat'
-      );
       const sessionsCmd = KAS_COMMANDS.find(
         (cmd: KasCommand) => cmd.name === '/sessions'
       );
       expect(sessionsCmd).toBeDefined();
-      expect(sessionsCmd!.meta).toEqual({ ...chatCmd!.meta, cloudOnly: true });
-      expect(kasHandlers[KasCommandName.Sessions]).toBe(
+      // Gated to the nightly session-dashboard preview, not a cloud alias.
+      expect(sessionsCmd!.feature).toBe(Feature.SessionDashboard);
+      expect(sessionsCmd!.meta).toEqual({ local: true });
+      // Opens the dashboard via its own handler, no longer an alias of /chat.
+      expect(kasHandlers[KasCommandName.Sessions]).not.toBe(
         kasHandlers[KasCommandName.Chat]
       );
     });

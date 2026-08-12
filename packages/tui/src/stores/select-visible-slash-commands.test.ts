@@ -14,7 +14,7 @@ import { createAppStore } from './app-store';
 import { selectVisibleSlashCommands } from './selectors';
 import { Kiro } from '../kiro';
 import { KAS_COMMANDS } from '../kas-commands';
-import { features } from '../features';
+import { features, Feature } from '../features';
 
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
@@ -311,25 +311,54 @@ describe('/repo cloud-only visibility gate (dark-ship)', () => {
     expect(visible.find((c) => c.name === '/repo')).toBeDefined();
   });
 
-  it('hides /sessions from a local session', () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
-    // cloudSessionActive defaults to false (a local session / released build).
-    const visible = selectVisibleSlashCommands(store.getState());
-    expect(visible.find((c) => c.name === '/sessions')).toBeUndefined();
-  });
-
-  it('shows /sessions once the session is marked cloud', () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
-    store.getState().setCloudSessionActive(true);
-    const visible = selectVisibleSlashCommands(store.getState());
-    expect(visible.find((c) => c.name === '/sessions')).toBeDefined();
-  });
-
   it('never shows /repo in v2 mode even with the cloud flag set', () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
     store.getState().setCloudSessionActive(true);
     const visible = selectVisibleSlashCommands(store.getState());
     expect(visible.find((c) => c.name === '/repo')).toBeUndefined();
+  });
+});
+
+describe('/sessions nightly feature gate', () => {
+  // getKasCommands() reads the feature set at store-creation time, so the env
+  // must be set (and the cache reset) before createAppStore.
+  const withFeatures = (value: string | undefined, fn: () => void) => {
+    const prev = process.env.KIRO_ENABLED_FEATURES;
+    if (value === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+    else process.env.KIRO_ENABLED_FEATURES = value;
+    features._resetForTests();
+    try {
+      fn();
+    } finally {
+      if (prev === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+      else process.env.KIRO_ENABLED_FEATURES = prev;
+      features._resetForTests();
+    }
+  };
+
+  it('hides /sessions when the session-dashboard feature is off', () => {
+    withFeatures('[]', () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      const visible = selectVisibleSlashCommands(store.getState());
+      expect(visible.find((c) => c.name === '/sessions')).toBeUndefined();
+    });
+  });
+
+  it('shows /sessions when the feature is on, in a local session', () => {
+    withFeatures(JSON.stringify([Feature.SessionDashboard]), () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      const visible = selectVisibleSlashCommands(store.getState());
+      expect(visible.find((c) => c.name === '/sessions')).toBeDefined();
+    });
+  });
+
+  it('shows /sessions when the feature is on, in a cloud session', () => {
+    withFeatures(JSON.stringify([Feature.SessionDashboard]), () => {
+      const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+      store.getState().setCloudSessionActive(true);
+      const visible = selectVisibleSlashCommands(store.getState());
+      expect(visible.find((c) => c.name === '/sessions')).toBeDefined();
+    });
   });
 });
 

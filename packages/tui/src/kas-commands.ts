@@ -147,6 +147,7 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     name: KasCommandName.Sessions,
     description:
       'Browse sessions (dashboard); "/sessions clean" removes empty ones',
+    feature: Feature.SessionDashboard,
     meta: {
       local: true,
     },

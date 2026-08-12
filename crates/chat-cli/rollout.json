@@ -88,5 +88,11 @@
     "treatment_percent": 100,
     "segment": "internal",
     "channel": "nightly"
+  },
+  "session_dashboard": {
+    "description": "Session dashboard preview: the /sessions browser, --sessions flag, and --resume-picker dashboard routing (v3). Nightly-only for now; widen channel once it soaks. Dial treatment_percent to 0 to kill-switch.",
+    "treatment_percent": 100,
+    "segment": "all",
+    "channel": "nightly"
   }
 }

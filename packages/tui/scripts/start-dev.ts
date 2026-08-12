@@ -177,8 +177,9 @@ function defaultRemoteSessionsEndpoint(authPortalUrl?: string): string {
 /**
  * KIRO_ENABLED_FEATURES is the authoritative feature set (a JSON string
  * array). Prod's launcher computes it from rollout.json; bun run dev bypasses
- * that, so features gate off. Merge `tangent` in (keeping any features the
- * caller already listed) so /tangent is testable locally.
+ * that, so features gate off. Merge `tangent` and `session_dashboard` in
+ * (keeping any features the caller already listed) so /tangent and the
+ * `/sessions` dashboard are testable locally.
  */
 function devEnabledFeatures(existing?: string): string {
   const set = new Set<string>();
@@ -193,6 +194,7 @@ function devEnabledFeatures(existing?: string): string {
     }
   }
   set.add('tangent');
+  set.add('session_dashboard');
   return JSON.stringify([...set]);
 }
 

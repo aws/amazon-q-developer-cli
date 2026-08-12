@@ -119,6 +119,12 @@ export enum Feature {
 	 * ramp shape as `remote_sandbox`.
 	 */
 	CloudConfig = "cloud_config",
+	/**
+	 * Session dashboard: the full-screen `/sessions` browser, the `--sessions`
+	 * launch flag, and (on v3) routing `--resume-picker` into the dashboard.
+	 * Nightly-only preview (`channel: nightly` in `rollout.json`).
+	 */
+	SessionDashboard = "session_dashboard",
 }
 
 /**
