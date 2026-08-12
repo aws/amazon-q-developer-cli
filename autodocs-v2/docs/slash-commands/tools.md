@@ -87,13 +87,19 @@ Trust all tools (no confirmation prompts).
 
 ### reset
 
-Reset all tools to agent's default permissions.
+Reset all runtime permissions accumulated during the session.
 
 ```
 /tools reset
 ```
 
-Removes session trust changes, restores agent configuration.
+Clears all session permissions including:
+- Trusted tools
+- Denied tools
+- Allowed shell commands
+- Filesystem read/write permissions (both allowed and denied)
+
+After reset, only the current working directory retains read permission. All other permissions return to requiring approval.
 
 ## Examples
 
@@ -162,6 +168,13 @@ All tools are now trusted for this session. Tools will run without approval prom
 ```
 Tool trust has been reset to default permission levels.
 ```
+
+This clears all accumulated session permissions:
+- Tools you trusted or denied
+- Shell commands you approved
+- File paths you granted read/write access to
+
+Only the current working directory keeps read permission.
 
 ### Example 7: Invalid Tool Name
 

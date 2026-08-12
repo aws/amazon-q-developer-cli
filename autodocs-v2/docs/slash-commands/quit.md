@@ -10,7 +10,6 @@ doc_meta:
   related: [chat-save]
 ---
 
-
 Exit the chat session and return to terminal.
 
 ## Overview

@@ -32,6 +32,16 @@ The `/model` command selects an AI model for the current session. You can either
 
 Type `/model ` and press Tab to autocomplete model names. Hints appear as you type.
 
+### Shadow Text Autocomplete (TUI only)
+
+As you type a partial model name after `/model `, ghost text appears showing the best matching completion. Press Tab or Right Arrow to accept the suggestion.
+
+```
+/model clau|de-sonnet-4
+       ^^^^
+       typed   ghost text (dimmed)
+```
+
 ## Subcommands
 
 ### (no subcommand)
@@ -73,9 +83,9 @@ This persists the setting to disk, so future sessions (including new process sta
 **Output**:
 ```
 Select model:
-  Claude 3.5 Sonnet (current) | 1.0x credit
-  Claude 3 Opus | 3.0x credit
-  Claude 3 Haiku | 0.3x credit
+  Claude Sonnet 4 (current) | 1.0x credits
+  Claude Opus 4.6 | 6.0x credits
+  Claude Haiku 3.5 | 0.25x credits
 ```
 
 Shows current model, rate multipliers, and descriptions.
@@ -201,6 +211,8 @@ Run `/model` without arguments to see the interactive picker with all available 
 **Fuzzy Matching**: Uses Jaro-Winkler similarity to suggest models when exact match not found.
 
 **Tab Completion**: Model names are fetched dynamically and filtered by prefix as you type.
+
+**Shadow Text**: In the TUI, shadow text shows the first matching model name as ghost text. Accepts via Tab or Right Arrow.
 
 **Persistence**: Model selection is session-only. Save a default explicitly with `/model set-current-as-default` or the `chat.defaultModel` setting. When resuming, the session's saved model is restored.
 

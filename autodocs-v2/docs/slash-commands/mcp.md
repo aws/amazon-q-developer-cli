@@ -29,7 +29,7 @@ The `/mcp` command displays status of MCP servers and provides subcommands to ma
 
 ### list (default)
 
-List all MCP servers (shows registry servers if configured by admin, or local configured servers).
+List all MCP servers. Shows both configured servers (with status and tool count) and registry servers (with enabled/disabled status) in a combined view.
 
 ```
 /mcp
@@ -78,11 +78,19 @@ Remove persisted OAuth credentials (token and dynamic client registration) for a
 
 ## Output
 
-Shows for each server:
-- Server name and command
+For `/mcp list`, displays two sections:
+
+**Configured Servers** - servers currently loaded:
+- Name
 - Status (initialized, loading, needs auth)
-- Available tools
-- Authentication action (if OAuth required — press Enter to copy the OAuth URL to your clipboard)
+- Tool count
+- OAuth URL (if authentication required)
+
+**Registry Servers** - servers available from admin-configured registry:
+- Name
+- Status (✓ enabled / disabled)
+- Version
+- Description
 
 ### Status View Keyboard Shortcuts
 
@@ -112,13 +120,18 @@ When viewing the MCP status panel (`/mcp` with no subcommand), the following key
 
 **Output**:
 ```
-@git (mcp-server-git)
-  Status: ✓ Initialized
-  Tools: git_status, git_commit, git_log
+/mcp list · 2 configured, 3 registry
 
-@github (mcp-server-github)
-  Status: ⚠ Needs authentication · Enter to authenticate
-  Tools: (not loaded)
+Configured Servers
+Name          Status         Tools
+@git          ✓ initialized  3
+@github       ⚠ needs auth   0
+
+Registry Servers
+Name          Status       Version   Description
+filesystem    ✓ enabled    1.2.0     File system operations
+database        disabled   2.0.1     Database connectivity
+web-scraper     disabled   1.0.0     Web scraping tools
 ```
 
 ### Example 2: Add MCP Server

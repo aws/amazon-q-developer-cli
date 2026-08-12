@@ -302,7 +302,7 @@ Context files have size limits to prevent overwhelming context window:
 
 **Token Counting**: Uses approximate token counter (characters / 4).
 
-**Context Window**: Size varies by model (e.g., 200K for Claude 3.5 Sonnet). When you switch models via `/model`, the context usage percentage recalculates immediately to reflect the new model's context window size.
+**Context Window**: Default is 200K tokens; some models (e.g., Claude Sonnet 4.6) support up to 1M tokens. When you switch models via `/model`, the context usage percentage recalculates immediately to reflect the new model's context window size.
 
 **File Matching**: Uses glob patterns with gitignore syntax. `**` matches recursively.
 
@@ -310,6 +310,6 @@ Context files have size limits to prevent overwhelming context window:
 
 **Agent vs Session**: Agent context from configuration (permanent). Session context from `/context add` or loaded conversations (temporary).
 
-**Skill Resources**: `skill://` resources show their estimated size based on the metadata sent to the model (name, description, filepath). Full skill content is loaded on demand.
+**Skill Resources**: `skill://` resources show their estimated token usage based on what's actually sent to the model. Skills with `inclusion: always` in their frontmatter show the full file's token count. Auto-included skills (the default) show only the summary line's token count (name + description + filepath), since that's all that's sent to the model until the skill is explicitly invoked.
 
 **Hooks**: Context can include dynamic content via hooks. See agent configuration documentation.
