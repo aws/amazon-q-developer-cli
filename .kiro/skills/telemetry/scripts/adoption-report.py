@@ -17,6 +17,10 @@ TERMINAL_QUERY_STATUSES = {"Complete", "Failed", "Cancelled", "Timeout", "Unknow
 
 INTERNAL_DIRECTORY = "d-9067925563"
 
+# Canonical Kiro Crew ACP client names. Used for normalization in the parser
+# and for column highlighting in the renderer. Keep both in sync via this constant.
+KIRO_CREW_CLIENTS = frozenset({"kirocrew", "meshclaw", "kiroclaw", "spudclaw", "cargoclaw"})
+
 QUERY = """\
 fields @timestamp, user_id, agent_engine, session_interface
 | filter `kuts.forwarded` = "true"
@@ -52,6 +56,16 @@ fields @timestamp, user_id, agent_engine
 | stats count_distinct(user_id) as users
   by bin(24h) as day, agent_engine
 | sort day asc
+"""
+
+QUERY_ACP_BY_CLIENT = """\
+fields @timestamp, user_id, acp_client_name
+| filter `kuts.forwarded` = "true"
+  and ispresent(kiro_cli_user_turns)
+  and session_interface = "external_acp"
+| stats sum(kiro_cli_user_turns) as turns, count_distinct(user_id) as users
+  by bin(24h) as day, acp_client_name
+| sort day asc, turns desc
 """
 
 
@@ -252,7 +266,10 @@ def query_metrics(profile, region, log_group, start_date, end_date, timeout_seco
     internal_engine_response = run_logs_query(
         profile, region, log_group, start_date, end_date, QUERY_INTERNAL_BY_ENGINE, "internal-engine", timeout_seconds
     )
-    return main_response, total_response, total_engine_response, internal_engine_response
+    acp_client_response = run_logs_query(
+        profile, region, log_group, start_date, end_date, QUERY_ACP_BY_CLIENT, "acp-client", timeout_seconds
+    )
+    return main_response, total_response, total_engine_response, internal_engine_response, acp_client_response
 
 
 def combine_statistics(*responses):
@@ -351,6 +368,43 @@ def parse_total_users(response, end_date):
     return days
 
 
+def parse_acp_client_results(response, end_date):
+    """Parse ACP client query into: {day: {client_name: {turns, users}}}"""
+    status = response.get("status")
+    if status and status != "Complete":
+        raise ValueError(f"ACP client query results are not complete (status: {status})")
+
+    days = {}
+    for raw_row in response.get("results", []):
+        row = row_to_dict(raw_row)
+        raw_day = row.get("day", "")
+        try:
+            day = date.fromisoformat(raw_day[:10])
+        except ValueError as error:
+            raise ValueError(f"invalid day value {raw_day!r}") from error
+
+        if day > end_date:
+            continue
+
+        client = row.get("acp_client_name") or "(none)"
+        # Normalize: casefold + strip separators, then check if it matches a known client
+        normalized = client.casefold().replace("-", "").replace("_", "").replace(" ", "")
+        client = normalized if normalized in KIRO_CREW_CLIENTS else client
+        turns = int(float(row.get("turns", "0")))
+        users = int(float(row.get("users", "0")))
+
+        if day not in days:
+            days[day] = {}
+        # Accumulate: sum turns, take max users (conservative lower bound for collapsed spellings)
+        if client in days[day]:
+            days[day][client]["turns"] += turns
+            days[day][client]["users"] = max(days[day][client]["users"], users)
+        else:
+            days[day][client] = {"turns": turns, "users": users}
+
+    return days
+
+
 def format_bytes(value):
     amount = float(value)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
@@ -373,6 +427,7 @@ def render_report(
     total_users_by_day,
     total_engine_days,
     internal_engine_days,
+    acp_client_days=None,
     statistics=None,
     generated_at=None,
     region=DEFAULT_REGION,
@@ -475,6 +530,50 @@ def render_report(
             f"| {v3_int:,} | {v3_ext:,} |"
         )
 
+    # Section 3: ACP Client Breakdown (KiroCrew etc.)
+    if acp_client_days:
+        # Collect all client names across all days
+        all_clients = set()
+        for day_data in acp_client_days.values():
+            all_clients.update(day_data.keys())
+
+        # Highlight known Kiro Crew family clients
+        highlighted = sorted(all_clients & KIRO_CREW_CLIENTS)
+        other_clients = sorted(all_clients - KIRO_CREW_CLIENTS - {"(none)"})
+
+        lines.extend([
+            "",
+            "## ACP Client Breakdown",
+            "",
+            "*Traffic by `acp_client_name` for `external_acp` sessions. Unnamed = clients not reporting their name (pre-fix or old CLI versions).*",
+            "",
+        ])
+
+        # Sub-table: Kiro Crew family
+        header_cols = ["Date", "Unnamed (turns)", "Unnamed (users)"]
+        for c in highlighted:
+            header_cols.extend([f"{c} (turns)", f"{c} (users)"])
+        if other_clients:
+            header_cols.append("Other Named (turns)")
+
+        lines.append("| " + " | ".join(header_cols) + " |")
+        lines.append("|------|" + "|".join(["------:" for _ in header_cols[1:]]) + "|")
+
+        for day in sorted_days:
+            day_data = acp_client_days.get(day, {})
+            unnamed = day_data.get("(none)", {"turns": 0, "users": 0})
+            row = [day.isoformat(), f"{unnamed['turns']:,}", f"{unnamed['users']:,}"]
+            for c in highlighted:
+                cd = day_data.get(c, {"turns": 0, "users": 0})
+                row.extend([f"{cd['turns']:,}", f"{cd['users']:,}"])
+            if other_clients:
+                other_turns = sum(day_data.get(c, {}).get("turns", 0) for c in other_clients)
+                row.append(f"{other_turns:,}")
+            lines.append("| " + " | ".join(row) + " |")
+
+        lines.append("")
+        lines.append("*Note: Before PR #2874 fix (merged 2026-08-11), KiroCrew's main path (`AcpRuntime`) did not send `clientInfo.name` — those turns appear as Unnamed.*")
+
     # Methodology
     lines.extend([
         "",
@@ -485,7 +584,7 @@ def render_report(
         "- **Users**: `count_distinct(user_id)` — unique user identities per day.",
         "- **Total**: Deduplicated across all engines and interfaces.",
         "- **Coverage**: ~81% of turns have `user_id` (SSO/IdC users). ~19% missing (Builder ID) are not counted.",
-        "- **Cost**: The report issues four separate Logs Insights queries over the same window; the scan line above sums all four.",
+        "- **Cost**: The report issues five Logs Insights queries over the same window; the scan line above sums all five.",
         "",
         "### Column Definitions",
         "",
@@ -528,6 +627,7 @@ def main(argv=None):
                 ("total", QUERY_TOTAL_USERS),
                 ("total-engine", QUERY_TOTAL_BY_ENGINE),
                 ("internal-engine", QUERY_INTERNAL_BY_ENGINE),
+                ("acp-client", QUERY_ACP_BY_CLIENT),
             ):
                 print(f"-- {label} --")
                 print(q)
@@ -538,9 +638,10 @@ def main(argv=None):
             total_response = {"status": "Complete", "results": []}
             total_engine_response = {"status": "Complete", "results": []}
             internal_engine_response = {"status": "Complete", "results": []}
+            acp_client_response = {"status": "Complete", "results": []}
             print(
                 "Warning: --input-json only provides the main query data. "
-                "Total and Internal/External sections will be incomplete.",
+                "Total, Internal/External, and ACP Client sections will be incomplete.",
                 file=sys.stderr,
             )
         else:
@@ -550,7 +651,7 @@ def main(argv=None):
                 f"Querying {start_date} through {end_date} with AWS profile {profile}",
                 file=sys.stderr,
             )
-            main_response, total_response, total_engine_response, internal_engine_response = query_metrics(
+            main_response, total_response, total_engine_response, internal_engine_response, acp_client_response = query_metrics(
                 profile,
                 args.region,
                 args.log_group,
@@ -563,8 +664,9 @@ def main(argv=None):
         total_users_by_day = parse_total_users(total_response, end_date)
         total_engine_days = parse_internal_results(total_engine_response, end_date)
         internal_engine_days = parse_internal_results(internal_engine_response, end_date)
+        acp_client_days = parse_acp_client_results(acp_client_response, end_date)
         combined_stats = combine_statistics(
-            main_response, total_response, total_engine_response, internal_engine_response
+            main_response, total_response, total_engine_response, internal_engine_response, acp_client_response
         )
         report = render_report(
             start_date,
@@ -573,6 +675,7 @@ def main(argv=None):
             total_users_by_day,
             total_engine_days,
             internal_engine_days,
+            acp_client_days,
             combined_stats,
             region=args.region,
             log_group=args.log_group,
