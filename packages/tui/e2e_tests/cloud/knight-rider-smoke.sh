@@ -385,31 +385,44 @@ if [ "$MODE" = "mock" ]; then
   echo "$LIST_OUT" | grep -q "| cloud |" && pass "cloud rows" || fail "cloud rows"
 fi
 
-# ── dark-ship: released build must hide an injected cloud row ───────────────
+# ── released-rollout listing shape (release binary only) ────────────────────
 # Only sound on a RELEASE binary: a debug build force-enables every rollout
 # feature (cfg!(debug_assertions)), so the released shape is unobservable —
 # this mirrors the Rust suite's #[cfg_attr(debug_assertions, ignore)] guard.
-# We INJECT a cloud row via the test seam (so a broken gate would visibly leak
-# it), drop every cloud env, and use a throwaway HOME so the developer's real
-# sessions can't skew the result. With the rollout off, the cloud row must be
-# filtered out; only cloud-specific markers are treated as a leak (a plain
-# local row is expected and must not fail the check).
+# CONTRACT (post-ramp, #3913): remote_sandbox is rolled out to ALL users at
+# 100%, so a released build MUST list an injected cloud row with its cloud
+# tag — a missing row now means the rollout regressed (or the kill-switch,
+# rollout.json treatment_percent, was dialed down; if that ever happens
+# deliberately, this section flips back to asserting the row is hidden).
+# The row is INJECTED via the test seam, every cloud env is dropped, and a
+# throwaway HOME keeps the developer's real sessions out of the result.
 if [ "$BIN_PROFILE" = "release" ]; then
   DARK_HOME="$(mktemp -d)"
   DARK_MOCK='[{"sessionId":"sess_local1111-2222-4333-8444-555555555555","cwd":"'"$PWD"'","title":"KR local session","updatedAt":"2026-01-01T00:00:00Z"},{"sessionId":"cloudaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee","cwd":"'"$PWD"'","title":"KR cloud row","updatedAt":"2026-01-02T00:00:00Z","executionTarget":"cloud-sandbox","status":"in_progress"}]'
+  # KIRO_API_KEY satisfies the auth gate without any network or login state
+  # (active_auth_source keys off env presence alone) — without it a fresh
+  # HOME sends the release binary into interactive login, which on a captured
+  # stdout waits out the full 10-minute OAuth timeout and then errors,
+  # leaving the greps below to run against an error message. It does not
+  # force-enable any rollout feature (KIRO_TEST_MODE stays dropped).
   DARK_OUT=$(env -u KIRO_TEST_MODE -u KIRO_REMOTE_SESSIONS_ENDPOINT -u KIRO_TEST_TUI_JS_PATH -u KIRO_KAS_SERVER_PATH -u KIRO_KAS_NODE_PATH \
-    HOME="$DARK_HOME" KIRO_TEST_MOCK_KAS_SESSIONS="$DARK_MOCK" \
+    HOME="$DARK_HOME" KIRO_TEST_MOCK_KAS_SESSIONS="$DARK_MOCK" KIRO_API_KEY="rollout-shape-check-key" \
     "$BIN" chat --list-sessions 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
   rm -rf "$DARK_HOME"
-  if echo "$DARK_OUT" | grep -q "KR cloud row"; then
-    fail "dark-ship leak (injected cloud row listed on released build)"
-  elif echo "$DARK_OUT" | grep -qE "\| cloud \|"; then
-    fail "dark-ship leak (cloud environment tag on released build)"
+  # Positive control FIRST: the injected LOCAL row must list. If it doesn't,
+  # the listing never ran (auth gate, crash, flag rename) and any cloud-row
+  # claim below would prove nothing.
+  if ! echo "$DARK_OUT" | grep -q "KR local session"; then
+    fail "released-rollout control (injected local row not listed — listing never ran)"
+  elif ! echo "$DARK_OUT" | grep -q "KR cloud row"; then
+    fail "released-rollout regression (cloud row hidden on released build — remote_sandbox ramp is 100%)"
+  elif ! echo "$DARK_OUT" | grep -qE "\| cloud \|"; then
+    fail "released-rollout regression (cloud row listed without its cloud environment tag)"
   else
-    pass "dark-ship listing clean (injected cloud row hidden on released build)"
+    pass "released-rollout listing shape (injected cloud row listed with cloud tag)"
   fi
 else
-  say "  SKIP  dark-ship check (needs a release binary; debug force-enables the rollout)"
+  say "  SKIP  released-rollout listing check (needs a release binary; debug force-enables the rollout)"
 fi
 
 # ── summary (process cleanup runs via the EXIT trap) ────────────────────────

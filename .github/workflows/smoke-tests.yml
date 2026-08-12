@@ -286,6 +286,143 @@ jobs:
             exit 1
           fi
 
+  cloud-smoke:
+    # Deterministic cloud-session smoke: drives the built binary through the
+    # scripted knight-rider cloud scenarios against the hermetic mock BFF
+    # (packages/tui/e2e_tests/cloud/knight-rider-smoke.sh). Release-profile
+    # binary ON PURPOSE: the dark-ship injected-row check is only meaningful
+    # there (a debug build force-enables every rollout feature and the script
+    # SKIPs it), and this is the only pipeline that runs it. The mock BFF is
+    # the backend — no LLM, no prod credentials — so a failure is a CLI
+    # regression, not backend weather; the only AWS touch is the
+    # CodeArtifact login for the @kiro/agent install (essential: without it
+    # there is no KAS server and every scenario fails at boot, hence no
+    # continue-on-error on that step). Runs unconditionally on every
+    # invocation (dispatch platform/engine inputs are for the LLM smoke
+    # matrix; this job is single-platform by design).
+    name: Cloud Smoke (mock BFF)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/release/chat_cli
+      # A source-built binary has no embedded KAS/TUI bundle (packaging adds
+      # those), so explicit paths are provided, mirroring the E2E harness:
+      # the KAS server from node_modules, the TUI bundle from dist, and the
+      # runner's node (>= 20) for the KAS process — without KIRO_KAS_NODE_PATH
+      # the binary falls back to running KAS under bun, a test-only path.
+      KIRO_KAS_SERVER_PATH: ${{ github.workspace }}/packages/tui/node_modules/@kiro/agent/dist/server/acp-server.js
+      KIRO_KAS_NODE_PATH: node
+      KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+      TERM: xterm-256color
+      COLORTERM: truecolor
+      FORCE_COLOR: '3'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Read pinned bun version
+        id: bun-ver
+        shell: bash
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: 'v0.16.0'
+
+      - name: Set Rust compiler wrapper
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-cloud-smoke-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-cloud-smoke-${{ runner.os }}-
+
+      # Release profile on purpose — see the dark-ship note above.
+      - name: Build chat_cli (release)
+        run: cargo build -p chat_cli --release
+
+      - name: CodeArtifact login (@kiro/agent — required, see job comment)
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install JS dependencies
+        run: bun install
+
+      - name: Build twinki
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Build TUI bundle
+        run: bun run build
+        working-directory: packages/tui
+
+      # continue-on-error mirrors the sibling smoke job: build-and-release
+      # treats smoke_tests as non-blocking, and a red job here would fail the
+      # release run's check + fire the nightly failure Slack ping while the
+      # judge report (which only reads smoke-frames-*) stayed silent about
+      # why. The step summary below carries the verdict instead; failures
+      # surface there and in the uploaded evidence.
+      - name: Run cloud smoke (mock)
+        id: cloud-smoke
+        continue-on-error: true
+        timeout-minutes: 35
+        working-directory: packages/tui
+        run: |
+          set -o pipefail
+          bash e2e_tests/cloud/knight-rider-smoke.sh mock 2>&1 | tee /tmp/cloud-smoke-run.log
+
+      - name: Collect diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p packages/tui/e2e_tests/test-outputs/diagnostics
+          cp /tmp/cloud-smoke-run.log /tmp/kr-cloud-smoke.log /tmp/mock-bff-smoke.log \
+            packages/tui/e2e_tests/test-outputs/diagnostics/ 2>/dev/null || true
+
+      - name: Write step summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Cloud Smoke (mock BFF, release binary)"
+            echo ""
+            if [ "${{ steps.cloud-smoke.outcome }}" = "success" ]; then
+              echo "✅ ALL PASS"
+            else
+              echo "❌ FAILED — see cloud-smoke-frames artifact (diagnostics/ has the run + BFF logs)"
+            fi
+            echo ""
+            echo '```'
+            grep -E "^  (PASS|FAIL|SKIP|WARN)" /tmp/cloud-smoke-run.log 2>/dev/null || echo "no check lines captured"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload cloud smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloud-smoke-frames-${{ github.run_id }}
+          path: packages/tui/e2e_tests/test-outputs/
+          if-no-files-found: warn
+          retention-days: 30
+
   judge:
     name: LLM Judge
     needs: [matrix, smoke]
