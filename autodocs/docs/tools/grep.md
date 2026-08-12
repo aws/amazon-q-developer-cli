@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: tool
@@ -100,7 +100,27 @@ Grep walks the directory tree using ignore rules (.gitignore), applies file filt
 
 ## Configuration
 
-No agent configuration available - grep is trusted by default.
+Configure path restrictions in agent's `toolsSettings`:
+
+```json
+{
+  "toolsSettings": {
+    "grep": {
+      "allowedPaths": ["~/projects", "./src/**"],
+      "deniedPaths": ["/etc/**", "~/.ssh/**"],
+      "allowReadOnly": true
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `allowedPaths` | array | `[]` | Paths searchable without prompting. Supports glob patterns |
+| `deniedPaths` | array | `[]` | Paths that are blocked. Evaluated before allowedPaths |
+| `allowReadOnly` | boolean | `false` | Auto-allow searches outside current working directory without prompting |
+
+**allowReadOnly**: When enabled, grep searches outside the current working directory are automatically allowed without user confirmation. Denied paths are still respected.
 
 ## Parameters
 

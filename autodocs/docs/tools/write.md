@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-05-21
-  commit: 69ae7a5f5
+  validated: 2026-08-11
+  commit: e339d50be
   status: validated
   testable_headless: true
   category: tool
@@ -161,7 +161,7 @@ Find and replace exact text match.
 }
 ```
 
-**Behavior**: Fails if old_str not found or found multiple times. Include enough context in old_str to ensure unique match.
+**Behavior**: Fails if old_str not found or found multiple times. Include enough context in old_str to ensure unique match. Line endings are normalized during matching (CRLF and LF are treated as equivalent), and the file's original line endings are preserved.
 
 ### insert
 
@@ -289,7 +289,7 @@ Append text to end of file.
 
 ## Limitations
 
-- str_replace requires exact match - whitespace and newlines must match precisely
+- str_replace requires exact match - whitespace and newlines must match precisely (though CRLF/LF differences are handled automatically)
 - str_replace fails if old_str appears 0 or >1 times (safety feature)
 - create overwrites existing files without confirmation
 - No built-in undo - use version control

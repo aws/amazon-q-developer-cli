@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2026-04-10
-  commit: 9111223a6
+  validated: 2026-08-11
+  commit: e339d50be
   status: validated
   testable_headless: true
   category: tool
-  title: read
+  title: fs_read
   description: Read files, directories, and images with support for line ranges, pattern search, and batch operations
   keywords: [fs_read, read, file, directory, image, search, batch]
-  related: [write, grep, glob]
+  related: [fs-write, grep, glob]
 ---
 
 # fs_read
@@ -124,7 +124,8 @@ Configure path restrictions in agent's `toolsSettings`:
   "toolsSettings": {
     "fs_read": {
       "allowedPaths": ["~/projects", "./src/**"],
-      "deniedPaths": ["/etc/**", "~/.ssh/**"]
+      "deniedPaths": ["/etc/**", "~/.ssh/**"],
+      "allowReadOnly": true
     }
   }
 }
@@ -134,8 +135,11 @@ Configure path restrictions in agent's `toolsSettings`:
 |--------|------|---------|-------------|
 | `allowedPaths` | array | `[]` | Paths readable without prompting. Supports glob patterns (gitignore syntax) |
 | `deniedPaths` | array | `[]` | Paths that are blocked. Evaluated before allowedPaths. Supports glob patterns |
+| `allowReadOnly` | boolean | `false` | Auto-allow reads outside current working directory without prompting |
 
 **Glob Pattern Behavior**: Patterns like `~/temp` match `~/temp/child` and all descendants.
+
+**allowReadOnly**: When enabled, fs_read operations outside the current working directory are automatically allowed without user confirmation. Denied paths are still respected.
 
 ## Operation Modes
 
@@ -314,9 +318,9 @@ Read image files for vision models.
 ## Limitations
 
 - Line mode reads entire file into memory - may be slow for very large files
-- Search mode is case-insensitive and matches per-line only (no multi-line patterns)
 - Directory mode respects .gitignore but may still list many files in large projects
 - Image mode requires vision-capable model
+- Search mode is case-insensitive and matches per-line only (no multi-line patterns)
 - Maximum tool response size is enforced - very large outputs may be truncated
 - Batch operations execute sequentially, not in parallel
 

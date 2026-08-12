@@ -1,13 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
   title: /usage
   description: Show billing and credits information for current session
-  keywords: [usage, billing, credits, cost]
+  keywords: [usage, billing, credits, cost, limit, overage, subscription]
+  related: []
 ---
 
 # /usage
@@ -30,6 +31,22 @@ Shows:
 - Credits used in session
 - Remaining credits
 - Cost breakdown
+
+## Monthly Limit Reached
+
+When you reach your monthly request limit, Kiro displays a message based on your account type:
+
+**Enterprise users**: Contact your administrator for account management.
+
+**Legacy Q Developer Pro users**: You can cancel your legacy subscription and purchase a Kiro subscription for increased limits.
+
+**Kiro users with overages enabled**: You've used your monthly included requests and are now using overages. You can upgrade your plan to get more included requests.
+
+**Kiro users who can enable overages**: You can enable overages to continue making requests, or upgrade your plan for more included requests.
+
+**Kiro users who can upgrade**: Upgrade your plan for increased limits.
+
+All messages include a link to the Kiro pricing page and indicate when your limit will reset (the first of the next month).
 
 ## Limitations
 
@@ -72,3 +89,9 @@ Session Usage:
 **Symptom**: Unexpected cost  
 **Cause**: Different model rates  
 **Solution**: Costs vary by model. Check model pricing.
+
+### Issue: Monthly Limit Reached
+
+**Symptom**: Error message about reaching monthly limit  
+**Cause**: You've used all your included requests for the month  
+**Solution**: Options depend on your account type - enable overages, upgrade your plan, or wait until the next month when limits reset.

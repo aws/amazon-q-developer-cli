@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: tool
@@ -94,7 +94,27 @@ Glob walks the directory tree from a base path, applies the pattern to each path
 
 ## Configuration
 
-No agent configuration available - glob is trusted by default.
+Configure path restrictions in agent's `toolsSettings`:
+
+```json
+{
+  "toolsSettings": {
+    "glob": {
+      "allowedPaths": ["~/projects", "./src/**"],
+      "deniedPaths": ["/etc/**", "~/.ssh/**"],
+      "allowReadOnly": true
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `allowedPaths` | array | `[]` | Paths searchable without prompting. Supports glob patterns |
+| `deniedPaths` | array | `[]` | Paths that are blocked. Evaluated before allowedPaths |
+| `allowReadOnly` | boolean | `false` | Auto-allow glob searches outside current working directory without prompting |
+
+**allowReadOnly**: When enabled, glob searches outside the current working directory are automatically allowed without user confirmation. Denied paths are still respected.
 
 ## Parameters
 
