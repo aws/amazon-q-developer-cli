@@ -7,7 +7,7 @@
  * chosen dimension, after applying a set of composable filters.
  *
  * Dimensions: 'workspace' (default) · 'recency' · 'none'.
- * Filters (all optional, ANDed): current-workspace, bookmarked, tag.
+ * Filters (all optional, combined with AND): current-workspace, bookmarked, tag.
  * Tag is deliberately a FILTER, not a group-by, to sidestep the multi-tag
  * "which bucket?" ambiguity.
  */

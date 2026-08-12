@@ -2483,4 +2483,18 @@ describe('/sessions dashboard opens regardless of cloud state', () => {
     expect(ctx._spies.setShowSessionDashboard).toHaveBeenCalledTimes(1);
     expect(ctx._spies.setMode).toHaveBeenCalledWith('session-dashboard');
   });
+
+  it('warns and does not open the dashboard on a non-KAS engine', () => {
+    const ctx = createMockCommandContext({});
+    (ctx as { agentEngine: string }).agentEngine = 'v2';
+    openDashboard(ctx as ReturnType<typeof dashboardCtx>);
+    expect(ctx._spies.setShowSessionDashboard).not.toHaveBeenCalled();
+    expect(ctx._spies.setMode).not.toHaveBeenCalled();
+    const showAlert = ctx._spies.showAlert as any;
+    expect(
+      showAlert.mock.calls.some((c: any[]) =>
+        String(c[0]).includes('V3 (KAS) engine only')
+      )
+    ).toBe(true);
+  });
 });
