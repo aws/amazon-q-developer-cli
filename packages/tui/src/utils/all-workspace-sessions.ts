@@ -91,7 +91,9 @@ function normalizeListingEntry(value: unknown): SessionListingInput | null {
       : input.parentSessionId
     : undefined;
   const createdReason =
-    input.createdReason === 'subagent' || input.createdReason === 'rewind'
+    input.createdReason === 'subagent' ||
+    input.createdReason === 'rewind' ||
+    input.createdReason === 'tangent'
       ? input.createdReason
       : undefined;
   const sessionId =
@@ -230,7 +232,9 @@ async function readKasStore(
       title: data.title,
       updatedAt: data.lastModifiedAt ?? data.createdAt,
       parentSessionId,
-      createdReason: data.sessionCreatedReason,
+      // KAS `session.json` records this as `createdReason` (camelCase); older
+      // field name kept as a fallback. Feeds tangent/subagent/rewind nesting.
+      createdReason: data.createdReason ?? data.sessionCreatedReason,
       executionTarget: data.executionTarget,
       source: copy.placement === 'remote' ? 'remote' : 'local',
       engine: 'v3',

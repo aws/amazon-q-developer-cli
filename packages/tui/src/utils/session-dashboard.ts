@@ -32,18 +32,24 @@ export interface SessionDashboardEntry {
   engine?: 'classic' | 'v2' | 'v3';
   /** True when this session is a child of another (subagent / crew stage). */
   isSubagent: boolean;
-  /** The parent session id when this entry is a subagent or rewind fork. */
+  /** The parent session id when this entry is a subagent, rewind, or tangent. */
   parentSessionId?: string;
   /**
    * Why the session was derived from a parent, when applicable:
-   * - `subagent` — a subagent/crew child (nested under its parent)
-   * - `rewind` — a fork of an earlier turn (kept top-level, tagged as an
-   *   alternate timeline)
+   * - `subagent` — a subagent/crew child (nested + hidden, shown in preview)
+   * - `rewind` — a fork of an earlier turn (nested + hidden, alternate timeline)
+   * - `tangent` — a user-created side-conversation (nested but VISIBLE and
+   *   resumable, rendered indented under its parent)
    * Absent for ordinary top-level sessions.
    */
-  createdReason?: 'subagent' | 'rewind';
-  /** Child sessions grouped under this entry (subagents/crew stages). */
+  createdReason?: 'subagent' | 'rewind' | 'tangent';
+  /** Hidden child sessions (subagents/crew stages) — surfaced in the preview
+   *  pane, not the master list. */
   children: SessionDashboardEntry[];
+  /** Visible tangent children, rendered indented under this entry in the
+   *  master list (kept separate from `children` so the hidden-nesting and
+   *  preview paths are unaffected). */
+  tangentChildren: SessionDashboardEntry[];
   /** True when this session is the currently active physical session. */
   isActive: boolean;
 }
@@ -53,7 +59,7 @@ export interface SessionDashboardEntry {
  *  from V2 session metadata. */
 export type SessionListingInput = SessionInfoEntry & {
   parentSessionId?: string;
-  createdReason?: 'subagent' | 'rewind';
+  createdReason?: 'subagent' | 'rewind' | 'tangent';
   /** Which engine's store the row came from. Absent == unknown (treated as v3). */
   engine?: 'classic' | 'v2' | 'v3';
 };
@@ -210,10 +216,10 @@ export function sessionMatchesActive(
     source: s.source,
     messageCount: s.messageCount,
     engine: s.engine,
-    // A subagent child is nested under its parent; a rewind fork stays
-    // top-level (an alternate timeline) but is tagged via createdReason.
-    // BOTH are hidden from the main listing — they appear in the parent's
-    // preview pane instead of cluttering the master list.
+    // Subagents and rewind forks nest under their parent and are HIDDEN from
+    // the master list (surfaced in the preview pane). Tangents are deliberately
+    // excluded here — they are user-created side-conversations that stay
+    // VISIBLE and resumable, nested via `tangentChildren` instead.
     isSubagent:
       s.createdReason === 'subagent' ||
       s.createdReason === 'rewind' ||
@@ -225,6 +231,7 @@ export function sessionMatchesActive(
     parentSessionId: s.parentSessionId,
     createdReason: s.createdReason,
     children: [],
+    tangentChildren: [],
     isActive: sessionMatchesActive(
       s,
       activeSessionId,
@@ -265,6 +272,55 @@ export function applySubagentNesting(
     );
     if (parent) {
       parent.children.push(entry);
+      nestedIdentities.add(sessionIdentityKey(entry));
+    }
+  }
+
+  for (const group of groups) {
+    group.sessions = group.sessions.filter(
+      (session) => !nestedIdentities.has(sessionIdentityKey(session))
+    );
+  }
+  return groups;
+}
+
+/**
+ * Nest tangent sessions under their parent as VISIBLE children.
+ *
+ * Unlike {@link applySubagentNesting} (which hides its children in the preview
+ * pane), tangents are user-created side-conversations that stay resumable, so
+ * they move into the parent's `tangentChildren` and are re-emitted as indented
+ * rows by the nav model. A tangent whose parent is not in the same group/list
+ * (e.g. a deeper tangent whose parent was itself nested away) stays top-level
+ * as a flat, still-tagged row rather than vanishing.
+ *
+ * Runs after {@link applySubagentNesting} so parents are already top-level.
+ * Mutates and returns the same groups array.
+ */
+export function applyTangentNesting(
+  groups: WorkspaceGroup[]
+): WorkspaceGroup[] {
+  const entryByIdentity = new Map<string, SessionDashboardEntry>();
+  for (const group of groups) {
+    for (const session of group.sessions) {
+      entryByIdentity.set(sessionIdentityKey(session), session);
+    }
+  }
+
+  const nestedIdentities = new Set<string>();
+  for (const entry of entryByIdentity.values()) {
+    if (entry.createdReason !== 'tangent' || !entry.parentSessionId) continue;
+    const parent = entryByIdentity.get(
+      sessionIdentityKey({
+        sessionId: entry.parentSessionId,
+        engine: entry.engine,
+        source: entry.source,
+      })
+    );
+    // Don't nest under a parent that is itself a nested tangent child — that
+    // parent won't be emitted as a top-level row, so its child would be lost.
+    if (parent && parent.createdReason !== 'tangent') {
+      parent.tangentChildren.push(entry);
       nestedIdentities.add(sessionIdentityKey(entry));
     }
   }

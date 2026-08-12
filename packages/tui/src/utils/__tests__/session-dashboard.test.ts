@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
   applySubagentNesting,
+  applyTangentNesting,
   filterSessionsByText,
   workspaceLabel,
   conversationKey,
@@ -12,6 +13,7 @@ import {
   type WorkspaceGroup,
 } from '../session-dashboard';
 import { groupSessions } from '../session-grouping';
+import { buildNavModel } from '../session-dashboard-nav';
 import type { SessionInfoEntry } from '../../types/session-client';
 
 function makeSession(
@@ -103,7 +105,7 @@ describe('session type examples', () => {
   function mk(
     overrides: Partial<SessionInfoEntry> & {
       parentSessionId?: string;
-      createdReason?: 'subagent' | 'rewind';
+      createdReason?: 'subagent' | 'rewind' | 'tangent';
     } = {}
   ) {
     return {
@@ -172,19 +174,65 @@ describe('session type examples', () => {
     expect(orig.children[0]!.parentSessionId).toBe('orig');
   });
 
-  it('EXAMPLE: tangent is not a persisted session type', () => {
-    // Tangent mode (V1) keeps state in memory and never writes a session
-    // file, so it can never appear in a listing. A session must carry an
-    // explicit subagent/rewind reason to be treated as derived; anything
-    // else (including a hypothetical "tangent") is an ordinary top-level
-    // session with no lineage.
-    const sessions = [mk({ sessionId: 'plain', createdReason: undefined })];
-    const groups = applySubagentNesting(
-      groupByWorkspace(sessions, '/workspace/proj')
+  it('EXAMPLE: tangent nests under its parent as a VISIBLE, resumable child', () => {
+    const sessions = [
+      mk({ sessionId: 'root', title: 'what does tangent do' }),
+      mk({
+        sessionId: 'tangent-1',
+        title: 'tangent-1',
+        parentSessionId: 'root',
+        createdReason: 'tangent',
+      }),
+    ];
+
+    const groups = applyTangentNesting(
+      applySubagentNesting(groupByWorkspace(sessions, '/workspace/proj'))
     );
-    const entry = groups[0]!.sessions[0]!;
-    expect(entry.createdReason).toBeUndefined();
-    expect(entry.isSubagent).toBe(false);
+    // Parent stays top-level; the tangent moves into tangentChildren (NOT the
+    // hidden `children` set) and is not flagged as a subagent.
+    expect(groups[0]!.sessions).toHaveLength(1);
+    const root = groups[0]!.sessions[0]!;
+    expect(root.sessionId).toBe('root');
+    expect(root.children).toHaveLength(0);
+    expect(root.tangentChildren.map((c) => c.sessionId)).toEqual(['tangent-1']);
+    const tangent = root.tangentChildren[0]!;
+    expect(tangent.createdReason).toBe('tangent');
+    expect(tangent.isSubagent).toBe(false);
+    expect(tangent.parentSessionId).toBe('root');
+
+    // The nav model re-emits the tangent as its own navigable (resumable) row
+    // right after its parent.
+    const nav = buildNavModel({
+      groups,
+      isRowVisible: () => true,
+      expandedGroups: new Set(),
+      isSearching: false,
+      groupBy: 'workspace',
+      pinnedGroupKey: '\u0000bookmarked',
+    });
+    const ids = nav.navItems.map((n) =>
+      n.type === 'session' ? n.entry.sessionId : `expand:${n.workspace}`
+    );
+    expect(ids).toEqual(['root', 'tangent-1']);
+  });
+
+  it('EXAMPLE: orphan tangent (parent not listed) stays a top-level row', () => {
+    const sessions = [
+      mk({
+        sessionId: 'lonely-tangent',
+        title: 'tangent-1',
+        parentSessionId: 'missing-parent',
+        createdReason: 'tangent',
+      }),
+    ];
+    const groups = applyTangentNesting(
+      applySubagentNesting(groupByWorkspace(sessions, '/workspace/proj'))
+    );
+    // No parent to nest under → remains top-level so it is never lost, still
+    // tagged as a tangent for the row marker.
+    expect(groups[0]!.sessions).toHaveLength(1);
+    expect(groups[0]!.sessions[0]!.sessionId).toBe('lonely-tangent');
+    expect(groups[0]!.sessions[0]!.createdReason).toBe('tangent');
   });
 
   it('EXAMPLE: orphan subagent (parent not listed) stays top-level', () => {
@@ -345,6 +393,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
           {
@@ -355,6 +404,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
         ],
@@ -382,6 +432,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
         ],
@@ -399,6 +450,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
         ],
@@ -425,6 +477,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
         ],
@@ -450,6 +503,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
         ],
@@ -475,6 +529,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
         ],
@@ -492,6 +547,7 @@ describe('filterSessionsByText', () => {
             updatedAt: '',
             isSubagent: false,
             children: [],
+            tangentChildren: [],
             isActive: false,
           },
         ],

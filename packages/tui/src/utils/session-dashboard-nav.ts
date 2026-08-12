@@ -76,6 +76,9 @@ export function buildNavModel(input: NavModelInput): NavModel {
     starts.push(nav.length);
     keys.push(group.workspace);
     eligible += ordered.length;
+    for (const s of ordered) {
+      eligible += s.tangentChildren.filter(input.isRowVisible).length;
+    }
     const cap =
       input.groupBy === 'none' || input.isSearching
         ? ordered.length
@@ -85,6 +88,15 @@ export function buildNavModel(input: NavModelInput): NavModel {
       const item: NavItem = { type: 'session', entry: session };
       nav.push(item);
       display.push(item);
+      // Tangent children ride along with their (visible) parent regardless of
+      // the group cap, so a resumable side-conversation is never cut off from
+      // the parent it belongs to.
+      for (const child of session.tangentChildren) {
+        if (!input.isRowVisible(child)) continue;
+        const childItem: NavItem = { type: 'session', entry: child };
+        nav.push(childItem);
+        display.push(childItem);
+      }
     }
     if (ordered.length > visible.length) {
       const expander: NavItem = { type: 'expand', workspace: group.workspace };

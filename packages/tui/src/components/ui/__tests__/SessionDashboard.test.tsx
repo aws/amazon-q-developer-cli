@@ -506,6 +506,25 @@ describe('cloud session rendering', () => {
   });
 });
 
+describe('tangent session rendering', () => {
+  test('nests a tangent under its parent with a [tangent] marker', async () => {
+    const { terminal } = mount([
+      session('root-1', 'what does tangent do'),
+      session('tangent-1', 'tangent-1', {
+        parentSessionId: 'root-1',
+        createdReason: 'tangent',
+      } as Partial<SessionListingInput>),
+    ]);
+    await flush();
+
+    const frame = await currentFrame(terminal);
+    // Parent visible, and the tangent rendered as its own visible row tagged
+    // [tangent] (resumable), not hidden away.
+    expect(frame).toContain('what does tangent do');
+    expect(frame).toMatch(/\[tangent] .*tangent-1/);
+  });
+});
+
 describe('catalog status rendering', () => {
   test('warns when a partial refresh retained cached sessions', async () => {
     const { terminal } = mount([session('cached', 'cached session')], {

@@ -42,6 +42,7 @@ import {
 import {
   filterSessionsByText,
   applySubagentNesting,
+  applyTangentNesting,
   workspaceLabel,
   sessionIdentityKey,
   sessionMatchesActive,
@@ -534,19 +535,21 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
       isBookmarked: (id: string) => bookmarkStore.isBookmarked(id),
       getTags: (id: string) => bookmarkStore.getTags(id),
     };
-    const grouped = applySubagentNesting(
-      groupSessions(visibleSessions, currentCwd, {
-        groupBy,
-        filters: {
-          currentWorkspaceOnly: filterMode === 'current',
-          bookmarkedOnly: filterMode === 'bookmarked',
-          tag: null,
-        },
-        activeSessionId,
-        activeEngine: activeSessionEngine,
-        activeSource: activeSessionSource,
-        meta,
-      })
+    const grouped = applyTangentNesting(
+      applySubagentNesting(
+        groupSessions(visibleSessions, currentCwd, {
+          groupBy,
+          filters: {
+            currentWorkspaceOnly: filterMode === 'current',
+            bookmarkedOnly: filterMode === 'bookmarked',
+            tag: null,
+          },
+          activeSessionId,
+          activeEngine: activeSessionEngine,
+          activeSource: activeSessionSource,
+          meta,
+        })
+      )
     );
     // Pinned Bookmarked group only makes sense in the workspace view, and is
     // redundant once the bookmarked FILTER is on.
@@ -2430,6 +2433,14 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
           // alternate timeline from an ordinary session.
           const rewindMark =
             entry.createdReason === 'rewind' ? `${glyphs.rewind} ` : '';
+          // Tangent children render indented under their parent with a
+          // ↩ [tangent] tag — a visible, resumable side-conversation. Plain
+          // text (like the other marks) so column widths stay aligned.
+          const isTangentChild = entry.createdReason === 'tangent';
+          const tangentIndent = isTangentChild ? '  ' : '';
+          const tangentMark = isTangentChild
+            ? `${glyphs.rewind} [tangent] `
+            : '';
           // Cloud rows (remote store or cloud-sandbox placement) get a
           // [cloud] text tag: deleting one goes through the agent to the
           // backend, so the row must be visually distinct from local ones. A
@@ -2456,6 +2467,8 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               ? entryTags.map((t) => ` #${t} `).join(' ')
               : '';
           const titleText =
+            tangentIndent +
+            tangentMark +
             starMark +
             rewindMark +
             cloudMark +
