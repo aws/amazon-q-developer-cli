@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-03-10
-  commit: 33f60059
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: true
   category: feature
@@ -254,10 +254,10 @@ or cleanup after the assistant's response.
 - `assistant_response`: The full text of the assistant's response for this turn
 
 **Exit Code Behavior:**
-- **0**: Hook succeeded.
+- **0**: Hook succeeded. STDOUT output is discarded.
 - **Other**: Show STDERR warning to user.
 
-**Note**: Stop hooks do not use matchers since they don't relate to specific tools.
+**Note**: Stop hooks do not use matchers since they don't relate to specific tools. Hook output (STDOUT) is not processed in V1.
 
 ### MCP Example
 

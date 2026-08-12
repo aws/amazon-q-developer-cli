@@ -8,7 +8,7 @@ doc_meta:
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
   keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill, oauth, clientId]
-  related: [cmd-agent, slash-agent, slash-agent-generate]
+  related: [cmd-agent, slash-agent, slash-agent-generate, knowledge-management]
 ---
 
 # Agent Configuration
@@ -167,7 +167,7 @@ Tool-specific configuration.
 
 ### resources
 
-Context files loaded into agent context. Supports `file://` and `skill://` URI schemes.
+Context files and knowledge bases loaded into agent context. Supports `file://`, `skill://` URI schemes and `knowledgeBase` objects.
 
 ```json
 {
@@ -175,7 +175,16 @@ Context files loaded into agent context. Supports `file://` and `skill://` URI s
     "file://README.md",
     "file://src/**/*.rs",
     "file://Cargo.toml",
-    "skill://.kiro/skills/**/SKILL.md"
+    "skill://.kiro/skills/**/SKILL.md",
+    {
+      "type": "knowledgeBase",
+      "source": "file://./docs",
+      "name": "project-docs",
+      "indexType": "best",
+      "include": ["**/*.md"],
+      "exclude": ["**/draft/**"],
+      "autoUpdate": true
+    }
   ]
 }
 ```
@@ -198,6 +207,34 @@ description: Guide for DynamoDB data modeling best practices. Use when designing
 ---
 ```
 ```
+
+**Knowledge Bases**: Directories indexed for semantic search. Automatically synced on session init and agent swap.
+
+```json
+{
+  "type": "knowledgeBase",
+  "source": "file://./docs",
+  "name": "my-docs",
+  "description": "Project documentation",
+  "indexType": "fast",
+  "include": ["**/*.md", "**/*.txt"],
+  "exclude": ["**/node_modules/**"],
+  "autoUpdate": true
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `type` | Yes | Must be `"knowledgeBase"` |
+| `source` | Yes | Directory path with `file://` prefix |
+| `name` | No | Display name for the knowledge base |
+| `description` | No | Human-readable description |
+| `indexType` | No | `"fast"` (BM25) or `"best"` (semantic) |
+| `include` | No | Glob patterns for files to include |
+| `exclude` | No | Glob patterns for files to exclude |
+| `autoUpdate` | No | Re-index on agent load if `true` |
+
+See [Knowledge Management](knowledge-management.md) for details on index types and search.
 
 ### hooks
 

@@ -108,6 +108,8 @@ kiro-cli --list
 | `--trust-all-tools` | `-a` | flag | Auto-approve all tool uses |
 | `--trust-tools` | | list | Auto-approve specific tools (comma-separated) |
 | `--no-interactive` | | flag | Run without user input (headless mode) |
+| `--tui` | | flag | Force TUI (terminal UI) mode |
+| `--legacy-ui` | | flag | Force legacy UI mode (alias: `--classic`) |
 | `--list-sessions` | `-l` | flag | List saved conversations |
 | `--list-models` | | flag | List available models and exit |
 | `--format` | `-f` | enum | Output format for list commands (plain/json/json-pretty, default: plain) |
@@ -238,7 +240,7 @@ Use `--no-interactive` for automation and scripts:
 
 - [/chat save](../slash-commands/chat-save.md) - Save conversations
 - [/chat load](../slash-commands/chat-load.md) - Load conversations
-- [/agent](../slash-commands/agent-switch.md) - Switch agents mid-session
+- [/agent](../slash-commands/agent-swap.md) - Switch agents mid-session
 - [kiro-cli agent](agent.md) - Manage agent configurations
 - [kiro-cli settings](settings.md) - Configure behavior
 
@@ -269,6 +271,8 @@ Use `--no-interactive` for automation and scripts:
 - Without flags: Prompts for each tool use (unless in agent's allowedTools)
 
 **Headless Mode**: Sets non-interactive flag, disables terminal UI, requires initial query.
+
+**UI Selection**: By default, Kiro launches the TUI (terminal UI). The TUI requires an interactive terminal - when stdin is piped or from a heredoc, Kiro automatically falls back to the legacy UI. You can also force UI selection with `--tui` or `--legacy-ui` flags, or via the `KIRO_CHAT_UI` environment variable.
 
 **Line Wrapping**: Auto-detects terminal width. Override with `--wrap always` or `--wrap never`.
 

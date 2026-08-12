@@ -47,8 +47,7 @@ Each operation validates the target path, creates parent directories if needed, 
 {
   "command": "create",
   "path": "src/config.json",
-  "file_text": "{\"version\": \"1.0\"}",
-  "summary": "Create configuration file"
+  "file_text": "{\"version\": \"1.0\"}"
 }
 ```
 
@@ -61,8 +60,7 @@ Each operation validates the target path, creates parent directories if needed, 
   "command": "str_replace",
   "path": "README.md",
   "old_str": "## Installation\n\nComing soon",
-  "new_str": "## Installation\n\nnpm install my-package",
-  "summary": "Update installation instructions"
+  "new_str": "## Installation\n\nnpm install my-package"
 }
 ```
 
@@ -75,8 +73,7 @@ Each operation validates the target path, creates parent directories if needed, 
   "command": "insert",
   "path": "src/main.rs",
   "insert_line": 5,
-  "new_str": "use std::collections::HashMap;\n",
-  "summary": "Add import statement"
+  "new_str": "use std::collections::HashMap;\n"
 }
 ```
 
@@ -88,8 +85,7 @@ Each operation validates the target path, creates parent directories if needed, 
 {
   "command": "append",
   "path": "logs/output.log",
-  "new_str": "[2025-12-19] Process completed\n",
-  "summary": "Add log entry"
+  "new_str": "[2025-12-19] Process completed\n"
 }
 ```
 
@@ -104,8 +100,7 @@ Configure path restrictions in agent's `toolsSettings`:
   "toolsSettings": {
     "fs_write": {
       "allowedPaths": ["~/projects/output/**", "./src/**"],
-      "deniedPaths": ["/etc/**", "~/.ssh/**"],
-      "fallbackAction": "deny"
+      "deniedPaths": ["/etc/**", "~/.ssh/**"]
     }
   }
 }
@@ -115,7 +110,7 @@ Configure path restrictions in agent's `toolsSettings`:
 |--------|------|---------|-------------|
 | `allowedPaths` | array | `[]` | Paths writable without prompting. Supports glob patterns (gitignore syntax) |
 | `deniedPaths` | array | `[]` | Paths that are blocked. Evaluated before allowedPaths. Supports glob patterns |
-| `fallbackAction` | string | `"interactive"` | Behavior for paths outside allowedPaths: `"interactive"` (prompt), `"deny"` (block completely) |
+| `fallbackAction` | string | `interactive` | Behavior when path is not in allowedPaths: `interactive` (prompt user) or `deny` (block silently) |
 
 **Glob Pattern Behavior**: Patterns like `~/temp` match `~/temp/child` and all descendants.
 
@@ -128,7 +123,7 @@ Create new file or overwrite existing file.
 **Parameters**:
 - `path` (string, required): File path
 - `file_text` (string, required): Complete file contents
-- `summary` (string, optional): Description of the change
+- `summary` (string, optional): Brief description of what the change does
 
 **Example**:
 ```json
@@ -149,7 +144,7 @@ Find and replace exact text match.
 - `path` (string, required): File path
 - `old_str` (string, required): Exact text to find (must match exactly once)
 - `new_str` (string, required): Replacement text
-- `summary` (string, optional): Description of the change
+- `summary` (string, optional): Brief description of what the change does
 
 **Example**:
 ```json
@@ -171,7 +166,7 @@ Insert text after specified line.
 - `path` (string, required): File path
 - `insert_line` (integer, required): Line number (0-indexed, 0 = before first line)
 - `new_str` (string, required): Text to insert
-- `summary` (string, optional): Description of the change
+- `summary` (string, optional): Brief description of what the change does
 
 **Example**:
 ```json
@@ -192,7 +187,7 @@ Append text to end of file.
 **Parameters**:
 - `path` (string, required): File path
 - `new_str` (string, required): Text to append
-- `summary` (string, optional): Description of the change
+- `summary` (string, optional): Brief description of what the change does
 
 **Example**:
 ```json
@@ -267,7 +262,7 @@ Append text to end of file.
 
 **Symptom**: Tool prompts for permission or is denied  
 **Cause**: Path not in agent's `allowedPaths` or is in `deniedPaths`  
-**Solution**: Add path to `allowedPaths` in agent config, or set `fallbackAction: "interactive"` to allow prompts.
+**Solution**: Add path to `allowedPaths` in agent config, or set `fallbackAction` to `interactive` (default) to be prompted. Use `deny` to block writes silently.
 
 ### Issue: File Overwritten Unexpectedly
 
@@ -302,7 +297,6 @@ Append text to end of file.
 
 **Path Handling**: All paths sanitized and resolved relative to current working directory. Tilde (`~`) expands to user home directory.
 
-**Permissions**: Prompts by default unless path in `allowedPaths`. Set `fallbackAction: "deny"` to block instead of prompting. Deny rules evaluated before allow rules.
 
 **Parent Directories**: create command automatically creates parent directories if they don't exist.
 

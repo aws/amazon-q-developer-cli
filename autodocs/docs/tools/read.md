@@ -169,6 +169,8 @@ List directory contents recursively.
 - `exclude_patterns` (array, optional): Patterns to exclude. Matches against both full path and filename. Default: `["node_modules", ".git", "dist", "build", "out", ".cache", "target"]`. Empty array `[]` disables filtering and shows everything
 - `show_deleted` (boolean, optional): Include deleted items (default: false)
 
+**Pagination**: Default `max_entries` is 1000. For large directories, use `offset` to paginate through results (e.g., first page: `offset: 0, max_entries: 100`, second page: `offset: 100, max_entries: 100`).
+
 **Example**:
 ```json
 {
@@ -293,8 +295,8 @@ Read image files for vision models.
 ### Issue: Directory Listing Truncated
 
 **Symptom**: Message "showing X of Y entries"  
-**Cause**: Directory has more entries than max_entries limit  
-**Solution**: Increase `max_entries` or use `offset` for pagination. Default limit is 1000.
+**Cause**: Directory has many entries  
+**Solution**: Use more specific path or increase depth selectively. Use `exclude_patterns` to filter unwanted entries.
 
 ### Issue: Permission Denied
 
