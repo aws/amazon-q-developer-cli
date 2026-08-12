@@ -46,7 +46,7 @@ subtle = "2.6"
 
 [dev-dependencies]
 tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

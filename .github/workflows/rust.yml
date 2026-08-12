@@ -53,16 +53,6 @@ jobs:
         id: toolchain
         with:
           components: clippy
-      - name: Configure sccache
-        if: needs.check-paths.outputs.rust-changed == 'true'
-        uses: mozilla-actions/sccache-action@v0.0.10
-        with:
-          version: "v0.16.0"
-      - name: Set Rust compiler wrapper
-        if: needs.check-paths.outputs.rust-changed == 'true'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
       - name: Cache cargo registry
         if: needs.check-paths.outputs.rust-changed == 'true'
         uses: actions/cache@v4
@@ -91,7 +81,6 @@ jobs:
       fail-fast: false
     env:
       OS: ${{ matrix.os }}
-      SCCACHE_CACHE_SIZE: 2G
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -114,16 +103,6 @@ jobs:
       - name: Install cargo-llvm-cov
         if: needs.check-paths.outputs.rust-changed == 'true'
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Configure sccache
-        if: needs.check-paths.outputs.rust-changed == 'true'
-        uses: mozilla-actions/sccache-action@v0.0.10
-        with:
-          version: "v0.16.0"
-      - name: Set Rust compiler wrapper
-        if: needs.check-paths.outputs.rust-changed == 'true'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
       - name: Cache cargo registry
         if: needs.check-paths.outputs.rust-changed == 'true'
         uses: actions/cache@v4
@@ -235,15 +214,6 @@ jobs:
         id: toolchain
         with:
           components: llvm-tools-preview
-      - name: Configure sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
-        with:
-          version: "v0.16.0"
-      - name: Set Rust compiler wrapper
-        shell: bash
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:

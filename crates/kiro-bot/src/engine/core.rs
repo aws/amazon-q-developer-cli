@@ -15,12 +15,13 @@ use tracing::info;
 
 use crate::engine::acp::{
     AcpInfo,
+    CANCEL_CONFIRM_TIMEOUT,
     Work,
 };
 use crate::engine::authz::Authorizer;
 use crate::engine::coordinator::{
-    Coordinator,
     ForwardEvent,
+    LeaseGuard,
     LeaseOutcome,
 };
 use crate::engine::response_policy::{
@@ -156,6 +157,7 @@ pub fn format_context(context: &[String]) -> Option<String> {
 #[derive(Clone)]
 pub struct BotCore {
     pub work_sender: mpsc::UnboundedSender<Work>,
+    pub work_capacity: Arc<tokio::sync::Semaphore>,
     pub inflight: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     pub authz: Option<Arc<Authorizer>>,
     pub response_policy: Arc<ResponsePolicyConfig>,
@@ -165,6 +167,153 @@ pub struct BotCore {
     /// `DynamoCoordinator` plugs in via this field when the runtime config
     /// asks for it.
     pub coordinator: Arc<dyn crate::engine::coordinator::Coordinator>,
+}
+
+impl BotCore {
+    pub fn work_capacity(max_active_work_items: usize) -> Arc<tokio::sync::Semaphore> {
+        Arc::new(tokio::sync::Semaphore::new(max_active_work_items))
+    }
+}
+
+fn enqueue_work(core: &BotCore, work: Work) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    let conversation_id = work.conversation_id().unwrap_or("runtime").to_string();
+    let permit = match core.work_capacity.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            core.acp_info.lock().unwrap().overload_rejections += 1;
+            tracing::warn!(
+                %conversation_id,
+                "ACP work capacity exhausted"
+            );
+            work.reject("⏳ The bot is at capacity — try again shortly");
+            return None;
+        },
+    };
+    match core.work_sender.send(work) {
+        Ok(()) => Some(permit),
+        Err(error) => {
+            tracing::error!(%conversation_id, "ACP control channel is closed");
+            error.0.reject("Error: ACP runtime is unavailable");
+            None
+        },
+    }
+}
+
+async fn wait_for_lease_loss(rx: &mut tokio::sync::watch::Receiver<Option<String>>) -> String {
+    loop {
+        if let Some(failure) = rx.borrow().clone() {
+            return failure;
+        }
+        if rx.changed().await.is_err() {
+            return "lease heartbeat stopped".into();
+        }
+    }
+}
+
+async fn stop_progress_updates(progress_handle: tokio::task::JoinHandle<()>) {
+    progress_handle.abort();
+    match progress_handle.await {
+        Ok(()) => {},
+        Err(error) if error.is_cancelled() => {},
+        Err(error) => tracing::warn!(%error, "progress update task failed"),
+    }
+}
+
+async fn replace_progress_with_reply(
+    frontend: &Arc<dyn Frontend>,
+    platform_id: String,
+    ack_id: String,
+    reply_to: Option<String>,
+    text: String,
+    progress_handle: tokio::task::JoinHandle<()>,
+) {
+    stop_progress_updates(progress_handle).await;
+    let _ = frontend
+        .send(Reply::Delete {
+            conversation: platform_id.clone(),
+            message_id: ack_id,
+        })
+        .await;
+    let _ = frontend
+        .send(Reply::Send {
+            conversation: platform_id,
+            reply_to,
+            text,
+        })
+        .await;
+}
+
+enum PromptWaitFailure {
+    LeaseLost(String),
+    ReplyChannelClosed,
+}
+
+async fn await_prompt_reply(
+    core: &BotCore,
+    session_key: &str,
+    request_id: &str,
+    reply_rx: &mut oneshot::Receiver<String>,
+    lease_loss: Option<&mut tokio::sync::watch::Receiver<Option<String>>>,
+) -> Result<String, PromptWaitFailure> {
+    let Some(lease_loss) = lease_loss else {
+        return reply_rx.await.map_err(|_| PromptWaitFailure::ReplyChannelClosed);
+    };
+    tokio::select! {
+        reply = reply_rx => reply.map_err(|_| PromptWaitFailure::ReplyChannelClosed),
+        failure = wait_for_lease_loss(lease_loss) => {
+            tracing::error!(
+                %request_id,
+                conversation_id = %session_key,
+                %failure,
+                "active prompt cancelled after coordinator lease loss"
+            );
+            let (cancel_tx, cancel_rx) = oneshot::channel();
+            let cancellation_confirmed = if core.work_sender.send(Work::CancelAndWait {
+                conversation: session_key.to_string(),
+                reply_tx: cancel_tx,
+            }).is_ok() {
+                matches!(
+                    tokio::time::timeout(CANCEL_CONFIRM_TIMEOUT, cancel_rx).await,
+                    Ok(Ok(()))
+                )
+            } else {
+                tracing::error!(
+                    %request_id,
+                    conversation_id = %session_key,
+                    "ACP control channel closed during lease-loss cancellation"
+                );
+                false
+            };
+            if !cancellation_confirmed {
+                tracing::error!(
+                    %request_id,
+                    conversation_id = %session_key,
+                    "ACP did not confirm cancellation after lease loss"
+                );
+                let mut info = core.acp_info.lock().unwrap();
+                info.last_failure = Some(format!(
+                    "lease-loss cancellation was not confirmed for {session_key}"
+                ));
+            }
+            Err(PromptWaitFailure::LeaseLost(failure))
+        }
+    }
+}
+
+async fn report_lease_loss(frontend: &Arc<dyn Frontend>, platform_id: &str, ack_id: &str, reply_to: &Option<String>) {
+    let _ = frontend
+        .send(Reply::Delete {
+            conversation: platform_id.to_string(),
+            message_id: ack_id.to_string(),
+        })
+        .await;
+    let _ = frontend
+        .send(Reply::Send {
+            conversation: platform_id.to_string(),
+            reply_to: reply_to.clone(),
+            text: "Error: Coordination lease was lost, so this request was cancelled. Please retry.".into(),
+        })
+        .await;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,42 +394,19 @@ fn check_authz(authz: &Option<Arc<Authorizer>>, check_fn: impl FnOnce(&Authorize
 // Dispatch
 // ---------------------------------------------------------------------------
 
-/// RAII guard that releases the cluster lease and removes the per-process
-/// inflight entry when the dispatch task exits — including on panic, error
-/// returns, and lease-not-held branches. Without this, every early-return
-/// site in the per-action arms would need to remember to call `release()`,
-/// and every miss would leak a 5-minute lease row in DDB.
+/// Releases the cluster lease and inflight slot on every dispatch exit.
 struct DispatchGuard {
-    coordinator: Arc<dyn Coordinator>,
     inflight: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     conv_id: String,
-    /// Whether to remove the inflight entry on drop. Read-only commands
-    /// (Help / Status / ListAgents) never insert one, so don't try.
     holds_inflight: bool,
-    /// Whether to release the cluster lease on drop. False when we never
-    /// acquired one (CLI / cron / Held branch that forwarded).
-    holds_lease: bool,
+    lease: Option<LeaseGuard>,
 }
 
 impl Drop for DispatchGuard {
     fn drop(&mut self) {
+        self.lease.take();
         if self.holds_inflight {
             self.inflight.lock().unwrap().remove(&self.conv_id);
-        }
-        if self.holds_lease {
-            // Coordinator.release is async; spawn a detached task. Bound it
-            // with the same 5s ceiling `forward()` uses so a degraded DDB
-            // can't keep this future alive for the AWS SDK's full retry
-            // budget. The lease TTL is the ultimate backstop.
-            let coord = self.coordinator.clone();
-            let conv = self.conv_id.clone();
-            tokio::spawn(async move {
-                match tokio::time::timeout(std::time::Duration::from_secs(5), coord.release(&conv)).await {
-                    Ok(Ok(())) => {},
-                    Ok(Err(e)) => tracing::warn!(error = %e, conv_id = %conv, "lease release failed"),
-                    Err(_) => tracing::warn!(conv_id = %conv, "lease release timed out after 5s; relying on TTL"),
-                }
-            });
         }
     }
 }
@@ -293,7 +419,7 @@ impl Drop for DispatchGuard {
 ///
 /// In a multi-task fleet, every Slack delivery fans to all tasks. To keep
 /// the user from seeing duplicate replies, this function arbitrates the
-/// event cluster-wide via [`Coordinator`]: dedup by `event_id`, then
+/// event cluster-wide via [`crate::engine::coordinator::Coordinator`]: dedup by `event_id`, then
 /// acquire a per-conversation lease. Only the winning task reaches the
 /// per-action work below; losers drop silently or forward to the lease
 /// holder. See [`DispatchEnvelope`] for the inputs.
@@ -311,9 +437,15 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
     // (idempotent on the ACP side) and preferable to dropping a cancel that
     // never reaches the leader.
     if matches!(action, Action::Cancel) {
-        let _ = core.work_sender.send(Work::Cancel {
-            conversation: session_key,
-        });
+        if core
+            .work_sender
+            .send(Work::Cancel {
+                conversation: session_key,
+            })
+            .is_err()
+        {
+            tracing::error!(conversation_id = %conv_id, "ACP control channel is closed");
+        }
         tokio::spawn(async move {
             let _ = frontend
                 .send(Reply::Send {
@@ -330,22 +462,34 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
     let envelope = msg.envelope.clone();
 
     tokio::spawn(async move {
+        let request_id = envelope
+            .as_ref()
+            .map(|env| env.event_id.clone())
+            .unwrap_or_else(|| format!("local:{conv_id}"));
         // 1. Cluster-wide dedup. Skip when there's no envelope (CLI / cron / forwarded-from-peer events) —
         //    those callers have already arbitrated and `NoopCoordinator` would dedup per-process anyway.
         if let Some(ref env) = envelope
             && !core.coordinator.dedupe_event(&env.event_id).await
         {
-            tracing::debug!(event_id = %env.event_id, conv_id = %conv_id, "duplicate event, dropping");
+            tracing::debug!(
+                request_id = %request_id,
+                conversation_id = %conv_id,
+                "duplicate event, dropping"
+            );
             return;
         }
 
         // 2. Lease arbitration. Held → forward; on forward failure, force-acquire and proceed locally.
         //    Unavailable → silent drop (operators alarm on the structured log; users retry).
-        let mut holds_lease = false;
+        let mut lease = None;
         if let Some(ref env) = envelope {
             match core.coordinator.try_acquire(&conv_id).await {
                 LeaseOutcome::Acquired => {
-                    holds_lease = true;
+                    lease = Some(LeaseGuard::start(
+                        core.coordinator.clone(),
+                        conv_id.clone(),
+                        request_id.clone(),
+                    ));
                 },
                 LeaseOutcome::Held { peer } => {
                     let payload = ForwardEvent {
@@ -353,32 +497,44 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                     };
                     match core.coordinator.forward(&peer, payload).await {
                         Ok(()) => {
-                            tracing::debug!(%peer, conv_id = %conv_id, "forwarded to lease holder");
+                            tracing::debug!(
+                                %request_id,
+                                %peer,
+                                conversation_id = %conv_id,
+                                "forwarded to lease holder"
+                            );
                             return;
                         },
                         Err(e) => {
                             tracing::warn!(
+                                %request_id,
                                 error = %e,
                                 %peer,
-                                conv_id = %conv_id,
+                                conversation_id = %conv_id,
                                 "forward failed; attempting force_acquire"
                             );
                             if !core.coordinator.force_acquire(&conv_id, &peer).await {
                                 tracing::warn!(
-                                    conv_id = %conv_id,
+                                    %request_id,
+                                    conversation_id = %conv_id,
                                     "force_acquire failed; dropping (lease still held by live peer or coordinator down)"
                                 );
                                 return;
                             }
-                            holds_lease = true;
+                            lease = Some(LeaseGuard::start(
+                                core.coordinator.clone(),
+                                conv_id.clone(),
+                                request_id.clone(),
+                            ));
                         },
                     }
                 },
                 LeaseOutcome::Unavailable => {
                     tracing::warn!(
                         target: "kiro_bot::coordinator",
+                        %request_id,
                         event_id = %env.event_id,
-                        conv_id = %conv_id,
+                        conversation_id = %conv_id,
                         "coordinator_unavailable_dropped: lease unavailable, dropping event"
                     );
                     return;
@@ -398,11 +554,10 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
                     })
                     .await;
                 let _guard = DispatchGuard {
-                    coordinator: core.coordinator.clone(),
                     inflight: core.inflight.clone(),
                     conv_id: conv_id.clone(),
                     holds_inflight: false,
-                    holds_lease,
+                    lease,
                 };
                 drop(_guard);
                 return;
@@ -413,12 +568,12 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
         // From here on, _guard releases the lease and the inflight slot on
         // every exit path (success, panic, early return).
         let _guard = DispatchGuard {
-            coordinator: core.coordinator.clone(),
             inflight: core.inflight.clone(),
             conv_id: conv_id.clone(),
             holds_inflight,
-            holds_lease,
+            lease,
         };
+        let lease_loss = _guard.lease.as_ref().map(LeaseGuard::subscribe_loss);
 
         run_action(
             action,
@@ -428,6 +583,8 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
             platform_id,
             reply_to,
             session_key,
+            request_id,
+            lease_loss,
             core,
             frontend,
         )
@@ -435,9 +592,7 @@ pub fn dispatch(core: &BotCore, msg: IncomingMessage, frontend: Arc<dyn Frontend
     });
 }
 
-/// Per-action body. Factored out of `dispatch` so the dedup / lease /
-/// inflight gating around it stays readable. All cleanup is handled by the
-/// `DispatchGuard` in `dispatch`.
+/// Runs an action after dispatch has acquired its local and cluster guards.
 #[allow(clippy::too_many_arguments)]
 async fn run_action(
     action: Action,
@@ -447,6 +602,8 @@ async fn run_action(
     platform_id: String,
     reply_to: Option<String>,
     session_key: String,
+    request_id: String,
+    mut lease_loss: Option<tokio::sync::watch::Receiver<Option<String>>>,
     core: BotCore,
     frontend: Arc<dyn Frontend>,
 ) {
@@ -490,14 +647,14 @@ async fn run_action(
                 },
             };
 
-            let (reply_tx, reply_rx) = oneshot::channel();
+            let (reply_tx, mut reply_rx) = oneshot::channel();
             let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
             let (approval_channel, approval_thread) = match &conversation {
                 Conversation::Dm { channel, .. } => (channel.clone(), reply_to.clone()),
                 Conversation::Channel(id) => (id.clone(), reply_to.clone()),
                 Conversation::Thread { channel, thread_ts } => (channel.clone(), Some(thread_ts.clone())),
             };
-            let _ = core.work_sender.send(Work::Prompt {
+            let work_permit = enqueue_work(&core, Work::Prompt {
                 text,
                 context: msg.context,
                 conversation: session_key.clone(),
@@ -510,7 +667,7 @@ async fn run_action(
             });
 
             // Stream tool status updates to the placeholder message
-            {
+            let progress_handle = {
                 let frontend2 = frontend.clone();
                 let conv = platform_id.clone();
                 let ack = ack_id.clone();
@@ -524,10 +681,22 @@ async fn run_action(
                             })
                             .await;
                     }
-                });
-            }
+                })
+            };
 
-            let reply_text = reply_rx.await.unwrap_or("Error".into());
+            let reply_text =
+                match await_prompt_reply(&core, &session_key, &request_id, &mut reply_rx, lease_loss.as_mut()).await {
+                    Ok(reply) => reply,
+                    Err(PromptWaitFailure::ReplyChannelClosed) => "Error".into(),
+                    Err(PromptWaitFailure::LeaseLost(failure)) => {
+                        tracing::debug!(%request_id, conversation_id = %session_key, %failure);
+                        stop_progress_updates(progress_handle).await;
+                        drop(work_permit);
+                        report_lease_loss(&frontend, &platform_id, &ack_id, &reply_to).await;
+                        return;
+                    },
+                };
+            drop(work_permit);
 
             // Post-reply retrieval check. If the model answered a
             // kiro-shaped question without citing, log a structured
@@ -557,9 +726,9 @@ async fn run_action(
                         the original question and end with a `Sources:` line citing the \
                         retrieved chunk paths. Do not apologize or explain — just produce \
                         the corrected answer.";
-                    let (retry_tx, retry_rx) = oneshot::channel();
+                    let (retry_tx, mut retry_rx) = oneshot::channel();
                     let (retry_progress_tx, _retry_progress_rx) = mpsc::unbounded_channel::<String>();
-                    let _ = core.work_sender.send(Work::Prompt {
+                    let retry_permit = enqueue_work(&core, Work::Prompt {
                         text: retry_prompt.to_string(),
                         context: Vec::new(),
                         conversation: session_key.clone(),
@@ -577,10 +746,10 @@ async fn run_action(
                         reply_tx: retry_tx,
                         progress_tx: retry_progress_tx,
                     });
-                    // If the retry also fails, fall back to the original
-                    // answer with a tag so the user knows to ask for
-                    // sources explicitly.
-                    match retry_rx.await {
+                    let retry_result =
+                        await_prompt_reply(&core, &session_key, &request_id, &mut retry_rx, lease_loss.as_mut()).await;
+                    drop(retry_permit);
+                    match retry_result {
                         Ok(retried) => {
                             if matches!(check(&prompt_for_check, &retried), RetrievalCheck::Cited) {
                                 retried
@@ -595,28 +764,30 @@ async fn run_action(
                                 )
                             }
                         },
-                        Err(_) => {
+                        Err(PromptWaitFailure::ReplyChannelClosed) => {
                             tracing::error!(target: "retrieval_check", "retry channel closed");
                             reply_text
+                        },
+                        Err(PromptWaitFailure::LeaseLost(failure)) => {
+                            tracing::debug!(%request_id, conversation_id = %session_key, %failure);
+                            stop_progress_updates(progress_handle).await;
+                            report_lease_loss(&frontend, &platform_id, &ack_id, &reply_to).await;
+                            return;
                         },
                     }
                 },
                 _ => reply_text,
             };
 
-            let _ = frontend
-                .send(Reply::Delete {
-                    conversation: platform_id.clone(),
-                    message_id: ack_id,
-                })
-                .await;
-            let _ = frontend
-                .send(Reply::Send {
-                    conversation: platform_id,
-                    reply_to,
-                    text: with_genai_disclaimer(&final_reply_text),
-                })
-                .await;
+            replace_progress_with_reply(
+                &frontend,
+                platform_id,
+                ack_id,
+                reply_to,
+                with_genai_disclaimer(&final_reply_text),
+                progress_handle,
+            )
+            .await;
         },
         action => {
             let user = msg.user.clone();
@@ -670,19 +841,20 @@ async fn run_action(
                 },
                 Action::NewSession => {
                     let (tx, rx) = oneshot::channel();
-                    let _ = core.work_sender.send(Work::NewSession {
+                    let permit = enqueue_work(&core, Work::NewSession {
                         conversation: session_key.clone(),
                         reply_tx: tx,
                     });
                     if let Ok(m) = rx.await {
                         send(m).await;
                     }
+                    drop(permit);
                 },
                 Action::SetAgent { name } => {
                     match check_authz(&core.authz, |a| a.can_use_agent(&user, &name, &authz_scope)) {
                         Ok(true) => {
                             let (tx, rx) = oneshot::channel();
-                            let _ = core.work_sender.send(Work::SetMode {
+                            let permit = enqueue_work(&core, Work::SetMode {
                                 conversation: session_key.clone(),
                                 mode: name,
                                 reply_tx: tx,
@@ -690,6 +862,7 @@ async fn run_action(
                             if let Ok(m) = rx.await {
                                 send(m).await;
                             }
+                            drop(permit);
                         },
                         Ok(false) => send(format!("❌ Unauthorized: You don't have access to agent '{name}'")).await,
                         Err(e) => send(format!("❌ Authorization error: {e}")).await,
@@ -698,7 +871,7 @@ async fn run_action(
                 Action::SetModel { name } => match check_authz(&core.authz, |a| a.can_use_model(&user, &name)) {
                     Ok(true) => {
                         let (tx, rx) = oneshot::channel();
-                        let _ = core.work_sender.send(Work::SetModel {
+                        let permit = enqueue_work(&core, Work::SetModel {
                             conversation: session_key.clone(),
                             model: name,
                             reply_tx: tx,
@@ -706,19 +879,21 @@ async fn run_action(
                         if let Ok(m) = rx.await {
                             send(m).await;
                         }
+                        drop(permit);
                     },
                     Ok(false) => send(format!("❌ Unauthorized: You don't have access to model '{name}'")).await,
                     Err(e) => send(format!("❌ Authorization error: {e}")).await,
                 },
                 Action::Status => {
                     let (tx, rx) = oneshot::channel();
-                    let _ = core.work_sender.send(Work::Status {
+                    let permit = enqueue_work(&core, Work::Status {
                         conversation: session_key.clone(),
                         reply_tx: tx,
                     });
                     if let Ok(m) = rx.await {
                         send(m).await;
                     }
+                    drop(permit);
                 },
                 Action::ListAgents => {
                     let agents: Vec<String> = {
@@ -753,6 +928,94 @@ async fn run_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct BlockingProgressFrontend {
+        events: std::sync::Mutex<Vec<&'static str>>,
+        update_active: std::sync::atomic::AtomicBool,
+        update_started: tokio::sync::Notify,
+    }
+
+    struct UpdateActiveGuard<'a> {
+        frontend: &'a BlockingProgressFrontend,
+    }
+
+    impl Drop for UpdateActiveGuard<'_> {
+        fn drop(&mut self) {
+            self.frontend
+                .update_active
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            self.frontend.events.lock().unwrap().push("update-finished");
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Frontend for BlockingProgressFrontend {
+        async fn send(&self, reply: Reply) -> Result<String> {
+            match reply {
+                Reply::Update { .. } => {
+                    self.update_active.store(true, std::sync::atomic::Ordering::SeqCst);
+                    self.events.lock().unwrap().push("update-started");
+                    self.update_started.notify_one();
+                    let _guard = UpdateActiveGuard { frontend: self };
+                    std::future::pending::<()>().await;
+                    unreachable!()
+                },
+                Reply::Delete { .. } => {
+                    assert!(!self.update_active.load(std::sync::atomic::Ordering::SeqCst));
+                    self.events.lock().unwrap().push("delete");
+                    Ok("deleted".into())
+                },
+                Reply::Send { .. } => {
+                    assert!(!self.update_active.load(std::sync::atomic::Ordering::SeqCst));
+                    self.events.lock().unwrap().push("send");
+                    Ok("sent".into())
+                },
+            }
+        }
+
+        async fn fetch_context(&self, _: &str, _: &str, _: Option<&str>) -> Vec<String> {
+            Vec::new()
+        }
+    }
+
+    #[tokio::test]
+    async fn progress_update_finishes_before_placeholder_replacement() {
+        let frontend = Arc::new(BlockingProgressFrontend::default());
+        let frontend_dyn: Arc<dyn Frontend> = frontend.clone();
+        let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
+        let progress_frontend = frontend_dyn.clone();
+        let progress_handle = tokio::spawn(async move {
+            while let Some(text) = progress_rx.recv().await {
+                let _ = progress_frontend
+                    .send(Reply::Update {
+                        conversation: "channel".into(),
+                        message_id: "ack".into(),
+                        text,
+                    })
+                    .await;
+            }
+        });
+        progress_tx.send("working".into()).unwrap();
+        frontend.update_started.notified().await;
+
+        replace_progress_with_reply(
+            &frontend_dyn,
+            "channel".into(),
+            "ack".into(),
+            None,
+            "done".into(),
+            progress_handle,
+        )
+        .await;
+
+        assert_eq!(*frontend.events.lock().unwrap(), [
+            "update-started",
+            "update-finished",
+            "delete",
+            "send"
+        ]);
+    }
 
     #[test]
     fn plain_text_is_prompt() {
@@ -833,5 +1096,85 @@ mod tests {
             user: "alice".into(),
         };
         assert_eq!(c.authz_id(), "dm:alice");
+    }
+
+    #[tokio::test]
+    async fn work_capacity_rejects_overload_with_explicit_reply() {
+        let work_capacity = BotCore::work_capacity(1);
+        let all_permits = work_capacity.clone().acquire_owned().await.unwrap();
+        let (work_sender, _work_receiver) = mpsc::unbounded_channel();
+        let acp_info = Arc::new(std::sync::Mutex::new(AcpInfo::default()));
+        let core = BotCore {
+            work_sender,
+            work_capacity,
+            inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            authz: None,
+            response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
+            acp_info: acp_info.clone(),
+            coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        let permit = enqueue_work(&core, Work::Status {
+            conversation: "conversation-overload".into(),
+            reply_tx,
+        });
+
+        assert!(permit.is_none());
+        assert_eq!(reply_rx.await.unwrap(), "⏳ The bot is at capacity — try again shortly");
+        assert_eq!(acp_info.lock().unwrap().overload_rejections, 1);
+        drop(all_permits);
+    }
+
+    #[test]
+    fn work_capacity_is_scoped_per_core() {
+        let first = BotCore::work_capacity(1);
+        let second = BotCore::work_capacity(1);
+
+        let _first_permit = first.try_acquire_owned().unwrap();
+        assert!(second.try_acquire_owned().is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unconfirmed_lease_loss_cancellation_does_not_fail_runtime() {
+        let (work_sender, mut work_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            if let Some(Work::CancelAndWait { reply_tx, .. }) = work_receiver.recv().await {
+                let _reply_tx = reply_tx;
+                std::future::pending::<()>().await;
+            }
+        });
+        let acp_info = Arc::new(std::sync::Mutex::new(AcpInfo {
+            runtime_state: crate::engine::acp::AcpRuntimeState::Running,
+            ..AcpInfo::default()
+        }));
+        let core = BotCore {
+            work_sender,
+            work_capacity: BotCore::work_capacity(1),
+            inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            authz: None,
+            response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
+            acp_info: acp_info.clone(),
+            coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
+        };
+        let (_reply_tx, mut reply_rx) = oneshot::channel();
+        let (_lease_tx, mut lease_rx) = tokio::sync::watch::channel(Some("lease expired".to_string()));
+
+        let result = await_prompt_reply(
+            &core,
+            "conversation-timeout",
+            "request-timeout",
+            &mut reply_rx,
+            Some(&mut lease_rx),
+        )
+        .await;
+
+        assert!(matches!(result, Err(PromptWaitFailure::LeaseLost(_))));
+        let info = acp_info.lock().unwrap();
+        assert_eq!(info.runtime_state, crate::engine::acp::AcpRuntimeState::Running);
+        assert_eq!(
+            info.last_failure.as_deref(),
+            Some("lease-loss cancellation was not confirmed for conversation-timeout")
+        );
     }
 }

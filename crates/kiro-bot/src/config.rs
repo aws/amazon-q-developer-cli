@@ -129,6 +129,8 @@ pub struct AgentConfig {
     pub mcp_wait_ms: u64,
     #[serde(default = "default_max_workers")]
     pub max_workers: usize,
+    #[serde(default = "default_max_active_work_items")]
+    pub max_active_work_items: usize,
     #[serde(default = "default_idle_timeout_secs")]
     pub idle_timeout_secs: u64,
     #[serde(default)]
@@ -146,6 +148,9 @@ fn default_mcp_wait_ms() -> u64 {
 }
 fn default_max_workers() -> usize {
     5
+}
+fn default_max_active_work_items() -> usize {
+    64
 }
 fn default_idle_timeout_secs() -> u64 {
     300
@@ -276,6 +281,17 @@ bot_name = "Bot"
             panic!("expected Slack frontend");
         };
         assert_eq!(conversation_history, None);
+    }
+
+    #[test]
+    fn max_active_work_items_defaults_to_64() {
+        assert_eq!(parse(BASE).agent.max_active_work_items, 64);
+    }
+
+    #[test]
+    fn max_active_work_items_is_configurable() {
+        let cfg = parse(&format!("{BASE}max_active_work_items = 7\n"));
+        assert_eq!(cfg.agent.max_active_work_items, 7);
     }
 
     #[test]

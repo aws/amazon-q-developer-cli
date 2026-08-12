@@ -14,6 +14,7 @@ model = ""
 default_mode = "kiro-help"
 approval_policy = "ask"
 max_workers = 5
+max_active_work_items = 64
 idle_timeout_secs = 300
 mcp_wait_ms = 2000
 

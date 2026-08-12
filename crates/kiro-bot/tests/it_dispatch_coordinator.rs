@@ -97,6 +97,13 @@ fn spawn_fake_acp(mut rx: mpsc::UnboundedReceiver<Work>) {
                     let _ = reply_tx.send("status".into());
                 },
                 Work::Cancel { .. } => {},
+                Work::CancelAndWait { reply_tx, .. } => {
+                    let _ = reply_tx.send(());
+                },
+                Work::Shutdown { reply_tx, .. } => {
+                    let _ = reply_tx.send(());
+                    break;
+                },
             }
         }
     });
@@ -107,6 +114,7 @@ fn build_core(coordinator: Arc<dyn Coordinator>) -> BotCore {
     spawn_fake_acp(rx);
     BotCore {
         work_sender: tx,
+        work_capacity: BotCore::work_capacity(64),
         inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         authz: None,
         response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
@@ -273,6 +281,62 @@ struct UnavailableCoordinator {
     inner: InMemoryClusterCoordinator,
 }
 
+struct LeaseLossCoordinator {
+    releases: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait]
+impl Coordinator for LeaseLossCoordinator {
+    async fn dedupe_event(&self, _id: &str) -> bool {
+        true
+    }
+
+    async fn try_acquire(&self, _conv: &str) -> LeaseOutcome {
+        LeaseOutcome::Acquired
+    }
+
+    async fn force_acquire(&self, _conv: &str, _peer: &str) -> bool {
+        true
+    }
+
+    async fn renew(&self, _conv: &str) -> Result<()> {
+        anyhow::bail!("coordinator unavailable")
+    }
+
+    fn lease_heartbeat_interval(&self) -> Duration {
+        Duration::from_secs(10)
+    }
+
+    fn lease_ttl(&self) -> Duration {
+        Duration::from_secs(30)
+    }
+
+    async fn release(&self, _conv: &str) -> Result<()> {
+        self.releases.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    async fn forward(&self, _peer: &str, _payload: ForwardEvent) -> Result<()> {
+        Ok(())
+    }
+
+    async fn append_turn(&self, _conv: &str, _turn: kiro_bot::engine::coordinator::Turn) -> Result<()> {
+        Ok(())
+    }
+
+    async fn load_history(&self, _conv: &str, _limit: usize) -> Result<Vec<kiro_bot::engine::coordinator::Turn>> {
+        Ok(Vec::new())
+    }
+
+    async fn register_approval(&self, _ts: &str, _conv: &str, _ttl: Duration) -> Result<()> {
+        Ok(())
+    }
+
+    async fn lookup_approval_owner(&self, _ts: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+}
+
 #[async_trait]
 impl Coordinator for UnavailableCoordinator {
     async fn dedupe_event(&self, id: &str) -> bool {
@@ -314,6 +378,144 @@ impl Coordinator for UnavailableCoordinator {
     async fn lookup_approval_owner(&self, ts: &str) -> Result<Option<String>> {
         self.inner.lookup_approval_owner(ts).await
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn lease_loss_cancels_active_prompt_before_ttl_expires() {
+    let coordinator = Arc::new(LeaseLossCoordinator {
+        releases: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let (work_sender, mut work_receiver) = mpsc::unbounded_channel();
+    let (prompt_seen_tx, prompt_seen_rx) = tokio::sync::oneshot::channel();
+    let (cancel_seen_tx, cancel_seen_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut prompt_seen_tx = Some(prompt_seen_tx);
+        let mut cancel_seen_tx = Some(cancel_seen_tx);
+        let mut pending_reply = None;
+        while let Some(work) = work_receiver.recv().await {
+            match work {
+                Work::Prompt { reply_tx, .. } => {
+                    pending_reply = Some(reply_tx);
+                    if let Some(tx) = prompt_seen_tx.take() {
+                        let _ = tx.send(());
+                    }
+                },
+                Work::CancelAndWait { reply_tx, .. } => {
+                    if let Some(tx) = cancel_seen_tx.take() {
+                        let _ = tx.send(());
+                    }
+                    let _ = reply_tx.send(());
+                },
+                _ => {},
+            }
+        }
+        drop(pending_reply);
+    });
+    let core = BotCore {
+        work_sender,
+        work_capacity: BotCore::work_capacity(64),
+        inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+        authz: None,
+        response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
+        acp_info: Arc::new(std::sync::Mutex::new(AcpInfo::default())),
+        coordinator: coordinator.clone(),
+    };
+    let frontend = Arc::new(RecorderFrontend::new());
+    dispatch(
+        &core,
+        incoming(
+            "slow question",
+            Conversation::Channel("C-lease-loss".into()),
+            Some(slack_envelope("EvLeaseLoss")),
+        ),
+        frontend.clone(),
+    );
+    prompt_seen_rx.await.unwrap();
+
+    tokio::time::advance(Duration::from_secs(11)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(frontend.send_count(), 1, "first failed renewal must not cancel early");
+
+    tokio::time::advance(Duration::from_secs(10)).await;
+    cancel_seen_rx.await.unwrap();
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+
+    let sends = frontend.sends();
+    assert_eq!(sends.len(), 2, "ack plus lease-loss error expected: {sends:?}");
+    assert!(sends[1].contains("Coordination lease was lost"));
+    assert_eq!(coordinator.releases.load(std::sync::atomic::Ordering::Relaxed), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn lease_loss_cancels_active_citation_retry() {
+    let coordinator = Arc::new(LeaseLossCoordinator {
+        releases: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let (work_sender, mut work_receiver) = mpsc::unbounded_channel();
+    let (retry_seen_tx, retry_seen_rx) = tokio::sync::oneshot::channel();
+    let (cancel_seen_tx, cancel_seen_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut prompt_count = 0;
+        let mut retry_seen_tx = Some(retry_seen_tx);
+        let mut cancel_seen_tx = Some(cancel_seen_tx);
+        let mut pending_retry = None;
+        while let Some(work) = work_receiver.recv().await {
+            match work {
+                Work::Prompt { reply_tx, .. } => {
+                    prompt_count += 1;
+                    if prompt_count == 1 {
+                        let _ = reply_tx.send("Kiro can do that without a source.".into());
+                    } else {
+                        pending_retry = Some(reply_tx);
+                        if let Some(tx) = retry_seen_tx.take() {
+                            let _ = tx.send(());
+                        }
+                    }
+                },
+                Work::CancelAndWait { reply_tx, .. } => {
+                    if let Some(tx) = cancel_seen_tx.take() {
+                        let _ = tx.send(());
+                    }
+                    drop(pending_retry.take());
+                    let _ = reply_tx.send(());
+                },
+                _ => {},
+            }
+        }
+    });
+    let core = BotCore {
+        work_sender,
+        work_capacity: BotCore::work_capacity(64),
+        inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+        authz: None,
+        response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
+        acp_info: Arc::new(std::sync::Mutex::new(AcpInfo::default())),
+        coordinator: coordinator.clone(),
+    };
+    let frontend = Arc::new(RecorderFrontend::new());
+    dispatch(
+        &core,
+        incoming(
+            "How does Kiro handle this?",
+            Conversation::Channel("C-retry-lease-loss".into()),
+            Some(slack_envelope("EvRetryLeaseLoss")),
+        ),
+        frontend.clone(),
+    );
+    retry_seen_rx.await.unwrap();
+
+    tokio::time::advance(Duration::from_secs(21)).await;
+    cancel_seen_rx.await.unwrap();
+    for _ in 0..5 {
+        tokio::task::yield_now().await;
+    }
+
+    let sends = frontend.sends();
+    assert_eq!(sends.len(), 2, "ack plus lease-loss error expected: {sends:?}");
+    assert!(sends[1].contains("Coordination lease was lost"));
+    assert_eq!(coordinator.releases.load(std::sync::atomic::Ordering::Relaxed), 1);
 }
 
 /// (4) DDB Unavailable on every `try_acquire`. Both tasks must drop silently;

@@ -19,7 +19,16 @@ use std::collections::{
     HashMap,
     HashSet,
 };
-use std::sync::Mutex;
+use std::sync::atomic::{
+    AtomicU64,
+    Ordering,
+};
+use std::sync::{
+    Arc,
+    LazyLock,
+    Mutex,
+    Weak,
+};
 
 use chrono::{
     DateTime,
@@ -92,6 +101,16 @@ pub trait Coordinator: Send + Sync {
     /// Renew the lease this task owns.
     async fn renew(&self, conversation_id: &str) -> anyhow::Result<()>;
 
+    /// Cadence used while a dispatch owns a lease.
+    fn lease_heartbeat_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(60)
+    }
+
+    /// Maximum time the lease remains valid without a successful renewal.
+    fn lease_ttl(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(300)
+    }
+
     /// Release the lease (graceful shutdown).
     async fn release(&self, conversation_id: &str) -> anyhow::Result<()>;
 
@@ -122,6 +141,159 @@ pub trait Coordinator: Send + Sync {
     /// Read back the owning task identity for a pending approval, if any.
     /// Returns `Ok(None)` when the row is missing or expired.
     async fn lookup_approval_owner(&self, slack_msg_ts: &str) -> anyhow::Result<Option<String>>;
+}
+
+type LocalLeaseKey = (usize, String);
+
+struct LocalLeaseEntry {
+    token: u64,
+    lease: Weak<LeaseGuardInner>,
+}
+
+static LOCAL_LEASES: LazyLock<Mutex<HashMap<LocalLeaseKey, LocalLeaseEntry>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static NEXT_LEASE_TOKEN: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) struct LeaseGuard {
+    inner: Arc<LeaseGuardInner>,
+}
+
+struct LeaseGuardInner {
+    coordinator: Arc<dyn Coordinator>,
+    conversation_id: String,
+    request_id: String,
+    heartbeat: tokio::task::JoinHandle<()>,
+    loss_rx: tokio::sync::watch::Receiver<Option<String>>,
+    registry_key: LocalLeaseKey,
+    token: u64,
+}
+
+impl LeaseGuard {
+    pub(crate) fn start(coordinator: Arc<dyn Coordinator>, conversation_id: String, request_id: String) -> Self {
+        let coordinator_id = Arc::as_ptr(&coordinator) as *const () as usize;
+        let registry_key = (coordinator_id, conversation_id.clone());
+        let mut local_leases = LOCAL_LEASES.lock().unwrap();
+        if let Some(inner) = local_leases.get(&registry_key).and_then(|entry| entry.lease.upgrade()) {
+            tracing::debug!(
+                %request_id,
+                conversation_id = %conversation_id,
+                "sharing locally-owned coordinator lease"
+            );
+            return Self { inner };
+        }
+
+        let token = NEXT_LEASE_TOKEN.fetch_add(1, Ordering::Relaxed);
+        let interval = coordinator.lease_heartbeat_interval();
+        let ttl = coordinator.lease_ttl();
+        let heartbeat_coordinator = coordinator.clone();
+        let heartbeat_conversation = conversation_id.clone();
+        let heartbeat_request = request_id.clone();
+        let (loss_tx, loss_rx) = tokio::sync::watch::channel(None);
+        let heartbeat = tokio::spawn(async move {
+            let start = tokio::time::Instant::now() + interval;
+            let mut ticks = tokio::time::interval_at(start, interval);
+            let mut expires_at = tokio::time::Instant::now() + ttl;
+            loop {
+                ticks.tick().await;
+                let failure = match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    heartbeat_coordinator.renew(&heartbeat_conversation),
+                )
+                .await
+                {
+                    Ok(Ok(())) => {
+                        expires_at = tokio::time::Instant::now() + ttl;
+                        tracing::debug!(
+                            request_id = %heartbeat_request,
+                            conversation_id = %heartbeat_conversation,
+                            "coordinator lease renewed"
+                        );
+                        continue;
+                    },
+                    Ok(Err(error)) => {
+                        tracing::warn!(
+                            request_id = %heartbeat_request,
+                            conversation_id = %heartbeat_conversation,
+                            %error,
+                            "coordinator lease renewal failed"
+                        );
+                        error.to_string()
+                    },
+                    Err(_) => {
+                        tracing::warn!(
+                            request_id = %heartbeat_request,
+                            conversation_id = %heartbeat_conversation,
+                            "coordinator lease renewal timed out"
+                        );
+                        "lease renewal timed out".to_string()
+                    },
+                };
+                let ownership_lost = failure.contains("no longer owned") || failure.contains("not owned");
+                if ownership_lost || tokio::time::Instant::now() + interval >= expires_at {
+                    tracing::error!(
+                        request_id = %heartbeat_request,
+                        conversation_id = %heartbeat_conversation,
+                        %failure,
+                        "coordinator lease lost; cancelling active dispatch"
+                    );
+                    loss_tx.send_replace(Some(failure));
+                    break;
+                }
+            }
+        });
+        let inner = Arc::new(LeaseGuardInner {
+            coordinator,
+            conversation_id,
+            request_id,
+            heartbeat,
+            loss_rx,
+            registry_key: registry_key.clone(),
+            token,
+        });
+        local_leases.insert(registry_key, LocalLeaseEntry {
+            token,
+            lease: Arc::downgrade(&inner),
+        });
+        Self { inner }
+    }
+
+    pub(crate) fn subscribe_loss(&self) -> tokio::sync::watch::Receiver<Option<String>> {
+        self.inner.loss_rx.clone()
+    }
+}
+
+impl Drop for LeaseGuardInner {
+    fn drop(&mut self) {
+        self.heartbeat.abort();
+        let mut local_leases = LOCAL_LEASES.lock().unwrap();
+        if local_leases
+            .get(&self.registry_key)
+            .is_some_and(|entry| entry.token == self.token)
+        {
+            local_leases.remove(&self.registry_key);
+        }
+        drop(local_leases);
+
+        let coordinator = self.coordinator.clone();
+        let conversation_id = self.conversation_id.clone();
+        let request_id = self.request_id.clone();
+        tokio::spawn(async move {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), coordinator.release(&conversation_id)).await {
+                Ok(Ok(())) => {},
+                Ok(Err(error)) => tracing::warn!(
+                    request_id = %request_id,
+                    conversation_id = %conversation_id,
+                    %error,
+                    "coordinator lease release failed"
+                ),
+                Err(_) => tracing::warn!(
+                    request_id = %request_id,
+                    conversation_id = %conversation_id,
+                    "coordinator lease release timed out"
+                ),
+            }
+        });
+    }
 }
 
 /// In-memory implementation. Single-task only (state isn't shared across
@@ -159,7 +331,7 @@ struct ClusterState {
 #[derive(Clone)]
 struct Lease {
     owner: String,
-    expires_at: DateTime<Utc>,
+    expires_at: tokio::time::Instant,
 }
 
 impl InMemoryClusterCoordinator {
@@ -180,8 +352,12 @@ impl InMemoryClusterCoordinator {
         }
     }
 
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
+    fn lease_expires_at(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now()
+            + self
+                .lease_ttl
+                .to_std()
+                .unwrap_or_else(|_| std::time::Duration::from_secs(0))
     }
 }
 
@@ -194,8 +370,8 @@ impl Coordinator for InMemoryClusterCoordinator {
 
     async fn try_acquire(&self, conversation_id: &str) -> LeaseOutcome {
         let mut s = self.cluster.lock().expect("cluster state poisoned");
-        let now = self.now();
-        let expires_at = now + self.lease_ttl;
+        let now = tokio::time::Instant::now();
+        let expires_at = self.lease_expires_at();
         match s.leases.get(conversation_id).cloned() {
             Some(existing) if existing.owner != self.own_task_id && existing.expires_at > now => {
                 LeaseOutcome::Held { peer: existing.owner }
@@ -212,8 +388,8 @@ impl Coordinator for InMemoryClusterCoordinator {
 
     async fn force_acquire(&self, conversation_id: &str, dead_peer: &str) -> bool {
         let mut s = self.cluster.lock().expect("cluster state poisoned");
-        let now = self.now();
-        let expires_at = now + self.lease_ttl;
+        let now = tokio::time::Instant::now();
+        let expires_at = self.lease_expires_at();
         let claimable = match s.leases.get(conversation_id) {
             None => true,
             Some(existing) => existing.owner == dead_peer || existing.expires_at <= now,
@@ -232,7 +408,7 @@ impl Coordinator for InMemoryClusterCoordinator {
         if let Some(lease) = s.leases.get_mut(conversation_id)
             && lease.owner == self.own_task_id
         {
-            lease.expires_at = self.now() + self.lease_ttl;
+            lease.expires_at = self.lease_expires_at();
             return Ok(());
         }
         anyhow::bail!("renew called on lease not owned by this task")
@@ -273,7 +449,7 @@ impl Coordinator for InMemoryClusterCoordinator {
         _conversation_id: &str,
         ttl: std::time::Duration,
     ) -> anyhow::Result<()> {
-        let expires_at = self.now() + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
+        let expires_at = Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::seconds(0));
         let mut s = self.cluster.lock().expect("cluster state poisoned");
         s.approvals
             .insert(slack_msg_ts.to_string(), (self.own_task_id.clone(), expires_at));
@@ -281,12 +457,26 @@ impl Coordinator for InMemoryClusterCoordinator {
     }
 
     async fn lookup_approval_owner(&self, slack_msg_ts: &str) -> anyhow::Result<Option<String>> {
-        let now = self.now();
+        let now = Utc::now();
         let s = self.cluster.lock().expect("cluster state poisoned");
         Ok(s.approvals
             .get(slack_msg_ts)
             .filter(|(_, exp)| *exp > now)
             .map(|(owner, _)| owner.clone()))
+    }
+
+    fn lease_heartbeat_interval(&self) -> std::time::Duration {
+        self.lease_ttl
+            .to_std()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(3))
+            .div_f64(3.0)
+            .max(std::time::Duration::from_secs(1))
+    }
+
+    fn lease_ttl(&self) -> std::time::Duration {
+        self.lease_ttl
+            .to_std()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(300))
     }
 }
 
@@ -392,6 +582,67 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
+
+    struct RenewFailureCoordinator {
+        releases: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Coordinator for RenewFailureCoordinator {
+        async fn dedupe_event(&self, _slack_event_id: &str) -> bool {
+            true
+        }
+
+        async fn try_acquire(&self, _conversation_id: &str) -> LeaseOutcome {
+            LeaseOutcome::Acquired
+        }
+
+        async fn force_acquire(&self, _conversation_id: &str, _dead_peer: &str) -> bool {
+            true
+        }
+
+        async fn renew(&self, _conversation_id: &str) -> anyhow::Result<()> {
+            anyhow::bail!("coordinator unavailable")
+        }
+
+        fn lease_heartbeat_interval(&self) -> std::time::Duration {
+            std::time::Duration::from_secs(100)
+        }
+
+        fn lease_ttl(&self) -> std::time::Duration {
+            std::time::Duration::from_secs(300)
+        }
+
+        async fn release(&self, _conversation_id: &str) -> anyhow::Result<()> {
+            self.releases.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn forward(&self, _peer: &str, _payload: ForwardEvent) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn append_turn(&self, _conversation_id: &str, _turn: Turn) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn load_history(&self, _conversation_id: &str, _limit: usize) -> anyhow::Result<Vec<Turn>> {
+            Ok(Vec::new())
+        }
+
+        async fn register_approval(
+            &self,
+            _slack_msg_ts: &str,
+            _conversation_id: &str,
+            _ttl: std::time::Duration,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn lookup_approval_owner(&self, _slack_msg_ts: &str) -> anyhow::Result<Option<String>> {
+            Ok(None)
+        }
+    }
 
     fn turn(role: TurnRole, text: &str, secs: i64) -> Turn {
         Turn {
@@ -519,6 +770,69 @@ mod tests {
         task_a.try_acquire("convo-1").await;
         let err = task_b.renew("convo-1").await.unwrap_err();
         assert!(err.to_string().contains("not owned"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn lease_guard_keeps_dispatch_ownership_beyond_300_and_600_seconds() {
+        let task_a = Arc::new(InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5)));
+        let task_b = task_a.sibling("task-B");
+        assert_eq!(task_a.try_acquire("convo-1").await, LeaseOutcome::Acquired);
+
+        let guard = LeaseGuard::start(task_a, "convo-1".into(), "event-1".into());
+        tokio::task::yield_now().await;
+        tokio::time::advance(std::time::Duration::from_secs(301)).await;
+        tokio::task::yield_now().await;
+        assert!(matches!(task_b.try_acquire("convo-1").await, LeaseOutcome::Held { .. }));
+
+        tokio::time::advance(std::time::Duration::from_secs(300)).await;
+        tokio::task::yield_now().await;
+        assert!(matches!(task_b.try_acquire("convo-1").await, LeaseOutcome::Held { .. }));
+
+        drop(guard);
+        tokio::task::yield_now().await;
+        assert_eq!(task_b.try_acquire("convo-1").await, LeaseOutcome::Acquired);
+    }
+
+    #[tokio::test]
+    async fn duplicate_local_guards_release_only_after_last_owner_drops() {
+        let task_a = Arc::new(InMemoryClusterCoordinator::new("task-A", chrono::Duration::minutes(5)));
+        let task_b = task_a.sibling("task-B");
+        assert_eq!(task_a.try_acquire("convo-1").await, LeaseOutcome::Acquired);
+        let first = LeaseGuard::start(task_a.clone(), "convo-1".into(), "event-1".into());
+
+        assert_eq!(task_a.try_acquire("convo-1").await, LeaseOutcome::Acquired);
+        let duplicate = LeaseGuard::start(task_a, "convo-1".into(), "event-2".into());
+        drop(duplicate);
+        tokio::task::yield_now().await;
+        assert!(matches!(task_b.try_acquire("convo-1").await, LeaseOutcome::Held { .. }));
+
+        drop(first);
+        tokio::task::yield_now().await;
+        assert_eq!(task_b.try_acquire("convo-1").await, LeaseOutcome::Acquired);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn lease_guard_signals_loss_before_failed_renewals_reach_ttl() {
+        let coordinator = Arc::new(RenewFailureCoordinator {
+            releases: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let started = tokio::time::Instant::now();
+        let guard = LeaseGuard::start(coordinator.clone(), "convo-1".into(), "event-1".into());
+        let loss = guard.subscribe_loss();
+        tokio::task::yield_now().await;
+
+        tokio::time::advance(std::time::Duration::from_secs(101)).await;
+        tokio::task::yield_now().await;
+        assert!(loss.borrow().is_none());
+
+        tokio::time::advance(std::time::Duration::from_secs(100)).await;
+        tokio::task::yield_now().await;
+        assert!(loss.borrow().is_some());
+        assert!(started.elapsed() < std::time::Duration::from_secs(300));
+
+        drop(guard);
+        tokio::task::yield_now().await;
+        assert_eq!(coordinator.releases.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 
     #[tokio::test]

@@ -180,6 +180,7 @@ model = "claude-opus-4.6-1m"
 default_mode = "my-agent"          # optional: default agent/mode
 approval_policy = "approve"        # approve | ask | deny
 max_workers = 5                    # concurrent ACP sessions
+max_active_work_items = 64          # queued and running frontend work
 idle_timeout_secs = 300            # reap idle workers after N seconds
 mcp_wait_ms = 2000                 # wait for MCP servers to initialize
 

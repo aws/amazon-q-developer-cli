@@ -283,6 +283,20 @@ impl Coordinator for DynamoCoordinator {
         Ok(())
     }
 
+    fn lease_heartbeat_interval(&self) -> std::time::Duration {
+        self.lease_ttl
+            .to_std()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(3))
+            .div_f64(3.0)
+            .max(std::time::Duration::from_secs(1))
+    }
+
+    fn lease_ttl(&self) -> std::time::Duration {
+        self.lease_ttl
+            .to_std()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(DEFAULT_LEASE_TTL_SECS as u64))
+    }
+
     async fn release(&self, conversation_id: &str) -> anyhow::Result<()> {
         let result = self
             .client
@@ -545,6 +559,7 @@ mod tests {
 
         assert_eq!(coord.leases_table, "kiro-bot-leases-test");
         assert_eq!(coord.lease_ttl, Duration::minutes(5));
+        assert_eq!(coord.lease_heartbeat_interval(), std::time::Duration::from_secs(100));
         assert!(coord.peer_base_url.is_some());
 
         // Cloneable so the engine + dispatch server can each hold a handle.

@@ -24,6 +24,8 @@ use crate::config::{
 use crate::engine::acp::{
     self,
     AcpConfig,
+    AcpInfo,
+    AcpRuntimeState,
     ApprovalPolicy,
 };
 use crate::engine::authz::Authorizer;
@@ -44,6 +46,9 @@ use crate::frontend::slack::{
     on_push,
     spawn_approval_listener,
 };
+
+const ACP_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(20);
+const DISPATCH_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Run a bot instance in the foreground (called by `start --foreground`).
 pub async fn cmd_run(name: &str) -> Result<()> {
@@ -76,6 +81,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     set_working_directory(&cfg.working_directory)?;
 
     let approval_policy = cfg.agent.approval_policy;
+    let max_active_work_items = cfg.agent.max_active_work_items;
     let (approval_tx, approval_rx) = if approval_policy == ApprovalPolicy::Ask {
         let (tx, rx) = mpsc::unbounded_channel();
         (Some(tx), Some(rx))
@@ -132,6 +138,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     let coordinator = crate::engine::coordinator_bootstrap::build_coordinator(own_task_id.clone()).await;
     let core = BotCore {
         work_sender: work_tx,
+        work_capacity: BotCore::work_capacity(max_active_work_items),
         inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         authz,
         response_policy,
@@ -198,18 +205,35 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> = Arc::new(
         crate::engine::coordinator_bootstrap::BotCoreDispatcher::new(state.clone()),
     );
-    let dispatch_handle = tokio::spawn(async move {
-        if let Err(e) = crate::engine::dispatch_server::run_dispatch_server(dispatch_port, dispatcher).await {
-            tracing::error!(error = %e, "dispatch server exited");
-        }
-    });
+    let mut dispatch_handle = tokio::spawn(crate::engine::dispatch_server::run_dispatch_server(
+        dispatch_port,
+        dispatcher,
+    ));
 
-    tokio::select! {
-        _ = listener.serve() => {}
-        _ = tokio::signal::ctrl_c() => { info!("Shutting down..."); }
-    }
+    let runtime_error = tokio::select! {
+        exit_code = listener.serve() => listener_exit_error(exit_code),
+        _ = shutdown_signal() => {
+            info!("Shutdown signal received; draining runtime");
+            None
+        }
+        failure = wait_for_acp_failure(state.core.acp_info.clone()) => {
+            Some(anyhow::anyhow!("ACP runtime failed: {failure}"))
+        }
+        dispatch_result = &mut dispatch_handle => {
+            Some(match dispatch_result {
+                Ok(Ok(())) => anyhow::anyhow!("dispatch server stopped unexpectedly"),
+                Ok(Err(error)) => anyhow::anyhow!("dispatch server failed: {error}"),
+                Err(error) => anyhow::anyhow!("dispatch server task failed: {error}"),
+            })
+        }
+    };
     dispatch_handle.abort();
-    Ok(())
+    request_acp_shutdown(&state.core.work_sender).await;
+    wait_for_dispatch_drain(&state.core.inflight).await;
+    match runtime_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 /// Run interactive CLI chat mode (no Slack).
@@ -217,6 +241,7 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
     let instance_dir = config::config_dir(name)?;
     let cfg = config::load_config(&instance_dir)?;
     std::env::set_current_dir(&instance_dir)?;
+    let max_active_work_items = cfg.agent.max_active_work_items;
 
     let acp_cfg = AcpConfig {
         command: cfg.agent.command,
@@ -238,6 +263,7 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
     let frontend = Arc::new(CliFrontend::new());
     let core = BotCore {
         work_sender: work_tx,
+        work_capacity: BotCore::work_capacity(max_active_work_items),
         inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         authz: None,
         response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
@@ -247,7 +273,78 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
 
     eprintln!("Ready. Type messages (prefix #name for multi-conversation). Ctrl-C to quit.");
     crate::frontend::cli::run_cli(&core, frontend).await;
+    request_acp_shutdown(&core.work_sender).await;
+    wait_for_dispatch_drain(&core.inflight).await;
     Ok(())
+}
+
+async fn request_acp_shutdown(work_sender: &mpsc::UnboundedSender<acp::Work>) {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    if work_sender
+        .send(acp::Work::Shutdown {
+            grace: ACP_DRAIN_GRACE,
+            reply_tx,
+        })
+        .is_err()
+    {
+        tracing::warn!("ACP control channel already closed during shutdown");
+        return;
+    }
+    match tokio::time::timeout(ACP_DRAIN_GRACE + std::time::Duration::from_secs(2), reply_rx).await {
+        Ok(Ok(())) => info!("ACP runtime drained"),
+        Ok(Err(_)) => tracing::warn!("ACP runtime stopped without acknowledging drain"),
+        Err(_) => tracing::warn!("ACP runtime drain timed out"),
+    }
+}
+
+async fn wait_for_dispatch_drain(inflight: &Arc<std::sync::Mutex<std::collections::HashSet<String>>>) {
+    if tokio::time::timeout(DISPATCH_DRAIN_GRACE, async {
+        loop {
+            if inflight.lock().unwrap().is_empty() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .is_err()
+    {
+        let active_dispatches = inflight.lock().unwrap().len();
+        tracing::warn!(active_dispatches, "dispatch drain timed out");
+    }
+}
+
+async fn wait_for_acp_failure(acp_info: Arc<std::sync::Mutex<AcpInfo>>) -> String {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+    loop {
+        interval.tick().await;
+        let info = acp_info.lock().unwrap();
+        if matches!(info.runtime_state, AcpRuntimeState::Failed | AcpRuntimeState::Stopped) {
+            return info
+                .last_failure
+                .clone()
+                .unwrap_or_else(|| format!("runtime entered {:?} state", info.runtime_state));
+        }
+    }
+}
+
+fn listener_exit_error(exit_code: i32) -> Option<anyhow::Error> {
+    (exit_code != 0).then(|| anyhow::anyhow!("Slack listener stopped unexpectedly with code {exit_code}"))
+}
+
+#[cfg(unix)]
+async fn shutdown_signal() {
+    let mut terminate =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("install SIGTERM handler");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {},
+        _ = terminate.recv() => {},
+    }
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,4 +433,20 @@ async fn build_feedback_writer() -> Option<std::sync::Arc<dyn crate::engine::fee
     Some(std::sync::Arc::new(crate::engine::feedback::DynamoFeedbackWriter::new(
         client, table,
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::listener_exit_error;
+
+    #[test]
+    fn clean_listener_exit_is_not_an_error() {
+        assert!(listener_exit_error(0).is_none());
+    }
+
+    #[test]
+    fn failed_listener_exit_reports_code() {
+        let error = listener_exit_error(23).expect("nonzero listener exit should fail");
+        assert_eq!(error.to_string(), "Slack listener stopped unexpectedly with code 23");
+    }
 }
