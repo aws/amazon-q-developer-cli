@@ -1967,7 +1967,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     <Box flexDirection="column" width={termWidth}>
       {/* Header: title left, close hint right — mock style. */}
       <Box paddingX={1}>
-        <Text>
+        <Text wrap="truncate">
           {chalk
             .hex(brandHex)
             .bold(truncateToWidth('Sessions', Math.max(termWidth - 2, 1)))}
@@ -2005,7 +2005,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             <Text inverse>{CURSOR_MARKER} </Text>
           )}
           {termWidth >= 48 && (
-            <Text>
+            <Text wrap="truncate">
               {(() => {
                 // The label states COVERAGE (what search can see right now),
                 // not where the last match came from. '#'-prefixed queries
@@ -2089,7 +2089,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             ));
           return (
             <Box flexDirection="column" marginBottom={1}>
-              <Text>
+              <Text wrap="truncate">
                 {!hasModal && inputOwner === 'control' ? CURSOR_MARKER : null}
                 {keycap('ctrl+f', controlFocus === 'filter')}
                 {dim(' filter')}
@@ -2132,7 +2132,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               {/* Interaction hints on their own line while a control is
                   expanded — inline they read as another option. */}
               {controlFocus && (
-                <Text>
+                <Text wrap="truncate">
                   {dim(
                     `${glyphs.arrowLeft}${glyphs.arrow} select ${glyphs.smallDot} ${glyphs.enter} done ${glyphs.smallDot} esc cancel`
                   )}
@@ -2316,7 +2316,9 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
           );
           return (
             <>
-              <Text>{chalk.hex(secondaryHex).bold(header)}</Text>
+              <Text wrap="truncate">
+                {chalk.hex(secondaryHex).bold(header)}
+              </Text>
               <Text>
                 {chalk.hex(secondaryHex)(
                   glyphs.lineHorizontal.repeat(contentW)
@@ -2357,7 +2359,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               return (
                 <React.Fragment key="h-bookmarked">
                   {i > 0 && <Text> </Text>}
-                  <Text>{band(`${star} Bookmarked`)}</Text>
+                  <Text wrap="truncate">{band(`${star} Bookmarked`)}</Text>
                 </React.Fragment>
               );
             }
@@ -2367,7 +2369,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               return (
                 <React.Fragment key={`h-${item.group.workspace}`}>
                   {i > 0 && <Text> </Text>}
-                  <Text>{band(item.group.label)}</Text>
+                  <Text wrap="truncate">{band(item.group.label)}</Text>
                 </React.Fragment>
               );
             }
@@ -2387,7 +2389,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             return (
               <React.Fragment key={`h-${item.group.workspace}`}>
                 {i > 0 && <Text> </Text>}
-                <Text>{band(label)}</Text>
+                <Text wrap="truncate">{band(label)}</Text>
               </React.Fragment>
             );
           }
@@ -2399,7 +2401,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               Math.max(contentW - 4, 1)
             );
             return (
-              <Text key={`e-${item.workspace}`}>
+              <Text key={`e-${item.workspace}`} wrap="truncate">
                 {isCursor && !hasModal && inputOwner === 'list'
                   ? CURSOR_MARKER
                   : null}
@@ -2538,7 +2540,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             : chalk.hex(secondaryHex);
           return (
             <React.Fragment key={sessionIdentityKey(entry)}>
-              <Text>
+              <Text wrap="truncate">
                 {isCursor && !hasModal && inputOwner === 'list'
                   ? CURSOR_MARKER
                   : null}
@@ -2565,7 +2567,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
                 ) : null}
               </Text>
               {snippet ? (
-                <Text>
+                <Text wrap="truncate">
                   {'    '}
                   {dim(
                     truncateToWidth(
@@ -2678,7 +2680,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
           const lines = footerHintLines;
           return (
             <>
-              <Text>
+              <Text wrap="truncate">
                 {dim(summary)}
                 {catalogIncomplete
                   ? getColor('warning')(
@@ -2686,9 +2688,13 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
                     )
                   : ''}
               </Text>
-              {gcHint && <Text>{getColor('warning')(gcHint)}</Text>}
+              {gcHint && (
+                <Text wrap="truncate">{getColor('warning')(gcHint)}</Text>
+              )}
               {lines.map((l, i) => (
-                <Text key={i}>{dim(l)}</Text>
+                <Text key={i} wrap="truncate">
+                  {dim(l)}
+                </Text>
               ))}
             </>
           );

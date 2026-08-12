@@ -205,5 +205,34 @@ describe.skipIf(!PERF)(
       },
       { timeout: 240_000 }
     );
+
+    test(
+      'wide preview opens and renders a titled bordered box',
+      async () => {
+        const terminal = new MockTerminal();
+        const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+        store.getState().setShowSessionDashboard(true, listing(), 'slash');
+        activeInstance = render(
+          <AppStoreContext.Provider value={store}>
+            <SessionDashboardScreen />
+          </AppStoreContext.Provider>,
+          { terminal }
+        );
+        await new Promise((r) => setTimeout(r, 600));
+
+        // Ctrl+P opens the host-owned wide preview pane.
+        terminal.output = '';
+        terminal.sendInput('\x10');
+        await new Promise((r) => setTimeout(r, 300));
+
+        // Smoke check: the preview toggles open and draws its round box.
+        // (The reported viewport-overflow — box bottom pushed off-screen —
+        // is a real-terminal clipping artifact the mock cannot observe;
+        // the fix bounds the box height and truncates its lines.)
+        expect(terminal.output).toContain('Preview (');
+        expect(terminal.output).toContain('╰');
+      },
+      { timeout: 240_000 }
+    );
   }
 );

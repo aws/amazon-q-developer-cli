@@ -475,6 +475,8 @@ export const SessionDashboardScreen: React.FC = () => {
           <Box
             flexDirection="column"
             width={previewW}
+            height={height}
+            overflow="hidden"
             borderStyle="round"
             borderColor={brandHex}
             borderTitle={truncateToWidth(
@@ -485,8 +487,10 @@ export const SessionDashboardScreen: React.FC = () => {
             )}
             paddingX={1}
           >
-            {previewLines.map((line, i) => (
-              <Text key={i}>{line}</Text>
+            {previewLines.slice(0, Math.max(height - 2, 0)).map((line, i) => (
+              <Text key={i} wrap="truncate">
+                {line}
+              </Text>
             ))}
           </Box>
         )}
