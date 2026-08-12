@@ -363,7 +363,7 @@ describe('listAllWorkspaceSessionsFromDisk', () => {
     expect(sanitizeSessionTitleForDisplay({ replace: 'nope' })).toBe('');
   });
 
-  it('skips oversized metadata and marks the catalog incomplete', async () => {
+  it('degrades oversized V2 metadata to a row; oversized KAS still marks incomplete', async () => {
     mkdirSync(join(root, 'cli'), { recursive: true });
     writeFileSync(
       join(root, 'cli', 'huge.json'),
@@ -379,7 +379,15 @@ describe('listAllWorkspaceSessionsFromDisk', () => {
 
     const result = await listAllWorkspaceSessionsFromDiskDetailed(root);
 
-    expect(result.sessions.map((entry) => entry.sessionId)).toEqual(['good']);
+    // The oversized V2 session lists as a degraded row (old V2 files embed
+    // whole conversations — hiding them punished exactly the long-time
+    // users with the most sessions); the oversized KAS copy still can't be
+    // identity-validated, so it is skipped and completeness drops.
+    const ids = result.sessions.map((entry) => entry.sessionId).sort();
+    expect(ids).toEqual(['good', 'huge']);
+    const huge = result.sessions.find((s) => s.sessionId === 'huge');
+    expect(huge?.engine).toBe('v2');
+    expect(huge?.updatedAt).toBeTruthy();
     expect(result.complete).toBe(false);
   });
 

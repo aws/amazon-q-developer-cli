@@ -3,9 +3,13 @@
  * listing. Entries merge by normalized session ID and engine.
  */
 
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { SESSION_METADATA_MAX_BYTES, readBoundedJson } from './bounded-json.js';
+import {
+  OversizedJsonFileError,
+  SESSION_METADATA_MAX_BYTES,
+  readBoundedJson,
+} from './bounded-json.js';
 import { logger } from './logger.js';
 import { listAllSessionsAllCwds } from './list-all-sessions-cli.js';
 import {
@@ -136,9 +140,25 @@ async function readV2Store(cliDir: string): Promise<SessionListingResult> {
         complete = false;
         continue;
       }
-      const data = record(
-        readBoundedJson(metaPath, SESSION_METADATA_MAX_BYTES)
-      );
+      let data: Record<string, unknown> | null;
+      try {
+        data = record(readBoundedJson(metaPath, SESSION_METADATA_MAX_BYTES));
+      } catch (err) {
+        // Oversized metadata (old V2 files embed whole conversations) must
+        // not hide the session or poison catalog completeness: list a
+        // degraded row — the title chain and content index fill in the rest.
+        if (err instanceof OversizedJsonFileError) {
+          const entry = normalizeListingEntry({
+            sessionId,
+            cwd: '',
+            updatedAt: statSync(metaPath).mtime.toISOString(),
+            engine: 'v2',
+          });
+          if (entry) entries.push(entry);
+          continue;
+        }
+        throw err;
+      }
       if (!data) throw new Error('Session metadata must be an object');
       const parentSessionId = isValidSessionId(data.parent_session_id)
         ? data.parent_session_id

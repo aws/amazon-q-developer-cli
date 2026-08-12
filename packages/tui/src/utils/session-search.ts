@@ -181,6 +181,30 @@ export class SessionSearchIndex {
   private refreshPending = false;
   private handle: IndexHandle | null = null;
   private searchEngines = new Map<string, 'v2' | 'v3'>();
+  // One snapshot of the per-session fact tables. The underlying helpers each
+  // run a full table scan; calling them per row turns an 8K-session
+  // enrichment pass into ~35K full scans (minutes of render-thread stalls).
+  private factsCache: {
+    heads: Map<string, string>;
+    counts: Map<string, number>;
+    promptless: Set<string>;
+  } | null = null;
+
+  private facts(): NonNullable<SessionSearchIndex['factsCache']> {
+    if (!this.factsCache) {
+      const handle = this.openHandle();
+      this.factsCache = {
+        heads: firstPromptHeads(handle),
+        counts: promptCounts(handle),
+        promptless: promptlessIds(handle),
+      };
+    }
+    return this.factsCache;
+  }
+
+  private invalidateFacts(): void {
+    this.factsCache = null;
+  }
 
   constructor(sessionsDir?: string) {
     this.sessionsDir =
@@ -218,6 +242,7 @@ export class SessionSearchIndex {
       this.handle.reason === 'unavailable'
     ) {
       this.handle = null;
+      this.invalidateFacts();
     }
     if (!this.handle) {
       this.handle = openIndex(join(this.storeRoot(), 'dashboard-search.db'));
@@ -260,6 +285,7 @@ export class SessionSearchIndex {
     if (this.handle) {
       closeIndex(this.handle);
       this.handle = null;
+      this.invalidateFacts();
     }
   }
 
@@ -425,6 +451,7 @@ export class SessionSearchIndex {
         indexed: this.documents.size,
         total: jsonFiles.length,
       };
+      this.invalidateFacts();
       this.emitStatus();
     } catch (err) {
       this.status = {
@@ -433,6 +460,7 @@ export class SessionSearchIndex {
         total: this.status.total,
         error: err instanceof Error ? err.message : String(err),
       };
+      this.invalidateFacts();
       this.emitStatus();
       logger.warn('[session-search] Build failed:', err);
     }
@@ -685,17 +713,20 @@ export class SessionSearchIndex {
     if (engine === 'v3') {
       forget(handle, indexedId);
       this.searchEngines.delete(indexedId);
+      this.invalidateFacts();
       void this.refresh();
       return;
     }
+    const facts = this.facts();
     let doc = this.indexSession(
       sessionId,
-      firstPromptHeads(handle),
-      promptCounts(handle),
-      promptlessIds(handle),
+      facts.heads,
+      facts.counts,
+      facts.promptless,
       undefined,
       indexedId
     );
+    this.invalidateFacts();
     if (!doc) {
       this.documents.delete(sessionId);
       forget(handle, indexedId);
@@ -777,9 +808,9 @@ export class SessionSearchIndex {
   isPromptless(sessionId: string, engine?: 'classic' | 'v2' | 'v3'): boolean {
     const id = this.factsId(sessionId, engine);
     if (!id) return false;
-    const handle = this.openHandle();
-    const count = promptCounts(handle).get(id);
-    return promptlessIds(handle).has(id) && !(count != null && count > 0);
+    const facts = this.facts();
+    const count = facts.counts.get(id);
+    return facts.promptless.has(id) && !(count != null && count > 0);
   }
 
   /** First user prompt converted to a display title for this physical row. */
@@ -789,7 +820,7 @@ export class SessionSearchIndex {
   ): string | undefined {
     const id = this.factsId(sessionId, engine);
     if (!id) return undefined;
-    const head = firstPromptHeads(this.openHandle()).get(id);
+    const head = this.facts().heads.get(id);
     const title = head ? fallbackTitleFromPrompt(head) : '';
     return title || undefined;
   }
@@ -800,7 +831,7 @@ export class SessionSearchIndex {
     engine?: 'classic' | 'v2' | 'v3'
   ): number | undefined {
     const id = this.factsId(sessionId, engine);
-    return id ? promptCounts(this.openHandle()).get(id) : undefined;
+    return id ? this.facts().counts.get(id) : undefined;
   }
 
   /** Number of indexed V2 metadata documents. */

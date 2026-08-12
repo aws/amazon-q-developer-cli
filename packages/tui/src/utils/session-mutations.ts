@@ -457,12 +457,14 @@ export async function gcScan(
   root: string = sessionsRoot(),
   workspaceFilter?: string
 ): Promise<GcScan> {
-  // Yield to the event loop periodically: the scan stats/reads thousands of
-  // files and would otherwise block keyboard input for seconds.
-  let opCount = 0;
+  // Yield to the event loop on a time budget: the scan stats/reads thousands
+  // of files of wildly varying cost, and a count-based cadence lets a run of
+  // expensive files stall keyboard input.
+  let sliceStart = performance.now();
   const tick = async () => {
-    if (++opCount % 20 === 0) {
+    if (performance.now() - sliceStart >= 12) {
       await new Promise((r) => setImmediate(r));
+      sliceStart = performance.now();
     }
   };
   const candidates: GcCandidate[] = [];

@@ -95,7 +95,10 @@ describe('gc KAS recency guard tracks transcript activity', () => {
     const dir = join(root, 'hash1', 'sess_live');
     mkdirSync(dir, { recursive: true });
     const metaPath = join(dir, 'session.json');
-    writeFileSync(metaPath, JSON.stringify({ title: 'New Session' }));
+    writeFileSync(
+      metaPath,
+      JSON.stringify({ id: 'sess_live', title: 'New Session' })
+    );
     writeFileSync(join(dir, 'messages.jsonl'), ''); // empty, but touched now
     const past = new Date(Date.now() - 48 * 60 * 60 * 1000);
     utimesSync(metaPath, past, past);
