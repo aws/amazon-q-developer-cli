@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -74,6 +74,12 @@ Saves to `my-session.json`.
 
 ```
 /chat save ~/backups/important-conversation.json
+```
+
+### Example 5: Save to Path with Spaces
+
+```
+/chat save "/path/with spaces/my-session.json"
 ```
 
 ## Troubleshooting

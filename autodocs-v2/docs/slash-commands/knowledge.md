@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-03
-  commit: 28e17b5ed
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -38,7 +38,20 @@ List all knowledge base entries with status.
 Add a file or directory to the knowledge base.
 
 ```
-/knowledge add <name> <path>
+/knowledge add --name <name> --path <path> [--include <pattern>] [--exclude <pattern>]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--name` | `-n` | Name for the knowledge base entry |
+| `--path` | `-p` | Path to file or directory to add |
+| `--include` | | Include glob patterns (e.g., `**/*.ts`). Can be repeated. |
+| `--exclude` | | Exclude glob patterns (e.g., `node_modules/**`). Can be repeated. |
+| `--index-type` | | Index type to use (`Fast` or `Best`) |
+
+Paths with spaces can be quoted:
+```
+/knowledge add --name my-docs --path "/path/with spaces/docs"
 ```
 
 ### remove
@@ -47,6 +60,11 @@ Remove an entry by name or path.
 
 ```
 /knowledge remove <name|path>
+```
+
+Paths with spaces can be quoted:
+```
+/knowledge remove "/path/with spaces/docs"
 ```
 
 Alias: `/knowledge rm`
@@ -59,7 +77,10 @@ Re-index one or all knowledge base entries.
 /knowledge update [path]
 ```
 
-Without arguments, updates all knowledge bases at once. With a path, updates only that entry.
+Paths with spaces can be quoted:
+```
+/knowledge update "/path/with spaces/docs"
+```
 
 ### clear
 
@@ -79,12 +100,22 @@ Cancel a background indexing operation.
 
 Without ID, cancels the most recent operation.
 
-## Examples
+### fix
 
-### Add documentation
+Fix knowledge base directory names after agent file path changes.
 
 ```
-/knowledge add rust-docs docs/
+/knowledge fix [--apply]
+```
+
+Without `--apply`, performs a dry-run showing what would change.
+
+## Examples
+
+### Add documentation with include pattern
+
+```
+/knowledge add --name rust-docs --path docs/ --include "**/*.md"
 ```
 
 ### Show entries

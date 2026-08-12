@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 4ae084db
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -83,6 +83,12 @@ Tries `backup` first, then `backup.zip`, then `backup.json` if not found.
 
 ```
 /chat load ~/backups/important-conversation.json
+```
+
+### Example 5: Load from Path with Spaces
+
+```
+/chat load "/path/with spaces/my-session.json"
 ```
 
 ## Troubleshooting

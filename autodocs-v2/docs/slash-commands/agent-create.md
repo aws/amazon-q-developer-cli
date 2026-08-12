@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-04-09
-  commit: 727bdf89
+  validated: 2026-04-24
+  commit: 22dc5f71
   status: validated
   testable_headless: false
   category: slash_command
@@ -59,6 +59,14 @@ Creates a new agent based on the default agent's configuration.
 ```
 
 Creates the agent in the local workspace instead of globally.
+
+### Create with path containing spaces
+
+```
+/agent create my-agent --directory "/path/with spaces/agents"
+```
+
+Paths with spaces can be quoted.
 
 ## Agent File Locations
 
