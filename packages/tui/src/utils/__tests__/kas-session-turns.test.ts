@@ -9,7 +9,7 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildKasTurnTree, buildV2TurnList } from '../kas-session-turns';
-import { findKasSessionDir } from '../session-store';
+import { findKasSessionDir, findKasSessionDirs } from '../session-store';
 
 function makeSessionDir(): string {
   const root = mkdtempSync(join(tmpdir(), 'kas-turns-'));
@@ -317,6 +317,51 @@ describe('findKasSessionDir', () => {
     mkdirSync(join(root, 'cli', 'sess_x'), { recursive: true });
     writeFileSync(join(root, 'cli', 'sess_x', 'session.json'), '{}');
     expect(findKasSessionDir(root, 'sess_x')).toBeNull();
+  });
+
+  it('picks the canonical copy among same-id copies across hashes', () => {
+    // Copy with no workspace and older activity.
+    const bare = join(root, 'hashA', 'sess_dup');
+    mkdirSync(bare, { recursive: true });
+    writeFileSync(
+      join(bare, 'session.json'),
+      JSON.stringify({ id: 'sess_dup', createdAt: '2026-01-01T00:00:00.000Z' })
+    );
+    // Copy with a workspace — canonical resolution prefers it.
+    const withWs = join(root, 'hashB', 'sess_dup');
+    mkdirSync(withWs, { recursive: true });
+    writeFileSync(
+      join(withWs, 'session.json'),
+      JSON.stringify({
+        id: 'sess_dup',
+        workspacePaths: ['/w/proj'],
+        lastModifiedAt: '2026-06-01T00:00:00.000Z',
+      })
+    );
+
+    expect(findKasSessionDir(root, 'dup')).toBe(withWs);
+    expect(findKasSessionDirs(root, 'dup').sort()).toEqual(
+      [bare, withWs].sort()
+    );
+  });
+
+  it('locates the target without depending on unrelated sessions being readable', () => {
+    const target = join(root, 'hashT', 'sess_target');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(
+      join(target, 'session.json'),
+      JSON.stringify({ id: 'sess_target', workspacePaths: ['/w'] })
+    );
+    // An unrelated session with metadata over the read limit: a whole-store
+    // scan would have to touch it, a targeted probe never does.
+    const oversized = join(root, 'hashO', 'sess_other');
+    mkdirSync(oversized, { recursive: true });
+    writeFileSync(
+      join(oversized, 'session.json'),
+      JSON.stringify({ id: 'sess_other', pad: 'x'.repeat(2 * 1024 * 1024) })
+    );
+
+    expect(findKasSessionDir(root, 'target')).toBe(target);
   });
 });
 

@@ -254,6 +254,18 @@ describe('listAllWorkspaceSessionsFromDisk', () => {
     expect(result.complete).toBe(false);
   });
 
+  it('ignores non-session dirs in a hash bucket without flagging incomplete', async () => {
+    writeKasSession('hash1', 'real', '/workspace/alpha', 'Real session');
+    // A sibling artifact dir (e.g. KAS workflows) with no session.json must
+    // not be treated as a malformed session copy.
+    mkdirSync(join(root, 'hash1', 'workflows'), { recursive: true });
+    writeFileSync(join(root, 'hash1', 'workflows', 'index.json'), '{}');
+
+    const result = await listAllWorkspaceSessionsFromDiskDetailed(root);
+    expect(result.sessions.map((s) => s.sessionId)).toEqual(['real']);
+    expect(result.complete).toBe(true);
+  });
+
   it('uses the V2 filename as physical identity, not untrusted metadata', async () => {
     mkdirSync(join(root, 'cli'), { recursive: true });
     writeFileSync(

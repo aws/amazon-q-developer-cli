@@ -110,6 +110,36 @@ describe('SessionPreviewProvider', () => {
     expect(preview!.summary.createdAt).toBe('2026-07-20T10:00:00.000Z');
   });
 
+  it('previews the transcript when V2 metadata is over the read limit', () => {
+    // Large legacy V2 sessions carry multi-MiB metadata; the transcript is
+    // still previewable and must not be blanked by an unreadable meta file.
+    writeFileSync(
+      join(testDir, 'big.json'),
+      JSON.stringify({
+        session_id: 'big',
+        cwd: '/w',
+        title: 'huge legacy session',
+        pad: 'x'.repeat(2 * 1024 * 1024),
+      })
+    );
+    writeLog(testDir, 'big', [
+      {
+        kind: 'Prompt',
+        data: {
+          message_id: 'm1',
+          content: [{ kind: 'text', data: 'recover this transcript' }],
+        },
+      },
+    ]);
+
+    const provider = new SessionPreviewProvider(testDir);
+    const preview = provider.getPreview('big', 'v2');
+
+    expect(preview).not.toBeNull();
+    expect(preview!.summary.firstPrompt).toContain('recover this transcript');
+    expect(preview!.summary.turnCount).toBe(1);
+  });
+
   it('extracts recent messages', () => {
     writeMeta(testDir, 's1', { title: 'Chat session' });
     writeLog(testDir, 's1', [

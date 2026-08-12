@@ -296,6 +296,10 @@ export async function loadExistingSession(
   // local probes and load the id straight through the connected client, which
   // routes `session/load` to the remote store.
   let sessionId: string;
+  // Store the incoming load resolves against. Defaults to the caller's hint;
+  // the cloud fallthrough below pins it to 'remote' so an id that isn't a
+  // local session can't be loaded local-first (which spawns an empty session).
+  let loadSource: 'local' | 'remote' | undefined = options?.source;
   if (options?.source === 'remote') {
     sessionId = inputId;
   } else {
@@ -308,11 +312,14 @@ export async function loadExistingSession(
     });
     ctx.setLoadingMessage(null);
     if (!ensured.ok) {
-      // Local stores don't have it — if this is a cloud session, treat the id as
-      // a remote one and let the connected client load it. Otherwise surface the
-      // original not-found.
+      // No local session resolves for this id. Inside a cloud session the id is
+      // almost certainly a remote/cloud session (bare UUID), so load it from the
+      // remote store explicitly — never local-first, which would create a fresh
+      // empty session for an id the local store doesn't have. Outside a cloud
+      // session, surface the original not-found.
       if (ctx.cloudSessionActive) {
         sessionId = inputId;
+        loadSource = 'remote';
       } else {
         ctx.showAlert(
           `Failed to load session: ${ensured.message}`,
@@ -352,7 +359,7 @@ export async function loadExistingSession(
     const session = await ctx.kiro.loadSession(
       sessionId,
       (e) => buffered.push(e),
-      options?.source ? { source: options.source } : undefined
+      loadSource ? { source: loadSource } : undefined
     );
     logger.debug('[chat] loadSession resolved', {
       sessionId,

@@ -553,7 +553,8 @@ impl EnsureSessionArgs {
 
     async fn run(self) -> Result<String, RunError> {
         match (self.source_format, self.target_format) {
-            (SourceFormat::Kas, TargetFormat::Kas) => Ok(self.source_session_id.clone()),
+            (SourceFormat::Kas, TargetFormat::Kas) => resolve_kas_session_id(&self.cwd, &self.source_session_id)?
+                .ok_or_else(|| RunError::not_found(&self.source_session_id)),
             (SourceFormat::Kas, TargetFormat::V2) => Err(RunError::message(
                 "ensure-session: KAS source -> V2 target not supported",
             )),
@@ -590,9 +591,9 @@ impl EnsureSessionArgs {
             };
         }
 
-        if kas_session_exists(&self.cwd, &self.source_session_id)? {
+        if let Some(resolved) = resolve_kas_session_id(&self.cwd, &self.source_session_id)? {
             return match target {
-                TargetFormat::Kas => Ok(self.source_session_id.clone()),
+                TargetFormat::Kas => Ok(resolved),
                 TargetFormat::V2 => Err(RunError::message(
                     "ensure-session: KAS source -> V2 target not supported",
                 )),
@@ -698,12 +699,32 @@ async fn v1_conversation_exists(conversation_id: &str) -> Result<bool, RunError>
     Ok(entry.is_some())
 }
 
-fn kas_session_exists(cwd: &str, session_id: &str) -> Result<bool, RunError> {
+/// Resolve a KAS session id to the canonical directory name that actually
+/// exists on disk, or `None` when no matching session is found.
+///
+/// KAS session/list can surface a bare UUID for a session whose on-disk id
+/// carries the `sess_` prefix; issuing `session/load` with the bare id misses
+/// the stored session and spawns a fresh empty one. Bare ids therefore resolve
+/// against the `sess_`-prefixed directory first, so a listing that dropped the
+/// prefix still loads the real conversation.
+fn resolve_kas_session_id(cwd: &str, session_id: &str) -> Result<Option<String>, RunError> {
     let kas_root = default_kas_sessions_root()
         .map_err(|e| RunError::message(format!("failed to resolve KAS sessions root: {e}")))?;
     let bucket = chat_cli_v2::agent::kas::workspace_hash::compute_workspace_hash(&[cwd.to_string()]);
-    let session_dir = kas_root.join(bucket).join(session_id);
-    Ok(session_dir.join("session.json").exists())
+    Ok(resolve_kas_session_id_in(&kas_root.join(bucket), session_id))
+}
+
+/// Candidate resolution against a concrete bucket directory. A bare id prefers
+/// the `sess_`-prefixed directory (and vice versa) so a listing that dropped or
+/// kept the prefix still resolves to the stored session.
+fn resolve_kas_session_id_in(bucket_dir: &Path, session_id: &str) -> Option<String> {
+    let candidates: Vec<String> = match session_id.strip_prefix("sess_") {
+        Some(bare) => vec![session_id.to_string(), bare.to_string()],
+        None => vec![format!("sess_{session_id}"), session_id.to_string()],
+    };
+    candidates
+        .into_iter()
+        .find(|cand| bucket_dir.join(cand).join("session.json").exists())
 }
 
 // ─── derive-messages ─────────────────────────────────────────────────
@@ -888,6 +909,63 @@ mod tests {
         );
     }
 
+    // ─── resolve_kas_session_id_in (sess_ prefix normalization) ──────
+
+    fn seed_kas_session(bucket_dir: &Path, dir_name: &str) {
+        let dir = bucket_dir.join(dir_name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("session.json"), "{}").unwrap();
+    }
+
+    #[test]
+    fn bare_id_resolves_to_the_prefixed_directory_on_disk() {
+        // KAS session/list can surface a bare UUID for a session stored under
+        // `sess_<uuid>`; the bare id must map back to that directory so the
+        // real conversation loads instead of spawning an empty session.
+        let bucket = tempfile::tempdir().unwrap();
+        seed_kas_session(bucket.path(), "sess_abc");
+        assert_eq!(
+            resolve_kas_session_id_in(bucket.path(), "abc"),
+            Some("sess_abc".to_string())
+        );
+    }
+
+    #[test]
+    fn prefixed_id_resolves_as_is_when_present() {
+        let bucket = tempfile::tempdir().unwrap();
+        seed_kas_session(bucket.path(), "sess_abc");
+        assert_eq!(
+            resolve_kas_session_id_in(bucket.path(), "sess_abc"),
+            Some("sess_abc".to_string())
+        );
+    }
+
+    #[test]
+    fn bare_native_directory_still_resolves_when_no_prefixed_sibling_exists() {
+        let bucket = tempfile::tempdir().unwrap();
+        seed_kas_session(bucket.path(), "abc");
+        assert_eq!(resolve_kas_session_id_in(bucket.path(), "abc"), Some("abc".to_string()));
+    }
+
+    #[test]
+    fn prefixed_sibling_wins_over_a_stray_bare_directory() {
+        // A prior bad load may have left an empty bare dir beside the real
+        // `sess_`-prefixed one; the prefixed session is the canonical target.
+        let bucket = tempfile::tempdir().unwrap();
+        seed_kas_session(bucket.path(), "abc");
+        seed_kas_session(bucket.path(), "sess_abc");
+        assert_eq!(
+            resolve_kas_session_id_in(bucket.path(), "abc"),
+            Some("sess_abc".to_string())
+        );
+    }
+
+    #[test]
+    fn missing_session_resolves_to_none() {
+        let bucket = tempfile::tempdir().unwrap();
+        assert_eq!(resolve_kas_session_id_in(bucket.path(), "abc"), None);
+    }
+
     #[test]
     fn test_seed_v1_serializes_with_camel_case_conversation_id() {
         let json_str = serde_json::to_string(&CliInternalOutput::test_seed_v1("conv-1")).unwrap();
@@ -1006,15 +1084,20 @@ mod tests {
     // ─── EnsureSessionArgs behavior ──────────────────────────────────
 
     #[tokio::test]
-    async fn run_to_kas_with_explicit_kas_source_is_noop() {
+    async fn run_to_kas_with_explicit_kas_source_errors_when_missing() {
+        // (kas, kas) is no longer a blind passthrough: it verifies the session
+        // exists on disk and resolves the canonical (`sess_`-prefixed) id, so a
+        // bare id from the listing can't spawn a fresh empty session. A session
+        // that exists under neither name resolves to not-found rather than
+        // echoing an unloadable id.
         let args = EnsureSessionArgs {
             source_format: SourceFormat::Kas,
-            source_session_id: "anything-the-caller-says".to_string(),
+            source_session_id: "does-not-exist-anywhere-9e3a".to_string(),
             target_format: TargetFormat::Kas,
-            cwd: "/tmp".to_string(),
+            cwd: "/tmp/kiro-ensure-session-missing-test".to_string(),
         };
         let result = args.run().await;
-        assert_eq!(result.ok().as_deref(), Some("anything-the-caller-says"));
+        assert!(result.is_err());
     }
 
     #[test]

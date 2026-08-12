@@ -440,6 +440,9 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     })();
     return () => {
       cancelled = true;
+      // Stop the store reconcile when the dashboard closes so it can't keep
+      // churning a large store in the background once we're back in chat.
+      getSessionSearchIndex().abort();
     };
   }, [activeSessionId, backgroundReady, bookmarkStore]);
 
@@ -2427,13 +2430,15 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
           // alternate timeline from an ordinary session.
           const rewindMark =
             entry.createdReason === 'rewind' ? `${glyphs.rewind} ` : '';
-          // Cloud rows (remote store or cloud-sandbox placement) get a ☁
-          // marker: deleting one goes through the agent to the backend, so
-          // the row must be visually distinct from local ones.
+          // Cloud rows (remote store or cloud-sandbox placement) get a
+          // [cloud] text tag: deleting one goes through the agent to the
+          // backend, so the row must be visually distinct from local ones. A
+          // plain-text tag (like the engine chip) always aligns since it has
+          // no ambiguous-width glyph.
           const cloudMark =
             entry.source === 'remote' ||
             entry.executionTarget?.kind === 'cloud-sandbox'
-              ? `${glyphs.cloud}  `
+              ? `[cloud]  `
               : '';
           // Bookmark star prefix + tags suffix, all folded into the title as
           // plain text so the fixed-column widths stay correct.
@@ -2671,7 +2676,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               : '');
           const summary =
             `Showing ${shownFrom}\u2013${shownTo} of ${total} sessions` +
-            (total < storeTotal ? ` (${storeTotal} in store)` : '') +
+            (total < storeTotal ? ` (${storeTotal} total)` : '') +
             (isRefreshing ? ' (refreshing\u2026)' : '') +
             groupCue;
           const gcHint = gcHintShown
@@ -2684,7 +2689,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
                 {dim(summary)}
                 {catalogIncomplete
                   ? getColor('warning')(
-                      ' · catalog incomplete; cached sessions retained'
+                      ' \u00b7 some sessions couldn\u2019t be loaded \u2014 showing your last complete list'
                     )
                   : ''}
               </Text>

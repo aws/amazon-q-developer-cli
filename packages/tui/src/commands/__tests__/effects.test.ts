@@ -2439,3 +2439,48 @@ describe('/sessions rename discovery source', () => {
     );
   });
 });
+
+describe('/sessions dashboard opens regardless of cloud state', () => {
+  const sessionsCmd: SlashCommand = {
+    name: '/sessions',
+    description: '',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  function dashboardCtx(cloudActive: boolean) {
+    const ctx = createMockCommandContext({ cloudSessionActive: cloudActive });
+    (ctx as { agentEngine: string }).agentEngine = 'kas';
+    return ctx;
+  }
+
+  function openDashboard(ctx: ReturnType<typeof dashboardCtx>) {
+    // The effect enters the alt screen via a raw stdout escape; stub it so the
+    // test doesn't scribble control codes into the runner output.
+    const stdoutSpy = spyOn(process.stdout, 'write').mockImplementation(
+      () => true
+    );
+    try {
+      runEffect(sessionsCmd, null, ctx, '');
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  }
+
+  it('bare /sessions opens the full-screen dashboard inside a cloud session', () => {
+    const ctx = dashboardCtx(true);
+    openDashboard(ctx);
+    expect(ctx._spies.setShowSessionDashboard).toHaveBeenCalledTimes(1);
+    expect((ctx._spies.setShowSessionDashboard as any).mock.calls[0][0]).toBe(
+      true
+    );
+    expect(ctx._spies.setMode).toHaveBeenCalledWith('session-dashboard');
+  });
+
+  it('bare /sessions opens the same dashboard outside a cloud session', () => {
+    const ctx = dashboardCtx(false);
+    openDashboard(ctx);
+    expect(ctx._spies.setShowSessionDashboard).toHaveBeenCalledTimes(1);
+    expect(ctx._spies.setMode).toHaveBeenCalledWith('session-dashboard');
+  });
+});

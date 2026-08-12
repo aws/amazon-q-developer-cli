@@ -496,13 +496,13 @@ describe('hardware cursor ownership', () => {
 });
 
 describe('cloud session rendering', () => {
-  test('keeps a visible gap between the cloud icon and title', async () => {
+  test('tags cloud rows with a [cloud] marker before the title', async () => {
     const { terminal } = mount([
       session('cloud-1', 'cloud session', { source: 'remote' }),
     ]);
     await flush();
 
-    expect(await currentFrame(terminal)).toMatch(/(?:☁️|\*) {2}cloud session/);
+    expect(await currentFrame(terminal)).toMatch(/\[cloud] {2}cloud session/);
   });
 });
 
@@ -514,7 +514,7 @@ describe('catalog status rendering', () => {
     await flush();
 
     expect(await currentFrame(terminal)).toContain(
-      'catalog incomplete; cached sessions retained'
+      'some sessions couldn\u2019t be loaded'
     );
   });
 });
@@ -1767,7 +1767,7 @@ describe('workspace group ordering', () => {
     expect(frame).not.toContain(descendant);
   });
 
-  test('bookmarks lead, then current and alphabetized workspace groups', async () => {
+  test('bookmarks lead, then cloud, then current and alphabetized workspaces', async () => {
     bookmarkedIds.add('bookmark');
     const { terminal } = mount([
       session('bookmark', 'bookmarked session', {
@@ -1794,13 +1794,14 @@ describe('workspace group ordering', () => {
     ]);
     await flush();
     const frame = await currentFrame(terminal);
-    expect(frame.indexOf('Bookmarked')).toBeLessThan(frame.indexOf('/w/proj'));
-    expect(frame.indexOf('/w/proj')).toBeLessThan(
+    // Order: Bookmarked, Cloud, current workspace, then others alphabetically.
+    expect(frame.indexOf('Bookmarked')).toBeLessThan(
       frame.indexOf('cloud session')
     );
     expect(frame.indexOf('cloud session')).toBeLessThan(
-      frame.indexOf('/w/older')
+      frame.indexOf('/w/proj')
     );
+    expect(frame.indexOf('/w/proj')).toBeLessThan(frame.indexOf('/w/older'));
     expect(frame.indexOf('/w/older')).toBeLessThan(frame.indexOf('/w/recent'));
   });
 });

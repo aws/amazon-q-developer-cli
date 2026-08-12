@@ -4,7 +4,9 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -200,6 +202,70 @@ describe('SessionSearchIndex', () => {
     // The oversized row no longer marks the listing incomplete, so the
     // vanished session's stale index rows were swept.
     expect(index.search('zebra')).toHaveLength(0);
+    index.close();
+  });
+
+  it('reuses unchanged metadata on refresh and skips re-reading the file', async () => {
+    const metaPath = join(testDir, 'incr.json');
+    writeSessionMeta(testDir, 'incr', { title: 'Original' });
+    writeSessionLog(testDir, 'incr', [
+      { kind: 'Prompt', data: { content: [{ kind: 'text', data: 'hello' }] } },
+    ]);
+    // Pin the metadata mtime so the incremental fast-path is deterministic.
+    const T0 = 1_700_000_000;
+    utimesSync(metaPath, T0, T0);
+
+    const index = new SessionSearchIndex(testDir);
+    await index.build();
+    expect(index.getDocument('incr')?.title).toBe('Original');
+    expect(statSync(metaPath).mtimeMs).toBe(T0 * 1000);
+
+    // Rewrite the content but restore the original mtime: reopening the
+    // dashboard (refresh) must NOT re-read a file whose mtime is unchanged.
+    writeFileSync(
+      metaPath,
+      JSON.stringify({ session_id: 'incr', cwd: '/w', title: 'Rewritten' })
+    );
+    utimesSync(metaPath, T0, T0);
+    await index.refresh();
+    expect(index.getDocument('incr')?.title).toBe('Original');
+
+    // Bump the mtime: a real change is picked up on the next refresh.
+    writeFileSync(
+      metaPath,
+      JSON.stringify({ session_id: 'incr', cwd: '/w', title: 'Rewritten' })
+    );
+    const T1 = T0 + 10;
+    utimesSync(metaPath, T1, T1);
+    await index.refresh();
+    expect(index.getDocument('incr')?.title).toBe('Rewritten');
+    index.close();
+  });
+
+  it('aborts an in-flight reconcile and resumes cleanly on the next refresh', async () => {
+    for (let i = 0; i < 300; i++) {
+      const id = `abort-${String(i).padStart(4, '0')}`;
+      writeSessionMeta(testDir, id, { title: `session ${i}` });
+      writeSessionLog(testDir, id, [
+        {
+          kind: 'Prompt',
+          data: { content: [{ kind: 'text', data: `payload token ${i}` }] },
+        },
+      ]);
+    }
+
+    const index = new SessionSearchIndex(testDir);
+    const inFlight = index.refresh();
+    index.abort();
+    // Aborting must not throw or corrupt the index — the pass just yields
+    // the event loop back partway through.
+    await expect(inFlight).resolves.toBeUndefined();
+
+    // The scan is resumable: a follow-up refresh completes a full,
+    // searchable index.
+    await index.refresh();
+    expect(index.size).toBe(300);
+    expect(index.search('payload').length).toBeGreaterThan(0);
     index.close();
   });
 

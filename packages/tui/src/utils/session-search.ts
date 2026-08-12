@@ -184,6 +184,10 @@ export class SessionSearchIndex {
   private buildPromise: Promise<void> | null = null;
   private refreshPending = false;
   private conflictRetry = false;
+  // Set by abort() to stop an in-flight reconcile at the next slice boundary.
+  // The dashboard aborts on unmount so a long store reconcile cannot keep
+  // starving the event loop once the user is back in the chat.
+  private aborted = false;
   private handle: IndexHandle | null = null;
   private searchEngines = new Map<string, 'v2' | 'v3'>();
   // One snapshot of the per-session fact tables. The underlying helpers each
@@ -327,8 +331,19 @@ export class SessionSearchIndex {
     return this.startBuild();
   }
 
+  /**
+   * Stop an in-flight reconcile at the next slice boundary. The store scan
+   * is resumable (marks record per-session progress), so aborting only
+   * yields the event loop back — the next {@link refresh} picks up where
+   * this left off. Safe to call when nothing is building.
+   */
+  abort(): void {
+    if (this.buildPromise) this.aborted = true;
+  }
+
   private startBuild(): Promise<void> {
     const p = (async () => {
+      this.aborted = false;
       // Conflict passes back off exponentially: another live process is
       // reconciling the same store, and an immediate full re-pass turns two
       // dashboards into a permanent CPU hot-loop that starves keyboard input.
@@ -337,6 +352,7 @@ export class SessionSearchIndex {
         this.refreshPending = false;
         this.conflictRetry = false;
         await this.doBuild();
+        if (this.aborted) break;
         if (this.conflictRetry) {
           conflictDelayMs = Math.min(
             Math.max(conflictDelayMs * 2, 2_000),
@@ -376,6 +392,7 @@ export class SessionSearchIndex {
       const indexedPromptless = promptlessIds(handle);
 
       const nextDocs = new Map<string, SessionDocument>();
+      const prevDocs = this.documents;
       let sliceStart = performance.now();
       for (const file of jsonFiles) {
         const sessionId = file.replace('.json', '');
@@ -387,7 +404,8 @@ export class SessionSearchIndex {
           () => {
             listingComplete = false;
           },
-          this.indexedId(sessionId, 'v2')
+          this.indexedId(sessionId, 'v2'),
+          prevDocs.get(sessionId)
         );
         if (doc) {
           nextDocs.set(sessionId, doc);
@@ -396,6 +414,7 @@ export class SessionSearchIndex {
         if (performance.now() - sliceStart >= RECONCILE_TIME_BUDGET_MS) {
           this.emitStatus();
           await new Promise((resolve) => setImmediate(resolve));
+          if (this.aborted) return;
           sliceStart = performance.now();
         }
       }
@@ -406,6 +425,7 @@ export class SessionSearchIndex {
       // so a cold build never puts one long stall on the UI thread.
       if (handle.mode === 'content') {
         const collected = await this.collectRefs();
+        if (this.aborted) return;
         const refs = collected.refs;
         const discoveredEngines = new Map(
           refs.map((ref) => [ref.id, ref.engine ?? 'v2'] as const)
@@ -445,6 +465,7 @@ export class SessionSearchIndex {
             }
             if (r.done) break;
             await new Promise((resolve) => setImmediate(resolve));
+            if (this.aborted) return;
           }
         } finally {
           disposeReconcileState(state);
@@ -471,6 +492,7 @@ export class SessionSearchIndex {
           // pass alone stalls the loop for most of a second at 10K docs.
           if (performance.now() - refineStart >= RECONCILE_TIME_BUDGET_MS) {
             await new Promise((resolve) => setImmediate(resolve));
+            if (this.aborted) return;
             refineStart = performance.now();
           }
         }
@@ -519,6 +541,7 @@ export class SessionSearchIndex {
         else complete = false;
         if (performance.now() - sliceStart >= RECONCILE_TIME_BUDGET_MS) {
           await new Promise((resolve) => setImmediate(resolve));
+          if (this.aborted) return { files, complete: false };
           sliceStart = performance.now();
         }
       }
@@ -676,7 +699,8 @@ export class SessionSearchIndex {
     counts: ReadonlyMap<string, number>,
     promptless: ReadonlySet<string>,
     onError?: () => void,
-    factsId = sessionId
+    factsId = sessionId,
+    prevDoc?: SessionDocument
   ): SessionDocument | null {
     try {
       const metaPath = containedRegularFile(
@@ -703,6 +727,18 @@ export class SessionSearchIndex {
         logMtime = statSync(logPath).mtimeMs;
       } catch {
         /* no transcript yet */
+      }
+      // Reopening the dashboard re-runs the whole metadata pass. Reading and
+      // parsing every session.json each time dominates the cost on a large
+      // store (some files are multiple MiB). When neither the metadata nor
+      // the transcript changed since the last build, reuse the prior record
+      // and skip the read — the fact-derived fields are refreshed downstream.
+      if (
+        prevDoc &&
+        prevDoc.metaMtimeMs === metaStat.mtimeMs &&
+        prevDoc.logMtimeMs === logMtime
+      ) {
+        return prevDoc;
       }
       const promptCount = counts.get(factsId) ?? 0;
       const hasTranscriptFacts = counts.has(factsId) || promptless.has(factsId);

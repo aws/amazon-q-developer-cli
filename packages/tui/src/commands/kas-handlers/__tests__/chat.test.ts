@@ -1051,6 +1051,46 @@ describe('handleChat (KAS-mode dispatch)', () => {
       ).toBe(true);
     });
 
+    it('bare id unresolved in a cloud session loads from the remote store (never local-first)', async () => {
+      // ensure-session finds no local session for the id; inside a cloud
+      // session it must load explicitly as remote so an id the local store
+      // lacks can't spawn a fresh empty session.
+      mockEnsureSession.mockImplementationOnce(() =>
+        Promise.resolve({ ok: false, message: 'not found' })
+      );
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, isCloudSessionActive: () => true } as any,
+      });
+      ctx.cloudSessionActive = true;
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(loadSession).toHaveBeenCalledTimes(1);
+      const call = (loadSession as any).mock.calls[0];
+      expect(call[0]).toBe('sid');
+      expect(call[2]).toEqual({ source: 'remote' });
+    });
+
+    it('bare id unresolved outside a cloud session surfaces not-found and does not load', async () => {
+      mockEnsureSession.mockImplementationOnce(() =>
+        Promise.resolve({ ok: false, message: 'not found' })
+      );
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, isCloudSessionActive: () => false } as any,
+      });
+      ctx.cloudSessionActive = false;
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(loadSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some((c: any[]) =>
+          String(c[0]).includes('Failed to load session')
+        )
+      ).toBe(true);
+    });
+
     it('new: cancels pending cloud /clear re-wipe timers', async () => {
       mockCancelCloudClearRewipes.mockClear();
       const newSession = mock(() => Promise.resolve({ sessionId: 'newSID' }));

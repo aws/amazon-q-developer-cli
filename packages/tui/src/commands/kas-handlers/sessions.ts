@@ -7,10 +7,13 @@ import { runEffect } from '../effects.js';
 import { handleChat } from './chat.js';
 
 export const handleSessions: KasHandler = async (cmd, args, ctx, options) => {
-  // In a cloud session, /sessions is the cloud-session picker (same as /chat).
-  if (ctx.cloudSessionActive) {
+  // Bare `/sessions` always opens the dashboard — identical in and out of a
+  // cloud session. Cloud-specific subcommands (new/save/load) still route
+  // through the /chat flow, which owns those.
+  const isBare = (args ?? '').trim() === '';
+  if (ctx.cloudSessionActive && !isBare) {
     return handleChat(cmd, args, ctx, options);
   }
-  // Local: open the session dashboard.
+  // Open the session dashboard.
   runEffect(cmd, null, ctx, args);
 };

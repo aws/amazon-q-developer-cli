@@ -25,6 +25,23 @@ import {
 } from './session-store.js';
 
 /**
+ * Read session metadata, tolerating oversized or corrupt files. The
+ * transcript is what the preview renders — a metadata file over the read
+ * limit (large legacy V2 sessions carry multi-MiB metadata) or a parse
+ * error must degrade the title, not blank the whole preview.
+ */
+function readSessionMetaLenient(path: string): Record<string, unknown> {
+  try {
+    const value = readBoundedJson(path, SESSION_METADATA_MAX_BYTES);
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Read the last `maxBytes` of a file and return complete lines (dropping
  * the first partial line at the slice boundary). Small files are read whole.
  * Prevents the event-loop freeze that a full readFileSync causes on 18MB+
@@ -208,10 +225,7 @@ export class SessionPreviewProvider {
           ? v2SessionPath(storeRoot, sessionId, '.json')
           : containedRegularFile(this.sessionsDir, `${sessionId}.json`);
       if (engine !== 'v3' && metaPath && existsSync(metaPath)) {
-        const meta = readBoundedJson(
-          metaPath,
-          SESSION_METADATA_MAX_BYTES
-        ) as Record<string, unknown>;
+        const meta = readSessionMetaLenient(metaPath);
         const logPath =
           basename(this.sessionsDir) === 'cli'
             ? v2SessionPath(storeRoot, sessionId, '.jsonl')
@@ -236,10 +250,7 @@ export class SessionPreviewProvider {
         if (kasDir) {
           const kasMetaPath = containedRegularFile(kasDir, 'session.json');
           if (!kasMetaPath) return null;
-          const kasMeta = readBoundedJson(
-            kasMetaPath,
-            SESSION_METADATA_MAX_BYTES
-          ) as Record<string, unknown>;
+          const kasMeta = readSessionMetaLenient(kasMetaPath);
           const lexicalLogPath = join(kasDir, 'messages.jsonl');
           const logPath = containedRegularFile(kasDir, 'messages.jsonl');
           if (!logPath && existsSync(lexicalLogPath)) return null;

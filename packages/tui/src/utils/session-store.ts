@@ -321,8 +321,17 @@ export function listValidatedKasSessionCopies(
     }
     for (const dirName of dirNames.sort()) {
       const copy = readKasSessionCopy(root, hash, dirName);
-      if (copy) copies.push(copy);
-      else complete = false;
+      if (copy) {
+        copies.push(copy);
+        continue;
+      }
+      // A subdir with no session.json is a sibling artifact (e.g. a
+      // `workflows` dir), not a malformed session — skip it without
+      // reporting the listing incomplete. Only a session.json that is
+      // present but unreadable/uncontained counts as an incomplete copy.
+      if (existsSync(join(root, hash, dirName, 'session.json'))) {
+        complete = false;
+      }
     }
   }
   return { copies, complete };
@@ -342,17 +351,44 @@ export function resolveCanonicalKasSessionCopy(
   );
 }
 
+/**
+ * Validated copies of ONE session id, probed directly under each hash dir
+ * instead of reading every session.json in the store. Locating a single
+ * session (preview, turn tree, mutations) must not cost a whole-store scan —
+ * on a large store that read+parse of thousands of files is a per-highlight
+ * stall. At most two candidate dir names (bare and `sess_`-prefixed) are
+ * checked per hash, and only the ones that exist are read.
+ */
+function listKasSessionCopiesById(
+  root: string,
+  sessionId: string
+): ValidatedKasSessionCopy[] {
+  const normalized = normalizeSessionId(sessionId);
+  const dirNames = [normalized, `sess_${normalized}`];
+  let hashes: string[];
+  try {
+    hashes = readdirSync(root).filter((entry) => entry !== 'cli');
+  } catch {
+    return [];
+  }
+  const copies: ValidatedKasSessionCopy[] = [];
+  for (const hash of hashes) {
+    for (const dirName of dirNames) {
+      const copy = readKasSessionCopy(root, hash, dirName);
+      if (copy && copy.sessionId === normalized) copies.push(copy);
+    }
+  }
+  return copies;
+}
+
 /** Locate the canonical validated KAS-native session copy by id. */
 export function findKasSessionCopy(
   root: string,
   sessionId: string
 ): ValidatedKasSessionCopy | null {
   if (!isValidSessionId(sessionId)) return null;
-  const normalized = normalizeSessionId(sessionId);
   return resolveCanonicalKasSessionCopy(
-    listValidatedKasSessionCopies(root).copies.filter(
-      (copy) => copy.sessionId === normalized
-    )
+    listKasSessionCopiesById(root, sessionId)
   );
 }
 
@@ -367,9 +403,7 @@ export function findKasSessionDir(
 /** Every validated directory holding this session across workspace buckets. */
 export function findKasSessionDirs(root: string, sessionId: string): string[] {
   if (!isValidSessionId(sessionId)) return [];
-  const normalized = normalizeSessionId(sessionId);
-  return listValidatedKasSessionCopies(root)
-    .copies.filter((copy) => copy.sessionId === normalized)
+  return listKasSessionCopiesById(root, sessionId)
     .map((copy) => copy.dir)
     .sort();
 }

@@ -368,6 +368,9 @@ export const SessionDashboardScreen: React.FC = () => {
       pushChildSessions(lines);
       return lines;
     }
+    // A session is highlighted but its preview has not loaded yet — say so
+    // rather than showing the empty-state hint, which reads as "nothing here".
+    if (highlightedSession) return [dim('Loading session…')];
     return [dim('Highlight a session to preview it.')];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -386,7 +389,7 @@ export const SessionDashboardScreen: React.FC = () => {
     : 'Preview';
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height} overflow="hidden">
       <Box flexDirection="row" flexGrow={1}>
         {/* Master list — the existing dashboard component, full height */}
         <Box flexDirection="column" width={listW} flexShrink={0}>

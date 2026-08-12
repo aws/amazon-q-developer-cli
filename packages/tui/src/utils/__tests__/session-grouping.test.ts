@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import {
+  CLOUD_GROUP_KEY,
   groupSessions,
   recencyBucket,
   type MetaLookup,
@@ -50,6 +51,34 @@ describe('groupSessions — workspace', () => {
     expect(
       groups.find((g) => g.workspace === '/w/alpha')!.sessions
     ).toHaveLength(2);
+  });
+
+  it('groups cloud/remote sessions into a pinned Cloud group', () => {
+    const sessions: SessionListingInput[] = [
+      mk('local', '/w/beta', daysAgo(1)),
+      { ...mk('cloudA', '', daysAgo(1)), source: 'remote' },
+      {
+        ...mk('cloudB', '', daysAgo(2)),
+        executionTarget: { kind: 'cloud-sandbox' } as never,
+      },
+    ];
+    const groups = groupSessions(sessions, '/w/beta', {
+      groupBy: 'workspace',
+      meta: emptyMeta,
+      now: NOW,
+    });
+    const cloud = groups.find((g) => g.workspace === CLOUD_GROUP_KEY);
+    expect(cloud).toBeDefined();
+    expect(cloud!.label).toBe('Cloud');
+    expect(cloud!.sessions.map((s) => s.sessionId).sort()).toEqual([
+      'cloudA',
+      'cloudB',
+    ]);
+    // Cloud is not sunk into "(unknown workspace)".
+    expect(groups.some((g) => g.workspace === '')).toBe(false);
+    // Cloud leads, then the current workspace.
+    expect(groups[0]!.workspace).toBe(CLOUD_GROUP_KEY);
+    expect(groups[1]!.isCurrent).toBe(true);
   });
 });
 

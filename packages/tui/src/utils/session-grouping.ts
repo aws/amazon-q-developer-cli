@@ -167,6 +167,14 @@ function applyFilters(
   });
 }
 
+/** Sentinel workspace key for the pinned Cloud group (never a real path). */
+export const CLOUD_GROUP_KEY = '\u0000cloud';
+
+/** Cloud/remote sessions have no local workspace and route to the backend. */
+function isCloudSession(e: SessionDashboardEntry): boolean {
+  return e.source === 'remote' || e.executionTarget?.kind === 'cloud-sandbox';
+}
+
 /**
  * Group + filter a raw listing into `WorkspaceGroup[]` for the list renderer.
  *
@@ -269,7 +277,12 @@ export function groupSessions(
   // groupBy === 'workspace'
   const groupMap = new Map<string, SessionDashboardEntry[]>();
   for (const e of entries) {
-    const key = e.workspace.replace(/\/+$/, '');
+    // Cloud/remote sessions carry no local workspace path, so grouping them
+    // by cwd sinks them into "(unknown workspace)". Give them their own
+    // group instead, keyed by a sentinel so it never collides with a path.
+    const key = isCloudSession(e)
+      ? CLOUD_GROUP_KEY
+      : e.workspace.replace(/\/+$/, '');
     (groupMap.get(key) ?? groupMap.set(key, []).get(key)!).push(e);
   }
   const groups: WorkspaceGroup[] = [];
@@ -277,14 +290,20 @@ export function groupSessions(
     list.sort(byRecency);
     groups.push({
       workspace,
-      label: workspaceLabel(workspace),
+      label:
+        workspace === CLOUD_GROUP_KEY ? 'Cloud' : workspaceLabel(workspace),
       isCurrent: workspace.replace(/\/+$/, '') === normalizedCwd,
       sessions: list,
     });
   }
   groups.sort((a, b) => {
-    if (a.isCurrent && !b.isCurrent) return -1;
-    if (!a.isCurrent && b.isCurrent) return 1;
+    // Group-by-workspace order: Cloud, then the current workspace, then other
+    // workspaces alphabetically. (The Bookmarked group is pinned ahead of all
+    // of these by the caller.)
+    const aCloud = a.workspace === CLOUD_GROUP_KEY;
+    const bCloud = b.workspace === CLOUD_GROUP_KEY;
+    if (aCloud !== bCloud) return aCloud ? -1 : 1;
+    if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
     return a.label.localeCompare(b.label);
   });
   return groups;
