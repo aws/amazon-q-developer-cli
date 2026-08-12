@@ -63,11 +63,21 @@ Records are OTEL metric data points forwarded by the KUTS ADOT collector. Each r
 ### Understanding `user_id`
 
 - Format: `<directory-id>.<user-uuid>` for SSO/IdC users
-- `d-9067925563` = Amazon corporate directory (internal users)
-- Other `d-XXXXXXXXXX` prefixes = external enterprise customers
-- `https://...` prefix = Builder ID users
-- ~81% of `kiro_cli_user_turns` records have `user_id` populated
-- ~19% are missing (Builder ID users on versions that don't emit it)
+- Known directory IDs:
+
+| Directory ID | User Type | Description |
+|-------------|-----------|-------------|
+| `d-9067925563` | **Internal** | Amazon corporate directory |
+| `d-9067642ac7` | **Builder ID** | AWS Builder ID |
+| `d-9067c98495` | **Social** | Social login (Google/GitHub) |
+| Other `d-XXXXXXXXXX` | **Enterprise** | Enterprise IdC/SSO customers |
+| `https://<issuer>.<subject>` | **External OIDC** | Enterprise federated via Entra ID or Okta |
+
+- ~81% of `kiro_cli_user_turns` records have `user_id` populated (denominator: all records with `ispresent(kiro_cli_user_turns)`)
+- ~19% of records are missing `user_id` — primarily Builder ID users on versions where `get_usage_limits()` times out or fails
+- Of distinct Builder ID users, ~93% are missing from KUTS (denominator: backend server-side distinct Builder ID count, measured Aug 10 2026)
+- Overall, KUTS `count_distinct(user_id)` reports ~33% fewer distinct users than the backend (denominator: backend total distinct users for the same window, measured Aug 10 2026)
+- These gaps will shrink as users upgrade to versions with better `user_id` coverage
 
 ### Understanding `session_interface`
 
@@ -142,6 +152,58 @@ fields @timestamp, user_id, agent_engine
 | sort day asc
 ```
 
+### Builder ID users only
+
+~93% of Builder ID users are missing `user_id` in KUTS; this query surfaces roughly 1 in 14 of them.
+
+```
+fields @timestamp, user_id, agent_engine
+| filter `kuts.forwarded` = "true"
+  and ispresent(kiro_cli_user_turns)
+  and user_id like /d-9067642ac7/
+| stats count_distinct(user_id) as users
+  by bin(24h) as day, agent_engine
+| sort day asc
+```
+
+### Social users only (Google/GitHub)
+
+```
+fields @timestamp, user_id, agent_engine
+| filter `kuts.forwarded` = "true"
+  and ispresent(kiro_cli_user_turns)
+  and user_id like /d-9067c98495/
+| stats count_distinct(user_id) as users
+  by bin(24h) as day, agent_engine
+| sort day asc
+```
+
+### Enterprise users (IdC + External OIDC, excludes Internal, Builder ID, Social)
+
+```
+fields @timestamp, user_id, agent_engine
+| filter `kuts.forwarded` = "true"
+  and ispresent(kiro_cli_user_turns)
+  and (user_id like /^d-/ or user_id like /^https:/)
+  and user_id not like /d-9067925563/
+  and user_id not like /d-9067642ac7/
+  and user_id not like /d-9067c98495/
+| stats count_distinct(user_id) as users
+  by bin(24h) as day, agent_engine
+| sort day asc
+```
+
+### Users by auth type (full breakdown)
+
+Run these four queries separately and combine results. Each query costs ~3.4 TiB per day queried, so a full breakdown over 1 day costs ~13.6 TiB total. Keep windows narrow.
+
+- **Internal**: `user_id like /d-9067925563/`
+- **Builder ID**: `user_id like /d-9067642ac7/` (severely undercounted — ~7% coverage)
+- **Social**: `user_id like /d-9067c98495/`
+- **Enterprise**: `(user_id like /^d-/ or user_id like /^https:/)` AND NOT Internal, Builder ID, Social
+
+The four buckets are mutually exclusive and collectively exhaustive over all records where `user_id` is present. Their sum equals the "Total distinct users" query below.
+
 ### Total distinct users (deduplicated across everything)
 
 ```
@@ -212,7 +274,7 @@ When presenting, call out:
 ## Guardrails
 
 - Use ReadOnly credentials. Never write to this account.
-- `count_distinct(user_id)` undercounts by ~19% (Builder ID users missing `user_id`).
+- `count_distinct(user_id)` undercounts significantly vs backend server-side numbers (measured Aug 10 2026): ~93% undercount for Builder ID, ~33% undercount for total distinct users. Do not use KUTS numbers as ground truth for user counts — use backend server-side data instead.
 - Users can appear in multiple `session_interface` and `agent_engine` buckets on the same day.
 - `kiro_cli_daily_heartbeat` counts installations, not users. One person with two installs = two heartbeats.
 - Do not conflate turns with users. High turn counts can come from automated pipelines with few users.
