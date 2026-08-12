@@ -1937,6 +1937,7 @@ mod tests {
                 oauth: Some(agent::mcp::oauth_util::OAuthConfig {
                     client_id: Some("custom-client-id".to_string()),
                     client_secret: None,
+                    client_metadata_url: None,
                     redirect_uri: None,
                     oauth_scopes: Some(vec!["read:jira-work".to_string(), "write:jira-work".to_string()]),
                 }),

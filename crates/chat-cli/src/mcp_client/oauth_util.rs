@@ -28,6 +28,7 @@ use rmcp::transport::auth::{
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{
     AuthorizationManager,
+    AuthorizationRequest,
     AuthorizationSession,
     StreamableHttpClientTransport,
 };
@@ -50,6 +51,7 @@ use tracing::{
     debug,
     error,
     info,
+    warn,
 };
 use url::Url;
 
@@ -726,12 +728,14 @@ async fn get_auth_manager_impl(
     let scopes_as_slice = scopes_as_str.as_slice();
     let user_client_id = oauth_config.as_ref().and_then(|cfg| cfg.client_id.as_deref());
     let user_client_secret = oauth_config.as_ref().and_then(|cfg| cfg.client_secret.as_deref());
+    let user_client_metadata_url = oauth_config.as_ref().and_then(|cfg| cfg.client_metadata_url.as_deref());
     start_authorization(
         &mut oauth_state,
         scopes_as_slice,
         &redirect_uri,
         user_client_id,
         user_client_secret,
+        user_client_metadata_url,
     )
     .await?;
 
@@ -764,6 +768,7 @@ async fn start_authorization(
     redirect_uri: &str,
     user_client_id: Option<&str>,
     user_client_secret: Option<&str>,
+    user_client_metadata_url: Option<&str>,
 ) -> Result<(), OauthUtilError> {
     // DO NOT CHANGE THIS
     // This string has significance as it is used for remote servers to identify us
@@ -772,10 +777,34 @@ async fn start_authorization(
     // Some servers (e.g. Figma) use this to identify the application.
     const DEFAULT_CLIENT_NAME: &str = "kiro";
 
+    // Client identity priority per the MCP authorization spec: a pre-registered client_id,
+    // then a Client ID Metadata Document (SEP-991), then Dynamic Client Registration.
+    // A metadata document names a public client and the SDK rejects a secret alongside it, so a
+    // configured secret suppresses the document rather than being silently dropped.
+    if user_client_id.is_none() && user_client_secret.is_some() && user_client_metadata_url.is_some() {
+        warn!(
+            "ignoring clientMetadataUrl because clientSecret is set: a client id metadata document identifies a public client"
+        );
+    }
+    let client_metadata_url =
+        user_client_metadata_url.filter(|_| user_client_id.is_none() && user_client_secret.is_none());
     let client_id = user_client_id.unwrap_or(DEFAULT_CLIENT_ID);
 
     let stub_cred = get_stub_credentials()?;
     oauth_state.set_credentials(client_id, stub_cred).await?;
+
+    if let Some(client_metadata_url) = client_metadata_url
+        && try_client_id_metadata_authorization(
+            oauth_state,
+            scopes,
+            redirect_uri,
+            client_metadata_url,
+            DEFAULT_CLIENT_NAME,
+        )
+        .await?
+    {
+        return Ok(());
+    }
 
     // The setting of credentials would put the oauth state into authorize.
     if let OAuthState::Authorized(auth_manager) = oauth_state {
@@ -817,6 +846,45 @@ async fn start_authorization(
     }
 
     Ok(())
+}
+
+/// Attempt authorization through [AuthorizationSession::new], the only SDK entry point that
+/// resolves a Client ID Metadata Document. The SDK downgrades to Dynamic Client Registration
+/// itself when the server does not advertise `client_id_metadata_document_supported`.
+///
+/// Returns `false` (leaving `oauth_state` authorized and untouched) when the attempt fails, so
+/// the caller can retry on its own registration path rather than failing the whole flow.
+async fn try_client_id_metadata_authorization(
+    oauth_state: &mut OAuthState,
+    scopes: &[&str],
+    redirect_uri: &str,
+    client_metadata_url: &str,
+    client_name: &str,
+) -> Result<bool, OauthUtilError> {
+    let OAuthState::Authorized(auth_manager) = oauth_state else {
+        return Ok(false);
+    };
+
+    // The session constructor consumes the manager, and discovered metadata lives inside it.
+    let mut discovered = AuthorizationManager::new("http://localhost").await?;
+    std::mem::swap(auth_manager, &mut discovered);
+
+    let request = AuthorizationRequest::new(redirect_uri)
+        .with_scopes(scopes.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+        .with_client_name(client_name)
+        .with_client_metadata_url(client_metadata_url);
+
+    match AuthorizationSession::new(discovered, request).await {
+        Ok(session) => {
+            *oauth_state = OAuthState::Session(session);
+            Ok(true)
+        },
+        Err((returned, e)) => {
+            warn!(?e, "client id metadata authorization failed, falling back");
+            *oauth_state = OAuthState::Authorized(returned);
+            Ok(false)
+        },
+    }
 }
 
 /// This looks silly but [rmcp::transport::auth::OAuthTokenResponse] is private and there is no
@@ -939,7 +1007,164 @@ async fn make_svc(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{
+        AtomicUsize,
+        Ordering,
+    };
+
     use super::*;
+
+    // ─── Client ID Metadata Documents (SEP-991) ──────────────────────────
+
+    const CLIENT_METADATA_URL: &str = "https://kiro.dev/client-metadata.json";
+
+    /// A minimal authorization server that publishes RFC 8414 metadata and counts Dynamic Client
+    /// Registration requests, so a test can assert registration was skipped entirely.
+    async fn spawn_mock_authorization_server(advertise_cimd: bool) -> (String, Arc<AtomicUsize>, CancellationToken) {
+        let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap();
+        let base_url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let registrations = Arc::new(AtomicUsize::new(0));
+        let cancellation_token = CancellationToken::new();
+
+        let metadata = serde_json::json!({
+            "issuer": base_url,
+            "authorization_endpoint": format!("{base_url}/authorize"),
+            "token_endpoint": format!("{base_url}/token"),
+            "registration_endpoint": format!("{base_url}/register"),
+            "response_types_supported": ["code"],
+            "code_challenge_methods_supported": ["S256"],
+            "client_id_metadata_document_supported": advertise_cimd,
+        })
+        .to_string();
+
+        let counter = Arc::clone(&registrations);
+        let shutdown = cancellation_token.clone();
+        tokio::spawn(async move {
+            loop {
+                let stream = tokio::select! {
+                    _ = shutdown.cancelled() => break,
+                    accepted = listener.accept() => match accepted {
+                        Ok((stream, _)) => stream,
+                        Err(_) => break,
+                    },
+                };
+                let metadata = metadata.clone();
+                let counter = Arc::clone(&counter);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                        let metadata = metadata.clone();
+                        let counter = Arc::clone(&counter);
+                        async move {
+                            let path = req.uri().path().to_string();
+                            if path.starts_with("/.well-known/oauth-authorization-server") {
+                                Response::builder()
+                                    .header("content-type", "application/json")
+                                    .body(Full::new(Bytes::from(metadata)))
+                            } else if path == "/register" {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                                Response::builder()
+                                    .header("content-type", "application/json")
+                                    .body(Full::new(Bytes::from(
+                                        r#"{"client_id":"dcr-issued","redirect_uris":[]}"#,
+                                    )))
+                            } else {
+                                Response::builder().status(404).body(Full::new(Bytes::new()))
+                            }
+                        }
+                    });
+                    let _ = http1::Builder::new()
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await;
+                });
+            }
+        });
+
+        (base_url, registrations, cancellation_token)
+    }
+
+    /// Run `start_authorization` against a mock server and report the client identifier it put on
+    /// the authorize URL alongside the number of registration requests the server saw.
+    async fn authorize_with(
+        advertise_cimd: bool,
+        user_client_id: Option<&str>,
+        user_client_secret: Option<&str>,
+        user_client_metadata_url: Option<&str>,
+    ) -> (String, usize) {
+        let (base_url, registrations, cancellation_token) = spawn_mock_authorization_server(advertise_cimd).await;
+        let mut oauth_state = OAuthState::new(base_url, Some(oauth_discovery_client().unwrap()))
+            .await
+            .unwrap();
+
+        start_authorization(
+            &mut oauth_state,
+            &["openid"],
+            "http://127.0.0.1:7778/oauth/callback",
+            user_client_id,
+            user_client_secret,
+            user_client_metadata_url,
+        )
+        .await
+        .unwrap();
+
+        let auth_url = Url::parse(&oauth_state.get_authorization_url().await.unwrap()).unwrap();
+        cancellation_token.cancel();
+
+        let client_id = auth_url
+            .query_pairs()
+            .find(|(key, _)| key == "client_id")
+            .map(|(_, value)| value.into_owned())
+            .expect("authorize url carries a client_id");
+        (client_id, registrations.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test]
+    async fn test_client_metadata_url_is_used_as_client_id_without_registration() {
+        let (client_id, registrations) = authorize_with(true, None, None, Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(client_id, CLIENT_METADATA_URL);
+        assert_eq!(registrations, 0, "a metadata document must not trigger registration");
+    }
+
+    #[tokio::test]
+    async fn test_without_client_metadata_url_registration_still_runs() {
+        let (client_id, registrations) = authorize_with(true, None, None, None).await;
+        assert_eq!(client_id, "dcr-issued");
+        assert_eq!(registrations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_client_id_outranks_client_metadata_url() {
+        let (client_id, registrations) =
+            authorize_with(true, Some("preregistered"), None, Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(client_id, "preregistered");
+        assert_eq!(registrations, 0);
+    }
+
+    #[tokio::test]
+    async fn test_client_metadata_url_falls_back_to_registration_when_unsupported() {
+        let (client_id, registrations) = authorize_with(false, None, None, Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(client_id, "dcr-issued");
+        assert_eq!(registrations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_non_https_client_metadata_url_falls_back_to_registration() {
+        let (client_id, registrations) =
+            authorize_with(true, None, None, Some("http://kiro.dev/client-metadata.json")).await;
+        assert_eq!(client_id, "dcr-issued");
+        assert_eq!(registrations, 1, "a rejected metadata document must still register");
+    }
+
+    #[tokio::test]
+    async fn test_client_secret_suppresses_client_metadata_url() {
+        let (client_id, registrations) = authorize_with(true, None, Some("shhh"), Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(
+            client_id, "dcr-issued",
+            "a secret must not ride on a public client identity"
+        );
+        assert_eq!(registrations, 1);
+    }
 
     #[test]
     fn test_parse_redirect_uri_host_port() {

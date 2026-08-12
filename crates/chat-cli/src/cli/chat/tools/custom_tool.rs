@@ -61,6 +61,12 @@ pub struct OAuthConfig {
     /// secret is sent to the token endpoint for client authentication.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
+    /// HTTPS URL of a Client ID Metadata Document (SEP-991), used as the client identifier
+    /// when the authorization server advertises `client_id_metadata_document_supported`.
+    /// Ignored when `client_id` is set, and downgraded to Dynamic Client Registration when
+    /// the server does not advertise support.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_metadata_url: Option<String>,
     /// Custom loopback redirect URI for the OAuth flow, e.g. `127.0.0.1:7778` or
     /// `http://localhost:7778/callback`. Only used to pin the loopback port (and
     /// path, when matching a pre-registered app); the host must be `127.0.0.1` or
@@ -702,6 +708,7 @@ mod tests {
         let config = OAuthConfig {
             client_id: None,
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: Some("127.0.0.1:8080".to_string()),
             oauth_scopes: None,
         };

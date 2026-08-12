@@ -25,6 +25,7 @@ use rmcp::transport::auth::{
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{
     AuthorizationManager,
+    AuthorizationRequest,
     AuthorizationSession,
     StreamableHttpClientTransport,
 };
@@ -49,6 +50,7 @@ use tracing::{
     debug,
     error,
     info,
+    warn,
 };
 use url::Url;
 
@@ -75,6 +77,12 @@ pub struct OAuthConfig {
     /// secret is sent to the token endpoint for client authentication.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
+    /// HTTPS URL of a Client ID Metadata Document (SEP-991), used as the client identifier
+    /// when the authorization server advertises `client_id_metadata_document_supported`.
+    /// Ignored when `client_id` is set, and downgraded to Dynamic Client Registration when
+    /// the server does not advertise support.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_metadata_url: Option<String>,
     /// Custom loopback redirect URI for the OAuth flow, e.g. `127.0.0.1:7778` or
     /// `http://localhost:7778/callback`. Only used to pin the loopback port (and
     /// path, when matching a pre-registered app); the host must be `127.0.0.1` or
@@ -760,12 +768,14 @@ async fn get_auth_manager_impl(
     let scopes_as_slice = scopes_as_str.as_slice();
     let user_client_id = oauth_config.as_ref().and_then(|cfg| cfg.client_id.as_deref());
     let user_client_secret = oauth_config.as_ref().and_then(|cfg| cfg.client_secret.as_deref());
+    let user_client_metadata_url = oauth_config.as_ref().and_then(|cfg| cfg.client_metadata_url.as_deref());
     start_authorization(
         &mut oauth_state,
         scopes_as_slice,
         &redirect_uri,
         user_client_id,
         user_client_secret,
+        user_client_metadata_url,
     )
     .await?;
 
@@ -831,6 +841,7 @@ async fn start_authorization(
     redirect_uri: &str,
     user_client_id: Option<&str>,
     user_client_secret: Option<&str>,
+    user_client_metadata_url: Option<&str>,
 ) -> Result<(), OauthUtilError> {
     // DO NOT CHANGE THIS
     // This string has significance as it is used for remote servers to identify us
@@ -839,10 +850,34 @@ async fn start_authorization(
     // Some servers (e.g. Figma) use this to identify the application.
     const DEFAULT_CLIENT_NAME: &str = "kiro";
 
+    // Client identity priority per the MCP authorization spec: a pre-registered client_id,
+    // then a Client ID Metadata Document (SEP-991), then Dynamic Client Registration.
+    // A metadata document names a public client and the SDK rejects a secret alongside it, so a
+    // configured secret suppresses the document rather than being silently dropped.
+    if user_client_id.is_none() && user_client_secret.is_some() && user_client_metadata_url.is_some() {
+        warn!(
+            "ignoring clientMetadataUrl because clientSecret is set: a client id metadata document identifies a public client"
+        );
+    }
+    let client_metadata_url =
+        user_client_metadata_url.filter(|_| user_client_id.is_none() && user_client_secret.is_none());
     let client_id = user_client_id.unwrap_or(DEFAULT_CLIENT_ID);
 
     let stub_cred = get_stub_credentials()?;
     oauth_state.set_credentials(client_id, stub_cred).await?;
+
+    if let Some(client_metadata_url) = client_metadata_url
+        && try_client_id_metadata_authorization(
+            oauth_state,
+            scopes,
+            redirect_uri,
+            client_metadata_url,
+            DEFAULT_CLIENT_NAME,
+        )
+        .await?
+    {
+        return Ok(());
+    }
 
     // The setting of credentials would put the oauth state into authorize.
     if let OAuthState::Authorized(auth_manager) = oauth_state {
@@ -884,6 +919,45 @@ async fn start_authorization(
     }
 
     Ok(())
+}
+
+/// Attempt authorization through [AuthorizationSession::new], the only SDK entry point that
+/// resolves a Client ID Metadata Document. The SDK downgrades to Dynamic Client Registration
+/// itself when the server does not advertise `client_id_metadata_document_supported`.
+///
+/// Returns `false` (leaving `oauth_state` authorized and untouched) when the attempt fails, so
+/// the caller can retry on its own registration path rather than failing the whole flow.
+async fn try_client_id_metadata_authorization(
+    oauth_state: &mut OAuthState,
+    scopes: &[&str],
+    redirect_uri: &str,
+    client_metadata_url: &str,
+    client_name: &str,
+) -> Result<bool, OauthUtilError> {
+    let OAuthState::Authorized(auth_manager) = oauth_state else {
+        return Ok(false);
+    };
+
+    // The session constructor consumes the manager, and discovered metadata lives inside it.
+    let mut discovered = AuthorizationManager::new("http://localhost").await?;
+    std::mem::swap(auth_manager, &mut discovered);
+
+    let request = AuthorizationRequest::new(redirect_uri)
+        .with_scopes(scopes.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+        .with_client_name(client_name)
+        .with_client_metadata_url(client_metadata_url);
+
+    match AuthorizationSession::new(discovered, request).await {
+        Ok(session) => {
+            *oauth_state = OAuthState::Session(session);
+            Ok(true)
+        },
+        Err((returned, e)) => {
+            warn!(?e, "client id metadata authorization failed, falling back");
+            *oauth_state = OAuthState::Authorized(returned);
+            Ok(false)
+        },
+    }
 }
 
 /// This looks silly but [rmcp::transport::auth::OAuthTokenResponse] is private and there is no
@@ -1006,7 +1080,385 @@ async fn make_svc(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{
+        AtomicUsize,
+        Ordering,
+    };
+
+    use base64::Engine as _;
+    use base64::prelude::BASE64_STANDARD;
+    use http_body_util::BodyExt;
+
     use super::*;
+
+    // ─── Client ID Metadata Documents (SEP-991) ──────────────────────────
+
+    const CLIENT_METADATA_URL: &str = "https://kiro.dev/client-metadata.json";
+
+    /// What the mock authorization server advertises and how it answers registration.
+    #[derive(Clone, Copy)]
+    struct MockAuthServer {
+        advertise_cimd: bool,
+        registration_succeeds: bool,
+    }
+
+    impl Default for MockAuthServer {
+        fn default() -> Self {
+            Self {
+                advertise_cimd: true,
+                registration_succeeds: true,
+            }
+        }
+    }
+
+    /// Decode the client credentials out of a recorded token request, whichever carrier the SDK
+    /// chose: an HTTP Basic `Authorization` header or a `client_secret` form field.
+    fn token_request_credentials(recorded: &TokenRequest) -> String {
+        let basic = recorded
+            .authorization
+            .strip_prefix("Basic ")
+            .and_then(|encoded| BASE64_STANDARD.decode(encoded).ok())
+            .map(|raw| String::from_utf8_lossy(&raw).into_owned())
+            .unwrap_or_default();
+        format!("{basic} {}", recorded.body)
+    }
+
+    /// One request the mock server's token endpoint answered.
+    #[derive(Debug)]
+    struct TokenRequest {
+        authorization: String,
+        body: String,
+    }
+
+    /// Live mock server plus the traffic it observed.
+    struct MockAuthHandle {
+        base_url: String,
+        registrations: Arc<AtomicUsize>,
+        token_requests: Arc<std::sync::Mutex<Vec<TokenRequest>>>,
+        cancellation_token: CancellationToken,
+    }
+
+    /// An [OAuthConfig] carrying only the client-identity fields a test cares about.
+    fn oauth_config_with(client_secret: Option<&str>, client_metadata_url: Option<&str>) -> OAuthConfig {
+        OAuthConfig {
+            client_id: None,
+            client_secret: client_secret.map(str::to_string),
+            client_metadata_url: client_metadata_url.map(str::to_string),
+            redirect_uri: None,
+            oauth_scopes: None,
+        }
+    }
+
+    /// A minimal authorization server that publishes RFC 8414 metadata, counts Dynamic Client
+    /// Registration requests so a test can assert registration was skipped entirely, and records
+    /// token-endpoint request bodies so a test can assert what was sent to authenticate.
+    async fn spawn_mock_authorization_server(options: MockAuthServer) -> MockAuthHandle {
+        let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap();
+        let base_url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let registrations = Arc::new(AtomicUsize::new(0));
+        let token_requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let cancellation_token = CancellationToken::new();
+
+        let metadata = serde_json::json!({
+            "issuer": base_url,
+            "authorization_endpoint": format!("{base_url}/authorize"),
+            "token_endpoint": format!("{base_url}/token"),
+            "registration_endpoint": format!("{base_url}/register"),
+            "response_types_supported": ["code"],
+            "code_challenge_methods_supported": ["S256"],
+            "client_id_metadata_document_supported": options.advertise_cimd,
+        })
+        .to_string();
+
+        let counter = Arc::clone(&registrations);
+        let requests = Arc::clone(&token_requests);
+        let shutdown = cancellation_token.clone();
+        tokio::spawn(async move {
+            loop {
+                let stream = tokio::select! {
+                    _ = shutdown.cancelled() => break,
+                    accepted = listener.accept() => match accepted {
+                        Ok((stream, _)) => stream,
+                        Err(_) => break,
+                    },
+                };
+                let metadata = metadata.clone();
+                let counter = Arc::clone(&counter);
+                let requests = Arc::clone(&requests);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                        let metadata = metadata.clone();
+                        let counter = Arc::clone(&counter);
+                        let requests = Arc::clone(&requests);
+                        async move {
+                            let path = req.uri().path().to_string();
+                            if path.starts_with("/.well-known/oauth-authorization-server") {
+                                Response::builder()
+                                    .header("content-type", "application/json")
+                                    .body(Full::new(Bytes::from(metadata)))
+                            } else if path == "/register" {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                                if options.registration_succeeds {
+                                    Response::builder()
+                                        .header("content-type", "application/json")
+                                        .body(Full::new(Bytes::from(
+                                            r#"{"client_id":"dcr-issued","redirect_uris":[]}"#,
+                                        )))
+                                } else {
+                                    Response::builder().status(500).body(Full::new(Bytes::new()))
+                                }
+                            } else if path == "/token" {
+                                // The SDK authenticates the client with HTTP Basic unless the
+                                // server advertises otherwise, so record both carriers.
+                                let authorization = req
+                                    .headers()
+                                    .get(http::header::AUTHORIZATION)
+                                    .and_then(|v| v.to_str().ok())
+                                    .unwrap_or_default()
+                                    .to_string();
+                                let body = req
+                                    .into_body()
+                                    .collect()
+                                    .await
+                                    .map(|b| b.to_bytes())
+                                    .unwrap_or_default();
+                                requests.lock().unwrap().push(TokenRequest {
+                                    authorization,
+                                    body: String::from_utf8_lossy(&body).into_owned(),
+                                });
+                                Response::builder()
+                                    .header("content-type", "application/json")
+                                    .body(Full::new(Bytes::from(
+                                        r#"{"access_token":"issued","token_type":"bearer","expires_in":3600,"refresh_token":"issued-refresh","scope":"openid"}"#,
+                                    )))
+                            } else {
+                                Response::builder().status(404).body(Full::new(Bytes::new()))
+                            }
+                        }
+                    });
+                    let _ = http1::Builder::new()
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await;
+                });
+            }
+        });
+
+        MockAuthHandle {
+            base_url,
+            registrations,
+            token_requests,
+            cancellation_token,
+        }
+    }
+
+    /// Run `start_authorization` against a mock server and report the client identifier it put on
+    /// the authorize URL alongside the number of registration requests the server saw.
+    async fn authorize_as(
+        advertise_cimd: bool,
+        user_client_id: Option<&str>,
+        user_client_metadata_url: Option<&str>,
+    ) -> (String, usize) {
+        authorize_with(advertise_cimd, user_client_id, None, user_client_metadata_url).await
+    }
+
+    /// [authorize_as] with a configured client secret.
+    async fn authorize_with(
+        advertise_cimd: bool,
+        user_client_id: Option<&str>,
+        user_client_secret: Option<&str>,
+        user_client_metadata_url: Option<&str>,
+    ) -> (String, usize) {
+        let server = spawn_mock_authorization_server(MockAuthServer {
+            advertise_cimd,
+            ..Default::default()
+        })
+        .await;
+        let mut oauth_state = OAuthState::new(server.base_url.clone(), Some(oauth_discovery_client().unwrap()))
+            .await
+            .unwrap();
+
+        start_authorization(
+            &mut oauth_state,
+            &["openid"],
+            "http://127.0.0.1:7778/oauth/callback",
+            user_client_id,
+            user_client_secret,
+            user_client_metadata_url,
+        )
+        .await
+        .unwrap();
+
+        let auth_url = Url::parse(&oauth_state.get_authorization_url().await.unwrap()).unwrap();
+        server.cancellation_token.cancel();
+
+        let client_id = auth_url
+            .query_pairs()
+            .find(|(key, _)| key == "client_id")
+            .map(|(_, value)| value.into_owned())
+            .expect("authorize url carries a client_id");
+        (client_id, server.registrations.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test]
+    async fn test_client_metadata_url_is_used_as_client_id_without_registration() {
+        let (client_id, registrations) = authorize_as(true, None, Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(client_id, CLIENT_METADATA_URL);
+        assert_eq!(registrations, 0, "a metadata document must not trigger registration");
+    }
+
+    #[tokio::test]
+    async fn test_without_client_metadata_url_registration_still_runs() {
+        let (client_id, registrations) = authorize_as(true, None, None).await;
+        assert_eq!(client_id, "dcr-issued");
+        assert_eq!(registrations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_client_id_outranks_client_metadata_url() {
+        let (client_id, registrations) = authorize_as(true, Some("preregistered"), Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(client_id, "preregistered");
+        assert_eq!(registrations, 0);
+    }
+
+    #[tokio::test]
+    async fn test_client_metadata_url_falls_back_to_registration_when_unsupported() {
+        let (client_id, registrations) = authorize_as(false, None, Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(client_id, "dcr-issued");
+        assert_eq!(registrations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_non_https_client_metadata_url_falls_back_to_registration() {
+        let (client_id, registrations) = authorize_as(true, None, Some("http://kiro.dev/client-metadata.json")).await;
+        assert_eq!(client_id, "dcr-issued");
+        assert_eq!(registrations, 1, "a rejected metadata document must still register");
+    }
+
+    #[tokio::test]
+    async fn test_client_secret_suppresses_client_metadata_url() {
+        let (client_id, registrations) = authorize_with(true, None, Some("shhh"), Some(CLIENT_METADATA_URL)).await;
+        assert_eq!(
+            client_id, "dcr-issued",
+            "a secret must not ride on a public client identity"
+        );
+        assert_eq!(registrations, 1);
+    }
+
+    /// Drive a whole browser-less authorization against a mock server: run [get_auth_manager],
+    /// answer the authorize URL on its own loopback listener, and report the client identifier the
+    /// connect ended up authorizing with.
+    async fn authorize_end_to_end(
+        server: &MockAuthHandle,
+        cred_dir: &Path,
+        oauth_config: Option<OAuthConfig>,
+    ) -> String {
+        let (tx, mut rx) = mpsc::channel::<McpServerActorEvent>(8);
+        let url = Url::parse(&server.base_url).unwrap();
+        let key = compute_key(&url);
+        let cred_path = cred_dir.join(format!("{key}.token.json"));
+        let reg_path = cred_dir.join(format!("{key}.registration.json"));
+
+        let flow = tokio::spawn(async move {
+            get_auth_manager(
+                "mock",
+                url,
+                cred_path,
+                reg_path,
+                &["openid".to_string()],
+                &oauth_config,
+                &tx,
+            )
+            .await
+        });
+
+        let authorized_client_id = match tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await {
+            Ok(Some(McpServerActorEvent::OauthRequest { oauth_url, .. })) => {
+                let auth_url = Url::parse(&oauth_url).unwrap();
+                let params: HashMap<String, String> = auth_url.query_pairs().into_owned().collect();
+                let redirect_uri = params.get("redirect_uri").expect("authorize url carries redirect_uri");
+                let state = params.get("state").expect("authorize url carries state");
+                let client_id = params
+                    .get("client_id")
+                    .expect("authorize url carries client_id")
+                    .clone();
+
+                reqwest::Client::new()
+                    .get(format!("{redirect_uri}?code=granted&state={state}"))
+                    .send()
+                    .await
+                    .unwrap();
+                Some(client_id)
+            },
+            // A cached-credential connect never asks for consent, so no url is emitted.
+            _ => None,
+        };
+
+        let am = flow.await.unwrap().unwrap();
+        let (cached_client_id, _) = am.get_credentials().await.unwrap();
+        authorized_client_id.unwrap_or(cached_client_id)
+    }
+
+    #[tokio::test]
+    async fn test_client_metadata_url_persists_and_round_trips_on_cached_connect() {
+        let server = spawn_mock_authorization_server(MockAuthServer::default()).await;
+        let cred_dir = tempfile::tempdir().unwrap();
+        let oauth_config = oauth_config_with(None, Some(CLIENT_METADATA_URL));
+
+        let authorized_with = authorize_end_to_end(&server, cred_dir.path(), Some(oauth_config.clone())).await;
+        assert_eq!(authorized_with, CLIENT_METADATA_URL);
+
+        let key = compute_key(&Url::parse(&server.base_url).unwrap());
+        let persisted: Registration = serde_json::from_slice(
+            &tokio::fs::read(cred_dir.path().join(format!("{key}.registration.json")))
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            persisted.client_id, CLIENT_METADATA_URL,
+            "the metadata url is the persisted client identity"
+        );
+
+        // Second connect reads the cache instead of asking for consent again.
+        let re_presented = authorize_end_to_end(&server, cred_dir.path(), Some(oauth_config)).await;
+        assert_eq!(re_presented, CLIENT_METADATA_URL);
+        assert_eq!(
+            server.registrations.load(Ordering::SeqCst),
+            0,
+            "neither connect may register a client"
+        );
+        server.cancellation_token.cancel();
+    }
+
+    #[tokio::test]
+    async fn test_client_secret_authenticates_at_token_endpoint_when_metadata_url_is_set() {
+        // Registration fails so the configured secret survives onto the fallback client config,
+        // which is what makes "the secret was applied" observable at the token endpoint.
+        let server = spawn_mock_authorization_server(MockAuthServer {
+            registration_succeeds: false,
+            ..Default::default()
+        })
+        .await;
+        let cred_dir = tempfile::tempdir().unwrap();
+
+        let authorized_with = authorize_end_to_end(
+            &server,
+            cred_dir.path(),
+            Some(oauth_config_with(Some("shhh"), Some(CLIENT_METADATA_URL))),
+        )
+        .await;
+
+        assert_ne!(authorized_with, CLIENT_METADATA_URL);
+        let recorded = server.token_requests.lock().unwrap();
+        let credentials: Vec<String> = recorded.iter().map(token_request_credentials).collect();
+        server.cancellation_token.cancel();
+        assert!(
+            credentials.iter().any(|c| c.contains("shhh")),
+            "the configured secret must reach the token endpoint, saw: {credentials:?}"
+        );
+    }
 
     // ─── OAuthConfig serde ───────────────────────────────────────────────
 
@@ -1015,6 +1467,7 @@ mod tests {
         let cfg = OAuthConfig {
             client_id: Some("my-client".into()),
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: Some("127.0.0.1:7778".into()),
             oauth_scopes: Some(vec!["openid".into(), "email".into()]),
         };
@@ -1029,6 +1482,7 @@ mod tests {
         let cfg = OAuthConfig {
             client_id: None,
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: None,
             oauth_scopes: None,
         };
@@ -1058,6 +1512,7 @@ mod tests {
         let cfg = OAuthConfig {
             client_id: Some("id".into()),
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: None,
             oauth_scopes: None,
         };
@@ -1900,6 +2355,7 @@ mod tests {
         let cfg = OAuthConfig {
             client_id: Some("id".into()),
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: None,
             oauth_scopes: Some(vec!["scope1".into()]),
         };
@@ -1929,12 +2385,14 @@ mod tests {
         let cfg1 = OAuthConfig {
             client_id: Some("a".into()),
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: None,
             oauth_scopes: None,
         };
         let cfg2 = OAuthConfig {
             client_id: Some("b".into()),
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: None,
             oauth_scopes: None,
         };
@@ -2089,6 +2547,7 @@ mod tests {
         let oauth_config = Some(OAuthConfig {
             client_id: Some("cid".into()),
             client_secret: None,
+            client_metadata_url: None,
             redirect_uri: Some("127.0.0.1:8080".into()),
             oauth_scopes: Some(vec!["openid".into()]),
         });
@@ -2122,6 +2581,7 @@ mod tests {
             oauth_config: Some(OAuthConfig {
                 client_id: Some("custom-id".into()),
                 client_secret: None,
+                client_metadata_url: None,
                 redirect_uri: Some("127.0.0.1:9999".into()),
                 oauth_scopes: None,
             }),
