@@ -145,6 +145,41 @@ describe('dashboard latency at scale', () => {
   );
 });
 
+describe('event-loop responsiveness during a cold index build', () => {
+  test(
+    'no macrotask stall exceeds the interaction budget',
+    async () => {
+      seedV2Store(SESSION_COUNT);
+      const index = new SessionSearchIndex(join(root, 'cli'));
+      try {
+        // Probe: measure macrotask scheduling gaps while the build runs.
+        // Keystroke handling rides these gaps — a slice-budget regression
+        // (or a hot retry loop) shows up as multi-hundred-ms stalls.
+        let worstGap = 0;
+        let last = performance.now();
+        let probing = true;
+        const probe = (async () => {
+          while (probing) {
+            await new Promise((r) => setTimeout(r, 0));
+            const now = performance.now();
+            worstGap = Math.max(worstGap, now - last);
+            last = now;
+          }
+        })();
+
+        await index.refresh();
+        probing = false;
+        await probe;
+
+        expect(worstGap).toBeLessThan(300);
+      } finally {
+        index.close();
+      }
+    },
+    { timeout: 120_000 }
+  );
+});
+
 describe('oversized V2 metadata', () => {
   test('lists a degraded row and keeps the catalog complete', async () => {
     seedV2Store(3);

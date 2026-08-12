@@ -179,6 +179,7 @@ export class SessionSearchIndex {
   private sessionsDir: string;
   private buildPromise: Promise<void> | null = null;
   private refreshPending = false;
+  private conflictRetry = false;
   private handle: IndexHandle | null = null;
   private searchEngines = new Map<string, 'v2' | 'v3'>();
   // One snapshot of the per-session fact tables. The underlying helpers each
@@ -324,9 +325,23 @@ export class SessionSearchIndex {
 
   private startBuild(): Promise<void> {
     const p = (async () => {
+      // Conflict passes back off exponentially: another live process is
+      // reconciling the same store, and an immediate full re-pass turns two
+      // dashboards into a permanent CPU hot-loop that starves keyboard input.
+      let conflictDelayMs = 0;
       do {
         this.refreshPending = false;
+        this.conflictRetry = false;
         await this.doBuild();
+        if (this.conflictRetry) {
+          conflictDelayMs = Math.min(
+            Math.max(conflictDelayMs * 2, 2_000),
+            30_000
+          );
+          await new Promise((r) => setTimeout(r, conflictDelayMs));
+        } else {
+          conflictDelayMs = 0;
+        }
       } while (this.refreshPending);
     })().finally(() => {
       if (this.buildPromise === p) this.buildPromise = null;
@@ -340,7 +355,7 @@ export class SessionSearchIndex {
       this.status = { state: 'indexing', indexed: 0, total: 0 };
       this.emitStatus();
 
-      const listing = this.listSessionFiles();
+      const listing = await this.listSessionFiles();
       const jsonFiles = listing.files;
       let listingComplete = listing.complete;
       this.status.total = jsonFiles.length;
@@ -418,6 +433,7 @@ export class SessionSearchIndex {
             }
             if (r.skipped === 'conflict') {
               this.refreshPending = true;
+              this.conflictRetry = true;
               return;
             }
             if (r.done) break;
@@ -429,6 +445,7 @@ export class SessionSearchIndex {
         const heads = firstPromptHeads(handle);
         const counts = promptCounts(handle);
         const promptless = promptlessIds(handle);
+        let refineStart = performance.now();
         for (const [id, doc] of this.documents) {
           const factsId = this.indexedId(id, 'v2');
           const promptCount = counts.get(factsId) ?? 0;
@@ -443,6 +460,12 @@ export class SessionSearchIndex {
             promptCount,
             countCapped: !counts.has(factsId) && !promptless.has(factsId),
           });
+          // Title derivation segments graphemes per doc — unyielded, this
+          // pass alone stalls the loop for most of a second at 10K docs.
+          if (performance.now() - refineStart >= RECONCILE_TIME_BUDGET_MS) {
+            await new Promise((resolve) => setImmediate(resolve));
+            refineStart = performance.now();
+          }
         }
       }
 
@@ -466,7 +489,10 @@ export class SessionSearchIndex {
     }
   }
 
-  private listSessionFiles(): { files: string[]; complete: boolean } {
+  private async listSessionFiles(): Promise<{
+    files: string[];
+    complete: boolean;
+  }> {
     if (!existsSync(this.sessionsDir)) return { files: [], complete: true };
     if (
       basename(this.sessionsDir) === 'cli' &&
@@ -476,12 +502,19 @@ export class SessionSearchIndex {
     }
     try {
       let complete = true;
-      const files = readdirSync(this.sessionsDir).filter((file) => {
-        if (!file.endsWith('.json')) return false;
-        if (containedRegularFile(this.sessionsDir, file)) return true;
-        complete = false;
-        return false;
-      });
+      const files: string[] = [];
+      let sliceStart = performance.now();
+      for (const file of readdirSync(this.sessionsDir)) {
+        if (!file.endsWith('.json')) continue;
+        // Containment lstat-walks every path segment; at 10K files this
+        // filter alone blocks the loop for hundreds of ms without yields.
+        if (containedRegularFile(this.sessionsDir, file)) files.push(file);
+        else complete = false;
+        if (performance.now() - sliceStart >= RECONCILE_TIME_BUDGET_MS) {
+          await new Promise((resolve) => setImmediate(resolve));
+          sliceStart = performance.now();
+        }
+      }
       return { files, complete };
     } catch {
       return { files: [], complete: false };
