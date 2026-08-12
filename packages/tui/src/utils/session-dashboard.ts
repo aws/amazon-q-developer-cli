@@ -291,14 +291,16 @@ export function filterSessionsByText(
 
   const filtered: WorkspaceGroup[] = [];
   for (const group of groups) {
-    const matchingSessions = group.sessions.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) ||
-        s.workspace.toLowerCase().includes(q) ||
-        group.label.toLowerCase().includes(q) ||
-        // A pasted session id finds its session — matched as an identifier.
-        s.sessionId.toLowerCase().includes(q)
-    );
+    const labelMatches = group.label.toLowerCase().includes(q);
+    const matchingSessions = labelMatches
+      ? group.sessions
+      : group.sessions.filter(
+          (s) =>
+            s.title.toLowerCase().includes(q) ||
+            s.workspace.toLowerCase().includes(q) ||
+            // A pasted session id finds its session — matched as an identifier.
+            s.sessionId.toLowerCase().includes(q)
+        );
     if (matchingSessions.length > 0) {
       filtered.push({ ...group, sessions: matchingSessions });
     }

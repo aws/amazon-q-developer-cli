@@ -14,7 +14,11 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { SESSION_METADATA_MAX_BYTES, readBoundedJson } from './bounded-json.js';
+import {
+  OversizedJsonFileError,
+  SESSION_METADATA_MAX_BYTES,
+  readBoundedJson,
+} from './bounded-json.js';
 import { kiroHomePath } from './kiro-home.js';
 import { logger } from './logger.js';
 import { conversationKey } from './session-dashboard.js';
@@ -434,6 +438,9 @@ export class SessionSearchIndex {
             if (r.skipped === 'conflict') {
               this.refreshPending = true;
               this.conflictRetry = true;
+              // Partial reconcile work may have landed; stale fact
+              // snapshots must not survive the retry backoff.
+              this.invalidateFacts();
               return;
             }
             if (r.done) break;
@@ -697,13 +704,38 @@ export class SessionSearchIndex {
       } catch {
         /* no transcript yet */
       }
-      const meta = readBoundedJson(metaPath, SESSION_METADATA_MAX_BYTES) as {
+      const promptCount = counts.get(factsId) ?? 0;
+      const hasTranscriptFacts = counts.has(factsId) || promptless.has(factsId);
+      const firstLine = fallbackTitleFromPrompt(heads.get(factsId) ?? '');
+      let meta: {
         cwd?: unknown;
         title?: unknown;
         updated_at?: unknown;
         parent_session_id?: unknown;
         session_created_reason?: unknown;
       };
+      try {
+        meta = readBoundedJson(
+          metaPath,
+          SESSION_METADATA_MAX_BYTES
+        ) as typeof meta;
+      } catch (err) {
+        if (!(err instanceof OversizedJsonFileError)) throw err;
+        // Oversized metadata still names a real session — index a degraded
+        // row (prompt-derived title, mtime recency) rather than dropping it
+        // and marking the whole listing incomplete forever.
+        return {
+          sessionId,
+          workspace: '',
+          title: firstLine || '(no title)',
+          updatedAt: new Date(metaStat.mtimeMs).toISOString(),
+          entryCount: promptCount,
+          promptCount,
+          countCapped: !hasTranscriptFacts,
+          metaMtimeMs: metaStat.mtimeMs,
+          logMtimeMs: logMtime,
+        };
+      }
       if (
         meta.parent_session_id &&
         meta.session_created_reason === 'subagent'
@@ -711,9 +743,6 @@ export class SessionSearchIndex {
         return null;
       }
 
-      const promptCount = counts.get(factsId) ?? 0;
-      const hasTranscriptFacts = counts.has(factsId) || promptless.has(factsId);
-      const firstLine = fallbackTitleFromPrompt(heads.get(factsId) ?? '');
       return {
         sessionId,
         workspace: typeof meta.cwd === 'string' ? meta.cwd : '',

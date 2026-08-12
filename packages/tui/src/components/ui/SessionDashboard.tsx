@@ -240,7 +240,7 @@ function wrapFooterHints(
   const dot = ` ${glyphs.smallDot} `;
   const hints = [
     `${glyphs.arrowUp}${glyphs.arrowDown} navigate`,
-    `${glyphs.arrowLeft}${glyphs.arrowRight} groups`,
+    `${glyphs.arrowLeft}${glyphs.arrow} groups`,
     `${glyphs.enter} resume`,
     hostPreview ? 'tab/ctrl+p preview' : 'tab preview',
     'ctrl+r rename',
@@ -588,14 +588,15 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     const cloudGroup = baseGroups.find(
       (group) => group.workspace === '\u0000cloud'
     );
-    logger.info('[sessions-debug] dashboard grouping', {
+    logger.debug('[sessions-debug] dashboard grouping', {
       groupBy,
       filterMode,
       groupCount: baseGroups.length,
       firstGroup: baseGroups[0]?.label ?? null,
       cloudGroupIndex: cloudGroup ? baseGroups.indexOf(cloudGroup) : -1,
       cloudRowCount: cloudGroup?.sessions.length ?? 0,
-      cloudSessionIds: cloudGroup?.sessions.map((s) => s.sessionId) ?? [],
+      cloudSessionIdsSample:
+        cloudGroup?.sessions.slice(0, 10).map((s) => s.sessionId) ?? [],
     });
   }, [baseGroups, filterMode, groupBy]);
 
@@ -1770,7 +1771,8 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
         pendingHeader = item;
         continue;
       }
-      if (navIdx >= startIdx && navIdx < endIdx) {
+      if (navIdx >= endIdx) break;
+      if (navIdx >= startIdx) {
         if (pendingHeader) {
           content.push(pendingHeader);
           pendingHeader = null;
@@ -2132,7 +2134,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               {controlFocus && (
                 <Text>
                   {dim(
-                    `${glyphs.arrowLeft}${glyphs.arrowRight} select ${glyphs.smallDot} ${glyphs.enter} done ${glyphs.smallDot} esc cancel`
+                    `${glyphs.arrowLeft}${glyphs.arrow} select ${glyphs.smallDot} ${glyphs.enter} done ${glyphs.smallDot} esc cancel`
                   )}
                 </Text>
               )}

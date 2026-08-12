@@ -91,6 +91,23 @@ describe('SessionBookmarkStore', () => {
     expect(store.getTags('s1')).toEqual(['auth']);
   });
 
+  it('caches merged reads and serves fresh state after any mutation', () => {
+    const store = new SessionBookmarkStore(path);
+    // Repeated reads reuse one merged snapshot per session id.
+    expect(store.get('s1')).toBe(store.get('s1'));
+
+    store.addTag('s1', 'alpha');
+    expect(store.getTags('s1')).toEqual(['alpha']);
+    store.toggleBookmark('s1');
+    expect(store.isBookmarked('s1')).toBe(true);
+
+    // A mutation through one physical copy refreshes the cached merge
+    // of every equivalent copy, not just the id that was written.
+    expect(store.getTags(KAS_COPY)).toEqual([]);
+    store.addTag(V2_COPY, 'shared');
+    expect(store.getTags(KAS_COPY)).toEqual(['shared']);
+  });
+
   it('persists tags across instances', () => {
     const a = new SessionBookmarkStore(path);
     a.setTags('s1', ['auth', 'wip']);

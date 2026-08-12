@@ -286,7 +286,10 @@ export const SessionDashboardScreen: React.FC = () => {
     };
     const lines: string[] = [];
     if (previewView === 'turns') {
-      if (!turns || turns.length === 0) {
+      if (turns === null) {
+        return [dim('Loading turns…')];
+      }
+      if (turns.length === 0) {
         return [dim('No turn data for this session.')];
       }
       for (const [ti, t] of turns.entries()) {

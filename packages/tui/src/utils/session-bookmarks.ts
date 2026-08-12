@@ -91,6 +91,7 @@ export function parseTags(input: string): string[] {
 
 export class SessionBookmarkStore {
   private data = new Map<string, SessionMeta>();
+  private mergedCache = new Map<string, SessionMeta>();
   private path: string;
   private loaded = false;
   private heldLockToken: string | null = null;
@@ -112,6 +113,7 @@ export class SessionBookmarkStore {
 
   /** Replace in-memory state only after a complete disk read succeeds. */
   private readFromDisk(): boolean {
+    this.mergedCache.clear();
     if (!existsSync(this.path)) {
       this.data.clear();
       return true;
@@ -162,6 +164,9 @@ export class SessionBookmarkStore {
       }
       return { ok: true, value: result };
     } finally {
+      // Mutation callbacks edit this.data after the fresh read, so cached
+      // merges from before or during the mutation are both stale.
+      this.mergedCache.clear();
       this.releaseLock();
     }
   }
@@ -305,6 +310,14 @@ export class SessionBookmarkStore {
   }
 
   private mergedMeta(sessionId: string): SessionMeta {
+    const cached = this.mergedCache.get(sessionId);
+    if (cached) return cached;
+    const merged = this.computeMergedMeta(sessionId);
+    this.mergedCache.set(sessionId, merged);
+    return merged;
+  }
+
+  private computeMergedMeta(sessionId: string): SessionMeta {
     const matches = this.equivalentEntries(sessionId);
     if (matches.length === 0) return EMPTY;
     const exact = this.data.get(sessionId);

@@ -160,6 +160,49 @@ describe('SessionSearchIndex', () => {
     expect(index.getDocument('subagent-1')).toBeUndefined();
   });
 
+  it('indexes an oversized-metadata session as a degraded row with a prompt title', async () => {
+    // Seed a session that will vanish; its stale index rows are swept only
+    // when the listing counts as complete.
+    writeSessionMeta(testDir, 'gone', { title: 'Gone session' });
+    writeSessionLog(testDir, 'gone', [
+      {
+        kind: 'Prompt',
+        data: { content: [{ kind: 'text', data: 'ephemeral zebra content' }] },
+      },
+    ]);
+    const seed = new SessionSearchIndex(testDir);
+    await seed.build();
+    seed.close();
+    rmSync(join(testDir, 'gone.json'));
+    rmSync(join(testDir, 'gone.jsonl'));
+
+    writeFileSync(
+      join(testDir, 'big.json'),
+      `{"session_id":"big","title":"Big","cwd":"/w","filler":"${'x'.repeat(1024 * 1024)}"}`
+    );
+    writeSessionLog(testDir, 'big', [
+      {
+        kind: 'Prompt',
+        data: { content: [{ kind: 'text', data: 'giant metadata prompt' }] },
+      },
+    ]);
+
+    const index = new SessionSearchIndex(testDir);
+    await index.build();
+
+    // Oversized metadata degrades to a minimal row instead of vanishing;
+    // its transcript still yields a searchable, prompt-derived title.
+    const doc = index.getDocument('big');
+    expect(doc).toBeDefined();
+    expect(doc!.title).toBe('giant metadata prompt');
+    expect(doc!.workspace).toBe('');
+    expect(index.search('giant').map((h) => h.sessionId)).toContain('big');
+    // The oversized row no longer marks the listing incomplete, so the
+    // vanished session's stale index rows were swept.
+    expect(index.search('zebra')).toHaveLength(0);
+    index.close();
+  });
+
   it('counts prompts but not assistant messages', async () => {
     writeSessionMeta(testDir, 'session-tools', { title: 'Tools session' });
     writeSessionLog(testDir, 'session-tools', [

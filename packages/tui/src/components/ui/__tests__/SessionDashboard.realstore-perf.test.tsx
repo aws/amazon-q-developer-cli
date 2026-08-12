@@ -103,8 +103,8 @@ beforeEach(() => {
     join(root, 'dashboard-meta.json'),
     JSON.stringify(
       Object.fromEntries(
-        Array.from({ length: 40 }, (_, i) => [
-          uuid(i * 100),
+        Array.from({ length: 400 }, (_, i) => [
+          uuid(i * 15),
           { bookmarked: i % 2 === 0, tags: ['alpha', 'beta'] },
         ])
       )
