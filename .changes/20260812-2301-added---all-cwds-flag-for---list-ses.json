@@ -1,4 +1,0 @@
-{
-  "type": "added",
-  "description": "`--all-cwds` flag for `--list-sessions` to list sessions across all workspaces"
-}

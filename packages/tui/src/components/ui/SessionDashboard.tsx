@@ -2114,7 +2114,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
                         )}
                   </>
                 )}
-                {dim('   ')}
+                {dim('  ')}
                 {keycap('ctrl+g', controlFocus === 'group')}
                 {dim(' group')}
                 {controlFocus === 'group' ? (
@@ -2128,7 +2128,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
                     {chalk.hex(brandHex)(`<${groupBy}>`)}
                   </>
                 )}
-                {dim('   ')}
+                {dim('  ')}
                 {keycap('ctrl+x', false)}
                 {dim(' clear filter')}
                 {searchResults && filterState !== 'all'
