@@ -297,6 +297,19 @@ export class TUI extends Container {
    * scrollback content is never duplicated or destroyed.
    */
   private hadFirstFrame = false;
+  /**
+   * Visible rows captured at flush-overflow time, awaiting the tail repaint.
+   * The repaint scrolls into scrollback only content it will not re-present,
+   * decided positionally (never by string equality — blank separators and
+   * repeated lines are routine and would be over-filtered).
+   */
+  private pendingVisibleRows: string[] | null = null;
+  /**
+   * Count of trailing static-buffer lines flushed since the capture and not
+   * yet physically presented. Identifies the flushed run inside the next
+   * frame's static prefix by position.
+   */
+  private pendingFlushedCount = 0;
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
   private pacingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1749,10 +1762,11 @@ export class TUI extends Container {
       this.trimStaticOutput();
       // When live content (excluding static) overflowed the viewport, the old
       // active rows above the viewport are stuck in scrollback where they can
-      // no longer be updated. With scrollback preservation on, erase only the
-      // VISIBLE rows and leave the overflowed rows as immutable history;
-      // otherwise \x1b[3J drops them, which costs the user their scroll
-      // position but is the only way to repaint rows a tall element spans.
+      // no longer be updated. With scrollback preservation on, capture the
+      // visible rows and erase the viewport; the tail repaint scrolls into
+      // scrollback only the captured rows it does not re-present. Otherwise
+      // \x1b[3J drops everything, which costs the user their scroll position
+      // but is the only way to repaint rows a tall element spans.
       // "Live rows" = physical rows of the active tail (all lines in
       // `previousLines` after the accumulated static prefix). When wide
       // lines aren't enabled, physical === logical (one row per line).
@@ -1774,6 +1788,40 @@ export class TUI extends Container {
       }
       if (liveRows > this.terminal.rows && !this.altScreen) {
         const screenRow = this.hardwareCursorRow - this.previousViewportTop;
+        if (this.preserveScrollbackOnRedraw) {
+          // Capture the rows on screen; the tail repaint scrolls into
+          // scrollback only those it will not re-present. Erasing without
+          // capturing lost them; scrolling a fixed screenful duplicated the
+          // re-presented ones into history on every flush.
+          const capRowOf = (line: string): number => {
+            if (!this.wideLinesEnabled) return 1;
+            const w = Math.max(this.terminal.columns || 80, this.minWidth);
+            const vw = visibleWidth(line);
+            return vw <= w ? 1 : Math.ceil(vw / w);
+          };
+          const visible: string[] = [];
+          let seen = 0;
+          for (
+            let i = this.previousLines.length - 1;
+            i >= 0 && seen < this.terminal.rows;
+            i--
+          ) {
+            const line = this.previousLines[i] ?? '';
+            // A line straddling the viewport top is included whole: its
+            // visible part must survive; the sliver already in scrollback
+            // duplicating is the lesser harm.
+            seen += capRowOf(line);
+            visible.unshift(line);
+          }
+          // Keep visible rows as content (their frame positions die with the
+          // erase below) but identify the flushed lines by COUNT: they are
+          // the trailing `lines.length` entries of the static buffer, so the
+          // repaint can locate them in the next frame positionally. Flushed
+          // lines land above the viewport when live stays overflowed and
+          // would otherwise never be emitted anywhere.
+          this.pendingVisibleRows = visible;
+          this.pendingFlushedCount = lines.length;
+        }
         const rowsToErase = Math.min(screenRow + 1, this.terminal.rows);
         let buf = this.preserveScrollbackOnRedraw ? '' : '\x1b[3J';
         for (let i = 0; i < rowsToErase; i++) {
@@ -2331,6 +2379,13 @@ export class TUI extends Container {
      * for self-contained text but wrong for an element spanning those rows —
      * a full-height gutter or border shows gaps where the stale rows sit.
      */
+    // Captured by the flush-overflow path for exactly the next render; any
+    // strategy that full-emits instead may drop them (content is re-emitted).
+    const pendingVisible = this.pendingVisibleRows;
+    const pendingFlushed = this.pendingFlushedCount;
+    this.pendingVisibleRows = null;
+    this.pendingFlushedCount = 0;
+
     const viewportTailRender = (reason: string): boolean => {
       // Walk back from the frame end until the tail fills the viewport, never
       // exceeding `height` physical rows: surplus rows scroll off into
@@ -2357,8 +2412,63 @@ export class TUI extends Container {
       this.debugLog(
         `fullRedraw #${this.fullRedrawCount}: reason=${reason} lines=${newLines.length} (viewport-tail)`
       );
+      // Content captured at flush time that the tail below does not
+      // re-present is the only copy of what the user watched stream —
+      // scroll it into scrollback ahead of the paint. Overlap is decided
+      // POSITIONALLY, never by bag-of-strings membership: blank separators
+      // and repeated lines are routine in finalized output and a content
+      // filter drops those distinct rows permanently.
+      // The trailing full-screen scroll leaves a blank screen with the
+      // cursor at the top, so the tail paint below needs no adjustment.
+      const preserved: string[] = [];
+      if (pendingVisible && pendingVisible.length > 0) {
+        // Visible rows overlap the tail as a SHIFTED suffix: streaming that
+        // continued across the flush advances the live region, so the rows
+        // the tail re-presents sit deeper in the tail window, not at the
+        // frame end. For each candidate shift, test whether a suffix of the
+        // captured rows equals the frame rows at that position; preserve
+        // only the prefix before the longest such overlap.
+        let bestMatched = 0;
+        const lastIdx = newLines.length - 1;
+        for (let shift = 0; lastIdx - shift >= startIdx; shift++) {
+          let matched = 0;
+          while (matched < pendingVisible.length) {
+            const frameIdx = lastIdx - shift - matched;
+            if (frameIdx < startIdx) break;
+            if (
+              (pendingVisible[pendingVisible.length - 1 - matched] ?? '') !==
+              (newLines[frameIdx] ?? '')
+            ) {
+              break;
+            }
+            matched++;
+          }
+          if (matched > bestMatched) bestMatched = matched;
+        }
+        for (let i = 0; i < pendingVisible.length - bestMatched; i++) {
+          preserved.push(pendingVisible[i] ?? '');
+        }
+      }
+      if (pendingFlushed > 0) {
+        // The flushed lines are the trailing run of the static prefix:
+        // frame indices [staticPrefixLen - pendingFlushed, staticPrefixLen).
+        // The tail re-presents indices >= startIdx, so emit only the part
+        // of the run above the tail window.
+        const flushStart = Math.max(0, staticPrefixLen - pendingFlushed);
+        const flushEnd = Math.min(staticPrefixLen, startIdx);
+        for (let i = flushStart; i < flushEnd; i++) {
+          preserved.push(newLines[i] ?? '');
+        }
+      }
+      let preservedSegment = '';
+      if (preserved.length > 0) {
+        preservedSegment =
+          preserved.join('\r\n') +
+          '\r\n'.repeat(height) +
+          (height > 1 ? `\x1b[${height - 1}A` : '');
+      }
       const sync = !process.env['TWINKI_NO_SYNC'];
-      let buffer = sync ? '\x1b[?2026h' : '';
+      let buffer = (sync ? '\x1b[?2026h' : '') + preservedSegment;
       // Relative moves only — absolute addressing or clears above the
       // viewport would touch committed scrollback.
       const screenRow = Math.max(
