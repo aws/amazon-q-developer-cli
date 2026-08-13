@@ -80,10 +80,12 @@ import { getCliVersion } from '../utils/version';
 import { getKasCommands, isKasWorkflowCommandName } from '../kas-commands';
 import { KAS_AUTONOMOUS_AGENT_ID } from '../constants/agents';
 import { Feature, features } from '../features';
+import { configResourceSource } from '../utils/config-resource.js';
 import { readClipboardImage } from '../utils/clipboard-image';
 import {
   modeFromId,
   recordTuiAutonomousMode,
+  recordTuiCloudConfigSource,
   recordTuiCloudError,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
@@ -98,6 +100,7 @@ import {
   resultFromStatus,
   turnFailureReasonFromStatus,
   TuiToolCallObserver,
+  type ConfigSurface,
 } from '../utils/tui-telemetry-observer';
 import {
   parseModelsFromConfigOptions,
@@ -258,6 +261,19 @@ export function isOutgoingSessionPush(
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Whether a `_kiro/*` config push carries an explicit failure status
+ * (`{status:'failed', error}` — e.g. the installed-powers scan threw).
+ * Shared by the powers/steering/diagnostics handlers so the three cannot
+ * drift: a failure must never be read as "zero items" (it would wipe a
+ * cache or retract a shown diagnostic), while a push with NO status — the
+ * older KAS bare-listing shape, and tolerant of kiro-agent #2142 still
+ * being open — is accepted.
+ */
+export function isFailedConfigPush(params: Record<string, unknown>): boolean {
+  return typeof params.status === 'string' && params.status !== 'success';
 }
 
 function isWorkflowAvailableCommand(command: acp.AvailableCommand): boolean {
@@ -422,6 +438,23 @@ export class KasAcpClient extends BaseAcpClient {
    * false on every released build (no cloud-sandbox cap).
    */
   private startedCloudSession = false;
+  /**
+   * Surfaces that already counted a cloud-sourced config observation for the
+   * active session — the adoption counter fires once per session per surface.
+   */
+  private cloudConfigSourceSeen = new Set<ConfigSurface>();
+
+  /**
+   * Count a cloud-sourced config observation for the active session. Only
+   * descriptor-derived cloud sources count (never the session-placement
+   * fallback), so the metric measures actual cloud config delivery.
+   */
+  private markCloudConfigSource(surface: ConfigSurface): void {
+    if (this.cloudConfigSourceSeen.has(surface)) return;
+    this.cloudConfigSourceSeen.add(surface);
+    recordTuiCloudConfigSource({ surface, version: this.version });
+  }
+
   /** A session/new RPC is in flight: the created session's pushes arrive
    *  tagged with an id the response hasn't reported yet. */
   private createInFlight = false;
@@ -834,6 +867,11 @@ export class KasAcpClient extends BaseAcpClient {
 
   /** Disposable for the hooks notification subscription. */
   private hooksNotificationDisposable: { dispose: () => void } | null = null;
+  private powersNotificationDisposable: { dispose: () => void } | null = null;
+  private steeringDocsNotificationDisposable: { dispose: () => void } | null =
+    null;
+  private diagnosticsNotificationDisposable: { dispose: () => void } | null =
+    null;
   /** Disposable for the tools notification subscription. */
   private toolsNotificationDisposable: { dispose: () => void } | null = null;
 
@@ -1141,6 +1179,193 @@ export class KasAcpClient extends BaseAcpClient {
       }
     );
 
+    // Subscribe to installed-powers changes for the /config powers page.
+    // KAS pushes the authoritative current set on load and whenever
+    // ~/.kiro/powers/ (or the cloud replica's powers root) changes. Items
+    // may carry the ConfigResource descriptor at _meta.kiro.resource.
+    this.powersNotificationDisposable = this.kiroClient.onExtNotification(
+      '_kiro/powers/items_changed',
+      (params: Record<string, unknown>) => {
+        // Tolerant session guard: powers are installed globally so KAS may
+        // omit sessionId, but a session-tagged push from a background
+        // session must not clobber the active session's cache. Same
+        // transition-aware shape as hooks/tools: mid-create the new
+        // session's id isn't known yet (createInFlight), and mid-load the
+        // OUTGOING session's own push still matches this.sessionId.
+        const sessionId = params.sessionId as string | undefined;
+        if (
+          sessionId &&
+          this.sessionId &&
+          sessionId !== this.sessionId &&
+          !this.createInFlight
+        ) {
+          return;
+        }
+        if (this.isOutgoingSessionPush(sessionId)) return;
+        // A failed scan must not be read as "zero powers" and wipe the
+        // cache; a push with no status (older KAS bare listing) is fine.
+        if (isFailedConfigPush(params)) return;
+        const rawPowers = Array.isArray(params.powers) ? params.powers : [];
+        const readDescriptor = features.isEnabled(Feature.CloudConfig);
+        this.broadcastStreamEvent({
+          type: AgentEventType.PowersUpdate,
+          powers: rawPowers.flatMap((p) => {
+            if (typeof p !== 'object' || p === null) return [];
+            const power = p as {
+              name?: string;
+              displayName?: string;
+              description?: string;
+            };
+            if (typeof power.name !== 'string') return [];
+            const configSource = readDescriptor
+              ? configResourceSource(p)
+              : undefined;
+            if (configSource === 'cloud') this.markCloudConfigSource('powers');
+            return [
+              {
+                name: power.name,
+                ...(typeof power.displayName === 'string'
+                  ? { displayName: power.displayName }
+                  : {}),
+                ...(typeof power.description === 'string'
+                  ? { description: power.description }
+                  : {}),
+                ...(configSource ? { configSource } : {}),
+              },
+            ];
+          }),
+        });
+      }
+    );
+
+    // Subscribe to the steering-documents listing for the /config steering
+    // page. Richer than the slash-command steering projection: it carries
+    // the per-document inclusion mode (always/manual/fileMatch) the UX mocks
+    // specify, plus the ConfigResource descriptor.
+    this.steeringDocsNotificationDisposable = this.kiroClient.onExtNotification(
+      '_kiro/steering/documents_changed',
+      (params: Record<string, unknown>) => {
+        // Session-scoped notification: drop pushes for other sessions so a
+        // background session (e.g. /spawn) can't clobber the active cache.
+        // Transition-aware (see hooks/tools): mid-create the created
+        // session's tagged push predates the RPC response reporting its id;
+        // mid-load the outgoing session's push must not survive.
+        const sessionId = params.sessionId as string | undefined;
+        if (
+          sessionId &&
+          this.sessionId &&
+          sessionId !== this.sessionId &&
+          !this.createInFlight
+        ) {
+          return;
+        }
+        if (this.isOutgoingSessionPush(sessionId)) return;
+        // Tolerant form (see isFailedConfigPush): a bare listing with no
+        // status must not be dropped, only an explicit failure.
+        if (isFailedConfigPush(params)) return;
+        const rawDocs = Array.isArray(params.documents) ? params.documents : [];
+        const readDescriptor = features.isEnabled(Feature.CloudConfig);
+        this.broadcastStreamEvent({
+          type: AgentEventType.SteeringDocumentsUpdate,
+          documents: rawDocs.flatMap((d) => {
+            if (typeof d !== 'object' || d === null) return [];
+            const doc = d as {
+              name?: string;
+              scope?: string;
+              inclusion?: string;
+            };
+            if (typeof doc.name !== 'string') return [];
+            const scope = doc.scope === 'workspace' ? 'workspace' : 'global';
+            const inclusion =
+              doc.inclusion === 'always' ||
+              doc.inclusion === 'manual' ||
+              doc.inclusion === 'fileMatch'
+                ? doc.inclusion
+                : undefined;
+            const configSource = readDescriptor
+              ? configResourceSource(d)
+              : undefined;
+            if (configSource === 'cloud')
+              this.markCloudConfigSource('steering');
+            return [
+              {
+                name: doc.name,
+                scope: scope as 'global' | 'workspace',
+                ...(inclusion ? { inclusion } : {}),
+                ...(configSource ? { configSource } : {}),
+              },
+            ];
+          }),
+        });
+      }
+    );
+
+    // Subscribe to per-domain diagnostics (kiro-agent PR #2142). KAS pushes
+    // the complete current set for a domain (first domain: 'cloudConfig' —
+    // sync health); the client replaces its held set for that domain. An
+    // empty set means "nothing to report", never verified-healthy.
+    this.diagnosticsNotificationDisposable = this.kiroClient.onExtNotification(
+      '_kiro/diagnostics/changed',
+      (params: Record<string, unknown>) => {
+        // Transition-aware session guard (see hooks/tools): a new session's
+        // initial diagnostics push arrives mid-create tagged with an id the
+        // RPC response hasn't reported yet, and mid-load the outgoing
+        // session's push must not repopulate the incoming session's caches.
+        const sessionId = params.sessionId as string | undefined;
+        if (
+          sessionId &&
+          this.sessionId &&
+          sessionId !== this.sessionId &&
+          !this.createInFlight
+        ) {
+          return;
+        }
+        if (this.isOutgoingSessionPush(sessionId)) return;
+        // A failed fetch must not masquerade as an intentional all-clear:
+        // the store treats an empty diagnostics array as the backend
+        // retracting a warning (and marks the domain received), so a
+        // {status:'failed'} push falling through here would clear a warning
+        // the user was shown AND suppress the stash-restore.
+        if (isFailedConfigPush(params)) return;
+        const domain =
+          typeof params.domain === 'string' ? params.domain : undefined;
+        if (!domain) return;
+        const rawDiags = Array.isArray(params.diagnostics)
+          ? params.diagnostics
+          : [];
+        this.broadcastStreamEvent({
+          type: AgentEventType.DiagnosticsUpdate,
+          domain,
+          diagnostics: rawDiags.flatMap((d) => {
+            if (typeof d !== 'object' || d === null) return [];
+            const diag = d as {
+              severity?: string;
+              code?: string;
+              message?: string;
+              resourceId?: string;
+            };
+            if (
+              typeof diag.severity !== 'string' ||
+              typeof diag.code !== 'string' ||
+              typeof diag.message !== 'string'
+            ) {
+              return [];
+            }
+            return [
+              {
+                severity: diag.severity,
+                code: diag.code,
+                message: diag.message,
+                ...(typeof diag.resourceId === 'string'
+                  ? { resourceId: diag.resourceId }
+                  : {}),
+              },
+            ];
+          }),
+        });
+      }
+    );
+
     // Subscribe to session tool-listing changes. KAS pushes the full current
     // tag set (builtin category tags + per-tool MCP tags) on session
     // new/load and whenever the resolved tool set changes (MCP connect/reset,
@@ -1353,6 +1578,12 @@ export class KasAcpClient extends BaseAcpClient {
     this.retired = true;
     this.hooksNotificationDisposable?.dispose();
     this.hooksNotificationDisposable = null;
+    this.powersNotificationDisposable?.dispose();
+    this.powersNotificationDisposable = null;
+    this.steeringDocsNotificationDisposable?.dispose();
+    this.steeringDocsNotificationDisposable = null;
+    this.diagnosticsNotificationDisposable?.dispose();
+    this.diagnosticsNotificationDisposable = null;
     this.toolsNotificationDisposable?.dispose();
     this.toolsNotificationDisposable = null;
     this.workflowExtensionInstance?.dispose();
@@ -1484,6 +1715,7 @@ export class KasAcpClient extends BaseAcpClient {
     }
     const sid = r.sessionId;
     this.sessionId = sid;
+    this.cloudConfigSourceSeen.clear();
     logger.debug('KAS session created', { sessionId: sid });
 
     // KAS validates each requested repository against the FULL provider
@@ -1675,6 +1907,7 @@ export class KasAcpClient extends BaseAcpClient {
     replayPermissionSubscription.dispose();
     this.loadTargetSessionId = null;
     this.sessionId = sessionId;
+    this.cloudConfigSourceSeen.clear();
     this.wireSessionListeners(sessionId);
     for (const notification of replayedNotifications) {
       try {
@@ -2178,6 +2411,7 @@ export class KasAcpClient extends BaseAcpClient {
         source?: string;
         filePath?: string;
         enabled?: boolean;
+        [key: string]: unknown;
       };
     }>
   ): HooksUpdateEvent['hooks'] {
@@ -2191,11 +2425,18 @@ export class KasAcpClient extends BaseAcpClient {
           : actionType === 'askAgent' || actionType === 'agent'
             ? `[agent] ${(h.action?.prompt ?? '').slice(0, 60)}`
             : (h.name ?? 'unknown');
+      // ConfigResource descriptor (_meta.kiro.resource, PR #2141) —
+      // cloud_config rollout only, so off-cohort HookInfo stays unchanged.
+      const configSource = features.isEnabled(Feature.CloudConfig)
+        ? configResourceSource(h)
+        : undefined;
+      if (configSource === 'cloud') this.markCloudConfigSource('hooks');
       return {
         ...(h.name ? { name: h.name } : {}),
         trigger,
         command,
         ...(matcher ? { matcher } : {}),
+        ...(configSource ? { configSource } : {}),
       };
     });
   }
@@ -2468,6 +2709,12 @@ export class KasAcpClient extends BaseAcpClient {
           failedAuthorization?: boolean;
           authorizationUrl?: string;
           errorMessage?: string;
+          /**
+           * Per-item meta. Carries the canonical `ConfigResource` descriptor
+           * at `_meta.kiro.resource` (kiro-agent PR #2141); read via
+           * configResourceSource which tolerates its absence (older KAS).
+           */
+          _meta?: Record<string, unknown>;
         }>
       | undefined;
 
@@ -2492,10 +2739,30 @@ export class KasAcpClient extends BaseAcpClient {
           status = 'failed';
       }
 
+      // Config origin — cloud_config rollout only, so the off-cohort
+      // snapshot stays byte-identical. The KAS ConfigResource descriptor
+      // (`_meta.kiro.resource`, PR #2141) wins when present; otherwise the
+      // session placement is the fallback: a cloud session's MCP servers
+      // run from cloud config, a local session's from local files.
+      const readDescriptor = features.isEnabled(Feature.CloudConfig);
+      const descriptorSource = readDescriptor
+        ? configResourceSource(server)
+        : undefined;
+      if (descriptorSource === 'cloud') this.markCloudConfigSource('mcp');
+
       return {
         name: server.name,
         status,
         toolCount: server.tools?.length ?? 0,
+        ...(readDescriptor
+          ? {
+              source:
+                descriptorSource ??
+                (this.startedCloudSession
+                  ? ('cloud' as const)
+                  : ('local' as const)),
+            }
+          : {}),
       };
     });
     this.broadcastStreamEvent({

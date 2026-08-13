@@ -1,5 +1,7 @@
 import * as acp from '@agentclientprotocol/sdk';
 import { logger } from '../utils/logger';
+import { configResourceSource } from '../utils/config-resource.js';
+import { features, Feature } from '../features.js';
 import { parseSessionRepositories } from '../utils/session-repositories';
 import { isUserCancelledReason } from '../constants/tool-failure-reasons';
 import type { ChildProcess } from 'node:child_process';
@@ -1726,6 +1728,12 @@ export abstract class BaseAcpClient implements SessionClient {
                 scope === 'global'
                   ? { kind: 'global', ...(path ? { path } : {}) }
                   : { kind: 'workspace', ...(path ? { path } : {}) };
+              // Cloud/local origin from the ConfigResource descriptor at
+              // _meta.kiro.resource (kiro-agent PR #2141). Gated on the
+              // cloud_config rollout so off-cohort entries stay unchanged.
+              const configSource = features.isEnabled(Feature.CloudConfig)
+                ? configResourceSource(cmd)
+                : undefined;
               skills.push({
                 name: cmd.name,
                 description: cmd.description,
@@ -1733,6 +1741,7 @@ export abstract class BaseAcpClient implements SessionClient {
                   ? { telemetryId: kiroMeta.telemetryId }
                   : {}),
                 source,
+                ...(configSource ? { configSource } : {}),
               });
               break;
             }
@@ -1744,6 +1753,10 @@ export abstract class BaseAcpClient implements SessionClient {
                 scope === 'global'
                   ? { kind: 'global', ...(path ? { path } : {}) }
                   : { kind: 'workspace', ...(path ? { path } : {}) };
+              // See the skill case above — same descriptor, same gating.
+              const configSource = features.isEnabled(Feature.CloudConfig)
+                ? configResourceSource(cmd)
+                : undefined;
               steering.push({
                 name: cmd.name,
                 description: cmd.description,
@@ -1751,6 +1764,7 @@ export abstract class BaseAcpClient implements SessionClient {
                   ? { telemetryId: kiroMeta.telemetryId }
                   : {}),
                 source,
+                ...(configSource ? { configSource } : {}),
               });
               break;
             }

@@ -113,6 +113,12 @@ export enum Feature {
 	 * channel match is what keeps those from fetching.
 	 */
 	RemoteChangelog = "remote_changelog",
+	/**
+	 * Consolidated `/config` panel and cloud/local source labels on config
+	 * listings (`/mcp` Source column). Dark outside internal nightly, same
+	 * ramp shape as `remote_sandbox`.
+	 */
+	CloudConfig = "cloud_config",
 }
 
 /**

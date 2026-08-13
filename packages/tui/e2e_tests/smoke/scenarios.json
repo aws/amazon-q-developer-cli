@@ -43,6 +43,33 @@
       ]
     },
     {
+      "id": "config-panel",
+      "name": "/config category table",
+      "category": "slash-commands",
+      "description": "Inside the cloud_config rollout, /config opens the consolidated config category table and ESC closes it",
+      "docRef": "/docs/cli/reference/slash-commands",
+      "priority": "p1",
+      "env": {
+        "KIRO_ENABLED_FEATURES": "[\"cloud_config\"]"
+      },
+      "steps": [
+        "type:/config",
+        "enter",
+        "waitForText:Category",
+        "frame:config-panel-open"
+      ],
+      "verify": [
+        "screen.contains:MCP servers",
+        "screen.contains:steering",
+        "screen.notContains:Unknown command"
+      ],
+      "observe": "Category | Source | Status table renders with agents/MCP servers/powers/steering/skills/hooks/env rows; footer shows navigation hints",
+      "engine": [
+        "v2",
+        "kas"
+      ]
+    },
+    {
       "id": "slash-help",
       "name": "/help command",
       "category": "slash-commands",

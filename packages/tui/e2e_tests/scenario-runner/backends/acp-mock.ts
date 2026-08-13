@@ -123,6 +123,9 @@ export function createAcpMockBackend(engine: Engine = 'kas'): ScenarioBackend {
         opts.backend.engine === 'kas' ? scenarioConfig?.kas : undefined;
       const testCaseOptions: ConstructorParameters<typeof AcpTestCase>[0] = {
         testName: buildAcpMockTestName(scenario.id, opts.backend.engine),
+        // Scenario-declared env (e.g. KIRO_ENABLED_FEATURES for the
+        // rollout-gated /config scenario) reaches the spawned TUI.
+        ...(scenario.env ? { extraEnv: scenario.env } : {}),
       };
       const localSeam = installLocalSeam(testCaseOptions, kasConfig);
       const testCase = new AcpTestCase(testCaseOptions);

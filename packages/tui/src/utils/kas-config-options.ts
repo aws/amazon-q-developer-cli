@@ -1,5 +1,6 @@
 import { KAS_DEFAULT_AGENT_ID } from '../constants/agents';
 import { features, Feature } from '../features';
+import { configResourceSource } from './config-resource.js';
 import type {
   KiroModelOptionMeta,
   EffortSchemaPath,
@@ -46,6 +47,12 @@ export interface AgentEntry {
   description?: string;
   source?: string;
   welcomeMessage?: string;
+  /**
+   * Collapsed cloud/local origin from the KAS ConfigResource descriptor on
+   * the mode option (`_meta.kiro.resource`, cloud_config rollout only).
+   * Absent = not reported; consumers fall back to session placement.
+   */
+  configSource?: 'local' | 'cloud';
 }
 
 export interface ParsedModels {
@@ -149,6 +156,12 @@ export function parseAgentsFromConfigOptions(
   if (!select) return undefined;
   const agents = validEntries(select.options)
     .map((o): AgentEntry => {
+      // ConfigResource descriptor on the mode option (_meta.kiro.resource,
+      // PR #2141) — cloud_config rollout only, so off-cohort entries stay
+      // unchanged.
+      const configSource = features.isEnabled(Feature.CloudConfig)
+        ? configResourceSource(o)
+        : undefined;
       return {
         id: fromKasModeId(o.value as string),
         name: o.name as string,
@@ -156,6 +169,7 @@ export function parseAgentsFromConfigOptions(
           typeof o.description === 'string' ? o.description : undefined,
         source: getMetaSource(o._meta),
         welcomeMessage: readWelcomeMessage(o._meta),
+        ...(configSource ? { configSource } : {}),
       };
     })
     .filter((a) => !isAgentHidden(a.id, a.source));

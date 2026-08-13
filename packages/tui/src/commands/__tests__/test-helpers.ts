@@ -52,6 +52,8 @@ export interface CreateMockCtxOptions {
   mcpRegistryCache?: CommandContext['mcpRegistryCache'];
   /** Whether the current session is a cloud session. Default: false */
   cloudSessionActive?: boolean;
+  /** Agent engine for the context. Default: 'v2' */
+  agentEngine?: CommandContext['agentEngine'];
   /** Locally observed workflow runs. Default: [] */
   localWorkflowRuns?: ReturnType<CommandContext['getLocalWorkflowRuns']>;
 }
@@ -90,7 +92,7 @@ export function createMockCommandContext(
 
   return {
     kiro: { ...defaultKiro, ...opts.kiro } as any,
-    agentEngine: 'v2',
+    agentEngine: opts.agentEngine ?? 'v2',
     cloudSessionActive: opts.cloudSessionActive ?? false,
     slashCommands: opts.slashCommands ?? [],
     kasCommands: opts.kasCommands ?? [],
@@ -157,6 +159,16 @@ export function createMockCommandContext(
     setShowThemePanel: spy('setShowThemePanel') as any,
     setShowCloudQuitPrompt: spy('setShowCloudQuitPrompt') as any,
     setShowSettingsPanel: spy('setShowSettingsPanel') as any,
+    setShowConfigPanel: spy('setShowConfigPanel') as any,
+    setConfigReturnOnEscape: spy('setConfigReturnOnEscape') as any,
+    endConfigHandoff: spy('endConfigHandoff') as any,
+    getConfigHandoffToken: (() => 0) as any,
+    claimLoadingMessage: (() => {
+      const fn = mock(() => true);
+      spies['claimLoadingMessage'] = fn;
+      return fn;
+    })() as any,
+    clearLoadingMessage: spy('clearLoadingMessage') as any,
     setSettingsReturnOnEscape: spy('setSettingsReturnOnEscape') as any,
     setVerboseReturnOnEscape: spy('setVerboseReturnOnEscape') as any,
     setThemeReturnOnEscape: spy('setThemeReturnOnEscape') as any,

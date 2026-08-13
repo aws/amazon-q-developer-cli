@@ -841,6 +841,9 @@ export class Kiro {
             event.type === AgentEventType.AgentNotFound ||
             event.type === AgentEventType.AgentConfigError ||
             event.type === AgentEventType.HooksUpdate ||
+            event.type === AgentEventType.PowersUpdate ||
+            event.type === AgentEventType.SteeringDocumentsUpdate ||
+            event.type === AgentEventType.DiagnosticsUpdate ||
             event.type === AgentEventType.McpServerSnapshot ||
             event.type === AgentEventType.McpRegistrySnapshot ||
             event.type === AgentEventType.RateLimitError) &&

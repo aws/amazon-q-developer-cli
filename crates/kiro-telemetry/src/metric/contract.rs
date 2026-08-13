@@ -717,6 +717,41 @@ pub fn record_cloud_attach(kind: &str, size_bucket: &str, engine: Engine) -> Met
         .expect_valid()
 }
 
+pub fn record_config_panel(category: &str, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_config_panel_total", 1)
+        .attribute("version_full", version_attr())
+        .attribute(
+            "config_category",
+            bounded_name(category, &[
+                "menu", "agents", "mcp", "powers", "steering", "skills", "hooks", "env",
+            ]),
+        )
+        .attribute("agent_engine", engine.as_str())
+        .expect_valid()
+}
+
+pub fn record_cloud_config_diagnostic(severity: &str, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_cloud_config_diagnostic_total", 1)
+        .attribute("version_full", version_attr())
+        .attribute(
+            "diagnostic_severity",
+            bounded_name(severity, &["error", "warning", "info"]),
+        )
+        .attribute("agent_engine", engine.as_str())
+        .expect_valid()
+}
+
+pub fn record_cloud_config_source(surface: &str, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_cloud_config_source_total", 1)
+        .attribute("version_full", version_attr())
+        .attribute(
+            "config_surface",
+            bounded_name(surface, &["mcp", "steering", "hooks", "powers"]),
+        )
+        .attribute("agent_engine", engine.as_str())
+        .expect_valid()
+}
+
 pub fn record_ui_mode_session_started(ui_mode: UiMode) -> MetricRecord {
     counter("kiro_cli_ui_mode_session_started_total", 1)
         .attribute("version_full", version_attr())

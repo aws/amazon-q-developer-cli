@@ -7,7 +7,7 @@ import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
-import type { HookInfo } from '../../stores/app-store.js';
+import { useAppStore, type HookInfo } from '../../stores/app-store.js';
 import { truncateToWidth } from '../../utils/text-width.js';
 import {
   cloudPanelNotice,
@@ -109,10 +109,17 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({
     setScrollOffset(0);
   }, []);
 
+  // Read once per render: set by /config before this panel opens. Drives the
+  // footer hint only ('to go back' vs 'to close'); back-navigation itself
+  // happens in the close handler (same pattern as KeybindingsPanel's
+  // fromSettings).
+  const fromConfig = useAppStore((state) => state.configReturnOnEscape);
+
   return (
     <Panel
       title={`/hooks ${glyphs.smallDot} ${hooks.length} hook${hooks.length === 1 ? '' : 's'}`}
       onClose={onClose}
+      closeHintLabel={fromConfig ? 'to go back' : 'to close'}
       searchable={true}
       onSearchChange={handleSearchChange}
       canScrollUp={scrollOffset > 0}

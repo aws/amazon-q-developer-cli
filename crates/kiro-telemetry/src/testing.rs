@@ -78,6 +78,9 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
         record_cloud_repo_attach("submitted", "2", engine),
         record_cloud_error("session_new", "version_skew", engine),
         record_cloud_attach("image", "under_1m", engine),
+        record_config_panel("menu", engine),
+        record_cloud_config_diagnostic("warning", engine),
+        record_cloud_config_source("mcp", engine),
         workflow_dimensions(counter("kiro_cli_workflow_run_total", 1))
             .attribute("workflow_run_event", "started")
             .attribute("workflow_topology", "mixed")

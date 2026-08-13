@@ -1960,6 +1960,57 @@ describe('per-session display snapshot stash', () => {
     ]);
     expect(store.getState().cloudSnapshotReadiness.mcp).toBe('received');
   });
+
+  it('an all-clear diagnostics push mid-load is not overwritten by the stash', () => {
+    // cloudConfig diagnostics are replace-not-merge: an EMPTY push is the
+    // backend retracting a warning, not "no data" — so restore must gate on
+    // the received marker, never on emptiness.
+    const store = createAppStore({ kiro: new Kiro() });
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.DiagnosticsUpdate,
+      domain: 'cloudConfig',
+      diagnostics: [
+        { severity: 'warning', code: 'stale-sync', message: 'stale sync' },
+      ],
+    } as any);
+    handler.flush();
+    expect(store.getState().cloudConfigDiagnosticsReceived).toBe(true);
+
+    const snapshot = store.getState().resetClientDisplayCaches();
+    store.getState().stashDisplaySnapshot('session-C', snapshot);
+    expect(store.getState().cloudConfigDiagnosticsReceived).toBe(false);
+
+    // The backend clears the warning while the load RPC is in flight.
+    handler({
+      type: AgentEventType.DiagnosticsUpdate,
+      domain: 'cloudConfig',
+      diagnostics: [],
+    } as any);
+    handler.flush();
+
+    store.getState().restoreDisplaySnapshotFor('session-C');
+    expect(store.getState().cloudConfigDiagnostics).toEqual([]);
+
+    // Without a mid-load push the stashed diagnostics DO come back.
+    const store2 = createAppStore({ kiro: new Kiro() });
+    const handler2 = store2.getState().createStreamEventHandler();
+    handler2({
+      type: AgentEventType.DiagnosticsUpdate,
+      domain: 'cloudConfig',
+      diagnostics: [
+        { severity: 'error', code: 'sync-failed', message: 'sync failed' },
+      ],
+    } as any);
+    handler2.flush();
+    const snap2 = store2.getState().resetClientDisplayCaches();
+    store2.getState().stashDisplaySnapshot('session-D', snap2);
+    store2.getState().restoreDisplaySnapshotFor('session-D');
+    expect(store2.getState().cloudConfigDiagnostics).toEqual([
+      { severity: 'error', code: 'sync-failed', message: 'sync failed' },
+    ]);
+    expect(store2.getState().cloudConfigDiagnosticsReceived).toBe(true);
+  });
 });
 
 describe('cloud snapshot readiness (stream events)', () => {

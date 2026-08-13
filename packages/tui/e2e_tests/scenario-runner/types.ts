@@ -18,6 +18,8 @@ export interface Scenario {
   timeout?: number;
   tags?: string[];
   priority?: 'p0' | 'p1' | 'p2';
+  /** Extra env for the spawned TUI (e.g. rollout gates for dark-shipped commands). */
+  env?: Record<string, string>;
 }
 
 export type ExitReason =

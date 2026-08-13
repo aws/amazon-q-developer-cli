@@ -61,6 +61,12 @@
     "segment": "internal",
     "channel": "nightly"
   },
+  "cloud_config": {
+    "description": "Consolidated /config panel and cloud/local source labels on config listings. Dark-shipped: internal nightly only, mirroring remote_sandbox; widen segment/channel here for the next ramp stage.",
+    "treatment_percent": 100,
+    "segment": "internal",
+    "channel": "nightly"
+  },
   "c2s": {
     "description": "Code-to-Spec Explore agent and analysis pipeline. Internal nightly only; launcher exports KIRO_C2S_ROLLOUT_ENABLED and the TUI honors chat.enableC2s + shows the Explore agent only when enabled.",
     "treatment_percent": 100,

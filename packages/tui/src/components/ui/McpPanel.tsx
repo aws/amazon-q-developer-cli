@@ -7,13 +7,15 @@ import { useTheme } from '../../hooks/useThemeContext';
 import { useTerminalSize } from '../../hooks/useTerminalSize';
 import { useGlyphs, useAllowIcons } from '../../hooks/useGlyphs.js';
 import { fuzzyScore } from '../../utils/fuzzyScore.js';
-import type {
-  McpServerInfo,
-  InitError,
-  CloudSnapshotReadiness,
+import {
+  useAppStore,
+  type McpServerInfo,
+  type InitError,
+  type CloudSnapshotReadiness,
 } from '../../stores/app-store.js';
 import { visibleWidth } from '../../utils/text-width.js';
 import { copyToSystemClipboard } from '../../commands/effects.js';
+import { features, Feature } from '../../features.js';
 import {
   cloudPanelNotice,
   cloudPanelEmptyMessage,
@@ -58,6 +60,10 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   onRemoveCredentials,
 }) => {
   const { getColor } = useTheme();
+  // Set by /config before this panel opens; footer hint only ('to go back'
+  // vs 'to close') — back-navigation happens in the close handler (same
+  // pattern as KeybindingsPanel's fromSettings).
+  const fromConfig = useAppStore((state) => state.configReturnOnEscape);
   const { width: termWidth, height: termHeight } = useTerminalSize();
   const glyphs = useGlyphs();
   const { allowIcons } = useAllowIcons();
@@ -83,6 +89,12 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     servers.length > 0 && servers[0]?.version !== undefined;
   const isInteractive =
     (mode === 'add' || mode === 'remove') && isRegistryView && !!onAction;
+
+  // Source column (Figma frames 24/27): only inside the cloud_config rollout
+  // AND when at least one server carries a source — off-cohort output stays
+  // byte-identical (same pattern as ToolsPanel's optional Status column).
+  const showSource =
+    features.isEnabled(Feature.CloudConfig) && servers.some((s) => s.source);
 
   // Build a lookup of MCP failure reasons from initErrors
   const failureReasons = useMemo(() => {
@@ -163,6 +175,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       ]
     : [
         { label: 'Name', width: nameCol },
+        ...(showSource ? [{ label: 'Source', width: 8 + GAP }] : []),
         { label: 'Status', width: 14 + GAP },
         { label: 'Details' },
       ];
@@ -220,6 +233,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
         const detailColor = server.status === 'failed' && reason ? error : dim;
         return [
           { text: server.name, color: primary },
+          ...(showSource ? [{ text: server.source ?? '', color: dim }] : []),
           {
             text: statusLabels[server.status] ?? server.status,
             color: statusColor(server.status),
@@ -231,6 +245,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
       visible,
       isRegistryView,
       isInteractive,
+      showSource,
       selected,
       pending,
       mode,
@@ -378,11 +393,17 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   const modeLabel =
     mode === 'add' ? 'add' : mode === 'remove' ? 'remove' : 'list';
   const selCount = selected.size + pending.size;
+  // Routed from /config, the panel titles itself as the MCP category page
+  // ('/config — MCP', frames 24/27) so it reads like the other /config
+  // pages; the view itself is identical to /mcp. Direct /mcp is unchanged,
+  // including its 'list' mode word (redundant after a '/config — MCP' label).
+  const commandLabel = fromConfig ? '/config — MCP' : '/mcp';
+  const listLabel = fromConfig ? commandLabel : '/mcp list';
   const title = isRegistryView
-    ? `/mcp ${modeLabel} ${glyphs.smallDot} ${servers.length} server${servers.length === 1 ? '' : 's'}${selCount > 0 ? ` ${glyphs.smallDot} ${selCount} selected` : ''}`
+    ? `${commandLabel} ${modeLabel} ${glyphs.smallDot} ${servers.length} server${servers.length === 1 ? '' : 's'}${selCount > 0 ? ` ${glyphs.smallDot} ${selCount} selected` : ''}`
     : isListMode
-      ? `/mcp list ${glyphs.smallDot} ${servers.length} configured${hasRegistry ? `, ${registryServers.length} registry` : ''}`
-      : `/mcp ${glyphs.smallDot} ${servers.length} server${servers.length === 1 ? '' : 's'}`;
+      ? `${listLabel} ${glyphs.smallDot} ${servers.length} configured${hasRegistry ? `, ${registryServers.length} registry` : ''}`
+      : `${commandLabel} ${glyphs.smallDot} ${servers.length} server${servers.length === 1 ? '' : 's'}`;
 
   const governanceDisabled = initErrors.find(
     (e): e is Extract<InitError, { type: 'mcp_governance_disabled' }> =>
@@ -400,6 +421,33 @@ export const McpPanel: React.FC<McpPanelProps> = ({
         : 'No MCP servers configured';
 
   const isStatusView = !isRegistryView && !isListMode;
+
+  // Frame-24/27 footer: conflict-precedence + edit paths. cloud_config
+  // rollout only, so off-cohort /mcp output stays byte-identical. The
+  // conflict line appears only when local and cloud servers actually
+  // coexist (the fact it explains); cloud-session views get the cloud-edit
+  // line alone (frame 27).
+  const showSourceFooter =
+    features.isEnabled(Feature.CloudConfig) &&
+    !isRegistryView &&
+    servers.length > 0;
+  const hasCloudSourced = servers.some((s) => s.source === 'cloud');
+  const hasLocalSourced = servers.some((s) => s.source === 'local');
+  const sourceFooterLines = showSourceFooter
+    ? [
+        ...(hasCloudSourced && hasLocalSourced
+          ? ['In case of conflict, local will override cloud configurations']
+          : []),
+        ...(!cloudSessionActive
+          ? [
+              'To edit local configs: Just ask Kiro, or open ~/.kiro/settings/mcp.json',
+            ]
+          : []),
+        ...(hasCloudSourced || cloudSessionActive
+          ? ['To edit cloud configs: https://app.kiro.dev/settings']
+          : []),
+      ]
+    : [];
   const statusActionHints = [
     onForceAuth && { key: '^A', label: 'auth' },
     onAbortAuth && { key: '^X', label: 'abort' },
@@ -428,6 +476,7 @@ export const McpPanel: React.FC<McpPanelProps> = ({
     <Panel
       title={title}
       onClose={onClose}
+      closeHintLabel={fromConfig ? 'to go back' : 'to close'}
       searchable={!governanceDisabled}
       onSearchChange={handleSearchChange}
       canScrollUp={scrollOffset > 0}
@@ -479,6 +528,13 @@ export const McpPanel: React.FC<McpPanelProps> = ({
           />
         )}
       </Box>
+      {sourceFooterLines.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          {sourceFooterLines.map((line, i) => (
+            <Text key={i}>{dim(line)}</Text>
+          ))}
+        </Box>
+      )}
     </Panel>
   );
 };

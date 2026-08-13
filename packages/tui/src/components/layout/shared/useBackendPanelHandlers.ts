@@ -53,12 +53,19 @@ export function useBackendPanelHandlers() {
   const store = useContext(AppStoreContext);
   if (!store) throw new Error('Missing StoreContext.Provider in the tree');
   const settingsReturnOnEscape = useAppStore((s) => s.settingsReturnOnEscape);
+  const configReturnOnEscape = useAppStore((s) => s.configReturnOnEscape);
+  const setConfigReturnOnEscape = useAppStore((s) => s.setConfigReturnOnEscape);
+  const reopenConfigMenu = useAppStore((s) => s.reopenConfigMenu);
 
   // makeClose wraps useCallback; it's called unconditionally and in fixed
   // order each render, so React hook ordering holds (hence the suppression).
   const makeClose = (
     setShow: (open: boolean) => void,
-    opts?: { returnToSettings?: boolean; clearReturnFlag?: boolean }
+    opts?: {
+      returnToSettings?: boolean;
+      returnToConfig?: boolean;
+      clearReturnFlag?: boolean;
+    }
   ) =>
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useCallback(() => {
@@ -71,6 +78,12 @@ export function useBackendPanelHandlers() {
       } else if (opts?.clearReturnFlag) {
         setSettingsReturnOnEscape(false);
       }
+      // /config twin of the settings branch: a panel the /config table
+      // routed to (MCP, hooks) walks back to the table on ESC.
+      if (opts?.returnToConfig && configReturnOnEscape) {
+        setConfigReturnOnEscape(false);
+        reopenConfigMenu();
+      }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       setShow,
@@ -79,6 +92,9 @@ export function useBackendPanelHandlers() {
       settingsReturnOnEscape,
       setSettingsReturnOnEscape,
       reopenSettingsMenu,
+      configReturnOnEscape,
+      setConfigReturnOnEscape,
+      reopenConfigMenu,
     ]);
 
   // makeClose calls run unconditionally in fixed order inside this object
@@ -88,10 +104,12 @@ export function useBackendPanelHandlers() {
     handleCloseUsagePanel: makeClose(setShowUsagePanel),
     handleCloseHelpPanel: makeClose(setShowHelpPanel),
     handleCloseGoalPanel: makeClose(setShowGoalPanel),
-    handleCloseMcpPanel: makeClose(setShowMcpPanel),
+    handleCloseMcpPanel: makeClose(setShowMcpPanel, { returnToConfig: true }),
     handleCloseToolsPanel: makeClose(setShowToolsPanel),
     handleCloseStatsPanel: makeClose(setShowStatsPanel),
-    handleCloseHooksPanel: makeClose(setShowHooksPanel),
+    handleCloseHooksPanel: makeClose(setShowHooksPanel, {
+      returnToConfig: true,
+    }),
     handleCloseRepoPicker: makeClose(setShowRepoPicker),
     handleCloseSessionPicker: makeClose(setShowSessionPicker),
     handleCloseKnowledgePanel: makeClose(setShowKnowledgePanel),

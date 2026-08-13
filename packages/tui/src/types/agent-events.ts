@@ -93,6 +93,9 @@ export enum AgentEventType {
   SteeringConsumed = 'steering_consumed',
   SteeringCleared = 'steering_cleared',
   HooksUpdate = 'hooks_update',
+  PowersUpdate = 'powers_update',
+  SteeringDocumentsUpdate = 'steering_documents_update',
+  DiagnosticsUpdate = 'diagnostics_update',
   ToolsUpdate = 'tools_update',
   McpServersUpdate = 'mcp_servers_update',
   McpServerSnapshot = 'mcp_server_snapshot',
@@ -515,6 +518,55 @@ export interface KasModelConfigUpdateEvent {
   origin: KasConfigOrigin;
 }
 
+/**
+ * Installed-powers listing pushed by KAS on `_kiro/powers/items_changed`.
+ * Feeds the /config powers page; each push is the authoritative current set.
+ */
+export interface PowersUpdateEvent {
+  type: AgentEventType.PowersUpdate;
+  powers: Array<{
+    name: string;
+    displayName?: string;
+    description?: string;
+    /** Cloud/local origin from the ConfigResource descriptor, when reported. */
+    configSource?: 'local' | 'cloud';
+  }>;
+}
+
+/**
+ * Steering-documents listing pushed by KAS on
+ * `_kiro/steering/documents_changed`. Richer than the slash-command steering
+ * projection: carries the mock-specified inclusion mode
+ * (always/manual/fileMatch). Feeds the /config steering page.
+ */
+export interface SteeringDocumentsUpdateEvent {
+  type: AgentEventType.SteeringDocumentsUpdate;
+  documents: Array<{
+    name: string;
+    scope: 'global' | 'workspace';
+    inclusion?: 'always' | 'manual' | 'fileMatch';
+    /** Cloud/local origin from the ConfigResource descriptor, when reported. */
+    configSource?: 'local' | 'cloud';
+  }>;
+}
+
+/**
+ * Diagnostics for one domain pushed by KAS on `_kiro/diagnostics/changed`
+ * (kiro-agent PR #2142). The complete current set for `domain`; the client
+ * replaces its held set (never merges). Empty = nothing to report, NOT
+ * verified-healthy. First domain is 'cloudConfig' (sync health).
+ */
+export interface DiagnosticsUpdateEvent {
+  type: AgentEventType.DiagnosticsUpdate;
+  domain: string;
+  diagnostics: Array<{
+    severity: string;
+    code: string;
+    message: string;
+    resourceId?: string;
+  }>;
+}
+
 export interface HooksUpdateEvent {
   type: AgentEventType.HooksUpdate;
   hooks: Array<{
@@ -522,6 +574,8 @@ export interface HooksUpdateEvent {
     trigger: string;
     command: string;
     matcher?: string;
+    /** Cloud/local origin from the ConfigResource descriptor, when reported. */
+    configSource?: 'local' | 'cloud';
   }>;
 }
 
@@ -555,6 +609,8 @@ export interface McpServerSnapshotEvent {
     name: string;
     status: 'running' | 'loading' | 'failed' | 'disabled' | 'auth-required';
     toolCount: number;
+    /** Config origin (cloud vs local), when known. See McpServerInfo.source. */
+    source?: 'local' | 'cloud';
   }>;
   /** True when the originating notification carried the active session's id
    *  (KAS >= 0.26.14 tags every push). Feeds cloud snapshot readiness. */
@@ -857,6 +913,9 @@ export type AgentStreamEvent =
   | KasAgentsUpdateEvent
   | KasModelConfigUpdateEvent
   | HooksUpdateEvent
+  | PowersUpdateEvent
+  | SteeringDocumentsUpdateEvent
+  | DiagnosticsUpdateEvent
   | ToolsUpdateEvent
   | McpServersUpdateEvent
   | McpServerSnapshotEvent

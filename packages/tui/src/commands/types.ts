@@ -20,6 +20,7 @@ import type {
 } from '../types/commands.js';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import type { SessionPickerRow } from '../components/ui/SessionPickerPanel.js';
+import type { ConfigCategoryId } from '../components/ui/config-panel-model.js';
 import type { WorkflowRunSummary } from '../types/workflow-history.js';
 import type { WorkflowLifecycleNotice } from '../types/workflow-lifecycle.js';
 import type {
@@ -259,6 +260,23 @@ export interface CommandContext {
   /** Open/close the /quit "keep running vs turn off" prompt (cloud sessions only). */
   setShowCloudQuitPrompt: (show: boolean) => void;
   setShowSettingsPanel: (show: boolean) => void;
+  /** Open/close the /config overlay, optionally on a category page. */
+  setShowConfigPanel: (show: boolean, category?: ConfigCategoryId) => void;
+  /** Prime ESC-back to the /config table (twin of setSettingsReturnOnEscape). */
+  setConfigReturnOnEscape: (value: boolean) => void;
+  /** End the current /config → mcp/hooks handoff (completion or ESC-cancel):
+   *  zero the token so the panel is interactive again. */
+  endConfigHandoff: () => void;
+  /** Set loadingMessage only if no other owner holds it (e.g. a compaction
+   *  spinner). Returns whether the claim succeeded. */
+  claimLoadingMessage: (message: string) => boolean;
+  /** Clear loadingMessage only if it still holds `expected` — an out-of-band
+   *  owner (compaction spinner) may have replaced it and still needs it. */
+  clearLoadingMessage: (expected: string) => void;
+  /** Read the live handoff token — a routed handler captures it on entry and
+   *  compares by identity after its RPC to detect an ESC-cancel (token 0) or
+   *  a superseding second handoff (token bumped). */
+  getConfigHandoffToken: () => number;
   setSettingsReturnOnEscape: (value: boolean) => void;
   /** Stash the parent route consumed by the /verbosity menu's ESC handler. */
   setVerboseReturnOnEscape: (route: string | null) => void;

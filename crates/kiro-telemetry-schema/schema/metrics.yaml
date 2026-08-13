@@ -71,6 +71,30 @@ metrics:
     temporality: delta
     attributes: [version_full, attach_kind, attach_size_bucket, agent_engine]
     cloudwatch_dimensions: [version_full, attach_kind, attach_size_bucket, agent_engine]
+  - name: kiro_cli_config_panel_total
+    description: Views of the /config panel grouped by the config category opened.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, config_category]
+    cloudwatch_dimensions: [version_full, agent_engine, config_category]
+  - name: kiro_cli_cloud_config_diagnostic_total
+    description: Cloud-config sync diagnostics received in agent diagnostics pushes, grouped by severity.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, diagnostic_severity]
+    cloudwatch_dimensions: [version_full, agent_engine, diagnostic_severity]
+  - name: kiro_cli_cloud_config_source_total
+    description: Sessions that observed cloud-sourced configuration, counted once per session per surface.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, config_surface]
+    cloudwatch_dimensions: [version_full, agent_engine, config_surface]
   - name: kiro_cli_workflow_run_total
     description: Client-observed workflow lifecycle transitions grouped by static topology and executable step count.
     kind: counter

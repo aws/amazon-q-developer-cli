@@ -16,10 +16,13 @@ const {
   recordTuiSlashCommand,
   recordTuiAutonomousMode,
   recordTuiCloudAttach,
+  recordTuiCloudConfigDiagnostics,
+  recordTuiCloudConfigSource,
   recordTuiCloudError,
   recordTuiCloudRepoAttach,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
+  recordTuiConfigPanel,
   recordTuiCreditsConsumed,
   recordTuiModelInvocations,
   recordTuiProcessHealth,
@@ -308,6 +311,95 @@ describe('TUI-owned usage metrics', () => {
     expect(counterCalls.map((call) => call.attrs?.['ui_mode'])).toEqual([
       'lite',
       'unknown',
+    ]);
+  });
+});
+
+describe('cloud config metrics', () => {
+  it('records /config category views with bounded categories', () => {
+    recordTuiConfigPanel({ version: '2.4.0', engine: 'v3' }, deps);
+    recordTuiConfigPanel(
+      { category: 'steering', version: '2.4.0', engine: 'v2' },
+      deps
+    );
+    recordTuiConfigPanel(
+      { category: 'not-a-category', version: '2.4.0' },
+      deps
+    );
+
+    expect(counterCalls).toEqual([
+      {
+        name: 'kiro_cli_config_panel_total',
+        value: 1,
+        attrs: {
+          version_full: '2.4.0',
+          config_category: 'menu',
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
+      {
+        name: 'kiro_cli_config_panel_total',
+        value: 1,
+        attrs: {
+          version_full: '2.4.0',
+          config_category: 'steering',
+          agent_engine: 'v2',
+        },
+        scope: TUI_SCOPE,
+      },
+      {
+        name: 'kiro_cli_config_panel_total',
+        value: 1,
+        attrs: {
+          version_full: '2.4.0',
+          config_category: 'unknown',
+          agent_engine: DEFAULT_ENGINE,
+        },
+        scope: TUI_SCOPE,
+      },
+    ]);
+  });
+
+  it('records one diagnostic count per severity with bounded values', () => {
+    recordTuiCloudConfigDiagnostics(
+      {
+        severities: ['warning', 'error', 'catastrophic'],
+        version: '2.4.0',
+        engine: 'v3',
+      },
+      deps
+    );
+
+    expect(
+      counterCalls.map((call) => [
+        call.name,
+        call.attrs?.['diagnostic_severity'],
+      ])
+    ).toEqual([
+      ['kiro_cli_cloud_config_diagnostic_total', 'warning'],
+      ['kiro_cli_cloud_config_diagnostic_total', 'error'],
+      ['kiro_cli_cloud_config_diagnostic_total', 'unknown'],
+    ]);
+  });
+
+  it('records a cloud config source observation per surface', () => {
+    recordTuiCloudConfigSource(
+      { surface: 'mcp', version: '2.4.0', engine: 'v3' },
+      deps
+    );
+
+    expect(counterCalls).toEqual([
+      {
+        name: 'kiro_cli_cloud_config_source_total',
+        value: 1,
+        attrs: {
+          version_full: '2.4.0',
+          config_surface: 'mcp',
+          agent_engine: 'v3',
+        },
+        scope: TUI_SCOPE,
+      },
     ]);
   });
 });

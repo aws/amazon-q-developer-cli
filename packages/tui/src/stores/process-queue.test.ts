@@ -261,6 +261,29 @@ describe('processQueue', () => {
     ]);
   });
 
+  it('pauses while the /config panel is open and resumes when it closes', async () => {
+    const store = createTestStore();
+    const mockStreamMessage = mock(() => Promise.resolve());
+    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+
+    store.setState({
+      activeInterruptMode: 'queue',
+      isProcessing: false,
+      queuedMessages: ['queued while /config open'],
+      showConfigPanel: true,
+    });
+
+    // The panel owns queue interaction: nothing drains under it.
+    await store.getState().processQueue();
+    expect(mockStreamMessage).not.toHaveBeenCalled();
+    expect(store.getState().queuedMessages).toHaveLength(1);
+
+    // Closing via the setter resumes the paused queue (like every panel).
+    store.getState().setShowConfigPanel(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mockStreamMessage).toHaveBeenCalled();
+  });
+
   it('waits for cancelInProgress before processing', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());

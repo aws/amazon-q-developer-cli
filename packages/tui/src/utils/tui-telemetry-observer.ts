@@ -552,6 +552,127 @@ export function recordTuiCloudRepoAttach(
   );
 }
 
+/** Categories of the /config panel; 'menu' is the top-level category table. */
+export type ConfigPanelCategory =
+  | 'menu'
+  | 'agents'
+  | 'mcp'
+  | 'powers'
+  | 'steering'
+  | 'skills'
+  | 'hooks'
+  | 'env'
+  | 'unknown';
+
+const CONFIG_PANEL_CATEGORIES: ReadonlySet<string> = new Set([
+  'menu',
+  'agents',
+  'mcp',
+  'powers',
+  'steering',
+  'skills',
+  'hooks',
+  'env',
+]);
+
+export function configPanelCategory(
+  value: string | undefined
+): ConfigPanelCategory {
+  const normalized = (value ?? 'menu').trim().toLowerCase();
+  return CONFIG_PANEL_CATEGORIES.has(normalized)
+    ? (normalized as ConfigPanelCategory)
+    : 'unknown';
+}
+
+/**
+ * A /config view was opened (`kiro_cli_config_panel_total`): the top-level
+ * category table ('menu') or one category — whether reached by typing
+ * `/config <sub>` or by selecting a row inside the panel.
+ */
+export function recordTuiConfigPanel(
+  args: { category?: string; version: string; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_config_panel_total',
+    1,
+    {
+      version_full: args.version,
+      config_category: configPanelCategory(args.category),
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
+    },
+    TUI_SCOPE
+  );
+}
+
+export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'unknown';
+
+export function diagnosticSeverity(
+  value: string | undefined
+): DiagnosticSeverity {
+  const normalized = (value ?? '').trim().toLowerCase();
+  return normalized === 'error' ||
+    normalized === 'warning' ||
+    normalized === 'info'
+    ? normalized
+    : 'unknown';
+}
+
+/**
+ * Cloud-config sync diagnostics arrived (`kiro_cli_cloud_config_diagnostic_total`).
+ * One count per diagnostic per push; pushes replace the held set, so the rate
+ * reflects how often clients are being shown unhealthy sync state.
+ */
+export function recordTuiCloudConfigDiagnostics(
+  args: {
+    severities: readonly string[];
+    version: string;
+    engine?: Engine;
+  },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  const emit = counterFn(deps);
+  for (const severity of args.severities) {
+    emit(
+      'kiro_cli_cloud_config_diagnostic_total',
+      1,
+      {
+        version_full: args.version,
+        diagnostic_severity: diagnosticSeverity(severity),
+        agent_engine: args.engine ?? DEFAULT_ENGINE,
+      },
+      TUI_SCOPE
+    );
+  }
+}
+
+/** Config surfaces that carry the ConfigResource descriptor. */
+export type ConfigSurface = 'mcp' | 'steering' | 'hooks' | 'powers';
+
+/**
+ * A session observed cloud-sourced configuration on one surface
+ * (`kiro_cli_cloud_config_source_total`). Callers dedupe per session per
+ * surface, so this counts adopting sessions, not descriptor pushes.
+ */
+export function recordTuiCloudConfigSource(
+  args: { surface: ConfigSurface; version: string; engine?: Engine },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_cloud_config_source_total',
+    1,
+    {
+      version_full: args.version,
+      config_surface: args.surface,
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
+    },
+    TUI_SCOPE
+  );
+}
+
 const WORKFLOW_RUN_DURATION_BOUNDS = [
   1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600, 7200,
 ];

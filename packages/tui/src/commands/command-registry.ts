@@ -2,6 +2,8 @@ import type { AvailableCommand, CommandMeta } from '../types/commands.js';
 import type { BackendPanelId } from '../components/layout/shared/BackendPanels.js';
 import { KasCommandName } from '../kas-commands.js';
 import type { AgentEngine } from '../agent-engine.js';
+import { Feature, features } from '../features.js';
+import { CONFIG_SUBCOMMANDS } from '../components/ui/config-panel-model.js';
 
 export type CommandEffectName =
   | 'updateModel'
@@ -31,6 +33,7 @@ export type CommandEffectName =
   | 'showThemeMenu'
   | 'showGoalPanel'
   | 'showSettingsMenu'
+  | 'showConfigMenu'
   | 'switchToTui'
   | 'showChangelogPanel'
   | 'showSessionId'
@@ -49,6 +52,13 @@ interface LocalCommandDefinition {
   hiddenInKas?: boolean;
   liteOnly?: boolean;
   tuiOnly?: boolean;
+  /**
+   * Rollout feature that must be enabled for the command to register at
+   * all (dark-ship: not registered → neither autocompletes nor dispatches).
+   */
+  feature?: Feature;
+  /** Subcommand values surfaced in the Tab-completion dropdown. */
+  subcommands?: readonly string[];
 }
 
 interface NonPanelCommandRegistration {
@@ -201,6 +211,21 @@ export const COMMAND_REGISTRY = {
         'Configure theme, terminal, keybindings, and other preferences',
     },
   },
+  config: {
+    // Consolidated config category view (agents/MCP/steering/skills/…).
+    // Dark-shipped behind the cloud_config rollout: the feature gate drops
+    // the registration entirely off-cohort, so it neither autocompletes nor
+    // dispatches for regular users. Subcommands power the Tab dropdown,
+    // mirroring /settings-style typed-subcommand routing
+    // (config-subcommands.ts via showConfigMenu).
+    effect: 'showConfigMenu',
+    local: {
+      description:
+        'View configured agents, MCP servers, steering, skills, hooks, and env variables',
+      feature: Feature.CloudConfig,
+      subcommands: CONFIG_SUBCOMMANDS,
+    },
+  },
   theme: {
     effect: 'showThemeMenu',
     local: {
@@ -295,10 +320,17 @@ export function getLocalSlashCommands(
       if (local.rollout === 'hide-unless-lite-enabled' && !liteRolloutEnabled) {
         return [];
       }
+      // Feature-gated commands are dark outside their rollout cohort.
+      if (local.feature && !features.isEnabled(local.feature)) {
+        return [];
+      }
 
       const meta: LocalSlashCommand['meta'] = { local: true };
       if ('inputType' in local && local.inputType) {
         meta.inputType = local.inputType;
+      }
+      if (local.subcommands) {
+        meta.subcommands = [...local.subcommands];
       }
       if (local.rollout === 'lite-only-unless-enabled' && !liteRolloutEnabled) {
         meta.liteOnly = true;

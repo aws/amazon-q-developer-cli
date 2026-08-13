@@ -50,6 +50,7 @@ import {
   type TranscriptFormat,
 } from '../utils/serialize-conversation.js';
 import { findSettingsSubcommand } from './settings-subcommands.js';
+import { findConfigSubcommand } from './config-subcommands.js';
 import { handleVerbosity } from './verbosity-menu.js';
 import {
   getCurrentTitle,
@@ -1396,6 +1397,37 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
     // 1:1 (breadcrumb titles, panel heights, ESC-back). The lite-only
     // `verbosity` row is added inside the panel's model, gated on uiMode.
     ctx.setShowSettingsPanel(true);
+    return true;
+  },
+
+  /**
+   * Open the /config overlay or route `/config <category>` (cloud_config
+   * rollout only — the command isn't registered otherwise).
+   *
+   * Subcommands and their routing logic live in ./config-subcommands.ts,
+   * mirroring /settings (settings-subcommands.ts). To add a new one, add an
+   * entry there — no changes needed here. `mcp` and `hooks` do not get
+   * config sub-pages: they dispatch to the same view as /mcp and /hooks so
+   * each category has exactly one page.
+   */
+  showConfigMenu: (_result, ctx, _cmd, args) => {
+    const token = args.trim().split(/\s+/)[0] ?? '';
+    if (!token) {
+      ctx.setShowConfigPanel(true);
+      return true;
+    }
+    const sub = findConfigSubcommand(token);
+    if (!sub) {
+      ctx.showAlert(`Unknown config category: ${token}`, 'error', 3000);
+      return true;
+    }
+    // openMcp's V2 branch awaits an RPC — surface a failure as an alert
+    // rather than an unhandled rejection.
+    void Promise.resolve(sub.handle({ ctx })).catch((error) => {
+      const message =
+        error instanceof Error ? error.message : 'Config command failed';
+      ctx.showAlert(message, 'error', 3000);
+    });
     return true;
   },
 

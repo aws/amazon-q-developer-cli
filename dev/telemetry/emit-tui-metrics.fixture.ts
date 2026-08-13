@@ -6,8 +6,11 @@
 
 import {
   forceFlushMetrics,
+  recordTuiCloudConfigDiagnostics,
+  recordTuiCloudConfigSource,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
+  recordTuiConfigPanel,
   recordTuiCreditsConsumed,
   recordTuiFirstVisibleResponse,
   recordTuiModelInvocations,
@@ -129,6 +132,34 @@ async function main(): Promise<void> {
     step('kiro_cli_slash_command_invoked_total{/goal,v3}', () =>
       recordTuiSlashCommand({
         command: '/goal',
+        version: VERSION,
+        engine: 'v3',
+      })
+    ),
+    step('kiro_cli_slash_command_invoked_total{/config,v3}', () =>
+      recordTuiSlashCommand({
+        command: '/config',
+        version: VERSION,
+        engine: 'v3',
+      })
+    ),
+    step('kiro_cli_config_panel_total', () =>
+      recordTuiConfigPanel({
+        category: 'menu',
+        version: VERSION,
+        engine: 'v3',
+      })
+    ),
+    step('kiro_cli_cloud_config_diagnostic_total', () =>
+      recordTuiCloudConfigDiagnostics({
+        severities: ['warning', 'error'],
+        version: VERSION,
+        engine: 'v3',
+      })
+    ),
+    step('kiro_cli_cloud_config_source_total', () =>
+      recordTuiCloudConfigSource({
+        surface: 'mcp',
         version: VERSION,
         engine: 'v3',
       })

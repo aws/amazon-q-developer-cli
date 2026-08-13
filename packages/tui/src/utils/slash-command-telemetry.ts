@@ -9,6 +9,7 @@ export const SLASH_COMMAND_METRIC_NAMES = [
   '/clear',
   '/code',
   '/compact',
+  '/config',
   '/context',
   '/context-gatherer',
   '/copy',

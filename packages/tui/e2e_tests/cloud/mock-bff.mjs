@@ -580,8 +580,95 @@ function encodeFrame(memberName, memberStruct) {
 }
 
 // A VibeStreamEvent frame: type discriminator + JSON-encoded payload string.
+// A `_kiro/*` eventType is relayed to the CLI verbatim as an ext-notification
+// (see kiro-agent bff-remote-agent-link projectFrames).
 function eventFrame(eventType, payload) {
   return encodeFrame('event', { eventType, payload: JSON.stringify(payload) });
+}
+
+/**
+ * Dummy cloud-config notifications, relayed to the CLI on the cloud session's
+ * downlink so the /config pages show cloud-sourced data instead of empty
+ * placeholders. Off by default; MOCK_BFF_CLOUD_CONFIG=1 turns it on. Every
+ * item carries the #2141 ConfigResource descriptor with origin 'cloud', so
+ * the CLI labels them Source=cloud exactly as a real cloud session would.
+ */
+const CLOUD_RESOURCE = (resourceType) => ({
+  kiro: {
+    resource: {
+      resourceType,
+      source: { origin: 'cloud', provenance: { scope: 'user' } },
+    },
+  },
+});
+
+function cloudConfigFrames(sessionId) {
+  if (process.env.MOCK_BFF_CLOUD_CONFIG !== '1') return [];
+  return [
+    eventFrame('_kiro/mcp/status', {
+      // Session-tagged like a real sandbox push: the CLI's cloud snapshot
+      // readiness gate only accepts tagged MCP snapshots.
+      sessionId,
+      servers: [
+        {
+          name: 'github',
+          status: 'connected',
+          tools: [{ name: 'search', disabled: false }],
+          _meta: CLOUD_RESOURCE('mcpServer'),
+        },
+        {
+          name: 'aws-docs',
+          status: 'connected',
+          tools: [{ name: 'read', disabled: false }],
+          _meta: CLOUD_RESOURCE('mcpServer'),
+        },
+      ],
+    }),
+    eventFrame('_kiro/steering/documents_changed', {
+      status: 'success',
+      documents: [
+        {
+          name: 'team-conventions',
+          type: 'steering',
+          scope: 'global',
+          inclusion: 'always',
+          _meta: CLOUD_RESOURCE('steering'),
+        },
+        {
+          name: 'api-guidelines',
+          type: 'steering',
+          scope: 'global',
+          inclusion: 'fileMatch',
+          _meta: CLOUD_RESOURCE('steering'),
+        },
+      ],
+    }),
+    eventFrame('_kiro/powers/items_changed', {
+      powers: [
+        {
+          name: 'md-optimizer',
+          displayName: 'MD Optimizer',
+          description: 'Agent-friendly markdown optimization rules',
+          _meta: CLOUD_RESOURCE('power'),
+        },
+      ],
+      errors: [],
+    }),
+    eventFrame('_kiro/hooks/didChange', {
+      sessionId,
+      hooks: [
+        {
+          name: 'team-guard',
+          action: { type: 'command', command: 'echo team' },
+          _meta: {
+            trigger: 'Stop',
+            source: 'standalone-file',
+            kiro: CLOUD_RESOURCE('hook').kiro,
+          },
+        },
+      ],
+    }),
+  ];
 }
 
 // An SSEDoneEventData frame. `kiroSessionId` is a required model member;
@@ -591,14 +678,18 @@ function doneFrame(sessionId, stopReason) {
   return encodeFrame('done', { kiroSessionId: sessionId, stopReason });
 }
 
-// The whole LoadSession response body: canned history when MOCK_BFF_HISTORY=1,
-// else just the sentinel (empty history, batch-1 behavior). Frames concatenate
-// byte-wise — the AWS event-stream framing is self-delimiting.
+// The whole LoadSession response body: optional cloud-config notifications
+// (MOCK_BFF_CLOUD_CONFIG=1) first, then canned history when
+// MOCK_BFF_HISTORY=1, else just the sentinel (empty history, batch-1
+// behavior). Frames concatenate byte-wise — the AWS event-stream framing is
+// self-delimiting.
 function loadSessionEventStream(sessionId) {
-  const frames =
-    process.env.MOCK_BFF_HISTORY === '1'
+  const frames = [
+    ...cloudConfigFrames(sessionId),
+    ...(process.env.MOCK_BFF_HISTORY === '1'
       ? cannedHistoryFrames(sessionId)
-      : [doneFrame(sessionId, 'session_loaded')];
+      : [doneFrame(sessionId, 'session_loaded')]),
+  ];
   return Buffer.concat(frames.map((f) => Buffer.from(f)));
 }
 

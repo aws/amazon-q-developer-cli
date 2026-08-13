@@ -45,6 +45,15 @@ attributes:
   - name: repo_count_bucket
     description: Bounded count of repositories selected for a cloud session.
     allowed_values: [none, "1", "2", "3_5", "6_plus", unknown]
+  - name: config_category
+    description: Config category viewed through the /config panel.
+    allowed_values: [menu, agents, mcp, powers, steering, skills, hooks, env, unknown]
+  - name: diagnostic_severity
+    description: Severity of a cloud-config sync diagnostic pushed by the agent.
+    allowed_values: [error, warning, info, unknown]
+  - name: config_surface
+    description: Configuration surface on which a cloud-sourced resource was observed.
+    allowed_values: [mcp, steering, hooks, powers, unknown]
   - name: workflow_run_event
     description: Client-observed workflow lifecycle transition.
     allowed_values: [started, paused, completed, failed, aborted]
@@ -92,6 +101,7 @@ attributes:
       - /clear
       - /code
       - /compact
+      - /config
       - /context
       - /context-gatherer
       - /copy

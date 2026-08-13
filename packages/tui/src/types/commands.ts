@@ -124,6 +124,12 @@ export interface SkillEntry {
   description?: string;
   telemetryId?: string;
   source: SkillSource;
+  /**
+   * Collapsed cloud/local origin from the KAS ConfigResource descriptor
+   * (`_meta.kiro.resource`). Populated only inside the cloud_config rollout;
+   * absent means "not reported" and consumers fall back to session placement.
+   */
+  configSource?: 'local' | 'cloud';
 }
 
 /** Origin of a {@link SteeringEntry}. KAS-only; V2 has no steering concept. */
@@ -137,6 +143,8 @@ export interface SteeringEntry {
   description?: string;
   telemetryId?: string;
   source: SteeringSource;
+  /** Collapsed cloud/local origin — see {@link SkillEntry.configSource}. */
+  configSource?: 'local' | 'cloud';
 }
 
 /** Command advertised by backend */

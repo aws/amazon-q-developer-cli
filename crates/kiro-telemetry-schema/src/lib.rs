@@ -412,7 +412,7 @@ mod tests {
     fn registry_loads_and_validates() {
         let registry = Registry::parse().expect("schema should load");
 
-        assert_eq!(registry.metrics.len(), 53);
+        assert_eq!(registry.metrics.len(), 56);
         assert!(registry.metric("kiro_cli_run_started_total").is_some());
         assert!(registry.metric("kiro_cli_telemetry_export_dropped_total").is_some());
     }

@@ -22,6 +22,7 @@ export function hasOpenBackendPanel(state: AppState): boolean {
     state.showStatusLinePanel ||
     state.showThemePanel ||
     state.showSettingsPanel ||
+    state.showConfigPanel ||
     state.artifactViewOpen != null ||
     state.showSurveyPanel ||
     state.showSessionPicker ||

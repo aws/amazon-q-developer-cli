@@ -258,6 +258,9 @@ const mockRecordTuiTokensConsumed = mock((_a: unknown) => {});
 const mockRecordTuiCreditsConsumed = mock((_a: unknown) => {});
 const mockRecordTuiSlashCommand = mock((_a: unknown) => {});
 const mockRecordTuiUiModeSessionStarted = mock((_a: unknown) => {});
+const mockRecordTuiConfigPanel = mock((_a: unknown) => {});
+const mockRecordTuiCloudConfigDiagnostics = mock((_a: unknown) => {});
+const mockRecordTuiCloudConfigSource = mock((_a: unknown) => {});
 const mockRecordTuiWorkflowRestoreSummary = mock(
   (_summary: unknown, _version: string) => {}
 );
@@ -281,6 +284,9 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiCreditsConsumed: mockRecordTuiCreditsConsumed,
   recordTuiSlashCommand: mockRecordTuiSlashCommand,
   recordTuiUiModeSessionStarted: mockRecordTuiUiModeSessionStarted,
+  recordTuiConfigPanel: mockRecordTuiConfigPanel,
+  recordTuiCloudConfigDiagnostics: mockRecordTuiCloudConfigDiagnostics,
+  recordTuiCloudConfigSource: mockRecordTuiCloudConfigSource,
   recordTuiWorkflowRestoreSummary: mockRecordTuiWorkflowRestoreSummary,
   modeFromId: (id?: string) => (id && id.length > 0 ? id : 'interactive'),
   resultFromStatus: (status?: string) => {
@@ -427,6 +433,9 @@ function freshMocks() {
   mockRecordTuiModelInvocations.mockClear();
   mockRecordTuiTokensConsumed.mockClear();
   mockRecordTuiCreditsConsumed.mockClear();
+  mockRecordTuiConfigPanel.mockClear();
+  mockRecordTuiCloudConfigDiagnostics.mockClear();
+  mockRecordTuiCloudConfigSource.mockClear();
   mockRecordTuiSlashCommand.mockClear();
   mockRecordTuiUiModeSessionStarted.mockClear();
   mockRecordTuiWorkflowRestoreSummary.mockClear();
@@ -6087,6 +6096,132 @@ describe('mcp command (push model)', () => {
     ]);
   });
 
+  it('tags servers with a source inside the cloud_config rollout', async () => {
+    const { features } = await import('../features');
+    const original = process.env.KIRO_ENABLED_FEATURES;
+    process.env.KIRO_ENABLED_FEATURES = '["cloud_config"]';
+    features._resetForTests();
+    try {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+
+      (client as any).handleMcpStatusNotification({
+        sessionId: 'kas-session-1',
+        servers: [
+          { name: 'local-server', status: 'connected', tools: [] },
+          // The ConfigResource descriptor (_meta.kiro.resource, kiro-agent
+          // PR #2141) must win over placement inference.
+          {
+            name: 'cloud-server',
+            status: 'connected',
+            _meta: {
+              kiro: {
+                resource: {
+                  resourceType: 'mcpServer',
+                  source: { origin: 'cloud', provenance: { scope: 'user' } },
+                },
+              },
+            },
+          },
+          // A power-delivered server takes its power's direct source.
+          {
+            name: 'power-server',
+            status: 'connected',
+            _meta: {
+              kiro: {
+                resource: {
+                  resourceType: 'mcpServer',
+                  source: {
+                    origin: 'power',
+                    power: {
+                      name: 'aws-tools',
+                      source: {
+                        origin: 'cloud',
+                        provenance: { scope: 'user' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      });
+
+      const snapshot = events.find(
+        (event) => event.type === AgentEventType.McpServerSnapshot
+      );
+      // Local (non-cloud) session: placement fallback tags servers local.
+      expect(snapshot.servers[0].source).toBe('local');
+      expect(snapshot.servers[1].source).toBe('cloud');
+      expect(snapshot.servers[2].source).toBe('cloud');
+    } finally {
+      if (original === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+      else process.env.KIRO_ENABLED_FEATURES = original;
+      features._resetForTests();
+    }
+  });
+
+  it('counts a cloud config source once per session per surface', async () => {
+    const { features } = await import('../features');
+    const original = process.env.KIRO_ENABLED_FEATURES;
+    process.env.KIRO_ENABLED_FEATURES = '["cloud_config"]';
+    features._resetForTests();
+    try {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+
+      const cloudServer = {
+        name: 'cloud-server',
+        status: 'connected',
+        _meta: {
+          kiro: {
+            resource: {
+              resourceType: 'mcpServer',
+              source: { origin: 'cloud', provenance: { scope: 'user' } },
+            },
+          },
+        },
+      };
+      // Two pushes with a cloud descriptor: the adoption counter fires once.
+      (client as any).handleMcpStatusNotification({
+        sessionId: 'kas-session-1',
+        servers: [cloudServer],
+      });
+      (client as any).handleMcpStatusNotification({
+        sessionId: 'kas-session-1',
+        servers: [cloudServer],
+      });
+      expect(mockRecordTuiCloudConfigSource).toHaveBeenCalledTimes(1);
+      expect(mockRecordTuiCloudConfigSource.mock.calls[0]?.[0]).toMatchObject({
+        surface: 'mcp',
+      });
+
+      // A placement-fallback 'cloud' (no descriptor) must NOT count.
+      mockRecordTuiCloudConfigSource.mockClear();
+      (client as any).startedCloudSession = true;
+      (client as any).cloudConfigSourceSeen.clear();
+      (client as any).handleMcpStatusNotification({
+        sessionId: 'kas-session-1',
+        servers: [{ name: 'plain', status: 'connected', tools: [] }],
+      });
+      expect(mockRecordTuiCloudConfigSource).not.toHaveBeenCalled();
+
+      // A new session clears the dedupe so the next observation counts again.
+      (client as any).cloudConfigSourceSeen.add('mcp');
+      await client.newSession();
+      expect((client as any).cloudConfigSourceSeen.size).toBe(0);
+    } finally {
+      if (original === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+      else process.env.KIRO_ENABLED_FEATURES = original;
+      features._resetForTests();
+    }
+  });
+
   it('drops a status notification tagged with another session id', async () => {
     const client = new KasAcpClient();
     await client.initialize();
@@ -6423,6 +6558,265 @@ describe('MCP OAuth flow', () => {
   });
 
   describe('KAS _kiro/* notification registration', () => {
+    it('projects _kiro/powers/items_changed into a PowersUpdate event', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const kc = (client as any).kiroClient;
+      expect(kc._extNotifHandlers['_kiro/powers/items_changed']).toBeDefined();
+      kc._extNotifHandlers['_kiro/powers/items_changed']({
+        powers: [
+          {
+            name: 'aws-tools',
+            displayName: 'AWS Tools',
+            description: 'AWS helpers',
+            skillNames: ['deploy'],
+          },
+          { name: 42 }, // malformed entry dropped, not thrown
+        ],
+        errors: [],
+      });
+      const update = events.find((e) => e.type === AgentEventType.PowersUpdate);
+      expect(update.powers).toEqual([
+        {
+          name: 'aws-tools',
+          displayName: 'AWS Tools',
+          description: 'AWS helpers',
+        },
+      ]);
+    });
+
+    it('projects _kiro/steering/documents_changed into a SteeringDocumentsUpdate event', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const kc = (client as any).kiroClient;
+      const handler = kc._extNotifHandlers['_kiro/steering/documents_changed'];
+      expect(handler).toBeDefined();
+      const activeSession = (client as any).sessionId;
+      // A push tagged with ANOTHER session is dropped — a background session
+      // must not clobber the active session's steering cache.
+      handler({
+        sessionId: 'other-session',
+        status: 'success',
+        documents: [{ name: 'intruder', type: 'steering', scope: 'global' }],
+      });
+      expect(
+        events.find((e) => e.type === AgentEventType.SteeringDocumentsUpdate)
+      ).toBeUndefined();
+      // A failed listing is ignored (no event, no throw).
+      handler({ sessionId: activeSession, status: 'failed', error: 'boom' });
+      handler({
+        sessionId: activeSession,
+        status: 'success',
+        documents: [
+          {
+            name: 'team',
+            type: 'steering',
+            scope: 'global',
+            inclusion: 'always',
+          },
+          {
+            name: 'api',
+            type: 'steering',
+            scope: 'workspace',
+            inclusion: 'fileMatch',
+          },
+          {
+            name: 'weird',
+            type: 'steering',
+            scope: 'global',
+            inclusion: 'bogus',
+          },
+        ],
+      });
+      const update = events.find(
+        (e) => e.type === AgentEventType.SteeringDocumentsUpdate
+      );
+      expect(update.documents).toEqual([
+        { name: 'team', scope: 'global', inclusion: 'always' },
+        { name: 'api', scope: 'workspace', inclusion: 'fileMatch' },
+        { name: 'weird', scope: 'global' }, // unknown inclusion dropped
+      ]);
+    });
+
+    it('projects _kiro/diagnostics/changed (cloudConfig) into a DiagnosticsUpdate event', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const kc = (client as any).kiroClient;
+      const handler = kc._extNotifHandlers['_kiro/diagnostics/changed'];
+      expect(handler).toBeDefined();
+      handler({
+        sessionId: (client as any).sessionId,
+        domain: 'cloudConfig',
+        diagnostics: [
+          {
+            severity: 'warning',
+            code: 'cloudConfig.syncStale',
+            message: 'Using your last synced settings',
+          },
+          {
+            severity: 'warning',
+            code: 'cloudConfig.contentMismatch',
+            message: 'A file failed verification',
+            resourceId: 'steering/team.md',
+          },
+          { severity: 'error' }, // malformed (no code/message) dropped
+        ],
+      });
+      const update = events.find(
+        (e) => e.type === AgentEventType.DiagnosticsUpdate
+      );
+      expect(update.domain).toBe('cloudConfig');
+      expect(update.diagnostics).toEqual([
+        {
+          severity: 'warning',
+          code: 'cloudConfig.syncStale',
+          message: 'Using your last synced settings',
+        },
+        {
+          severity: 'warning',
+          code: 'cloudConfig.contentMismatch',
+          message: 'A file failed verification',
+          resourceId: 'steering/team.md',
+        },
+      ]);
+    });
+
+    it('a failed powers push never wipes the cache (status guard)', async () => {
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const kc = (client as any).kiroClient;
+      const handler = kc._extNotifHandlers['_kiro/powers/items_changed'];
+      // KAS emits {status:'failed', error} with NO powers key when the
+      // installed-powers scan throws — reading that as "zero powers" would
+      // blank the /config powers page for the rest of the session.
+      handler({ status: 'failed', error: 'scan exploded' });
+      expect(
+        events.find((e) => e.type === AgentEventType.PowersUpdate)
+      ).toBeUndefined();
+      // The success shape and the older bare listing (no status) both pass.
+      handler({ status: 'success', powers: [{ name: 'a' }] });
+      handler({ powers: [{ name: 'b' }] });
+      const updates = events.filter(
+        (e) => e.type === AgentEventType.PowersUpdate
+      );
+      expect(updates.map((u) => u.powers[0].name)).toEqual(['a', 'b']);
+    });
+
+    it('a failed diagnostics push emits nothing (not a false all-clear)', async () => {
+      // The store treats an empty cloudConfig diagnostics array as an
+      // intentional all-clear and marks the domain received; a {status:
+      // 'failed'} push falling through would retract a shown warning AND
+      // defeat the stash-restore marker. isFailedConfigPush must drop it.
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const kc = (client as any).kiroClient;
+      const handler = kc._extNotifHandlers['_kiro/diagnostics/changed'];
+      handler({
+        sessionId: (client as any).sessionId,
+        domain: 'cloudConfig',
+        status: 'failed',
+        error: 'fetch failed',
+      });
+      expect(
+        events.find((e) => e.type === AgentEventType.DiagnosticsUpdate)
+      ).toBeUndefined();
+    });
+
+    it('a status-less steering listing still emits (tolerant guard)', async () => {
+      // Steering used to require status==='success'; the shared guard now
+      // accepts the older bare listing (no status) — dropping it would leave
+      // /config steering silently empty.
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const kc = (client as any).kiroClient;
+      const handler = kc._extNotifHandlers['_kiro/steering/documents_changed'];
+      handler({
+        sessionId: (client as any).sessionId,
+        documents: [{ name: 'bare', type: 'steering', scope: 'global' }],
+      });
+      const update = events.find(
+        (e) => e.type === AgentEventType.SteeringDocumentsUpdate
+      );
+      expect(update?.documents.map((d: { name: string }) => d.name)).toEqual([
+        'bare',
+      ]);
+    });
+
+    it('config pushes honor session-transition windows (create + load)', async () => {
+      // The powers/steering/diagnostics guards must match hooks/tools:
+      // mid-create a tagged push from the CREATED session (id unknown until
+      // the RPC resolves) is accepted; mid-load the OUTGOING session's push
+      // (still equal to this.sessionId) is dropped while the TARGET
+      // session's push survives.
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      const events: any[] = [];
+      client.onUpdate((event) => events.push(event));
+      const kc = (client as any).kiroClient;
+      const activeSession = (client as any).sessionId;
+      const push = (over: Record<string, unknown> = {}) => {
+        kc._extNotifHandlers['_kiro/powers/items_changed']({
+          powers: [{ name: 'p' }],
+          ...over,
+        });
+        kc._extNotifHandlers['_kiro/steering/documents_changed']({
+          status: 'success',
+          documents: [{ name: 's', type: 'steering', scope: 'global' }],
+          ...over,
+        });
+        kc._extNotifHandlers['_kiro/diagnostics/changed']({
+          domain: 'cloudConfig',
+          diagnostics: [{ severity: 'warning', code: 'c', message: 'm' }],
+          ...over,
+        });
+      };
+      const count = () =>
+        events.filter(
+          (e) =>
+            e.type === AgentEventType.PowersUpdate ||
+            e.type === AgentEventType.SteeringDocumentsUpdate ||
+            e.type === AgentEventType.DiagnosticsUpdate
+        ).length;
+
+      // Mid-create: the new session's tagged push must NOT be dropped.
+      (client as any).createInFlight = true;
+      push({ sessionId: 'created-but-unreported' });
+      expect(count()).toBe(3);
+      (client as any).createInFlight = false;
+
+      // Mid-load: the outgoing session's own push (matches this.sessionId)
+      // is dropped; the load TARGET's push passes.
+      (client as any).loadTargetSessionId = 'incoming-session';
+      events.length = 0;
+      push({ sessionId: activeSession });
+      expect(count()).toBe(0);
+      (client as any).loadTargetSessionId = null;
+
+      // Steady state: a background session's tagged push is still dropped.
+      events.length = 0;
+      push({ sessionId: 'background-session' });
+      expect(count()).toBe(0);
+    });
+
     it('registers handlers for _kiro/customAgent/not_found', async () => {
       const client = new KasAcpClient();
       await client.initialize();

@@ -73,6 +73,9 @@ export function createLiveBackend(engine: Engine = 'kas'): ScenarioBackend {
         .withTerminal(opts.terminal ?? { width: 120, height: 40 })
         .withTimeout(opts.timeout ?? scenario.timeout ?? 120_000);
 
+      if (scenario.env) {
+        builder = builder.withEnv(scenario.env);
+      }
       if (engine === 'kas') {
         builder = builder.withKasEngine().withEnv({ KIRO_AGENT_ENGINE: 'kas' });
       }

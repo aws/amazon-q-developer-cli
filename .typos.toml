@@ -1,5 +1,11 @@
 [files]
 extend-exclude = [
+  # KRS mock (#4009): the generated Smithy server SDK carries upstream
+  # codegen typos, and mock-krs-server's docs use the "mis-scripted"
+  # compound the checker splits. Scope both to the crate rather than
+  # weakening the global dictionary.
+  "crates/amzn-kiro-runtime-service-server-sdk/",
+  "crates/mock-krs-server/",
   "packages/ink/",
   "packages/twinki/",
   "docs/perf-baselines/",

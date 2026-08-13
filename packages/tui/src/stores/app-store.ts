@@ -16,7 +16,8 @@ import {
   type RosterEntry,
 } from '../utils/session-roster';
 import type { SessionRepositoryEntry } from '../utils/session-repositories';
-import { features } from '../features';
+import { Feature, features } from '../features';
+import type { ConfigCategoryId } from '../components/ui/config-panel-model.js';
 import { deriveToolDenial, type ToolDenial } from '../utils/tool-denial';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
 import type { SessionPickerRow } from '../components/ui/SessionPickerPanel';
@@ -28,7 +29,9 @@ import {
 import { dedupeRepoResources } from '../utils/repo-multiselect';
 import {
   recordTuiCloudAttach,
+  recordTuiCloudConfigDiagnostics,
   recordTuiCloudRepoAttach,
+  recordTuiConfigPanel,
 } from '../utils/tui-telemetry-observer';
 import { getCliVersion } from '../utils/version';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
@@ -195,6 +198,14 @@ export interface McpServerInfo {
   status: 'running' | 'loading' | 'failed' | 'disabled' | 'auth-required';
   toolCount: number;
   /**
+   * Where the server's config comes from. Populated from the KAS status
+   * notification's per-server source when present, otherwise inferred from
+   * the session placement (cloud session → cloud, local → local). Rendered
+   * only inside the cloud_config rollout — the /mcp panel is byte-identical
+   * without it.
+   */
+  source?: 'local' | 'cloud';
+  /**
    * True while a forced (re-)authentication is in progress for this server. The
    * original server keeps running during the flow (a hidden shadow server runs
    * the OAuth handshake), so this is surfaced as an `auth-required` overlay on
@@ -233,6 +244,10 @@ export interface ClientDisplaySnapshot {
   mcpRegistryCache: McpServerInfo[];
   toolsList: ToolInfo[];
   hooksList: HookInfo[];
+  powersList: PowerEntry[];
+  steeringDocs: SteeringDocEntry[];
+  cloudConfigDiagnostics: ConfigDiagnostic[];
+  cloudConfigDiagnosticsReceived: boolean;
   cloudSnapshotReadiness: {
     mcp: CloudSnapshotReadiness;
     tools: CloudSnapshotReadiness;
@@ -258,11 +273,43 @@ export interface StatsSummary {
   errors: number;
 }
 
+/** A cloud-config sync diagnostic (KAS `_kiro/diagnostics/changed`). */
+export interface ConfigDiagnostic {
+  severity: string;
+  code: string;
+  message: string;
+  resourceId?: string;
+}
+
+/** An installed power, as listed by KAS for the /config powers page. */
+export interface PowerEntry {
+  name: string;
+  displayName?: string;
+  description?: string;
+  /** Cloud/local origin from the ConfigResource descriptor, when reported. */
+  configSource?: 'local' | 'cloud';
+}
+
+/** A steering document with its inclusion mode (/config steering page). */
+export interface SteeringDocEntry {
+  name: string;
+  scope: 'global' | 'workspace';
+  inclusion?: 'always' | 'manual' | 'fileMatch';
+  /** Cloud/local origin from the ConfigResource descriptor, when reported. */
+  configSource?: 'local' | 'cloud';
+}
+
 export interface HookInfo {
   name?: string;
   trigger: string;
   command: string;
   matcher?: string;
+  /**
+   * Collapsed cloud/local origin from the KAS ConfigResource descriptor
+   * (`_meta.kiro.resource`, cloud_config rollout only). Absent = not
+   * reported; consumers fall back to session placement.
+   */
+  configSource?: 'local' | 'cloud';
 }
 
 export interface KnowledgeEntry {
@@ -1590,6 +1637,9 @@ interface BaseAppActions {
     summary?: StatsSummary | null
   ) => void;
   setShowHooksPanel: (show: boolean, hooks?: HookInfo[]) => void;
+  /** Replace the hooks cache without touching panel visibility (V2 /config
+   *  hydration — KAS keeps this fresh via _kiro/hooks/didChange instead). */
+  setHooksList: (hooks: HookInfo[]) => void;
   setShowRepoPicker: (
     show: boolean,
     resources?: SourceProviderResource[]
@@ -1757,7 +1807,24 @@ interface BaseAppActions {
   toggleAnnouncementExpanded: () => void;
 
   // Dispatch a slash command with an optional human-readable form for recall history
-  dispatchSlashCommand: (execCmd: string, recordAs?: string) => Promise<void>;
+  /** Monotonic id of the in-flight /config → mcp/hooks handoff; 0 = none.
+   *  Nonzero renders the open ConfigPanel inert (no re-entrant Enter). A
+   *  routed handler captures the token on entry and, after its RPC, opens
+   *  its panel only if the token is unchanged — so an ESC-cancel (which
+   *  zeroes it) or a superseding second handoff (which bumps it) is detected
+   *  by IDENTITY, not by a shared boolean an ABA sequence could re-prime. */
+  configHandoffToken: number;
+  /** Begin a handoff: bump the token, mark the panel inert, return the id. */
+  beginConfigHandoff: () => number;
+  /** End the current handoff (completion or ESC-cancel): zero the token. */
+  endConfigHandoff: () => void;
+  /** Execute a slash command directly (no user-input busy gate). `recordAs`
+   *  customizes the history entry; pass `null` to skip history entirely
+   *  (UI-driven dispatches the user never typed). */
+  dispatchSlashCommand: (
+    execCmd: string,
+    recordAs?: string | null
+  ) => Promise<void>;
 
   // Main orchestrator
   handleUserInput: (input: string) => Promise<void>;
@@ -2283,6 +2350,31 @@ export interface AppState {
   statsSummary: StatsSummary | null;
   showHooksPanel: boolean;
   hooksList: HookInfo[];
+  /**
+   * Installed powers (KAS `_kiro/powers/items_changed`) — feeds the /config
+   * powers page. Empty on V2 (no powers concept) and before the first push.
+   */
+  powersList: PowerEntry[];
+  /**
+   * Steering documents (KAS `_kiro/steering/documents_changed`) — feeds the
+   * /config steering page with the per-document inclusion mode the mocks
+   * specify. Richer than `steering` (the slash-command projection), which is
+   * kept for autocomplete.
+   */
+  steeringDocs: SteeringDocEntry[];
+  /**
+   * Cloud-config sync diagnostics (KAS `_kiro/diagnostics/changed`, domain
+   * `cloudConfig`) — the authoritative current set, surfaced in the /config
+   * footer. Empty = nothing to report (NOT verified-healthy, per contract).
+   */
+  cloudConfigDiagnostics: ConfigDiagnostic[];
+  /**
+   * True once a cloudConfig DiagnosticsUpdate has arrived for the current
+   * session. Distinguishes an intentional all-clear push (empty array = the
+   * backend retracting a warning) from the post-reset "no push yet" state —
+   * emptiness alone cannot, since replace-not-merge makes [] meaningful.
+   */
+  cloudConfigDiagnosticsReceived: boolean;
   /** `/repo` picker (cloud-only): open flag + the fetched repositories to choose from. */
   showRepoPicker: boolean;
   repoPickerResources: SourceProviderResource[];
@@ -2307,6 +2399,14 @@ export interface AppState {
   /** Whether the cloud-session `/quit` prompt (keep-running vs turn-off) is open. */
   showCloudQuitPrompt: boolean;
   showSettingsPanel: boolean;
+  /**
+   * Whether the /config overlay is open, and the category page (if any) it
+   * should open on. Feature-gated: /config is only registered under
+   * `Feature.CloudConfig`, so these never change for regular users.
+   */
+  showConfigPanel: boolean;
+  configPanelCategory: ConfigCategoryId | null;
+  setShowConfigPanel: (show: boolean, category?: ConfigCategoryId) => void;
   /** Theme preview string rendered below the /theme menu during the lite flow. */
   themePreview: string | null;
   /** Set the lite /theme preview string (null clears it). */
@@ -2321,6 +2421,17 @@ export interface AppState {
    * and reset whenever consumed.
    */
   settingsReturnOnEscape: boolean;
+  /**
+   * /config twin of {@link settingsReturnOnEscape}: when true, closing the
+   * currently open overlay re-opens the /config category table instead of
+   * fully dismissing. Set when /config routes a category to a shared panel
+   * (/mcp, /hooks), consumed by those panels' close handlers, reset on
+   * consume and on top-level /config close.
+   */
+  configReturnOnEscape: boolean;
+  setConfigReturnOnEscape: (value: boolean) => void;
+  /** Re-open the top-level /config panel (ESC-back one level). */
+  reopenConfigMenu: () => void;
   /**
    * Parent route to re-dispatch on ESC from a /verbose sub-menu. Set by the
    * verboseConfig handler when it opens any non-root menu (e.g. the tool
@@ -2886,6 +2997,20 @@ export function buildCommandContext(
     setShowThemePanel: state.setShowThemePanel,
     setShowCloudQuitPrompt: state.setShowCloudQuitPrompt,
     setShowSettingsPanel: state.setShowSettingsPanel,
+    setShowConfigPanel: state.setShowConfigPanel,
+    setConfigReturnOnEscape: state.setConfigReturnOnEscape,
+    endConfigHandoff: state.endConfigHandoff,
+    getConfigHandoffToken: () => get().configHandoffToken,
+    claimLoadingMessage: (message: string) => {
+      if (get().loadingMessage != null) return false;
+      state.setLoadingMessage(message);
+      return true;
+    },
+    clearLoadingMessage: (expected: string) => {
+      if (get().loadingMessage === expected) {
+        state.setLoadingMessage(null);
+      }
+    },
     setSettingsReturnOnEscape: state.setSettingsReturnOnEscape,
     setVerboseReturnOnEscape: state.setVerboseReturnOnEscape,
     setThemeReturnOnEscape: state.setThemeReturnOnEscape,
@@ -2939,9 +3064,19 @@ export function buildCommandContext(
         showStatusLinePanel: false,
         showCloudQuitPrompt: false,
         settingsReturnOnEscape: false,
+        configReturnOnEscape: false,
         verboseReturnOnEscape: null,
         themeReturnOnEscape: null,
         showKnowledgePanel: false,
+        showConfigPanel: false,
+        configPanelCategory: null,
+        configHandoffToken: 0,
+        // Diagnostics are CURRENT-SESSION state (per the #2142 covenant a
+        // client resets rendered diagnostics on load/reconnect). Left stale,
+        // a healthy new session would keep showing the old session's sync
+        // warnings — "empty = no push" means it never gets overwritten.
+        cloudConfigDiagnostics: [],
+        cloudConfigDiagnosticsReceived: false,
         contextBreakdown: null,
         usageData: null,
         // Any session change clears the tangent chip; a real tangent switch
@@ -3192,6 +3327,10 @@ export const createAppStore = (props: AppStoreProps) => {
     statsSummary: null,
     showHooksPanel: false,
     hooksList: [],
+    powersList: [],
+    steeringDocs: [],
+    cloudConfigDiagnostics: [],
+    cloudConfigDiagnosticsReceived: false,
     showRepoPicker: false,
     repoPickerResources: [],
     attachedRepos: [],
@@ -3207,9 +3346,13 @@ export const createAppStore = (props: AppStoreProps) => {
     showStatusLinePanel: false,
     showCloudQuitPrompt: false,
     showSettingsPanel: false,
+    showConfigPanel: false,
+    configPanelCategory: null,
+    configHandoffToken: 0,
     themePreview: null,
     terminalTitleEnabled: readBoolSetting(Settings.CHAT_TERMINAL_TITLE, false),
     settingsReturnOnEscape: false,
+    configReturnOnEscape: false,
     verboseReturnOnEscape: null,
     themeReturnOnEscape: null,
     showKnowledgePanel: false,
@@ -5186,6 +5329,42 @@ export const createAppStore = (props: AppStoreProps) => {
             // Update cached hooks list. If the panel is open, it will
             // re-render with the new data automatically.
             set({ hooksList: event.hooks });
+            break;
+          case AgentEventType.PowersUpdate:
+            // Authoritative installed-powers set for the /config powers page.
+            set({ powersList: event.powers });
+            break;
+          case AgentEventType.SteeringDocumentsUpdate:
+            // Steering documents with inclusion mode for /config steering.
+            set({ steeringDocs: event.documents });
+            break;
+          case AgentEventType.DiagnosticsUpdate:
+            // Replace-not-merge per domain. Only cloudConfig is surfaced
+            // today (the /config footer); other domains are ignored until a
+            // consumer exists.
+            if (event.domain === 'cloudConfig') {
+              // An empty push is an intentional all-clear (replace-not-merge)
+              // — mark received so a stale stash is never restored over it.
+              set({
+                cloudConfigDiagnostics: event.diagnostics,
+                cloudConfigDiagnosticsReceived: true,
+              });
+              // Cohort-gated like the other two cloud-config counters: only
+              // flagged clients can RENDER a diagnostic (/config footer,
+              // gated /mcp footer), and an ungated emission would change the
+              // metric's meaning from "unhealthy sync shown" to "pushes
+              // received" with no cohort dimension to separate the two.
+              if (
+                event.diagnostics.length > 0 &&
+                features.isEnabled(Feature.CloudConfig)
+              ) {
+                recordTuiCloudConfigDiagnostics({
+                  severities: event.diagnostics.map((d) => d.severity),
+                  version: telemetryVersion,
+                  engine: agentEngine === 'kas' ? 'v3' : 'v2',
+                });
+              }
+            }
             break;
           case AgentEventType.ToolsUpdate:
             // Cache the latest session tool listing (pushed by KAS via
@@ -7805,6 +7984,10 @@ export const createAppStore = (props: AppStoreProps) => {
         mcpRegistryCache: s.mcpRegistryCache,
         toolsList: s.toolsList,
         hooksList: s.hooksList,
+        powersList: s.powersList,
+        steeringDocs: s.steeringDocs,
+        cloudConfigDiagnostics: s.cloudConfigDiagnostics,
+        cloudConfigDiagnosticsReceived: s.cloudConfigDiagnosticsReceived,
         cloudSnapshotReadiness: s.cloudSnapshotReadiness,
       };
       set({
@@ -7813,6 +7996,10 @@ export const createAppStore = (props: AppStoreProps) => {
         mcpRegistryCache: [],
         toolsList: [],
         hooksList: [],
+        powersList: [],
+        steeringDocs: [],
+        cloudConfigDiagnostics: [],
+        cloudConfigDiagnosticsReceived: false,
         cloudSnapshotReadiness: {
           mcp: 'awaiting-sandbox',
           tools: 'awaiting-sandbox',
@@ -7827,6 +8014,10 @@ export const createAppStore = (props: AppStoreProps) => {
         mcpRegistryCache: snapshot.mcpRegistryCache,
         toolsList: snapshot.toolsList,
         hooksList: snapshot.hooksList,
+        powersList: snapshot.powersList,
+        steeringDocs: snapshot.steeringDocs,
+        cloudConfigDiagnostics: snapshot.cloudConfigDiagnostics,
+        cloudConfigDiagnosticsReceived: snapshot.cloudConfigDiagnosticsReceived,
         cloudSnapshotReadiness: snapshot.cloudSnapshotReadiness,
       });
     },
@@ -7862,6 +8053,21 @@ export const createAppStore = (props: AppStoreProps) => {
         }),
         ...(!toolsFresh && { toolsList: stashed.toolsList }),
         ...(now.hooksList.length === 0 && { hooksList: stashed.hooksList }),
+        // Same live-push-wins rule as hooks: restore only when a live push
+        // hasn't already repopulated the slice since the reset.
+        ...(now.powersList.length === 0 && { powersList: stashed.powersList }),
+        ...(now.steeringDocs.length === 0 && {
+          steeringDocs: stashed.steeringDocs,
+        }),
+        // Diagnostics gate on the received marker, NOT emptiness: an empty
+        // cloudConfig push is the backend retracting a warning
+        // (replace-not-merge), and restoring the stash over it would revive
+        // a warning the backend just cleared.
+        ...(!now.cloudConfigDiagnosticsReceived && {
+          cloudConfigDiagnostics: stashed.cloudConfigDiagnostics,
+          cloudConfigDiagnosticsReceived:
+            stashed.cloudConfigDiagnosticsReceived,
+        }),
         cloudSnapshotReadiness: {
           mcp: mcpFresh ? 'received' : stashed.cloudSnapshotReadiness.mcp,
           tools: toolsFresh ? 'received' : stashed.cloudSnapshotReadiness.tools,
@@ -7891,6 +8097,19 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ toolsList: tools });
     },
     updateMcpServerStatuses: (servers) => {
+      // V2 feeds the /config table's MCP cache from here — this event is the
+      // engine's only full-listing push (fires at init and on tool refreshes),
+      // and without it the category row reads "—" while /mcp lists servers.
+      // KAS owns the cache via session-tagged McpServerSnapshot pushes.
+      if (agentEngine !== 'kas') {
+        set({
+          mcpServerCache: servers.map((s) => ({
+            name: s.name,
+            status: s.status as McpServerInfo['status'],
+            toolCount: s.toolCount,
+          })),
+        });
+      }
       const { mcpServers, showMcpPanel } = get();
       if (!showMcpPanel || mcpServers.length === 0) return;
       const updated = mcpServers.map((existing) => {
@@ -7917,6 +8136,10 @@ export const createAppStore = (props: AppStoreProps) => {
           ? { showHooksPanel: show, hooksList: hooks }
           : { showHooksPanel: show }
       );
+    },
+
+    setHooksList: (hooks) => {
+      set({ hooksList: hooks });
     },
 
     setShowRepoPicker: (show, resources = []) => {
@@ -8130,6 +8353,71 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ showSettingsPanel: show });
     },
 
+    setShowConfigPanel: (show, category) => {
+      // A freshly (re)opened panel is always interactive — structural reset
+      // rather than trusting every handoff path to have released the flag.
+      set({
+        showConfigPanel: show,
+        configPanelCategory: category ?? null,
+        ...(show && { configHandoffToken: 0 }),
+      });
+      if (show) {
+        recordTuiConfigPanel({
+          category: category ?? 'menu',
+          version: telemetryVersion,
+          engine: agentEngine === 'kas' ? 'v3' : 'v2',
+        });
+        // V2 hydration: KAS pushes agents/hooks unprompted, but on V2 those
+        // caches stay cold until their command runs — the category table
+        // would say "—" while /agent and /hooks list plenty. Fill them
+        // best-effort as the panel opens; rows update as data lands.
+        // Skills/steering/MCP arrive via V2's own update events, and powers
+        // and diagnostics have no V2 source (their "—" is honest).
+        if (agentEngine !== 'kas') {
+          const { kiro } = get();
+          if (
+            get().kas.availableAgents.length === 0 &&
+            typeof kiro.getCommandOptions === 'function'
+          ) {
+            void kiro
+              .getCommandOptions('/agent', '')
+              .then(({ options }) => {
+                if (options.length === 0) return;
+                set((s) => ({
+                  kas: {
+                    ...s.kas,
+                    availableAgents: options.map((o) => ({
+                      id: o.value,
+                      name: o.label,
+                      ...(o.description ? { description: o.description } : {}),
+                    })),
+                  },
+                }));
+              })
+              .catch(() => {});
+          }
+          if (
+            get().hooksList.length === 0 &&
+            typeof kiro.executeCommand === 'function'
+          ) {
+            void kiro
+              .executeCommand({ command: 'hooks', args: {} } as never)
+              .then((result) => {
+                const data = result?.data as { hooks?: HookInfo[] } | undefined;
+                if (result?.success && data?.hooks && data.hooks.length > 0) {
+                  get().setHooksList(data.hooks);
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      } else {
+        // The panel owns queue interaction (hasOpenBackendPanel) — closing
+        // it must resume a paused message queue, like every other panel.
+        resumeQueueAfterInteraction(get);
+      }
+    },
+
     setCloudSessionActive: (cloudSessionActive) => {
       set({ cloudSessionActive });
     },
@@ -8140,6 +8428,31 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setSettingsReturnOnEscape: (value) => {
       set({ settingsReturnOnEscape: value });
+    },
+
+    setConfigReturnOnEscape: (value) => {
+      set({ configReturnOnEscape: value });
+    },
+
+    /**
+     * Re-open the top-level /config category table. The /config twin of
+     * {@link reopenSettingsMenu}: ESC from a /config-routed shared panel
+     * (/mcp, /hooks) walks back one level instead of dismissing everything.
+     */
+    reopenConfigMenu: () => {
+      // Delegate so the ESC-walk-back re-entry counts as a `menu` view like
+      // every other route into the table (exactly-once per view shown).
+      get().setShowConfigPanel(true);
+    },
+
+    beginConfigHandoff: () => {
+      const token = get().configHandoffToken + 1;
+      set({ configHandoffToken: token });
+      return token;
+    },
+
+    endConfigHandoff: () => {
+      set({ configHandoffToken: 0 });
     },
 
     setVerboseReturnOnEscape: (route) => {
@@ -8680,8 +8993,12 @@ export const createAppStore = (props: AppStoreProps) => {
       }));
     },
 
-    dispatchSlashCommand: async (execCmd: string, recordAs?: string) => {
-      CommandHistory.getInstance().add(recordAs ?? execCmd);
+    dispatchSlashCommand: async (execCmd: string, recordAs?: string | null) => {
+      // null = don't record: UI-driven dispatches (panel row selects) must
+      // not pollute Up-arrow history with commands the user never typed.
+      if (recordAs !== null) {
+        CommandHistory.getInstance().add(recordAs ?? execCmd);
+      }
       const ctx: CommandContext = buildCommandContext(get(), set, get);
       await executeCommand(execCmd, ctx);
     },

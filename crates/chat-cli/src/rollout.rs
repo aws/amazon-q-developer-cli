@@ -64,6 +64,10 @@ pub enum Feature {
     /// launching the V3/KAS engine. Internal nightly only for now; the launcher
     /// only runs the migration prompt/scan when this is enabled.
     AutoAgentUpgrade,
+    /// Consolidated `/config` panel and cloud/local source labels on config
+    /// listings (`/mcp` Source column). Dark outside internal nightly, same
+    /// ramp shape as `remote_sandbox`.
+    CloudConfig,
     #[cfg(test)]
     #[typeshare(skip)]
     Test,
@@ -435,6 +439,32 @@ mod tests {
                 r.is_enabled(Feature::RemoteChangelog),
                 expected,
                 "remote_changelog enabled={expected} for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cloud_config_enabled_only_for_internal_nightly() {
+        let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            features.contains_key(<&str>::from(Feature::CloudConfig)),
+            "cloud_config must be declared in rollout.json"
+        );
+
+        // Dark-shipped like remote_sandbox: internal nightly only. This is
+        // the guarantee that keeps the /config surface and the /mcp Source
+        // column invisible to live customers.
+        for (is_internal, is_nightly, expected) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, false),
+            (true, true, true),
+        ] {
+            let r = Rollout::new_for_test(is_internal, is_nightly);
+            assert_eq!(
+                r.is_enabled(Feature::CloudConfig),
+                expected,
+                "cloud_config enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

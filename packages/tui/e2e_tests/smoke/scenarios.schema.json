@@ -179,6 +179,13 @@
           "type": "string",
           "enum": ["p0", "p1", "p2"],
           "description": "Priority level for CI gating (p0 = must pass)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra environment variables for the spawned TUI (e.g. rollout gates for dark-shipped commands)"
         }
       }
     },

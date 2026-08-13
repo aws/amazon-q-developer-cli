@@ -26,6 +26,8 @@ import { DisplaySettingsPanel } from '../../ui/DisplaySettingsPanel.js';
 import { ThemePanel } from '../../ui/ThemePanel.js';
 import { StatusLineSettingsPanel } from '../../ui/StatusLineSettingsPanel.js';
 import { SettingsPanel } from '../../ui/SettingsPanel.js';
+import { ConfigPanel } from '../../ui/ConfigPanel.js';
+import { collectKiroEnv } from '../../ui/config-panel-model.js';
 import { ArtifactView } from '../../ui/ArtifactView/index.js';
 import { SurveyPanel } from '../../ui/SurveyPanel.js';
 import { CloudQuitPrompt } from '../../ui/CloudQuitPrompt.js';
@@ -91,6 +93,7 @@ const BACKEND_PANEL_DEFINITIONS = [
   ['showStatusLinePanel', 'StatusLineSettingsPanel', ['input', 'copyHint']],
   ['showThemePanel', 'ThemePanel', ALL_INLINE_GATES],
   ['showSettingsPanel', 'SettingsPanel', ALL_INLINE_GATES],
+  ['showConfigPanel', 'ConfigPanel', ALL_INLINE_GATES],
   ['showKnowledgePanel', 'KnowledgePanel', ALL_INLINE_GATES],
   ['showCodePanel', 'CodePanel', ALL_INLINE_GATES],
   ['artifactViewOpen', 'ArtifactView', ALL_INLINE_GATES],
@@ -227,6 +230,25 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
   const cloudSnapshotReadiness = useAppStore((s) => s.cloudSnapshotReadiness);
   const supportsMcpCommandActions =
     engineSupportsMcpCommandActions(agentEngine);
+  const showConfigPanel = useAppStore((s) => s.showConfigPanel);
+  const configPanelCategory = useAppStore((s) => s.configPanelCategory);
+  const setShowConfigPanel = useAppStore((s) => s.setShowConfigPanel);
+  const setConfigReturnOnEscape = useAppStore((s) => s.setConfigReturnOnEscape);
+  const endConfigHandoff = useAppStore((s) => s.endConfigHandoff);
+  const dispatchSlashCommand = useAppStore((s) => s.dispatchSlashCommand);
+  // Top-level /config close. Always clears the back-flag so the next overlay
+  // open starts fresh (twin of handleCloseSettingsPanel's stale-flag guard).
+  const handleCloseConfigPanel = useCallback(() => {
+    setShowConfigPanel(false);
+    setConfigReturnOnEscape(false);
+  }, [setShowConfigPanel, setConfigReturnOnEscape]);
+  const configAgents = useAppStore((s) => s.kas.availableAgents);
+  const mcpServerCache = useAppStore((s) => s.mcpServerCache);
+  const configSteering = useAppStore((s) => s.steering);
+  const configSteeringDocs = useAppStore((s) => s.steeringDocs);
+  const configSkills = useAppStore((s) => s.skills);
+  const configPowers = useAppStore((s) => s.powersList);
+  const configDiagnostics = useAppStore((s) => s.cloudConfigDiagnostics);
   const showSurveyPanel = useAppStore((s) => s.showSurveyPanel);
   const closeSurveyPanel = useAppStore((s) => s.closeSurveyPanel);
   const submitSurvey = useAppStore((s) => s.submitSurvey);
@@ -254,6 +276,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     showStatusLinePanel,
     showThemePanel,
     showSettingsPanel,
+    showConfigPanel,
     showKnowledgePanel,
     showCodePanel,
     artifactViewOpen,
@@ -503,6 +526,50 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     ),
     showSettingsPanel: () => (
       <SettingsPanel onClose={handlers.handleCloseSettingsPanel} />
+    ),
+    showConfigPanel: () => (
+      <ConfigPanel
+        snapshot={{
+          cloudSession: cloudSessionActive,
+          agents: configAgents,
+          mcpServers: mcpServerCache,
+          steering: configSteering,
+          steeringDocs: configSteeringDocs,
+          skills: configSkills,
+          hooks: hooksList,
+          powers: configPowers,
+          kiroEnv: collectKiroEnv(process.env),
+          diagnostics: configDiagnostics,
+        }}
+        initialCategory={configPanelCategory ?? undefined}
+        onClose={handleCloseConfigPanel}
+        // Row-select handoff: dispatch the typed subcommand so row select
+        // and `/config mcp` are one code path (config-subcommands.ts). Via
+        // dispatchSlashCommand, not handleUserInput — the latter is the
+        // user-input gate and rejects/queues slash commands while a turn is
+        // in flight, which would close /config and swallow the action; a
+        // row select on an already-open panel is a UI navigation, not new
+        // input, so it bypasses the busy gate the way /settings sub-panel
+        // openings do. recordAs:null keeps UI navigation out of Up-arrow
+        // history; rejections surface via the effect's catch → alert, and
+        // the catch here only guards the dispatch plumbing itself.
+        // No .finally ending the handoff here: the showConfigMenu effect
+        // fire-and-forgets the subcommand handler, so this promise resolves
+        // BEFORE the routed RPC does — ending it from here would break the
+        // inert window mid-flight. The handler's own finally owns the end;
+        // a rejection that never reaches it ends via .catch, and ESC (which
+        // cancels the handoff) recovers any residue.
+        onOpenMcp={() => {
+          dispatchSlashCommand('/config mcp', null).catch(() =>
+            endConfigHandoff()
+          );
+        }}
+        onOpenHooks={() => {
+          dispatchSlashCommand('/config hooks', null).catch(() =>
+            endConfigHandoff()
+          );
+        }}
+      />
     ),
     showKnowledgePanel: () => (
       <KnowledgePanel
