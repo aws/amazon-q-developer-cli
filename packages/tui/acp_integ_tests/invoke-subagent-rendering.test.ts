@@ -405,4 +405,65 @@ describe('local sessions: adapter is inert (no UX change for existing users)', (
     );
     expect(rewritten).toBeUndefined();
   });
+
+  it('shows the monitor hint and approval status for a local invoke subagent', async () => {
+    tc = new AcpTestCase({
+      testName: 'invoke-local-approval-status',
+      extraEnv: { KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION: '' },
+    });
+    setupHandshake(tc);
+
+    tc.mock.on<PromptRequest, PromptResponse>('session/prompt', async () => {
+      notifyInvokeParent(
+        tc!,
+        'invoke-local-approval',
+        'sub-local-approval',
+        'kiro-research-agent'
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      tc!.mock.notify('session/update', {
+        sessionId: MAIN_SESSION_ID,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'write-local-approval',
+          title: 'fs_write',
+          kind: 'edit',
+          rawInput: { path: '/tmp/subagent-permission-repro.txt' },
+          _meta: {
+            kiro: { agentSubtaskId: 'sub-local-approval' },
+          },
+        },
+      });
+      await new Promise((r) => setTimeout(r, 100));
+      return (await tc!.mock.request('session/request_permission', {
+        sessionId: MAIN_SESSION_ID,
+        toolCall: { toolCallId: 'write-local-approval' },
+        options: [
+          { kind: 'allow_once', name: 'Allow once', optionId: 'accept' },
+          { kind: 'reject_once', name: 'Deny', optionId: 'reject' },
+        ],
+        _meta: {
+          kiro: {
+            toolId: 'fs_write',
+            agentSubtaskId: 'sub-local-approval',
+            consent: { capability: 'fs_write' },
+          },
+        },
+      })) as PromptResponse;
+    });
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.waitForVisibleText('ask a question', 10_000);
+    await tc.sendKeys('delegate this');
+    await tc.pressEnter();
+
+    const store = (await tc.waitForStore(
+      (state) => state.pendingApproval !== null,
+      10_000
+    )) as any;
+    expect(store.pendingApproval.sessionId).toBe('sub-local-approval');
+    await tc.waitForVisibleText('ctrl+g open agent monitor', 10_000);
+    await tc.waitForVisibleText('Write ⚠ tool approval needed', 10_000);
+  }, 20_000);
 });

@@ -27,6 +27,15 @@ import {
 import { sessionConversationsStore } from '../../../stores/session-conversations.js';
 import { Kiro } from '../../../kiro.js';
 import type { AgentSession } from '../../../types/multi-session.js';
+import type { ApprovalRequestInfo } from '../../../types/agent-events.js';
+import { GlyphsContext } from '../../../hooks/useGlyphs.js';
+import {
+  ASCII_GLYPHS,
+  ASCII_SPINNERS,
+  UNICODE_GLYPHS,
+  UNICODE_SPINNERS,
+} from '../../../utils/glyphs.js';
+import { visibleWidth } from '../../../utils/text-width.js';
 import { SubagentToolPanel } from '../SubagentToolPanel.js';
 
 /** Session id KAS uses for a dispatched sub-agent: its `agentSubtaskId`. */
@@ -98,9 +107,24 @@ function runningWriteTool(agentName: string): MessageType {
   } as MessageType;
 }
 
+function approvalRequest(
+  toolCallId: string,
+  toolCall: Omit<Partial<ApprovalRequestInfo['toolCall']>, 'toolCallId'> = {}
+): ApprovalRequestInfo {
+  return {
+    sessionId: SUBTASK_ID,
+    toolCall: { toolCallId, ...toolCall },
+    permissionOptions: [],
+    resolve: vi.fn(),
+  };
+}
+
 function mountPanel(
   sessionMessages: MessageType[],
-  mainStoreMessages: MessageType[] = []
+  mainStoreMessages: MessageType[] = [],
+  approvalQueue: ApprovalRequestInfo[] = [],
+  allowIcons = true,
+  ascii = false
 ) {
   sessionConversationsStore.setState({
     conversations: new Map(
@@ -120,14 +144,28 @@ function mountPanel(
     sessions: new Map([[SUBTASK_ID, session]]),
     sessionId: MAIN_SESSION_ID,
     messages: mainStoreMessages,
+    approvalQueue,
     focusedCrewIndex: 0,
   });
 
   const terminal = new MockTerminal();
   activeInstance = render(
-    <AppStoreContext.Provider value={store}>
-      <SubagentToolPanel />
-    </AppStoreContext.Provider>,
+    <GlyphsContext.Provider
+      value={{
+        glyphs: ascii ? ASCII_GLYPHS : UNICODE_GLYPHS,
+        spinners: ascii ? ASCII_SPINNERS : UNICODE_SPINNERS,
+        allowAsciiArt: true,
+        setAllowAsciiArt: vi.fn(),
+        allowAnimations: true,
+        setAllowAnimations: vi.fn(),
+        allowIcons,
+        setAllowIcons: vi.fn(),
+      }}
+    >
+      <AppStoreContext.Provider value={store}>
+        <SubagentToolPanel />
+      </AppStoreContext.Provider>
+    </GlyphsContext.Provider>,
     { terminal, exitOnCtrlC: false }
   );
   return terminal;
@@ -148,6 +186,155 @@ describe('SubagentToolPanel active tool', () => {
     // formatToolDesc renders "<label> (<param>)" — the param is the path.
     expect(terminal.output).toContain('design.md');
     expect(terminal.output).not.toContain('Thinking...');
+  });
+
+  test('shows the queued approval tool instead of the active tool', async () => {
+    const terminal = mountPanel(
+      [runningWriteTool(SUBAGENT_NAME)],
+      [],
+      [
+        approvalRequest('tool-2', {
+          name: 'fs_read',
+          kind: 'read',
+          origin: 'builtin',
+        }),
+      ]
+    );
+    await flush();
+
+    expect(terminal.output).toContain('Read');
+    expect(terminal.output).not.toContain('Write');
+    expect(terminal.output).toContain('tool approval needed');
+    expect(terminal.output.indexOf(SUBAGENT_NAME)).toBeLessThan(
+      terminal.output.indexOf('Read')
+    );
+    expect(terminal.output).not.toContain('design.md');
+    expect(terminal.output).not.toContain('Thinking...');
+  });
+
+  test('keeps the approval label when icons are disabled', async () => {
+    const terminal = mountPanel(
+      [runningWriteTool(SUBAGENT_NAME)],
+      [],
+      [approvalRequest('tool-1', { name: 'fs_write', origin: 'builtin' })],
+      false
+    );
+    await flush();
+
+    expect(terminal.output).toContain('Write tool approval needed');
+    expect(terminal.output).not.toContain(UNICODE_GLYPHS.warning);
+  });
+
+  test('uses the ASCII warning glyph when ASCII mode is active', async () => {
+    const terminal = mountPanel(
+      [],
+      [],
+      [approvalRequest('tool-1', { name: 'fs_write', origin: 'builtin' })],
+      true,
+      true
+    );
+    await flush();
+
+    expect(terminal.output).toContain('Write ! tool approval needed');
+    expect(terminal.output).not.toContain(UNICODE_GLYPHS.warning);
+  });
+
+  test('omits a descriptive title when canonical identity is unavailable', async () => {
+    const terminal = mountPanel(
+      [],
+      [],
+      [
+        approvalRequest('title-only', {
+          title: 'Creating report.ts',
+          name: 'Creating report.ts',
+          origin: 'builtin',
+        }),
+      ]
+    );
+    await flush();
+
+    expect(terminal.output).toContain('tool approval needed');
+    expect(terminal.output).not.toContain('Creating report.ts');
+  });
+
+  test('falls back to an exact tool id in the session buffer', async () => {
+    const terminal = mountPanel(
+      [runningWriteTool(SUBAGENT_NAME)],
+      [],
+      [approvalRequest('tool-1')]
+    );
+    await flush();
+
+    expect(terminal.output).toContain('Write');
+    expect(terminal.output).toContain('tool approval needed');
+  });
+
+  test('falls back to an exact tool id in the main store', async () => {
+    const terminal = mountPanel(
+      [],
+      [runningWriteTool(MAIN_AGENT_NAME)],
+      [approvalRequest('tool-1')]
+    );
+    await flush();
+
+    expect(terminal.output).toContain('Write');
+    expect(terminal.output).toContain('tool approval needed');
+  });
+
+  test('labels the first queued approval when one session has multiple', async () => {
+    const terminal = mountPanel(
+      [],
+      [],
+      [
+        approvalRequest('tool-2', { name: 'fs_read', origin: 'builtin' }),
+        approvalRequest('tool-1', { name: 'fs_write', origin: 'builtin' }),
+      ]
+    );
+    await flush();
+
+    expect(terminal.output).toContain('Read');
+    expect(terminal.output).not.toContain('Write');
+  });
+
+  test('bounds long approval labels while preserving the approval status', async () => {
+    const longMcpName =
+      'mcp__awslabs_cdk_mcp_server__CDKGeneralGuidanceWithExtraContext';
+    const terminal = mountPanel(
+      [],
+      [],
+      [
+        approvalRequest('mcp-tool', {
+          name: longMcpName,
+          origin: 'mcp',
+        }),
+      ]
+    );
+    await flush();
+
+    expect(terminal.output).toContain('mcp__awslabs');
+    expect(terminal.output).toContain('...');
+    expect(terminal.output).toContain('tool approval needed');
+    expect(terminal.output).not.toContain(longMcpName);
+  });
+
+  test('bounds wide approval labels by terminal columns', async () => {
+    const prefix = 'x'.repeat(22);
+    const longMcpName = `${prefix}😀${'y'.repeat(30)}`;
+    const terminal = mountPanel(
+      [],
+      [],
+      [
+        approvalRequest('unicode-mcp-tool', {
+          name: longMcpName,
+          origin: 'mcp',
+        }),
+      ]
+    );
+    await flush();
+
+    const status = `${prefix}😀... ${UNICODE_GLYPHS.warning} tool approval needed`;
+    expect(terminal.output).toContain(status);
+    expect(visibleWidth(status)).toBeLessThanOrEqual(50);
   });
 
   test('still shows the tool when the message carries the MAIN agent name', async () => {

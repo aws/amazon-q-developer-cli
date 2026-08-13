@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Show the active tool while a subagent approval is pending"
+}

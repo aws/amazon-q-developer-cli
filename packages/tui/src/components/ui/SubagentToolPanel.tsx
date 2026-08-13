@@ -16,12 +16,17 @@ import {
 import { useKeypress } from '../../hooks/useKeypress.js';
 import {
   resolveToolId,
+  type ApprovalRequestInfo,
   type ToolCallOrigin,
   type ToolKind,
 } from '../../types/agent-events.js';
-import { getToolLabel } from '../../types/tool-status.js';
 import { sessionConversationsStore } from '../../stores/session-conversations.js';
-import { isSubagentWrapperTool } from '../../utils/collapsed-tool-view.js';
+import {
+  isSubagentWrapperTool,
+  resolveToolDisplayName,
+} from '../../utils/collapsed-tool-view.js';
+import { truncateToWidth, visibleWidth } from '../../utils/text-width.js';
+import { ATTENTION_TEXT } from '../layout/crew-monitor/types.js';
 import { selectSubagentToolSessions } from './subagent-session-filter.js';
 
 interface SubagentToolPanelProps {
@@ -49,25 +54,59 @@ function getToolParam(content: string): string | null {
   }
 }
 
+interface ToolIdentity {
+  name: string;
+  kind?: ToolKind;
+  origin?: ToolCallOrigin;
+}
+
+function approvalToolIdentity(
+  approval: ApprovalRequestInfo
+): ToolIdentity | undefined {
+  const { toolCall, toolId } = approval;
+  const name = toolId ?? toolCall.name;
+  if (!name) return undefined;
+
+  const isDescriptiveTitleFallback =
+    toolId === undefined &&
+    toolCall.title !== undefined &&
+    name === toolCall.title &&
+    toolCall.origin !== 'mcp' &&
+    resolveToolId(name, toolCall.kind, toolCall.origin) === undefined;
+  if (isDescriptiveTitleFallback) return undefined;
+
+  return { name, kind: toolCall.kind, origin: toolCall.origin };
+}
+
+function truncateToolStatus(text: string, maxWidth = MAX_TOOL_COL): string {
+  return truncateToWidth(text, maxWidth, '...');
+}
+
 function formatToolDesc(
   name: string,
   content: string,
   kind?: ToolKind,
   origin?: ToolCallOrigin
 ): string {
-  const toolId = resolveToolId(name, kind, origin);
-  const label = toolId ? getToolLabel(toolId) : name;
+  const label = resolveToolDisplayName(name, kind, origin);
   const param = getToolParam(content);
-  const desc = param ? `${label} (${param})` : label;
-  if (desc.length > MAX_TOOL_COL)
-    return desc.slice(0, MAX_TOOL_COL - 3) + '...';
-  return desc;
+  return truncateToolStatus(param ? `${label} (${param})` : label);
+}
+
+function formatApprovalStatus(
+  toolLabel: string | null,
+  approvalText: string
+): string {
+  if (!toolLabel) return truncateToolStatus(approvalText);
+  const labelWidth = MAX_TOOL_COL - visibleWidth(approvalText) - 1;
+  return `${truncateToolStatus(toolLabel, labelWidth)} ${approvalText}`;
 }
 
 interface AgentRow {
   name: string;
   agentName: string;
   status: string;
+  pendingApprovalToolLabel: string | null;
   activeToolDesc: string | null;
   hasPendingApproval: boolean;
 }
@@ -86,22 +125,21 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
       (state) => state.setFocusedCrewIndex
     );
     const orderRef = useRef<string[]>([]);
-    // Subscribes to the whole map, so the rows memo below recomputes on an append to
-    // any session, not just a displayed one. Left coarse deliberately: each recompute
-    // reverse-scans every session buffer only as far as its first unfinished call, and
-    // buffers are capped at 50 messages, so the work is bounded well under the React
-    // re-render the same event already causes. Narrowing it means deriving the tracked
-    // ids in the selector (they come from the memo body) and giving zustand a custom
-    // Map equality — new bug surface for no measurable gain.
+    // Capped buffers cost less than synchronizing narrower selectors.
     const conversations = useStore(
       sessionConversationsStore,
       (s) => s.conversations
     );
 
-    const sessionsWithApproval = useMemo(
-      () => new Set(approvalQueue.map((a) => a.sessionId)),
-      [approvalQueue]
-    );
+    const pendingApprovalBySessionId = useMemo(() => {
+      const approvals = new Map<string, (typeof approvalQueue)[number]>();
+      for (const approval of approvalQueue) {
+        if (approval.sessionId && !approvals.has(approval.sessionId)) {
+          approvals.set(approval.sessionId, approval);
+        }
+      }
+      return approvals;
+    }, [approvalQueue]);
 
     const rows = useMemo(() => {
       const subagentSessions = selectSubagentToolSessions(sessions.values(), {
@@ -109,11 +147,8 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         pipelineGroupId,
       });
 
-      interface ActiveTool {
-        name: string;
+      interface ActiveTool extends ToolIdentity {
         content: string;
-        kind?: ToolKind;
-        origin?: ToolCallOrigin;
       }
 
       function lastUnfinishedTool(
@@ -123,8 +158,7 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
           const msg = msgs[i]!;
           if (msg.role !== MessageRole.ToolUse) continue;
           if (msg.isFinished) continue;
-          // A wrapper card is the sub-agent itself, not work it is doing; reporting it
-          // would show `Sub-agent: <role>` in the tool column instead of the real tool.
+          // Wrapper cards represent the sub-agent itself, not its current work.
           if (isSubagentWrapperTool(msg.name, msg.kind, msg.origin)) continue;
           return {
             name: msg.name,
@@ -136,21 +170,53 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         return undefined;
       }
 
-      // Primary lookup. KAS delivers a dispatched sub-agent's tool calls on the MAIN
-      // session id, so app-store resolves their `agentName` to the main agent — a
-      // name-keyed lookup structurally cannot match. The per-session store keeps them
-      // keyed by the id the session is actually known by.
+      const approvalToolBySessionId = new Map<string, ToolIdentity>();
+      const unresolvedApprovalToolIds = new Set<string>();
+      for (const session of subagentSessions) {
+        const approval = pendingApprovalBySessionId.get(session.id);
+        if (!approval) continue;
+        const identity = approvalToolIdentity(approval);
+        if (identity) {
+          approvalToolBySessionId.set(session.id, identity);
+        } else if (approval.toolCall.toolCallId) {
+          unresolvedApprovalToolIds.add(approval.toolCall.toolCallId);
+        }
+      }
+
+      // Exact-id scans only bridge approval payloads missing canonical identity.
+      const toolById = new Map<string, ToolIdentity>();
       const activeToolBySessionId = new Map<string, ActiveTool>();
       for (const [id, msgs] of conversations) {
+        if (unresolvedApprovalToolIds.size > 0) {
+          for (const msg of msgs) {
+            if (
+              msg.role !== MessageRole.ToolUse ||
+              !unresolvedApprovalToolIds.has(msg.id)
+            ) {
+              continue;
+            }
+            toolById.set(msg.id, {
+              name: msg.name,
+              kind: msg.kind,
+              origin: msg.origin,
+            });
+          }
+        }
         const tool = lastUnfinishedTool(msgs);
         if (tool) activeToolBySessionId.set(id, tool);
       }
 
-      // Fallback for the window the per-session store cannot cover: before a session's
-      // first event lands, and after its 50-message cap evicts the running call.
+      // Main-store lookup covers pre-buffer events and calls evicted by the 50-message cap.
       const activeToolByAgent = new Map<string, ActiveTool>();
       for (const msg of messages) {
         if (msg.role !== MessageRole.ToolUse) continue;
+        if (unresolvedApprovalToolIds.has(msg.id)) {
+          toolById.set(msg.id, {
+            name: msg.name,
+            kind: msg.kind,
+            origin: msg.origin,
+          });
+        }
         if (!msg.agentName) continue;
         if (msg.isFinished) continue;
         if (isSubagentWrapperTool(msg.name, msg.kind, msg.origin)) continue;
@@ -162,7 +228,7 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         });
       }
 
-      // Maintain stable insertion order across renders, reset when sessions change entirely
+      // Preserve row order while any known session remains.
       const currentNames = new Set(subagentSessions.map((s) => s.name));
       if (
         orderRef.current.length > 0 &&
@@ -182,14 +248,26 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
         if (!session) continue;
         const tool =
           activeToolBySessionId.get(session.id) ?? activeToolByAgent.get(name);
+        const approval = pendingApprovalBySessionId.get(session.id);
+        const approvalTool = approval
+          ? (approvalToolBySessionId.get(session.id) ??
+            toolById.get(approval.toolCall.toolCallId))
+          : undefined;
         result.push({
           name,
           agentName: session.agentName ?? name,
           status: session.status,
+          pendingApprovalToolLabel: approvalTool
+            ? resolveToolDisplayName(
+                approvalTool.name,
+                approvalTool.kind,
+                approvalTool.origin
+              )
+            : null,
           activeToolDesc: tool
             ? formatToolDesc(tool.name, tool.content, tool.kind, tool.origin)
             : null,
-          hasPendingApproval: sessionsWithApproval.has(session.id),
+          hasPendingApproval: approval !== undefined,
         });
       }
       return result;
@@ -199,7 +277,7 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
       pipelineGroupId,
       messages,
       conversations,
-      sessionsWithApproval,
+      pendingApprovalBySessionId,
     ]);
 
     // Clamp focused index to valid range
@@ -257,7 +335,13 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
             statusText = isError ? 'Failed' : 'Completed';
             statusColor = isError ? 'error' : 'success';
           } else if (row.hasPendingApproval) {
-            statusText = `${!allowIcons ? '' : glyphs.warning} tool approval needed`;
+            const approvalText = allowIcons
+              ? `${glyphs.warning} ${ATTENTION_TEXT}`
+              : ATTENTION_TEXT;
+            statusText = formatApprovalStatus(
+              row.pendingApprovalToolLabel,
+              approvalText
+            );
             statusColor = 'warning';
           } else if (row.activeToolDesc) {
             statusText = row.activeToolDesc;
