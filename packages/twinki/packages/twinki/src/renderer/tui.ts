@@ -298,18 +298,27 @@ export class TUI extends Container {
    */
   private hadFirstFrame = false;
   /**
-   * Visible rows captured at flush-overflow time, awaiting the tail repaint.
-   * The repaint scrolls into scrollback only content it will not re-present,
-   * decided positionally (never by string equality — blank separators and
-   * repeated lines are routine and would be over-filtered).
+   * State captured at flush-overflow time, awaiting the tail repaint. The
+   * repaint must emit each piece of content exactly once, choosing among
+   * three physical sources: rows already committed to scrollback in streamed
+   * form, rows captured off the erased screen, and finalized lines in the
+   * static buffer. The presented run ties flushed lines to the streamed rows
+   * they re-render, so the repaint can decide disposition positionally.
    */
-  private pendingVisibleRows: string[] | null = null;
-  /**
-   * Count of trailing static-buffer lines flushed since the capture and not
-   * yet physically presented. Identifies the flushed run inside the next
-   * frame's static prefix by position.
-   */
-  private pendingFlushedCount = 0;
+  private pendingFlush: {
+    /** Rows on screen at flush time (logical lines, marker-free). */
+    visible: string[];
+    /** Live-region index (old frame) of visible[0]. */
+    visibleStartLive: number;
+    /** Flushed static lines since capture; trailing run of the static buffer. */
+    flushedCount: number;
+    /** Longest contiguous run of flushed lines found inside the old live
+     *  region — evidence those lines were already presented in streamed
+     *  form. len === 0 means no such evidence (replay, divergence). */
+    runFlushStart: number;
+    runLiveStart: number;
+    runLen: number;
+  } | null = null;
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
   private pacingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1701,6 +1710,65 @@ export class TUI extends Container {
   }
 
   /**
+   * Longest contiguous run of `flushed` lines appearing, in order, inside
+   * `live` — evidence those flushed lines were already physically presented
+   * in their streamed form. Runs are seeded only on non-blank lines so a
+   * coincidental blank/blank match can never anchor one; blanks join a run
+   * only by extension from a corroborating non-blank anchor. Seeds and
+   * per-line occurrences are capped, keeping the search linear in practice:
+   * the true alignment is anchored by the first painted non-blank line.
+   */
+  private findPresentedRun(
+    flushed: string[],
+    live: string[]
+  ): { flushStart: number; liveStart: number; len: number } {
+    const best = { flushStart: 0, liveStart: 0, len: 0 };
+    if (flushed.length === 0 || live.length === 0) return best;
+    const occurrences = new Map<string, number[]>();
+    for (let k = 0; k < live.length; k++) {
+      const line = live[k]!;
+      if (visibleWidth(line) === 0) continue;
+      let arr = occurrences.get(line);
+      if (!arr) occurrences.set(line, (arr = []));
+      if (arr.length < 8) arr.push(k);
+    }
+    let seeds = 0;
+    for (let j = 0; j < flushed.length && seeds < 8; j++) {
+      const line = flushed[j]!;
+      if (visibleWidth(line) === 0) continue;
+      seeds++;
+      const occ = occurrences.get(line);
+      if (!occ) continue;
+      for (const k of occ) {
+        let back = 0;
+        while (
+          j - back - 1 >= 0 &&
+          k - back - 1 >= 0 &&
+          flushed[j - back - 1] === live[k - back - 1]
+        ) {
+          back++;
+        }
+        let fwd = 1;
+        while (
+          j + fwd < flushed.length &&
+          k + fwd < live.length &&
+          flushed[j + fwd] === live[k + fwd]
+        ) {
+          fwd++;
+        }
+        const len = back + fwd;
+        if (len > best.len) {
+          best.len = len;
+          best.flushStart = j - back;
+          best.liveStart = k - back;
+          if (best.len === flushed.length) return best;
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
    * Records `lines` as the shadow buffer that the next frame diffs against,
    * together with the static-buffer generation it was rendered from.
    */
@@ -1744,7 +1812,15 @@ export class TUI extends Container {
       // re-diffs them, so the prefix costs nothing per frame.
       // When the fast path is off, store lines verbatim so the per-frame
       // reset pass produces byte-identical output to the unoptimized path.
-      this.staticBuffer.append(this.finalizeStaticLines(lines));
+      const finalized = this.finalizeStaticLines(lines);
+      this.staticBuffer.append(finalized);
+      // A flush arriving after the capture (screen already erased, nothing
+      // new to see) still grows the trailing run the repaint must account
+      // for; without accumulating, the frame-index range below drifts onto
+      // the wrong lines.
+      if (this.pendingFlush) {
+        this.pendingFlush.flushedCount += finalized.length;
+      }
       // Update cached staticHasWide/staticPhysRowsCache incrementally — only
       // scan the NEW lines, not the whole accumulated buffer. If wide mode
       // is off or our cached width is stale, skip (will be rebuilt next render).
@@ -1788,11 +1864,12 @@ export class TUI extends Container {
       }
       if (liveRows > this.terminal.rows && !this.altScreen) {
         const screenRow = this.hardwareCursorRow - this.previousViewportTop;
-        if (this.preserveScrollbackOnRedraw) {
-          // Capture the rows on screen; the tail repaint scrolls into
-          // scrollback only those it will not re-present. Erasing without
-          // capturing lost them; scrolling a fixed screenful duplicated the
-          // re-presented ones into history on every flush.
+        if (this.preserveScrollbackOnRedraw && !this.pendingFlush) {
+          // Capture the rows on screen and match the flushed lines against
+          // the old live region. The repaint emits each piece of content
+          // exactly once: erasing without capturing lost it; emitting the
+          // flushed lines unconditionally re-emitted everything the user
+          // already watched stream (whole-turn duplication).
           const capRowOf = (line: string): number => {
             if (!this.wideLinesEnabled) return 1;
             const w = Math.max(this.terminal.columns || 80, this.minWidth);
@@ -1801,6 +1878,7 @@ export class TUI extends Container {
           };
           const visible: string[] = [];
           let seen = 0;
+          let firstVisibleIdx = this.previousLines.length;
           for (
             let i = this.previousLines.length - 1;
             i >= 0 && seen < this.terminal.rows;
@@ -1812,15 +1890,20 @@ export class TUI extends Container {
             // duplicating is the lesser harm.
             seen += capRowOf(line);
             visible.unshift(line);
+            firstVisibleIdx = i;
           }
-          // Keep visible rows as content (their frame positions die with the
-          // erase below) but identify the flushed lines by COUNT: they are
-          // the trailing `lines.length` entries of the static buffer, so the
-          // repaint can locate them in the next frame positionally. Flushed
-          // lines land above the viewport when live stays overflowed and
-          // would otherwise never be emitted anywhere.
-          this.pendingVisibleRows = visible;
-          this.pendingFlushedCount = lines.length;
+          // Both sides carry the reset suffix and are marker-free, so the
+          // run matcher compares committed strings directly.
+          const liveOld = this.previousLines.slice(staticLogicalCount);
+          const run = this.findPresentedRun(finalized, liveOld);
+          this.pendingFlush = {
+            visible,
+            visibleStartLive: Math.max(0, firstVisibleIdx - staticLogicalCount),
+            flushedCount: finalized.length,
+            runFlushStart: run.flushStart,
+            runLiveStart: run.liveStart,
+            runLen: run.len,
+          };
         }
         const rowsToErase = Math.min(screenRow + 1, this.terminal.rows);
         let buf = this.preserveScrollbackOnRedraw ? '' : '\x1b[3J';
@@ -2381,10 +2464,8 @@ export class TUI extends Container {
      */
     // Captured by the flush-overflow path for exactly the next render; any
     // strategy that full-emits instead may drop them (content is re-emitted).
-    const pendingVisible = this.pendingVisibleRows;
-    const pendingFlushed = this.pendingFlushedCount;
-    this.pendingVisibleRows = null;
-    this.pendingFlushedCount = 0;
+    const pending = this.pendingFlush;
+    this.pendingFlush = null;
 
     const viewportTailRender = (reason: string): boolean => {
       // Walk back from the frame end until the tail fills the viewport, never
@@ -2412,31 +2493,43 @@ export class TUI extends Container {
       this.debugLog(
         `fullRedraw #${this.fullRedrawCount}: reason=${reason} lines=${newLines.length} (viewport-tail)`
       );
-      // Content captured at flush time that the tail below does not
-      // re-present is the only copy of what the user watched stream —
-      // scroll it into scrollback ahead of the paint. Overlap is decided
-      // POSITIONALLY, never by bag-of-strings membership: blank separators
-      // and repeated lines are routine in finalized output and a content
-      // filter drops those distinct rows permanently.
+      // Content captured at flush time must survive exactly once. Physical
+      // sources: the streamed overflow already committed to scrollback, the
+      // captured screen rows, and the finalized static lines. The presented
+      // run (matched at flush time) ties flushed lines to the streamed rows
+      // they re-render, so disposition is positional:
+      //   - flushed line whose streamed form is committed overflow → skip
+      //     (the streamed record stands);
+      //   - flushed line inside the tail window → skip (the tail paints it);
+      //   - anything else flushed → emit once;
+      //   - captured rows before the run → emit (only copy anywhere);
+      //   - captured rows inside the run → skip (byte-equal flushed copy is
+      //     dispositioned above);
+      //   - captured rows past the run → superseded by the re-rendered live
+      //     region when the tail covers it; otherwise deduped against the
+      //     tail and emitted to stand in for the unpaintable live head.
+      // Without run evidence (session replay, paint lag on the head,
+      // renderer divergence) fall back to preserving captured rows minus the
+      // tail overlap plus the full above-tail flushed range: duplication is
+      // then possible but bounded, whereas dropping either source is loss.
       // The trailing full-screen scroll leaves a blank screen with the
       // cursor at the top, so the tail paint below needs no adjustment.
       const preserved: string[] = [];
-      if (pendingVisible && pendingVisible.length > 0) {
-        // Visible rows overlap the tail as a SHIFTED suffix: streaming that
-        // continued across the flush advances the live region, so the rows
-        // the tail re-presents sit deeper in the tail window, not at the
-        // frame end. For each candidate shift, test whether a suffix of the
-        // captured rows equals the frame rows at that position; preserve
-        // only the prefix before the longest such overlap.
+      // Suffix-dedup `rows` against the painted tail at every candidate
+      // shift (streaming across the flush advances the live region, so the
+      // re-presented rows sit deeper in the tail window, not at the frame
+      // end); emit only the prefix before the longest overlap.
+      const pushTailDeduped = (rows: string[]): void => {
+        if (rows.length === 0) return;
         let bestMatched = 0;
         const lastIdx = newLines.length - 1;
         for (let shift = 0; lastIdx - shift >= startIdx; shift++) {
           let matched = 0;
-          while (matched < pendingVisible.length) {
+          while (matched < rows.length) {
             const frameIdx = lastIdx - shift - matched;
             if (frameIdx < startIdx) break;
             if (
-              (pendingVisible[pendingVisible.length - 1 - matched] ?? '') !==
+              (rows[rows.length - 1 - matched] ?? '') !==
               (newLines[frameIdx] ?? '')
             ) {
               break;
@@ -2445,19 +2538,55 @@ export class TUI extends Container {
           }
           if (matched > bestMatched) bestMatched = matched;
         }
-        for (let i = 0; i < pendingVisible.length - bestMatched; i++) {
-          preserved.push(pendingVisible[i] ?? '');
+        for (let i = 0; i < rows.length - bestMatched; i++) {
+          preserved.push(rows[i] ?? '');
         }
-      }
-      if (pendingFlushed > 0) {
-        // The flushed lines are the trailing run of the static prefix:
-        // frame indices [staticPrefixLen - pendingFlushed, staticPrefixLen).
-        // The tail re-presents indices >= startIdx, so emit only the part
-        // of the run above the tail window.
-        const flushStart = Math.max(0, staticPrefixLen - pendingFlushed);
-        const flushEnd = Math.min(staticPrefixLen, startIdx);
-        for (let i = flushStart; i < flushEnd; i++) {
-          preserved.push(newLines[i] ?? '');
+      };
+      if (pending) {
+        const flushBase = Math.max(0, staticPrefixLen - pending.flushedCount);
+        const flushEndAboveTail = Math.min(staticPrefixLen, startIdx);
+        if (pending.runLen > 0 && staticPrefixLen >= pending.flushedCount) {
+          const runFlushEnd = pending.runFlushStart + pending.runLen;
+          const runLiveEnd = pending.runLiveStart + pending.runLen;
+          // Flushed index below which the streamed form already scrolled
+          // into scrollback as committed overflow (mapped live index below
+          // the captured region).
+          const committedFlushEnd =
+            pending.runFlushStart +
+            Math.min(
+              pending.runLen,
+              Math.max(0, pending.visibleStartLive - pending.runLiveStart)
+            );
+          for (let v = 0; v < pending.visible.length; v++) {
+            if (pending.visibleStartLive + v >= pending.runLiveStart) break;
+            preserved.push(pending.visible[v] ?? '');
+          }
+          for (let f = 0; f < pending.flushedCount; f++) {
+            const frameIdx = flushBase + f;
+            if (frameIdx >= flushEndAboveTail) break;
+            if (
+              f >= pending.runFlushStart &&
+              f < runFlushEnd &&
+              f < committedFlushEnd
+            ) {
+              continue;
+            }
+            preserved.push(newLines[frameIdx] ?? '');
+          }
+          if (startIdx > staticPrefixLen) {
+            const afterRun: string[] = [];
+            for (let v = 0; v < pending.visible.length; v++) {
+              if (pending.visibleStartLive + v >= runLiveEnd) {
+                afterRun.push(pending.visible[v] ?? '');
+              }
+            }
+            pushTailDeduped(afterRun);
+          }
+        } else {
+          pushTailDeduped(pending.visible);
+          for (let frameIdx = flushBase; frameIdx < flushEndAboveTail; frameIdx++) {
+            preserved.push(newLines[frameIdx] ?? '');
+          }
         }
       }
       let preservedSegment = '';
