@@ -1,0 +1,29 @@
+{
+  "_description": "Cache of GitHub username -> Amazon alias, resolved via puzzleglue. Auto-maintained by scripts/resolve-github-aliases.sh.",
+  "_updated": "2026-08-13T17:33:00Z",
+  "aliases": {
+    "abhraina-aws": "abhraina",
+    "avgvi": "avgvi",
+    "brandonskiser": "bskiser",
+    "dingfeli": "dingfeli",
+    "evanliu048": "evannliu",
+    "Gupta-Raghav": "rghvgpt",
+    "hengliu0919": "hengliuz",
+    "jguoamz": "jasonguo",
+    "joshuayanggithub": "realjosh",
+    "kensave": "kennvene",
+    "liamba05": "lsba",
+    "MarcoWang3": "wamingx",
+    "namanrajpal": "namanraj",
+    "rschmitt": "ryansch",
+    "rubencu": "rubencu",
+    "tommy-amzn": "tommyb",
+    "TrongNguyenzzz": "trongngn",
+    "vinayshah1998": "shhvin",
+    "wudi19931123-us": "dwwua",
+    "Xianwen-Peng": "xianwp",
+    "yossiwaa": "yossiwaa",
+    "yueny2020": "yueny",
+    "zixlin7": "zoelin"
+  }
+}
