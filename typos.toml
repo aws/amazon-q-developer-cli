@@ -4,6 +4,7 @@ extend-exclude = [
   "crates/amzn-codewhisperer-client",
   "crates/amzn-codewhisperer-streaming-client",
   "crates/amzn-consolas-client",
+  "crates/amzn-kiro-runtime-service-server-sdk",
   "crates/amzn-toolkit-telemetry-client",
   "crates/amzn-qdeveloper-client",
   "crates/amzn-qdeveloper-streaming-client",

@@ -45,7 +45,7 @@ async fn health_reports_the_queue_depth() {
 async fn scenarios_can_be_injected_over_http_and_read_back() {
     let server = server().await;
     let (status, body) = post(
-        format!("{}/__control/scenarios", server.endpoint()),
+        format!("{}/__control/turns", server.endpoint()),
         json!({"turns": [
             {"name": "one", "respond": {"events": [{"type": "text", "content": "hi"}]}},
             {"name": "two", "respond": {"events": [{"type": "text", "content": "there"}]}},
@@ -67,7 +67,7 @@ async fn a_malformed_scenario_is_rejected_with_the_offending_field() {
     // usefully; later it is just a turn that never gets answered.
     let server = server().await;
     let (status, body) = post(
-        format!("{}/__control/scenarios", server.endpoint()),
+        format!("{}/__control/turns", server.endpoint()),
         json!([{"respond": {"evnets": []}}]),
     )
     .await;
@@ -84,7 +84,7 @@ async fn a_malformed_scenario_is_rejected_with_the_offending_field() {
 async fn requests_are_captured_with_their_body_and_safe_headers() {
     let server = server().await;
     post(
-        format!("{}/__control/scenarios", server.endpoint()),
+        format!("{}/__control/turns", server.endpoint()),
         json!([{"respond": {"events": [{"type": "text", "content": "hi"}]}}]),
     )
     .await;
@@ -128,7 +128,7 @@ async fn requests_are_captured_with_their_body_and_safe_headers() {
 async fn the_modeled_operation_answers_with_an_event_stream() {
     let server = server().await;
     post(
-        format!("{}/__control/scenarios", server.endpoint()),
+        format!("{}/__control/turns", server.endpoint()),
         json!([{"respond": {"events": [{"type": "text", "content": "hi"}]}}]),
     )
     .await;

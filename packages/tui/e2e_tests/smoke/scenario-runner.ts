@@ -7,6 +7,7 @@ export type {
   RunReport,
   Scenario,
   ScenarioBackend,
+  ScenarioBackendId,
   ScenarioResult,
   StepTiming,
   TestHarness,

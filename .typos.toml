@@ -1,7 +1,9 @@
 [files]
 extend-exclude = [
-  # Generated KRS mock artifacts carry upstream or deliberate typos.
+  # Generated Smithy SDK: doc comments come from the service model, so fixing a
+  # typo here is undone by the next regeneration.
   "crates/amzn-kiro-runtime-service-server-sdk/",
+  # Generated KRS mock artifacts carry upstream or deliberate typos.
   "crates/mock-krs-server/",
   "packages/ink/",
   "packages/twinki/",

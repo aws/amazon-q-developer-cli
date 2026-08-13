@@ -322,8 +322,8 @@ async fn turns_are_consumed_unless_marked_sticky() {
 
 #[tokio::test]
 async fn an_unscripted_call_fails_loudly() {
-    // The whole value of the mock in a version-bump gate is that a mis-scripted
-    // test cannot quietly pass.
+    // The whole value of the mock in a version-bump gate is that a wrongly
+    // scripted test cannot quietly pass.
     let server = server().await;
     let failure = ask(&server, "nothing is queued").await.expect_err("must fail");
     assert_eq!(failure.status, 500);

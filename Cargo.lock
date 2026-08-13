@@ -6339,6 +6339,7 @@ dependencies = [
  "http-body-util",
  "regex",
  "reqwest 0.13.3",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "tokio",

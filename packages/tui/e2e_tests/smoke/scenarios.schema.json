@@ -4,7 +4,10 @@
   "title": "Knight Rider Smoke Test Scenarios",
   "description": "Schema for TUI smoke test scenarios driven by Knight Rider",
   "type": "object",
-  "required": ["version", "scenarios"],
+  "required": [
+    "version",
+    "scenarios"
+  ],
   "additionalProperties": false,
   "properties": {
     "$schema": {
@@ -38,7 +41,14 @@
   "$defs": {
     "scenario": {
       "type": "object",
-      "required": ["id", "name", "category", "description", "steps", "verify"],
+      "required": [
+        "id",
+        "name",
+        "category",
+        "description",
+        "steps",
+        "verify"
+      ],
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -104,7 +114,9 @@
               "properties": {
                 "mode": {
                   "type": "string",
-                  "enum": ["acp-wire"]
+                  "enum": [
+                    "acp-wire"
+                  ]
                 },
                 "ref": {
                   "type": "string",
@@ -144,21 +156,34 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["v2", "kas"]
+            "enum": [
+              "v2",
+              "kas"
+            ]
           },
           "uniqueItems": true,
-          "default": ["v2", "kas"],
+          "default": [
+            "v2",
+            "kas"
+          ],
           "description": "Which agent engines this scenario runs on"
         },
         "backend": {
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["live", "acp-mock"]
+            "enum": [
+              "live",
+              "acp-mock",
+              "krs-mock"
+            ]
           },
           "uniqueItems": true,
-          "default": ["live", "acp-mock"],
-          "description": "Which scenario backends can execute this scenario"
+          "default": [
+            "live",
+            "acp-mock"
+          ],
+          "description": "Which scenario backends can execute this scenario. `live` runs real services; `acp-mock` replays a recorded ACP-wire fixture from fixtures/acp-wire; `krs-mock` runs a real KAS against the fake Kiro Runtime Service, answering it with the turns in fixtures/krs/<id>.json."
         },
         "timeout": {
           "type": "integer",
@@ -177,7 +202,11 @@
         },
         "priority": {
           "type": "string",
-          "enum": ["p0", "p1", "p2"],
+          "enum": [
+            "p0",
+            "p1",
+            "p2"
+          ],
           "description": "Priority level for CI gating (p0 = must pass)"
         },
         "env": {

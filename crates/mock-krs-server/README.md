@@ -92,7 +92,7 @@ Script a turn and call it:
 ```bash
 B=http://127.0.0.1:$(cat /tmp/krs.port)
 
-curl -s -X POST $B/__control/scenarios -H 'content-type: application/json' -d '{
+curl -s -X POST $B/__control/turns -H 'content-type: application/json' -d '{
   "turns": [{
     "name": "greeting",
     "match": {"userInputContains": "hello"},
@@ -131,7 +131,7 @@ has a real decoder worth copying.
 |---|---|---|
 | `GET` | `/__control/health` | `{"ok": true, "queuedTurns": n}` |
 | `GET` | `/__control/state` | `{"queuedTurns": [names], "calls": n, "unmatchedCalls": n}` |
-| `POST` | `/__control/scenarios` | Enqueue turns. Body is `{"turns": [...]}` or a bare `[...]`. Answers `{"queued": n}`, or `400` naming the offending field. |
+| `POST` | `/__control/turns` | Enqueue turns written in this server's own language — `match` a request, `respond` with events. Body is `{"turns": [...]}` or a bare `[...]`. Answers `{"queued": n}`, or `400` naming the offending field. |
 | `GET` | `/__control/requests` | Every captured call: `index`, `path`, `body`, `headers`, `matchedTurn`. |
 | `POST` | `/__control/reset` | Clear the queue, the capture log and the counters. |
 
@@ -252,6 +252,48 @@ token is `403`.
 request-shape breakage at the first call instead of as a stalled turn. Disable
 with `--allow-unvalidated-requests` / `Config::validate_requests`.
 
+## Turns for a smoke scenario
+
+A scenario in the TUI smoke suite is answered by turns written beside it, keyed by
+its id:
+
+```
+smoke/scenarios.json                    the scenario "tool-use-shell"
+smoke/fixtures/krs/tool-use-shell.json  the turns it is answered with
+```
+
+Having that file is how a scenario says it belongs to the `krs-mock` backend.
+Nothing is inferred from its steps, and the scenario carries no backend payload —
+the same convention the `acp-mock` backend uses for `fixtures/acp-wire`.
+
+```jsonc
+// smoke/fixtures/krs/tool-use-shell.json
+{ "turns": [
+  { "name": "ask-for-the-tool",
+    "match": { "userInputContains": "echo hello world" },
+    "respond": { "events": [
+      { "type": "toolUse", "toolUseId": "tu-1", "name": "shell",
+        "input": "{\"command\":\"echo hello world\"}", "stop": true },
+      { "type": "metadata", "stopReason": "TOOL_USE" } ]}},
+  { "name": "answer-after-the-tool",
+    "match": { "hasToolResults": true },
+    "respond": { "events": [
+      { "type": "text", "content": "The shell printed hello world." } ]}} ]}
+```
+
+`resolveKrsPlan` in `packages/tui/e2e_tests/scenario-runner/krs-plan.ts` reads the
+file and the backend POSTs its turns to `/__control/turns`. A scenario run under
+`krs-mock` with no file fails at launch, naming the path to write.
+
+**A tool call needs two turns.** KAS calls KRS again with the tool's result, and
+that second call needs its own turn — match it with `hasToolResults: true`. With
+only the first turn, the tool runs and then the continuation hits the
+unscripted-call error, which KAS reports as a transient model failure.
+
+The file's schema is `packages/tui/e2e_tests/smoke/krs-turns.schema.json`,
+generated from `scenario::KrsScript` — regenerate it with
+`UPDATE_KRS_SCHEMA=1 cargo test -p mock-krs-server --test krs_turns_schema`.
+
 ## Against a real KAS
 
 Verified with published `@kiro/agent@0.35.11`. KAS takes the endpoint as a CLI
@@ -285,11 +327,14 @@ Through the kiro-cli TUI instead of raw ACP, the endpoint is plumbed by
 cargo test -p mock-krs-server
 ```
 
-26 unit tests, 5 control-API tests, and 14 that drive the server over raw HTTP
-and decode the event-stream frames. The integration tests deliberately do not use
-a generated client: the bytes are the contract KAS's TypeScript client consumes,
-so asserting on them proves the mock is wire-correct instead of proving that one
-codegen output agrees with another.
+26 unit tests, 5 control-API tests, 14 that drive the server over raw HTTP and
+decode the event-stream frames, and 2 that keep the generated turn schema in step
+with the Rust types — a hand-written copy of that schema would drift silently.
+
+The integration tests deliberately do not use a generated client: the bytes are
+the contract KAS's TypeScript client consumes, so asserting on them proves the
+mock is wire-correct instead of proving that one codegen output agrees with
+another.
 
 ## Limits
 

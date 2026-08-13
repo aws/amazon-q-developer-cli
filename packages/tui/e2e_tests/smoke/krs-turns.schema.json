@@ -1,0 +1,530 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fake KRS turns for a smoke scenario",
+  "description": "Generated from mock_krs_server::scenario::KrsScript. Do not edit by hand: run `UPDATE_KRS_SCHEMA=1 cargo test -p mock-krs-server --test krs_turns_schema`.",
+  "type": "object",
+  "properties": {
+    "turns": {
+      "description": "Scripted turns, in queue order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Turn"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "turns"
+  ],
+  "$defs": {
+    "Turn": {
+      "description": "One scripted request/response pair.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Free-form label echoed in `/__control/state` and in the \"no scripted\nresponse\" error, so a failing test names the turn it expected.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "match": {
+          "description": "Which requests this turn answers. Absent (or empty) matches anything.",
+          "$ref": "#/$defs/Matcher",
+          "default": {
+            "userInputContains": null,
+            "userInputRegex": null,
+            "bodyContains": null,
+            "hasToolResults": null,
+            "modelId": null,
+            "agentMode": null,
+            "callIndex": null
+          }
+        },
+        "times": {
+          "description": "How many requests this turn may answer before it is consumed. Defaults\nto 1. `0` means unlimited — the turn is sticky and never consumed, which\nis what a background call that fires an unpredictable number of times\n(title generation, compaction) needs.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "default": null
+        },
+        "respond": {
+          "$ref": "#/$defs/Respond"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "respond"
+      ]
+    },
+    "Matcher": {
+      "description": "Request predicates. All present fields must match (AND).",
+      "type": "object",
+      "properties": {
+        "userInputContains": {
+          "description": "Substring of `conversationState.currentMessage.userInputMessage.content`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "userInputRegex": {
+          "description": "Regex over the same user-input content.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "bodyContains": {
+          "description": "Substring of the whole raw request body. The escape hatch for asserting\non parts of the request this struct does not model yet (history shape,\nadvertised tools, images) without growing a field per case.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "hasToolResults": {
+          "description": "`true` requires the request to carry at least one tool result (i.e. it\nis the continuation of a tool-using turn); `false` requires none.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "modelId": {
+          "description": "Exact match on `conversationState.currentMessage.userInputMessage.modelId`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "agentMode": {
+          "description": "Exact match on `agentMode`, which the model binds to the\n`x-amzn-kiro-agent-mode` request header rather than the body.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "callIndex": {
+          "description": "Zero-based index of the GenerateAssistantResponse call, counted since\nthe last reset.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0,
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "Respond": {
+      "description": "What the server plays back for a matched turn.\n\nThe healthy path is `events` alone: the server frames each event and then\nguarantees a terminal `metadata` event carrying a `stopReason` if the script\ndid not include one. That default is deliberate — real KRS always closes a\ncomplete response with a stop reason, and a stream that ends without one\ntrips KAS's stream-recovery retry, which silently doubles invocation counts\nand makes a test look flaky rather than wrong. Tests that *want* that\nbehavior ask for it with `truncate`.",
+      "type": "object",
+      "properties": {
+        "events": {
+          "description": "The event sequence, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventScript"
+          },
+          "default": []
+        },
+        "truncate": {
+          "description": "End the stream after `events` without appending a terminal stop reason.\nModels a truncated/mid-flight close.",
+          "type": "boolean",
+          "default": false
+        },
+        "streamError": {
+          "description": "Emit a modeled exception frame instead of finishing the stream. Applied\nafter `events`, so a test can stream partial content and then fail.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StreamError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "httpError": {
+          "description": "Fail the request with a modeled error instead of streaming. Takes\nprecedence over `events`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "delayMs": {
+          "description": "Delay before the first byte of the response.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        },
+        "chunkDelayMs": {
+          "description": "Delay between event frames. Lets a test observe incremental rendering\ninstead of a single flush.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "EventScript": {
+      "description": "A modeled member of the `ChatResponseStream` union, in scenario form.\n\n`rename_all_fields` is needed as well as `rename_all`: the latter renames the\nvariants (`toolUse`), the former their fields (`toolUseId`). Without it a\nscenario would be camelCase everywhere except inside an event.",
+      "oneOf": [
+        {
+          "description": "`assistantResponseEvent` — a chunk of assistant markdown.",
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "modelId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "modelTag": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "description": "`reasoningContentEvent` — a chunk of model reasoning.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "signature": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "redactedContent": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "type": {
+              "type": "string",
+              "const": "reasoning"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`toolUseEvent` — a tool-call chunk. `input` is concatenated by the\nclient across events until one arrives with `stop: true`, so a scenario\ncan split a single call across frames to exercise that reassembly.",
+          "type": "object",
+          "properties": {
+            "toolUseId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "input": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "stop": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "default": null
+            },
+            "type": {
+              "type": "string",
+              "const": "toolUse"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "toolUseId",
+            "name"
+          ]
+        },
+        {
+          "description": "`meteringEvent` — credit usage.",
+          "type": "object",
+          "properties": {
+            "usage": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double",
+              "default": null
+            },
+            "unit": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "unitPlural": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "type": {
+              "type": "string",
+              "const": "metering"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`contextUsageEvent` — percentage of the context window used.",
+          "type": "object",
+          "properties": {
+            "contextUsagePercentage": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float",
+              "default": null
+            },
+            "type": {
+              "type": "string",
+              "const": "contextUsage"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`metadataEvent` — token usage and/or the terminal stop reason.",
+          "type": "object",
+          "properties": {
+            "stopReason": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "tokenUsage": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TokenUsageScript"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "type": {
+              "type": "string",
+              "const": "metadata"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Not an event: pause before the next one. Distinct from\n`Respond::chunk_delay_ms`, which paces every frame uniformly.",
+          "type": "object",
+          "properties": {
+            "ms": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "delay"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "ms"
+          ]
+        }
+      ]
+    },
+    "TokenUsageScript": {
+      "description": "`TokenUsage` in scenario form. The three required members carry zeroes by\ndefault so a scenario that only cares about a stop reason stays short.",
+      "type": "object",
+      "properties": {
+        "uncachedInputTokens": {
+          "type": "integer",
+          "format": "int32",
+          "default": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "format": "int32",
+          "default": 0
+        },
+        "totalTokens": {
+          "type": "integer",
+          "format": "int32",
+          "default": 0
+        },
+        "cacheReadInputTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "default": null
+        },
+        "cacheWriteInputTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "default": null
+        },
+        "contextUsagePercentage": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
+        "normalizedTokenUsage": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "StreamError": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/StreamErrorKind"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    "StreamErrorKind": {
+      "description": "A mid-stream exception frame. Each variant names a member of the modeled\n`ChatResponseStream` error union; the generated SDK decides the\n`:exception-type` header it is framed with.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "throttling",
+            "validation",
+            "serviceUnavailable"
+          ]
+        },
+        {
+          "description": "`InternalServerException` (renamed `InternalServerError` in the Rust client).",
+          "type": "string",
+          "const": "internal"
+        }
+      ]
+    },
+    "HttpError": {
+      "description": "A modeled error response. The status code and body shape come from the\ngenerated server SDK, not from this crate.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/HttpErrorKind"
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    "HttpErrorKind": {
+      "description": "One of the errors the model says `GenerateAssistantResponse` can return.\n\nA closed set on purpose: the mock can only fail the way KRS can fail, so a\nscenario cannot script a response KAS would never see in production.",
+      "type": "string",
+      "enum": [
+        "accessDenied",
+        "internalServer",
+        "serviceQuotaExceeded",
+        "serviceUnavailable",
+        "throttling",
+        "validation"
+      ]
+    }
+  },
+  "$id": "https://kiro.dev/schemas/krs-turns.schema.json"
+}

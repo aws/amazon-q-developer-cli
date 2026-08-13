@@ -363,7 +363,7 @@ fn router(inner: Arc<Inner>) -> anyhow::Result<Router> {
     Ok(Router::new()
         .route("/__control/health", get(control_health))
         .route("/__control/state", get(control_state))
-        .route("/__control/scenarios", post(control_enqueue))
+        .route("/__control/turns", post(control_enqueue))
         .route("/__control/requests", get(control_requests))
         .route("/__control/reset", post(control_reset))
         .fallback(serve_generated)
@@ -381,6 +381,13 @@ async fn control_state(State(state): State<AppState>) -> Response {
     axum::Json(snapshot_state(&state.inner).await).into_response()
 }
 
+/// Enqueues turns.
+///
+/// The body is KRS traffic — `match` a request, `respond` with events — so
+/// nothing is inferred. A caller that has a TUI scenario rather than turns
+/// resolves it to turns first; this server does not read scenarios.
+///
+/// Body: `{"turns": [...]}` or a bare `[...]`.
 async fn control_enqueue(State(state): State<AppState>, body: Bytes) -> Response {
     // Parsed here rather than via `Json<...>` so a malformed scenario answers
     // with the serde message naming the offending field. A rejected extractor

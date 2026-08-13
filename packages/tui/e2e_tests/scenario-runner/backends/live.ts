@@ -7,7 +7,7 @@ import type {
   TestHarness,
 } from '../types';
 
-class LiveHarness implements TestHarness {
+export class LiveHarness implements TestHarness {
   constructor(private readonly testCase: E2ETestCase) {}
 
   sendKeys(input: string | number[]): Promise<void> {

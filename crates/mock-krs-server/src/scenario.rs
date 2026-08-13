@@ -9,16 +9,17 @@
 //! flows need once tool calls make the call order hard to predict).
 //!
 //! Everything here is plain serde, wire-compatible with the JSON a test POSTs
-//! to `/__control/scenarios`. The modeled KRS types are built from these
+//! to `/__control/turns`. The modeled KRS types are built from these
 //! descriptions in [`crate::wire`], not here, so a scenario file stays readable
 //! and free of event-stream detail.
 
+use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
 };
 
-/// Parses the body of `POST /__control/scenarios`.
+/// Parses the body of `POST /__control/turns`.
 ///
 /// Accepts either `{"turns": [...]}` or a bare `[...]`, branching on the JSON
 /// shape rather than deriving `#[serde(untagged)]`: untagged collapses every
@@ -32,8 +33,23 @@ pub fn parse_scenario_batch(body: &[u8]) -> Result<Vec<Turn>, serde_json::Error>
     }
 }
 
+/// The `krs` block of a smoke scenario: the turns that scenario's model traffic
+/// is answered with.
+///
+/// This is the same shape the control API takes, so a scenario's script can be
+/// forwarded to `/__control/turns` untouched. Its JSON schema is generated
+/// from this type into `packages/tui/e2e_tests/smoke/krs-turns.schema.json`,
+/// which `scenarios.schema.json` references — so the schema a scenario author
+/// writes against cannot drift from the types the server deserializes.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KrsScript {
+    /// Scripted turns, in queue order.
+    pub turns: Vec<Turn>,
+}
+
 /// One scripted request/response pair.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Turn {
     /// Free-form label echoed in `/__control/state` and in the "no scripted
@@ -71,7 +87,7 @@ impl Turn {
 }
 
 /// Request predicates. All present fields must match (AND).
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Matcher {
     /// Substring of `conversationState.currentMessage.userInputMessage.content`.
@@ -129,7 +145,7 @@ impl Matcher {
 /// trips KAS's stream-recovery retry, which silently doubles invocation counts
 /// and makes a test look flaky rather than wrong. Tests that *want* that
 /// behavior ask for it with `truncate`.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Respond {
     /// The event sequence, in order.
@@ -166,7 +182,7 @@ pub struct Respond {
 /// `rename_all_fields` is needed as well as `rename_all`: the latter renames the
 /// variants (`toolUse`), the former their fields (`toolUseId`). Without it a
 /// scenario would be camelCase everywhere except inside an event.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -236,7 +252,7 @@ pub enum EventScript {
 
 /// `TokenUsage` in scenario form. The three required members carry zeroes by
 /// default so a scenario that only cares about a stop reason stays short.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenUsageScript {
     #[serde(default)]
@@ -258,7 +274,7 @@ pub struct TokenUsageScript {
 /// A mid-stream exception frame. Each variant names a member of the modeled
 /// `ChatResponseStream` error union; the generated SDK decides the
 /// `:exception-type` header it is framed with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum StreamErrorKind {
     /// `InternalServerException` (renamed `InternalServerError` in the Rust client).
@@ -280,7 +296,7 @@ impl StreamErrorKind {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StreamError {
     pub kind: StreamErrorKind,
@@ -292,7 +308,7 @@ pub struct StreamError {
 ///
 /// A closed set on purpose: the mock can only fail the way KRS can fail, so a
 /// scenario cannot script a response KAS would never see in production.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum HttpErrorKind {
     AccessDenied,
@@ -305,7 +321,7 @@ pub enum HttpErrorKind {
 
 /// A modeled error response. The status code and body shape come from the
 /// generated server SDK, not from this crate.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpError {
     pub kind: HttpErrorKind,

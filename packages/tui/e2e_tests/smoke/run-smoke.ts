@@ -22,11 +22,13 @@ import {
   type RunReport,
   type RunOptions,
   type ScenarioResult,
+  type ScenarioBackendId,
   type Engine,
   runAll,
 } from './scenario-runner';
 import { emitFailureContext } from './failure-context';
 import { createAcpMockBackend } from '../scenario-runner/backends/acp-mock';
+import { createKrsMockBackend } from '../scenario-runner/backends/krs-mock';
 import { createLiveBackend } from '../scenario-runner/backends/live';
 
 // ---------------------------------------------------------------------------
@@ -57,7 +59,7 @@ function highestExitCode(results: ScenarioResult[]): number {
 // ---------------------------------------------------------------------------
 
 interface CliOptions {
-  backend: 'live' | 'acp-mock';
+  backend: ScenarioBackendId;
   engine: Engine;
   fixturesDir: string;
   format: 'tap' | 'summary';
@@ -101,7 +103,7 @@ function parseCliArgs(): CliOptions {
   const ci = values.ci ?? false;
 
   // Env var precedence: explicit flag > env var > default
-  const envBackend = process.env.SMOKE_BACKEND as 'live' | 'acp-mock' | undefined;
+  const envBackend = process.env.SMOKE_BACKEND as ScenarioBackendId | undefined;
   const envEngine = process.env.SMOKE_ENGINE as Engine | undefined;
   const envFormat = process.env.SMOKE_FORMAT as 'tap' | 'summary' | undefined;
   const envTimeout = process.env.SMOKE_TIMEOUT;
@@ -112,8 +114,8 @@ function parseCliArgs(): CliOptions {
     | 'live'
     | 'deterministic'
     | undefined;
-  const backend: 'live' | 'acp-mock' =
-    (values.backend as 'live' | 'acp-mock') ??
+  const backend: ScenarioBackendId =
+    (values.backend as ScenarioBackendId) ??
     envBackend ??
     (legacyMode === 'deterministic' ? 'acp-mock' : 'live');
   const defaultEngine: Engine = 'kas';
@@ -135,8 +137,11 @@ function parseCliArgs(): CliOptions {
     captureFrames = ci ? false : true;
   }
 
-  if (backend !== 'live' && backend !== 'acp-mock') {
-    console.error(`error: invalid backend "${backend}" (expected "live" or "acp-mock")`);
+  const BACKENDS: ScenarioBackendId[] = ['live', 'acp-mock', 'krs-mock'];
+  if (!BACKENDS.includes(backend)) {
+    console.error(
+      `error: invalid backend "${backend}" (expected ${BACKENDS.map((id) => `"${id}"`).join(', ')})`
+    );
     process.exit(RUNNER_ERROR);
   }
 
@@ -145,8 +150,10 @@ function parseCliArgs(): CliOptions {
     process.exit(RUNNER_ERROR);
   }
 
-  if (backend === 'acp-mock' && engine !== 'kas') {
-    console.error('error: backend "acp-mock" only supports engine "kas"');
+  // Neither mock backend has a v2 path: `acp-mock` replays KAS-shaped ACP
+  // fixtures, and only KAS talks to KRS.
+  if (backend !== 'live' && engine !== 'kas') {
+    console.error(`error: backend "${backend}" only supports engine "kas"`);
     process.exit(RUNNER_ERROR);
   }
 
@@ -357,8 +364,12 @@ Usage: run-smoke [options]
 Run smoke test scenarios against the Kiro CLI TUI.
 
 Options:
-  -b, --backend <live|acp-mock>
+  -b, --backend <live|acp-mock|krs-mock>
                               Execution backend (default: live, env: SMOKE_BACKEND)
+                              live     real services
+                              acp-mock replay a recorded ACP-wire fixture
+                              krs-mock real KAS against the fake Kiro Runtime
+                                       Service (needs: cargo build -p mock-krs-server)
   -e, --engine <v2|kas>       Agent engine for the selected backend (default: kas, env: SMOKE_ENGINE)
   -m, --mode <live|determ.>   Legacy alias: live -> backend=live, determ. -> backend=acp-mock
       --fixtures-dir <path>   ACP mock fixture directory (env: SMOKE_FIXTURES_DIR)
@@ -407,7 +418,9 @@ async function main(): Promise<void> {
   const backend =
     cli.backend === 'acp-mock'
       ? createAcpMockBackend(cli.engine)
-      : createLiveBackend(cli.engine);
+      : cli.backend === 'krs-mock'
+        ? createKrsMockBackend(cli.engine)
+        : createLiveBackend(cli.engine);
 
   const runOpts: RunOptions = {
     backend,

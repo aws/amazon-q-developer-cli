@@ -1,7 +1,7 @@
 import type { SerializedAppState } from '../../src/test-utils/shared/ipc-types';
 
 export type Engine = 'v2' | 'kas';
-export type ScenarioBackendId = 'live' | 'acp-mock';
+export type ScenarioBackendId = 'live' | 'acp-mock' | 'krs-mock';
 
 export interface Scenario {
   id: string;
