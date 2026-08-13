@@ -5,12 +5,14 @@ import {
   applySubagentNesting,
   applyTangentNesting,
   filterSessionsByText,
+  isDerivedArtifactSession,
   workspaceLabel,
   conversationKey,
   sessionIdentityKey,
   sessionMatchesActive,
   sessionDashboardPaneWidths,
   type WorkspaceGroup,
+  type SessionListingInput,
 } from '../session-dashboard';
 import { groupSessions } from '../session-grouping';
 import { buildNavModel } from '../session-dashboard-nav';
@@ -618,6 +620,42 @@ describe('physical session identity', () => {
         'v3',
         'local'
       )
+    ).toBe(false);
+  });
+});
+
+describe('isDerivedArtifactSession', () => {
+  const row = (over: Partial<SessionListingInput> = {}): SessionListingInput =>
+    ({ sessionId: 's', updatedAt: '', ...over }) as SessionListingInput;
+
+  it('flags subagent and rewind forks by createdReason', () => {
+    expect(isDerivedArtifactSession(row({ createdReason: 'subagent' }))).toBe(
+      true
+    );
+    expect(isDerivedArtifactSession(row({ createdReason: 'rewind' }))).toBe(
+      true
+    );
+  });
+
+  it('flags V2 subagents that lack createdReason by title pattern', () => {
+    expect(
+      isDerivedArtifactSession(row({ title: 'You are a subagent doing X' }))
+    ).toBe(true);
+    expect(
+      isDerivedArtifactSession(row({ title: 'You are a session naming agent' }))
+    ).toBe(true);
+  });
+
+  it('does NOT flag tangents or ordinary sessions', () => {
+    expect(isDerivedArtifactSession(row({ createdReason: 'tangent' }))).toBe(
+      false
+    );
+    expect(isDerivedArtifactSession(row({ title: 'Fix the login bug' }))).toBe(
+      false
+    );
+    // A real session that merely mentions subagents in its title.
+    expect(
+      isDerivedArtifactSession(row({ title: 'How do subagents work?' }))
     ).toBe(false);
   });
 });

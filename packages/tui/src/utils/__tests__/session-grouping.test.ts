@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import {
   CLOUD_GROUP_KEY,
   groupSessions,
+  isLiveStatus,
   recencyBucket,
   type MetaLookup,
 } from '../session-grouping';
@@ -255,5 +256,27 @@ describe('groupSessions — filters', () => {
       now: NOW,
     });
     expect(groups).toHaveLength(0);
+  });
+});
+
+describe('isLiveStatus', () => {
+  it('keeps the active session bright regardless of status', () => {
+    expect(isLiveStatus('idle', true)).toBe(true);
+    expect(isLiveStatus('failed', true)).toBe(true);
+    expect(isLiveStatus(undefined, true)).toBe(true);
+  });
+
+  it('treats working, starting, and waiting rows as live', () => {
+    expect(isLiveStatus('in_progress', false)).toBe(true);
+    expect(isLiveStatus('provisioning', false)).toBe(true);
+    expect(isLiveStatus('waiting_on_user', false)).toBe(true);
+  });
+
+  it('dims dormant and finished rows, including failed', () => {
+    expect(isLiveStatus('idle', false)).toBe(false);
+    expect(isLiveStatus('completed', false)).toBe(false);
+    expect(isLiveStatus('failed', false)).toBe(false);
+    expect(isLiveStatus(undefined, false)).toBe(false);
+    expect(isLiveStatus(null, false)).toBe(false);
   });
 });

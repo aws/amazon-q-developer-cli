@@ -197,6 +197,25 @@ export function sessionMatchesActive(
     : false;
 }
 
+/**
+ * Whether a listing row is a DERIVED artifact — a subagent or rewind fork that
+ * nests under a parent and is hidden from the master list (surfaced only in the
+ * preview pane). Tangents are deliberately NOT derived: they are user-created
+ * side-conversations that stay visible and resumable. Kept as a standalone
+ * predicate so the dashboard footer counts the same universe the list renders.
+ */
+export function isDerivedArtifactSession(s: SessionListingInput): boolean {
+  return (
+    s.createdReason === 'subagent' ||
+    s.createdReason === 'rewind' ||
+    // V2 subagent sessions lack createdReason; detect by title pattern.
+    (!s.createdReason &&
+      /^You are a (subagent|session naming agent|fresh-eyes|memory consolidation)\b/i.test(
+        s.title ?? ''
+      ))
+  );
+}
+
 /** Build annotated dashboard entries from a raw listing (shared by groupers). */ export function buildDashboardEntries(
   sessions: SessionListingInput[],
   currentCwd: string,
@@ -220,14 +239,7 @@ export function sessionMatchesActive(
     // the master list (surfaced in the preview pane). Tangents are deliberately
     // excluded here — they are user-created side-conversations that stay
     // VISIBLE and resumable, nested via `tangentChildren` instead.
-    isSubagent:
-      s.createdReason === 'subagent' ||
-      s.createdReason === 'rewind' ||
-      // V2 subagent sessions lack createdReason; detect by title pattern.
-      (!s.createdReason &&
-        /^You are a (subagent|session naming agent|fresh-eyes|memory consolidation)\b/i.test(
-          s.title ?? ''
-        )),
+    isSubagent: isDerivedArtifactSession(s),
     parentSessionId: s.parentSessionId,
     createdReason: s.createdReason,
     children: [],

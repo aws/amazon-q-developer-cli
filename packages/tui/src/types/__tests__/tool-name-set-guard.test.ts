@@ -33,6 +33,9 @@ const ALLOWED_CANONICAL_NAME_COLLECTIONS = new Set([
   'components/layout/status-line/segments.ts:ID_SET',
   // User-visible tangent names that would collide with navigation commands.
   'commands/kas-handlers/tangent.ts:RESERVED_NAMES',
+  // Common workspace-directory basenames used to disambiguate list labels;
+  // reuses the word "code" as a folder name, not the code tool.
+  'utils/session-dashboard.ts:generic',
 ]);
 
 function sourceFiles(directory: string): string[] {

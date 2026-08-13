@@ -43,6 +43,7 @@ import {
   filterSessionsByText,
   applySubagentNesting,
   applyTangentNesting,
+  isDerivedArtifactSession,
   workspaceLabel,
   sessionIdentityKey,
   sessionMatchesActive,
@@ -52,6 +53,7 @@ import {
 } from '../../utils/session-dashboard.js';
 import {
   groupSessions,
+  isLiveStatus,
   sessionStatusDisplay,
   type GroupByDimension,
 } from '../../utils/session-grouping.js';
@@ -490,6 +492,25 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     () => enrichedSessions.some((s) => s.status != null),
     [enrichedSessions]
   );
+
+  // Footer counts, reconciled to a single universe: DERIVED artifacts
+  // (subagents / rewind forks) are internal machinery, never shown as their
+  // own rows, so they are excluded outright. Of the rows that remain, the
+  // empty ones are sunk behind the "+empty" expander. This makes the footer
+  // add up in the default view — visible non-empty (`eligibleTotal`) + empty
+  // (`nonDerivedEmpty`) == `nonDerivedTotal`.
+  const { nonDerivedTotal, nonDerivedEmpty } = useMemo(() => {
+    let total = 0;
+    let empty = 0;
+    for (const s of enrichedSessions) {
+      if (isDerivedArtifactSession(s)) continue;
+      total++;
+      if (emptyIds.has(sessionEnrichmentKey(s.sessionId, s.engine, s.source))) {
+        empty++;
+      }
+    }
+    return { nonDerivedTotal: total, nonDerivedEmpty: empty };
+  }, [enrichedSessions, emptyIds]);
 
   // Build groups under the chosen dimension + filters.
   const baseGroups = useMemo(() => {
@@ -1724,7 +1745,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     termWidth,
     Boolean(onTogglePreview)
   ).slice(0, Math.max(termHeight - 12 - bannerLines, 0));
-  const gcHintShown = Boolean(globalGc && globalGc.candidates.length > 0);
+  const gcHintShown = nonDerivedEmpty > 0;
   // Fixed chrome: title 1 + search box 3 + controls 2 + column header 2 +
   // rule 1 + footer summary 1.
   const chromeReserve =
@@ -2537,7 +2558,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             ? chalk.hex(accentHex).bold(truncTitle) +
               styledTags +
               ' '.repeat(padNeeded)
-            : (entry.status === 'idle' || !entry.status) && !entry.isActive
+            : !isLiveStatus(entry.status, Boolean(entry.isActive))
               ? chalk.hex(secondaryHex)(truncTitle) +
                 styledTags +
                 ' '.repeat(padNeeded)
@@ -2667,9 +2688,11 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             wrapped across as many rows as the terminal can afford. */}
         {(() => {
           // Total reflects the FILTERED view — quoting the raw store count
-          // under an active filter reads as "the filter did nothing".
+          // under an active filter reads as "the filter did nothing". Both the
+          // total and the empty hint count only NON-DERIVED rows so the footer
+          // reconciles: visible non-empty + empty == total in the default view.
           const total = eligibleTotal;
-          const storeTotal = sessions.length;
+          const storeTotal = nonDerivedTotal;
           const shownFrom = navItems.length === 0 ? 0 : startIdx + 1;
           const shownTo = endIdx;
           // Whole groups scrolled out of the window, either side — folded
@@ -2693,7 +2716,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             (isRefreshing ? ' (refreshing\u2026)' : '') +
             groupCue;
           const gcHint = gcHintShown
-            ? `${globalGc!.candidates.length} empty sessions \u2014 /sessions clean to review`
+            ? `${nonDerivedEmpty} empty sessions \u2014 /sessions clean to review`
             : '';
           const lines = footerHintLines;
           return (

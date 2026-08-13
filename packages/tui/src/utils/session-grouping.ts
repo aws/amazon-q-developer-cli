@@ -151,6 +151,25 @@ export function sessionStatusDisplay(
   }
 }
 
+/** Whether a row should render at full brightness in the list. Live rows — the
+ *  active session, plus those working, starting, or waiting on the user — stay
+ *  bright so the eye is drawn to them; every dormant or finished row (idle,
+ *  done, failed, no status) is dimmed. */
+export function isLiveStatus(
+  status: string | null | undefined,
+  isActive: boolean
+): boolean {
+  if (isActive) return true;
+  switch (status) {
+    case 'in_progress':
+    case 'provisioning':
+    case 'waiting_on_user':
+      return true;
+    default:
+      return false;
+  }
+}
+
 function applyFilters(
   entries: SessionDashboardEntry[],
   filters: SessionFilters,
