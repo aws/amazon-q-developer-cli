@@ -33,7 +33,8 @@ function flagValue(args: string[], flag: string): string | undefined {
   return idx >= 0 && idx + 1 < args.length ? args[idx + 1] : undefined;
 }
 
-const FAKE_BIN = '/fake/chat_cli';
+// A real on-disk path: bin resolution probes for existence. Never executed - spawners are injected.
+const FAKE_BIN = process.execPath;
 let originalBin: string | undefined;
 
 beforeEach(() => {

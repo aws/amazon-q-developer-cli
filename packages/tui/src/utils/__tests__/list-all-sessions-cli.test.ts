@@ -22,7 +22,7 @@ import type {
   SessionEntry,
   SessionSource,
 } from '../list-all-sessions-cli';
-import { requireChatCliBinFromEnv } from '../chat-cli-bin';
+import { resolveChatCliBinFromEnv } from '../chat-cli-bin';
 
 // --- Local copy of listAllSessions (immune to mock.module pollution) ---
 
@@ -32,7 +32,7 @@ async function listAllSessions(
 ): Promise<ListAllSessionsResult> {
   let bin: string;
   try {
-    bin = requireChatCliBinFromEnv();
+    bin = resolveChatCliBinFromEnv();
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -137,7 +137,8 @@ function parseListing(stdout: string): ListAllSessionsResult {
 
 // --- Tests ----------------------------------------------------------------
 
-const FAKE_BIN = '/fake/chat_cli';
+// A real on-disk path: bin resolution probes for existence. Never executed - spawners are injected.
+const FAKE_BIN = process.execPath;
 let originalBin: string | undefined;
 
 beforeEach(() => {

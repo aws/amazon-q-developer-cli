@@ -11,6 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   type AsyncSpawner,
   type SyncSpawner,
@@ -19,7 +22,8 @@ import {
 } from '../chat-internal-cli';
 import { ErrorCode } from '../../types/generated/chat-internal';
 
-const FAKE_BIN = '/fake/chat_cli';
+// A real on-disk path: bin resolution probes for existence. Never executed - spawners are injected.
+const FAKE_BIN = process.execPath;
 let originalBin: string | undefined;
 
 beforeEach(() => {
@@ -30,6 +34,66 @@ beforeEach(() => {
 afterEach(() => {
   if (originalBin === undefined) delete process.env.KIRO_CHAT_CLI_BIN;
   else process.env.KIRO_CHAT_CLI_BIN = originalBin;
+});
+
+describe('binary fallback through the runner', () => {
+  // Exercises the DEFAULT resolution wiring with a real filesystem: the
+  // env path is gone, so the runner must spawn the stable install
+  // location under $HOME. Resolution reads process.env.HOME first, so
+  // the test owns the fallback location hermetically on every platform.
+  let originalHome: string | undefined;
+  let tempHome: string;
+  let fallbackBin: string;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-cli-bin-test-'));
+    fallbackBin = path.join(tempHome, '.local', 'bin', 'kiro-cli');
+    fs.mkdirSync(path.dirname(fallbackBin), { recursive: true });
+    fs.writeFileSync(fallbackBin, '');
+    process.env.HOME = tempHome;
+    process.env.KIRO_CHAT_CLI_BIN = path.join(
+      tempHome,
+      'deleted-install',
+      'kiro-cli-chat'
+    );
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('sync: spawns ~/.local/bin/kiro-cli when the env path is deleted', () => {
+    const calls: Array<{ cmd: string }> = [];
+    const spawner: SyncSpawner = (cmd) => {
+      calls.push({ cmd });
+      return {
+        status: 0,
+        stdout: '{"kind":"exportSession","data":{"path":"/o.zip"}}',
+        stderr: '',
+      };
+    };
+    const result = runChatInternalSync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    expect(calls[0]?.cmd).toBe(fallbackBin);
+  });
+
+  it('async: spawns ~/.local/bin/kiro-cli when the env path is deleted', async () => {
+    const calls: Array<{ cmd: string }> = [];
+    const spawner: AsyncSpawner = (cmd) => {
+      calls.push({ cmd });
+      return Promise.resolve({
+        status: 0,
+        stdout: '{"kind":"exportSession","data":{"path":"/o.zip"}}',
+        stderr: '',
+      });
+    };
+    const result = await runChatInternalAsync(['x'], spawner);
+    expect(result.ok).toBe(true);
+    expect(calls[0]?.cmd).toBe(fallbackBin);
+  });
 });
 
 describe('runChatInternalSync', () => {

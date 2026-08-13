@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Recover auth refresh and session commands when an update removes the running binary's install directory, by falling back to the stable install location"
+}

@@ -23,11 +23,22 @@
  *
  * # Binary resolution
  *
- * The path to `chat_cli` is read from `KIRO_CHAT_CLI_BIN`. The Rust
- * launcher injects this when spawning the TUI; tests set it explicitly
- * (typically to `target/debug/chat_cli` for the ACP integ harness).
- * If unset, the helper returns a structured error rather than throwing
- * so handlers can surface it as an alert.
+ * The path to `chat_cli` comes from `resolveChatCliBinFromEnv`: the
+ * `KIRO_CHAT_CLI_BIN` env var (injected by the Rust launcher; tests set
+ * it explicitly, typically to `target/debug/chat_cli` for the ACP integ
+ * harness), with fallbacks to stable install locations when the env
+ * path has been deleted from disk. If the env var is unset, the helper
+ * returns a structured error rather than throwing so handlers can
+ * surface it as an alert.
+ *
+ * The fallback may execute a binary from a NEWER release than the
+ * running bundle, for every subcommand routed through this module.
+ * That skew is safe by construction of the wire contract: the parser
+ * requires only `{kind: string, data: object}` and ignores unknown
+ * fields, callers narrow on `kind` before touching `data`, and any
+ * incompatible envelope degrades to the same structured failure a
+ * missing binary would have produced - never worse than the ENOENT
+ * the fallback replaces.
  *
  * # Spawner injection
  *
@@ -39,7 +50,7 @@
  */
 
 import type { CliInternalOutput } from '../types/generated/chat-internal';
-import { requireChatCliBinFromEnv } from './chat-cli-bin';
+import { resolveChatCliBinFromEnv } from './chat-cli-bin';
 import { logger } from './logger';
 
 /** Spawn function shape compatible with `Bun.spawn`-style async APIs. */
@@ -189,7 +200,7 @@ export async function runChatInternalAsync(
 ): Promise<RunResult> {
   let bin: string;
   try {
-    bin = requireChatCliBinFromEnv();
+    bin = resolveChatCliBinFromEnv();
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
@@ -261,7 +272,7 @@ export function runChatInternalSync(
 ): RunResult {
   let bin: string;
   try {
-    bin = requireChatCliBinFromEnv();
+    bin = resolveChatCliBinFromEnv();
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }

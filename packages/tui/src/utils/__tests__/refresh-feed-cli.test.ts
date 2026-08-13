@@ -22,7 +22,8 @@ function makeSpawner(stdout: string, status = 0): SpawnerHarness {
   return { spawner, calls };
 }
 
-const FAKE_BIN = '/fake/chat_cli';
+// A real on-disk path: bin resolution probes for existence. Never executed - spawners are injected.
+const FAKE_BIN = process.execPath;
 let originalBin: string | undefined;
 
 beforeEach(() => {

@@ -10,7 +10,7 @@
  * workspace build.
  *
  * Not for production use - production code reads `KIRO_CHAT_CLI_BIN`
- * directly via `requireChatCliBinFromEnv` in `src/utils/chat-cli-bin.ts`.
+ * directly via `resolveChatCliBinFromEnv` in `src/utils/chat-cli-bin.ts`.
  */
 
 import * as fs from 'node:fs';

@@ -20,7 +20,7 @@
 
 import { spawn } from 'node:child_process';
 
-import { requireChatCliBinFromEnv } from './chat-cli-bin';
+import { resolveChatCliBinFromEnv } from './chat-cli-bin';
 
 /** Engine that backs a session entry. */
 export type SessionSource = 'classic' | 'v2' | 'v3';
@@ -115,7 +115,7 @@ export async function listAllSessions(
 
   let bin: string;
   try {
-    bin = requireChatCliBinFromEnv();
+    bin = resolveChatCliBinFromEnv();
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
