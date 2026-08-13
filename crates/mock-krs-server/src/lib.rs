@@ -37,8 +37,8 @@
 //! # Failing loudly
 //!
 //! An unscripted request is an error, never a stubbed-out default. A default
-//! would let a mis-scripted test pass while asserting nothing, which is the
-//! failure mode a version-bump gate cannot afford.
+//! would let an incorrectly scripted test pass while asserting nothing. That is
+//! a failure mode a version-bump gate cannot afford.
 
 pub mod scenario;
 pub mod wire;
@@ -523,7 +523,7 @@ async fn generate_assistant_response(
             let queued = snapshot_state(&inner).await.queued_turns;
             inner.requests.lock().await.push(captured);
             // Deliberately fatal. See the module docs: a stubbed default here
-            // would turn a mis-scripted test into a passing one.
+            // would turn an incorrectly scripted test into a passing one.
             return Err(internal_error(format!(
                 "mock KRS has no scripted response for call {index} (user input: {input_text:?}); queued turns: {queued:?}"
             )));

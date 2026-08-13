@@ -240,9 +240,9 @@ with a message naming the call index, the user input and the turns still queued.
 mock KRS has no scripted response for call 1 (user input: "hello"); queued turns: []
 ```
 
-A default would let a mis-scripted test pass while asserting nothing, which is
-the failure mode a version-bump gate cannot afford. The unmatched request is
-still captured, so the test can show what was actually sent.
+A default would let an incorrectly scripted test pass while asserting nothing,
+which is the failure mode a version-bump gate cannot afford. The unmatched
+request is still captured, so the test can show what was actually sent.
 
 **A bearer token is always required**, even with no `--api-key`. KAS always
 sends one, so its absence is a wiring bug worth surfacing. A missing or wrong

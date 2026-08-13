@@ -8,7 +8,9 @@ extend-exclude = [
   "**/tests/",
   "**/*.test.*",
   "**/*.spec.*",
-  "**/fixtures/"
+  "**/fixtures/",
+  # Generated from an upstream model and overwritten on regeneration.
+  "crates/amzn-kiro-runtime-service-server-sdk/src/model.rs"
 ]
 
 [default]

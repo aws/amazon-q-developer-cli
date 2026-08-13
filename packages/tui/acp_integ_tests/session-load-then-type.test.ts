@@ -21,7 +21,7 @@ import type {
   LoadSessionResponse,
 } from '@agentclientprotocol/sdk';
 import { computeWorkspaceHash } from '@kiro/agent';
-import { AcpTestCase } from './shared/AcpTestCase';
+import { AcpTestCase } from '../src/test-utils/acp-mock/AcpTestCase';
 import { defaultKasModes } from './shared/default-agent';
 
 const SESSION_ID = 'load-then-type';
