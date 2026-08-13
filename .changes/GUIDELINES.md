@@ -27,6 +27,7 @@ See `.changes/VISIBILITY.md` for rules on what counts as user-facing vs internal
 6. Mention the specific feature or command affected
 7. No trailing period
 8. Wrap code references in backticks: slash commands (`/settings`), tool names (`fs_write`), settings (`chat.showThinking`), env vars (`KIRO_HOME`), flags (`--resume`)
+9. Prefix with `[V3]` only if the change exclusively affects V3 (KAS agent engine) features — e.g. specs, workflows, cloud sessions. Do NOT use `[V3]` for shared TUI changes that affect both V2 (Rust agent) and V3
 
 ## Good examples
 
