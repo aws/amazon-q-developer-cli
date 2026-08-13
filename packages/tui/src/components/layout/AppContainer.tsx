@@ -136,6 +136,7 @@ export const AppContainer: React.FC = () => {
   const pendingOAuthServers = useAppStore((state) => state.pendingOAuthServers);
   const agentEngine = useAppStore((state) => state.agentEngine);
   const showTransientAlert = useAppStore((state) => state.showTransientAlert);
+  const addSystemMessage = useAppStore((state) => state.addSystemMessage);
   const subagentPanelOpen = useAppStore((state) => state.subagentPanelOpen);
   const surveyPrompt = useAppStore((state) => state.surveyPrompt);
   const openSurveyPanel = useAppStore((state) => state.openSurveyPanel);
@@ -260,6 +261,7 @@ export const AppContainer: React.FC = () => {
           copyToClipboard: copyToSystemClipboard,
           showAlert: (message, status, autoHideMs) =>
             showTransientAlert({ message, status, autoHideMs }),
+          addSystemMessage,
         });
       },
       suspendProcess,

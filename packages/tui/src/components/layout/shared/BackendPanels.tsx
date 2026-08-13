@@ -226,6 +226,7 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
   const { contextUsagePercent, currentModel, currentAgent } = useContextState();
   const { kiro } = useKiroClient();
   const agentEngine = useAppStore((s) => s.agentEngine);
+  const addSystemMessage = useAppStore((s) => s.addSystemMessage);
   const cloudSessionActive = useAppStore((s) => s.cloudSessionActive);
   const cloudSnapshotReadiness = useAppStore((s) => s.cloudSnapshotReadiness);
   const supportsMcpCommandActions =
@@ -310,9 +311,16 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
         copyToClipboard: copyToSystemClipboard,
         showAlert: (message, status, autoHideMs) =>
           showTransientAlert({ message, status, autoHideMs }),
+        addSystemMessage,
       });
     },
-    [agentEngine, kiro, pendingOAuthServers, showTransientAlert]
+    [
+      addSystemMessage,
+      agentEngine,
+      kiro,
+      pendingOAuthServers,
+      showTransientAlert,
+    ]
   );
 
   // V2 owns the command-backed mutation surface. KAS exposes only its

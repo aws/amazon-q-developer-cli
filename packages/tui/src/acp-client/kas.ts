@@ -332,6 +332,7 @@ export interface KasAcpClientOptions {
   kasSubagentRoutingStore: KasSubagentRoutingStore;
   spawnProcess?: typeof spawn;
   stream?: Stream;
+  copyToClipboard?: (text: string) => boolean;
   initialAgent?: string;
   initialModel?: string;
   initialEffort?: string;
@@ -582,6 +583,16 @@ export class KasAcpClient extends BaseAcpClient {
           createUserInputCapability((request) =>
             this.handleUserInputRequest(request)
           ),
+          createCopyUrlToClipboardCapability(
+            options.copyToClipboard,
+            (message) =>
+              this.broadcastStreamEvent({
+                type: AgentEventType.SystemNotice,
+                message,
+                success: false,
+                persistent: true,
+              })
+          ),
         ],
         clientMeta: buildKasClientMeta(kasSettings),
       });
@@ -686,7 +697,14 @@ export class KasAcpClient extends BaseAcpClient {
         createUserInputCapability((request) =>
           this.handleUserInputRequest(request)
         ),
-        createCopyUrlToClipboardCapability(),
+        createCopyUrlToClipboardCapability(options.copyToClipboard, (message) =>
+          this.broadcastStreamEvent({
+            type: AgentEventType.SystemNotice,
+            message,
+            success: false,
+            persistent: true,
+          })
+        ),
         ...createSecretStorageCapabilities(),
       ],
       clientMeta: buildKasClientMeta(kasSettings),

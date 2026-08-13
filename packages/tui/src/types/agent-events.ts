@@ -827,6 +827,8 @@ export interface SystemNoticeEvent {
   type: AgentEventType.SystemNotice;
   message: string;
   success: boolean;
+  /** Keep security-relevant recovery details available in scrollback. */
+  persistent?: boolean;
 }
 
 export interface McpServerInitializedEvent {

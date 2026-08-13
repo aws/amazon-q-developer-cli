@@ -1396,6 +1396,7 @@ interface BaseAppActions {
   handleCompactionEvent: (event: AgentStreamEvent) => Promise<void>;
 
   // Chat actions
+  addSystemMessage: (message: string, success: boolean) => void;
   clearMessages: () => void;
   resetMessages: () => void;
   /**
@@ -5024,10 +5025,13 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             break;
           case AgentEventType.SystemNotice:
+            if (event.persistent) {
+              get().addSystemMessage(event.message, event.success);
+              break;
+            }
             // A transient status remark (e.g. a cloud mode revert), shown as an
             // auto-dismissing banner — the same pattern as the cloud-only
             // command refusals ("… is not available for a cloud session yet.").
-            // It is not persisted to chat history.
             get().showTransientAlert({
               message: event.message,
               status: event.success ? 'success' : 'error',
@@ -6576,6 +6580,20 @@ export const createAppStore = (props: AppStoreProps) => {
 
     setAutoApproveCrewTools: (value) => set({ autoApproveCrewTools: value }),
     setFocusedCrewIndex: (index) => set({ focusedCrewIndex: index }),
+
+    addSystemMessage: (content, success) => {
+      set((state) => ({
+        messages: [
+          ...state.messages,
+          {
+            id: generateMessageId(),
+            role: MessageRole.System,
+            content,
+            success,
+          },
+        ],
+      }));
+    },
 
     // Keeps last turn visible for /clear
     clearMessages: () => {

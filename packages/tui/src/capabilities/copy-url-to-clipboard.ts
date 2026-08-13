@@ -16,6 +16,7 @@
 
 import type { ClientCapability } from '@kiro/acp-type-covenant';
 import { copyToSystemClipboard } from '../commands/effects.js';
+import { formatOAuthUrlFallback } from '../utils/mcp-oauth.js';
 import { logger } from '../utils/logger.js';
 
 /** Wire method name KAS uses; kept verbatim as the protocol contract. */
@@ -42,13 +43,15 @@ export interface CopyUrlToClipboardResponse {
  */
 function handleCopyUrlToClipboard(
   request: CopyUrlToClipboardRequest,
-  copyToClipboard: (text: string) => boolean
+  copyToClipboard: (text: string) => boolean,
+  onCopyFailure: (message: string) => void
 ): CopyUrlToClipboardResponse {
   const success = copyToClipboard(request.url);
   if (success) {
     logger.info('[copy-url] Copied URL to clipboard');
   } else {
     logger.warn('[copy-url] Failed to copy URL — no clipboard tool found');
+    onCopyFailure(formatOAuthUrlFallback(request.url));
   }
   return { success };
 }
@@ -59,7 +62,8 @@ function handleCopyUrlToClipboard(
  * the clipboard instead of launching a browser.
  */
 export function createCopyUrlToClipboardCapability(
-  copyToClipboard: (text: string) => boolean = copyToSystemClipboard
+  copyToClipboard: (text: string) => boolean = copyToSystemClipboard,
+  onCopyFailure: (message: string) => void = () => {}
 ): ClientCapability<
   typeof OPEN_EXTERNAL_URL_METHOD,
   CopyUrlToClipboardRequest,
@@ -71,6 +75,6 @@ export function createCopyUrlToClipboardCapability(
     value: true,
     method: OPEN_EXTERNAL_URL_METHOD,
     handler: async (request: CopyUrlToClipboardRequest) =>
-      handleCopyUrlToClipboard(request, copyToClipboard),
+      handleCopyUrlToClipboard(request, copyToClipboard, onCopyFailure),
   };
 }

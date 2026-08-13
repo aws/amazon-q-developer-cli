@@ -1404,6 +1404,27 @@ describe('Stream event handler — SystemNotice', () => {
     });
     expect(store.getState().transientAlert?.status).toBe('success');
   });
+
+  it('adds a persistent notice as one selectable system row', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    const message =
+      'Clipboard copy failed. Open this session-specific OAuth URL manually; do not share it:\nhttps://example.com/oauth?state=sensitive';
+
+    handler({
+      type: AgentEventType.SystemNotice,
+      message,
+      success: false,
+      persistent: true,
+    });
+
+    expect(store.getState().transientAlert).toBeNull();
+    expect(
+      store
+        .getState()
+        .messages.filter((item: any) => item.role === MessageRole.System)
+    ).toEqual([expect.objectContaining({ content: message, success: false })]);
+  });
 });
 
 describe('Stream event handler — AgentNotFound', () => {

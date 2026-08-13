@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "MCP OAuth displays the authorization URL when clipboard copying fails"
+}

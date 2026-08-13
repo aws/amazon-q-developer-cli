@@ -15,22 +15,35 @@ describe('copy-url-to-clipboard capability', () => {
     expect(cap.key).toBe('openExternalUrl');
   });
 
-  it('copies the URL to the clipboard and reports success', async () => {
+  it('copies the URL without invoking the fallback and reports success', async () => {
     const copyToClipboard = mock(() => true);
-    const cap = createCopyUrlToClipboardCapability(copyToClipboard);
+    const onCopyFailure = mock(() => {});
+    const cap = createCopyUrlToClipboardCapability(
+      copyToClipboard,
+      onCopyFailure
+    );
 
     const res = (await cap.handler({ url: URL })) as CopyUrlToClipboardResponse;
 
     expect(copyToClipboard).toHaveBeenCalledWith(URL);
+    expect(onCopyFailure).not.toHaveBeenCalled();
     expect(res.success).toBe(true);
   });
 
-  it('reports failure when the clipboard copy fails', async () => {
+  it('invokes one sensitive-URL fallback and reports failure', async () => {
     const copyToClipboard = mock(() => false);
-    const cap = createCopyUrlToClipboardCapability(copyToClipboard);
+    const onCopyFailure = mock(() => {});
+    const cap = createCopyUrlToClipboardCapability(
+      copyToClipboard,
+      onCopyFailure
+    );
 
     const res = (await cap.handler({ url: URL })) as CopyUrlToClipboardResponse;
 
+    expect(onCopyFailure).toHaveBeenCalledTimes(1);
+    expect(onCopyFailure).toHaveBeenCalledWith(
+      `Clipboard copy failed. Open this session-specific OAuth URL manually; do not share it:\n${URL}`
+    );
     expect(res.success).toBe(false);
   });
 });

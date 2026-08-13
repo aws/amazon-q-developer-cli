@@ -816,6 +816,32 @@ describe('KasAcpClient', () => {
     });
   });
 
+  it('registers OAuth copy failure as one persistent system notice', async () => {
+    const copyToClipboard = mock(() => false);
+    const client = new KasAcpClient({ copyToClipboard });
+    const events: AgentStreamEvent[] = [];
+    client.onUpdate((event) => events.push(event));
+    const capability = capturedKiroClientConfig.capabilities.find(
+      (item: any) => item.method === '_kiro/openExternalUrl'
+    );
+    const url = 'https://example.com/oauth?state=sensitive';
+
+    const response = await capability.handler({ url });
+
+    expect(copyToClipboard).toHaveBeenCalledWith(url);
+    expect(response).toEqual({ success: false });
+    expect(events).toEqual([
+      {
+        type: AgentEventType.SystemNotice,
+        message:
+          'Clipboard copy failed. Open this session-specific OAuth URL manually; do not share it:\n' +
+          url,
+        success: false,
+        persistent: true,
+      },
+    ]);
+  });
+
   it('close() calls kill("SIGTERM") on the agent process', () => {
     const client = new KasAcpClient();
     client.close();

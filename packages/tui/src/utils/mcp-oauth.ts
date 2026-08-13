@@ -17,6 +17,11 @@ export interface McpOAuthActionDeps {
     status: 'info' | 'error',
     autoHideMs: number
   ) => void;
+  addSystemMessage: (message: string, success: boolean) => void;
+}
+
+export function formatOAuthUrlFallback(url: string): string {
+  return `Clipboard copy failed. Open this session-specific OAuth URL manually; do not share it:\n${url}`;
 }
 
 /** Shown when the OAuth URL is (or will be) on the clipboard. */
@@ -44,6 +49,7 @@ export function startMcpOAuth(deps: McpOAuthActionDeps): void {
     resetMcpServer,
     copyToClipboard,
     showAlert,
+    addSystemMessage,
   } = deps;
 
   if (!serverName) return;
@@ -56,9 +62,19 @@ export function startMcpOAuth(deps: McpOAuthActionDeps): void {
     return;
   }
 
-  if (url && copyToClipboard(url)) {
+  if (!url) {
+    showAlert(
+      'Failed to copy OAuth URL — no clipboard tool found',
+      'error',
+      5000
+    );
+    return;
+  }
+
+  if (copyToClipboard(url)) {
     showAlert(URL_COPIED_MESSAGE, 'info', 3000);
   } else {
+    addSystemMessage(formatOAuthUrlFallback(url), false);
     showAlert(
       'Failed to copy OAuth URL — no clipboard tool found',
       'error',
