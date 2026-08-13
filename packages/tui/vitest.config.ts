@@ -10,18 +10,28 @@
  * correctly attributes those hits. We therefore run hook and selector tests
  * under vitest while keeping all other unit tests under bun:test.
  */
-import { defineConfig } from "vitest/config";
+import { defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // The Node runtime cannot resolve bun:sqlite; the suites here never
+      // open the index, they only load modules that import it transitively.
+      'bun:sqlite': fileURLToPath(
+        new URL('./src/test-utils/bun-sqlite-stub.ts', import.meta.url)
+      ),
+    },
+  },
   test: {
-    include: ["src/**/*.vitest.{ts,tsx}"],
+    include: ['src/**/*.vitest.{ts,tsx}'],
     passWithNoTests: true,
-    environment: "node",
+    environment: 'node',
     coverage: {
-      provider: "v8",
-      reportsDirectory: "./coverage/vitest",
-      reporter: ["text", "lcov"],
-      include: ["src/hooks/**", "src/stores/selectors.ts"],
+      provider: 'v8',
+      reportsDirectory: './coverage/vitest',
+      reporter: ['text', 'lcov'],
+      include: ['src/hooks/**', 'src/stores/selectors.ts'],
     },
   },
 });
