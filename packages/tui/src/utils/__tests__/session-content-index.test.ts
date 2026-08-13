@@ -121,8 +121,11 @@ describe('session-content-index', () => {
 
     const fractional = {
       ...ref('frac'),
-      mtimeMs: statSync(p).mtimeMs + 0.6318,
-      ctimeMs: statSync(p).ctimeMs + 0.2077,
+      // Floor before adding: on ext4 the stat float already carries a
+      // fraction, and adding to it could cross into the next whole ms —
+      // which would make the row genuinely dirty.
+      mtimeMs: Math.floor(statSync(p).mtimeMs) + 0.6318,
+      ctimeMs: Math.floor(statSync(p).ctimeMs) + 0.2077,
     };
     expect(reconcile(handle, [fractional]).updated).toBe(0);
   });
