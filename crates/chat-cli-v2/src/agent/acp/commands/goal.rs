@@ -39,9 +39,15 @@ fn handle_set_goal(input: &str) -> CommandResult {
     let args = shell_split(input);
     let mut max: u32 = 5;
 
-    // Only parse --max if it's the second-to-last token (avoids eating
-    // "--max" that appears inside the description, e.g. "fix the --max flag").
+    // Parse "--max N" only at the start or end of the input, so a "--max"
+    // inside the description (e.g. "fix the --max flag") stays literal text.
     let desc_args = if args.len() >= 2
+        && args[0] == "--max"
+        && let Ok(n) = args[1].parse::<u32>()
+    {
+        max = n;
+        &args[2..]
+    } else if args.len() >= 2
         && args[args.len() - 2] == "--max"
         && let Ok(n) = args[args.len() - 1].parse::<u32>()
     {
@@ -124,6 +130,34 @@ mod tests {
         let data = result.data.unwrap();
         assert_eq!(data["definition"]["description"], "fix all tests");
         assert_eq!(data["definition"]["max_iterations"], 10);
+    }
+
+    #[test]
+    fn leading_max_flag() {
+        let result = handle_set_goal("--max 10 migrate the entire test suite from Jest to Vitest");
+        assert!(result.data.is_some());
+        let data = result.data.unwrap();
+        assert_eq!(
+            data["definition"]["description"],
+            "migrate the entire test suite from Jest to Vitest"
+        );
+        assert_eq!(data["definition"]["max_iterations"], 10);
+    }
+
+    #[test]
+    fn leading_max_without_number_is_part_of_description() {
+        let result = handle_set_goal("--max flag support for the parser");
+        assert!(result.data.is_some());
+        let data = result.data.unwrap();
+        assert_eq!(data["definition"]["description"], "--max flag support for the parser");
+        assert_eq!(data["definition"]["max_iterations"], 5); // default
+    }
+
+    #[test]
+    fn leading_max_zero_returns_error() {
+        let result = handle_set_goal("--max 0 do thing");
+        assert!(!result.success);
+        assert!(result.message.contains("at least 1"));
     }
 
     #[test]

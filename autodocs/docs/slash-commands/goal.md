@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2026-06-09
-  commit: 10bd54a2a
+  validated: 2026-08-13
+  commit: bd40cd7f2
   status: validated
   testable_headless: true
   category: slash_command
@@ -23,18 +23,22 @@ The `/goal` command starts a goal-driven loop where the agent works autonomously
 
 ```
 /goal <description> [--max <N>]
+/goal [--max <N>] <description>
 /goal clear
 ```
 
 - `description` — What you want accomplished (max 4,000 characters)
-- `--max <N>` — Maximum iterations before stopping (default: 5, ceiling: 50)
+- `--max <N>` — Maximum iterations before stopping (default: 5, ceiling: 50). Can appear at the start or end of the command.
 - `clear` — Cancel the active goal
+
+The `--max` flag is only recognized at the start or end of the input. If `--max` appears in the middle of your description (e.g., "fix the --max flag"), it is treated as literal text.
 
 ## Examples
 
 ```
 /goal implement pagination for the /users endpoint
 /goal fix all failing tests in the auth module --max 15
+/goal --max 10 migrate the entire test suite from Jest to Vitest
 /goal clear
 ```
 

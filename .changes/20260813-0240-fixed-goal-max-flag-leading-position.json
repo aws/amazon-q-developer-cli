@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "`/goal` now accepts `--max` N before the description, matching the documented example"
+}
