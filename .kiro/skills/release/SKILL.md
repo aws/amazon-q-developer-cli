@@ -99,12 +99,18 @@ Before starting the release, compute the changelog to decide the version number.
    minor even with a low `added` count, and two trivial adds can stay a patch — so the count
    never decides on its own.
 
-5. **Present to the operator and let them assess complexity — don't proceed on the heuristic alone.**
-   Show the full fragment list (type + description) with the suggested bump, then ask the operator
-   to confirm or override:
+5. **Independently sanity-check the operator's version — do not silently accept an inconsistent choice.**
+   Compare the proposed version with the latest stable version, the selected base tag, and the full
+   customer-facing changelog. Push back when the semantic bump does not match the release scope —
+   for example, a minor bump containing only fixes and small behavior changes, or a patch containing
+   a substantial new capability. Explain the conflicting evidence and recommend a concrete version.
+   Do not create branches, tags, or tickets until the operator explicitly resolves the mismatch.
+
+   Then show the full fragment list (type + description), the heuristic, and the independent assessment:
    > Heuristic suggests **`<minor|patch>`** → `<version>` (from `<N>` `added` fragments).
    > Full changelog (`<M>` fragments): `<type: description list>`
-   > Does the complexity/risk match, or should we adjust? Please confirm the version.
+   > Independent assessment: `<why the proposed version does or does not fit the scope>`.
+   > Recommended version: `<version>`. Please confirm or explain why a different bump is warranted.
 
 6. **Ask the operator for the target deploy date.** Ask when they intend to deploy this release, as `YYYY-MM-DD`, and record it as `<deploy_date>`. It is used as the `date` field of the release entry when writing `feed.json` in Step 2 (instead of "today"). If they don't have a firm date yet, default to today and note that the feed.json date can be updated when Step 2 runs.
 
