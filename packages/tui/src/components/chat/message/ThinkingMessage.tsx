@@ -13,6 +13,7 @@ import { getComfortMessage } from './comfort-messages.js';
 import { useThinkingTip } from './useThinkingTip.js';
 import { Settings } from '../../../constants/settings.js';
 import { readBoolSetting } from '../../../utils/cli-settings.js';
+import { getTerminalChalkColor } from '../../../utils/colorUtils.js';
 
 interface ThinkingMessageProps {
   barColor?: string;
@@ -43,9 +44,14 @@ export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
   noBar,
 }) => {
   const { getColor } = useTheme();
-  const secondaryColor = getColor('secondary');
   const dim = getColor('muted');
   const warning = getColor('warning');
+  // Match the spinner's color: the active agent's bar color when one is set,
+  // falling back to brand — same fallback StatusBar itself uses for the
+  // spinner icon (and what ThinkingDisplay uses for its live title).
+  const titleColor = barColor
+    ? getTerminalChalkColor({ truecolor: barColor })
+    : getColor('brand');
   const keybindings = useKeybindings();
   const retryStatus = useAppStore((s) => s.retryStatus);
   const { thinkingMode } = useThinkingMode();
@@ -90,7 +96,7 @@ export const ThinkingMessage: React.FC<ThinkingMessageProps> = ({
     <Box flexDirection="column">
       <StatusBar status="thinking" barColor={barColor} noBar={noBar}>
         <Text>
-          {secondaryColor(message)}
+          {titleColor(message)}
           {dim(` (${keybindings.label('cancelStream')} to cancel)`)}
           {retryStatus && (
             <>
