@@ -111,6 +111,22 @@ describe('session-content-index', () => {
     expect(handle.mode).toBe('content');
   });
 
+  it('treats sub-millisecond stat fractions as clean (Linux ext4 floats)', () => {
+    // Marks persist whole ms; on filesystems with sub-ms timestamps the
+    // caller's stat floats carry a fraction. A fractional ref for unchanged
+    // content must NOT read as dirty, or every reconcile re-reads every row.
+    const p = join(dir, 'frac.jsonl');
+    writeFileSync(p, v2Line('fractional timestamp prompt'));
+    reconcile(handle, [ref('frac')]);
+
+    const fractional = {
+      ...ref('frac'),
+      mtimeMs: statSync(p).mtimeMs + 0.6318,
+      ctimeMs: statSync(p).ctimeMs + 0.2077,
+    };
+    expect(reconcile(handle, [fractional]).updated).toBe(0);
+  });
+
   it('opens a symlinked index path as titles-only without mutating its target', () => {
     const target = join(dir, 'target.db');
     const link = join(dir, 'linked.db');

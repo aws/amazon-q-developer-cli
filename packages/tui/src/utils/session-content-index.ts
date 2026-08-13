@@ -596,11 +596,15 @@ export function createReconcileState(
     if (ref.transcriptState === 'unknown') continue;
     const mark = currentMarks.get(ref.id);
     const titleHash = ref.titleHash ?? Bun.hash(ref.title).toString(36);
+    // Marks persist whole milliseconds (truncated from the indexer's ns
+    // stat), while callers pass stat floats that keep a sub-ms fraction on
+    // some filesystems (Linux ext4). Compare in whole ms or such rows would
+    // read as perpetually dirty and be re-read on every reconcile.
     if (
       !mark ||
-      mark.mtimeMs !== ref.mtimeMs ||
+      Math.floor(mark.mtimeMs) !== Math.floor(ref.mtimeMs) ||
       mark.size !== (ref.size ?? mark.size) ||
-      mark.ctimeMs !== (ref.ctimeMs ?? mark.ctimeMs) ||
+      Math.floor(mark.ctimeMs) !== Math.floor(ref.ctimeMs ?? mark.ctimeMs) ||
       mark.titleHash !== titleHash
     ) {
       work.push({ ref: { ...ref, titleHash }, mark });
@@ -961,10 +965,10 @@ export function reconcile(
         pending.completeEnd > 0 ? Bun.hash(pending.tail).toString(36) : '';
       const mtimeMs = pending.identity
         ? nanosecondsToMilliseconds(pending.identity.mtimeNs)
-        : pending.ref.mtimeMs;
+        : Math.floor(pending.ref.mtimeMs);
       const ctimeMs = pending.identity
         ? nanosecondsToMilliseconds(pending.identity.ctimeNs)
-        : (pending.ref.ctimeMs ?? 0);
+        : Math.floor(pending.ref.ctimeMs ?? 0);
       const titleHash =
         pending.ref.titleHash ?? Bun.hash(pending.ref.title).toString(36);
       const parseComplete =

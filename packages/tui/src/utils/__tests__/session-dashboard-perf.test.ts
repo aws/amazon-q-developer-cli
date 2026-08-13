@@ -171,7 +171,10 @@ describe('event-loop responsiveness during a cold index build', () => {
         probing = false;
         await probe;
 
-        expect(worstGap).toBeLessThan(300);
+        // Generous for loaded CI runners (observed ~430ms of scheduler noise
+        // on shared 4-core hosts). The regression this guards — a slice
+        // budget bug or hot retry loop — stalls for multiple seconds.
+        expect(worstGap).toBeLessThan(800);
       } finally {
         index.close();
       }
