@@ -6213,13 +6213,18 @@ describe('mcp command (push model)', () => {
           },
         },
       };
-      // Two pushes with a cloud descriptor: the adoption counter fires once.
+      // A descriptor push delivered on the creating session's downlink
+      // BEFORE the session/new response reports its id (mid-create window),
+      // then a repeat push after: one adoption count, keyed to the session.
+      (client as any).createInFlight = true;
       (client as any).handleMcpStatusNotification({
-        sessionId: 'kas-session-1',
+        sessionId: 'kas-session-2',
         servers: [cloudServer],
       });
+      (client as any).createInFlight = false;
+      (client as any).sessionId = 'kas-session-2';
       (client as any).handleMcpStatusNotification({
-        sessionId: 'kas-session-1',
+        sessionId: 'kas-session-2',
         servers: [cloudServer],
       });
       expect(mockRecordTuiCloudConfigSource).toHaveBeenCalledTimes(1);
@@ -6230,17 +6235,19 @@ describe('mcp command (push model)', () => {
       // A placement-fallback 'cloud' (no descriptor) must NOT count.
       mockRecordTuiCloudConfigSource.mockClear();
       (client as any).startedCloudSession = true;
-      (client as any).cloudConfigSourceSeen.clear();
       (client as any).handleMcpStatusNotification({
-        sessionId: 'kas-session-1',
+        sessionId: 'kas-session-2',
         servers: [{ name: 'plain', status: 'connected', tools: [] }],
       });
       expect(mockRecordTuiCloudConfigSource).not.toHaveBeenCalled();
 
-      // A new session clears the dedupe so the next observation counts again.
-      (client as any).cloudConfigSourceSeen.add('mcp');
-      await client.newSession();
-      expect((client as any).cloudConfigSourceSeen.size).toBe(0);
+      // A DIFFERENT session observing cloud config counts on its own key.
+      (client as any).sessionId = 'kas-session-3';
+      (client as any).handleMcpStatusNotification({
+        sessionId: 'kas-session-3',
+        servers: [cloudServer],
+      });
+      expect(mockRecordTuiCloudConfigSource).toHaveBeenCalledTimes(1);
     } finally {
       if (original === undefined) delete process.env.KIRO_ENABLED_FEATURES;
       else process.env.KIRO_ENABLED_FEATURES = original;

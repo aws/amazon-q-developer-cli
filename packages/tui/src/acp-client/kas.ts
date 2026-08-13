@@ -440,19 +440,28 @@ export class KasAcpClient extends BaseAcpClient {
    */
   private startedCloudSession = false;
   /**
-   * Surfaces that already counted a cloud-sourced config observation for the
-   * active session — the adoption counter fires once per session per surface.
+   * Session-scoped dedupe keys (`<sessionId>:<surface>`) that already counted
+   * a cloud-sourced config observation — the adoption counter fires once per
+   * session per surface. Keyed by the push's own session tag (falling back to
+   * the switch-target/active session) rather than cleared on switch, so a
+   * mid-create push and a post-create repeat for the same session count once.
    */
-  private cloudConfigSourceSeen = new Set<ConfigSurface>();
+  private cloudConfigSourceSeen = new Set<string>();
 
   /**
-   * Count a cloud-sourced config observation for the active session. Only
-   * descriptor-derived cloud sources count (never the session-placement
-   * fallback), so the metric measures actual cloud config delivery.
+   * Count a cloud-sourced config observation. Only descriptor-derived cloud
+   * sources count (never the session-placement fallback), so the metric
+   * measures actual cloud config delivery.
    */
-  private markCloudConfigSource(surface: ConfigSurface): void {
-    if (this.cloudConfigSourceSeen.has(surface)) return;
-    this.cloudConfigSourceSeen.add(surface);
+  private markCloudConfigSource(
+    surface: ConfigSurface,
+    sessionId?: string
+  ): void {
+    const session =
+      sessionId ?? this.loadTargetSessionId ?? this.sessionId ?? 'pending';
+    const key = `${session}:${surface}`;
+    if (this.cloudConfigSourceSeen.has(key)) return;
+    this.cloudConfigSourceSeen.add(key);
     recordTuiCloudConfigSource({ surface, version: this.version });
   }
 
@@ -1189,7 +1198,7 @@ export class KasAcpClient extends BaseAcpClient {
         // incoming session's panel state.
         if (this.isOutgoingSessionPush(sessionId)) return;
         const rawHooks = Array.isArray(params.hooks) ? params.hooks : [];
-        const hooks = this.projectHooks(rawHooks);
+        const hooks = this.projectHooks(rawHooks, sessionId);
         this.broadcastStreamEvent({
           type: AgentEventType.HooksUpdate,
           hooks,
@@ -1238,7 +1247,8 @@ export class KasAcpClient extends BaseAcpClient {
             const configSource = readDescriptor
               ? configResourceSource(p)
               : undefined;
-            if (configSource === 'cloud') this.markCloudConfigSource('powers');
+            if (configSource === 'cloud')
+              this.markCloudConfigSource('powers', sessionId);
             return [
               {
                 name: power.name,
@@ -1304,7 +1314,7 @@ export class KasAcpClient extends BaseAcpClient {
               ? configResourceSource(d)
               : undefined;
             if (configSource === 'cloud')
-              this.markCloudConfigSource('steering');
+              this.markCloudConfigSource('steering', sessionId);
             return [
               {
                 name: doc.name,
@@ -1733,7 +1743,6 @@ export class KasAcpClient extends BaseAcpClient {
     }
     const sid = r.sessionId;
     this.sessionId = sid;
-    this.cloudConfigSourceSeen.clear();
     logger.debug('KAS session created', { sessionId: sid });
 
     // KAS validates each requested repository against the FULL provider
@@ -1925,7 +1934,6 @@ export class KasAcpClient extends BaseAcpClient {
     replayPermissionSubscription.dispose();
     this.loadTargetSessionId = null;
     this.sessionId = sessionId;
-    this.cloudConfigSourceSeen.clear();
     this.wireSessionListeners(sessionId);
     for (const notification of replayedNotifications) {
       try {
@@ -2431,7 +2439,8 @@ export class KasAcpClient extends BaseAcpClient {
         enabled?: boolean;
         [key: string]: unknown;
       };
-    }>
+    }>,
+    sessionId?: string
   ): HooksUpdateEvent['hooks'] {
     return rawHooks.map((h) => {
       const trigger = h._meta?.trigger ?? h.trigger ?? 'unknown';
@@ -2448,7 +2457,8 @@ export class KasAcpClient extends BaseAcpClient {
       const configSource = features.isEnabled(Feature.CloudConfig)
         ? configResourceSource(h)
         : undefined;
-      if (configSource === 'cloud') this.markCloudConfigSource('hooks');
+      if (configSource === 'cloud')
+        this.markCloudConfigSource('hooks', sessionId);
       return {
         ...(h.name ? { name: h.name } : {}),
         trigger,
@@ -2714,6 +2724,7 @@ export class KasAcpClient extends BaseAcpClient {
     params: Record<string, unknown>,
     sessionTagged = false
   ): void {
+    const mcpPushSessionId = params.sessionId as string | undefined;
     const servers = params.servers as
       | Array<{
           name: string;
@@ -2766,7 +2777,8 @@ export class KasAcpClient extends BaseAcpClient {
       const descriptorSource = readDescriptor
         ? configResourceSource(server)
         : undefined;
-      if (descriptorSource === 'cloud') this.markCloudConfigSource('mcp');
+      if (descriptorSource === 'cloud')
+        this.markCloudConfigSource('mcp', mcpPushSessionId);
 
       return {
         name: server.name,

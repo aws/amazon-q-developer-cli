@@ -16,6 +16,13 @@ import type { SlashCommand } from '../../stores/app-store';
 import { createMockCommandContext } from './test-helpers.js';
 import { features } from '../../features';
 
+const actualObserver = await import('../../utils/tui-telemetry-observer');
+const mockRecordTuiConfigPanel = mock((_a: unknown) => {});
+mock.module('../../utils/tui-telemetry-observer', () => ({
+  ...actualObserver,
+  recordTuiConfigPanel: mockRecordTuiConfigPanel,
+}));
+
 const configCmd: SlashCommand = {
   name: '/config',
   description:
@@ -35,6 +42,7 @@ function setFeatures(json: string | undefined) {
 describe('/config command', () => {
   beforeEach(() => {
     setFeatures('["cloud_config"]');
+    mockRecordTuiConfigPanel.mockClear();
   });
 
   afterEach(() => {
@@ -301,5 +309,35 @@ describe('/config command', () => {
     await dispatch(configCmd, 'bogus', ctx);
     expect((ctx as any)._spies.setShowConfigPanel).not.toHaveBeenCalled();
     expect((ctx as any)._spies.showAlert).toHaveBeenCalled();
+  });
+
+  it('a rejected V2 /config mcp RPC counts no panel view', async () => {
+    const ctx = createMockCommandContext({
+      slashCommands: [configCmd],
+      agentEngine: 'v2',
+    } as any);
+    (ctx.kiro as any).executeCommand = mock(() =>
+      Promise.reject(new Error('backend gone'))
+    );
+    await dispatch(configCmd, 'mcp', ctx);
+    expect((ctx as any)._spies.setShowMcpPanel).not.toHaveBeenCalled();
+    expect(mockRecordTuiConfigPanel).not.toHaveBeenCalled();
+  });
+
+  it('a successful V2 /config mcp counts exactly one mcp view', async () => {
+    const ctx = createMockCommandContext({
+      slashCommands: [configCmd],
+      agentEngine: 'v2',
+    } as any);
+    (ctx.kiro as any).executeCommand = mock(() =>
+      Promise.resolve({ data: { servers: [], mode: 'list' } })
+    );
+    await dispatch(configCmd, 'mcp', ctx);
+    expect((ctx as any)._spies.setShowMcpPanel).toHaveBeenCalled();
+    expect(mockRecordTuiConfigPanel).toHaveBeenCalledTimes(1);
+    expect(mockRecordTuiConfigPanel.mock.calls[0]?.[0]).toMatchObject({
+      category: 'mcp',
+      engine: 'v2',
+    });
   });
 });
