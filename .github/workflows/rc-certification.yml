@@ -1,0 +1,695 @@
+name: RC Certification
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '.changes/**'
+      - 'scripts/testing-cert-status/**'
+      - '*.md'
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      run_smoke:
+        description: Run the broad smoke lane
+        type: boolean
+        default: true
+      run_scenarios:
+        description: Run scenario categories in parallel
+        type: boolean
+        default: false
+      run_visual:
+        description: Run visual story certification
+        type: boolean
+        default: false
+      live_engine:
+        description: Optional live smoke engine lane
+        type: choice
+        default: none
+        options:
+          - none
+          - v2
+          - kas
+          - both
+      smoke_priority:
+        description: Smoke priority filter
+        type: choice
+        default: all
+        options:
+          - p0
+          - all
+      scenario_category:
+        description: Optional single scenario category shard
+        type: string
+        default: ''
+      scenario_tag:
+        description: Optional scenario tag filter for manual scenario runs
+        type: string
+        default: ''
+      visual_suite:
+        description: Storybook certification suite
+        type: string
+        default: workflow-monitor
+      scenario_runner_retries:
+        description: Retries inside the scenario runner for failed scenarios
+        type: choice
+        default: '1'
+        options:
+          - '0'
+          - '1'
+          - '2'
+      lane_attempts:
+        description: Full lane attempts for flaky workflow steps
+        type: choice
+        default: '2'
+        options:
+          - '1'
+          - '2'
+          - '3'
+      lane_retry_delay_seconds:
+        description: Delay between full lane retry attempts
+        type: choice
+        default: '15'
+        options:
+          - '5'
+          - '15'
+          - '30'
+
+concurrency:
+  group: rc-certification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  CI: '1'
+  TERM: xterm-256color
+  COLORTERM: truecolor
+  FORCE_COLOR: '3'
+
+jobs:
+  resolve:
+    name: Resolve Verification Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      run_smoke: ${{ steps.resolve.outputs.run_smoke }}
+      run_scenarios: ${{ steps.resolve.outputs.run_scenarios }}
+      run_visual: ${{ steps.resolve.outputs.run_visual }}
+      live_engines: ${{ steps.resolve.outputs.live_engines }}
+      smoke_priority: ${{ steps.resolve.outputs.smoke_priority }}
+      visual_suite: ${{ steps.resolve.outputs.visual_suite }}
+      scenario_categories: ${{ steps.resolve.outputs.scenario_categories }}
+      scenario_tag: ${{ steps.resolve.outputs.scenario_tag }}
+      scenario_runner_retries: ${{ steps.resolve.outputs.scenario_runner_retries }}
+      lane_attempts: ${{ steps.resolve.outputs.lane_attempts }}
+      lane_retry_delay_seconds: ${{ steps.resolve.outputs.lane_retry_delay_seconds }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - id: resolve
+        shell: bash
+        env:
+          SCENARIO_CATEGORY: ${{ inputs.scenario_category }}
+          SCENARIO_TAG: ${{ inputs.scenario_tag }}
+          VISUAL_SUITE: ${{ inputs.visual_suite }}
+          LIVE_ENGINE: ${{ inputs.live_engine }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if [ "${{ github.event.pull_request.head.repo.fork || false }}" = "true" ]; then
+              echo "run_smoke=false" >> "$GITHUB_OUTPUT"
+              echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
+              echo "run_visual=false" >> "$GITHUB_OUTPUT"
+              echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
+              echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
+              echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+              echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
+              echo "scenario_tag=" >> "$GITHUB_OUTPUT"
+              echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
+              echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+              echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "run_smoke=true" >> "$GITHUB_OUTPUT"
+            echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
+            echo "run_visual=false" >> "$GITHUB_OUTPUT"
+            echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
+            echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
+            echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+            echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
+            echo "scenario_tag=" >> "$GITHUB_OUTPUT"
+            echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
+            echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+            echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "run_smoke=true" >> "$GITHUB_OUTPUT"
+            echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
+            echo "run_visual=false" >> "$GITHUB_OUTPUT"
+            echo 'live_engines=["v2","kas"]' >> "$GITHUB_OUTPUT"
+            echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
+            echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+            echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
+            echo "scenario_tag=" >> "$GITHUB_OUTPUT"
+            echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
+            echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+            echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$LIVE_ENGINE" in
+            none)
+              LIVE_ENGINES='[]'
+              ;;
+            v2)
+              LIVE_ENGINES='["v2"]'
+              ;;
+            kas)
+              LIVE_ENGINES='["kas"]'
+              ;;
+            both)
+              LIVE_ENGINES='["v2","kas"]'
+              ;;
+            *)
+              echo "Unsupported live_engine input: $LIVE_ENGINE" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "${{ inputs.run_smoke }}" != "true" ] && [ "${{ inputs.run_scenarios }}" != "true" ] && [ "${{ inputs.run_visual }}" != "true" ] && [ "$LIVE_ENGINES" = '[]' ]; then
+            echo "Select at least one verification lane or live engine to run." >&2
+            exit 1
+          fi
+
+          echo "live_engines=$LIVE_ENGINES" >> "$GITHUB_OUTPUT"
+          ARGS=(--backend acp-mock --engine kas)
+          if [ -n "$SCENARIO_CATEGORY" ]; then
+            ARGS+=(--category "$SCENARIO_CATEGORY")
+          fi
+          if [ -n "$SCENARIO_TAG" ]; then
+            ARGS+=(--tag "$SCENARIO_TAG")
+          fi
+          SCENARIO_CATEGORIES="$(bun packages/tui/e2e_tests/verification/list-scenario-categories.ts "${ARGS[@]}")"
+
+          echo "run_smoke=${{ inputs.run_smoke }}" >> "$GITHUB_OUTPUT"
+          echo "run_scenarios=${{ inputs.run_scenarios }}" >> "$GITHUB_OUTPUT"
+          echo "run_visual=${{ inputs.run_visual }}" >> "$GITHUB_OUTPUT"
+          echo "smoke_priority=${{ inputs.smoke_priority }}" >> "$GITHUB_OUTPUT"
+          echo "visual_suite=$VISUAL_SUITE" >> "$GITHUB_OUTPUT"
+          echo "scenario_categories=$SCENARIO_CATEGORIES" >> "$GITHUB_OUTPUT"
+          echo "scenario_tag=$SCENARIO_TAG" >> "$GITHUB_OUTPUT"
+          echo "scenario_runner_retries=${{ inputs.scenario_runner_retries }}" >> "$GITHUB_OUTPUT"
+          echo "lane_attempts=${{ inputs.lane_attempts }}" >> "$GITHUB_OUTPUT"
+          echo "lane_retry_delay_seconds=${{ inputs.lane_retry_delay_seconds }}" >> "$GITHUB_OUTPUT"
+
+  build-assets:
+    name: Build Verification Assets (${{ matrix.os }})
+    needs: resolve
+    if: needs.resolve.outputs.run_smoke == 'true' || needs.resolve.outputs.run_scenarios == 'true' || needs.resolve.outputs.run_visual == 'true' || needs.resolve.outputs.live_engines != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux
+            binary_path: target/release/chat_cli
+          - os: macos-latest
+            artifact_suffix: macos
+            binary_path: target/release/chat_cli
+          - os: windows-x64-latest-16-cores
+            artifact_suffix: windows
+            binary_path: target/release/chat_cli.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: 'v0.16.0'
+
+      - name: Set Rust compiler wrapper
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-rc-certification-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-rc-certification-${{ runner.os }}-
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build chat_cli
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo build -p chat_cli --release --no-default-features
+          else
+            cargo build -p chat_cli --release
+          fi
+
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Build TUI bundle
+        run: bun run build
+        working-directory: packages/tui
+
+      - name: Upload reusable bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-bundle-${{ matrix.artifact_suffix }}
+          path: |
+            ${{ matrix.binary_path }}
+            packages/tui/dist/tui.js
+            packages/twinki/packages/twinki/dist/
+          retention-days: 7
+
+  smoke:
+    name: Smoke Lane (${{ matrix.os }})
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.run_smoke == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux
+            binary_path: target/release/chat_cli
+            lane_timeout: 30
+          - os: macos-latest
+            artifact_suffix: macos
+            binary_path: target/release/chat_cli
+            lane_timeout: 30
+          - os: windows-x64-latest-16-cores
+            artifact_suffix: windows
+            binary_path: target/release/chat_cli.exe
+            lane_timeout: 45
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-bundle-${{ matrix.artifact_suffix }}
+          path: .
+
+      - name: Restore binary mode
+        if: runner.os != 'Windows'
+        run: chmod +x ${{ matrix.binary_path }}
+
+      - name: Run smoke lane
+        timeout-minutes: ${{ matrix.lane_timeout }}
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/${{ matrix.binary_path }}
+          SCENARIO_RUNNER_RETRIES: ${{ needs.resolve.outputs.scenario_runner_retries }}
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          mkdir -p verification-results/smoke
+          ARGS=(--backend acp-mock --engine kas --tag smoke --format tap --retries "$SCENARIO_RUNNER_RETRIES" --capture-frames --output-dir verification-results/smoke)
+          if [ "${{ needs.resolve.outputs.smoke_priority }}" != "all" ]; then
+            ARGS+=(--priority "${{ needs.resolve.outputs.smoke_priority }}")
+          fi
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "smoke lane" \
+            -- bun packages/tui/e2e_tests/smoke/run-smoke.ts "${ARGS[@]}"
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-smoke-${{ matrix.artifact_suffix }}
+          path: verification-results/smoke/
+          retention-days: 7
+          if-no-files-found: warn
+
+  scenario-categories:
+    name: Scenario Lane (${{ matrix.os }} / ${{ matrix.category }})
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.run_scenarios == 'true' && needs.resolve.outputs.scenario_categories != '[]'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        category: ${{ fromJSON(needs.resolve.outputs.scenario_categories) }}
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux
+            binary_path: target/release/chat_cli
+          - os: macos-latest
+            artifact_suffix: macos
+            binary_path: target/release/chat_cli
+          - os: windows-x64-latest-16-cores
+            artifact_suffix: windows
+            binary_path: target/release/chat_cli.exe
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-bundle-${{ matrix.artifact_suffix }}
+          path: .
+
+      - name: Restore binary mode
+        if: runner.os != 'Windows'
+        run: chmod +x ${{ matrix.binary_path }}
+
+      - name: Run scenario category shard
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/${{ matrix.binary_path }}
+          SCENARIO_TAG: ${{ needs.resolve.outputs.scenario_tag }}
+          SCENARIO_RUNNER_RETRIES: ${{ needs.resolve.outputs.scenario_runner_retries }}
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          mkdir -p "verification-results/scenarios/${{ matrix.category }}"
+          ARGS=(
+            --backend acp-mock
+            --engine kas
+            --category "${{ matrix.category }}"
+            --format tap
+            --retries "$SCENARIO_RUNNER_RETRIES"
+            --capture-frames
+            --output-dir "verification-results/scenarios/${{ matrix.category }}"
+          )
+          if [ -n "$SCENARIO_TAG" ]; then
+            ARGS+=(--tag "$SCENARIO_TAG")
+          fi
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "scenario lane:${{ matrix.category }}" \
+            -- bun packages/tui/e2e_tests/smoke/run-smoke.ts "${ARGS[@]}"
+
+      - name: Upload scenario artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-scenarios-${{ matrix.artifact_suffix }}-${{ matrix.category }}
+          path: verification-results/scenarios/${{ matrix.category }}/
+          retention-days: 7
+          if-no-files-found: warn
+
+  visual:
+    name: Visual Lane (${{ matrix.os }} / ${{ needs.resolve.outputs.visual_suite }})
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.run_visual == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux
+            binary_path: target/release/chat_cli
+          - os: macos-latest
+            artifact_suffix: macos
+            binary_path: target/release/chat_cli
+          - os: windows-x64-latest-16-cores
+            artifact_suffix: windows
+            binary_path: target/release/chat_cli.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-bundle-${{ matrix.artifact_suffix }}
+          path: .
+
+      - name: Restore binary mode
+        if: runner.os != 'Windows'
+        run: chmod +x ${{ matrix.binary_path }}
+
+      - name: Run visual certification
+        shell: bash
+        env:
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/${{ matrix.binary_path }}
+          VISUAL_SUITE: ${{ needs.resolve.outputs.visual_suite }}
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          mkdir -p "verification-results/visual/$VISUAL_SUITE"
+          ARGS=(--suite "$VISUAL_SUITE" --out "verification-results/visual/$VISUAL_SUITE")
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "visual lane:$VISUAL_SUITE" \
+            -- bun run test:storybook:visual -- "${ARGS[@]}"
+        working-directory: packages/tui
+
+      - name: Upload visual artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-visual-${{ matrix.artifact_suffix }}-${{ needs.resolve.outputs.visual_suite }}
+          path: packages/tui/verification-results/visual/${{ needs.resolve.outputs.visual_suite }}/
+          retention-days: 7
+          if-no-files-found: warn
+
+  live-parity:
+    name: Live Smoke (ubuntu-latest / ${{ matrix.engine }})
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.live_engines != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ${{ fromJSON(needs.resolve.outputs.live_engines) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-bundle-linux
+          path: .
+
+      - name: Restore binary mode
+        run: chmod +x target/release/chat_cli
+
+      - name: Run live smoke tests
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/release/chat_cli
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+        run: |
+          ARGS=(--backend live --engine "${{ matrix.engine }}" --tag smoke --format tap --output-dir verification-results/live/${{ matrix.engine }})
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts 1 \
+            --delay-seconds 0 \
+            --label "live smoke:${{ matrix.engine }}" \
+            -- bun packages/tui/e2e_tests/smoke/run-smoke.ts "${ARGS[@]}"
+
+      - name: Upload live smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-live-${{ matrix.engine }}
+          path: verification-results/live/${{ matrix.engine }}/
+          retention-days: 7
+          if-no-files-found: warn
+
+  summary:
+    name: Publish Verification Summary
+    needs:
+      [resolve, build-assets, smoke, scenario-categories, visual, live-parity]
+    if: |
+      always() && (
+        needs.resolve.result == 'failure' ||
+        needs.build-assets.result == 'failure' ||
+        needs.smoke.result != 'skipped' ||
+        needs.scenario-categories.result != 'skipped' ||
+        needs.visual.result != 'skipped' ||
+        needs.live-parity.result != 'skipped'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Download smoke artifacts
+        if: needs.smoke.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: verification-smoke-*
+          path: verification-artifacts
+
+      - name: Download scenario artifacts
+        if: needs.scenario-categories.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: verification-scenarios-*
+          path: verification-artifacts
+
+      - name: Download visual artifacts
+        if: needs.visual.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: verification-visual-*
+          path: verification-artifacts
+
+      - name: Download live smoke artifacts
+        if: needs.live-parity.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: verification-live-*
+          path: verification-artifacts
+
+      - name: Build summary bundle
+        run: bun packages/tui/e2e_tests/verification/build-verification-report.ts --root verification-artifacts --out-dir verification-artifacts/summary
+
+      - name: Publish workflow summary
+        shell: bash
+        run: cat verification-artifacts/summary/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload summary bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-summary
+          path: verification-artifacts/summary/
+          retention-days: 14
+
+      - name: Fail on lane failures
+        if: |
+          needs.resolve.result == 'failure' ||
+          needs.build-assets.result == 'failure' ||
+          needs.smoke.result == 'failure' ||
+          needs.scenario-categories.result == 'failure' ||
+          needs.visual.result == 'failure' ||
+          needs.live-parity.result == 'failure'
+        run: exit 1

@@ -21,6 +21,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -40,6 +43,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -83,10 +89,13 @@
       "verify": [
         "screen.contains:/<COMMAND>"
       ],
-      "observe": "Help panel opens with all commands listed, subcommands shown with \u2319 prefix, search filter at top, ESC to close hint at bottom, scrollable with \u2193 more indicator",
+      "observe": "Help panel opens with all commands listed, subcommands shown with ⌙ prefix, search filter at top, ESC to close hint at bottom, scrollable with ↓ more indicator",
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -107,6 +116,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -123,10 +135,13 @@
       "verify": [
         "screen.contains:Select model:"
       ],
-      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (\u276f marker), search filter at top, ESC to cancel",
+      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (❯ marker), search filter at top, ESC to cancel",
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -146,6 +161,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -165,6 +183,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -184,6 +205,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -203,6 +227,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -222,6 +249,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -241,6 +271,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -260,6 +293,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -279,6 +315,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -297,6 +336,9 @@
       "observe": "Confirmation message 'read now trusted', /tools panel should show read as Trusted",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -315,6 +357,9 @@
       "observe": "Confirmation that read is back to per-request, /tools panel should show approval required",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -333,6 +378,9 @@
       "observe": "All tools trusted, /tools panel should show all as Trusted",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -351,6 +399,9 @@
       "observe": "All tools back to default, /tools panel should show approval required",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -366,10 +417,13 @@
       "verify": [
         "screen.contains:configured"
       ],
-      "observe": "MCP panel shows configured servers with Name, Status (\u25cf running), Details (tool count). Search filter at top.",
+      "observe": "MCP panel shows configured servers with Name, Status (● running), Details (tool count). Search filter at top.",
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -389,6 +443,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -408,6 +465,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -427,6 +487,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -446,6 +509,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -465,6 +531,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -480,10 +549,13 @@
       "verify": [
         "screen.contains:Workspace"
       ],
-      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (\u25cf running, \u25cb not_installed, \u25cb available)",
+      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (● running, ○ not_installed, ○ available)",
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -503,6 +575,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -523,6 +598,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -545,6 +623,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -570,6 +651,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -589,6 +673,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -608,6 +695,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -627,6 +717,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -643,10 +736,13 @@
       "verify": [
         "screen.contains:Read"
       ],
-      "observe": "Read tool indicator appears (\u25d4 Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom",
+      "observe": "Read tool indicator appears (◔ Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom",
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -667,6 +763,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -685,6 +784,9 @@
       "observe": "Write tool shows approval dialog with file path, diff preview showing new content, approve/deny options",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -705,6 +807,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -726,6 +831,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -748,6 +856,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -769,6 +880,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -792,6 +906,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -811,6 +928,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -830,11 +950,14 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
       "id": "permissions-trust-flow",
-      "name": "Trust \u2192 use \u2192 untrust \u2192 re-approve flow",
+      "name": "Trust → use → untrust → re-approve flow",
       "category": "permissions",
       "description": "Full trust lifecycle for a tool",
       "docRef": "/docs/cli/chat/permissions",
@@ -850,6 +973,9 @@
       "observe": "Trust: 'shell now trusted'. Untrust: shell reverts to per-request. Full lifecycle works without errors.",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -870,6 +996,9 @@
       "observe": "Trust-all: all tools trusted. Reset: all tools back to approval required. No stale state.",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -889,6 +1018,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -908,6 +1040,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -929,6 +1064,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -949,6 +1087,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -966,6 +1107,9 @@
       "observe": "Fuzzy search overlay opens, can type to filter commands and context files, Tab to select multiple",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -985,6 +1129,9 @@
       "observe": "Goal is acknowledged and agent begins iterating. Status shows goal progress or iteration count.",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -1004,6 +1151,9 @@
       "observe": "Goal is cleared. No error message. Prompt returns to normal state.",
       "engine": [
         "v2"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -1023,6 +1173,9 @@
       "observe": "Rewind picker opens showing previous turns, or shows empty state if no history. No error.",
       "engine": [
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -1043,6 +1196,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -1063,6 +1219,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     },
     {
@@ -1083,6 +1242,9 @@
       "engine": [
         "v2",
         "kas"
+      ],
+      "tags": [
+        "smoke"
       ]
     }
   ]

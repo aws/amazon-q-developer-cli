@@ -1,9 +1,6 @@
 [files]
 extend-exclude = [
-  # KRS mock (#4009): the generated Smithy server SDK carries upstream
-  # codegen typos, and mock-krs-server's docs use the "mis-scripted"
-  # compound the checker splits. Scope both to the crate rather than
-  # weakening the global dictionary.
+  # Generated KRS mock artifacts carry upstream or deliberate typos.
   "crates/amzn-kiro-runtime-service-server-sdk/",
   "crates/mock-krs-server/",
   "packages/ink/",
@@ -37,3 +34,7 @@ nd = "nd" # ndjson (newline-delimited JSON)
 hel = "hel" # used in test data
 isues = "isues" # intentional typo in agent-configuration.md example
 unparseable = "unparseable" # valid word in LLM dictionary
+mis = "mis" # "mis-scripted" (hyphenated prefix) in RC certification docs
+Repsitory = "Repsitory" # upstream typo in generated Smithy client comments
+Respository = "Respository" # upstream typo in generated Smithy client comments
+postion = "postion" # upstream typo in generated Smithy client comments
