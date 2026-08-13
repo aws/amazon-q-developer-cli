@@ -126,6 +126,12 @@ impl RtsModel {
             },
         };
 
+        debug!(
+            conversation_id = %state.conversation_id.as_deref().unwrap_or_default(),
+            model_id = %state.user_input_message.model_id.as_deref().unwrap_or_default(),
+            "RTS request model selected"
+        );
+
         let request_start_time = Instant::now();
         let request_start_time_sys = Utc::now();
         let token_clone = cancel_token.clone();

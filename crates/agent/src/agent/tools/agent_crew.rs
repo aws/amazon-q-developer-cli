@@ -146,7 +146,7 @@ const TOOL_SCHEMA: &str = r#"
           "role": { "type": "string" },
           "prompt_template": { "type": "string", "description": "Task for this stage. Use {task} to reference the overall task." },
           "depends_on": { "type": "array", "items": { "type": "string" } },
-          "model": { "type": "string" },
+          "model": { "type": "string", "description": "Optional model override for this stage" },
           "loop_to": {
             "type": "object",
             "description": "Loop back to a target stage when this stage's output contains the trigger text. Useful for review→implement cycles.",
@@ -224,6 +224,8 @@ pub struct PendingStageSpec {
     pub role: String,
     pub task: String,
     pub depends_on: Vec<String>,
+    #[serde(default)]
+    pub model: Option<String>,
     /// Loop-back config from the source stage that points to this stage's target.
     #[serde(default)]
     pub loop_config: Option<LoopConfig>,
@@ -360,6 +362,7 @@ impl AgentCrew {
                 role: s.role.clone(),
                 task: s.prompt_template.replace("{task}", task),
                 depends_on: s.depends_on.clone(),
+                model: s.model.clone(),
                 loop_config: s.loop_to.clone(),
             })
             .collect();
@@ -384,6 +387,7 @@ impl AgentCrew {
                 request: SessionTool::SpawnSession {
                     agent_name: stage.role.clone(),
                     task: stage_task,
+                    model: stage.model.clone(),
                     name: Some(stage.name.clone()),
                     role: Some(stage.role.clone()),
                     group: Some(group.to_string()),
@@ -954,6 +958,7 @@ mod tests {
             role: "reviewer".to_string(),
             task: "review code".to_string(),
             depends_on: vec!["code".to_string()],
+            model: None,
             loop_config: None,
         }];
         let output = AgentCrew::non_blocking_summary(&spawned, &pending);
@@ -1122,6 +1127,7 @@ mod tests {
             role: "reviewer".to_string(),
             task: "review the code".to_string(),
             depends_on: vec!["implement".to_string()],
+            model: Some("claude-sonnet".to_string()),
             loop_config: Some(LoopConfig {
                 target: "implement".to_string(),
                 max_iterations: 5,
@@ -1132,7 +1138,44 @@ mod tests {
         let deserialized: PendingStageSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.name, "review");
         assert_eq!(deserialized.depends_on, vec!["implement"]);
+        assert_eq!(deserialized.model.as_deref(), Some("claude-sonnet"));
         assert_eq!(deserialized.loop_config.as_ref().unwrap().trigger, "NEEDS_CHANGES");
+    }
+
+    #[tokio::test]
+    async fn spawn_ready_stages_preserves_model_overrides() {
+        let mut immediate = stage("research", None);
+        immediate.role = "researcher".to_string();
+        immediate.model = Some("claude-opus".to_string());
+
+        let mut delayed = stage("implement", None);
+        delayed.role = "coder".to_string();
+        delayed.depends_on = vec!["research".to_string()];
+        delayed.model = Some("claude-sonnet".to_string());
+
+        let (event_tx, mut event_rx) = broadcast::channel(4);
+        let spawn_task = tokio::spawn(async move {
+            AgentCrew::spawn_ready_stages(&[immediate, delayed], "build feature", "test-group", &event_tx).await
+        });
+
+        let AgentEvent::SessionToolRequest(request) = event_rx.recv().await.unwrap() else {
+            panic!("expected session tool request");
+        };
+        let SessionToolRequest { request, response_tx } = request;
+        assert!(matches!(
+            request,
+            SessionTool::SpawnSession { model: Some(model), .. } if model == "claude-opus"
+        ));
+        response_tx
+            .send(Ok(crate::agent::tools::session::SessionToolResponse {
+                output: ToolExecutionOutput::new(vec![]),
+            }))
+            .await
+            .unwrap();
+
+        let (_, pending) = spawn_task.await.unwrap().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].model.as_deref(), Some("claude-sonnet"));
     }
 
     #[test]
@@ -1199,6 +1242,10 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .contains(&serde_json::json!("stages"))
+        );
+        assert_eq!(
+            parsed["properties"]["stages"]["items"]["properties"]["model"]["type"],
+            "string"
         );
     }
 

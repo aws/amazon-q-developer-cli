@@ -57,6 +57,9 @@ pub enum SessionTool {
         agent_name: String,
         /// Initial task/prompt for the session
         task: String,
+        /// Optional model override for the session
+        #[serde(default)]
+        model: Option<String>,
         /// Optional friendly name (auto-assigned if omitted)
         #[serde(default)]
         name: Option<String>,
@@ -222,6 +225,10 @@ const TOOL_SCHEMA: &str = r#"
       "type": "string",
       "description": "Initial task/prompt for spawn_session"
     },
+    "model": {
+      "type": "string",
+      "description": "Optional model override for spawn_session"
+    },
     "name": {
       "type": "string",
       "description": "Optional friendly name for spawn_session"
@@ -320,6 +327,7 @@ mod tests {
         let tool = SessionTool::SpawnSession {
             agent_name: "test-agent".to_string(),
             task: "test task".to_string(),
+            model: Some("claude-sonnet".to_string()),
             name: Some("test-session".to_string()),
             role: None,
             group: None,
@@ -329,6 +337,7 @@ mod tests {
         assert!(json.contains(r#""command":"spawn_session""#));
         assert!(json.contains(r#""agent_name":"test-agent""#));
         assert!(json.contains(r#""task":"test task""#));
+        assert!(json.contains(r#""model":"claude-sonnet""#));
     }
 
     #[test]
@@ -383,7 +392,8 @@ mod tests {
     #[test]
     fn test_built_in_tool_trait() {
         assert!(!SessionTool::description().is_empty());
-        assert!(!SessionTool::input_schema().is_empty());
+        let schema: serde_json::Value = serde_json::from_str(&SessionTool::input_schema()).unwrap();
+        assert_eq!(schema["properties"]["model"]["type"], "string");
     }
 
     #[test]
@@ -447,6 +457,7 @@ mod tests {
             SessionTool::SpawnSession {
                 agent_name: "a".into(),
                 task: "t".into(),
+                model: None,
                 name: None,
                 role: Some("r".into()),
                 group: Some("g".into()),

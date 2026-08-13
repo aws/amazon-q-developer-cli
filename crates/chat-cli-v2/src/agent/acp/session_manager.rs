@@ -974,6 +974,25 @@ impl SessionManager {
             .unwrap_or_else(|| agent::consts::DEFAULT_AGENT_NAME.to_string())
     }
 
+    fn resolve_model_id(explicit_model: Option<String>, cli_model: &mut Option<String>) -> Option<String> {
+        explicit_model.or_else(|| cli_model.take())
+    }
+
+    fn orchestrated_session_config(
+        session_id: String,
+        cwd: PathBuf,
+        parent_session_id: String,
+        agent_name: String,
+        model_id: Option<String>,
+        embedded_msg: String,
+    ) -> AcpSessionConfig {
+        AcpSessionConfig::new(session_id, cwd)
+            .parent_session_id(parent_session_id)
+            .initial_agent_name(agent_name)
+            .model_id(model_id)
+            .user_embedded_msg(embedded_msg)
+    }
+
     async fn handle_request(&mut self, request: SessionManagerRequest) {
         debug!(?request, "session manager received new request");
         let SessionManagerRequest { session_id, data } = request;
@@ -1179,8 +1198,8 @@ impl SessionManager {
                 builder = builder.current_agent_name(agent_name.clone());
                 builder = builder.subagent_info(config.subagent_info.clone());
 
-                // Pass CLI --model override to session builder
-                let next_model_id = self.next_model_id.take();
+                // Explicit per-session model takes precedence over the CLI override.
+                let next_model_id = Self::resolve_model_id(config.model_id.clone(), &mut self.next_model_id);
                 if let Some(ref model_id) = next_model_id {
                     builder = builder.model_id(Some(model_id.as_str()));
                 }
@@ -1449,6 +1468,7 @@ impl SessionManager {
                             task: ps.task,
                             depends_on: ps.depends_on,
                             agent_name: ps.role,
+                            model: ps.model,
                             loop_config: ps
                                 .loop_config
                                 .map(|lc| crate::agent::acp::orchestration::types::LoopConfig {
@@ -1539,6 +1559,7 @@ impl SessionManager {
                             .handle_spawn_orchestrated(
                                 &parent_session_id,
                                 &stage.agent_name,
+                                stage.model.as_deref(),
                                 &task_with_context,
                                 Some(&stage.name),
                                 Some(&stage.role),
@@ -1691,6 +1712,7 @@ impl SessionManager {
                 parent_session_id,
                 agent_name,
                 task,
+                model,
                 name,
                 role,
                 group,
@@ -1701,6 +1723,7 @@ impl SessionManager {
                     .handle_spawn_orchestrated(
                         &parent_session_id,
                         &agent_name,
+                        model.as_deref(),
                         &task,
                         name.as_deref(),
                         role.as_deref(),
@@ -1815,6 +1838,7 @@ impl SessionManager {
         &mut self,
         parent_session_id: &SessionId,
         agent_name: &str,
+        model: Option<&str>,
         task: &str,
         name: Option<&str>,
         role: Option<&str>,
@@ -1871,6 +1895,7 @@ impl SessionManager {
             name: session_name.clone(),
             role: role.map(String::from),
             agent_name: agent_name.to_string(),
+            model: model.map(String::from),
             task: task.to_string(),
             parent_session: Some(parent_session_id.clone()),
             group: Some(group_name),
@@ -1899,6 +1924,7 @@ impl SessionManager {
         let session_tx = self.session_manager_handle.clone();
         let new_sid = new_session_id.clone();
         let agent_str = agent_name.to_string();
+        let model_id = model.map(String::from);
         let task_str = task.to_string();
         let session_name_clone = session_name.clone();
         let group_name_clone = group_name_for_task;
@@ -1912,10 +1938,14 @@ impl SessionManager {
             role.map(|r| format!("Your role: {}", r)).unwrap_or_default(),
         );
         tokio::spawn(async move {
-            let config = AcpSessionConfig::new(new_sid.to_string(), std::env::current_dir().unwrap_or_default())
-                .parent_session_id(parent_sid.to_string())
-                .initial_agent_name(agent_str)
-                .user_embedded_msg(embedded_msg);
+            let config = Self::orchestrated_session_config(
+                new_sid.to_string(),
+                std::env::current_dir().unwrap_or_default(),
+                parent_sid.to_string(),
+                agent_str,
+                model_id,
+                embedded_msg,
+            );
             match session_tx.start_session(&new_sid, config, None).await {
                 Ok(result) => {
                     let _ = result.ready_rx.await;
@@ -2039,6 +2069,7 @@ impl SessionManager {
             name: target.to_string(),
             role: role.map(String::from),
             agent_name: old_session.agent_name.clone(),
+            model: old_session.model.clone(),
             task: task.to_string(),
             parent_session: Some(parent_session_id.clone()),
             group: group.map(String::from),
@@ -2354,6 +2385,22 @@ impl SessionManager {
             session_task: session.task.clone(),
             session_role: session.role.clone().unwrap_or_default(),
             agent_name: session.agent_name.clone(),
+            model: session.model.clone(),
+        })
+    }
+
+    /// A prior run of the target is authoritative; if the trigger fires before
+    /// the target has ever run, its model still lives on its pending stage.
+    fn loop_target_model(
+        target_session: Option<&crate::agent::acp::orchestration::types::OrchestratedSession>,
+        pending_stages: &[crate::agent::acp::orchestration::types::PendingStage],
+        target_name: &str,
+    ) -> Option<String> {
+        target_session.and_then(|s| s.model.clone()).or_else(|| {
+            pending_stages
+                .iter()
+                .find(|ps| ps.name == target_name)
+                .and_then(|ps| ps.model.clone())
         })
     }
 
@@ -2371,20 +2418,21 @@ impl SessionManager {
         );
 
         // Look up the target stage's original task and role from existing sessions
-        let target_task = self
+        let target_session = self
             .orchestrated_sessions
             .values()
             .filter(|s| s.name == cfg.target && s.group.as_deref() == Some(group))
-            .max_by_key(|s| s.created_at)
-            .map_or_else(|| cfg.target.clone(), |s| s.task.clone());
+            .max_by_key(|s| s.created_at);
 
-        let target_role = self
-            .orchestrated_sessions
-            .values()
-            .filter(|s| s.name == cfg.target && s.group.as_deref() == Some(group))
-            .max_by_key(|s| s.created_at)
+        let target_task = target_session.map_or_else(|| cfg.target.clone(), |s| s.task.clone());
+        let target_role = target_session
             .and_then(|s| s.role.clone())
             .unwrap_or_else(|| cfg.target.clone());
+        let target_model = Self::loop_target_model(
+            target_session,
+            self.groups.get(group).map_or(&[][..], |g| &g.pending_stages),
+            &cfg.target,
+        );
 
         let loop_task = format!(
             "{}\n\n---\n\n## Loop iteration {} (feedback from {})\n\n{}",
@@ -2403,6 +2451,7 @@ impl SessionManager {
                     task: loop_task,
                     depends_on: vec![],
                     agent_name: target_role,
+                    model: target_model,
                     loop_config: None,
                     loop_iteration: 0,
                 });
@@ -2414,6 +2463,7 @@ impl SessionManager {
                     task: data.session_task.clone(),
                     depends_on: vec![cfg.target.clone()],
                     agent_name: data.agent_name.clone(),
+                    model: data.model.clone(),
                     loop_config: Some(crate::agent::acp::orchestration::types::LoopConfig {
                         target: cfg.target.clone(),
                         max_iterations: cfg.max_iterations,
@@ -2454,6 +2504,7 @@ impl SessionManager {
                 .handle_spawn_orchestrated(
                     &parent_id,
                     &stage.agent_name,
+                    stage.model.as_deref(),
                     &stage.task,
                     Some(&stage.name),
                     Some(&stage.role),
@@ -2624,6 +2675,7 @@ pub(crate) enum SessionManagerRequestData {
         parent_session_id: SessionId,
         agent_name: String,
         task: String,
+        model: Option<String>,
         name: Option<String>,
         role: Option<String>,
         group: Option<String>,
@@ -3035,6 +3087,31 @@ impl SessionManagerHandle {
         group: Option<String>,
         persistent: bool,
     ) -> Result<SpawnOrchestratedResult, sacp::Error> {
+        self.spawn_orchestrated_session_with_model(
+            parent_session_id,
+            agent_name,
+            task,
+            None,
+            name,
+            role,
+            group,
+            persistent,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn spawn_orchestrated_session_with_model(
+        &self,
+        parent_session_id: &SessionId,
+        agent_name: String,
+        task: String,
+        model: Option<String>,
+        name: Option<String>,
+        role: Option<String>,
+        group: Option<String>,
+        persistent: bool,
+    ) -> Result<SpawnOrchestratedResult, sacp::Error> {
         let (resp_sender, rx) = oneshot::channel();
         self.tx
             .send(SessionManagerRequest {
@@ -3043,6 +3120,7 @@ impl SessionManagerHandle {
                     parent_session_id: parent_session_id.clone(),
                     agent_name,
                     task,
+                    model,
                     name,
                     role,
                     group,
@@ -3337,6 +3415,37 @@ mod tests {
     }
 
     #[test]
+    fn resolve_model_prefers_explicit_without_consuming_cli_override() {
+        let mut cli_model = Some("cli-model".to_string());
+        let resolved = SessionManager::resolve_model_id(Some("stage-model".to_string()), &mut cli_model);
+        assert_eq!(resolved.as_deref(), Some("stage-model"));
+        assert_eq!(cli_model.as_deref(), Some("cli-model"));
+    }
+
+    #[test]
+    fn resolve_model_uses_cli_override_when_explicit_is_absent() {
+        let mut cli_model = Some("cli-model".to_string());
+        let resolved = SessionManager::resolve_model_id(None, &mut cli_model);
+        assert_eq!(resolved.as_deref(), Some("cli-model"));
+        assert!(cli_model.is_none());
+    }
+
+    #[test]
+    fn orchestrated_session_config_preserves_model_override() {
+        let config = SessionManager::orchestrated_session_config(
+            "session-id".to_string(),
+            std::path::PathBuf::from("/tmp/workspace"),
+            "parent-id".to_string(),
+            "reviewer".to_string(),
+            Some("stage-model".to_string()),
+            "review task".to_string(),
+        );
+        assert_eq!(config.model_id.as_deref(), Some("stage-model"));
+        assert_eq!(config.initial_agent_name.as_deref(), Some("reviewer"));
+        assert_eq!(config.parent_session_id.as_deref(), Some("parent-id"));
+    }
+
+    #[test]
     fn test_is_relevant_config_path() {
         use std::path::Path;
         let rel = super::is_relevant_config_path;
@@ -3408,6 +3517,7 @@ mod tests {
         result: Option<String>,
         loop_iteration: u32,
         changes_needed: bool,
+        model: Option<&str>,
     ) -> crate::agent::acp::orchestration::types::OrchestratedSession {
         use std::time::SystemTime;
 
@@ -3417,6 +3527,7 @@ mod tests {
             name: "reviewer".to_string(),
             task: "review code".to_string(),
             agent_name: "review-agent".to_string(),
+            model: model.map(String::from),
             role: Some("reviewer".to_string()),
             parent_session: None,
             group: Some("test-group".to_string()),
@@ -3443,7 +3554,7 @@ mod tests {
 
     #[test]
     fn check_loop_trigger_changes_needed_signal() {
-        let session = make_session(loop_cfg(), Some("All good".to_string()), 0, true);
+        let session = make_session(loop_cfg(), Some("All good".to_string()), 0, true, None);
         let data = super::SessionManager::check_loop_trigger(&session);
         assert!(
             data.is_some(),
@@ -3452,29 +3563,80 @@ mod tests {
     }
 
     #[test]
+    fn check_loop_trigger_preserves_model_override() {
+        let session = make_session(loop_cfg(), Some("All good".to_string()), 0, true, Some("review-model"));
+        let data = super::SessionManager::check_loop_trigger(&session).unwrap();
+        assert_eq!(data.model.as_deref(), Some("review-model"));
+    }
+
+    fn make_pending_stage(name: &str, model: Option<&str>) -> crate::agent::acp::orchestration::types::PendingStage {
+        crate::agent::acp::orchestration::types::PendingStage {
+            name: name.to_string(),
+            role: "implementer".to_string(),
+            task: "implement".to_string(),
+            depends_on: vec![],
+            agent_name: "implementer".to_string(),
+            model: model.map(String::from),
+            loop_config: None,
+            loop_iteration: 0,
+        }
+    }
+
+    #[test]
+    fn loop_target_model_prefers_completed_session() {
+        let session = make_session(None, None, 0, false, Some("session-model"));
+        let pending = vec![make_pending_stage("reviewer", Some("pending-model"))];
+        let model = super::SessionManager::loop_target_model(Some(&session), &pending, "reviewer");
+        assert_eq!(model.as_deref(), Some("session-model"));
+    }
+
+    #[test]
+    fn loop_target_model_falls_back_to_pending_stage() {
+        let pending = vec![
+            make_pending_stage("other", Some("other-model")),
+            make_pending_stage("implementer", Some("impl-model")),
+        ];
+        let model = super::SessionManager::loop_target_model(None, &pending, "implementer");
+        assert_eq!(model.as_deref(), Some("impl-model"));
+    }
+
+    #[test]
+    fn loop_target_model_none_when_target_unknown() {
+        let pending = vec![make_pending_stage("other", Some("other-model"))];
+        let model = super::SessionManager::loop_target_model(None, &pending, "implementer");
+        assert!(model.is_none());
+    }
+
+    #[test]
     fn check_loop_trigger_text_fallback() {
-        let session = make_session(loop_cfg(), Some("Found issues. NEEDS_CHANGES".to_string()), 0, false);
+        let session = make_session(
+            loop_cfg(),
+            Some("Found issues. NEEDS_CHANGES".to_string()),
+            0,
+            false,
+            None,
+        );
         let data = super::SessionManager::check_loop_trigger(&session);
         assert!(data.is_some(), "trigger text should still work as fallback");
     }
 
     #[test]
     fn check_loop_trigger_no_signal_no_text() {
-        let session = make_session(loop_cfg(), Some("All good, approved".to_string()), 0, false);
+        let session = make_session(loop_cfg(), Some("All good, approved".to_string()), 0, false, None);
         let data = super::SessionManager::check_loop_trigger(&session);
         assert!(data.is_none(), "no signal and no trigger text should not trigger");
     }
 
     #[test]
     fn check_loop_trigger_max_iterations_reached() {
-        let session = make_session(loop_cfg(), Some("NEEDS_CHANGES".to_string()), 3, true);
+        let session = make_session(loop_cfg(), Some("NEEDS_CHANGES".to_string()), 3, true, None);
         let data = super::SessionManager::check_loop_trigger(&session);
         assert!(data.is_none(), "should not trigger when max iterations reached");
     }
 
     #[test]
     fn check_loop_trigger_no_loop_config() {
-        let session = make_session(None, Some("NEEDS_CHANGES".to_string()), 0, true);
+        let session = make_session(None, Some("NEEDS_CHANGES".to_string()), 0, true, None);
         let data = super::SessionManager::check_loop_trigger(&session);
         assert!(data.is_none(), "no loop_config means no trigger regardless of signals");
     }
@@ -3495,6 +3657,7 @@ mod tests {
             name: name.to_string(),
             task: "t".to_string(),
             agent_name: "a".to_string(),
+            model: None,
             role: None,
             parent_session: None,
             group: Some(group.to_string()),

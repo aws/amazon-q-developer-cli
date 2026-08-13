@@ -696,6 +696,11 @@ impl AcpSessionConfig {
         self
     }
 
+    pub fn model_id(mut self, id: Option<String>) -> Self {
+        self.model_id = id;
+        self
+    }
+
     pub fn mcp_servers(mut self, servers: Vec<sacp::schema::McpServer>) -> Self {
         self.mcp_servers = servers;
         self

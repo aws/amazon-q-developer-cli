@@ -31,6 +31,7 @@ Spawn a new persistent session with an agent.
 
 - `agent_name` (required) — Agent config name to use
 - `task` (required) — Initial task/prompt for the session
+- `model` (optional) — Model override for the session (normal agent/default model resolution when omitted)
 - `name` (optional) — Friendly name (auto-assigned if omitted)
 - `role` (optional) — Role description
 - `group` (optional) — Group to add the session to
@@ -88,6 +89,7 @@ Revive a terminated session with a new task, keeping the same name and group.
   "command": "spawn_session",
   "agent_name": "code-reviewer",
   "task": "Review the changes in src/auth/ for security issues",
+  "model": "claude-sonnet-4.6",
   "name": "auth-reviewer",
   "group": "review-team"
 }

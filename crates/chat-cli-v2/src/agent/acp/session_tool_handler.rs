@@ -40,6 +40,7 @@ pub async fn handle_session_tool_request(
         SessionTool::SpawnSession {
             agent_name,
             task,
+            model,
             name,
             role,
             group,
@@ -50,6 +51,7 @@ pub async fn handle_session_tool_request(
                 &caller_session_id,
                 agent_name,
                 task,
+                model.as_deref(),
                 name.as_deref(),
                 role.as_deref(),
                 group.as_deref(),
@@ -136,16 +138,18 @@ async fn handle_spawn_session(
     caller_session_id: &SessionId,
     agent_name: &str,
     task: &str,
+    model: Option<&str>,
     name: Option<&str>,
     role: Option<&str>,
     group: Option<&str>,
     persistent: bool,
 ) -> Result<String, String> {
     let result = session_tx
-        .spawn_orchestrated_session(
+        .spawn_orchestrated_session_with_model(
             caller_session_id,
             agent_name.to_string(),
             task.to_string(),
+            model.map(String::from),
             name.map(String::from),
             role.map(String::from),
             group.map(String::from),

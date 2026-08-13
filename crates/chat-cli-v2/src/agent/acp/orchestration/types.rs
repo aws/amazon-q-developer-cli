@@ -15,6 +15,8 @@ pub struct OrchestratedSession {
     pub name: String,
     pub role: Option<String>,
     pub agent_name: String,
+    #[serde(default)]
+    pub model: Option<String>,
     pub task: String,
     pub parent_session: Option<SessionId>,
     pub group: Option<String>,
@@ -82,6 +84,8 @@ pub struct PendingStage {
     pub task: String,
     pub depends_on: Vec<String>,
     pub agent_name: String,
+    #[serde(default)]
+    pub model: Option<String>,
     /// Loop-back config: when this stage completes and output contains trigger, re-run target.
     #[serde(default)]
     pub loop_config: Option<LoopConfig>,
@@ -111,4 +115,5 @@ pub struct LoopTriggerData {
     pub session_task: String,
     pub session_role: String,
     pub agent_name: String,
+    pub model: Option<String>,
 }

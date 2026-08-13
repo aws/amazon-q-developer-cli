@@ -1083,6 +1083,179 @@ async fn set_current_as_default_persists_model_to_settings() {
     );
 }
 
+/// A crew stage's `model` override must reach the spawned child session's
+/// outbound LLM request. Drives the real path: crew tool use → SpawnSession →
+/// session manager → child session builder → captured request `model_id`.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn crew_stage_model_reaches_child_session_request() {
+    use agent::agent_config::definitions::AgentConfigV2025_08_22;
+    use chat_cli_v2::api_client::model::ChatResponseStream;
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    const STAGE_MODEL: &str = "claude-opus-4.5";
+
+    let worker_config = AgentConfigV2025_08_22 {
+        name: "crew_worker".to_string(),
+        tools: vec!["*".to_string()],
+        ..Default::default()
+    };
+
+    let (mut harness, client, parent_session_id, _cwd) =
+        AcpTestHarnessBuilder::new("crew_stage_model_reaches_child_session_request")
+            .with_agent_config("crew_worker", &worker_config)
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // Parent turn 1: invoke the crew tool with one immediate stage carrying a model override.
+    let crew_input = serde_json::json!({
+        "task": "say hello",
+        "stages": [{
+            "name": "worker",
+            "role": "crew_worker",
+            "prompt_template": "{task}",
+            "model": STAGE_MODEL,
+        }]
+    })
+    .to_string();
+    harness
+        .push_mock_response(
+            &parent_session_id.to_string(),
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew_1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew_1".to_string(),
+                    name: "subagent".to_string(),
+                    input: Some(crew_input),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew_1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&parent_session_id.to_string(), None).await;
+
+    // Parent turn 2: final response after the blocking crew tool returns.
+    harness
+        .push_mock_response(
+            &parent_session_id.to_string(),
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Crew finished.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&parent_session_id.to_string(), None).await;
+
+    // The crew tool blocks the parent's turn until the group completes, so the
+    // prompt must run concurrently with driving the child below.
+    let prompt_rx = client
+        .prompt_text_async(parent_session_id.clone(), "run the crew")
+        .await;
+
+    // Discover the child's session id from the subagent list update notification.
+    let list_update_method = methods::SUBAGENT_LIST_UPDATE
+        .strip_prefix('_')
+        .expect("method should have underscore prefix");
+    let extract_child_session_id = |captured: &common::CapturedNotifications| -> Option<String> {
+        captured.ext_notifications.iter().find_map(|n| {
+            if n.method.as_ref() != list_update_method {
+                return None;
+            }
+            let params: serde_json::Value = serde_json::from_str(n.params.get()).ok()?;
+            params.get("subagents")?.as_array()?.iter().find_map(|s| {
+                (s.get("sessionName").and_then(|v| v.as_str()) == Some("worker"))
+                    .then(|| s.get("sessionId").and_then(|v| v.as_str()).map(String::from))
+                    .flatten()
+            })
+        })
+    };
+    let spawned = client
+        .wait_for_timeout(
+            |captured| extract_child_session_id(captured).is_some(),
+            Duration::from_secs(30),
+        )
+        .await;
+    assert!(spawned, "crew stage 'worker' was not spawned within 30s");
+    let child_session_id =
+        extract_child_session_id(&client.captured().await).expect("child session id should be present");
+
+    // Child turn: report via summary, then a trailing end-turn.
+    harness
+        .push_mock_response(
+            &child_session_id,
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "worker_summary_1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "worker_summary_1".to_string(),
+                    name: "summary".to_string(),
+                    input: Some(r#"{"taskDescription":"say hello","taskResult":"hello"}"#.to_string()),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "worker_summary_1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&child_session_id, None).await;
+    harness
+        .push_mock_response(
+            &child_session_id,
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Done.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&child_session_id, None).await;
+
+    prompt_rx
+        .await
+        .expect("prompt channel dropped")
+        .expect("crew prompt failed");
+
+    // The child's outbound request must carry the stage model override.
+    let child_requests = harness.get_captured_requests(&child_session_id).await;
+    assert!(!child_requests.is_empty(), "child session made no LLM requests");
+    assert_eq!(
+        child_requests[0].user_input_message.model_id.as_deref(),
+        Some(STAGE_MODEL),
+        "child request should carry the stage model override"
+    );
+
+    // The override is stage-scoped: the parent keeps its own (default) model.
+    let parent_requests = harness.get_captured_requests(&parent_session_id.to_string()).await;
+    assert!(
+        parent_requests
+            .iter()
+            .all(|r| r.user_input_message.model_id.as_deref() != Some(STAGE_MODEL)),
+        "parent requests must not inherit the stage model override"
+    );
+}
+
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
