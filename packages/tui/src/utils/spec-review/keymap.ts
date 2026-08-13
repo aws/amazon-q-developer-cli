@@ -16,6 +16,7 @@ export type ReviewIntent =
   | { type: 'jump-comment'; direction: 1 | -1 }
   | { type: 'comment' }
   | { type: 'comment-delete' }
+  | { type: 'toggle-mouse' }
   | { type: 'help' }
   | { type: 'close' };
 
@@ -62,6 +63,8 @@ export function mapReviewKey(input: string, key: Key): ReviewIntent | null {
       return { type: 'jump-comment', direction: -1 };
     case 'e':
       return { type: 'comment' };
+    case 'm':
+      return { type: 'toggle-mouse' };
     case '?':
       return { type: 'help' };
     case 'q':
@@ -86,6 +89,7 @@ export const REVIEW_KEY_HINTS: readonly ReviewKeyHint[] = [
   { keys: 'enter / e', action: 'comment on this line' },
   { keys: 'del', action: 'delete the comment under the cursor' },
   { keys: '?', action: 'this list' },
+  { keys: 'm', action: 'toggle mouse capture' },
   { keys: 'esc / q', action: 'back' },
 ];
 

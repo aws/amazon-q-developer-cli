@@ -68,6 +68,7 @@ export const Settings = {
   // wheel scroll, drag-resize) on open. Default ON; toggled live with `m` and
   // persisted so power users who rely on terminal text-selection can opt out.
   WORKFLOW_MONITOR_MOUSE: 'chat.workflowMonitor.mouseEnabled',
+  SPEC_REVIEW_MOUSE: 'chat.specReview.mouseEnabled',
 } as const;
 
 /**

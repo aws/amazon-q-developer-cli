@@ -1,17 +1,22 @@
 import React, {
+  useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
   useState,
 } from 'react';
-import { Box, Input, useTwinkiContext } from '../../renderer.js';
+import { Box, Input, useMouse, useTwinkiContext } from '../../renderer.js';
 import { Text } from '../ui/text/Text.js';
 import { commentsForDocument, useAppStore } from '../../stores/app-store.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useKeypress } from '../../hooks/useKeypress.js';
+import { setMouseCaptureEnabled } from '../../utils/mouse-capture.js';
+import { readBoolSetting, updateCliSetting } from '../../utils/cli-settings.js';
+import { Settings } from '../../constants/settings.js';
 import { layoutRows } from '../../utils/spec-review/layout.js';
 import type { ReviewAction } from '../../utils/spec-review/review-actions.js';
 import {
@@ -50,6 +55,7 @@ export const SpecReviewScreen: React.FC = () => {
       : NO_COMMENTS
   );
   const moveCursor = useAppStore((s) => s.moveSpecReviewCursor);
+  const setCursor = useAppStore((s) => s.setSpecReviewCursor);
   const moveToSection = useAppStore((s) => s.moveSpecReviewCursorToSection);
   const moveToComment = useAppStore((s) => s.moveSpecReviewCursorToComment);
   const moveToEdge = useAppStore((s) => s.moveSpecReviewCursorToEdge);
@@ -63,6 +69,12 @@ export const SpecReviewScreen: React.FC = () => {
   const [helpOpen, setHelpOpen] = useState(false);
   const onComment = !!review?.cursor.commentId;
   const footerHints = useMemo(() => reviewFooterHints(onComment), [onComment]);
+
+  // Mouse support: scroll wheel + click-to-position, toggled with `m`.
+  const [mouseEnabled, setMouseEnabled] = useState(() =>
+    readBoolSetting(Settings.SPEC_REVIEW_MOUSE, true)
+  );
+
   // The footer is one row normally, one per binding plus a closing hint while
   // help is open; the body gets what's left so nothing spills into scrollback.
   const footerRows = helpOpen ? REVIEW_KEY_HINTS.length + 1 : composing ? 2 : 1;
@@ -71,6 +83,37 @@ export const SpecReviewScreen: React.FC = () => {
   const inputRef = useRef<Input | null>(null);
   const composingRef = useRef(false);
   composingRef.current = !!composing;
+
+  // Double-click detection: two clicks resolving to the same cursor within 300ms.
+  const lastClickRef = useRef<{ key: string; time: number }>({
+    key: '',
+    time: 0,
+  });
+
+  const openCommentEditor = useCallback(() => {
+    const draft = startComment();
+    const editor = new Input();
+    editor.focused = true;
+    editor.setValue(draft);
+    editor.onSubmit = (value: string) => {
+      inputRef.current = null;
+      commitComment(value);
+    };
+    inputRef.current = editor;
+  }, [startComment, commitComment]);
+
+  useEffect(() => {
+    setMouseCaptureEnabled(mouseEnabled);
+    return () => setMouseCaptureEnabled(false);
+  }, [mouseEnabled]);
+
+  const toggleMouse = useCallback(() => {
+    const next = !mouseEnabled;
+    setMouseEnabled(next);
+    setMouseCaptureEnabled(next);
+    updateCliSetting(Settings.SPEC_REVIEW_MOUSE, next).catch(() => {});
+  }, [mouseEnabled]);
+
   // The Input renders from its own buffer, so keystrokes need an explicit
   // rerender — the store doesn't see them until the comment is submitted.
   const [, rerenderInput] = useReducer((n: number) => n + 1, 0);
@@ -104,14 +147,42 @@ export const SpecReviewScreen: React.FC = () => {
   }, [review, rows]);
 
   // The window follows the cursor rather than being stored: it depends on the
-  // terminal's size, which the store has no business knowing.
+  // terminal's size, which the store has no business knowing. When the cursor
+  // is already visible, the window stays put (avoids a jarring re-center on
+  // mouse click); it only scrolls when the cursor moves out of view.
+  // NOTE: ref written in useMemo — safe under twinki's synchronous renderer;
+  // would need rework if the renderer ever gains concurrent-mode semantics.
+  const scrollOffsetRef = useRef(0);
   const scrollOffset = useMemo(() => {
     const last = Math.max(0, rows.length - viewportRows);
-    return Math.min(
-      last,
-      Math.max(0, cursorRow - Math.floor(viewportRows / 2))
-    );
+    const prev = scrollOffsetRef.current;
+    let next = prev;
+    if (cursorRow < prev) {
+      // Cursor moved above the viewport — scroll up to keep it visible.
+      next = cursorRow;
+    } else if (cursorRow >= prev + viewportRows) {
+      // Cursor moved below the viewport — scroll down to keep it visible.
+      next = cursorRow - viewportRows + 1;
+    }
+    next = Math.max(0, Math.min(next, last));
+    scrollOffsetRef.current = next;
+    return next;
   }, [cursorRow, rows.length, viewportRows]);
+
+  useMouse(
+    useCallback(
+      (event: { type: string }) => {
+        if (composingRef.current || helpOpen) return;
+        if (event.type === 'scrollup') {
+          moveCursor(-3);
+        } else if (event.type === 'scrolldown') {
+          moveCursor(3);
+        }
+      },
+      [moveCursor, helpOpen]
+    ),
+    { isActive: mouseEnabled }
+  );
 
   useKeypress((input, key) => {
     if (!review) return;
@@ -156,19 +227,14 @@ export const SpecReviewScreen: React.FC = () => {
         return;
       case 'comment': {
         if (review.error) return;
-        const draft = startComment();
-        const editor = new Input();
-        editor.focused = true;
-        editor.setValue(draft);
-        editor.onSubmit = (value: string) => {
-          inputRef.current = null;
-          commitComment(value);
-        };
-        inputRef.current = editor;
+        openCommentEditor();
         return;
       }
       case 'comment-delete':
         if (onComment) removeComment();
+        return;
+      case 'toggle-mouse':
+        toggleMouse();
         return;
     }
   });
@@ -221,12 +287,42 @@ export const SpecReviewScreen: React.FC = () => {
                 : focused
                   ? primary
                   : secondary;
+            const rowIndex = scrollOffset + offset;
             return (
-              <Text key={`${scrollOffset + offset}`}>
-                {marker}
-                {row.indent}
-                {paint(body || ' ')}
-              </Text>
+              <Box
+                key={`${rowIndex}`}
+                width={width}
+                onClick={
+                  mouseEnabled
+                    ? () => {
+                        if (composingRef.current || helpOpen) return;
+                        const targetLine = row.lineIndex;
+                        const targetComment =
+                          row.kind === 'comment'
+                            ? (row.commentId ?? null)
+                            : null;
+                        const now = Date.now();
+                        const last = lastClickRef.current;
+                        const clickKey = `${targetLine}:${targetComment ?? ''}`;
+                        const isDoubleClick =
+                          last.key === clickKey && now - last.time < 300;
+                        lastClickRef.current = { key: clickKey, time: now };
+
+                        setCursor(targetLine, targetComment);
+
+                        if (isDoubleClick && !review?.error) {
+                          openCommentEditor();
+                        }
+                      }
+                    : undefined
+                }
+              >
+                <Text wrap="truncate-end">
+                  {marker}
+                  {row.indent}
+                  {paint(body || ' ')}
+                </Text>
+              </Box>
             );
           })}
         </Box>
@@ -270,20 +366,30 @@ export const SpecReviewScreen: React.FC = () => {
           </>
         ) : (
           <Box>
-            <Text>
-              {footerHints.map((hint, i) => (
-                <React.Fragment key={hint.action}>
-                  {i > 0 && secondary(` ${glyphs.smallDot} `)}
-                  {primary(
-                    hint.glyph === 'arrows'
-                      ? `${glyphs.arrowUp}${glyphs.arrowDown}`
-                      : hint.glyph === 'enter'
-                        ? glyphs.enter
-                        : hint.keys
-                  )}{' '}
-                  {secondary(hint.action)}
-                </React.Fragment>
-              ))}
+            <Text wrap="truncate-end">
+              {footerHints.map((hint, i) => {
+                const isLast = i === footerHints.length - 1;
+                return (
+                  <React.Fragment key={hint.action}>
+                    {i > 0 && secondary(` ${glyphs.smallDot} `)}
+                    {isLast && (
+                      <>
+                        {primary('m')}{' '}
+                        {secondary(`mouse:${mouseEnabled ? 'on' : 'off'}`)}
+                        {secondary(` ${glyphs.smallDot} `)}
+                      </>
+                    )}
+                    {primary(
+                      hint.glyph === 'arrows'
+                        ? `${glyphs.arrowUp}${glyphs.arrowDown}`
+                        : hint.glyph === 'enter'
+                          ? glyphs.enter
+                          : hint.keys
+                    )}{' '}
+                    {secondary(hint.action)}
+                  </React.Fragment>
+                );
+              })}
             </Text>
           </Box>
         )}

@@ -124,6 +124,7 @@ describe('REVIEW_KEY_HINTS', () => {
       'enter / e': ['', { return: true }],
       del: ['', { delete: true }],
       '?': ['?', {}],
+      m: ['m', {}],
       'esc / q': ['', { escape: true }],
     };
     for (const hint of REVIEW_KEY_HINTS) {

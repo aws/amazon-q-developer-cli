@@ -2106,6 +2106,7 @@ export interface AppState {
   moveSpecReviewCursorToSection: (direction: 1 | -1) => void;
   moveSpecReviewCursorToComment: (direction: 1 | -1) => void;
   moveSpecReviewCursorToEdge: (edge: 'start' | 'end') => void;
+  setSpecReviewCursor: (lineIndex: number, commentId: string | null) => void;
   startSpecReviewComment: () => string;
   cancelSpecReviewComment: () => void;
   commitSpecReviewComment: (body: string) => void;
@@ -6481,6 +6482,15 @@ export const createAppStore = (props: AppStoreProps) => {
           lineIndex: edge === 'start' ? 0 : view.lines.length - 1,
           commentId: null,
         },
+      });
+    },
+
+    setSpecReviewCursor: (lineIndex, commentId) => {
+      const view = get().specReviewView;
+      if (!view) return;
+      const clamped = Math.max(0, Math.min(lineIndex, view.lines.length - 1));
+      patchSpecReviewView(set, get, {
+        cursor: { lineIndex: clamped, commentId },
       });
     },
 

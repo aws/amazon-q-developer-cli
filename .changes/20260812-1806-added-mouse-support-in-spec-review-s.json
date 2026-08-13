@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Mouse support in spec review screen — scroll wheel navigation and click-to-position, toggled with `m`"
+}
