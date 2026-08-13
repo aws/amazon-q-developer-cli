@@ -12,6 +12,12 @@ const mockExecSync = mock((_cmd?: unknown, _opts?: unknown): string => {
   throw new Error('not available');
 });
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['child_process']);
+
 mock.module('child_process', () => ({
   execSync: mockExecSync,
 }));

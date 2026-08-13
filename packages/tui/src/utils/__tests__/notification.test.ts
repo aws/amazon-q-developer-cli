@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
 
 // playNotification short-circuits when isTerminalFocused() is true.
 // The module defaults to focused=true; force it false so writes happen.
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../focus-tracker.js']);
+
 mock.module('../focus-tracker.js', () => ({
   isTerminalFocused: () => false,
 }));

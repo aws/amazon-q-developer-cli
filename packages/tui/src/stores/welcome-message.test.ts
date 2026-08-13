@@ -4,6 +4,12 @@ import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { Kiro } from '../kiro';
 import { AgentEventType } from '../types/agent-events';
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../kiro']);
+
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),

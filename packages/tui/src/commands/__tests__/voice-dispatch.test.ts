@@ -40,6 +40,12 @@ const startPTTRecordingMock = mock(
   }
 );
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../voice-helper']);
+
 mock.module('../voice-helper', () => ({
   startPTTRecording: startPTTRecordingMock,
 }));

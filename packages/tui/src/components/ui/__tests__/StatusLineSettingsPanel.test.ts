@@ -21,6 +21,14 @@ import stripAnsi from 'strip-ansi';
 // The panel sizes its window from the terminal height, so drive that directly
 // rather than reaching into the stream and leaving it changed for other suites.
 const termSize = { width: 200, height: 120 };
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../../../hooks/useTerminalSize.js',
+]);
+
 mock.module('../../../hooks/useTerminalSize.js', () => ({
   useTerminalSize: () => ({ ...termSize }),
 }));

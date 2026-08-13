@@ -3,6 +3,12 @@ import { describe, it, expect, mock, afterAll } from 'bun:test';
 // Mock child_process and fs to prevent side effects from other effects
 // that import these modules (e.g. /copy, /hooks edit).
 // Note: these mocks are scoped to this file's imports only.
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['child_process']);
+
 mock.module('child_process', () => ({
   spawnSync: mock(() => ({ status: 1 })),
 }));

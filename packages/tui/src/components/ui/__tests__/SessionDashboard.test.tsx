@@ -12,6 +12,21 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { render, type Instance, type Terminal } from 'twinki';
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../../../hooks/useTerminalSize.js',
+  '../../../utils/cli-settings.js',
+  '../../../utils/session-lock.js',
+  '../../../utils/session-mutations.js',
+  '../../../utils/session-search.js',
+  '../../../utils/session-preview.js',
+  '../../../utils/session-bookmarks.js',
+  '../../../utils/list-all-sessions-cli.js',
+]);
+
 const mockTermSize = { width: 120, height: 40 };
 mock.module('../../../hooks/useTerminalSize.js', () => ({
   useTerminalSize: () => ({ ...mockTermSize }),
@@ -108,6 +123,7 @@ type IndexMock = Pick<
   | 'isPromptless'
   | 'getPromptTitle'
   | 'getPromptCount'
+  | 'abort'
 >;
 type IndexStatus = ReturnType<IndexMock['getStatus']>;
 let indexSearchImpl: IndexMock['search'] = () => [];
@@ -133,6 +149,7 @@ const indexMock: IndexMock = {
   isPromptless: () => false,
   getPromptTitle: () => undefined,
   getPromptCount: (id: string) => indexPromptCounts.get(id),
+  abort: () => {},
 };
 mock.module('../../../utils/session-search.js', () => ({
   getSessionSearchIndex: () => indexMock,

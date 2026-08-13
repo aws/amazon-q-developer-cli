@@ -4,6 +4,12 @@ import { createMockCommandContext } from '../../__tests__/test-helpers';
 import { KasCommandName } from '../../../kas-commands';
 import type { ToolInfo } from '../../../stores/app-store';
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../../../kiro']);
+
 mock.module('../../../kiro', () => ({
   Kiro: mock(() => ({ initialize: mock() })),
 }));

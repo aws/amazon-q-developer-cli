@@ -16,6 +16,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../../../hooks/useTerminalSize.js',
+  '../../../utils/cli-settings.js',
+]);
+
 const mockTermSize = { width: 120, height: 40 };
 mock.module('../../../hooks/useTerminalSize.js', () => ({
   useTerminalSize: () => ({ ...mockTermSize }),

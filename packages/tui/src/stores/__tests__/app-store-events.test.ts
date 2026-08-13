@@ -6,6 +6,12 @@ import { AgentEventType, ContentType } from '../../types/agent-events';
 import { SessionLifecycleOwner } from '../../types/multi-session.js';
 import { CommandHistory } from '../../utils/command-history';
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../../kiro']);
+
 mock.module('../../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),

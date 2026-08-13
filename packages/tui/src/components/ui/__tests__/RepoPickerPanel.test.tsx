@@ -7,6 +7,14 @@ import { render, type Instance, type Terminal } from 'twinki';
 const mockTermSize = { width: 80, height: 24 };
 const subscribeToMockTermSize = () => () => {};
 const getMockTermSize = () => mockTermSize;
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../../../hooks/useTerminalSize.js',
+]);
+
 mock.module('../../../hooks/useTerminalSize.js', () => ({
   useTerminalSize: () =>
     React.useSyncExternalStore(subscribeToMockTermSize, getMockTermSize),
