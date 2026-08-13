@@ -666,6 +666,21 @@ pub fn record_ui_mode_session_started(ui_mode: UiMode) -> MetricRecord {
         .expect_valid()
 }
 
+/// A session-dashboard visit ended. The TUI is the production emitter; this
+/// constructor is the typed contract that keeps the schema honest.
+pub fn record_session_dashboard(outcome: &str, via: &str, entry: &str, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_session_dashboard_total", 1)
+        .attribute("version_full", version_attr())
+        .attribute("agent_engine", engine.as_str())
+        .attribute(
+            "outcome",
+            bounded_or(outcome, &["resumed", "resumed_cross_workspace", "closed"], "_other_"),
+        )
+        .attribute("via", bounded_or(via, &["search", "browse", "_none_"], "_other_"))
+        .attribute("entry", bounded_or(entry, &["slash", "ctrl_e", "boot"], "_other_"))
+        .expect_valid()
+}
+
 pub fn record_daily_heartbeat(
     release_channel: super::ReleaseChannel,
     os_type: OsType,
@@ -1172,6 +1187,11 @@ fn non_negative(value: f64) -> bool {
 
 fn bounded_name<'a>(value: &'a str, allowed: &[&str]) -> &'a str {
     if allowed.contains(&value) { value } else { "unknown" }
+}
+
+/// Like `bounded_name`, for attributes whose schema fallback is not "unknown".
+fn bounded_or<'a>(value: &'a str, allowed: &[&str], fallback: &'a str) -> &'a str {
+    if allowed.contains(&value) { value } else { fallback }
 }
 
 #[cfg(test)]
