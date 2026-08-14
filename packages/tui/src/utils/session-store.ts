@@ -281,12 +281,19 @@ function readKasSessionCopy(
   }
 }
 
-/** Enumerate validated KAS copies and report whether every candidate was readable. */
-export function listValidatedKasSessionCopies(
+/**
+ * Enumerate validated KAS copies and report whether every candidate was
+ * readable. Async: each copy costs a session.json read plus ~15 syscalls,
+ * so a large store scanned in one synchronous sweep would stall input and
+ * rendering — yield every 50 sessions instead.
+ */
+export async function listValidatedKasSessionCopies(
   root: string
-): ValidatedKasSessionCopies {
+): Promise<ValidatedKasSessionCopies> {
+  const yieldTick = () => new Promise<void>((resolve) => setImmediate(resolve));
   const copies: ValidatedKasSessionCopy[] = [];
   let complete = true;
+  let scanned = 0;
   let hashes: string[];
   try {
     hashes = readdirSync(root).filter((entry) => entry !== 'cli');
@@ -320,6 +327,7 @@ export function listValidatedKasSessionCopies(
       continue;
     }
     for (const dirName of dirNames.sort()) {
+      if (++scanned % 50 === 0) await yieldTick();
       const copy = readKasSessionCopy(root, hash, dirName);
       if (copy) {
         copies.push(copy);

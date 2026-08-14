@@ -623,7 +623,7 @@ export class SessionSearchIndex {
     // KAS store: use the same validated canonical copy as listing/preview.
     const root = this.storeRoot();
     if (root === this.sessionsDir) return { refs, complete };
-    const scanned = listValidatedKasSessionCopies(root);
+    const scanned = await listValidatedKasSessionCopies(root);
     complete &&= scanned.complete;
     const bySession = new Map<string, typeof scanned.copies>();
     for (const copy of scanned.copies) {

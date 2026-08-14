@@ -255,6 +255,8 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SessionLock {
     pid: u32,
+    /// Alias: earlier TUI builds wrote the camelCase spelling.
+    #[serde(alias = "startedAt")]
     started_at: DateTime<Utc>,
 }
 
@@ -418,6 +420,10 @@ fn is_pid_alive(pid: u32) -> bool {
         name.starts_with(crate::util::CLI_BINARY_NAME)
             // "chat_cli" is the binary name for cargo debug builds
             || name.starts_with("chat_cli")
+            // The TUI holds session locks too, and its process is the
+            // extracted bun runtime.
+            || name == "bun"
+            || name == "bun.exe"
     })
 }
 

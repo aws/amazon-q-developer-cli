@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   writeFileSync,
   rmSync,
   existsSync,
@@ -99,6 +100,28 @@ describe('acquireSessionLock', () => {
     );
 
     expect(isSessionLocked('a')).toMatchObject({ locked: true, pid: 1 });
+  });
+
+  it('writes started_at (snake_case) and reads both key spellings', () => {
+    // The Rust agent parses these lock files with a snake_case schema; a
+    // camelCase-only lock reads to it as unlocked.
+    const dir = kasDir('interop');
+    acquireSessionLock('interop');
+    const written = JSON.parse(readFileSync(join(dir, '.lock'), 'utf-8'));
+    expect(written.started_at).toBeString();
+    expect(written.startedAt).toBeUndefined();
+    releaseSessionLock();
+
+    const stamp = new Date().toISOString();
+    writeFileSync(
+      join(dir, '.lock'),
+      JSON.stringify({ pid: 1, started_at: stamp })
+    );
+    expect(isSessionLocked('interop')).toMatchObject({
+      locked: true,
+      pid: 1,
+      startedAt: stamp,
+    });
   });
 
   it('checks only the selected physical store and skips remote rows', () => {

@@ -330,6 +330,13 @@ export async function deleteLocalKasSessionWithAgent(
         reason: placements.includes('remote') ? 'cloud' : 'error',
       };
     }
+    // Same recency backstop as the direct delete path: the lock alone is not
+    // enough — acquiring one is a no-op for a session directory another
+    // terminal created moments ago and has not locked yet.
+    const activity = Math.max(...finalDirs.map(kasActivityMs));
+    if (activity > 0 && Date.now() - activity < KAS_LIVE_GUARD_MS) {
+      return { ok: false, reason: 'recent' };
+    }
     return (await agentDelete(normalizedId).catch(() => false))
       ? { ok: true, store: 'kas' }
       : { ok: false, reason: 'error' };
@@ -361,7 +368,7 @@ export interface GcScan {
 // config-only/empty logs are tiny. Skipping the read caps scan I/O.
 const EMPTY_SIZE_CUTOFF = 256 * 1024;
 
-/** True when a validated V2 JSONL log contains no user Prompt entry. */
+/** True when a validated V2 JSONL log contains no conversation content. */
 function v2IsEmpty(root: string, sessionId: string): boolean {
   const logPath = v2SessionPath(root, sessionId, '.jsonl');
   const lexicalLogPath = join(root, 'cli', `${sessionId}.jsonl`);
@@ -373,7 +380,18 @@ function v2IsEmpty(root: string, sessionId: string): boolean {
       if (!line.trim()) continue;
       try {
         const e = JSON.parse(line);
-        if (e?.kind === 'Prompt') return false;
+        // Any conversation-bearing entry counts as content — Compaction in
+        // particular carries a whole imported-V1 messages snapshot even when
+        // no Prompt line survives. Only control markers (e.g. Clear) and
+        // unknown kinds leave a session classifiable as empty.
+        if (
+          e?.kind === 'Prompt' ||
+          e?.kind === 'AssistantMessage' ||
+          e?.kind === 'ToolResults' ||
+          e?.kind === 'Compaction'
+        ) {
+          return false;
+        }
       } catch {
         return false; // corrupt content could hide a conversation
       }

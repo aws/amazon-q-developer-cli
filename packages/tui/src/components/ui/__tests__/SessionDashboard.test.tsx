@@ -1205,6 +1205,25 @@ describe('narrow layout', () => {
     await flush();
     await expectWithinTerminal();
   });
+
+  test('a 15-line pane with the gc hint still shows session rows', async () => {
+    mockTermSize.width = 100;
+    mockTermSize.height = 15;
+    const { terminal } = mount([
+      ...Array.from({ length: 6 }, (_, index) =>
+        session(`short-${index}`, `short pane row ${index}`, { cwd: '/tmp' })
+      ),
+      // Placeholder title classifies as empty → the gc hint line renders.
+      session('short-empty', 'New Session', { cwd: '/tmp' }),
+    ]);
+    await flush();
+
+    const frame = await currentFrame(terminal);
+    const lines = frame.split('\n').filter((line) => line.length > 0);
+    expect(lines.length).toBeLessThanOrEqual(mockTermSize.height);
+    // Hints may be dropped at this height, session rows must not be.
+    expect(frame).toContain('short pane row 0');
+  });
 });
 
 describe('tiny terminal safety', () => {

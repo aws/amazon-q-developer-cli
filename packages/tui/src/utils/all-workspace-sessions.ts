@@ -166,8 +166,11 @@ async function readV2Store(cliDir: string): Promise<SessionListingResult> {
         ? data.parent_session_id
         : undefined;
       const reason = data.session_created_reason;
+      // The Rust writer serde-defaults this field to 'subagent' even for
+      // user-created sessions, and its own predicate requires a parent id
+      // too — a reason without a parent is the default, not a derivation.
       const createdReason =
-        reason === 'subagent' || (parentSessionId && reason === 'rewind')
+        parentSessionId && (reason === 'subagent' || reason === 'rewind')
           ? reason
           : undefined;
       const entry = normalizeListingEntry({
@@ -201,7 +204,7 @@ async function readKasStore(
   sessionsRoot: string
 ): Promise<SessionListingResult> {
   if (!existsSync(sessionsRoot)) return { sessions: [], complete: true };
-  const scanned = listValidatedKasSessionCopies(sessionsRoot);
+  const scanned = await listValidatedKasSessionCopies(sessionsRoot);
   const bySession = new Map<string, typeof scanned.copies>();
   for (const copy of scanned.copies) {
     const copies = bySession.get(copy.sessionId) ?? [];

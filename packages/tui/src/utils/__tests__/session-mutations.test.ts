@@ -22,7 +22,12 @@ let root: string;
 
 function v2Session(
   id: string,
-  opts: { cwd?: string; withPrompt?: boolean; lockPid?: number } = {}
+  opts: {
+    cwd?: string;
+    withPrompt?: boolean;
+    withCompaction?: boolean;
+    lockPid?: number;
+  } = {}
 ): void {
   const cliDir = join(root, 'cli');
   mkdirSync(cliDir, { recursive: true });
@@ -38,13 +43,25 @@ function v2Session(
           data: { message_id: 'm1', content: [{ kind: 'text', data: 'hi' }] },
         }),
       ]
-    : [
-        JSON.stringify({
-          version: 'v1',
-          kind: 'Clear',
-          data: {},
-        }),
-      ];
+    : opts.withCompaction
+      ? [
+          JSON.stringify({
+            version: 'v1',
+            kind: 'Compaction',
+            data: {
+              summary: 'imported v1 conversation',
+              strategy: 'default',
+              messages_snapshot: [{ role: 'user', content: 'hello' }],
+            },
+          }),
+        ]
+      : [
+          JSON.stringify({
+            version: 'v1',
+            kind: 'Clear',
+            data: {},
+          }),
+        ];
   writeFileSync(join(cliDir, `${id}.jsonl`), entries.join('\n') + '\n');
   if (opts.lockPid !== undefined) {
     writeFileSync(
@@ -407,6 +424,9 @@ describe('deleteLocalKasSessionWithAgent', () => {
       })
     );
     writeFileSync(join(second, 'messages.jsonl'), '');
+    const past = new Date(Date.now() - 60 * 60 * 1000);
+    utimesSync(join(second, 'session.json'), past, past);
+    utimesSync(join(second, 'messages.jsonl'), past, past);
 
     const result = await deleteLocalKasSessionWithAgent(
       'agent-locked',
@@ -446,6 +466,27 @@ describe('deleteLocalKasSessionWithAgent', () => {
     expect(calls).toBe(0);
     expect(existsSync(dir)).toBe(true);
   });
+
+  it('refuses a recently active session without calling the agent', async () => {
+    // A session created moments ago in another terminal may not hold its
+    // lock yet — recency is the backstop.
+    const dir = kasSession('agent-fresh');
+    let calls = 0;
+
+    const result = await deleteLocalKasSessionWithAgent(
+      'agent-fresh',
+      null,
+      async () => {
+        calls += 1;
+        return true;
+      },
+      root
+    );
+
+    expect(result).toEqual({ ok: false, reason: 'recent' });
+    expect(calls).toBe(0);
+    expect(existsSync(dir)).toBe(true);
+  });
 });
 
 describe('gcScan', () => {
@@ -458,6 +499,14 @@ describe('gcScan', () => {
     const scan = await gcScan(null, new Set(), root);
     const ids = scan.candidates.map((c) => c.sessionId).sort();
     expect(ids).toEqual(['empty1', 'kempty']);
+  });
+
+  it('keeps a compacted imported-V1 session (Compaction entry, no Prompt)', async () => {
+    v2Session('compacted', { withCompaction: true });
+
+    const scan = await gcScan(null, new Set(), root);
+
+    expect(scan.candidates).toHaveLength(0);
   });
 
   it('keeps an untitled KAS session that has a transcript', async () => {

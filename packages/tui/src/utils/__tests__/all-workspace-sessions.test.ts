@@ -203,7 +203,7 @@ describe('listAllWorkspaceSessionsFromDisk', () => {
     expect(entries[0]!.createdReason).toBe('rewind');
   });
 
-  it('honors a subagent reason without a parent id', async () => {
+  it('drops a subagent reason without a parent id (serde default, real conversation)', async () => {
     mkdirSync(join(root, 'cli'), { recursive: true });
     writeFileSync(
       join(root, 'cli', 'sub-2.json'),
@@ -216,7 +216,7 @@ describe('listAllWorkspaceSessionsFromDisk', () => {
 
     const entries = await listAllWorkspaceSessionsFromDisk(root);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.createdReason).toBe('subagent');
+    expect(entries[0]!.createdReason).toBeUndefined();
     expect(entries[0]!.parentSessionId).toBeUndefined();
   });
 

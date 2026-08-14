@@ -29,6 +29,14 @@ interface LockPayload {
   startedAt: string;
 }
 
+/** On-disk key is snake_case (the Rust agent's schema); accept the camelCase
+ *  spelling too for locks written by earlier TUI builds. */
+function payloadStartedAt(raw: Record<string, unknown>): string {
+  if (typeof raw.started_at === 'string') return raw.started_at;
+  if (typeof raw.startedAt === 'string') return raw.startedAt;
+  return '';
+}
+
 type LockState =
   | { kind: 'absent' }
   | { kind: 'owned'; payload: LockPayload }
@@ -57,15 +65,15 @@ function isPidAlive(pid: number): boolean {
 function readLockState(path: string): LockState {
   if (!existsSync(path)) return { kind: 'absent' };
   try {
-    const raw = readBoundedJson(
-      path,
-      LOCK_METADATA_MAX_BYTES
-    ) as Partial<LockPayload>;
+    const raw = readBoundedJson(path, LOCK_METADATA_MAX_BYTES) as Record<
+      string,
+      unknown
+    >;
     const pid = Number(raw.pid);
     if (!Number.isSafeInteger(pid) || pid <= 0) return { kind: 'unknown' };
     const payload = {
       pid,
-      startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : '',
+      startedAt: payloadStartedAt(raw),
     };
     if (pid === process.pid) return { kind: 'owned', payload };
     return isPidAlive(pid)
@@ -151,10 +159,12 @@ function removeOwned(path: string): void {
 
 /** Publish the complete payload with an exclusive hard link, never an empty file. */
 function createLock(path: string): void {
+  // snake_case on disk: the Rust agent reads the same lock files and its
+  // schema uses started_at.
   const payload = JSON.stringify({
     pid: process.pid,
-    startedAt: new Date().toISOString(),
-  } satisfies LockPayload);
+    started_at: new Date().toISOString(),
+  });
   const temp = `${path}.${process.pid}.${Date.now()}.${tempCounter++}.tmp`;
   const fd = openSync(temp, 'wx', 0o600);
   try {

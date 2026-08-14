@@ -11,6 +11,7 @@ import { WelcomeScreen } from '../welcome-screen/index.js';
 import { SourceProviderGate } from '../ui/SourceProviderGate.js';
 import { openUrlInBrowser } from '../../utils/browser.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../utils/cloud-urls.js';
+import { Feature, features } from '../../features.js';
 import { formatCloudStartupChecklist } from './shared/cloud-startup-checklist.js';
 import { cloudConnectStage } from './shared/cloud-connect-stage.js';
 import { ExitHint } from '../ui/ExitHint';
@@ -387,12 +388,18 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   );
   // Warm the cross-workspace scan cache at boot so the first toggle is instant.
   useEffect(() => {
-    if (inlineAgentEngine === 'kas') void scanAllWorkspaceSessions();
+    if (
+      inlineAgentEngine === 'kas' &&
+      features.isEnabled(Feature.SessionDashboard)
+    ) {
+      void scanAllWorkspaceSessions();
+    }
   }, [inlineAgentEngine]);
   useKeypress(
     (input, key) => {
       if (keybindings.matches('toggleSessionDashboard', input, key)) {
         if (
+          features.isEnabled(Feature.SessionDashboard) &&
           inlineAgentEngine === 'kas' &&
           inlinePromptEmpty &&
           !isProcessing &&

@@ -1740,20 +1740,24 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     (pendingDelete ? (pendingDelete.kind === 'gc' ? 4 : 3) : 0) +
     (mutationNotice && !pendingDelete ? 2 : 0) +
     (pendingSwitch ? 4 : 0);
+  // Chrome that always paints: title 1 + search box 3 + controls 2 + column
+  // header 2 + rule 1 + footer summary 1.
+  const fixedChrome =
+    10 +
+    (nonDerivedEmpty > 0 ? 1 : 0) +
+    (inlinePreviewShown ? PREVIEW_MAX_LINES + 4 : 0) +
+    bannerLines;
+  // The list gets first claim on the leftover height: footer hints only keep
+  // lines the session window does not need, so a short pane drops hints
+  // before it drops rows.
+  const MIN_LIST_LINES = 4;
   const footerHintLines = wrapFooterHints(
     glyphs,
     termWidth,
     Boolean(onTogglePreview)
-  ).slice(0, Math.max(termHeight - 12 - bannerLines, 0));
+  ).slice(0, Math.max(termHeight - fixedChrome - MIN_LIST_LINES, 0));
   const gcHintShown = nonDerivedEmpty > 0;
-  // Fixed chrome: title 1 + search box 3 + controls 2 + column header 2 +
-  // rule 1 + footer summary 1.
-  const chromeReserve =
-    10 +
-    footerHintLines.length +
-    (gcHintShown ? 1 : 0) +
-    (inlinePreviewShown ? PREVIEW_MAX_LINES + 4 : 0) +
-    bannerLines;
+  const chromeReserve = fixedChrome + footerHintLines.length;
   // +1: the window's topmost band renders without its leading blank line.
   const lineBudget = Math.max(termHeight - chromeReserve, 0) + 1;
 

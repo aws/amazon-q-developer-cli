@@ -39,8 +39,38 @@ function seedV2Store(count: number): void {
     );
     writeFileSync(
       join(cliDir, `${id}.jsonl`),
-      JSON.stringify({ kind: 'Prompt', content: `prompt for session ${i}` }) +
-        '\n'
+      JSON.stringify({
+        version: 'v1',
+        kind: 'Prompt',
+        data: {
+          message_id: `m-${i}`,
+          content: [{ kind: 'text', data: `prompt for session ${i}` }],
+        },
+      }) + '\n'
+    );
+  }
+}
+
+/** KAS-shaped store: `{hash}/{sess_dir}/session.json` + transcript. The scan
+ *  of these dirs is the dashboards' hottest path; seeding them makes an
+ *  event-loop regression in that walk visible to the responsiveness probe. */
+function seedKasStore(count: number): void {
+  for (let i = 0; i < count; i++) {
+    const id = `sess_${uuid(i)}`;
+    const dir = join(root, `hash-${i % 25}`, id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'session.json'),
+      JSON.stringify({
+        id,
+        title: `kas session ${i}`,
+        workspacePaths: [`/w/proj-${i % 40}`],
+        lastModifiedAt: new Date(1700000000000 + i * 1000).toISOString(),
+      })
+    );
+    writeFileSync(
+      join(dir, 'messages.jsonl'),
+      JSON.stringify({ type: 'user', content: `kas prompt ${i}` }) + '\n'
     );
   }
 }
@@ -150,6 +180,7 @@ describe('event-loop responsiveness during a cold index build', () => {
     'no macrotask stall exceeds the interaction budget',
     async () => {
       seedV2Store(SESSION_COUNT);
+      seedKasStore(1000);
       const index = new SessionSearchIndex(join(root, 'cli'));
       try {
         // Probe: measure macrotask scheduling gaps while the build runs.
@@ -158,7 +189,7 @@ describe('event-loop responsiveness during a cold index build', () => {
         let worstGap = 0;
         let last = performance.now();
         let probing = true;
-        const probe = (async () => {
+        void (async () => {
           while (probing) {
             await new Promise((r) => setTimeout(r, 0));
             const now = performance.now();
@@ -168,8 +199,11 @@ describe('event-loop responsiveness during a cold index build', () => {
         })();
 
         await index.refresh();
+        // The probe is stopped but deliberately NOT awaited: its final
+        // timer wakeup can be dropped by the bun test runner after this
+        // workload (the identical code joins cleanly as a plain script),
+        // and worstGap is complete once the build has resolved.
         probing = false;
-        await probe;
 
         // Generous for loaded CI runners (observed ~430ms of scheduler noise
         // on shared 4-core hosts). The regression this guards — a slice
