@@ -251,12 +251,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest-8-cores, macos-latest, windows-x64-latest-16-cores]
+        os:
+          [
+            ubuntu-latest-8-cores,
+            macos-latest-xlarge,
+            windows-x64-latest-16-cores,
+          ]
         include:
           - os: ubuntu-latest-8-cores
             artifact_suffix: linux
             binary_path: target/release/chat_cli
-          - os: macos-latest
+          - os: macos-latest-xlarge
             artifact_suffix: macos
             binary_path: target/release/chat_cli
           - os: windows-x64-latest-16-cores
@@ -420,12 +425,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest-8-cores, macos-latest, windows-x64-latest-16-cores]
+        os:
+          [
+            ubuntu-latest-8-cores,
+            macos-latest-xlarge,
+            windows-x64-latest-16-cores,
+          ]
         include:
           - os: ubuntu-latest-8-cores
             artifact_suffix: linux
             binary_path: target/release/chat_cli
-          - os: macos-latest
+          - os: macos-latest-xlarge
             artifact_suffix: macos
             binary_path: target/release/chat_cli
           - os: windows-x64-latest-16-cores
@@ -477,6 +487,15 @@ jobs:
             -- bun run test:acp-integ
         working-directory: packages/tui
 
+      - name: Upload ACP integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-acp-integration-${{ matrix.artifact_suffix }}
+          path: packages/tui/integ_tests/test-outputs/
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Upload ACP integration retry status
         if: always()
         uses: actions/upload-artifact@v4
@@ -493,12 +512,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest-8-cores, macos-latest, windows-x64-latest-16-cores]
+        os:
+          [
+            ubuntu-latest-8-cores,
+            macos-latest-xlarge,
+            windows-x64-latest-16-cores,
+          ]
         include:
           - os: ubuntu-latest-8-cores
             artifact_suffix: linux
             binary_path: target/release/chat_cli
-          - os: macos-latest
+          - os: macos-latest-xlarge
             artifact_suffix: macos
             binary_path: target/release/chat_cli
           - os: windows-x64-latest-16-cores
@@ -574,13 +598,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        os: [ubuntu-latest, macos-latest-xlarge, windows-x64-latest-16-cores]
         include:
           - os: ubuntu-latest
             artifact_suffix: linux
             binary_path: target/release/chat_cli
             lane_timeout: 30
-          - os: macos-latest
+          - os: macos-latest-xlarge
             artifact_suffix: macos
             binary_path: target/release/chat_cli
             lane_timeout: 30
@@ -657,13 +681,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        os: [ubuntu-latest, macos-latest-xlarge, windows-x64-latest-16-cores]
         category: ${{ fromJSON(needs.resolve.outputs.scenario_categories) }}
         include:
           - os: ubuntu-latest
             artifact_suffix: linux
             binary_path: target/release/chat_cli
-          - os: macos-latest
+          - os: macos-latest-xlarge
             artifact_suffix: macos
             binary_path: target/release/chat_cli
           - os: windows-x64-latest-16-cores
@@ -742,12 +766,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        os: [ubuntu-latest, macos-latest-xlarge, windows-x64-latest-16-cores]
         include:
           - os: ubuntu-latest
             artifact_suffix: linux
             binary_path: target/release/chat_cli
-          - os: macos-latest
+          - os: macos-latest-xlarge
             artifact_suffix: macos
             binary_path: target/release/chat_cli
           - os: windows-x64-latest-16-cores
@@ -961,15 +985,17 @@ jobs:
               return
             fi
 
-            local values=()
+            local joined=''
             for file in "${files[@]}"; do
               local platform
               platform="$(basename "$file" .txt)"
               platform="${platform#"$prefix"-}"
-              values+=("$platform: $(<"$file")")
+              if [[ -n "$joined" ]]; then
+                joined+='; '
+              fi
+              joined+="$platform: $(<"$file")"
             done
-            local IFS='; '
-            printf '%s' "${values[*]}"
+            printf '%s' "$joined"
           }
 
           {
