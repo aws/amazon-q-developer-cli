@@ -9,8 +9,6 @@ use serde::{
     Serialize,
 };
 
-const DEFAULT_OAUTH_SCOPES: &[&str] = &["openid", "email", "profile", "offline_access"];
-
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[derive(Default)]
@@ -41,7 +39,7 @@ pub struct CustomToolConfig {
     pub url: String,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub headers: HashMap<String, String>,
-    #[serde(default = "get_default_scopes", skip_serializing_if = "is_default_oauth_scopes")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub oauth_scopes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OAuthConfig>,
@@ -99,10 +97,6 @@ impl CustomToolConfig {
     }
 }
 
-pub fn get_default_scopes() -> Vec<String> {
-    DEFAULT_OAUTH_SCOPES.iter().map(|s| (*s).to_string()).collect()
-}
-
 pub fn default_timeout() -> u64 {
     120 * 1000
 }
@@ -119,17 +113,13 @@ fn is_empty_vec<T>(v: &[T]) -> bool {
     v.is_empty()
 }
 
-fn is_default_oauth_scopes(scopes: &Vec<String>) -> bool {
-    *scopes == get_default_scopes()
-}
-
 impl Default for CustomToolConfig {
     fn default() -> Self {
         Self {
             transport_type: None,
             url: String::new(),
             headers: HashMap::new(),
-            oauth_scopes: get_default_scopes(),
+            oauth_scopes: Vec::new(),
             oauth: None,
             command: String::new(),
             args: Vec::new(),

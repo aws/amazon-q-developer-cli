@@ -299,10 +299,7 @@ impl AuthClientWrapper {
             let reg = Registration {
                 client_id,
                 client_secret: None,
-                scopes: get_default_scopes()
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect::<Vec<_>>(),
+                scopes: ctx.scopes.clone(),
                 redirect_uri,
             };
             let reg_as_str = serde_json::to_string_pretty(&reg).map_err(|e| {
@@ -371,10 +368,6 @@ impl AuthClientWrapper {
 
         Ok(())
     }
-}
-
-pub fn get_default_scopes() -> &'static [&'static str] {
-    &["openid", "email", "profile", "offline_access"]
 }
 
 enum HttpServiceBuilderState {
@@ -636,10 +629,7 @@ async fn get_auth_manager(
             let reg = Registration {
                 client_id,
                 client_secret: None,
-                scopes: get_default_scopes()
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect::<Vec<_>>(),
+                scopes: scopes.to_vec(),
                 redirect_uri,
             };
             let reg_as_str = serde_json::to_string_pretty(&reg)?;
@@ -1663,19 +1653,6 @@ mod tests {
         assert_ne!(compute_key(&u1), compute_key(&u2));
     }
 
-    // ─── get_default_scopes ──────────────────────────────────────────────
-
-    #[test]
-    fn test_get_default_scopes() {
-        let scopes = get_default_scopes();
-        assert_eq!(scopes, &["openid", "email", "profile", "offline_access"]);
-    }
-
-    #[test]
-    fn test_get_default_scopes_length() {
-        assert_eq!(get_default_scopes().len(), 4);
-    }
-
     // ─── get_stub_credentials ────────────────────────────────────────────
 
     #[test]
@@ -2514,18 +2491,6 @@ mod tests {
         // Cancelling an already-cancelled token is fine
         token.cancel();
         assert!(token.is_cancelled());
-    }
-
-    // ─── get_default_scopes contains expected values ─────────────────────
-
-    #[test]
-    fn test_get_default_scopes_contains_offline_access() {
-        assert!(get_default_scopes().contains(&"offline_access"));
-    }
-
-    #[test]
-    fn test_get_default_scopes_contains_openid() {
-        assert!(get_default_scopes().contains(&"openid"));
     }
 
     // ─── OauthUtilError reqwest variant ──────────────────────────────────

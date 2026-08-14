@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Registry MCP servers no longer inject default OAuth scopes, fixing authentication with Atlassian authv2 endpoint"
+}

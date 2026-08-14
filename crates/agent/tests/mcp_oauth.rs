@@ -22,6 +22,7 @@
 //!   - Test E: a persisted token is reused on relaunch instead of prompting again.
 //!   - Test F: the authorization request's `resource` indicator is the protected-resource-metadata
 //!     resource, not the server base URL.
+//!   - Test G: the authorization request omits `scope` entirely when no scopes are configured.
 //!
 //! The test process plays the role of the user's browser: when the agent emits
 //! an `OauthRequest`, a background task fetches the authorization URL, which
@@ -689,6 +690,62 @@ async fn authorize_resource_indicator_uses_protected_resource_metadata_not_base_
     assert!(
         params.get("scope").is_some_and(|s| s.contains("openid")),
         "authorization request must carry the requested scope; params: {params:?}"
+    );
+
+    handle.shutdown().await;
+}
+
+/// Test G — Regression guard: when no OAuth scopes are configured, the
+/// authorization request must not carry a `scope` parameter at all. Atlassian's
+/// `authv2` endpoint fails its consent flow with a 404 when `scope` is present,
+/// so an injected default scope set breaks authentication against it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authorize_omits_scope_param_when_no_scopes_configured() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    let base_url = server.url();
+
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+
+    let oauth_requests = Arc::new(AtomicUsize::new(0));
+    let captured_urls = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let _browser = spawn_oauth_browser(
+        handle.clone(),
+        oauth_requests.clone(),
+        None,
+        Some(captured_urls.clone()),
+    );
+
+    // Empty scopes mirror a registry server with no oauthScopes declared anywhere.
+    let config = registry_resolved_remote("atlassian-mcp", base_url.clone(), Vec::new(), true);
+
+    launch_and_wait(&mut handle, "atlassian-mcp", config, Duration::from_secs(30))
+        .await
+        .expect("server should complete OAuth and initialize");
+
+    let urls = captured_urls.lock().unwrap().clone();
+    assert_eq!(
+        urls.len(),
+        1,
+        "exactly one authorization request expected; got {urls:?}"
+    );
+    let parsed = reqwest::Url::parse(&urls[0]).expect("authorization URL should parse");
+    let params: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
+
+    assert!(
+        !params.contains_key("scope"),
+        "authorization request must omit `scope` when no scopes are configured; params: {params:?}"
     );
 
     handle.shutdown().await;

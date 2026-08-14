@@ -743,17 +743,6 @@ pub fn default_timeout() -> u64 {
     120 * 1000
 }
 
-/// Default OAuth scopes for registry-type MCP servers when no overrides are set.
-///
-/// Empty scope sets break Dynamic Client Registration on some authorization
-/// servers, so we fall back to a standard OpenID Connect scope set.
-pub fn default_legacy_oauth_scopes() -> Vec<String> {
-    ["openid", "email", "profile", "offline_access"]
-        .into_iter()
-        .map(String::from)
-        .collect()
-}
-
 impl McpServerConfig {
     /// Returns the list of disabled tool names for this server.
     pub fn disabled_tools(&self) -> &[String] {
@@ -2041,12 +2030,6 @@ mod tests {
     #[test]
     fn test_default_timeout() {
         assert_eq!(default_timeout(), 120_000);
-    }
-
-    #[test]
-    fn test_default_legacy_oauth_scopes() {
-        let scopes = default_legacy_oauth_scopes();
-        assert_eq!(scopes, vec!["openid", "email", "profile", "offline_access"]);
     }
 
     #[test]

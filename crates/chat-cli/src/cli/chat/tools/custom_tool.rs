@@ -27,10 +27,7 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
-use crate::mcp_client::{
-    RunningService,
-    oauth_util,
-};
+use crate::mcp_client::RunningService;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
@@ -91,7 +88,7 @@ pub struct CustomToolConfig {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub headers: HashMap<String, String>,
     /// Scopes with which oauth is done (deprecated: use oauth.oauthScopes instead)
-    #[serde(default = "get_default_scopes", skip_serializing_if = "is_default_oauth_scopes")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub oauth_scopes: Vec<String>,
     /// OAuth configuration for this server
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,13 +165,6 @@ impl CustomToolConfig {
     }
 }
 
-pub fn get_default_scopes() -> Vec<String> {
-    oauth_util::get_default_scopes()
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect::<Vec<_>>()
-}
-
 pub fn default_timeout() -> u64 {
     120 * 1000
 }
@@ -190,10 +180,6 @@ fn is_false(b: &bool) -> bool {
 
 fn is_empty_vec<T>(v: &[T]) -> bool {
     v.is_empty()
-}
-
-fn is_default_oauth_scopes(scopes: &Vec<String>) -> bool {
-    *scopes == get_default_scopes()
 }
 
 // MCP-specific tool validation constants
@@ -449,7 +435,7 @@ impl Default for CustomToolConfig {
             transport_type: None,
             url: String::new(),
             headers: std::collections::HashMap::new(),
-            oauth_scopes: get_default_scopes(),
+            oauth_scopes: Vec::new(),
             oauth: None,
             command: String::new(),
             args: Vec::new(),

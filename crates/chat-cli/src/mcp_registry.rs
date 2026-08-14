@@ -529,14 +529,13 @@ pub fn convert_registry_to_config(
 ) -> Result<crate::cli::chat::tools::custom_tool::CustomToolConfig> {
     use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 
-    // Merge OAuth overrides; fall back to default scopes when none are set
-    // (empty scopes break Dynamic Client Registration on some servers).
-    let oauth_scopes = if !agent_config.oauth_scopes.is_empty() {
-        agent_config.oauth_scopes.clone()
-    } else if let Some(scopes) = agent_config.oauth.as_ref().and_then(|oc| oc.oauth_scopes.clone()) {
+    // Resolve OAuth scopes. Scopes are sent only when the user explicitly configures
+    // them; some authorization servers reject an authorize request that carries a
+    // `scope` at all, so an unset value must stay unset.
+    let oauth_scopes = if let Some(scopes) = agent_config.oauth.as_ref().and_then(|oc| oc.oauth_scopes.clone()) {
         scopes
     } else {
-        crate::cli::chat::tools::custom_tool::get_default_scopes()
+        agent_config.oauth_scopes.clone()
     };
 
     let mut config = CustomToolConfig {

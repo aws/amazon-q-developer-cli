@@ -276,10 +276,7 @@ impl AuthClientWrapper {
             let reg = Registration {
                 client_id,
                 client_secret: None,
-                scopes: get_default_scopes()
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect::<Vec<_>>(),
+                scopes: ctx.scopes.clone(),
                 redirect_uri,
             };
             let reg_as_str = serde_json::to_string_pretty(&reg).map_err(|e| {
@@ -347,10 +344,6 @@ impl AuthClientWrapper {
 
         Ok(())
     }
-}
-
-pub fn get_default_scopes() -> &'static [&'static str] {
-    &["openid", "email", "profile", "offline_access"]
 }
 
 enum HttpServiceBuilderState {
@@ -596,10 +589,7 @@ async fn get_auth_manager(
             let reg = Registration {
                 client_id,
                 client_secret: None,
-                scopes: get_default_scopes()
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect::<Vec<_>>(),
+                scopes: scopes.to_vec(),
                 redirect_uri,
             };
             let reg_as_str = serde_json::to_string_pretty(&reg)?;

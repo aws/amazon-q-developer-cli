@@ -134,7 +134,7 @@ Use `"type": "registry"` with optional `env`, `headers`, and `timeout` fields:
 - `oauth` - OAuth configuration object (`clientId`, `clientSecret`, `redirectUri`, `oauthScopes`); useful for servers requiring custom scopes, pre-registered clients (e.g. Atlassian Rovo, Slack), or confidential clients with a secret (e.g. Figma)
 - `oauthScopes` - Alternative top-level location for OAuth scopes (fallback; overridden by `oauth.oauthScopes` if both are set)
 
-When both `oauth.oauthScopes` and top-level `oauthScopes` are specified, the nested `oauth.oauthScopes` takes priority. When OAuth scopes are not specified in either location, the CLI requests a default scope set (`openid`, `email`, `profile`, `offline_access`).
+When both `oauth.oauthScopes` and top-level `oauthScopes` are specified, the nested `oauth.oauthScopes` takes priority. When OAuth scopes are not specified in either location, no `scope` parameter is sent on the authorization request — including when the registry entry itself declares `oauthScopes`, which are informational only. Some authorization servers (such as Atlassian's `authv2` endpoint) reject an authorize request that carries a `scope` at all, so scopes must be opted into explicitly.
 
 Example — remote registry server with custom OAuth scopes:
 
