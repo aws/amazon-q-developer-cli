@@ -783,7 +783,9 @@ describe('delete confirmation flow', () => {
     await flush();
     terminal.sendInput('y');
     await flush();
-    expect(textSoFar(terminal)).toContain('Not deleted (recent)');
+    expect(textSoFar(terminal)).toContain(
+      'Not deleted — in use moments ago, try again in a few minutes'
+    );
   });
 });
 

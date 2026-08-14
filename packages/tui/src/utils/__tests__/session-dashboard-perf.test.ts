@@ -199,10 +199,13 @@ describe('event-loop responsiveness during a cold index build', () => {
         })();
 
         await index.refresh();
-        // The probe is stopped but deliberately NOT awaited: its final
-        // timer wakeup can be dropped by the bun test runner after this
-        // workload (the identical code joins cleanly as a plain script),
-        // and worstGap is complete once the build has resolved.
+        // Fold in the tail gap inline: refresh() resumes in a microtask, so
+        // no probe wakeup can run between it resolving and this line — the
+        // final slice would otherwise go unmeasured. The probe is stopped
+        // but deliberately NOT awaited: its last timer wakeup can be dropped
+        // by the bun test runner after this workload (the identical code
+        // joins cleanly as a plain script).
+        worstGap = Math.max(worstGap, performance.now() - last);
         probing = false;
 
         // Generous for loaded CI runners (observed ~430ms of scheduler noise

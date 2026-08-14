@@ -168,6 +168,24 @@ function dashboardSearchKey(
 ): string {
   return sessionIdentityKey({ sessionId, engine, source });
 }
+
+/** Human sentence for a delete refusal, instead of the raw reason token. */
+function deleteRefusalText(reason: string): string {
+  switch (reason) {
+    case 'recent':
+      return 'in use moments ago, try again in a few minutes';
+    case 'locked':
+      return 'open in another terminal';
+    case 'active':
+      return 'this is the active session';
+    case 'cloud':
+      return 'cloud sessions must be deleted through the cloud store';
+    case 'not-found':
+      return 'session no longer exists';
+    default:
+      return `could not delete (${reason})`;
+  }
+}
 const COL_WS_W = 18;
 const PREVIEW_MAX_LINES = 6;
 
@@ -1175,7 +1193,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
             setMutationNotice({
               text: ok
                 ? `Deleted "${staged.title.slice(0, 40)}"`
-                : `Not deleted (${reason})`,
+                : `Not deleted — ${deleteRefusalText(reason)}`,
               tone: ok ? 'success' : 'error',
             });
             bumpMeta();

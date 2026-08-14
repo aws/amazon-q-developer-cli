@@ -113,6 +113,7 @@ import {
 import { SourceProviderGate } from '../../ui/SourceProviderGate.js';
 import { openUrlInBrowser } from '../../../utils/browser.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../../utils/cloud-urls.js';
+import { Feature, features } from '../../../features.js';
 import { getPlaceholder } from '../getPlaceholder.js';
 import { useStatusSurfaceProps } from '../useStatusSurfaceProps.js';
 import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
@@ -449,6 +450,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   useKeypress((input, key) => {
     if (!keybindings.matches('toggleSessionDashboard', input, key)) return;
     if (liteAgentEngine !== 'kas') return;
+    if (!features.isEnabled(Feature.SessionDashboard)) return;
     // Mid-prompt, Ctrl+E means end-of-line (readline). Only an empty prompt
     // lets the chord open the dashboard.
     if (!litePromptEmpty) return;

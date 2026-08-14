@@ -122,6 +122,19 @@ describe('acquireSessionLock', () => {
       pid: 1,
       startedAt: stamp,
     });
+
+    // Locks written by earlier TUI builds carry the camelCase spelling; the
+    // reader's fallback must surface the same start time, not lose it.
+    const legacyStamp = new Date(Date.now() - 1000).toISOString();
+    writeFileSync(
+      join(dir, '.lock'),
+      JSON.stringify({ pid: 1, startedAt: legacyStamp })
+    );
+    expect(isSessionLocked('interop')).toMatchObject({
+      locked: true,
+      pid: 1,
+      startedAt: legacyStamp,
+    });
   });
 
   it('checks only the selected physical store and skips remote rows', () => {
