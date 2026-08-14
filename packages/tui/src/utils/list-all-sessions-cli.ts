@@ -241,7 +241,7 @@ export async function listAllSessionsAllCwds(
 ): Promise<ListAllCwdsResult> {
   let bin: string;
   try {
-    bin = requireChatCliBinFromEnv();
+    bin = resolveChatCliBinFromEnv();
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -352,7 +352,7 @@ export async function deleteClassicSession(
 ): Promise<{ ok: boolean; error?: string }> {
   let bin: string;
   try {
-    bin = requireChatCliBinFromEnv();
+    bin = resolveChatCliBinFromEnv();
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
