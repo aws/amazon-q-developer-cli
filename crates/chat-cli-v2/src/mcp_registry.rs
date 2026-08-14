@@ -51,6 +51,14 @@ pub struct HttpHeader {
     pub value: String,
 }
 
+/// OAuth configuration declared in a registry remote entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteOAuthConfig {
+    /// Scopes the server requires for OAuth
+    #[serde(default, rename = "oauthScopes", skip_serializing_if = "Vec::is_empty")]
+    pub oauth_scopes: Vec<String>,
+}
+
 /// Remote server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteServerConfig {
@@ -62,6 +70,9 @@ pub struct RemoteServerConfig {
     /// Optional HTTP headers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub headers: Vec<HttpHeader>,
+    /// Optional OAuth configuration from registry
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<RemoteOAuthConfig>,
 }
 
 /// Runtime or package argument
@@ -1105,8 +1116,14 @@ fn resolve_registry_servers_for_agent_config(
                 .and_then(|o| o.timeout)
                 .unwrap_or_else(agent::agent_config::definitions::default_timeout);
 
-            // Resolve OAuth scopes: oauth.oauthScopes > oauthScopes > default
-            // (empty scopes break Dynamic Client Registration on some servers).
+            // Resolve OAuth scopes. Priority: user oauth.oauthScopes > user oauthScopes >
+            // registry remote oauth.oauthScopes > empty (no injection).
+            let registry_scopes = remote
+                .oauth
+                .as_ref()
+                .map(|o| o.oauth_scopes.clone())
+                .unwrap_or_default();
+
             let oauth_scopes = agent_overrides
                 .and_then(|o| o.oauth.as_ref())
                 .and_then(|oc| oc.oauth_scopes.clone())
@@ -1115,7 +1132,7 @@ fn resolve_registry_servers_for_agent_config(
                         .filter(|o| !o.oauth_scopes.is_empty())
                         .map(|o| o.oauth_scopes.clone())
                 })
-                .unwrap_or_else(agent::agent_config::default_legacy_oauth_scopes);
+                .unwrap_or(registry_scopes);
             let oauth = agent_overrides.and_then(|o| o.oauth.clone());
 
             resolved.push((
@@ -1886,8 +1903,8 @@ mod tests {
         }"#;
         let registry: McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
 
-        // Case 1: user provides no OAuth overrides — resolver must fall back to
-        // legacy defaults rather than an empty Vec.
+        // Case 1: user provides no OAuth overrides, registry declares no scopes —
+        // resolver must produce an empty Vec (no default injection), matching KAS behavior.
         let mut mcp_servers = HashMap::new();
         mcp_servers.insert(
             "atlassian".to_string(),
@@ -1915,10 +1932,9 @@ mod tests {
         let server = loaded.config().mcp_servers().get("atlassian").unwrap();
         match server {
             AgentMcpServerConfig::Remote(remote) => {
-                assert_eq!(
-                    remote.oauth_scopes,
-                    agent::agent_config::default_legacy_oauth_scopes(),
-                    "no-override case must fall back to legacy default scopes, not empty Vec"
+                assert!(
+                    remote.oauth_scopes.is_empty(),
+                    "no-override case must produce empty scopes (no default injection)"
                 );
             },
             other => panic!("Expected Remote variant, got {:?}", other),
@@ -1965,6 +1981,67 @@ mod tests {
                 );
                 let oauth = remote.oauth.as_ref().expect("oauth block should be propagated");
                 assert_eq!(oauth.client_id.as_deref(), Some("custom-client-id"));
+            },
+            other => panic!("Expected Remote variant, got {:?}", other),
+        }
+
+        // Case 3: registry declares oauth.oauthScopes on the remote entry, user provides
+        // no overrides — resolver must use the registry-declared scopes.
+        let registry_with_scopes_json = r#"{
+            "servers": [{
+                "server": {
+                    "name": "atlassian",
+                    "description": "Atlassian Rovo MCP Server",
+                    "version": "1.0.0",
+                    "remotes": [{
+                        "type": "streamable-http",
+                        "url": "https://mcp.atlassian.com/v1/mcp/authv2",
+                        "oauth": {
+                            "oauthScopes": ["read:jira-work", "write:jira-work", "read:me"]
+                        }
+                    }]
+                }
+            }]
+        }"#;
+        let registry_with_scopes: McpRegistryResponse =
+            serde_json::from_str(registry_with_scopes_json).unwrap();
+
+        let mut mcp_servers = HashMap::new();
+        mcp_servers.insert(
+            "atlassian".to_string(),
+            AgentMcpServerConfig::Registry(RegistryMcpServerConfig {
+                server_type: "registry".to_string(),
+                env: None,
+                headers: None,
+                timeout: None,
+                oauth_scopes: Vec::new(),
+                oauth: None,
+            }),
+        );
+        let config = AgentConfigV2025_08_22 {
+            name: "test-agent".to_string(),
+            tools: vec!["@atlassian/*".to_string()],
+            mcp_servers,
+            ..Default::default()
+        };
+        let mut loaded = LoadedAgentConfig::new(
+            AgentConfig::V2025_08_22(config),
+            ConfigSource::Ephemeral,
+            ResolvedGlobalPrompt::None,
+        );
+        resolve_registry_servers_for_agent_config(&mut loaded, &registry_with_scopes);
+        let server = loaded.config().mcp_servers().get("atlassian").unwrap();
+        match server {
+            AgentMcpServerConfig::Remote(remote) => {
+                assert_eq!(
+                    remote.oauth_scopes,
+                    vec![
+                        "read:jira-work".to_string(),
+                        "write:jira-work".to_string(),
+                        "read:me".to_string()
+                    ],
+                    "registry-declared oauth.oauthScopes must be used when user provides no overrides"
+                );
             },
             other => panic!("Expected Remote variant, got {:?}", other),
         }

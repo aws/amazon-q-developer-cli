@@ -52,6 +52,14 @@ pub struct HttpHeader {
     pub value: String,
 }
 
+/// OAuth configuration declared in a registry remote entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteOAuthConfig {
+    /// Scopes the server requires for OAuth
+    #[serde(default, rename = "oauthScopes", skip_serializing_if = "Vec::is_empty")]
+    pub oauth_scopes: Vec<String>,
+}
+
 /// Remote server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteServerConfig {
@@ -63,6 +71,9 @@ pub struct RemoteServerConfig {
     /// Optional HTTP headers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub headers: Vec<HttpHeader>,
+    /// Optional OAuth configuration from registry
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<RemoteOAuthConfig>,
 }
 
 /// Runtime or package argument
@@ -529,14 +540,21 @@ pub fn convert_registry_to_config(
 ) -> Result<crate::cli::chat::tools::custom_tool::CustomToolConfig> {
     use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 
-    // Merge OAuth overrides; fall back to default scopes when none are set
-    // (empty scopes break Dynamic Client Registration on some servers).
+    // Resolve OAuth scopes. Priority: user oauth.oauthScopes > user oauthScopes >
+    // registry remote oauth.oauthScopes > empty (no injection).
+    let registry_scopes = registry_server
+        .remotes
+        .first()
+        .and_then(|r| r.oauth.as_ref())
+        .map(|o| o.oauth_scopes.clone())
+        .unwrap_or_default();
+
     let oauth_scopes = if !agent_config.oauth_scopes.is_empty() {
         agent_config.oauth_scopes.clone()
     } else if let Some(scopes) = agent_config.oauth.as_ref().and_then(|oc| oc.oauth_scopes.clone()) {
         scopes
     } else {
-        crate::cli::chat::tools::custom_tool::get_default_scopes()
+        registry_scopes
     };
 
     let mut config = CustomToolConfig {
