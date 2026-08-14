@@ -285,7 +285,20 @@ export const SessionDashboardScreen: React.FC = () => {
       }
     };
     const lines: string[] = [];
+    // Cloud rows keep their transcript in the backend — there is nothing
+    // local to preview, so say that instead of loading forever.
+    const targetKind = highlightedSession?.executionTarget?.kind;
+    const isCloud =
+      highlightedSession != null &&
+      (highlightedSession.source === 'remote' ||
+        (typeof targetKind === 'string' && targetKind !== 'local'));
     if (previewView === 'turns') {
+      if (isCloud) {
+        return [
+          dim('Cloud session — turn data is not available.'),
+          dim('Press enter to open it.'),
+        ];
+      }
       if (turns === null) {
         return [dim('Loading turns…')];
       }
@@ -357,25 +370,40 @@ export const SessionDashboardScreen: React.FC = () => {
         lines.push(''); // blank line between messages
       }
       if (lines.length < budget) {
-        lines.push(
-          dim(
-            preview.summary.isComplete
-              ? `${preview.summary.turnCount} turns`
-              : `${preview.summary.turnCount} recent turns`
-          )
-        );
+        // Tail-scoped counting can miss user turns entirely; only claim a
+        // count that is real.
+        if (preview.summary.isComplete) {
+          lines.push(dim(`${preview.summary.turnCount} turns`));
+        } else if (preview.summary.turnCount > 0) {
+          lines.push(dim(`${preview.summary.turnCount} recent turns`));
+        }
       }
       pushChildSessions(lines);
       return lines;
     }
-    // A session is highlighted but its preview has not loaded yet — say so
-    // rather than showing the empty-state hint, which reads as "nothing here".
-    if (highlightedSession) return [dim('Loading session…')];
+    if (highlightedSession) {
+      if (isCloud) {
+        return [
+          dim('Cloud session — preview is not available.'),
+          dim('Press enter to open it.'),
+        ];
+      }
+      // The provider settled on "no preview" (unreadable/empty transcript).
+      if (previewState?.identity === highlightedIdentity) {
+        return [dim('No preview available.')];
+      }
+      // A session is highlighted but its preview has not loaded yet — say so
+      // rather than showing the empty-state hint, which reads as "nothing here".
+      return [dim('Loading session…')];
+    }
     return [dim('Highlight a session to preview it.')];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     turns,
     preview,
+    previewState,
+    highlightedIdentity,
+    highlightedSession,
     previewW,
     height,
     renderTheme,
