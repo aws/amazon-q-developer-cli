@@ -870,6 +870,22 @@ fn settled_launch_state<T>(queried: Result<T, mcp::McpManagerError>) -> SettledL
     }
 }
 
+fn approval_option_was_offered(options: &[PermissionOption], selected: &PermissionOptionId) -> bool {
+    options.iter().any(|option| {
+        option.id == *selected
+            || matches!(
+                (&option.id, selected),
+                (
+                    PermissionOptionId::AllowAlwaysTool,
+                    PermissionOptionId::AllowAlwaysToolArgs
+                ) | (
+                    PermissionOptionId::RejectAlwaysTool,
+                    PermissionOptionId::RejectAlwaysToolArgs
+                )
+            )
+    })
+}
+
 impl Agent {
     /// Prefix for the hidden "shadow" MCP server used to run a forced
     /// (re-)authentication flow alongside a still-running original. Shadow servers
@@ -2444,18 +2460,29 @@ impl Agent {
             )));
         };
 
+        let Some(approval_state) = state.needs_approval.get(&args.id) else {
+            return Err(AgentError::Custom(format!(
+                "No tool use with the id '{}' requires approval",
+                args.id
+            )));
+        };
+        if !approval_option_was_offered(&approval_state.options, &args.result.option_id) {
+            return Err(AgentError::Custom(format!(
+                "Permission option '{}' was not offered for tool use '{}'",
+                args.result.option_id, args.id
+            )));
+        }
+
         // Update permissions for "always" options
         if let Some((_, tool)) = state.tools.iter().find(|(b, _)| b.tool_use_id == args.id) {
             apply_approval_to_permissions(&mut self.permissions, tool.kind(), &args.result, &self.sys_provider);
         }
 
         // Store the selected option
-        let Some(approval_state) = state.needs_approval.get_mut(&args.id) else {
-            return Err(AgentError::Custom(format!(
-                "No tool use with the id '{}' requires approval",
-                args.id
-            )));
-        };
+        let approval_state = state
+            .needs_approval
+            .get_mut(&args.id)
+            .expect("approval state was validated above");
         approval_state.selected = Some(args.result.option_id);
         approval_state.rejection_reason = args.result.reason.clone();
 
@@ -5650,6 +5677,7 @@ fn recover_pending_summary(name: &str, input: &serde_json::Value) -> Option<Summ
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::protocol::PermissionOptionHint;
     use crate::util::test::TestBase;
 
     #[test]
@@ -5707,6 +5735,32 @@ mod tests {
             settled_launch_state::<()>(Err(mcp::McpManagerError::Channel)),
             SettledLaunchState::Failed
         );
+    }
+
+    #[test]
+    fn approval_validation_rejects_options_that_were_not_offered() {
+        let options = vec![
+            PermissionOption {
+                id: PermissionOptionId::AllowOnce,
+                label: "Yes".into(),
+                kind: PermissionOptionHint::AllowOnce,
+            },
+            PermissionOption {
+                id: PermissionOptionId::RejectOnce,
+                label: "No".into(),
+                kind: PermissionOptionHint::RejectOnce,
+            },
+        ];
+
+        assert!(approval_option_was_offered(&options, &PermissionOptionId::AllowOnce));
+        assert!(!approval_option_was_offered(
+            &options,
+            &PermissionOptionId::AllowAlwaysTool
+        ));
+        assert!(!approval_option_was_offered(
+            &options,
+            &PermissionOptionId::AllowAlwaysToolArgs
+        ));
     }
 
     /// A pending summary tool use carries the model's real result in its input;

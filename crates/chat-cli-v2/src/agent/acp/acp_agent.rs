@@ -3386,13 +3386,8 @@ async fn advertise_commands_and_prompts_to_client(
 /// behavior annotations on `ToolCallUpdateFields` natively — its `Annotations`
 /// type is for content-display priorities, not behavior. We surface the
 /// behavior hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
-/// `openWorldHint`) via the documented `_meta` extension point so kiro-bot's
-/// approval gate can read them.
-///
-/// TODO(acp-typed-annotations): when ACP grows a typed annotations field on
-/// `ToolCallUpdateFields` (or `ToolCall`), populate that field directly and
-/// delete this helper plus the matching `_meta` reader on the kiro-bot side
-/// (`engine::acp::read_mcp_read_only_hint`).
+/// `openWorldHint`) via the documented `_meta` extension point for display and
+/// diagnostics. They remain advisory and must not authorize a tool.
 fn attach_mcp_annotations(
     meta: &mut serde_json::Map<String, serde_json::Value>,
     annotations: &agent::tools::mcp::McpToolAnnotations,
@@ -3401,6 +3396,58 @@ fn attach_mcp_annotations(
         "mcpAnnotations".into(),
         serde_json::to_value(annotations).unwrap_or(serde_json::Value::Null),
     );
+}
+
+fn attach_mcp_tool_identity(meta: &mut serde_json::Map<String, serde_json::Value>, tool: &agent::tools::mcp::McpTool) {
+    meta.insert(
+        "mcpToolIdentity".into(),
+        serde_json::json!({
+            "serverName": tool.server_name,
+            "toolName": tool.tool_name,
+        }),
+    );
+}
+
+fn attach_fs_read_paths(meta: &mut serde_json::Map<String, serde_json::Value>, tool: &Tool) {
+    if let AgentToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)) = &tool.kind {
+        meta.insert("fsReadPaths".into(), serde_json::json!(fs_read.all_paths()));
+    }
+}
+
+#[cfg(test)]
+mod permission_metadata_tests {
+    use agent::tools::fs_read::FsRead;
+
+    use super::*;
+
+    #[test]
+    fn fs_read_permission_metadata_preserves_every_exact_path() {
+        let fs_read: FsRead = serde_json::from_value(serde_json::json!({
+            "operations": [
+                { "mode": "Line", "path": "/tmp/request-a/file.txt" },
+                { "mode": "Directory", "path": "/tmp/request-a/subdir" },
+                { "mode": "Image", "image_paths": ["../escape.png", "/tmp/request-a/image.png"] }
+            ]
+        }))
+        .unwrap();
+        let tool = Tool {
+            tool_use_purpose: None,
+            kind: AgentToolKind::BuiltIn(BuiltInTool::FileRead(fs_read)),
+        };
+        let mut meta = serde_json::Map::new();
+
+        attach_fs_read_paths(&mut meta, &tool);
+
+        assert_eq!(
+            meta.get("fsReadPaths"),
+            Some(&serde_json::json!([
+                "/tmp/request-a/file.txt",
+                "/tmp/request-a/subdir",
+                "../escape.png",
+                "/tmp/request-a/image.png"
+            ]))
+        );
+    }
 }
 
 async fn handle_approval_request(
@@ -3456,13 +3503,15 @@ async fn handle_approval_request(
     // When the protocol grows typed fields for either, drop the corresponding
     // helper below and switch.
     let mut meta = serde_json::Map::new();
+    attach_fs_read_paths(&mut meta, &req.tool);
 
     // MCP tool annotations (readOnlyHint / destructiveHint / idempotentHint /
     // openWorldHint) — only attach for MCP tools that actually carry hints.
-    if let AgentToolKind::Mcp(mcp_tool) = &req.tool.kind
-        && let Some(ann) = &mcp_tool.annotations
-    {
-        attach_mcp_annotations(&mut meta, ann);
+    if let AgentToolKind::Mcp(mcp_tool) = &req.tool.kind {
+        attach_mcp_tool_identity(&mut meta, mcp_tool);
+        if let Some(ann) = &mcp_tool.annotations {
+            attach_mcp_annotations(&mut meta, ann);
+        }
     }
 
     // Granular trust options (path/command-level) so the TUI can offer them.

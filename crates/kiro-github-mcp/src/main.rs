@@ -220,6 +220,7 @@ fn tool_search_issues() -> Tool {
         "Search GitHub issues / PRs for the kiro-cli repo by keyword. Returns the top-N matches with title, state, URL, and an excerpt.",
         Arc::new(serde_json::from_value(schema).expect("static schema")),
     )
+    .with_annotations(ToolAnnotations::new().read_only(true))
 }
 
 fn tool_create_issue() -> Tool {
@@ -238,6 +239,7 @@ fn tool_create_issue() -> Tool {
         "File a new GitHub issue. The bot must always confirm with the user via reaction before invoking this tool.",
         Arc::new(serde_json::from_value(schema).expect("static schema")),
     )
+    .with_annotations(ToolAnnotations::new().read_only(false).idempotent(false))
 }
 
 fn tool_comment_on_existing() -> Tool {
@@ -255,6 +257,7 @@ fn tool_comment_on_existing() -> Tool {
         "Add a comment to an existing GitHub issue or PR. The bot must always confirm with the user via reaction before invoking this tool.",
         Arc::new(serde_json::from_value(schema).expect("static schema")),
     )
+    .with_annotations(ToolAnnotations::new().read_only(false).idempotent(false))
 }
 
 fn json_result(value: serde_json::Value) -> CallToolResult {
@@ -288,4 +291,21 @@ async fn main() -> Result<()> {
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn github_tools_advertise_their_mutation_behavior() {
+        let search = tool_search_issues().annotations.unwrap();
+        assert_eq!(search.read_only_hint, Some(true));
+
+        for mutation in [tool_create_issue(), tool_comment_on_existing()] {
+            let annotations = mutation.annotations.unwrap();
+            assert_eq!(annotations.read_only_hint, Some(false));
+            assert_eq!(annotations.idempotent_hint, Some(false));
+        }
+    }
 }

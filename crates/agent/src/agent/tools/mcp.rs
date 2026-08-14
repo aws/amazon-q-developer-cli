@@ -15,10 +15,8 @@ pub struct McpTool {
     pub params: Option<serde_json::Map<String, serde_json::Value>>,
     /// MCP tool annotations from `tools/list`. Populated when the
     /// agent's MCP catalog is built; surfaced to ACP clients via
-    /// `RequestPermissionRequest._meta.mcpAnnotations` (Phase 2 of
-    /// the kiro-bot Taskei integration). When ACP v2 grows a typed
-    /// annotations field on `ToolCallUpdateFields`, this should
-    /// move there — see `acp_agent::attach_mcp_annotations`.
+    /// `RequestPermissionRequest._meta.mcpAnnotations`. When ACP grows a
+    /// typed behavior-annotations field, this metadata can move there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<McpToolAnnotations>,
 }
@@ -35,14 +33,11 @@ impl McpTool {
 /// MCP tool behavior hints surfaced to ACP clients via `_meta.mcpAnnotations`.
 ///
 /// Mirrors the subset of [`rmcp::model::ToolAnnotations`] that is
-/// safety-relevant for approval-gating. The `title` field is intentionally
-/// omitted — it is display-only and already covered by the tool's name.
+/// useful to clients. The `title` field is omitted because the tool name
+/// already supplies display text.
 ///
 /// All fields are MCP-spec hints (see the MCP `ToolAnnotations` schema): they
-/// MUST NOT be trusted blindly from untrusted servers. Kiro-bot uses
-/// `read_only_hint == Some(true)` only as a *gate-down* signal (allow
-/// auto-approval); a missing or `Some(false)` hint always falls through to the
-/// usual approval policy.
+/// MUST NOT be trusted for authorization decisions.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpToolAnnotations {

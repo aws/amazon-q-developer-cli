@@ -182,6 +182,7 @@ mod tests {
         let convo = Conversation::Dm {
             channel: "D123".to_string(),
             user: "U_USER".to_string(),
+            thread_ts: "111.222".to_string(),
         };
         assert!(
             authz.can_use_bot("U_USER", &convo).unwrap(),

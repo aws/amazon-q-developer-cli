@@ -72,6 +72,7 @@ const KUTS_MAX_EXPORT_RETRIES: usize = 3;
 const KUTS_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(1);
 const KUTS_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
 const TELEMETRY_EXPORT_DROPPED_METRIC: &str = "kiro_cli_telemetry_export_dropped_total";
+const ONE_SHOT_EXPORT_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Explicit histogram bucket boundaries for latencies recorded in **seconds**.
 ///
@@ -344,9 +345,25 @@ pub enum OtelPipelineKind {
     OtlpHttp,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum OneShotMetricExportError {
+    #[error("OTLP metric export is not configured")]
+    NotConfigured,
+    #[error(transparent)]
+    Build(#[from] opentelemetry_otlp::ExporterBuildError),
+    #[error(transparent)]
+    Emit(#[from] TelemetryError),
+    #[error(transparent)]
+    Flush(#[from] opentelemetry_sdk::error::OTelSdkError),
+}
+
 impl OtelProviders {
     pub fn meter_provider(&self) -> &SdkMeterProvider {
         &self.meter_provider
+    }
+
+    pub fn meter(&self) -> Meter {
+        self.meter_provider.meter("kiro-telemetry")
     }
 
     pub fn pipeline_kind(&self) -> OtelPipelineKind {
@@ -412,15 +429,7 @@ fn build_otlp_http_providers(
     let drop_store = ExportDropStore::new(config.state_dir.clone());
     let replayed_drops = drop_store.snapshot();
     let resource = telemetry_resource(config);
-    let metric_exporter = MetricExporter::builder()
-        .with_http()
-        .with_protocol(Protocol::HttpBinary)
-        .with_endpoint(signal_endpoint(endpoint, "/v1/metrics"))
-        .with_timeout(Duration::from_secs(30))
-        .with_http_client(otlp_http_client(Some(drop_store.clone())))
-        .with_headers(otlp_headers(config))
-        .with_temporality(Temporality::Delta)
-        .build()?;
+    let metric_exporter = build_otlp_metric_exporter(config, endpoint, Some(drop_store.clone()))?;
 
     let reader = PeriodicReader::builder(metric_exporter)
         .with_interval(otel_export_interval_from_env())
@@ -443,6 +452,54 @@ fn build_otlp_http_providers(
         drop_store: Some(drop_store),
         replayed_drops: Arc::new(Mutex::new(emitted_replayed_drops)),
     })
+}
+
+fn build_otlp_metric_exporter(
+    config: &TelemetryConfig,
+    endpoint: &str,
+    drop_store: Option<ExportDropStore>,
+) -> Result<MetricExporter, opentelemetry_otlp::ExporterBuildError> {
+    MetricExporter::builder()
+        .with_http()
+        .with_protocol(Protocol::HttpBinary)
+        .with_endpoint(signal_endpoint(endpoint, "/v1/metrics"))
+        .with_timeout(Duration::from_secs(30))
+        .with_http_client(otlp_http_client(drop_store))
+        .with_headers(otlp_headers(config))
+        .with_temporality(Temporality::Delta)
+        .build()
+}
+
+pub fn export_metric_records_once(
+    config: &TelemetryConfig,
+    records: impl IntoIterator<Item = MetricRecord>,
+) -> Result<(), OneShotMetricExportError> {
+    if !config.exports_enabled() {
+        return Err(OneShotMetricExportError::NotConfigured);
+    }
+    let endpoint = config
+        .otlp_endpoint
+        .as_deref()
+        .ok_or(OneShotMetricExportError::NotConfigured)?;
+    let drop_store = ExportDropStore::new(config.state_dir.clone());
+    let exporter = build_otlp_metric_exporter(config, endpoint, Some(drop_store))?;
+    // The dedicated reader cannot race this immediate export with runtime collection.
+    let reader = PeriodicReader::builder(exporter)
+        .with_interval(ONE_SHOT_EXPORT_INTERVAL)
+        .build();
+    let meter_provider = SdkMeterProvider::builder()
+        .with_reader(reader)
+        .with_resource(telemetry_resource(config))
+        .with_view(histogram_bucket_view)
+        .build();
+    let client = crate::TelemetryClient::new(config.clone()).with_sink(Arc::new(OtelMetricsSink::new(
+        meter_provider.meter("kiro-telemetry-recovery"),
+    )));
+    for record in records {
+        client.emit(record)?;
+    }
+    meter_provider.force_flush()?;
+    Ok(())
 }
 
 fn emit_replayed_drops(meter: &Meter, entries: &[ExportDropAggregate]) -> Vec<ExportDropAggregate> {

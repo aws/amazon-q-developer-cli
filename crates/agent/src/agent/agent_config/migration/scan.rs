@@ -22,6 +22,7 @@ use super::migrate::{
 };
 use super::permissions::MigrationWarning;
 use crate::agent::agent_config::load::{
+    configured_agent_dir,
     resolve_global_agents_dir,
     resolve_workspace_agents_dir,
 };
@@ -108,12 +109,15 @@ pub struct ScanDir {
 }
 
 /// Default scan dirs: workspace-local first, then user-global. Reuses the loader's resolvers so the
-/// `KIRO_TEST_AGENTS_DIR`/`KIRO_HOME` overrides and `.amazonq` fallbacks stay honored; falls back
-/// to the canonical `.kiro/agents` path when a dir doesn't yet exist so the scope is still
+/// configured agent directory, test/home overrides, and `.amazonq` fallbacks stay honored; falls
+/// back to the canonical `.kiro/agents` path when a dir doesn't yet exist so the scope is still
 /// represented (its `list_agent_files` yields an empty list).
 pub fn default_scan_dirs(system: &dyn SystemProvider) -> Vec<ScanDir> {
-    let local =
-        resolve_workspace_agents_dir(system).or_else(|| system.cwd().ok().map(|cwd| cwd.join(".kiro").join("agents")));
+    let local = if configured_agent_dir(system).is_some() {
+        None
+    } else {
+        resolve_workspace_agents_dir(system).or_else(|| system.cwd().ok().map(|cwd| cwd.join(".kiro").join("agents")))
+    };
     let global = resolve_global_agents_dir(system).or_else(|| {
         system
             .home()
@@ -461,5 +465,30 @@ mod tests {
         assert_eq!(scan.counts.v2_only.total, 0);
         assert_eq!(scan.counts.universal_in_sync.total, 0);
         assert!(scan.agents.is_empty());
+    }
+
+    #[test]
+    fn configured_agent_dir_excludes_workspace_scan() {
+        use crate::agent::util::test::TestProvider;
+
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join(".kiro/agents");
+        let configured = root.path().join("packaged-agents");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&configured).unwrap();
+        std::fs::write(workspace.join("shadow.json"), r#"{"tools":["read"]}"#).unwrap();
+        std::fs::write(configured.join("kiro-help.json"), r#"{"tools":["read"]}"#).unwrap();
+        let provider = TestProvider::new_with_base(root.path())
+            .with_cwd(root.path())
+            .with_var("KIRO_AGENT_CONFIG_DIR", configured.to_string_lossy());
+
+        let dirs = default_scan_dirs(&provider);
+
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(dirs[0].scope, AgentScope::Global);
+        assert_eq!(dirs[0].dir, configured);
+        let result = scan_agents(&dirs);
+        assert_eq!(result.total, 1);
+        assert_eq!(result.agents[0].name, "kiro-help");
     }
 }

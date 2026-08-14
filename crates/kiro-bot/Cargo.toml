@@ -41,10 +41,13 @@ cedar-policy = "4.0"
 cron = "0.16"
 jsonschema = { version = "0.44", default-features = false }
 rpassword = "7"
-slack-morphism = { version = "2", features = ["hyper"] }
+slack-morphism = { version = "2.24.1", features = ["hyper"] }
 subtle = "2.6"
+uuid.workspace = true
 
 [dev-dependencies]
+aws-sdk-dynamodb = { workspace = true, features = ["test-util"] }
+aws-smithy-mocks.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 

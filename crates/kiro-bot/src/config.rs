@@ -74,10 +74,41 @@ pub struct Config {
     pub working_directory: Option<String>,
     pub frontend: FrontendConfig,
     pub agent: AgentConfig,
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
     pub authorization: Option<AuthzConfig>,
     pub users: Option<HashMap<String, String>>,
     #[serde(default)]
     pub response_policies: Vec<ResponsePolicyEntry>,
+}
+
+/// Per-user prompt admission limit.
+///
+/// Slack deployments enforce this across the fleet through the configured
+/// coordinator. Local/no-coordinator runs enforce it within that process.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RateLimitConfig {
+    #[serde(default = "default_rate_limit_prompts")]
+    pub max_prompts: u32,
+    #[serde(default = "default_rate_limit_window_secs")]
+    pub window_secs: u64,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            max_prompts: default_rate_limit_prompts(),
+            window_secs: default_rate_limit_window_secs(),
+        }
+    }
+}
+
+fn default_rate_limit_prompts() -> u32 {
+    10
+}
+
+fn default_rate_limit_window_secs() -> u64 {
+    60
 }
 
 /// Frontend-specific configuration.
@@ -227,7 +258,9 @@ struct RawSecrets {
 /// Load and parse `config.toml` from an instance directory.
 pub fn load_config(instance_dir: &Path) -> Result<Config> {
     let content = std::fs::read_to_string(instance_dir.join("config.toml")).context("failed to read config.toml")?;
-    toml::from_str(&content).context("failed to parse config.toml")
+    let config: Config = toml::from_str(&content).context("failed to parse config.toml")?;
+    crate::engine::rate_limit::validate(&config.rate_limit)?;
+    Ok(config)
 }
 
 /// Load secrets and validate they match the frontend type in config.
@@ -307,6 +340,39 @@ bot_name = "Bot"
     fn working_directory_absent() {
         let cfg = parse(BASE);
         assert_eq!(cfg.working_directory, None);
+    }
+
+    #[test]
+    fn rate_limit_defaults_are_applied() {
+        let cfg = parse(BASE);
+        assert_eq!(cfg.rate_limit.max_prompts, 10);
+        assert_eq!(cfg.rate_limit.window_secs, 60);
+    }
+
+    #[test]
+    fn rate_limit_values_round_trip() {
+        let cfg = parse(&BASE.replace(
+            "[frontend]",
+            "[rate_limit]\nmax_prompts = 4\nwindow_secs = 120\n\n[frontend]",
+        ));
+        assert_eq!(cfg.rate_limit.max_prompts, 4);
+        assert_eq!(cfg.rate_limit.window_secs, 120);
+    }
+
+    #[test]
+    fn load_config_rejects_rate_limit_window_that_cannot_fit_expiry() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = BASE.replace(
+            "[frontend]",
+            &format!(
+                "[rate_limit]\nwindow_secs = {}\n\n[frontend]",
+                crate::engine::rate_limit::MAX_WINDOW_SECS + 1
+            ),
+        );
+        std::fs::write(dir.path().join("config.toml"), content).unwrap();
+
+        let error = load_config(dir.path()).unwrap_err();
+        assert!(error.to_string().contains("rate_limit.window_secs must be at most"));
     }
 
     #[test]

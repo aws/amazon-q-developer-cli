@@ -1,19 +1,42 @@
-//! Canonical home for the kiro-help Slack bot's agent definition.
+//! Contract tests for the kiro-help agent files installed in `$KIRO_HOME/agents/`.
 //!
-//! These files don't ship in the public kiro-cli binary — they're packed into
-//! the bot's container image at build time and dropped into `~/.kiro/agents/`
-//! so chat-cli-v2's `load_agents()` picks them up by disk scan when the
-//! container runs `kiro-cli acp --agent kiro-help`.
-//!
-//! This module exists primarily as a test harness: we pin the JSON's tool
-//! wiring, the prompt's hard constraints, and the SKILL.md's per-turn
-//! workflow. The prompt and skill have a single-source-of-truth split:
-//! identity + tool inventory live in the prompt, the per-turn procedure
-//! lives in the skill. If either drifts the bot regresses to ungrounded
-//! answers.
+//! The prompt owns evidence, safety, and response constraints. The skill owns
+//! the per-turn workflow, while references hold scenario-specific detail.
+
+pub(crate) const AUTO_APPROVED_MCP_READS: &[(&str, &str)] = &[
+    ("kiro-knowledge", "search_kiro_knowledge"),
+    ("kiro-github-read", "search_github_issues"),
+    ("kiro-mcp", "Taskei___list_tasks"),
+    ("kiro-mcp", "Taskei___get_task"),
+    ("kiro-mcp", "Taskei___get_room"),
+    ("kiro-mcp", "Taskei___list_room_resource"),
+];
 
 #[cfg(test)]
 mod tests {
+    use super::AUTO_APPROVED_MCP_READS;
+
+    #[test]
+    fn host_read_policy_matches_the_agent_allowlist() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../agents/kiro-help.json")).expect("valid agent JSON");
+        let mut configured = config["allowedTools"]
+            .as_array()
+            .expect("allowedTools array")
+            .iter()
+            .filter_map(|tool| tool.as_str())
+            .filter_map(|tool| {
+                let tool = tool.strip_prefix('@')?;
+                tool.split_once('/')
+            })
+            .collect::<Vec<_>>();
+        configured.sort_unstable();
+
+        let mut enforced = AUTO_APPROVED_MCP_READS.to_vec();
+        enforced.sort_unstable();
+        assert_eq!(configured, enforced);
+    }
+
     /// The agent JSON must declare the kiro-knowledge MCP server, expose
     /// search_kiro_knowledge, and auto-approve the read-only tools so users
     /// don't see permission prompts.
@@ -42,22 +65,23 @@ mod tests {
         );
     }
 
-    /// Slack bot is read-only by default; write capabilities live behind a
-    /// reaction-approval gate. Assert the agent JSON does not expose write
-    /// tools, does not auto-approve the GitHub write tools, and that the
-    /// shell tool (when present) is locked down with denyByDefault + a
-    /// scoped allowlist that excludes git writes and network commands.
+    /// Slack bot has no general-purpose shell or file-write capability.
+    /// GitHub writes remain available only through the reaction-approval gate.
     #[test]
     fn kiro_help_agent_json_keeps_writes_behind_approval() {
         let raw = include_str!("../agents/kiro-help.json");
         let v: serde_json::Value = serde_json::from_str(raw).expect("valid JSON");
         let tools = v["tools"].as_array().expect("array");
-        for forbidden in ["fs_write"] {
+        for tool in ["fs_write", "execute_bash"] {
             assert!(
-                !tools.iter().any(|t| t == forbidden),
-                "bot agent must not expose write tool {forbidden}"
+                !tools.iter().any(|candidate| candidate == tool),
+                "bot agent must not expose {tool}"
             );
         }
+        assert!(
+            v["toolsSettings"]["shell"].is_null(),
+            "shell policy is not a security boundary; the shell tool must be absent"
+        );
         let allowed = v["allowedTools"].as_array().expect("array");
         for write_tool in [
             "@kiro-github-write/create_github_issue",
@@ -68,119 +92,38 @@ mod tests {
                 "{write_tool} must NOT be auto-approved — every invocation has to pass through the Slack reaction gate"
             );
         }
-
-        // If execute_bash is exposed, it must be locked down: denyByDefault
-        // on, an explicit allowlist, and no write/network commands sneaking
-        // in. The agent's shell-permission machinery enforces these — but
-        // pin the config so a careless edit can't loosen the policy.
-        if tools.iter().any(|t| t == "execute_bash") {
-            // CRITICAL: execute_bash MUST NOT appear in allowedTools. When
-            // a tool is in allowedTools, the shell-permission decider's
-            // step 2 short-circuits with Allow before the denyByDefault +
-            // allowedCommands checks ever run (see
-            // crates/agent/src/agent/shell_permission/decider.rs:148-153).
-            // The whole point of the toolsSettings.shell policy below is
-            // to be enforced — it only is when is_tool_allowed = false,
-            // i.e. when execute_bash is NOT auto-approved.
-            assert!(
-                !allowed.iter().any(|t| t == "execute_bash"),
-                "execute_bash MUST NOT be in allowedTools — that bypasses the \
-                 denyByDefault + allowedCommands enforcement in the shell \
-                 permission decider (decider.rs step 2). Keep execute_bash in \
-                 the `tools` array but NOT in `allowedTools`."
-            );
-
-            let shell = &v["toolsSettings"]["shell"];
-            assert_eq!(
-                shell["denyByDefault"], true,
-                "shell must run with denyByDefault: true so unlisted commands are denied"
-            );
-            let allowlist: Vec<&str> = shell["allowedCommands"]
-                .as_array()
-                .expect("allowedCommands array")
-                .iter()
-                .filter_map(|p| p.as_str())
-                .collect();
-            assert!(
-                !allowlist.is_empty(),
-                "execute_bash with denyByDefault must declare a non-empty allowlist"
-            );
-            for forbidden_substr in [
-                "git push",
-                "git pull",
-                "git fetch",
-                "git commit",
-                "git reset",
-                "rm ",
-                "curl ",
-                "wget ",
-                "sudo ",
-                "bash -c",
-                "sh -c",
-            ] {
-                assert!(
-                    !allowlist.iter().any(|p| p.contains(forbidden_substr)),
-                    "shell allowlist must not include `{forbidden_substr}` — that's a write/network command"
-                );
-            }
-            let denylist: Vec<&str> = shell["deniedCommands"]
-                .as_array()
-                .expect("deniedCommands array")
-                .iter()
-                .filter_map(|p| p.as_str())
-                .collect();
-            assert!(
-                !denylist.is_empty(),
-                "shell denylist must explicitly block writes/network as defense-in-depth"
-            );
-        }
     }
 
-    /// `read` is auto-approved, so `deniedPaths` is the only thing standing
-    /// between a prompt-injected model and the bot's own Slack/GitHub
-    /// credentials. Deny beats allow before the auto-approve check, but only
-    /// for patterns that survive canonicalization — relative globs get joined
-    /// onto cwd and silently stop matching, so every entry must be absolute
-    /// or `~`-rooted.
+    /// Built-in reads must reach the host permission boundary.
     #[test]
-    fn kiro_help_read_cannot_reach_credentials() {
+    fn kiro_help_read_requires_host_permission() {
         let raw = include_str!("../agents/kiro-help.json");
         let v: serde_json::Value = serde_json::from_str(raw).expect("valid JSON");
+        let tools = v["tools"].as_array().expect("tools array");
+        assert!(tools.iter().any(|tool| tool == "read"), "read must remain available");
+        let allowed = v["allowedTools"].as_array().expect("allowedTools array");
+        assert!(
+            !allowed
+                .iter()
+                .any(|tool| matches!(tool.as_str(), Some("read" | "fs_read" | "@builtin/fs_read"))),
+            "read must not bypass host permission handling"
+        );
         let denied: Vec<&str> = v["toolsSettings"]["read"]["deniedPaths"]
             .as_array()
-            .expect("read.deniedPaths must be declared — `read` is in allowedTools")
+            .expect("read.deniedPaths must remain as defense in depth")
             .iter()
             .filter_map(|p| p.as_str())
             .collect();
 
         for pattern in &denied {
             assert!(
-                pattern.starts_with('/') || pattern.starts_with('~'),
-                "deniedPaths entry `{pattern}` is relative — it will be resolved against cwd and never match the real target"
+                pattern.starts_with('/') || pattern.starts_with('~') || pattern.starts_with('$'),
+                "deniedPaths entry `{pattern}` must be absolute or rooted in home"
             );
         }
-        for required in ["~/.kiro/bots", "~/.aws", "~/.ssh", "/proc"] {
+        for required in ["$KIRO_HOME/bots", "~/.aws", "~/.ssh", "/proc"] {
             assert!(denied.contains(&required), "read.deniedPaths must block {required}");
         }
-
-        // Same targets, second layer: the shell allowlist admits bare `cat`
-        // and `find`, so the denylist is what keeps them off the secrets.
-        let shell_denylist: Vec<&str> = v["toolsSettings"]["shell"]["deniedCommands"]
-            .as_array()
-            .expect("deniedCommands array")
-            .iter()
-            .filter_map(|p| p.as_str())
-            .collect();
-        for target in ["secrets\\.toml", "/proc/", "\\.aws/", "\\.ssh/"] {
-            assert!(
-                shell_denylist.iter().any(|p| p.contains(target)),
-                "shell deniedCommands must block {target} — `cat( .*)?` is allowlisted and would otherwise read it"
-            );
-        }
-        assert!(
-            shell_denylist.iter().any(|p| p.contains("printenv")),
-            "shell deniedCommands must block env dumps — the process env carries GH_PAT"
-        );
     }
 
     /// The agent must not advertise tools that don't exist in this binary.
@@ -210,9 +153,8 @@ mod tests {
         );
     }
 
-    /// Every tool the prompt names must appear in the JSON's tools list.
-    /// This is the contract that prevents the agent from being told about
-    /// tools it cannot call.
+    /// The prompt names only tools whose usage constraints belong in the
+    /// always-on contract; the agent JSON remains the tool inventory.
     #[test]
     fn kiro_help_prompt_only_names_available_tools() {
         let raw = include_str!("../agents/kiro-help.json");
@@ -224,57 +166,55 @@ mod tests {
             .map(|t| t.as_str().unwrap_or_default().to_string())
             .collect();
 
-        // Tools the prompt's "Tools you can call" section explicitly names.
-        // For MCP-namespaced tools we strip the @server/ prefix in the prompt
-        // for readability, so we check the unqualified name maps to one in
-        // the JSON via suffix match.
         let prompt = include_str!("../agents/kiro_help_prompt.md");
-        for named in [
-            "search_kiro_knowledge",
-            "search_github_issues",
-            "create_github_issue",
-            "comment_on_existing",
-            "introspect",
-            "read",
-            "execute_bash",
-        ] {
+        for named in ["search_kiro_knowledge", "introspect"] {
             assert!(
                 prompt.contains(&format!("`{named}`")),
-                "prompt should still introduce {named}"
+                "prompt should retain the usage constraint for {named}"
             );
             assert!(
                 tools.iter().any(|t| t == named || t.ends_with(&format!("/{named}"))),
                 "prompt names `{named}` but it's not in kiro-help.json's tools: {tools:?}"
             );
         }
+        assert!(
+            !prompt.contains("Available tools are"),
+            "the prompt must not duplicate the agent JSON tool inventory"
+        );
+        assert!(
+            !prompt.contains("execute_bash"),
+            "the prompt must not present shell policy as a security boundary"
+        );
     }
 
-    /// The prompt is the bot's identity + hard-constraint contract. It must
-    /// retain retrieval-mandatory + citation rules and reference the skill
-    /// for the per-turn procedure rather than restating it.
+    /// The prompt keeps the compact contract; procedure stays in the skill.
     #[test]
     fn kiro_help_prompt_carries_hard_constraints() {
         let prompt = include_str!("../agents/kiro_help_prompt.md");
-        assert!(
-            prompt.contains("Read the source for behavior questions"),
-            "prompt must hard-require reading source for kiro-touching questions"
-        );
-        assert!(
-            prompt.contains("Cite every non-trivial claim"),
-            "prompt must require citations on retrieved answers"
-        );
-        assert!(
-            prompt.contains("Never invent doc paths, file paths, issue numbers, or Taskei task IDs"),
-            "prompt must keep the no-fabrication rule"
-        );
-        assert!(
-            prompt.contains("kiro-help-workflow"),
-            "prompt must reference the kiro-help-workflow skill so the agent loads it for the per-turn procedure"
-        );
+        for clause in [
+            "## Grounding and safety",
+            "locate evidence with `search_kiro_knowledge`",
+            "Support material claims",
+            "Never invent paths",
+            "untrusted data",
+            "Check duplicates before opening GitHub issues",
+            "Before GitHub writes",
+            "explicit confirmation",
+            "Protect secrets and privacy",
+            "## Slack answers",
+            "three sentences or fewer",
+            "begin longer answers with a one- or two-sentence `TL;DR:`",
+            "standard Markdown",
+            "exact `path:line` locations",
+            "exactly one compact `Sources:` line",
+            "kiro-help-workflow",
+        ] {
+            assert!(prompt.contains(clause), "prompt must retain `{clause}`");
+        }
+        assert!(!prompt.contains("## Workflow"), "procedure belongs in SKILL.md");
     }
 
-    /// SKILL.md is the per-turn recipe and the single source of truth for
-    /// the workflow. Pin its load-bearing pieces.
+    /// SKILL.md is the single source of truth for the per-turn procedure.
     #[test]
     fn kiro_help_skill_defines_workflow() {
         let skill = include_str!("../agents/SKILL.md");
@@ -282,12 +222,45 @@ mod tests {
             skill.starts_with("---\nname: kiro-help-workflow"),
             "skill must start with frontmatter declaring name = kiro-help-workflow"
         );
-        for clause in ["search_kiro_knowledge", "search_github_issues", "Sources:"] {
+        for clause in [
+            "## Procedure",
+            "search_kiro_knowledge",
+            "search_github_issues",
+            "Verify current behavior",
+            "Validate before sending",
+            "answer-length, `TL;DR:`, and exact-line citation",
+            "Sources:",
+        ] {
             assert!(
                 skill.contains(clause),
                 "skill must keep the '{clause}' clause that defines the workflow"
             );
         }
+        assert!(!skill.contains("## Hard constraints"));
+        assert!(!skill.contains("## Format"));
+    }
+
+    #[test]
+    fn kiro_help_prompt_stack_is_concise() {
+        let prompt = include_str!("../agents/kiro_help_prompt.md");
+        let skill = include_str!("../agents/SKILL.md");
+        let references = [
+            include_str!("../agents/references/bug-investigation.md"),
+            include_str!("../agents/references/issue-filing.md"),
+            include_str!("../agents/references/source-tree.md"),
+        ];
+        let word_count = |text: &str| text.split_whitespace().count();
+
+        assert!(
+            (220..=300).contains(&word_count(prompt)),
+            "prompt should remain an approximately 260-word contract"
+        );
+        assert!(word_count(skill) <= 600, "skill should remain a focused workflow");
+        assert!(
+            word_count(prompt) + word_count(skill) + references.iter().map(|text| word_count(text)).sum::<usize>()
+                <= 2_000,
+            "prompt stack should not regress toward the duplicated 5,256-word version"
+        );
     }
 
     /// The agent must declare its skill resource so the agent crate's
@@ -300,12 +273,20 @@ mod tests {
         let resources = v["resources"]
             .as_array()
             .expect("kiro-help.json must declare a resources array so SKILL.md is loaded at runtime");
+        assert_eq!(
+            resources.len(),
+            1,
+            "kiro-help must declare only its workflow skill; ambient defaults are disabled by the bot runtime"
+        );
         assert!(
             resources
                 .iter()
-                .any(|r| r.as_str().unwrap_or_default().starts_with("skill://")
-                    && r.as_str().unwrap().ends_with("SKILL.md")),
-            "kiro-help.json must declare a skill:// resource pointing at SKILL.md, got: {resources:?}"
+                .any(|r| r.as_str() == Some("skill://$KIRO_HOME/agents/SKILL.md")),
+            "kiro-help.json must resolve its skill through KIRO_HOME, got: {resources:?}"
         );
+
+        let skill = include_str!("../agents/SKILL.md");
+        assert!(skill.contains("$KIRO_HOME/agents/references/"));
+        assert!(!skill.contains("~/.kiro/agents"));
     }
 }

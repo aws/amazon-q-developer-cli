@@ -45,6 +45,9 @@ impl Frontend for CliFrontend {
         match reply {
             Reply::Send { text, .. } => println!("{text}"),
             Reply::Update { text, .. } => eprintln!("  {text}"),
+            Reply::StartProgress { .. } => eprintln!("  Working on your request"),
+            Reply::Progress { update, .. } => eprintln!("  {}", update.title),
+            Reply::FinishProgress { text, .. } => println!("{text}"),
             Reply::Delete { .. } => {},
         }
         let mut c = self.msg_counter.lock().await;
@@ -84,11 +87,14 @@ pub async fn run_cli(core: &BotCore, frontend: Arc<CliFrontend>) {
             IncomingMessage {
                 user: user.clone(),
                 slack_user_id: String::new(),
+                slack_team_id: String::new(),
+                source_message_id: None,
                 text,
                 conversation: Conversation::Channel(conv_id),
                 reply_to: None,
                 directed: true,
                 context: vec![],
+                prompt_preparation: None,
                 envelope: None,
             },
             frontend.clone(),

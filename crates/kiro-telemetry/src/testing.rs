@@ -219,6 +219,10 @@ impl OtlpTestCollector {
         self.endpoint.clone()
     }
 
+    pub fn receive_timeout(&self, timeout: Duration) -> CapturedOtlpRequest {
+        self.rx.recv_timeout(timeout).expect("mock collector request")
+    }
+
     pub fn collect(self) -> Vec<CapturedOtlpRequest> {
         self.collect_timeout(Duration::from_secs(5))
     }

@@ -28,6 +28,7 @@ use crate::engine::acp::{
     AcpRuntimeState,
     ApprovalPolicy,
 };
+use crate::engine::attachment_read::AttachmentReadAuthorizer;
 use crate::engine::authz::Authorizer;
 use crate::engine::core::BotCore;
 use crate::engine::response_policy::{
@@ -41,6 +42,7 @@ use crate::frontend::cli::CliFrontend;
 use crate::frontend::slack::{
     PendingApprovals,
     SlackFrontend,
+    SlackSocketState,
     SlackState,
     on_error,
     on_push,
@@ -82,12 +84,13 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
 
     let approval_policy = cfg.agent.approval_policy;
     let max_active_work_items = cfg.agent.max_active_work_items;
-    let (approval_tx, approval_rx) = if approval_policy == ApprovalPolicy::Ask {
+    let (approval_tx, approval_rx) = if approval_policy != ApprovalPolicy::Deny {
         let (tx, rx) = mpsc::unbounded_channel();
         (Some(tx), Some(rx))
     } else {
         (None, None)
     };
+    let attachment_reads = Arc::new(AttachmentReadAuthorizer::default());
 
     let acp_cfg = AcpConfig {
         command: cfg.agent.command,
@@ -99,6 +102,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         idle_timeout_secs: cfg.agent.idle_timeout_secs,
         approval_policy,
         approval_tx,
+        attachment_reads: attachment_reads.clone(),
     };
 
     let (work_tx, work_rx) = mpsc::unbounded_channel::<acp::Work>();
@@ -107,16 +111,21 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     ready_rx.await.context("ACP thread died")?;
     info!("ACP ready, starting Slack listener");
 
-    let slack_client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
+    let slack_connector = SlackClientHyperConnector::new()?.with_rate_control(
+        SlackApiRateControlConfig::new()
+            .with_max_retries(0)
+            .with_max_delay_timeout(std::time::Duration::from_secs(10)),
+    );
+    let slack_client = Arc::new(SlackClient::new(slack_connector));
     let bot_token = SlackApiToken::new(slack_secrets.bot_token.clone().into());
 
-    let frontend = Arc::new(SlackFrontend {
-        client: slack_client.clone(),
-        bot_token: bot_token.clone(),
-        user_map: user_map.clone(),
-        conversation_history: conversation_history.unwrap_or(10),
-        last_seen: std::sync::Mutex::new(std::collections::HashMap::new()),
-    });
+    let frontend = Arc::new(SlackFrontend::new(
+        slack_client.clone(),
+        bot_token.clone(),
+        user_map.clone(),
+        conversation_history.unwrap_or(10),
+        attachment_reads,
+    )?);
 
     // Hoisted above the coordinator so the self-id we write into DDB is the
     // same `<ip>:<port>` peers will POST to. `0` would yield a `<ip>:0`
@@ -144,6 +153,8 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         response_policy,
         acp_info,
         coordinator: coordinator.clone(),
+        lease_manager: crate::engine::coordinator::LeaseManager::new(coordinator.clone()),
+        rate_limit: cfg.rate_limit,
     };
 
     let pending_approvals: PendingApprovals = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -157,15 +168,19 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         );
     }
 
-    let bot_user_id = {
+    let (bot_user_id, bot_id) = {
         let session = slack_client.open_session(&bot_token);
-        session
-            .auth_test()
-            .await
-            .map(|r| r.user_id.to_string())
-            .unwrap_or_default()
+        session.auth_test().await.map_or_else(
+            |_| (String::new(), String::new()),
+            |response| {
+                (
+                    response.user_id.to_string(),
+                    response.bot_id.map(|id| id.to_string()).unwrap_or_default(),
+                )
+            },
+        )
     };
-    info!(bot_user_id, "Bot authenticated");
+    info!(bot_user_id, bot_id, "Bot authenticated");
 
     let feedback_writer = build_feedback_writer().await;
 
@@ -175,6 +190,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         user_id: String::new(),
         member_id: bot_member_id.unwrap_or_default(),
         bot_user_id,
+        bot_id,
         user_map,
         pending_approvals,
         feedback_writer,
@@ -184,7 +200,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     let env = Arc::new(
         SlackClientEventsListenerEnvironment::new(slack_client.clone())
             .with_error_handler(on_error)
-            .with_user_state((*state).clone()),
+            .with_user_state(SlackSocketState::new(state.clone())),
     );
 
     let socket_config = SlackClientSocketModeConfig::new().with_ping_interval_in_seconds(30);
@@ -253,6 +269,7 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
         idle_timeout_secs: cfg.agent.idle_timeout_secs,
         approval_policy: ApprovalPolicy::Approve,
         approval_tx: None,
+        attachment_reads: Arc::new(AttachmentReadAuthorizer::default()),
     };
 
     let (work_tx, work_rx) = mpsc::unbounded_channel::<acp::Work>();
@@ -261,6 +278,8 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
     ready_rx.await.context("ACP thread died")?;
 
     let frontend = Arc::new(CliFrontend::new());
+    let coordinator: Arc<dyn crate::engine::coordinator::Coordinator> =
+        Arc::new(crate::engine::coordinator::NoopCoordinator::new());
     let core = BotCore {
         work_sender: work_tx,
         work_capacity: BotCore::work_capacity(max_active_work_items),
@@ -268,7 +287,9 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
         authz: None,
         response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
         acp_info,
-        coordinator: Arc::new(crate::engine::coordinator::NoopCoordinator::new()),
+        coordinator: coordinator.clone(),
+        lease_manager: crate::engine::coordinator::LeaseManager::new(coordinator),
+        rate_limit: cfg.rate_limit,
     };
 
     eprintln!("Ready. Type messages (prefix #name for multi-conversation). Ctrl-C to quit.");

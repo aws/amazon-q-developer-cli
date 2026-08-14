@@ -5,132 +5,57 @@
 //! - Message and app_mention events → [`crate::engine::core::dispatch`]
 //! - Reaction events → tool approval (✅/❌/🔓)
 //! - File downloads from message attachments
-//! - Markdown → Slack mrkdwn conversion
+//! - Native Slack Markdown Block Kit rendering
+
+mod approvals;
+mod attachments;
+mod delivery;
+mod events;
+mod socket_admission;
 
 use std::collections::HashMap;
 use std::sync::{
     Arc,
-    LazyLock,
     Mutex,
 };
+#[cfg(test)]
+use std::time::Duration;
 
 use anyhow::Result;
-use async_trait::async_trait;
-use regex::Regex;
+#[cfg(test)]
+use slack_morphism::errors::{
+    SlackClientApiError,
+    SlackClientEndOfStreamError,
+    SlackClientError,
+    SlackClientHttpError,
+    SlackRateLimitError,
+};
 use slack_morphism::prelude::*;
-use tokio::sync::oneshot;
-use tracing::{
-    error,
-    info,
-    warn,
-};
 
+pub use self::approvals::{
+    PendingApproval,
+    PendingApprovals,
+    spawn_approval_listener,
+};
+use self::attachments::AttachmentStore;
+#[cfg(test)]
+use self::delivery::*;
+pub use self::events::dispatch_event;
+pub use self::socket_admission::{
+    SlackSocketState,
+    on_error,
+    on_push,
+};
+#[cfg(test)]
 use crate::engine::acp::{
-    ApprovalRequest,
-    ApprovalResponse,
+    ProgressStatus,
+    ProgressUpdate,
 };
-use crate::engine::core::{
-    BotCore,
-    Conversation,
-    DispatchEnvelope,
-    Frontend,
-    IncomingMessage,
-    Reply,
-    determine_reply_location,
-};
+use crate::engine::attachment_read::AttachmentReadAuthorizer;
+use crate::engine::core::BotCore;
+#[cfg(test)]
+use crate::engine::core::GENAI_DISCLAIMER;
 use crate::engine::user_map::UserMap;
-
-// ---------------------------------------------------------------------------
-// Tool approval state
-// ---------------------------------------------------------------------------
-
-/// Pending approval: maps message timestamp → approval state.
-pub type PendingApprovals = Arc<Mutex<HashMap<String, PendingApproval>>>;
-
-pub struct PendingApproval {
-    pub tool_name: String,
-    pub options: Vec<(String, String)>,
-    pub reply_tx: Option<oneshot::Sender<ApprovalResponse>>,
-    /// Slack user whose prompt triggered the tool call. Only this user's
-    /// reaction decides the approval — otherwise anyone who can see the
-    /// message in a shared channel could grant another user's tool call.
-    pub requester: String,
-}
-
-/// Returns the registered requester when `reactor` is *not* them, i.e. when the
-/// reaction must be ignored. `None` means "proceed" — either the reactor is the
-/// requester, or there's no local approval under this ts (a peer may own it).
-///
-/// Peeks rather than removes so a bystander's reaction can't consume the
-/// approval and leave the real requester with a dead prompt.
-fn wrong_requester(pending: &PendingApprovals, ts: &str, reactor: &str) -> Option<String> {
-    pending
-        .lock()
-        .unwrap()
-        .get(ts)
-        .map(|a| a.requester.clone())
-        .filter(|requester| requester != reactor)
-}
-
-// ---------------------------------------------------------------------------
-// File downloads
-// ---------------------------------------------------------------------------
-
-/// Download files attached to a Slack message, returning `(path, mimetype)` pairs.
-async fn download_slack_files(files: &[SlackFile], bot_token: &str) -> Vec<(String, String)> {
-    let dir = std::path::Path::new("/tmp/kiro-bot-files");
-    let _ = std::fs::create_dir_all(dir);
-    let client = reqwest::Client::new();
-    let mut results = Vec::new();
-    for file in files {
-        let url = file.url_private_download.as_ref().or(file.url_private.as_ref());
-        let Some(url) = url else { continue };
-        let name = file.name.as_deref().unwrap_or("file");
-        let ext = name.rsplit('.').next().unwrap_or("bin");
-        let dest = dir.join(format!("{}.{}", file.id.0, ext));
-        let mime = file.mimetype.as_ref().map(|m| m.to_string()).unwrap_or_default();
-        match client
-            .get(url.as_str())
-            .header("Authorization", format!("Bearer {bot_token}"))
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-        {
-            Ok(resp) => match resp.bytes().await {
-                Ok(bytes) => {
-                    if std::fs::write(&dest, &bytes).is_ok() {
-                        info!(path = %dest.display(), mime = %mime, "Downloaded file");
-                        results.push((dest.to_string_lossy().into_owned(), mime));
-                    }
-                },
-                Err(e) => error!("Failed to read file bytes: {e}"),
-            },
-            Err(e) => error!("Failed to download {url}: {e}"),
-        }
-    }
-    results
-}
-
-// ---------------------------------------------------------------------------
-// Markdown → Slack mrkdwn
-// ---------------------------------------------------------------------------
-
-/// Convert standard markdown to Slack mrkdwn format.
-pub fn markdown_to_slack(text: &str) -> String {
-    static THINKING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<thinking>.*?</thinking>\s*").unwrap());
-    static HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#{1,6}\s+(.+)$").unwrap());
-    static BOLD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*\*(.+?)\*\*").unwrap());
-    static BOLD2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"__(.+?)__").unwrap());
-    static BULLET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+").unwrap());
-    static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^\)]+)\)").unwrap());
-
-    let r = THINKING.replace_all(text, "");
-    let r = HEADING.replace_all(&r, "*$1*");
-    let r = BOLD.replace_all(&r, "*$1*");
-    let r = BOLD2.replace_all(&r, "*$1*");
-    let r = BULLET.replace_all(&r, "• ");
-    LINK.replace_all(&r, "<$2|$1>").into_owned()
-}
 
 // ---------------------------------------------------------------------------
 // SlackFrontend
@@ -142,110 +67,27 @@ pub struct SlackFrontend {
     pub user_map: Arc<UserMap>,
     pub conversation_history: u16,
     pub last_seen: Mutex<HashMap<String, SlackTs>>,
+    pub recipient_teams: Mutex<HashMap<String, String>>,
+    attachment_store: AttachmentStore,
 }
 
-#[async_trait]
-impl Frontend for SlackFrontend {
-    async fn send(&self, reply: Reply) -> Result<String> {
-        let session = self.client.open_session(&self.bot_token);
-        match reply {
-            Reply::Send {
-                conversation,
-                reply_to,
-                text,
-            } => {
-                let mut req = SlackApiChatPostMessageRequest::new(
-                    conversation.into(),
-                    SlackMessageContent::new().with_text(markdown_to_slack(&text)),
-                );
-                if let Some(ts) = reply_to {
-                    req = req.with_thread_ts(ts.into());
-                }
-                let resp = session.chat_post_message(&req).await?;
-                Ok(resp.ts.to_string())
-            },
-            Reply::Update {
-                conversation,
-                message_id,
-                text,
-            } => {
-                session
-                    .chat_update(&SlackApiChatUpdateRequest::new(
-                        conversation.into(),
-                        SlackMessageContent::new().with_text(text),
-                        message_id.clone().into(),
-                    ))
-                    .await?;
-                Ok(message_id)
-            },
-            Reply::Delete {
-                conversation,
-                message_id,
-            } => {
-                session
-                    .chat_delete(&SlackApiChatDeleteRequest::new(
-                        conversation.into(),
-                        message_id.clone().into(),
-                    ))
-                    .await?;
-                Ok(message_id)
-            },
-        }
-    }
-
-    async fn fetch_context(&self, conversation: &str, before: &str, thread_ts: Option<&str>) -> Vec<String> {
-        if self.conversation_history == 0 {
-            return vec![];
-        }
-        // No `thread_ts` means this is a top-level channel event (a DM, or a
-        // bare @mention that the response policy is about to put into a new
-        // thread). Pulling `conversations.history` here would inject whatever
-        // unrelated chatter ran in the channel since the last event into the
-        // agent prompt — exactly the cross-thread pollution we want to avoid.
-        // The mention's own text is already passed as the prompt, and any
-        // follow-up in the new thread will fetch via the thread branch below.
-        let Some(ts) = thread_ts else {
-            self.last_seen
-                .lock()
-                .unwrap()
-                .insert(conversation.to_string(), before.into());
-            return vec![];
-        };
-
-        let session = self.client.open_session(&self.bot_token);
-        let channel: SlackChannelId = conversation.into();
-        let latest: SlackTs = before.into();
-
-        let req = SlackApiConversationsRepliesRequest::new(channel, ts.into())
-            .with_latest(latest)
-            .with_limit(self.conversation_history);
-        let result = match session.conversations_replies(&req).await {
-            Ok(resp) => resp
-                .messages
-                .iter()
-                .skip(1)
-                .rev()
-                .filter_map(|m| {
-                    let text = m.content.text.as_deref()?;
-                    let user = m
-                        .sender
-                        .user
-                        .as_ref()
-                        .map(|u| self.user_map.resolve(u.as_ref()).to_string())
-                        .unwrap_or_else(|| "bot".into());
-                    Some(format!("{user}: {text}"))
-                })
-                .collect(),
-            Err(e) => {
-                warn!("Thread context fetch failed: {e}");
-                vec![]
-            },
-        };
-        self.last_seen
-            .lock()
-            .unwrap()
-            .insert(conversation.to_string(), before.into());
-        result
+impl SlackFrontend {
+    pub fn new(
+        client: Arc<SlackHyperClient>,
+        bot_token: SlackApiToken,
+        user_map: Arc<UserMap>,
+        conversation_history: u16,
+        attachment_reads: Arc<AttachmentReadAuthorizer>,
+    ) -> Result<Self> {
+        Ok(Self {
+            client,
+            bot_token,
+            user_map,
+            conversation_history,
+            last_seen: Mutex::new(HashMap::new()),
+            recipient_teams: Mutex::new(HashMap::new()),
+            attachment_store: AttachmentStore::new_default(attachment_reads)?,
+        })
     }
 }
 
@@ -261,6 +103,7 @@ pub struct SlackState {
     pub user_id: String,
     pub member_id: String,
     pub bot_user_id: String,
+    pub bot_id: String,
     pub user_map: Arc<UserMap>,
     pub pending_approvals: PendingApprovals,
     /// 👍/👎 reactions on bot-authored messages flow into this writer for the
@@ -275,605 +118,566 @@ pub struct SlackState {
     pub own_task_id: String,
 }
 
-static MENTION_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<@[A-Z0-9]+>").unwrap());
-
-/// Handle all Slack push events (messages, mentions, reactions).
-pub async fn on_push(
-    event: SlackPushEventCallback,
-    _client: Arc<SlackHyperClient>,
-    states: SlackClientEventsUserState,
-) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let guard = states.read().await;
-    let state = guard.get_user_state::<SlackState>().ok_or("no state")?.clone();
-    drop(guard);
-    dispatch_event(event, &state, /* forwarded */ false).await
-}
-
-/// Drive a `SlackPushEventCallback` through the same per-event handlers
-/// `on_push` uses. Exposed so a forwarded event arriving at this task's
-/// `/dispatch` endpoint can be processed exactly as if Slack had delivered
-/// it natively. `forwarded = true` suppresses re-forwarding on a local miss
-/// so peers don't ping-pong reactions.
-pub async fn dispatch_event(
-    event: SlackPushEventCallback,
-    state: &SlackState,
-    forwarded: bool,
-) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Capture the dispatch envelope before we destructure `event` — the body
-    // handlers below may need to forward the raw JSON to a peer task. Skip
-    // for forwarded events: the original receiver already deduped and routed
-    // this event to us, so we should process it locally without re-arbitrating.
-    let envelope = if forwarded {
-        None
-    } else {
-        let event_id = event.event_id.0.clone();
-        serde_json::to_value(&event)
-            .ok()
-            .map(|raw| DispatchEnvelope { event_id, raw })
-    };
-    match event.event {
-        SlackEventCallbackBody::Message(msg) => handle_message(msg, state, envelope).await?,
-        SlackEventCallbackBody::AppMention(mention) => handle_mention(mention, state, envelope).await?,
-        SlackEventCallbackBody::ReactionAdded(reaction) => handle_reaction(reaction, state, forwarded).await?,
-        _ => {},
-    }
-    Ok(())
-}
-
-async fn handle_message(
-    msg: SlackMessageEvent,
-    state: &SlackState,
-    envelope: Option<DispatchEnvelope>,
-) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let raw_user_id = msg.sender.user.as_ref().map(|u| u.to_string()).unwrap_or_default();
-    if msg.subtype.is_some() || msg.sender.bot_id.is_some() {
-        return Ok(());
-    }
-    if !state.user_id.is_empty() && raw_user_id != state.user_id {
-        return Ok(());
-    }
-    let user = state.frontend.user_map.resolve(&raw_user_id).to_string();
-    let text = msg
-        .content
-        .as_ref()
-        .and_then(|c| c.text.as_deref())
-        .unwrap_or("")
-        .to_string();
-    let channel = match msg.origin.channel {
-        Some(c) => c,
-        None => return Ok(()),
-    };
-    let is_dm = msg.origin.channel_type.as_ref().map(|t| t.to_string()) == Some("im".into());
-    let mentioned = !state.member_id.is_empty() && text.contains(&format!("<@{}>", state.member_id));
-    let is_thread = msg.origin.thread_ts.is_some();
-
-    // Slack delivers both `message` and `app_mention` events for an @-mention
-    // in a channel — they have different `event_id`s so dedup can't suppress
-    // them, and they'd both reach `dispatch` and produce two replies. Defer
-    // channel mentions to `handle_mention`; this handler still owns DMs and
-    // policy-driven non-mention replies (Trigger::Always / ThreadOnly).
-    if mentioned && !is_dm {
-        return Ok(());
-    }
-
-    let mut text = if mentioned {
-        MENTION_PATTERN.replace_all(&text, "").trim().to_string()
-    } else {
-        text
-    };
-
-    // Download attached files
-    if let Some(files) = msg.content.as_ref().and_then(|c| c.files.as_ref()) {
-        for (path, mime) in download_slack_files(files, state.frontend.bot_token.token_value.0.as_str()).await {
-            text = format!("[File downloaded ({mime}) to: {path} — read it]\n{text}");
-        }
-    }
-
-    let scope = if is_dm {
-        "dm".to_string()
-    } else {
-        format!("channel:{channel}")
-    };
-    let directed = is_dm || mentioned;
-    if !state.core.response_policy.should_respond(&scope, directed, is_thread) {
-        info!(scope, directed, is_thread, "Filtered by response policy");
-        return Ok(());
-    }
-
-    let reply_to = determine_reply_location(
-        &state.core.response_policy,
-        &scope,
-        &text,
-        msg.origin.thread_ts.as_ref().map(|ts| ts.0.as_str()),
-        &msg.origin.ts.0,
-    );
-
-    let context = state
-        .frontend
-        .fetch_context(
-            channel.as_ref(),
-            &msg.origin.ts.0,
-            msg.origin.thread_ts.as_ref().map(|ts| ts.0.as_str()),
-        )
-        .await;
-
-    let conversation = if is_dm {
-        Conversation::Dm {
-            channel: channel.to_string(),
-            user: user.clone(),
-        }
-    } else if let Some(ref rt) = reply_to {
-        let thread_ts = msg
-            .origin
-            .thread_ts
-            .as_ref()
-            .map(|ts| ts.0.clone())
-            .unwrap_or_else(|| rt.clone());
-        Conversation::Thread {
-            channel: channel.to_string(),
-            thread_ts,
-        }
-    } else {
-        Conversation::Channel(channel.to_string())
-    };
-
-    crate::engine::core::dispatch(
-        &state.core,
-        IncomingMessage {
-            user,
-            slack_user_id: raw_user_id,
-            text,
-            conversation,
-            reply_to,
-            directed,
-            context,
-            envelope,
-        },
-        state.frontend.clone(),
-    );
-    Ok(())
-}
-
-async fn handle_mention(
-    mention: SlackAppMentionEvent,
-    state: &SlackState,
-    envelope: Option<DispatchEnvelope>,
-) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if !state.user_id.is_empty() && mention.user.to_string() != state.user_id {
-        return Ok(());
-    }
-    let user = state.frontend.user_map.resolve(mention.user.as_ref()).to_string();
-    let mut text = MENTION_PATTERN
-        .replace_all(mention.content.text.as_deref().unwrap_or(""), "")
-        .trim()
-        .to_string();
-
-    if let Some(files) = mention.content.files.as_ref() {
-        for (path, mime) in download_slack_files(files, state.frontend.bot_token.token_value.0.as_str()).await {
-            text = format!("[File downloaded ({mime}) to: {path} — read it]\n{text}");
-        }
-    }
-
-    let scope = format!("channel:{}", mention.channel);
-    let reply_to = determine_reply_location(
-        &state.core.response_policy,
-        &scope,
-        &text,
-        mention.origin.thread_ts.as_ref().map(|ts| ts.0.as_str()),
-        &mention.origin.ts.0,
-    );
-
-    let context = state
-        .frontend
-        .fetch_context(
-            mention.channel.as_ref(),
-            &mention.origin.ts.0,
-            mention.origin.thread_ts.as_ref().map(|ts| ts.0.as_str()),
-        )
-        .await;
-
-    let conversation = if let Some(ref rt) = reply_to {
-        let thread_ts = mention
-            .origin
-            .thread_ts
-            .as_ref()
-            .map(|ts| ts.0.clone())
-            .unwrap_or_else(|| rt.clone());
-        Conversation::Thread {
-            channel: mention.channel.to_string(),
-            thread_ts,
-        }
-    } else {
-        Conversation::Channel(mention.channel.to_string())
-    };
-
-    crate::engine::core::dispatch(
-        &state.core,
-        IncomingMessage {
-            user,
-            slack_user_id: mention.user.to_string(),
-            text,
-            conversation,
-            reply_to,
-            directed: true,
-            context,
-            envelope,
-        },
-        state.frontend.clone(),
-    );
-    Ok(())
-}
-
-async fn handle_reaction(
-    reaction: SlackReactionAddedEvent,
-    state: &SlackState,
-    forwarded: bool,
-) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let reactor = reaction.user.to_string();
-    tracing::debug!(reactor, bot_user_id = %state.bot_user_id, member_id = %state.member_id, "Reaction event received");
-    if reactor == state.bot_user_id || reactor == state.member_id {
-        tracing::debug!("Ignoring bot's own reaction");
-        return Ok(());
-    }
-    let SlackReactionsItem::Message(msg) = &reaction.item else {
-        return Ok(());
-    };
-    let ts = msg.origin.ts.to_string();
-    let channel = msg.origin.channel.clone();
-    let emoji = reaction.reaction.0.as_str();
-
-    // Cluster-wide dedup. slack-morphism's `SlackReactionAddedEvent` does not
-    // surface a stable `event_id`, so synthesize a composite key that is the
-    // same on every task receiving the same delivery. Skip on `forwarded`
-    // (the peer that originally received it already deduped).
-    if !forwarded {
-        let dedup_key = format!("rxn:{ts}:{}:{emoji}", reaction.user.0);
-        if !state.core.coordinator.dedupe_event(&dedup_key).await {
-            tracing::debug!(dedup_key, "duplicate reaction event, dropping");
-            return Ok(());
-        }
-    }
-
-    let pending_count = state.pending_approvals.lock().unwrap().len();
-    tracing::info!(
-        emoji,
-        ts,
-        pending_count,
-        "Reaction on message, checking pending approvals"
-    );
-
-    // Phase 6: 👍/👎 on a bot-authored message → persist as feedback. Runs
-    // alongside the approval flow below — a 👍 on an approval prompt is
-    // both an "allow_once" and (incidentally) a positive-feedback signal.
-    if let Some(writer) = state.feedback_writer.as_ref()
-        && let Some(reaction_kind) = crate::engine::feedback::Reaction::from_slack(emoji)
-    {
-        let channel_str = channel.as_ref().map(|c| c.to_string()).unwrap_or_default();
-        // Pull chunk_ids from the most recent grounded assistant turn for
-        // this conversation. We try the obvious convo ids in order:
-        // - `dm:<reactor>` for DMs (handler ignored bot reactions earlier)
-        // - `channel:<id>` for channel reactions
-        // The first hit wins; loading both is cheap (DDB Query+Limit).
-        let candidates = [format!("dm:{reactor}"), format!("channel:{channel_str}")];
-        let mut chunk_ids = Vec::new();
-        for convo in &candidates {
-            let turns = state.core.coordinator.load_history(convo, 5).await.unwrap_or_default();
-            let from_window = crate::engine::feedback::chunk_ids_for_recent_assistant_turn(&turns);
-            if !from_window.is_empty() {
-                chunk_ids = from_window;
-                break;
-            }
-        }
-        let record = crate::engine::feedback::FeedbackRecord {
-            slack_msg_id: format!("{channel_str}:{ts}"),
-            reaction: reaction_kind,
-            chunk_ids,
-            ts: chrono::Utc::now(),
-        };
-        if let Err(e) = writer.record(record).await {
-            tracing::warn!(error = %e, "feedback PutItem failed; not blocking approval flow");
-        }
-    }
-
-    if let Some(requester) = wrong_requester(&state.pending_approvals, &ts, &reactor) {
-        tracing::info!(
-            reactor,
-            requester,
-            msg_ts = %ts,
-            "ignoring approval reaction from a user who didn't make the request"
-        );
-        return Ok(());
-    }
-
-    let approval = state.pending_approvals.lock().unwrap().remove(&ts);
-    let Some(mut approval) = approval else {
-        // Local miss: maybe a peer task posted this approval. Look up the
-        // owner in the cross-task approvals table (if any) and forward.
-        // Skip forwarding for events that *already* arrived via /dispatch —
-        // otherwise we ping-pong with the original owner.
-        if !forwarded
-            && let Ok(Some(peer)) = state.core.coordinator.lookup_approval_owner(&ts).await
-            && !peer.is_empty()
-            && peer != state.own_task_id
-        {
-            let payload = serde_json::json!({
-                "token": "",
-                "team_id": "",
-                "api_app_id": "",
-                "type": "event_callback",
-                "event_id": format!("forward:{ts}:{emoji}"),
-                "event_time": chrono::Utc::now().timestamp(),
-                "authed_users": [],
-                "event": {
-                    "type": "reaction_added",
-                    "user": reactor,
-                    "reaction": emoji,
-                    "item": &reaction.item,
-                    "item_user": "",
-                    "event_ts": ts.clone(),
-                },
-            });
-            let payload = crate::engine::coordinator::ForwardEvent {
-                slack_event_json: payload,
-            };
-            if let Err(e) = state.core.coordinator.forward(&peer, payload).await {
-                warn!(error = %e, peer, msg_ts = %ts, "forward to approval owner failed");
-            } else {
-                tracing::info!(peer, msg_ts = %ts, "forwarded reaction to approval owner");
-            }
-        }
-        return Ok(());
-    };
-
-    info!(emoji, tool = %approval.tool_name, "Reaction on approval message");
-    let Some(reply_tx) = approval.reply_tx.take() else {
-        return Ok(());
-    };
-
-    let (response, label) = match emoji {
-        "white_check_mark" => {
-            let opt = approval
-                .options
-                .iter()
-                .find(|(id, _)| id.contains("allow_once") || id.contains("yes"))
-                .or(approval.options.first());
-            (
-                opt.map(|(id, _)| ApprovalResponse::Selected(id.clone()))
-                    .unwrap_or(ApprovalResponse::Denied),
-                opt.map(|(_, l)| l.clone()).unwrap_or_else(|| "denied".into()),
-            )
-        },
-        "unlock" => {
-            let opt = approval
-                .options
-                .iter()
-                .find(|(id, _)| id.contains("allow_always") || id.contains("always"))
-                .or(approval.options.last());
-            (
-                opt.map(|(id, _)| ApprovalResponse::Selected(id.clone()))
-                    .unwrap_or(ApprovalResponse::Denied),
-                opt.map(|(_, l)| l.clone()).unwrap_or_else(|| "denied".into()),
-            )
-        },
-        "x" => {
-            let opt = approval
-                .options
-                .iter()
-                .find(|(id, _)| id.contains("reject") || id.contains("no") || id.contains("deny"));
-            (
-                opt.map(|(id, _)| ApprovalResponse::Selected(id.clone()))
-                    .unwrap_or(ApprovalResponse::Denied),
-                opt.map(|(_, l)| l.clone()).unwrap_or_else(|| "denied".into()),
-            )
-        },
-        _ => (ApprovalResponse::Denied, "denied".into()),
-    };
-    let _ = reply_tx.send(response);
-
-    if let Some(ch) = channel {
-        let frontend = state.frontend.clone();
-        let consequence = match emoji {
-            "white_check_mark" => "Tool will run this one time only.",
-            "unlock" => "Tool is now trusted for the rest of this session.",
-            _ => "Tool was blocked and will not run.",
-        };
-        let text = format!(
-            "🔐 `{}`\n*Option selected:* {label}\n_{consequence}_",
-            approval.tool_name
-        );
-        tokio::spawn(async move {
-            let _ = frontend
-                .send(Reply::Update {
-                    conversation: ch.to_string(),
-                    message_id: ts,
-                    text,
-                })
-                .await;
-        });
-    }
-    Ok(())
-}
-
-/// How long an approval row in the cross-task approvals DDB table is valid.
-/// Must outlive the in-process `tokio::time::timeout(600s)` on the ACP-side
-/// `reply_rx.await` plus a comfortable cushion so a slow user doesn't make
-/// the row TTL out before they react.
-const APPROVAL_DDB_TTL: std::time::Duration = std::time::Duration::from_secs(1800);
-
-/// Derive the conversation id used as a hash for cross-task forwarding.
-/// Mirrors `engine::core::Conversation::id` for thread/channel cases; DM
-/// approvals are rare in practice so the simpler `channel:<id>` form is
-/// fine — the routing key only needs to be stable across tasks.
-fn conv_id_for_approval(channel: &str, thread_ts: Option<&str>) -> String {
-    match thread_ts {
-        Some(ts) => format!("thread:{channel}:{ts}"),
-        None => format!("channel:{channel}"),
-    }
-}
-
-/// Spawn a task that posts approval requests to Slack and seeds emoji reactions.
-pub fn spawn_approval_listener(
-    mut approval_rx: tokio::sync::mpsc::UnboundedReceiver<ApprovalRequest>,
-    client: Arc<SlackHyperClient>,
-    bot_token: SlackApiToken,
-    pending: PendingApprovals,
-    coordinator: Arc<dyn crate::engine::coordinator::Coordinator>,
-) {
-    tokio::spawn(async move {
-        while let Some(req) = approval_rx.recv().await {
-            let options_text = req
-                .options
-                .iter()
-                .map(|(_, label)| label.as_str())
-                .collect::<Vec<_>>()
-                .join(" / ");
-            let text = format!(
-                "🔐 *Permission request*\n`{}`\nOptions: {options_text}\n\nOnly <@{}> can approve this — React: ✅ allow · ❌ deny · 🔓 trust",
-                req.tool_name, req.slack_user_id
-            );
-
-            let session = client.open_session(&bot_token);
-            let channel: SlackChannelId = req.channel.clone().into();
-            let mut post =
-                SlackApiChatPostMessageRequest::new(channel.clone(), SlackMessageContent::new().with_text(text));
-            if let Some(ref ts) = req.thread_ts {
-                post = post.with_thread_ts(ts.clone().into());
-            }
-
-            let msg_ts = match session.chat_post_message(&post).await {
-                Ok(resp) => resp.ts.to_string(),
-                Err(e) => {
-                    error!("Failed to post approval message: {e}");
-                    let _ = req.reply_tx.send(ApprovalResponse::Denied);
-                    continue;
-                },
-            };
-
-            let ts: SlackTs = msg_ts.clone().into();
-            for emoji in ["white_check_mark", "x", "unlock"] {
-                let _ = session
-                    .reactions_add(&SlackApiReactionsAddRequest::new(
-                        channel.clone(),
-                        SlackReactionName(emoji.into()),
-                        ts.clone(),
-                    ))
-                    .await;
-            }
-
-            // Cross-task: record this task as the owner of the approval before
-            // installing the in-memory entry so a peer's reaction lookup
-            // doesn't race against the local insert. Coordinator failure is
-            // logged and treated as a soft fall-through to local-only mode —
-            // the in-memory map still works, the bot just can't route across
-            // tasks until DDB recovers.
-            let conv_id = conv_id_for_approval(&req.channel, req.thread_ts.as_deref());
-            if let Err(e) = coordinator.register_approval(&msg_ts, &conv_id, APPROVAL_DDB_TTL).await {
-                warn!(error = %e, msg_ts, "register_approval failed; falling back to local-only routing");
-            }
-
-            pending.lock().unwrap().insert(msg_ts.clone(), PendingApproval {
-                tool_name: req.tool_name,
-                options: req.options,
-                reply_tx: Some(req.reply_tx),
-                requester: req.slack_user_id,
-            });
-            tracing::info!(
-                msg_ts,
-                pending_count = pending.lock().unwrap().len(),
-                "Registered pending approval"
-            );
-        }
-    });
-}
-
-/// Slack error handler — reconnects on WebSocket resets.
-pub fn on_error(
-    err: Box<dyn std::error::Error + Send + Sync>,
-    _: Arc<SlackHyperClient>,
-    _: SlackClientEventsUserState,
-) -> http::StatusCode {
-    let msg = err.to_string();
-    if msg.contains("ConnectionReset") || msg.contains("ResetWithoutClosingHandshake") {
-        warn!("Slack WebSocket reconnecting: {err}");
-    } else {
-        error!("Slack: {err}");
-    }
-    http::StatusCode::OK
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn bold_double_asterisk() {
-        assert_eq!(markdown_to_slack("**hello**"), "*hello*");
-    }
-
-    #[test]
-    fn heading_converts_to_bold() {
-        assert_eq!(markdown_to_slack("# Title"), "*Title*");
-    }
-
-    #[test]
-    fn bullet_converts() {
-        assert_eq!(markdown_to_slack("- item one\n* item two"), "• item one\n• item two");
-    }
-
-    #[test]
-    fn link_converts() {
+    fn delivery_retries_only_safe_failure_classes() {
+        let rate_limit = SlackClientError::RateLimitError(
+            SlackRateLimitError::new().with_retry_after(std::time::Duration::from_secs(7)),
+        );
         assert_eq!(
-            markdown_to_slack("[click](https://example.com)"),
-            "<https://example.com|click>"
+            delivery_retry_delay(&rate_limit, 1, RetrySafety::PostMessage),
+            Some(Duration::from_secs(7))
+        );
+
+        let server_error =
+            SlackClientError::HttpError(SlackClientHttpError::new(http::StatusCode::SERVICE_UNAVAILABLE));
+        let server_delay = delivery_retry_delay(&server_error, 2, RetrySafety::Idempotent).unwrap();
+        assert!((Duration::from_millis(320)..=Duration::from_millis(480)).contains(&server_delay));
+        assert!(delivery_retry_delay(&server_error, 2, RetrySafety::PostMessage).is_none());
+
+        let api_error = SlackClientError::ApiError(SlackClientApiError::new("channel_not_found".to_string()));
+        assert!(delivery_retry_delay(&api_error, 1, RetrySafety::Idempotent).is_none());
+        assert!(!update_requires_new_message(&api_error));
+        assert!(stream_start_can_fallback(&api_error));
+        assert!(!stream_start_can_fallback(&SlackClientError::ApiError(
+            SlackClientApiError::new("internal_error".to_string())
+        )));
+        for code in ["message_not_found", "cant_update_message", "edit_window_closed"] {
+            assert!(update_requires_new_message(&SlackClientError::ApiError(
+                SlackClientApiError::new(code.to_string())
+            )));
+        }
+
+        let transport_error = SlackClientError::EndOfStream(SlackClientEndOfStreamError::new());
+        assert!(delivery_retry_delay(&transport_error, 1, RetrySafety::Idempotent).is_some());
+        assert!(delivery_retry_delay(&transport_error, 1, RetrySafety::PostMessage).is_none());
+        assert!(!stream_start_can_fallback(&transport_error));
+
+        let request_timeout = SlackClientError::HttpError(SlackClientHttpError::new(http::StatusCode::REQUEST_TIMEOUT));
+        assert!(delivery_retry_delay(&request_timeout, 1, RetrySafety::Idempotent).is_some());
+        assert!(delivery_retry_delay(&request_timeout, 1, RetrySafety::PostMessage).is_none());
+        assert!(!stream_start_can_fallback(&request_timeout));
+
+        let excessive_rate_limit = SlackClientError::RateLimitError(
+            SlackRateLimitError::new().with_retry_after(DELIVERY_RETRY_MAX_DELAY + Duration::from_secs(1)),
+        );
+        assert!(delivery_retry_delay(&excessive_rate_limit, 1, RetrySafety::Idempotent).is_none());
+    }
+
+    fn markdown_text(content: &SlackMessageContent) -> &str {
+        match &content.blocks.as_ref().unwrap()[0] {
+            SlackBlock::Markdown(block) => &block.text,
+            other => panic!("expected markdown block, got {other:?}"),
+        }
+    }
+
+    fn context_text(content: &SlackMessageContent) -> String {
+        match content.blocks.as_ref().unwrap().last().unwrap() {
+            SlackBlock::Context(context) => context
+                .elements
+                .iter()
+                .map(|element| match element {
+                    SlackContextBlockElement::MarkDown(text) => text.text.as_str(),
+                    other => panic!("expected markdown context, got {other:?}"),
+                })
+                .collect::<Vec<_>>()
+                .join(" | "),
+            other => panic!("expected context block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn standard_markdown_is_preserved_for_slack() {
+        let text = concat!(
+            "# Heading\n\n",
+            "**Bold** and [parenthesized link](https://example.com/docs_(v2)).\n\n",
+            "```bash\n# shell comment\necho \"ok\"\n```",
+        );
+        let rendered = render_message(text);
+        assert_eq!(rendered.chunks.len(), 1);
+        assert_eq!(markdown_text(&rendered.chunks[0]), text);
+    }
+
+    #[test]
+    fn renderer_includes_accessible_fallback_and_context() {
+        let rendered = render_message(&format!(
+            "## Root cause\nThe worker stopped.\n\nSources: `crates/kiro-bot/src/engine/acp.rs:10`\n\n{GENAI_DISCLAIMER}"
+        ));
+        let content = &rendered.chunks[0];
+        assert_eq!(content.text.as_deref(), Some("Root cause The worker stopped."));
+        let blocks = content.blocks.as_ref().unwrap();
+        assert_eq!(blocks.len(), 2);
+        match &blocks[1] {
+            SlackBlock::Context(context) => {
+                assert_eq!(context.elements.len(), 2);
+                match &context.elements[0] {
+                    SlackContextBlockElement::MarkDown(text) => assert!(text.text.contains("Sources:")),
+                    other => panic!("expected source context, got {other:?}"),
+                }
+                match &context.elements[1] {
+                    SlackContextBlockElement::MarkDown(text) => assert_eq!(text.text, DISCLAIMER_CONTEXT),
+                    other => panic!("expected disclaimer context, got {other:?}"),
+                }
+            },
+            other => panic!("expected context block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn thread_context_prefers_rendered_markdown_over_fallback_text() {
+        let content = render_message("## Root cause\nThe worker stopped.").chunks.remove(0);
+
+        assert_eq!(
+            context_message_text(&content).as_deref(),
+            Some("## Root cause\nThe worker stopped.")
         );
     }
 
     #[test]
-    fn thinking_tags_stripped() {
-        assert_eq!(markdown_to_slack("<thinking>internal</thinking>\nvisible"), "visible");
+    fn thread_context_preserves_rendered_sources_blocks() {
+        let content = render_message(&format!(
+            "The worker stopped.\n\nSources: [ACP lifecycle](https://example.com/acp)\n\n{GENAI_DISCLAIMER}"
+        ))
+        .chunks
+        .remove(0);
+
+        let context = context_message_text(&content).unwrap();
+
+        assert!(context.starts_with("The worker stopped."));
+        assert!(context.contains("Sources: <https://example.com/acp|ACP lifecycle>"));
     }
 
-    fn pending_with_requester(ts: &str, requester: &str) -> PendingApprovals {
-        let (tx, _rx) = oneshot::channel();
-        let map = HashMap::from([(ts.to_string(), PendingApproval {
-            tool_name: "execute_bash".to_string(),
-            options: vec![("allow_once".to_string(), "Allow once".to_string())],
-            reply_tx: Some(tx),
-            requester: requester.to_string(),
-        })]);
-        Arc::new(Mutex::new(map))
-    }
-
-    /// A tool call is only approved by the user who triggered it. Anyone else in
-    /// a shared channel can see the prompt, so without this an onlooker could
-    /// authorize someone else's write.
     #[test]
-    fn only_the_requester_can_approve() {
-        let pending = pending_with_requester("1700000000.1", "U_REQUESTER");
+    fn oversized_answers_deliver_every_chunk_and_preserve_source_context() {
+        let body = "A useful sentence with enough words to split safely. ".repeat(500);
+        let rendered = render_message(&format!(
+            "{body}\n\n{body}\n\nSources:\n- [Runbook](https://example.com/docs_(v2))\n\n{GENAI_DISCLAIMER}"
+        ));
 
-        assert_eq!(
-            wrong_requester(&pending, "1700000000.1", "U_BYSTANDER"),
-            Some("U_REQUESTER".to_string()),
-            "a bystander's reaction must be rejected"
-        );
+        assert!(rendered.chunks.len() > 1);
         assert!(
-            pending.lock().unwrap().contains_key("1700000000.1"),
-            "rejecting a bystander must leave the approval pending for the real requester"
+            rendered
+                .chunks
+                .iter()
+                .all(|chunk| char_len(markdown_text(chunk)) <= MARKDOWN_CHAR_LIMIT)
         );
+        let context = context_text(rendered.chunks.last().unwrap());
+        assert!(context.contains("<https://example.com/docs_(v2)|Runbook>"));
+        assert!(context.contains(DISCLAIMER_CONTEXT));
+    }
+
+    #[test]
+    fn delivered_markdown_sequence_round_trips_complete_response() {
+        let prose_line = format!("{} [guide](https://example.com/docs_(v2))", "word ".repeat(700));
+        let body = format!(
+            "{prose_line}\n{prose_line}\n{prose_line}\n```rust\nfn main() {{ println!(\"done\"); }}\n```\n{prose_line}"
+        );
+        let rendered = render_message(&format!(
+            "{body}\nSources: [Runbook](https://example.com/runbook)\n{GENAI_DISCLAIMER}"
+        ));
+        let delivered = rendered.chunks.iter().map(markdown_text).collect::<Vec<_>>().join("\n");
+
+        assert!(rendered.chunks.len() > 1);
+        assert_eq!(delivered, body);
+        assert!(
+            rendered
+                .chunks
+                .iter()
+                .all(|chunk| chunk.text.as_deref().is_some_and(|fallback| !fallback.is_empty()))
+        );
+        let context = context_text(rendered.chunks.last().unwrap());
+        assert!(context.contains("<https://example.com/runbook|Runbook>"));
+        assert!(context.contains(DISCLAIMER_CONTEXT));
+    }
+
+    #[test]
+    fn oversized_source_footer_cannot_truncate_disclaimer() {
+        let sources = format!(
+            "Sources:\n{}",
+            "- `crates/kiro-bot/src/frontend/slack.rs:1`\n".repeat(200)
+        );
+        let rendered = render_message(&format!("Answer.\n\n{sources}\n{GENAI_DISCLAIMER}"));
+        let context = match rendered.chunks[0].blocks.as_ref().unwrap().last().unwrap() {
+            SlackBlock::Context(context) => context,
+            other => panic!("expected context block, got {other:?}"),
+        };
+
+        assert_eq!(context.elements.len(), 2);
+        match context.elements.last().unwrap() {
+            SlackContextBlockElement::MarkDown(text) => assert_eq!(text.text, DISCLAIMER_CONTEXT),
+            other => panic!("expected disclaimer context, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn post_requests_disable_unfurls() {
+        let mut rendered = render_message("[docs](https://example.com)");
+        let content = rendered.chunks.remove(0);
+        let request = post_request("C123".into(), content, Some("170.1".into()));
+        assert_eq!(request.unfurl_links, Some(false));
+        assert_eq!(request.unfurl_media, Some(false));
+        assert_eq!(request.thread_ts.as_ref().map(|ts| ts.0.as_str()), Some("170.1"));
+    }
+
+    #[test]
+    fn stream_requests_match_slack_task_update_contract() {
+        let start = serde_json::to_value(start_stream_request(
+            "C123".into(),
+            "170.1".into(),
+            "U123".into(),
+            "T123".into(),
+        ))
+        .unwrap();
+        assert_eq!(start["channel"], "C123");
+        assert_eq!(start["thread_ts"], "170.1");
+        assert_eq!(start["recipient_user_id"], "U123");
+        assert_eq!(start["recipient_team_id"], "T123");
+        assert_eq!(start["task_display_mode"], "timeline");
+        assert_eq!(start["chunks"][0]["type"], "task_update");
+        assert_eq!(start["chunks"][0]["status"], "in_progress");
+
+        let append = serde_json::to_value(SlackAppendStreamRequest {
+            channel: "C123".into(),
+            ts: "170.2".into(),
+            markdown_text: None,
+            chunks: vec![progress_task(ProgressUpdate {
+                id: "tool-1".into(),
+                title: "Searching Kiro docs".into(),
+                status: ProgressStatus::Complete,
+            })],
+        })
+        .unwrap();
+        assert_eq!(append["ts"], "170.2");
+        assert!(append.get("markdown_text").is_none());
+        assert_eq!(append["chunks"][0]["id"], "tool-1");
+        assert_eq!(append["chunks"][0]["title"], "Searching Kiro docs");
+        assert_eq!(append["chunks"][0]["status"], "complete");
+
+        let complete = serde_json::to_value(stop_stream_request(
+            "C123".into(),
+            "170.2".into(),
+            &format!("**Answer**\n\n{GENAI_DISCLAIMER}"),
+            ProgressStatus::Complete,
+        ))
+        .unwrap();
+        assert_eq!(complete["chunks"][0]["status"], "complete");
+        assert_eq!(complete["chunks"][1]["type"], "markdown_text");
+        assert_eq!(complete["chunks"][1]["text"], "**Answer**");
+        assert!(complete.get("markdown_text").is_none());
+        assert_eq!(complete["blocks"][0]["type"], "context");
+
+        let fallback = serde_json::to_value(stop_stream_fallback_request(
+            "C123".into(),
+            "170.2".into(),
+            &format!("**Answer**\n\n{GENAI_DISCLAIMER}"),
+        ))
+        .unwrap();
+        assert!(fallback.get("chunks").is_none());
+        assert_eq!(fallback["markdown_text"], "**Answer**");
+        assert_eq!(fallback["blocks"][0]["type"], "context");
+
+        let failed = serde_json::to_value(stop_stream_request(
+            "C123".into(),
+            "170.2".into(),
+            "Error",
+            ProgressStatus::Error,
+        ))
+        .unwrap();
+        assert_eq!(failed["chunks"][0]["status"], "error");
+    }
+
+    #[test]
+    fn slack_task_cards_decode_for_thread_history() {
+        let block: SlackBlock = serde_json::from_value(serde_json::json!({
+            "type": "task_card",
+            "task_id": "tool-1",
+            "title": "Searching Kiro docs",
+            "status": "in_progress"
+        }))
+        .unwrap();
+
+        assert!(matches!(block, SlackBlock::TaskCard(_)));
+    }
+
+    #[test]
+    fn long_answers_are_split_without_content_loss() {
+        let paragraph = "A useful sentence with enough words to split safely. ".repeat(400);
+        let body = format!("{paragraph}\n{paragraph}");
+        let rendered = render_message(&body);
+        assert!(rendered.chunks.len() > 1);
+        assert!(
+            rendered
+                .chunks
+                .iter()
+                .all(|chunk| char_len(markdown_text(chunk)) <= MARKDOWN_CHAR_LIMIT)
+        );
+        let delivered = rendered.chunks.iter().map(markdown_text).collect::<Vec<_>>().join("\n");
         assert_eq!(
-            wrong_requester(&pending, "1700000000.1", "U_REQUESTER"),
-            None,
-            "the requester's own reaction must be accepted"
+            delivered.split_whitespace().collect::<Vec<_>>(),
+            body.split_whitespace().collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn split_code_fences_remain_closed() {
+        let code = format!("```rust\n{}\n```", "let value = 1;\n".repeat(1_000));
+        let rendered = render_message(&code);
+        assert!(rendered.chunks.len() > 1);
+        for chunk in &rendered.chunks {
+            let markdown = markdown_text(chunk);
+            assert!(char_len(markdown) <= MARKDOWN_CHAR_LIMIT);
+            assert_eq!(
+                markdown.match_indices("```").count() % 2,
+                0,
+                "each Slack message must contain complete fences"
+            );
+        }
+    }
+
+    #[test]
+    fn inline_self_closing_fence_remains_balanced_across_chunks() {
+        let reply = "Before the inline snippet.\nContext remains visible.\n```status: ready```\nAfter the inline snippet.\nThe answer keeps going.\n";
+        let chunks = split_markdown(reply, 40);
+
+        assert!(chunks.len() > 1);
+        assert_eq!(chunks.join("\n"), reply.trim_end());
+        for chunk in &chunks {
+            assert!(char_len(chunk) <= 40);
+            assert_eq!(
+                chunk.match_indices("```").count() % 2,
+                0,
+                "each delivered chunk must contain complete fences: {chunk:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn oversized_fence_info_strings_remain_bounded_and_closed() {
+        for info_len in [
+            MAX_FENCE_HEADER_CHARS - 3,
+            MAX_FENCE_HEADER_CHARS - 2,
+            MARKDOWN_CHAR_LIMIT - 4,
+            MARKDOWN_CHAR_LIMIT + 100,
+        ] {
+            let code = format!("```{}\nbody\n```\n", "x".repeat(info_len));
+            let chunks = split_markdown(&code, MARKDOWN_CHAR_LIMIT);
+            assert!(!chunks.is_empty());
+            assert!(chunks.len() <= 2, "unexpected chunk growth for info length {info_len}");
+            let preserved_info_chars = chunks
+                .iter()
+                .map(|chunk| chunk.chars().filter(|character| *character == 'x').count())
+                .sum::<usize>();
+            assert!(
+                preserved_info_chars >= info_len,
+                "fence info string was truncated for info length {info_len}"
+            );
+            let joined = chunks.join("\n");
+            assert_eq!(joined.matches("body").count(), 1);
+            assert!(joined.rfind('x').unwrap() < joined.find("body").unwrap());
+            for chunk in &chunks {
+                assert!(char_len(chunk) <= MARKDOWN_CHAR_LIMIT);
+                assert_eq!(
+                    chunk.match_indices("```").count() % 2,
+                    0,
+                    "chunk must contain complete fences for info length {info_len}"
+                );
+            }
+        }
+
+        let rendered = render_message(&format!("```{}\nbody\n```", "x".repeat(MARKDOWN_CHAR_LIMIT + 100)));
+        assert!(rendered.chunks.len() > 1);
+    }
+
+    #[test]
+    fn oversized_self_closing_fence_is_split_into_balanced_chunks() {
+        let content = "x".repeat(MARKDOWN_CHAR_LIMIT + 500);
+        let chunks = split_markdown(&format!("```{content}```"), MARKDOWN_CHAR_LIMIT);
+
+        assert!(chunks.len() > 1);
         assert_eq!(
-            wrong_requester(&pending, "9999999999.9", "U_ANYONE"),
-            None,
-            "unknown ts falls through to the cross-task peer lookup"
+            chunks
+                .iter()
+                .map(|chunk| chunk.trim_start_matches("```\n").trim_end_matches("\n```"))
+                .collect::<String>(),
+            content
         );
+        for chunk in &chunks {
+            assert!(char_len(chunk) <= MARKDOWN_CHAR_LIMIT);
+            assert_eq!(chunk.match_indices("```").count() % 2, 0);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "markdown chunk limit must allow fenced content")]
+    fn markdown_splitter_rejects_tiny_limits() {
+        split_markdown("```rust\nbody\n```", 8);
+    }
+
+    #[test]
+    fn slack_mentions_and_controls_are_neutralized() {
+        let rendered = render_message("Ask <@U123>, <!channel>, <!subteam^S123>, or <#C123>.");
+        let markdown = markdown_text(&rendered.chunks[0]);
+        assert!(!markdown.contains("<@"));
+        assert!(!markdown.contains("<!"));
+        assert!(!markdown.contains("<#"));
+        assert!(markdown.contains("&lt;@U123>"));
+    }
+
+    #[test]
+    fn thinking_tags_are_stripped_without_rewriting_visible_markdown() {
+        let rendered = render_message("<thinking>internal</thinking>\n**visible**");
+        assert_eq!(markdown_text(&rendered.chunks[0]), "**visible**");
+    }
+
+    #[test]
+    fn known_runtime_errors_are_replaced_with_a_correlation_id() {
+        let rendered = render_message("Error: Internal error: \"server shut down unexpectedly\"");
+        let markdown = markdown_text(&rendered.chunks[0]);
+        assert!(markdown.contains("Please try again."));
+        assert!(markdown.contains("Reference: `KB-"));
+        assert!(!markdown.contains("server shut down"));
+    }
+
+    #[test]
+    fn completion_replaces_the_tracked_progress_message() {
+        let mut tracker = DeliveryTracker::default();
+        let key = DeliveryKey::new("C123".into(), Some("170.1".into()));
+        tracker.record_ack("170.2".into(), key.clone());
+
+        assert!(tracker.complete("170.2"));
+        assert!(tracker.is_completed("170.2"));
+        assert_eq!(tracker.begin_update(&key).unwrap().as_deref(), Some("170.2"));
+        assert_eq!(
+            tracker.replacements.get(&key).map(String::as_str),
+            Some("170.2"),
+            "reserving an update must not consume the placeholder"
+        );
+        assert!(tracker.begin_update(&key).is_err());
+        tracker.finish_update(&key, "170.2");
+        assert!(tracker.begin_update(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn completed_delivery_expiry_removes_pending_replacement() {
+        let mut tracker = DeliveryTracker::default();
+        let key = DeliveryKey::new("C123".into(), Some("170.1".into()));
+        tracker.record_ack("170.2".into(), key.clone());
+        assert!(tracker.complete("170.2"));
+
+        tracker.expire_delivery("170.2");
+
+        assert!(!tracker.is_completed("170.2"));
+        assert!(tracker.begin_update(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn old_expiry_does_not_remove_a_newer_replacement() {
+        let mut tracker = DeliveryTracker::default();
+        let key = DeliveryKey::new("C123".into(), Some("170.1".into()));
+        tracker.record_ack("170.2".into(), key.clone());
+        assert!(tracker.complete("170.2"));
+        tracker.record_ack("170.3".into(), key.clone());
+        assert!(tracker.complete("170.3"));
+
+        tracker.expire_delivery("170.2");
+
+        assert_eq!(tracker.begin_update(&key).unwrap().as_deref(), Some("170.3"));
+    }
+
+    #[test]
+    fn failed_final_update_preserves_a_reusable_progress_placeholder() {
+        let mut tracker = DeliveryTracker::default();
+        let key = DeliveryKey::new("C123".into(), Some("170.1".into()));
+        tracker.record_ack("170.2".into(), key.clone());
+        assert!(tracker.complete("170.2"));
+        assert_eq!(tracker.begin_update(&key).unwrap().as_deref(), Some("170.2"));
+
+        tracker.fail_update(&key);
+
+        assert!(tracker.is_completed("170.2"));
+        assert_eq!(tracker.begin_update(&key).unwrap().as_deref(), Some("170.2"));
+
+        tracker.expire_delivery("170.2");
+        assert!(!tracker.is_completed("170.2"));
+    }
+
+    #[test]
+    fn completed_update_cannot_reuse_the_progress_placeholder() {
+        let mut tracker = DeliveryTracker::default();
+        let key = DeliveryKey::new("C123".into(), Some("170.1".into()));
+        tracker.record_ack("170.2".into(), key.clone());
+        assert!(tracker.complete("170.2"));
+
+        let message_id = tracker.begin_update(&key).unwrap().unwrap();
+        tracker.finish_update(&key, &message_id);
+
+        assert!(tracker.is_completed(&message_id));
+        assert!(tracker.begin_update(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn exact_message_citations_take_precedence_over_history() {
+        let mut tracker = DeliveryTracker::default();
+        tracker.record_citations("1700000000.1".into(), vec!["docs/exact.md".into()]);
+
+        let exact = tracker.citations("1700000000.1");
+        let selected = if exact.is_empty() {
+            vec!["docs/history.md".into()]
+        } else {
+            exact
+        };
+
+        assert_eq!(selected, vec!["docs/exact.md"]);
+    }
+
+    #[test]
+    fn citations_can_be_tracked_for_multiple_message_timestamps() {
+        let mut tracker = DeliveryTracker::default();
+        let citations = vec!["crates/kiro-bot/src/frontend/slack.rs:1-20".into()];
+        for message_id in ["1700000000.1", "1700000000.2", "1700000000.3"] {
+            tracker.record_citations(message_id.into(), citations.clone());
+        }
+
+        for message_id in ["1700000000.1", "1700000000.2", "1700000000.3"] {
+            assert_eq!(tracker.citations(message_id), citations);
+        }
+    }
+
+    #[test]
+    fn citation_capacity_evicts_oldest_and_expiry_removes_order_entry() {
+        let mut tracker = DeliveryTracker::default();
+        for index in 0..=1_000 {
+            tracker.record_citations(index.to_string(), vec![format!("docs/{index}.md")]);
+        }
+
+        assert!(tracker.citations("0").is_empty());
+        assert_eq!(tracker.citations("1"), vec!["docs/1.md"]);
+        tracker.expire_citations("1");
+        assert!(tracker.citations("1").is_empty());
+        assert!(!tracker.citation_order.iter().any(|message_id| message_id == "1"));
+    }
+
+    #[test]
+    fn progress_expiry_does_not_expire_newer_citations() {
+        let mut tracker = DeliveryTracker::default();
+        let key = DeliveryKey::new("C123".into(), Some("170.1".into()));
+        tracker.record_ack("170.2".into(), key);
+        assert!(tracker.complete("170.2"));
+        tracker.record_citations("170.2".into(), vec!["docs/current.md".into()]);
+
+        tracker.expire_delivery("170.2");
+
+        assert_eq!(tracker.citations("170.2"), vec!["docs/current.md"]);
+        tracker.expire_citations("170.2");
+        assert!(tracker.citations("170.2").is_empty());
     }
 
     #[test]
     fn plain_text_unchanged() {
-        assert_eq!(markdown_to_slack("just text"), "just text");
+        let rendered = render_message("just text");
+        assert_eq!(markdown_text(&rendered.chunks[0]), "just text");
     }
 }

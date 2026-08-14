@@ -134,6 +134,9 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 | `reactions:read` | Read emoji reactions (for tool approval) |
 | `reactions:write` | Add emoji reactions to messages |
 | `channels:history` | Read channel messages (for conversation context) |
+| `groups:history` | Read private-channel threads (for conversation context) |
+
+Under **App Home**, enable the **Messages Tab** and allow users to send messages. Without it, Slack rejects DM acknowledgements with `messages_tab_disabled`.
 
 ### 4. Subscribe to Bot Events
 
@@ -167,6 +170,10 @@ Each instance is a directory with `config.toml`, `secrets.toml`, and optionally 
 ```toml
 name = "my-bot"
 working_directory = "/path/to/agent/workspace"
+
+[rate_limit]
+max_prompts = 10                    # prompts per Slack user
+window_secs = 60                    # fixed admission window
 
 [frontend]
 type = "slack"
@@ -203,6 +210,11 @@ conversation = "*"                 # everything else
 trigger = "directed_only"          # only when @mentioned
 reply = "thread"                   # reply in a thread
 ```
+
+With the Dynamo coordinator configured, `[rate_limit]` is enforced atomically
+across all bot tasks. Local and no-coordinator runs enforce the same settings
+within their single process. Commands such as `!help` and `!cancel` are not
+charged.
 
 ### secrets.toml
 
@@ -255,7 +267,9 @@ Any other message is sent to the agent as a prompt.
 
 ## Tool Approval
 
-When `approval_policy = "ask"`, the bot posts a permission request before running tools:
+`approve` and `ask` auto-approve only the exact MCP reads packaged with the
+bot. Every other permission request is posted to Slack; `deny` rejects every
+request.
 
 ```
 🔐 Permission request
@@ -602,4 +616,3 @@ kiro-bot start --all     # start every installed instance
 kiro-bot stop --all      # stop everything
 kiro-bot status          # see the fleet
 ```
-

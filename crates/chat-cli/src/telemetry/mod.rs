@@ -1206,7 +1206,7 @@ impl TelemetryClient {
             .with_user_id(database.get_telemetry_user_id().ok().flatten());
         let otel_providers = init_otel(&otel_config);
         let otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
-            .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
+            .with_sink(std::sync::Arc::new(OtelMetricsSink::new(otel_providers.meter())));
         let otel_telemetry_client = Arc::new(otel_telemetry_client);
 
         let client = Self {

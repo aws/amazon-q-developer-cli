@@ -52,7 +52,7 @@ pub const DISPATCH_TOKEN_HEADER: &str = "x-kiro-bot-dispatch-token";
 /// implementation that re-enters the normal Slack-event dispatch path.
 #[async_trait::async_trait]
 pub trait Dispatcher: Send + Sync + 'static {
-    async fn process_as_if_from_slack(&self, event: Value);
+    async fn process_as_if_from_slack(&self, event: Value) -> anyhow::Result<()>;
 }
 
 #[derive(Clone)]
@@ -91,8 +91,13 @@ async fn handle_dispatch(
         warn!("rejected /dispatch: token mismatch");
         return StatusCode::UNAUTHORIZED;
     }
-    state.dispatcher.process_as_if_from_slack(event).await;
-    StatusCode::OK
+    match state.dispatcher.process_as_if_from_slack(event).await {
+        Ok(()) => StatusCode::OK,
+        Err(error) => {
+            warn!(%error, "forwarded event dispatch failed");
+            StatusCode::SERVICE_UNAVAILABLE
+        },
+    }
 }
 
 /// Serve the dispatch endpoint. Binds `0.0.0.0` only when a peer token is
@@ -139,8 +144,18 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Dispatcher for Recorder {
-        async fn process_as_if_from_slack(&self, event: Value) {
+        async fn process_as_if_from_slack(&self, event: Value) -> anyhow::Result<()> {
             self.seen.lock().unwrap().push(event);
+            Ok(())
+        }
+    }
+
+    struct RejectingDispatcher;
+
+    #[async_trait::async_trait]
+    impl Dispatcher for RejectingDispatcher {
+        async fn process_as_if_from_slack(&self, _event: Value) -> anyhow::Result<()> {
+            anyhow::bail!("receiver rejected forwarded event")
         }
     }
 
@@ -215,5 +230,28 @@ mod tests {
         let (_rec, addr) = serve().await;
         let resp = reqwest::get(format!("http://{addr}/healthz")).await.unwrap();
         assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn dispatch_returns_non_success_when_receiver_rejects_event() {
+        let app = router(DispatchState {
+            dispatcher: Arc::new(RejectingDispatcher),
+            token: Arc::new(TEST_TOKEN.to_string()),
+        });
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/dispatch"))
+            .header(DISPATCH_TOKEN_HEADER, TEST_TOKEN)
+            .json(&serde_json::json!({"type": "event_callback"}))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

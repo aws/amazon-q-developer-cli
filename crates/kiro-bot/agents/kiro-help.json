@@ -31,7 +31,6 @@
   "tools": [
     "introspect",
     "read",
-    "execute_bash",
     "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
     "@kiro-github-write/create_github_issue",
@@ -48,13 +47,12 @@
     "@kiro-mcp/Taskei___get_task",
     "@kiro-mcp/Taskei___get_room",
     "@kiro-mcp/Taskei___list_room_resource",
-    "introspect",
-    "read"
+    "introspect"
   ],
   "toolsSettings": {
     "read": {
       "deniedPaths": [
-        "~/.kiro/bots",
+        "$KIRO_HOME/bots",
         "~/.aws",
         "~/.ssh",
         "~/.netrc",
@@ -63,47 +61,10 @@
         "/sys",
         "/**/secrets.toml"
       ]
-    },
-    "shell": {
-      "denyByDefault": true,
-      "allowedCommands": [
-        "git log( .*)?",
-        "git blame( .*)?",
-        "git show( .*)?",
-        "git diff( .*)?",
-        "git status( .*)?",
-        "git rev-parse( .*)?",
-        "git branch( .*)?",
-        "git tag( .*)?",
-        "git ls-files( .*)?",
-        "rg( .*)?",
-        "find( .*)?",
-        "wc( .*)?",
-        "ls( .*)?",
-        "stat( .*)?",
-        "file( .*)?",
-        "head( .*)?",
-        "tail( .*)?",
-        "cat( .*)?"
-      ],
-      "deniedCommands": [
-        ".*--force.*",
-        ".*\\bsudo\\b.*",
-        ".*\\bcurl\\b.*",
-        ".*\\bwget\\b.*",
-        ".*\\bgit (push|pull|fetch|commit|reset|checkout|clean|rebase|merge|cherry-pick|stash)( .*)?",
-        ".*\\b(rm|mv|cp|mkdir|rmdir|chmod|chown|tee|kill|killall|pkill)\\b.*",
-        ".*\\b(npm|bun|yarn|pnpm|cargo)\\s+install\\b.*",
-        ".*\\b(bash|sh|zsh)\\s+-c\\b.*",
-        ".*\\beval\\b.*",
-        ".*\\bsource\\b.*",
-        ".*(secrets\\.toml|\\.kiro/bots|/proc/|/sys/|\\.aws/|\\.ssh/|\\.netrc|\\.git-credentials).*",
-        "(env|printenv|set)( .*)?"
-      ]
     }
   },
   "resources": [
-    "skill://~/.kiro/agents/SKILL.md"
+    "skill://$KIRO_HOME/agents/SKILL.md"
   ],
   "includeMcpJson": false,
   "welcomeMessage": "Ask me anything about Kiro CLI. I use generative AI — answers may be incorrect or incomplete, so verify before acting on them."

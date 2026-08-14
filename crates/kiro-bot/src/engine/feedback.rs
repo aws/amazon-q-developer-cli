@@ -118,6 +118,34 @@ pub fn chunk_ids_for_recent_assistant_turn(turns: &[crate::engine::coordinator::
     Vec::new()
 }
 
+pub fn extract_cited_sources(reply: &str) -> Vec<String> {
+    let Some(sources) = reply
+        .lines()
+        .rev()
+        .find_map(|line| line.trim().strip_prefix("Sources:"))
+    else {
+        return Vec::new();
+    };
+
+    let quoted = sources
+        .split('`')
+        .enumerate()
+        .filter_map(|(index, value)| (index % 2 == 1).then_some(value.trim()))
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if !quoted.is_empty() {
+        return quoted;
+    }
+
+    sources
+        .split([',', '|'])
+        .map(|value| value.trim().trim_matches(['*', '_']))
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn build_item(record: &FeedbackRecord) -> HashMap<String, AttributeValue> {
     let mut m = HashMap::new();
     m.insert(
@@ -153,7 +181,7 @@ mod tests {
 
     #[test]
     fn reaction_from_slack_ignores_anything_else() {
-        for unrelated in ["heart", "eyes", "fire", "pray", ""] {
+        for unrelated in ["heart", "eyes", "fire", "pray", "white_check_mark", "unlock", "x", ""] {
             assert!(Reaction::from_slack(unrelated).is_none(), "got Some for {unrelated:?}");
         }
     }
@@ -192,7 +220,7 @@ mod tests {
         };
         let item = build_item(&rec);
         assert!(
-            item.get("chunk_ids").is_none(),
+            !item.contains_key("chunk_ids"),
             "expected no chunk_ids attribute when empty"
         );
     }
@@ -250,5 +278,28 @@ mod tests {
         // if they did (corruption / migration), don't pick them up.
         let turns = vec![turn(TurnRole::User, "q", &["docs/wrong.md"], 100)];
         assert!(chunk_ids_for_recent_assistant_turn(&turns).is_empty());
+    }
+
+    #[test]
+    fn cited_sources_extracts_exact_identifiers_from_the_sources_line() {
+        let reply = concat!(
+            "Use the login command.\n\n",
+            "Sources: `docs/auth.md`, `crates/chat-cli/src/auth.rs:40-52`, `taskei:abc-123`\n\n",
+            "_Generated content may be inaccurate._"
+        );
+        assert_eq!(extract_cited_sources(reply), vec![
+            "docs/auth.md",
+            "crates/chat-cli/src/auth.rs:40-52",
+            "taskei:abc-123"
+        ]);
+    }
+
+    #[test]
+    fn cited_sources_accepts_unquoted_source_lists() {
+        assert_eq!(
+            extract_cited_sources("Answer\n\nSources: docs/a.md | github_issue:#42"),
+            vec!["docs/a.md", "github_issue:#42"]
+        );
+        assert!(extract_cited_sources("Answer without sources").is_empty());
     }
 }

@@ -11,6 +11,7 @@ use kiro_telemetry::{
     OtelMetricsSink,
     OtelProviders,
     TelemetryClient as OtelTelemetryClient,
+    export_metric_records_once,
     init_otel,
     metric,
 };
@@ -20,7 +21,10 @@ use tokio::sync::{
 };
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
-use tracing::trace;
+use tracing::{
+    error,
+    trace,
+};
 
 use crate::config::{
     EventEnricher,
@@ -130,7 +134,7 @@ impl OtelEmitter {
     fn from_config(config: &kiro_telemetry::TelemetryConfig, translator: Option<Arc<dyn OtelEventTranslator>>) -> Self {
         let providers = init_otel(config);
         let client =
-            OtelTelemetryClient::new(config.clone()).with_sink(Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
+            OtelTelemetryClient::new(config.clone()).with_sink(Arc::new(OtelMetricsSink::new(providers.meter())));
         Self {
             providers,
             client: Arc::new(client),
@@ -146,7 +150,7 @@ impl OtelEmitter {
         match self.providers.force_flush() {
             Ok(()) => true,
             Err(err) => {
-                trace!(%err, "failed to flush OTel provider");
+                error!(%err, "failed to flush OTel provider");
                 false
             },
         }
@@ -189,29 +193,144 @@ impl OtelEmitter {
     }
 }
 
-fn spawn_recovery_flush(
-    otel: OtelEmitter,
-    acknowledgement: DeferredRunReceiptAcknowledgement,
-) -> Option<oneshot::Receiver<()>> {
-    let (complete_tx, complete_rx) = oneshot::channel();
-    match std::thread::Builder::new()
-        .name("kiro-telemetry-recovery".to_string())
-        .spawn(move || {
-            if otel.flush() {
-                acknowledgement.acknowledge();
+struct FlushRequest {
+    flush: Box<dyn FnOnce() -> bool + Send + 'static>,
+    on_success: Box<dyn FnOnce() + Send + 'static>,
+    complete: oneshot::Sender<bool>,
+}
+
+#[derive(Debug)]
+struct FlushWorker {
+    tx: std::sync::mpsc::Sender<FlushRequest>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FlushOutcome {
+    Succeeded,
+    Failed,
+    NotAccepted,
+    Abandoned,
+}
+
+impl FlushWorker {
+    fn spawn() -> Result<Self, std::io::Error> {
+        Self::spawn_with(|worker| {
+            std::thread::Builder::new()
+                .name("kiro-telemetry-flush".to_string())
+                .spawn(worker)
+                .map(drop)
+        })
+    }
+
+    fn spawn_with(
+        spawn: impl FnOnce(Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::Error>,
+    ) -> Result<Self, std::io::Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<FlushRequest>();
+        spawn(Box::new(move || {
+            while let Ok(request) = rx.recv() {
+                let succeeded = (request.flush)();
+                if succeeded {
+                    (request.on_success)();
+                }
+                let _ = request.complete.send(succeeded);
             }
-            let _ = complete_tx.send(());
-        }) {
-        Ok(_) => Some(complete_rx),
+        }))?;
+        Ok(Self { tx })
+    }
+
+    fn flush<F, G>(&self, flush: F, on_success: G) -> Option<oneshot::Receiver<bool>>
+    where
+        F: FnOnce() -> bool + Send + 'static,
+        G: FnOnce() + Send + 'static,
+    {
+        let (complete, receiver) = oneshot::channel();
+        let request = FlushRequest {
+            flush: Box::new(flush),
+            on_success: Box::new(on_success),
+            complete,
+        };
+        if let Err(err) = self.tx.send(request) {
+            error!(%err, "telemetry flush worker stopped before accepting request");
+            return None;
+        }
+        Some(receiver)
+    }
+}
+
+async fn request_flush<F, G>(worker: &FlushWorker, flush: F, on_success: G) -> FlushOutcome
+where
+    F: FnOnce() -> bool + Send + 'static,
+    G: FnOnce() + Send + 'static,
+{
+    let Some(completion) = worker.flush(flush, on_success) else {
+        return FlushOutcome::NotAccepted;
+    };
+    match completion.await {
+        Ok(true) => FlushOutcome::Succeeded,
+        Ok(false) => FlushOutcome::Failed,
         Err(err) => {
-            trace!(%err, "failed to start recovered telemetry flush");
-            None
+            error!(%err, "telemetry flush worker stopped before reporting completion");
+            FlushOutcome::Abandoned
         },
+    }
+}
+
+struct PendingRecovery {
+    acknowledgement: DeferredRunReceiptAcknowledgement,
+    records: Vec<kiro_telemetry::MetricRecord>,
+}
+
+type SharedRecovery = Arc<std::sync::Mutex<Option<PendingRecovery>>>;
+
+fn acknowledge_recovery(recovery: Option<&SharedRecovery>) -> impl FnOnce() + Send + 'static {
+    let recovery = recovery.cloned();
+    move || {
+        let Some(recovery) = recovery else {
+            return;
+        };
+        let Ok(mut recovery) = recovery.lock() else {
+            return;
+        };
+        let acknowledgement = recovery.take().map(|pending| pending.acknowledgement);
+        drop(recovery);
+        if let Some(acknowledgement) = acknowledgement {
+            acknowledgement.acknowledge();
+        }
+    }
+}
+
+fn export_recovery(
+    config: kiro_telemetry::TelemetryConfig,
+    recovery: Option<&SharedRecovery>,
+) -> impl FnOnce() -> bool + Send + 'static {
+    let recovery = recovery.cloned();
+    move || {
+        let records = recovery.and_then(|recovery| {
+            let recovery = recovery.lock().ok()?;
+            recovery.as_ref().map(|recovery| recovery.records.clone())
+        });
+        let Some(records) = records else {
+            return true;
+        };
+        match export_metric_records_once(&config, records) {
+            Ok(()) => true,
+            Err(err) => {
+                error!(%err, "failed to export recovered telemetry");
+                false
+            },
+        }
     }
 }
 
 impl TelemetryThread {
     pub async fn new(config: HostConfig) -> Result<Self, TelemetryError> {
+        Self::new_with_flush_worker(config, FlushWorker::spawn).await
+    }
+
+    async fn new_with_flush_worker(
+        config: HostConfig,
+        spawn_flush_worker: impl FnOnce() -> Result<FlushWorker, std::io::Error>,
+    ) -> Result<Self, TelemetryError> {
         let HostConfig {
             otel_config,
             telemetry_enabled,
@@ -225,20 +344,33 @@ impl TelemetryThread {
         } = config;
 
         let otel = OtelEmitter::from_config(&otel_config, otel_translator);
+        let flush_worker = if otel.exports_enabled() {
+            match spawn_flush_worker() {
+                Ok(worker) => Some(worker),
+                Err(err) => {
+                    error!(%err, "failed to start telemetry flush worker");
+                    None
+                },
+            }
+        } else {
+            None
+        };
         let receipt_store = RunReceiptStore::new(otel_config.state_dir.clone());
-        let (run_receipt, recovery_acknowledgement) = if telemetry_enabled && otel.exports_enabled() {
+        let (run_receipt, pending_recovery) = if telemetry_enabled && otel.exports_enabled() {
             let recovery = receipt_store.recover();
             let recovered_records = recovery.records().collect::<Vec<_>>();
-            otel.emit_records(recovered_records.iter().cloned());
-            let recovery_acknowledgement = if recovered_records.is_empty() {
+            let pending_recovery = if recovered_records.is_empty() {
                 recovery.acknowledge();
                 None
             } else {
-                Some(recovery.defer_acknowledgement())
+                Some(PendingRecovery {
+                    acknowledgement: recovery.defer_acknowledgement(),
+                    records: recovered_records,
+                })
             };
             (
                 process_identity.and_then(|identity| receipt_store.start(identity).ok()),
-                recovery_acknowledgement,
+                pending_recovery,
             )
         } else {
             receipt_store.clear_unlocked();
@@ -255,14 +387,27 @@ impl TelemetryThread {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
 
-        let recovery_flush =
-            recovery_acknowledgement.and_then(|acknowledgement| spawn_recovery_flush(otel.clone(), acknowledgement));
+        let pending_recovery = pending_recovery.map(|recovery| Arc::new(std::sync::Mutex::new(Some(recovery))));
+        let recovery_flush = pending_recovery.as_ref().and_then(|recovery| {
+            flush_worker.as_ref().and_then(|worker| {
+                worker.flush(
+                    export_recovery(otel_config.clone(), Some(recovery)),
+                    acknowledge_recovery(Some(recovery)),
+                )
+            })
+        });
         let has_recovery = recovery_flush.is_some();
         let recovery_monitor = async move {
-            if let Some(recovery_flush) = recovery_flush
-                && recovery_flush.await.is_err()
-            {
-                trace!("recovered telemetry flush exited without reporting completion");
+            if let Some(recovery_flush) = recovery_flush {
+                match recovery_flush.await {
+                    Ok(true) => {},
+                    Ok(false) => {
+                        error!("recovered telemetry flush failed");
+                    },
+                    Err(err) => {
+                        error!(%err, "recovered telemetry flush worker stopped before completion");
+                    },
+                }
             }
         };
 
@@ -303,7 +448,66 @@ impl TelemetryThread {
             if let Some((identity, sampler)) = process_sampler.as_mut() {
                 otel.emit_records(sampler.final_sample(*identity));
             }
-            otel.flush();
+            let recovery_outcome = match flush_worker.as_ref() {
+                Some(flush_worker) => {
+                    request_flush(
+                        flush_worker,
+                        export_recovery(otel_config.clone(), pending_recovery.as_ref()),
+                        acknowledge_recovery(pending_recovery.as_ref()),
+                    )
+                    .await
+                },
+                None => FlushOutcome::NotAccepted,
+            };
+            let recovery_outcome = if matches!(recovery_outcome, FlushOutcome::NotAccepted | FlushOutcome::Abandoned) {
+                match FlushWorker::spawn() {
+                    Ok(flush_worker) => {
+                        request_flush(
+                            &flush_worker,
+                            export_recovery(otel_config.clone(), pending_recovery.as_ref()),
+                            acknowledge_recovery(pending_recovery.as_ref()),
+                        )
+                        .await
+                    },
+                    Err(err) => {
+                        error!(%err, "failed to start fallback recovery export worker");
+                        FlushOutcome::NotAccepted
+                    },
+                }
+            } else {
+                recovery_outcome
+            };
+            if recovery_outcome != FlushOutcome::Succeeded {
+                error!(
+                    ?recovery_outcome,
+                    "recovered telemetry export did not complete successfully"
+                );
+            }
+
+            let flush_outcome = match flush_worker.as_ref() {
+                Some(flush_worker) => {
+                    let otel = otel.clone();
+                    request_flush(flush_worker, move || otel.flush(), || {}).await
+                },
+                None => FlushOutcome::NotAccepted,
+            };
+            let flush_outcome = if matches!(flush_outcome, FlushOutcome::NotAccepted | FlushOutcome::Abandoned) {
+                match FlushWorker::spawn() {
+                    Ok(flush_worker) => {
+                        let otel = otel.clone();
+                        request_flush(&flush_worker, move || otel.flush(), || {}).await
+                    },
+                    Err(err) => {
+                        error!(%err, "failed to start fallback telemetry flush worker");
+                        FlushOutcome::NotAccepted
+                    },
+                }
+            } else {
+                flush_outcome
+            };
+            if flush_outcome != FlushOutcome::Succeeded {
+                error!(?flush_outcome, "final telemetry flush did not complete successfully");
+            }
         });
 
         Ok(Self {
@@ -827,6 +1031,10 @@ mod tests {
     use std::sync::mpsc as std_mpsc;
     use std::time::Instant;
 
+    use kiro_telemetry::testing::{
+        OtlpTestCollector,
+        expect_otlp_metric,
+    };
     use kiro_telemetry::{
         OtelMode,
         TelemetryConfig,
@@ -834,6 +1042,20 @@ mod tests {
 
     use super::*;
     use crate::config::govcloud_partition;
+
+    fn start_one_shot_collector() -> (String, std_mpsc::Receiver<()>, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let (received_tx, received_rx) = std_mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            received_tx.send(()).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                .unwrap();
+        });
+        (endpoint, received_rx, server)
+    }
 
     #[tokio::test]
     async fn default_host_config_runs_without_sinks() {
@@ -850,47 +1072,262 @@ mod tests {
         thread.finish().await.unwrap();
     }
 
-    #[test]
-    fn recovered_receipt_flush_does_not_block_thread_startup() {
+    #[tokio::test]
+    async fn startup_spawn_failure_retries_final_export() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let (endpoint, received_rx, server) = start_one_shot_collector();
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
+            process_identity: Some(identity),
+            ..HostConfig::default()
+        };
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let thread = TelemetryThread::new_with_flush_worker(config, {
+            let spawn_count = Arc::clone(&spawn_count);
+            move || {
+                spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(std::io::Error::from_raw_os_error(libc::EAGAIN))
+            }
+        })
+        .await
+        .unwrap();
+
+        thread.finish().await.unwrap();
+        received_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        server.join().unwrap();
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn telemetry_thread_reuses_startup_worker_for_final_export() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let (endpoint, received_rx, server) = start_one_shot_collector();
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
+            process_identity: Some(identity),
+            ..HostConfig::default()
+        };
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let thread = TelemetryThread::new_with_flush_worker(config, {
+            let spawn_count = Arc::clone(&spawn_count);
+            move || {
+                FlushWorker::spawn_with(move |worker| {
+                    spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    std::thread::Builder::new()
+                        .name("kiro-telemetry-flush-test".to_string())
+                        .spawn(worker)
+                        .map(drop)
+                })
+            }
+        })
+        .await
+        .unwrap();
+
+        thread.finish().await.unwrap();
+        received_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        server.join().unwrap();
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn dead_flush_worker_keeps_shutdown_bounded_and_run_clean() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let (endpoint, received_rx, server) = start_one_shot_collector();
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
+            process_identity: Some(identity),
+            ..HostConfig::default()
+        };
+        let thread = TelemetryThread::new_with_flush_worker(config, || {
+            FlushWorker::spawn_with(|worker| {
+                drop(worker);
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(1), thread.finish())
+            .await
+            .unwrap()
+            .unwrap();
+        received_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        server.join().unwrap();
+        assert_eq!(RunReceiptStore::new(state.path()).recover().records().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn noop_fallback_preserves_recovery_receipt_for_later_launch() {
         let state = tempfile::tempdir().unwrap();
         let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
         let store = RunReceiptStore::new(state.path());
         drop(store.start(identity).unwrap());
 
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let (respond_tx, respond_rx) = std_mpsc::channel();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            respond_rx.recv().unwrap();
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
-                .unwrap();
-        });
         let config = HostConfig {
             telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
+            otel_config: TelemetryConfig::new(
+                true,
+                OtelMode::OtelOnly,
+                Some("not a valid endpoint".to_string()),
+                state.path().to_path_buf(),
+            ),
             ..HostConfig::default()
         };
-        let (started_tx, started_rx) = std_mpsc::channel();
-        let runtime = std::thread::spawn(move || {
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    let thread = TelemetryThread::new(config).await.unwrap();
-                    started_tx.send(()).unwrap();
-                    thread.finish().await.unwrap();
-                });
-        });
+        let thread = TelemetryThread::new(config).await.unwrap();
 
-        let startup_result = started_rx.recv_timeout(Duration::from_secs(2));
-        respond_tx.send(()).unwrap();
-        server.join().unwrap();
-        runtime.join().unwrap();
+        thread.finish().await.unwrap();
+        assert_eq!(store.recover().records().count(), 1);
+    }
 
-        assert!(startup_result.is_ok(), "recovery export blocked telemetry startup");
+    #[tokio::test]
+    async fn failed_accepted_flush_retries_and_acknowledges_only_success() {
+        let flushes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let acknowledgements = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let worker = FlushWorker::spawn_with(|worker| {
+            std::thread::Builder::new()
+                .name("kiro-telemetry-flush-test".to_string())
+                .spawn(worker)
+                .map(drop)
+        })
+        .unwrap();
+
+        let first = request_flush(
+            &worker,
+            {
+                let flushes = Arc::clone(&flushes);
+                move || {
+                    flushes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    false
+                }
+            },
+            {
+                let acknowledgements = Arc::clone(&acknowledgements);
+                move || {
+                    acknowledgements.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            },
+        )
+        .await;
+        let second = request_flush(
+            &worker,
+            {
+                let flushes = Arc::clone(&flushes);
+                move || {
+                    flushes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    true
+                }
+            },
+            {
+                let acknowledgements = Arc::clone(&acknowledgements);
+                move || {
+                    acknowledgements.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(first, FlushOutcome::Failed);
+        assert_eq!(second, FlushOutcome::Succeeded);
+        assert_eq!(flushes.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(acknowledgements.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_recovery_flush_reemits_record_before_acknowledging() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let store = RunReceiptStore::new(state.path());
+        drop(store.start(identity).unwrap());
+        let collector = OtlpTestCollector::start_with_statuses(vec![400, 200]);
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(
+                true,
+                OtelMode::OtelOnly,
+                Some(collector.endpoint()),
+                state.path().to_path_buf(),
+            ),
+            ..HostConfig::default()
+        };
+        let thread = TelemetryThread::new(config).await.unwrap();
+        let expected = metric::record_crash_for_version(
+            env!("CARGO_PKG_VERSION"),
+            metric::Engine::V2,
+            metric::OsType::from_name(std::env::consts::OS),
+            metric::ProcessRole::Host,
+            metric::CrashKind::UncleanExit,
+        );
+        let failed_request = collector.receive_timeout(Duration::from_secs(5));
+        expect_otlp_metric(std::slice::from_ref(&failed_request), &expected);
+
+        thread.finish_with_timeout(Duration::from_secs(5)).await.unwrap();
+        let successful_request = collector.receive_timeout(Duration::from_secs(5));
+        expect_otlp_metric(std::slice::from_ref(&successful_request), &expected);
+        assert_eq!(store.recover().records().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn unavailable_startup_worker_exports_recovery_once_at_shutdown() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let store = RunReceiptStore::new(state.path());
+        drop(store.start(identity).unwrap());
+        let collector = OtlpTestCollector::start(1);
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(
+                true,
+                OtelMode::OtelOnly,
+                Some(collector.endpoint()),
+                state.path().to_path_buf(),
+            ),
+            ..HostConfig::default()
+        };
+        let thread =
+            TelemetryThread::new_with_flush_worker(config, || Err(std::io::Error::from_raw_os_error(libc::EAGAIN)))
+                .await
+                .unwrap();
+
+        thread.finish_with_timeout(Duration::from_secs(5)).await.unwrap();
+        let requests = collector.collect();
+        let expected = metric::record_crash_for_version(
+            env!("CARGO_PKG_VERSION"),
+            metric::Engine::V2,
+            metric::OsType::from_name(std::env::consts::OS),
+            metric::ProcessRole::Host,
+            metric::CrashKind::UncleanExit,
+        );
+        expect_otlp_metric(&requests, &expected);
+        assert_eq!(store.recover().records().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn abandoned_flush_does_not_acknowledge() {
+        let acknowledgements = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let worker = FlushWorker::spawn_with(|worker| {
+            std::thread::Builder::new()
+                .name("kiro-telemetry-flush-test".to_string())
+                .spawn(worker)
+                .map(drop)
+        })
+        .unwrap();
+
+        let outcome = request_flush(&worker, || panic!("simulated abandoned flush"), {
+            let acknowledgements = Arc::clone(&acknowledgements);
+            move || {
+                acknowledgements.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        })
+        .await;
+
+        assert_eq!(outcome, FlushOutcome::Abandoned);
+        assert_eq!(acknowledgements.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -933,15 +1370,15 @@ mod tests {
         });
 
         accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        let started_waiting = Instant::now();
-        let result = finished_rx.recv_timeout(Duration::from_secs(1)).unwrap();
-
-        assert!(result.is_ok());
-        assert!(started_waiting.elapsed() < Duration::from_secs(1));
-
+        let shutdown_result = finished_rx.recv_timeout(Duration::from_secs(5));
         release_tx.send(()).unwrap();
         server.join().unwrap();
         runtime_thread.join().unwrap();
+
+        match shutdown_result {
+            Ok(result) => assert!(result.is_ok()),
+            Err(err) => panic!("blocked recovery flush held runtime shutdown: {err}"),
+        }
 
         let receipt_directory = state.path().join("run-receipts");
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -961,6 +1398,54 @@ mod tests {
                 .filter_map(Result::ok)
                 .all(|entry| entry.path().extension().is_none_or(|extension| extension != "json"))
         );
+    }
+
+    #[test]
+    fn blocked_final_flush_does_not_hold_runtime_shutdown() {
+        let state = tempfile::tempdir().unwrap();
+        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let (accepted_tx, accepted_rx) = std_mpsc::channel();
+        let (release_tx, release_rx) = std_mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            accepted_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let config = HostConfig {
+            telemetry_enabled: true,
+            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
+            process_identity: Some(identity),
+            ..HostConfig::default()
+        };
+        let (finished_tx, finished_rx) = std_mpsc::channel();
+        let runtime_thread = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let result = runtime.block_on(async move {
+                let thread = TelemetryThread::new(config).await.unwrap();
+                thread.finish_with_timeout(Duration::from_millis(100)).await
+            });
+            drop(runtime);
+            finished_tx.send(result).unwrap();
+        });
+
+        accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let shutdown_result = finished_rx.recv_timeout(Duration::from_secs(5));
+        release_tx.send(()).unwrap();
+        server.join().unwrap();
+        runtime_thread.join().unwrap();
+
+        match shutdown_result {
+            Ok(result) => assert!(result.is_ok()),
+            Err(err) => panic!("blocked final flush held runtime shutdown: {err}"),
+        }
     }
 
     #[tokio::test]

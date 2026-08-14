@@ -839,7 +839,10 @@ mod tests {
     };
     use crate::tools::glob::Glob;
     use crate::tools::grep::Grep;
-    use crate::tools::mcp::McpTool;
+    use crate::tools::mcp::{
+        McpTool,
+        McpToolAnnotations,
+    };
     use crate::util::test::TestProvider;
 
     #[derive(Debug)]
@@ -1976,6 +1979,35 @@ mod tests {
         allowed.insert("@otherserver".to_string());
         let result = evaluate_tool_permission(&perms, &allowed, &settings, &mcp_tool, &provider).unwrap();
         assert!(matches!(result, PermissionEvalResult::Ask { .. }));
+    }
+
+    #[test]
+    fn mcp_annotations_do_not_override_generic_trust() {
+        let provider = TestProvider::new();
+        let settings = ToolsSettings::default();
+        let tool = ToolKind::Mcp(McpTool {
+            server_name: "github".to_string(),
+            tool_name: "create_issue".to_string(),
+            params: None,
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(false),
+                destructive_hint: Some(true),
+                ..Default::default()
+            }),
+        });
+        let allowed_tools = HashSet::from(["@github/create_issue".to_string()]);
+        let permissions = RuntimePermissions::default();
+        assert!(matches!(
+            evaluate_tool_permission(&permissions, &allowed_tools, &settings, &tool, &provider).unwrap(),
+            PermissionEvalResult::Allow
+        ));
+
+        let mut permissions = RuntimePermissions::default();
+        permissions.trust_tool(tool.canonical_tool_name());
+        assert!(matches!(
+            evaluate_tool_permission(&permissions, &HashSet::new(), &settings, &tool, &provider).unwrap(),
+            PermissionEvalResult::Allow
+        ));
     }
 
     #[test]

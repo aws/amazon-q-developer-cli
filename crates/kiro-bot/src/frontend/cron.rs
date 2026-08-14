@@ -28,6 +28,7 @@ use crate::engine::acp::{
     AcpConfig,
     ApprovalPolicy,
 };
+use crate::engine::attachment_read::AttachmentReadAuthorizer;
 
 /// Scheduling mode.
 enum Schedule {
@@ -221,6 +222,7 @@ async fn spawn_acp(
         idle_timeout_secs: 3600,
         approval_policy: ApprovalPolicy::Approve,
         approval_tx: None,
+        attachment_reads: std::sync::Arc::new(AttachmentReadAuthorizer::default()),
     };
 
     let (work_tx, work_rx) = mpsc::unbounded_channel();
@@ -235,13 +237,15 @@ async fn send_prompt(work_tx: &mpsc::UnboundedSender<acp::Work>, prompt: &str) -
     let (reply_tx, reply_rx) = oneshot::channel();
     let (progress_tx, _) = mpsc::unbounded_channel();
     let _ = work_tx.send(acp::Work::Prompt {
-        text: prompt.to_string(),
-        context: vec![],
+        input: acp::PromptInput::ready(
+            prompt.to_string(),
+            vec![],
+            String::new(),
+            None,
+            "cron".into(),
+            String::new(),
+        ),
         conversation: "cron".into(),
-        channel: String::new(),
-        thread_ts: None,
-        user: "cron".into(),
-        slack_user_id: String::new(),
         reply_tx,
         progress_tx,
     });

@@ -1,31 +1,18 @@
-# Filing issues (dedup-first)
+# GitHub write workflow
 
-Reference for the kiro-help bot. Load this when the user asks to file an issue or comment on one. Do not preemptively volunteer to file.
+Load this reference only when the user asks to file an issue or comment.
 
-## When to load this reference
+## New issue
 
-Phrases that should trigger this flow:
-- "can you file this?" / "open an issue for X" / "report this"
-- "comment on issue #123 with..." / "add a note to that issue"
+1. Search `search_github_issues` using the symptom, command, and exact error where available. Try a second focused query when the first is empty.
+2. For a bug, verify the relevant source so documented behavior is not filed as a defect.
+3. Show up to three close matches with number, title, state, and why each may match. If none match, show the proposed title and a concise sanitized body.
+4. Wait for explicit confirmation that this is new and should be filed.
+5. Invoke `create_github_issue` and wait for the Slack approval result.
+6. After success, return the issue link. Never claim success before the tool returns it.
 
-If the user is just *asking about* a bug (not asking to file one), follow the bug-investigation workflow instead — see `references/bug-investigation.md`.
+## Existing issue comment
 
-## Filing a new issue
+Confirm the target issue and show the sanitized draft. Wait for explicit confirmation, invoke `comment_on_existing`, and wait for Slack approval before reporting success.
 
-1. **Search existing issues first.** Call `search_github_issues` with a focused query built from the user's symptom — the error string, the failing command, the unexpected behavior. Run 1-2 queries with different phrasings if the first returns nothing.
-2. **For bug reports, also confirm in source.** A "bug" that's actually documented behavior shouldn't become an issue — open the relevant file with `read` to verify the symptom is real before proposing an issue. If the source shows this is by-design, surface that to the user instead of filing.
-3. **Present matches to the user.** Reply with up to 3 of the closest matches as a numbered list with title + issue number + 1-line state (open/closed, last activity if available). Ask: *"Is this what you're hitting, or is this a different bug worth filing?"*
-   - If you found 0 matches, say so explicitly and propose a draft title + 2-3 sentence body for the user to confirm.
-4. **Wait for user confirmation.** Do not proceed without an unambiguous "yes file it" / "this is new" / "go ahead". A vague reply is a stop signal — ask again.
-5. **Request the write-tool approval reaction.** When `create_github_issue` is invoked, Slack will gate it via the reaction-approval flow. Wait for the approval signal in this turn before claiming the issue was filed.
-6. **Confirm with the issue link.** Once the tool returns, reply with the issue number/URL. Cite it in the `Sources:` line for any follow-up.
-
-## Commenting on an existing issue
-
-Same gate: confirm the user wants a comment, draft the comment for them to review, wait for the Slack reaction-approval signal, then post via `comment_on_existing`. Never modify or close an issue silently.
-
-## Hard rules
-
-- Never file an issue without doing the dedup search and getting explicit user confirmation first.
-- Never claim to have filed/commented unless you just received the Slack reaction-approval signal in this turn.
-- Never echo user-pasted secrets, configs, or stack traces into the issue body without sanitizing — strip tokens, internal hostnames, and customer identifiers.
+Never include tokens, internal hostnames, customer identifiers, or unrelated private Slack content. Taskei tools cannot create or update work items.

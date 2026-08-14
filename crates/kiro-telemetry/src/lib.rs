@@ -45,9 +45,11 @@ pub use metric::{
     RedactionResult,
 };
 pub use otel::{
+    OneShotMetricExportError,
     OtelMetricsSink,
     OtelPipelineKind,
     OtelProviders,
+    export_metric_records_once,
     init_noop_otel,
     init_otel,
 };
@@ -63,10 +65,6 @@ pub use redaction::{
     RedactionFinding,
     RedactionOutcome,
 };
-
-pub fn meter() -> opentelemetry::metrics::Meter {
-    opentelemetry::global::meter("kiro-telemetry")
-}
 
 static PROCESS_STARTED_AT: OnceLock<Instant> = OnceLock::new();
 

@@ -1,5 +1,9 @@
 name = "kiro-help"
 
+[rate_limit]
+max_prompts = 10
+window_secs = 60
+
 [frontend]
 type = "slack"
 bot_name = "KiroHelp"

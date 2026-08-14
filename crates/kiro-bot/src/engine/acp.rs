@@ -22,6 +22,10 @@ use std::collections::{
     HashMap,
     VecDeque,
 };
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::rc::Rc;
 use std::sync::atomic::{
     AtomicU64,
@@ -54,6 +58,11 @@ use tracing::{
     warn,
 };
 
+use super::attachment_read::{
+    AttachmentReadAuthorizer,
+    AttachmentReadDecision,
+};
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -64,7 +73,7 @@ use tracing::{
 pub enum ApprovalPolicy {
     /// Deny all tool requests.
     Deny,
-    /// Auto-approve all tool requests.
+    /// Auto-approve only exact bot-owned reads; ask for every other tool.
     #[default]
     Approve,
     /// Post to Slack and wait for user reaction.
@@ -82,6 +91,7 @@ pub struct AcpConfig {
     pub idle_timeout_secs: u64,
     pub approval_policy: ApprovalPolicy,
     pub approval_tx: Option<mpsc::UnboundedSender<ApprovalRequest>>,
+    pub attachment_reads: Arc<AttachmentReadAuthorizer>,
 }
 
 pub const PROMPT_TIMEOUT_ENV: &str = "KIRO_BOT_PROMPT_TIMEOUT_SECS";
@@ -95,7 +105,13 @@ const PROMPT_TASK_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 const APPROVAL_QUEUE_LIMIT: usize = 32;
 const STDERR_HISTORY_LIMIT: usize = 20;
+const DISABLE_DEFAULT_RESOURCES_KEY: &str = "chat.disableInheritingDefaultResources";
+const AGENT_CONFIG_DIR_ENV: &str = "KIRO_AGENT_CONFIG_DIR";
+const KIRO_HOME_ENV: &str = "KIRO_HOME";
+const PINNED_AGENT_NAME: &str = "kiro-help";
+const SETTINGS_PATH_ENV: &str = "KIRO_TEST_SETTINGS_PATH";
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_SETTINGS_OVERLAY_ID: AtomicU64 = AtomicU64::new(1);
 
 fn next_request_id() -> String {
     format!(
@@ -158,22 +174,76 @@ pub struct AcpInfo {
     pub last_failure: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressStatus {
+    Pending,
+    InProgress,
+    Complete,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgressUpdate {
+    pub id: String,
+    pub title: String,
+    pub status: ProgressStatus,
+}
+
 // ---------------------------------------------------------------------------
 // Work items
 // ---------------------------------------------------------------------------
 
-/// A unit of work dispatched from the bot core to the ACP thread.
-pub enum Work {
-    Prompt {
+/// Prompt fields that can be prepared after the work item is queued.
+pub struct PromptPayload {
+    pub text: String,
+    pub context: Vec<String>,
+    pub channel: String,
+    pub thread_ts: Option<String>,
+    pub user: String,
+    pub slack_user_id: String,
+}
+
+pub enum PromptInput {
+    Ready(PromptPayload),
+    Deferred(oneshot::Receiver<PromptPayload>),
+}
+
+impl PromptInput {
+    pub fn ready(
         text: String,
         context: Vec<String>,
-        conversation: String,
         channel: String,
         thread_ts: Option<String>,
         user: String,
         slack_user_id: String,
+    ) -> Self {
+        Self::Ready(PromptPayload {
+            text,
+            context,
+            channel,
+            thread_ts,
+            user,
+            slack_user_id,
+        })
+    }
+
+    async fn resolve(self) -> Result<PromptPayload, String> {
+        match self {
+            Self::Ready(payload) => Ok(payload),
+            Self::Deferred(receiver) => receiver
+                .await
+                .map_err(|_| "prompt preparation was cancelled".to_string()),
+        }
+    }
+}
+
+/// A unit of work dispatched from the bot core to the ACP thread.
+pub enum Work {
+    Prompt {
+        input: PromptInput,
+        conversation: String,
         reply_tx: oneshot::Sender<String>,
-        progress_tx: mpsc::UnboundedSender<String>,
+        progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
     },
     NewSession {
         conversation: String,
@@ -275,8 +345,11 @@ pub trait Worker {
     fn health(&self) -> WorkerHealth;
     fn set_request_context(&self, request_id: String, conversation_id: String);
     fn set_conv(&self, channel: String, thread_ts: Option<String>, slack_user_id: String);
-    async fn prompt(&self, messages: Vec<String>, progress_tx: mpsc::UnboundedSender<String>)
-    -> Result<String, String>;
+    async fn prompt(
+        &self,
+        messages: Vec<String>,
+        progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
+    ) -> Result<String, String>;
     async fn cancel(&self);
     async fn set_mode(&self, mode: String) -> Result<String, String>;
     async fn kill(&self);
@@ -332,13 +405,16 @@ fn should_emit_progress(last_progress_update: &Cell<Option<Instant>>) -> bool {
 
 struct AcpClient {
     chunks: Rc<RefCell<Vec<String>>>,
-    progress: Rc<RefCell<Option<mpsc::UnboundedSender<String>>>>,
+    progress: Rc<RefCell<Option<mpsc::UnboundedSender<ProgressUpdate>>>>,
+    progress_titles: Rc<RefCell<HashMap<String, String>>>,
     last_progress_update: Rc<Cell<Option<Instant>>>,
     mcp_ready_count: Rc<RefCell<u32>>,
     mcp_notify: Rc<tokio::sync::Notify>,
     acp_info: Arc<Mutex<AcpInfo>>,
     approval_policy: ApprovalPolicy,
     approval_tx: Option<mpsc::UnboundedSender<ApprovalRequest>>,
+    attachment_reads: Arc<AttachmentReadAuthorizer>,
+    current_request: Rc<RefCell<(String, String)>>,
     current_conv: Rc<RefCell<(String, Option<String>, String)>>,
 }
 
@@ -353,21 +429,100 @@ impl Drop for ApprovalCapacityGuard {
     }
 }
 
-/// Read `mcpAnnotations.readOnlyHint` from the ACP request's `_meta`
-/// extension.
-///
-/// ACP v1 (agent-client-protocol-schema 0.6) does not surface MCP tool
-/// behavior annotations on `ToolCallUpdateFields` natively — its
-/// `Annotations` type is for content-display priorities, not behavior. The
-/// agent side surfaces the hint via the documented `_meta` extension point;
-/// see `chat_cli_v2::agent::acp::acp_agent::attach_mcp_annotations` for the
-/// matching writer.
-///
-/// TODO(acp-typed-annotations): when ACP grows a typed annotations field on
-/// `ToolCallUpdateFields` (or `ToolCall`), swap this body to read the typed
-/// field and delete the writer named above.
-fn read_only_hint_from_meta(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> Option<bool> {
-    meta?.get("mcpAnnotations")?.get("readOnlyHint")?.as_bool()
+fn mcp_tool_identity_from_meta(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> Option<(&str, &str)> {
+    let identity = meta?.get("mcpToolIdentity")?;
+    Some((
+        identity.get("serverName")?.as_str()?,
+        identity.get("toolName")?.as_str()?,
+    ))
+}
+
+fn is_auto_approved_mcp_read(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> bool {
+    let Some(identity) = mcp_tool_identity_from_meta(meta) else {
+        return false;
+    };
+    crate::agents::AUTO_APPROVED_MCP_READS.contains(&identity)
+}
+
+fn fs_read_paths_from_meta(
+    meta: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> Result<Option<Vec<String>>, ()> {
+    let Some(value) = meta.and_then(|meta| meta.get("fsReadPaths")) else {
+        return Ok(None);
+    };
+    let values = value.as_array().ok_or(())?;
+    if values.is_empty() {
+        return Err(());
+    }
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|path| !path.is_empty())
+                .map(str::to_string)
+                .ok_or(())
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn permission_option(args: &acp::RequestPermissionRequest, option_id: &str) -> Option<acp::PermissionOptionId> {
+    args.options
+        .iter()
+        .find(|option| option.option_id.0.as_ref() == option_id)
+        .map(|option| option.option_id.clone())
+}
+
+async fn request_slack_approval(
+    client: &AcpClient,
+    args: &acp::RequestPermissionRequest,
+) -> acp::Result<acp::RequestPermissionResponse> {
+    let cancelled = || acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled);
+    let Some(tx) = &client.approval_tx else {
+        return Ok(cancelled());
+    };
+
+    {
+        let mut info = client.acp_info.lock().unwrap();
+        if info.pending_approvals >= APPROVAL_QUEUE_LIMIT {
+            info.overload_rejections += 1;
+            warn!("approval queue is full; denying permission request");
+            return Ok(cancelled());
+        }
+        info.pending_approvals += 1;
+    }
+    let _capacity = ApprovalCapacityGuard {
+        acp_info: client.acp_info.clone(),
+    };
+    let options: Vec<(String, String)> = args
+        .options
+        .iter()
+        .map(|option| (option.option_id.to_string(), option.name.clone()))
+        .collect();
+    let title = args.tool_call.fields.title.clone().unwrap_or_default();
+    let (reply_tx, reply_rx) = oneshot::channel();
+    let (channel, thread_ts, slack_user_id) = client.current_conv.borrow().clone();
+    let req = ApprovalRequest {
+        tool_name: title,
+        tool_call_id: args.tool_call.tool_call_id.to_string(),
+        options,
+        channel,
+        thread_ts,
+        slack_user_id,
+        reply_tx,
+    };
+    if tx.send(req).is_err() {
+        return Ok(cancelled());
+    }
+    match tokio::time::timeout(Duration::from_secs(600), reply_rx).await {
+        Ok(Ok(ApprovalResponse::Selected(option_id))) => Ok(acp::RequestPermissionResponse::new(
+            acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(acp::PermissionOptionId::new(
+                option_id,
+            ))),
+        )),
+        _ => Ok(cancelled()),
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -389,65 +544,27 @@ impl acp::Client for AcpClient {
             ))
         };
 
-        // Phase 2: auto-approve MCP tools whose readOnlyHint is true,
-        // regardless of the configured approval_policy. Cache miss / no
-        // _meta / non-MCP tools fall through to the existing policy
-        // (defense-in-depth). The plan's "second layer" against annotation
-        // drift is the agent's allowedTools list in agent.json, NOT this
-        // gate.
-        if read_only_hint_from_meta(args.meta.as_ref()) == Some(true) {
-            return Ok(selected(first_option.clone()));
-        }
-
         match self.approval_policy {
             ApprovalPolicy::Deny => Ok(cancelled()),
-            ApprovalPolicy::Approve => Ok(selected(first_option)),
-            ApprovalPolicy::Ask => {
-                if let Some(tx) = &self.approval_tx {
-                    {
-                        let mut info = self.acp_info.lock().unwrap();
-                        if info.pending_approvals >= APPROVAL_QUEUE_LIMIT {
-                            info.overload_rejections += 1;
-                            warn!("approval queue is full; denying permission request");
-                            return Ok(cancelled());
-                        }
-                        info.pending_approvals += 1;
-                    }
-                    let _capacity = ApprovalCapacityGuard {
-                        acp_info: self.acp_info.clone(),
+            ApprovalPolicy::Approve | ApprovalPolicy::Ask => {
+                let fs_read_paths = match fs_read_paths_from_meta(args.meta.as_ref()) {
+                    Ok(paths) => paths,
+                    Err(()) => return Ok(cancelled()),
+                };
+                if let Some(paths) = fs_read_paths {
+                    let conversation = self.current_request.borrow().1.clone();
+                    return match self.attachment_reads.evaluate(&conversation, &paths) {
+                        AttachmentReadDecision::Allow => Ok(permission_option(&args, "allow_once")
+                            .map(selected)
+                            .unwrap_or_else(cancelled)),
+                        AttachmentReadDecision::Deny => Ok(cancelled()),
+                        AttachmentReadDecision::Unmanaged => request_slack_approval(self, &args).await,
                     };
-                    let options: Vec<(String, String)> = args
-                        .options
-                        .iter()
-                        .map(|o| (o.option_id.to_string(), o.name.clone()))
-                        .collect();
-                    let title = args.tool_call.fields.title.clone().unwrap_or_default();
-                    let (reply_tx, reply_rx) = oneshot::channel();
-                    let (channel, thread_ts, slack_user_id) = self.current_conv.borrow().clone();
-                    let req = ApprovalRequest {
-                        tool_name: title,
-                        tool_call_id: args.tool_call.tool_call_id.to_string(),
-                        options,
-                        channel,
-                        thread_ts,
-                        slack_user_id,
-                        reply_tx,
-                    };
-                    if tx.send(req).is_err() {
-                        return Ok(cancelled());
-                    }
-                    // Bound the wait so a missed reaction (e.g. delivered to a
-                    // peer task whose pending_approvals doesn't have the entry)
-                    // surfaces as Cancelled instead of hanging until the idle
-                    // reaper kills the ACP child.
-                    match tokio::time::timeout(Duration::from_secs(600), reply_rx).await {
-                        Ok(Ok(ApprovalResponse::Selected(option_id))) => {
-                            Ok(selected(acp::PermissionOptionId::new(option_id)))
-                        },
-                        _ => Ok(cancelled()),
-                    }
+                }
+                if is_auto_approved_mcp_read(args.meta.as_ref()) {
+                    Ok(selected(first_option))
                 } else {
-                    Ok(cancelled())
+                    request_slack_approval(self, &args).await
                 }
             },
         }
@@ -510,13 +627,65 @@ impl acp::Client for AcpClient {
             },
             acp::SessionUpdate::ToolCall(tool_call) => {
                 self.chunks.borrow_mut().clear();
-                let status = format!("{} {}...", tool_emoji(&tool_call.kind), tool_call.title);
+                let id = tool_call.tool_call_id.to_string();
+                let title = format!("{} {}", tool_emoji(&tool_call.kind), tool_call.title);
+                self.progress_titles.borrow_mut().insert(id.clone(), title.clone());
+                let status = match tool_call.status {
+                    acp::ToolCallStatus::Pending => ProgressStatus::Pending,
+                    acp::ToolCallStatus::InProgress => ProgressStatus::InProgress,
+                    acp::ToolCallStatus::Completed => ProgressStatus::Complete,
+                    acp::ToolCallStatus::Failed => ProgressStatus::Error,
+                    _ => ProgressStatus::InProgress,
+                };
+                let terminal = matches!(status, ProgressStatus::Complete | ProgressStatus::Error);
                 if let Some(sender) = self.progress.borrow().as_ref() {
-                    if should_emit_progress(&self.last_progress_update) {
-                        let _ = sender.send(status);
+                    if terminal || should_emit_progress(&self.last_progress_update) {
+                        let _ = sender.send(ProgressUpdate { id, title, status });
                     } else {
                         self.acp_info.lock().unwrap().dropped_progress_updates += 1;
                     }
+                }
+                if terminal {
+                    self.progress_titles
+                        .borrow_mut()
+                        .remove(&tool_call.tool_call_id.to_string());
+                }
+            },
+            acp::SessionUpdate::ToolCallUpdate(tool_call) => {
+                let id = tool_call.tool_call_id.to_string();
+                if let Some(title) = tool_call.fields.title {
+                    self.progress_titles.borrow_mut().insert(id.clone(), title);
+                }
+                let Some(status) = tool_call.fields.status else {
+                    return Ok(());
+                };
+                let status = match status {
+                    acp::ToolCallStatus::Pending => ProgressStatus::Pending,
+                    acp::ToolCallStatus::InProgress => ProgressStatus::InProgress,
+                    acp::ToolCallStatus::Completed => ProgressStatus::Complete,
+                    acp::ToolCallStatus::Failed => ProgressStatus::Error,
+                    _ => ProgressStatus::InProgress,
+                };
+                let title = self
+                    .progress_titles
+                    .borrow()
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| "Tool call".into());
+                let terminal = matches!(status, ProgressStatus::Complete | ProgressStatus::Error);
+                if let Some(sender) = self.progress.borrow().as_ref() {
+                    if terminal || should_emit_progress(&self.last_progress_update) {
+                        let _ = sender.send(ProgressUpdate {
+                            id: id.clone(),
+                            title,
+                            status,
+                        });
+                    } else {
+                        self.acp_info.lock().unwrap().dropped_progress_updates += 1;
+                    }
+                }
+                if terminal {
+                    self.progress_titles.borrow_mut().remove(&id);
                 }
             },
             acp::SessionUpdate::CurrentModeUpdate(mode_update) => {
@@ -547,13 +716,34 @@ struct AcpWorker {
     stderr: Rc<RefCell<VecDeque<String>>>,
     log_context: Rc<RefCell<(String, String)>>,
     chunks: Rc<RefCell<Vec<String>>>,
-    progress: Rc<RefCell<Option<mpsc::UnboundedSender<String>>>>,
+    progress: Rc<RefCell<Option<mpsc::UnboundedSender<ProgressUpdate>>>>,
+    progress_titles: Rc<RefCell<HashMap<String, String>>>,
     last_progress_update: Rc<Cell<Option<Instant>>>,
     current_conv: Rc<RefCell<(String, Option<String>, String)>>,
+    _settings_overlay: Option<SettingsOverlay>,
 }
 
 struct PromptProgressGuard {
-    progress: Rc<RefCell<Option<mpsc::UnboundedSender<String>>>>,
+    progress: Rc<RefCell<Option<mpsc::UnboundedSender<ProgressUpdate>>>>,
+}
+
+struct SettingsOverlay {
+    path: PathBuf,
+}
+
+impl SettingsOverlay {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for SettingsOverlay {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        let mut lock_path = self.path.clone().into_os_string();
+        lock_path.push(".lock");
+        let _ = std::fs::remove_file(PathBuf::from(lock_path));
+    }
 }
 
 impl Drop for PromptProgressGuard {
@@ -650,9 +840,10 @@ impl Worker for AcpWorker {
     async fn prompt(
         &self,
         messages: Vec<String>,
-        progress_tx: mpsc::UnboundedSender<String>,
+        progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
     ) -> Result<String, String> {
         self.chunks.borrow_mut().clear();
+        self.progress_titles.borrow_mut().clear();
         self.last_progress_update.set(None);
         *self.progress.borrow_mut() = Some(progress_tx);
         let _progress_guard = PromptProgressGuard {
@@ -696,21 +887,278 @@ impl Worker for AcpWorker {
     }
 }
 
-async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Result<AcpWorker, String> {
-    let mut parts = cfg.command.split_whitespace();
+fn source_settings_path() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var(SETTINGS_PATH_ENV)
+        && !path.is_empty()
+    {
+        return Some(path.into());
+    }
+    let kiro_home = std::env::var("KIRO_HOME")
+        .ok()
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".kiro")))?;
+    Some(kiro_home.join("settings").join("cli.json"))
+}
+
+fn source_kiro_home() -> Option<PathBuf> {
+    std::env::var(KIRO_HOME_ENV)
+        .ok()
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".kiro")))
+}
+
+fn authoritative_agent_dir_in(required_mode: Option<&str>, kiro_home: &Path) -> Result<Option<PathBuf>, String> {
+    if required_mode != Some(PINNED_AGENT_NAME) {
+        return Ok(None);
+    }
+    let dir = kiro_home.join("agents");
+    let config_path = dir.join(format!("{PINNED_AGENT_NAME}.json"));
+    let config = std::fs::read_to_string(&config_path).map_err(|error| {
+        format!(
+            "Failed to read packaged ACP agent config {}: {error}",
+            config_path.display()
+        )
+    })?;
+    let config: serde_json::Value = serde_json::from_str(&config).map_err(|error| {
+        format!(
+            "Failed to parse packaged ACP agent config {}: {error}",
+            config_path.display()
+        )
+    })?;
+    if config.get("name").and_then(serde_json::Value::as_str) != Some(PINNED_AGENT_NAME) {
+        return Err(format!(
+            "Packaged ACP agent config {} must declare name '{PINNED_AGENT_NAME}'",
+            config_path.display()
+        ));
+    }
+    for entry in std::fs::read_dir(&dir).map_err(|error| {
+        format!(
+            "Failed to inspect packaged ACP agent directory {}: {error}",
+            dir.display()
+        )
+    })? {
+        let path = entry
+            .map_err(|error| {
+                format!(
+                    "Failed to inspect packaged ACP agent directory {}: {error}",
+                    dir.display()
+                )
+            })?
+            .path();
+        if path == config_path || path.extension().is_none_or(|extension| extension != "json") {
+            continue;
+        }
+        let Ok(candidate) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(candidate) = serde_json::from_str::<serde_json::Value>(&candidate) else {
+            continue;
+        };
+        if candidate.get("name").and_then(serde_json::Value::as_str) == Some(PINNED_AGENT_NAME) {
+            return Err(format!(
+                "Packaged ACP agent directory {} contains duplicate agent name '{PINNED_AGENT_NAME}' in {}",
+                dir.display(),
+                path.display()
+            ));
+        }
+    }
+    let prompt_uri = config
+        .get("prompt")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|prompt| prompt.strip_prefix("file://"))
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "Packaged ACP agent config {} must declare a file prompt",
+                config_path.display()
+            )
+        })?;
+    let prompt_path = Path::new(prompt_uri);
+    if prompt_path.is_absolute() || prompt_uri.starts_with('~') || prompt_uri.starts_with('$') {
+        return Err(format!("Packaged ACP agent prompt must stay inside {}", dir.display()));
+    }
+    let resolved_dir = std::fs::canonicalize(&dir).map_err(|error| {
+        format!(
+            "Failed to resolve packaged ACP agent directory {}: {error}",
+            dir.display()
+        )
+    })?;
+    let prompt_path = std::fs::canonicalize(dir.join(prompt_path))
+        .map_err(|error| format!("Failed to resolve packaged ACP agent prompt {prompt_uri}: {error}"))?;
+    if !prompt_path.starts_with(&resolved_dir) {
+        return Err(format!("Packaged ACP agent prompt must stay inside {}", dir.display()));
+    }
+    let prompt = std::fs::read_to_string(&prompt_path).map_err(|error| {
+        format!(
+            "Failed to read packaged ACP agent prompt {}: {error}",
+            prompt_path.display()
+        )
+    })?;
+    if prompt.trim().is_empty() {
+        return Err(format!("Packaged ACP agent prompt is empty: {}", prompt_path.display()));
+    }
+    Ok(Some(dir))
+}
+
+fn authoritative_agent_dir(required_mode: Option<&str>) -> Result<Option<PathBuf>, String> {
+    if required_mode != Some(PINNED_AGENT_NAME) {
+        return Ok(None);
+    }
+    let kiro_home =
+        source_kiro_home().ok_or_else(|| "Cannot locate the packaged kiro-help agent directory".to_string())?;
+    authoritative_agent_dir_in(required_mode, &kiro_home)
+}
+
+fn write_settings_overlay(
+    writer: &mut impl std::io::Write,
+    settings: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    serde_json::to_writer_pretty(&mut *writer, settings)
+        .map_err(|error| format!("Failed to write ACP settings overlay: {error}"))?;
+    writer
+        .write_all(b"\n")
+        .and_then(|()| writer.flush())
+        .map_err(|error| format!("Failed to flush ACP settings overlay: {error}"))
+}
+
+fn create_settings_overlay(source: Option<&Path>, temp_dir: &Path) -> Result<SettingsOverlay, String> {
+    let mut settings = match source.map(std::fs::read).transpose() {
+        Ok(Some(contents)) => serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&contents)
+            .map_err(|error| format!("Failed to parse ACP settings: {error}"))?,
+        Ok(None) => serde_json::Map::new(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::Map::new(),
+        Err(error) => return Err(format!("Failed to read ACP settings: {error}")),
+    };
+    settings.insert(DISABLE_DEFAULT_RESOURCES_KEY.into(), serde_json::Value::Bool(true));
+
+    let (path, mut file) = loop {
+        let id = NEXT_SETTINGS_OVERLAY_ID.fetch_add(1, Ordering::Relaxed);
+        let path = temp_dir.join(format!("kiro-bot-settings-{}-{id}.json", std::process::id()));
+        let mut options = std::fs::OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&path) {
+            Ok(file) => break (path, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("Failed to create ACP settings overlay: {error}")),
+        }
+    };
+    let overlay = SettingsOverlay { path };
+    write_settings_overlay(&mut file, &settings)?;
+    file.sync_all()
+        .map_err(|error| format!("Failed to flush ACP settings overlay: {error}"))?;
+    Ok(overlay)
+}
+
+fn acp_command(command: &str, required_mode: Option<&str>) -> Result<(String, Vec<String>), String> {
+    let mut parts = command.split_whitespace();
     let executable = parts.next().ok_or_else(|| "ACP command is empty".to_string())?;
+    let mut args = parts.map(str::to_string).collect::<Vec<_>>();
+
+    if let Some(required_mode) = required_mode {
+        let configured_mode = args
+            .iter()
+            .position(|arg| arg == "--agent" || arg.starts_with("--agent="))
+            .map(|index| {
+                let arg = &args[index];
+                let value = arg
+                    .strip_prefix("--agent=")
+                    .map(str::to_string)
+                    .or_else(|| args.get(index + 1).filter(|value| !value.starts_with('-')).cloned());
+                value.ok_or_else(|| "ACP command has an --agent flag without a value".to_string())
+            })
+            .transpose()?;
+        match configured_mode {
+            Some(configured_mode) if configured_mode != required_mode => {
+                return Err(format!(
+                    "ACP command selects agent '{configured_mode}', but bot requires '{required_mode}'"
+                ));
+            },
+            Some(_) => {},
+            None => {
+                args.push("--agent".into());
+                args.push(required_mode.into());
+            },
+        }
+    }
+
+    Ok((executable.into(), args))
+}
+
+fn required_mode_change(modes: Option<&acp::SessionModeState>, required_mode: &str) -> Result<bool, String> {
+    let modes = modes.ok_or_else(|| {
+        format!("Configured ACP mode '{required_mode}' cannot be verified because the server returned no modes")
+    })?;
+    if !modes
+        .available_modes
+        .iter()
+        .any(|mode| mode.id.to_string() == required_mode)
+    {
+        let available = modes
+            .available_modes
+            .iter()
+            .map(|mode| mode.id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Configured ACP mode '{required_mode}' is unavailable; available modes: {available}"
+        ));
+    }
+    Ok(modes.current_mode_id.to_string() != required_mode)
+}
+
+fn verify_default_resources_disabled(response: &acp::ExtResponse) -> Result<(), String> {
+    let settings = serde_json::from_str::<serde_json::Value>(response.0.get())
+        .map_err(|error| format!("Failed to inspect effective ACP settings: {error}"))?;
+    if settings.get(DISABLE_DEFAULT_RESOURCES_KEY) == Some(&serde_json::Value::Bool(true)) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Effective ACP setting '{DISABLE_DEFAULT_RESOURCES_KEY}' must be true for a pinned bot agent"
+        ))
+    }
+}
+
+async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Result<AcpWorker, String> {
+    let (executable, args) = acp_command(&cfg.command, cfg.default_mode.as_deref())?;
+    let authoritative_agent_dir = authoritative_agent_dir(cfg.default_mode.as_deref())?;
+    let settings_overlay = cfg
+        .default_mode
+        .as_ref()
+        .map(|_| create_settings_overlay(source_settings_path().as_deref(), &std::env::temp_dir()))
+        .transpose()?;
     let mut cmd = tokio::process::Command::new(executable);
-    cmd.args(parts)
+    cmd.args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+    if let Some(settings_overlay) = &settings_overlay {
+        cmd.env(SETTINGS_PATH_ENV, settings_overlay.path());
+    }
+    if let Some(authoritative_agent_dir) = &authoritative_agent_dir {
+        cmd.env(AGENT_CONFIG_DIR_ENV, authoritative_agent_dir);
+        let kiro_home = authoritative_agent_dir.parent().ok_or_else(|| {
+            format!(
+                "Packaged ACP agent directory has no parent: {}",
+                authoritative_agent_dir.display()
+            )
+        })?;
+        cmd.env(KIRO_HOME_ENV, kiro_home);
+    }
     #[cfg(unix)]
     cmd.process_group(0);
     let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn ACP: {e}"))?;
 
     let chunks: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-    let progress: Rc<RefCell<Option<mpsc::UnboundedSender<String>>>> = Rc::new(RefCell::new(None));
+    let progress: Rc<RefCell<Option<mpsc::UnboundedSender<ProgressUpdate>>>> = Rc::new(RefCell::new(None));
+    let progress_titles = Rc::new(RefCell::new(HashMap::new()));
     let last_progress_update = Rc::new(Cell::new(None));
     let mcp_ready_count: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
     let mcp_notify = Rc::new(tokio::sync::Notify::new());
@@ -738,12 +1186,15 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
         AcpClient {
             chunks: chunks.clone(),
             progress: progress.clone(),
+            progress_titles: progress_titles.clone(),
             last_progress_update: last_progress_update.clone(),
             mcp_ready_count: mcp_ready_count.clone(),
             mcp_notify: mcp_notify.clone(),
             acp_info: acp_info.clone(),
             approval_policy: cfg.approval_policy,
             approval_tx: cfg.approval_tx.clone(),
+            attachment_reads: cfg.attachment_reads.clone(),
+            current_request: log_context.clone(),
             current_conv: current_conv.clone(),
         },
         child_stdin.compat_write(),
@@ -806,6 +1257,16 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
         .await
         .map_err(|e| format!("ACP init failed: {e}"))?;
 
+    if settings_overlay.is_some() {
+        let params = acp::RawValue::from_string("{}".into())
+            .map_err(|error| format!("Failed to encode ACP settings request: {error}"))?;
+        let settings = connection
+            .ext_method(acp::ExtRequest::new("kiro.dev/settings/list", params.into()))
+            .await
+            .map_err(|error| format!("Failed to inspect effective ACP settings: {error}"))?;
+        verify_default_resources_disabled(&settings)?;
+    }
+
     let resp = connection
         .new_session(acp::NewSessionRequest::new(std::env::current_dir().unwrap()))
         .await
@@ -824,31 +1285,38 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
                 })
                 .collect();
         }
-        info.session_modes
-            .insert(resp.session_id.to_string(), mode_state.current_mode_id.to_string());
     }
 
-    // Wait for MCP servers to initialize
-    while tokio::time::timeout(Duration::from_millis(cfg.mcp_wait_ms), mcp_notify.notified())
-        .await
-        .is_ok()
-    {}
-
-    if let Some(agent) = &cfg.default_mode
-        && connection
-            .set_session_mode(acp::SetSessionModeRequest::new(
-                resp.session_id.clone(),
-                acp::SessionModeId::new(agent.clone()),
-            ))
-            .await
-            .is_ok()
-    {
+    let active_mode = if let Some(agent) = &cfg.default_mode {
+        if required_mode_change(resp.modes.as_ref(), agent)?
+            && let Err(error) = connection
+                .set_session_mode(acp::SetSessionModeRequest::new(
+                    resp.session_id.clone(),
+                    acp::SessionModeId::new(agent.clone()),
+                ))
+                .await
+        {
+            return Err(format!("Failed to select configured ACP mode '{agent}': {error}"));
+        }
+        Some(agent.clone())
+    } else {
+        resp.modes
+            .as_ref()
+            .map(|mode_state| mode_state.current_mode_id.to_string())
+    };
+    if let Some(active_mode) = active_mode {
         acp_info
             .lock()
             .unwrap()
             .session_modes
-            .insert(resp.session_id.to_string(), agent.clone());
+            .insert(resp.session_id.to_string(), active_mode);
     }
+
+    // Wait for the selected mode's MCP servers to initialize.
+    while tokio::time::timeout(Duration::from_millis(cfg.mcp_wait_ms), mcp_notify.notified())
+        .await
+        .is_ok()
+    {}
 
     let child = Rc::new(RefCell::new(child));
     {
@@ -895,8 +1363,10 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
         log_context,
         chunks,
         progress,
+        progress_titles,
         last_progress_update,
         current_conv,
+        _settings_overlay: settings_overlay,
     })
 }
 
@@ -1172,7 +1642,7 @@ async fn execute_prompt(
     thread_ts: Option<String>,
     slack_user_id: String,
     messages: Vec<String>,
-    progress_tx: mpsc::UnboundedSender<String>,
+    progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
     prompt_timeout: Duration,
     acp_info: Arc<Mutex<AcpInfo>>,
 ) -> String {
@@ -1572,13 +2042,8 @@ async fn run_work_loop(
         };
         match work {
             Work::Prompt {
-                text,
-                context,
+                input,
                 conversation,
-                channel,
-                thread_ts,
-                user,
-                slack_user_id,
                 reply_tx,
                 progress_tx,
             } => {
@@ -1589,29 +2054,41 @@ async fn run_work_loop(
                 next_generation = next_generation.wrapping_add(1).max(1);
                 let generation = next_generation;
                 let request_id = next_request_id();
-                let mut messages = vec![];
-                if let Some(ctx) = crate::engine::core::format_context(&context) {
-                    messages.push(ctx);
-                }
-                messages.push(format!("Slack message from {user} ({user}): {text}"));
                 let pool = pool.clone();
                 let acp_info = acp_info.clone();
                 let task_conversation = conversation.clone();
                 let completion_conversation = conversation.clone();
                 let prompt = prompts.spawn_local(async move {
-                    let reply = execute_prompt(
-                        pool,
-                        request_id,
-                        task_conversation,
-                        channel,
-                        thread_ts,
-                        slack_user_id,
-                        messages,
-                        progress_tx,
-                        prompt_timeout,
-                        acp_info,
-                    )
-                    .await;
+                    let reply = match input.resolve().await {
+                        Ok(PromptPayload {
+                            text,
+                            context,
+                            channel,
+                            thread_ts,
+                            user,
+                            slack_user_id,
+                        }) => {
+                            let mut messages = vec![];
+                            if let Some(ctx) = crate::engine::core::format_context(&context) {
+                                messages.push(ctx);
+                            }
+                            messages.push(format!("Slack message from {user} ({user}): {text}"));
+                            execute_prompt(
+                                pool,
+                                request_id,
+                                task_conversation,
+                                channel,
+                                thread_ts,
+                                slack_user_id,
+                                messages,
+                                progress_tx,
+                                prompt_timeout,
+                                acp_info,
+                            )
+                            .await
+                        },
+                        Err(error) => format!("Error: {error}"),
+                    };
                     PromptCompletion {
                         conversation: completion_conversation,
                         generation,
@@ -1719,7 +2196,7 @@ async fn run_work_loop(
                         .map(|s| s.as_str())
                         .unwrap_or("unknown");
                     format!(
-                        "*Agent:* {mode}\n*Model:* {}\n*Session:* {}\n*Request:* {prompt_state}\n*Runtime:* {:?}\n*Workers:* {}/{} ({} busy)\n*Restarts:* {}\n*Timeouts:* {}\n*Overload rejections:* {}\n*Dropped progress:* {}\n*Pending approvals:* {}\n*Last failure:* {}",
+                        "**Agent:** {mode}\n**Model:** {}\n**Session:** {}\n**Request:** {prompt_state}\n**Runtime:** {:?}\n**Workers:** {}/{} ({} busy)\n**Restarts:** {}\n**Timeouts:** {}\n**Overload rejections:** {}\n**Dropped progress:** {}\n**Pending approvals:** {}\n**Last failure:** {}",
                         info.model_id,
                         w.session_id(),
                         info.runtime_state,
@@ -1740,7 +2217,7 @@ async fn run_work_loop(
                         "No active session — send a message first"
                     };
                     format!(
-                        "*Model:* {}\n*Request:* {prompt_state}\n*Runtime:* {:?}\n*Workers:* {}/{} ({} busy)\n*Restarts:* {}\n*Timeouts:* {}\n*Overload rejections:* {}\n*Dropped progress:* {}\n*Pending approvals:* {}\n*Last failure:* {}\n{session}",
+                        "**Model:** {}\n**Request:** {prompt_state}\n**Runtime:** {:?}\n**Workers:** {}/{} ({} busy)\n**Restarts:** {}\n**Timeouts:** {}\n**Overload rejections:** {}\n**Dropped progress:** {}\n**Pending approvals:** {}\n**Last failure:** {}\n{session}",
                         info.model_id,
                         info.runtime_state,
                         pool.len(),
@@ -1918,6 +2395,144 @@ mod tests {
         assert!(CANCEL_CONFIRM_TIMEOUT > STOP_PROMPT_TIMEOUT + PROMPT_TASK_STOP_TIMEOUT);
     }
 
+    #[test]
+    fn settings_overlay_preserves_settings_and_disables_default_resources() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source.json");
+        std::fs::write(&source, r#"{"chat.defaultModel":"test-model"}"#).unwrap();
+
+        let overlay = create_settings_overlay(Some(&source), temp.path()).unwrap();
+        let settings: serde_json::Value = serde_json::from_slice(&std::fs::read(overlay.path()).unwrap()).unwrap();
+
+        assert_eq!(settings["chat.defaultModel"], "test-model");
+        assert_eq!(settings[DISABLE_DEFAULT_RESOURCES_KEY], true);
+        let overlay_path = overlay.path().to_path_buf();
+        drop(overlay);
+        assert!(!overlay_path.exists());
+    }
+
+    #[test]
+    fn partial_settings_overlay_is_removed_after_write_failure() {
+        struct FailingWriter {
+            file: std::fs::File,
+            remaining: usize,
+        }
+
+        impl std::io::Write for FailingWriter {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if self.remaining == 0 {
+                    return Err(std::io::Error::other("injected write failure"));
+                }
+                let len = self.remaining.min(bytes.len());
+                let written = std::io::Write::write(&mut self.file, &bytes[..len])?;
+                self.remaining -= written;
+                Ok(written)
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                std::io::Write::flush(&mut self.file)
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("partial.json");
+        let file = std::fs::File::create(&path).unwrap();
+        let overlay = SettingsOverlay { path: path.clone() };
+        let mut settings = serde_json::Map::new();
+        settings.insert(DISABLE_DEFAULT_RESOURCES_KEY.into(), serde_json::Value::Bool(true));
+        let mut writer = FailingWriter { file, remaining: 1 };
+
+        assert!(write_settings_overlay(&mut writer, &settings).is_err());
+        assert_ne!(std::fs::metadata(&path).unwrap().len(), 0);
+        drop(writer);
+        drop(overlay);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn pinned_agent_requires_packaged_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let agents = temp.path().join("agents");
+        std::fs::create_dir(&agents).unwrap();
+
+        assert!(authoritative_agent_dir_in(Some(PINNED_AGENT_NAME), temp.path()).is_err());
+        std::fs::write(
+            agents.join("kiro-help.json"),
+            r#"{"name":"kiro-help","prompt":"file://kiro_help_prompt.md"}"#,
+        )
+        .unwrap();
+        assert!(authoritative_agent_dir_in(Some(PINNED_AGENT_NAME), temp.path()).is_err());
+        std::fs::write(agents.join("kiro_help_prompt.md"), "packaged prompt").unwrap();
+        assert_eq!(
+            authoritative_agent_dir_in(Some(PINNED_AGENT_NAME), temp.path()).unwrap(),
+            Some(agents.clone())
+        );
+        assert_eq!(
+            authoritative_agent_dir_in(Some("other-agent"), temp.path()).unwrap(),
+            None
+        );
+        std::fs::write(
+            agents.join("00-shadow.json"),
+            r#"{"name":"kiro-help","prompt":"shadow"}"#,
+        )
+        .unwrap();
+        let error = authoritative_agent_dir_in(Some(PINNED_AGENT_NAME), temp.path()).unwrap_err();
+        assert!(error.contains("duplicate agent name 'kiro-help'"));
+    }
+
+    #[test]
+    fn acp_command_pins_and_validates_required_agent() {
+        assert_eq!(
+            acp_command("kiro-cli acp", Some("kiro-help")).unwrap(),
+            ("kiro-cli".to_string(), vec![
+                "acp".to_string(),
+                "--agent".to_string(),
+                "kiro-help".to_string()
+            ])
+        );
+        assert_eq!(
+            acp_command("kiro-cli acp --agent=kiro-help", Some("kiro-help")).unwrap(),
+            ("kiro-cli".to_string(), vec![
+                "acp".to_string(),
+                "--agent=kiro-help".to_string()
+            ])
+        );
+        assert!(
+            acp_command("kiro-cli acp --agent default", Some("kiro-help"))
+                .unwrap_err()
+                .contains("bot requires 'kiro-help'")
+        );
+        assert!(
+            acp_command("kiro-cli acp --agent", Some("kiro-help"))
+                .unwrap_err()
+                .contains("without a value")
+        );
+    }
+
+    #[test]
+    fn required_mode_must_be_advertised_and_selected() {
+        let available = vec![
+            acp::SessionMode::new("default", "Default"),
+            acp::SessionMode::new("kiro-help", "Kiro Help"),
+        ];
+        let default = acp::SessionModeState::new("default", available.clone());
+        let selected = acp::SessionModeState::new("kiro-help", available);
+
+        assert!(required_mode_change(Some(&default), "kiro-help").unwrap());
+        assert!(!required_mode_change(Some(&selected), "kiro-help").unwrap());
+        assert!(required_mode_change(Some(&selected), "missing").is_err());
+        assert!(required_mode_change(None, "kiro-help").is_err());
+    }
+
+    #[test]
+    fn effective_settings_must_confirm_resource_isolation() {
+        let enabled = acp::RawValue::from_string(format!(r#"{{"{DISABLE_DEFAULT_RESOURCES_KEY}":true}}"#)).unwrap();
+        let disabled = acp::RawValue::from_string(format!(r#"{{"{DISABLE_DEFAULT_RESOURCES_KEY}":false}}"#)).unwrap();
+
+        assert!(verify_default_resources_disabled(&acp::ExtResponse::new(enabled.into())).is_ok());
+        assert!(verify_default_resources_disabled(&acp::ExtResponse::new(disabled.into())).is_err());
+    }
+
     #[cfg(unix)]
     #[tokio::test(flavor = "current_thread")]
     async fn child_shutdown_releases_refcell_borrow_before_waiting() {
@@ -1947,6 +2562,7 @@ mod tests {
         AcpClient {
             chunks: Rc::new(RefCell::new(Vec::new())),
             progress: Rc::new(RefCell::new(None)),
+            progress_titles: Rc::new(RefCell::new(HashMap::new())),
             last_progress_update: Rc::new(Cell::new(None)),
             mcp_ready_count: Rc::new(RefCell::new(0)),
             mcp_notify: Rc::new(tokio::sync::Notify::new()),
@@ -1956,6 +2572,8 @@ mod tests {
             // which is exactly the "fall-through" behaviour we want to assert
             // against in the negative tests.
             approval_tx: None,
+            attachment_reads: Arc::new(AttachmentReadAuthorizer::default()),
+            current_request: Rc::new(RefCell::new(("test-request".into(), "thread:C1:1".into()))),
             current_conv: Rc::new(RefCell::new((String::new(), None, String::new()))),
         }
     }
@@ -1989,100 +2607,261 @@ mod tests {
     }
 
     #[test]
-    fn read_only_hint_helper_extracts_true() {
-        let meta = json!({ "mcpAnnotations": { "readOnlyHint": true } });
-        assert_eq!(read_only_hint_from_meta(meta.as_object()), Some(true));
-    }
+    fn mcp_identity_requires_two_string_fields() {
+        let complete = json!({
+            "mcpToolIdentity": {
+                "serverName": "kiro-github-read",
+                "toolName": "search_github_issues"
+            }
+        });
+        assert_eq!(
+            mcp_tool_identity_from_meta(complete.as_object()),
+            Some(("kiro-github-read", "search_github_issues"))
+        );
 
-    #[test]
-    fn read_only_hint_helper_extracts_false() {
-        let meta = json!({ "mcpAnnotations": { "readOnlyHint": false } });
-        assert_eq!(read_only_hint_from_meta(meta.as_object()), Some(false));
-    }
-
-    #[test]
-    fn read_only_hint_helper_returns_none_when_meta_missing() {
-        assert_eq!(read_only_hint_from_meta(None), None);
-    }
-
-    #[test]
-    fn read_only_hint_helper_returns_none_when_mcp_annotations_absent() {
-        let meta = json!({ "trustOptions": [] });
-        assert_eq!(read_only_hint_from_meta(meta.as_object()), None);
-    }
-
-    #[test]
-    fn read_only_hint_helper_returns_none_when_field_not_bool() {
-        let meta = json!({ "mcpAnnotations": { "readOnlyHint": "yes" } });
-        assert_eq!(read_only_hint_from_meta(meta.as_object()), None);
-    }
-
-    #[test]
-    fn request_permission_auto_approves_when_read_only_hint_true() {
-        // Even under Deny policy, readOnlyHint=true wins. This is the strongest
-        // assertion of the gate's intent.
-        let client = make_test_client(ApprovalPolicy::Deny);
-        let req = make_permission_request(Some(json!({
-            "mcpAnnotations": { "readOnlyHint": true }
-        })));
-
-        let resp = run(client.request_permission(req)).expect("request_permission ok");
-        match resp.outcome {
-            acp::RequestPermissionOutcome::Selected(outcome) => {
-                assert_eq!(outcome.option_id.to_string(), "allow_once");
-            },
-            other => panic!("expected Selected(allow_once), got {other:?}"),
+        for malformed in [
+            json!({}),
+            json!({ "mcpToolIdentity": null }),
+            json!({ "mcpToolIdentity": { "serverName": "kiro-github-read" } }),
+            json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-read",
+                    "toolName": false
+                }
+            }),
+        ] {
+            assert_eq!(mcp_tool_identity_from_meta(malformed.as_object()), None);
         }
     }
 
     #[test]
-    fn request_permission_falls_through_to_policy_when_hint_false() {
-        // Hint=false → Deny policy continues to deny.
-        let client = make_test_client(ApprovalPolicy::Deny);
-        let req = make_permission_request(Some(json!({
-            "mcpAnnotations": { "readOnlyHint": false }
-        })));
-
-        let resp = run(client.request_permission(req)).expect("request_permission ok");
-        assert!(
-            matches!(resp.outcome, acp::RequestPermissionOutcome::Cancelled),
-            "expected Cancelled (Deny policy fall-through), got {:?}",
-            resp.outcome
-        );
+    fn exact_host_owned_read_is_auto_approved() {
+        for policy in [ApprovalPolicy::Approve, ApprovalPolicy::Ask] {
+            let client = make_test_client(policy);
+            let request = make_permission_request(Some(json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-read",
+                    "toolName": "search_github_issues"
+                },
+                "mcpAnnotations": { "readOnlyHint": false }
+            })));
+            let response = run(client.request_permission(request)).expect("request_permission ok");
+            assert!(matches!(
+                response.outcome,
+                acp::RequestPermissionOutcome::Selected(ref outcome)
+                    if outcome.option_id.to_string() == "allow_once"
+            ));
+        }
     }
 
     #[test]
-    fn request_permission_falls_through_to_policy_when_no_meta() {
-        // No _meta at all → fall through to policy. Approve policy selects
-        // the first option.
+    fn deny_policy_rejects_even_known_reads() {
+        let client = make_test_client(ApprovalPolicy::Deny);
+        let request = make_permission_request(Some(json!({
+            "mcpToolIdentity": {
+                "serverName": "kiro-github-read",
+                "toolName": "search_github_issues"
+            }
+        })));
+        let response = run(client.request_permission(request)).expect("request_permission ok");
+        assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+    }
+
+    #[test]
+    fn unknown_tool_routes_to_requester_approval_despite_read_only_hint() {
+        run(async {
+            let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+            let mut client = make_test_client(ApprovalPolicy::Approve);
+            client.approval_tx = Some(approval_tx);
+            let request = make_permission_request(Some(json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-write",
+                    "toolName": "create_github_issue"
+                },
+                "mcpAnnotations": { "readOnlyHint": true }
+            })));
+
+            let respond = async {
+                let approval = approval_rx.recv().await.expect("approval request");
+                assert_eq!(approval.options, vec![("allow_once".into(), "Allow once".into())]);
+                assert!(
+                    approval
+                        .reply_tx
+                        .send(ApprovalResponse::Selected("allow_once".into()))
+                        .is_ok()
+                );
+            };
+            let (response, ()) = tokio::join!(client.request_permission(request), respond);
+            let response = response.expect("request_permission ok");
+            assert!(matches!(
+                response.outcome,
+                acp::RequestPermissionOutcome::Selected(ref outcome)
+                    if outcome.option_id.to_string() == "allow_once"
+            ));
+        });
+    }
+
+    #[test]
+    fn deny_policy_does_not_enqueue_unknown_tools() {
+        let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+        let mut client = make_test_client(ApprovalPolicy::Deny);
+        client.approval_tx = Some(approval_tx);
+        let request = make_permission_request(Some(json!({
+            "mcpToolIdentity": {
+                "serverName": "kiro-github-write",
+                "toolName": "create_github_issue"
+            }
+        })));
+
+        let response = run(client.request_permission(request)).expect("request_permission ok");
+        assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+        assert!(approval_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn missing_malformed_and_unlisted_identity_fail_closed() {
         let client = make_test_client(ApprovalPolicy::Approve);
-        let req = make_permission_request(None);
-
-        let resp = run(client.request_permission(req)).expect("request_permission ok");
-        match resp.outcome {
-            acp::RequestPermissionOutcome::Selected(outcome) => {
-                assert_eq!(outcome.option_id.to_string(), "allow_once");
-            },
-            other => panic!("expected Selected(allow_once), got {other:?}"),
+        for meta in [
+            None,
+            Some(json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-read",
+                    "toolName": 42
+                }
+            })),
+            Some(json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-read",
+                    "toolName": "create_github_issue"
+                }
+            })),
+            Some(json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-write",
+                    "toolName": "search_github_issues"
+                }
+            })),
+        ] {
+            let request = make_permission_request(meta);
+            let response = run(client.request_permission(request)).expect("request_permission ok");
+            assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
         }
     }
 
     #[test]
-    fn request_permission_falls_through_to_policy_when_non_mcp_tool() {
-        // Non-MCP tools won't have mcpAnnotations in _meta. Even if other
-        // _meta keys are present (e.g. trustOptions), readOnlyHint lookup
-        // returns None and we fall through to policy — Deny here.
+    fn advisory_annotations_never_grant_host_approval() {
         let client = make_test_client(ApprovalPolicy::Deny);
-        let req = make_permission_request(Some(json!({
-            "trustOptions": [{ "kind": "path", "label": "scope to /tmp", "scope": "/tmp" }]
+        for hint in [json!(true), json!(false), json!("dishonest"), json!(null)] {
+            let request = make_permission_request(Some(json!({
+                "mcpAnnotations": { "readOnlyHint": hint }
+            })));
+            let response = run(client.request_permission(request)).expect("request_permission ok");
+            assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+        }
+    }
+
+    #[test]
+    fn active_attachment_read_is_allow_once_and_cleanup_revokes_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().join("attachments");
+        let root = base.join("request-active");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("attachment.txt");
+        std::fs::write(&file, b"private").unwrap();
+        let authorizer = Arc::new(AttachmentReadAuthorizer::new(&base));
+        let lease = authorizer.activate("thread:C1:1", &root).unwrap();
+        let mut client = make_test_client(ApprovalPolicy::Approve);
+        client.attachment_reads = authorizer;
+        let request = || {
+            make_permission_request(Some(json!({
+                "fsReadPaths": [file.display().to_string()]
+            })))
+        };
+
+        let response = run(client.request_permission(request())).expect("request_permission ok");
+        assert!(matches!(
+            response.outcome,
+            acp::RequestPermissionOutcome::Selected(ref outcome)
+                if outcome.option_id.to_string() == "allow_once"
+        ));
+
+        drop(lease);
+        let response = run(client.request_permission(request())).expect("request_permission ok");
+        assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+    }
+
+    #[test]
+    fn cross_conversation_attachment_read_is_denied_without_requester_override() {
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().join("attachments");
+        let root = base.join("request-other");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("attachment.txt");
+        std::fs::write(&file, b"private").unwrap();
+        let authorizer = Arc::new(AttachmentReadAuthorizer::new(&base));
+        let _lease = authorizer.activate("thread:C1:2", &root).unwrap();
+        let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+        let mut client = make_test_client(ApprovalPolicy::Ask);
+        client.attachment_reads = authorizer;
+        client.approval_tx = Some(approval_tx);
+        let request = make_permission_request(Some(json!({
+            "fsReadPaths": [file.display().to_string()]
         })));
 
-        let resp = run(client.request_permission(req)).expect("request_permission ok");
-        assert!(
-            matches!(resp.outcome, acp::RequestPermissionOutcome::Cancelled),
-            "expected Cancelled (no mcpAnnotations → Deny policy), got {:?}",
-            resp.outcome
-        );
+        let response = run(client.request_permission(request)).expect("request_permission ok");
+
+        assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+        assert!(approval_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn malformed_fs_read_metadata_is_denied() {
+        let client = make_test_client(ApprovalPolicy::Approve);
+        for meta in [
+            json!({ "fsReadPaths": null }),
+            json!({ "fsReadPaths": [] }),
+            json!({ "fsReadPaths": [42] }),
+            json!({ "fsReadPaths": [""] }),
+        ] {
+            let request = make_permission_request(Some(meta));
+            let response = run(client.request_permission(request)).expect("request_permission ok");
+            assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+        }
+    }
+
+    #[test]
+    fn unmanaged_fs_read_routes_to_requester_approval() {
+        run(async {
+            let directory = tempfile::tempdir().unwrap();
+            let base = directory.path().join("attachments");
+            std::fs::create_dir(&base).unwrap();
+            let ordinary_file = directory.path().join("ordinary.txt");
+            std::fs::write(&ordinary_file, b"ordinary").unwrap();
+            let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+            let mut client = make_test_client(ApprovalPolicy::Ask);
+            client.attachment_reads = Arc::new(AttachmentReadAuthorizer::new(&base));
+            client.approval_tx = Some(approval_tx);
+            let request = make_permission_request(Some(json!({
+                "fsReadPaths": [ordinary_file.display().to_string()]
+            })));
+
+            let respond = async {
+                let approval = approval_rx.recv().await.expect("approval request");
+                assert!(
+                    approval
+                        .reply_tx
+                        .send(ApprovalResponse::Selected("allow_once".into()))
+                        .is_ok()
+                );
+            };
+            let (response, ()) = tokio::join!(client.request_permission(request), respond);
+            let response = response.expect("request_permission ok");
+            assert!(matches!(
+                response.outcome,
+                acp::RequestPermissionOutcome::Selected(ref outcome)
+                    if outcome.option_id.to_string() == "allow_once"
+            ));
+        });
     }
 
     #[derive(Clone)]
@@ -2172,7 +2951,7 @@ mod tests {
         async fn prompt(
             &self,
             _messages: Vec<String>,
-            _progress_tx: mpsc::UnboundedSender<String>,
+            _progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
         ) -> Result<String, String> {
             match &self.prompt {
                 TestPrompt::Reply(reply) => reply.clone(),
@@ -2325,13 +3104,15 @@ mod tests {
                 let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
                 work_tx
                     .send(Work::Prompt {
-                        text: "slow spawn".into(),
-                        context: Vec::new(),
+                        input: PromptInput::ready(
+                            "slow spawn".into(),
+                            Vec::new(),
+                            "channel".into(),
+                            None,
+                            "user".into(),
+                            "U1".into(),
+                        ),
                         conversation: "conversation-spawning".into(),
-                        channel: "channel".into(),
-                        thread_ts: None,
-                        user: "user".into(),
-                        slack_user_id: "U1".into(),
                         reply_tx: prompt_reply_tx,
                         progress_tx,
                     })
@@ -2384,7 +3165,7 @@ mod tests {
                     })
                     .unwrap();
                 let status = status_rx.await.unwrap();
-                assert!(status.contains("*Request:* starting"));
+                assert!(status.contains("**Request:** starting"));
                 assert!(status.contains("Session is starting"));
 
                 let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -2437,13 +3218,15 @@ mod tests {
                 let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
                 work_tx
                     .send(Work::Prompt {
-                        text: "slow".into(),
-                        context: Vec::new(),
+                        input: PromptInput::ready(
+                            "slow".into(),
+                            Vec::new(),
+                            "channel".into(),
+                            None,
+                            "user".into(),
+                            "U1".into(),
+                        ),
                         conversation: "conversation-cancelling".into(),
-                        channel: "channel".into(),
-                        thread_ts: None,
-                        user: "user".into(),
-                        slack_user_id: "U1".into(),
                         reply_tx: prompt_reply_tx,
                         progress_tx,
                     })
@@ -2465,7 +3248,7 @@ mod tests {
                         reply_tx: status_tx,
                     })
                     .unwrap();
-                assert!(status_rx.await.unwrap().contains("*Request:* active"));
+                assert!(status_rx.await.unwrap().contains("**Request:** active"));
                 assert_eq!(started.elapsed(), Duration::ZERO);
 
                 let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -2508,13 +3291,15 @@ mod tests {
                 let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
                 work_tx
                     .send(Work::Prompt {
-                        text: "slow".into(),
-                        context: Vec::new(),
+                        input: PromptInput::ready(
+                            "slow".into(),
+                            Vec::new(),
+                            "channel".into(),
+                            None,
+                            "user".into(),
+                            "U1".into(),
+                        ),
                         conversation: "conversation-draining".into(),
-                        channel: "channel".into(),
-                        thread_ts: None,
-                        user: "user".into(),
-                        slack_user_id: "U1".into(),
                         reply_tx: prompt_reply_tx,
                         progress_tx,
                     })
@@ -2580,13 +3365,15 @@ mod tests {
                     let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
                     work_tx
                         .send(Work::Prompt {
-                            text: text.into(),
-                            context: Vec::new(),
+                            input: PromptInput::ready(
+                                text.into(),
+                                Vec::new(),
+                                "channel".into(),
+                                None,
+                                "user".into(),
+                                "U1".into(),
+                            ),
                             conversation: "conversation-retry".into(),
-                            channel: "channel".into(),
-                            thread_ts: None,
-                            user: "user".into(),
-                            slack_user_id: "U1".into(),
                             reply_tx,
                             progress_tx,
                         })
@@ -2668,13 +3455,15 @@ mod tests {
                 let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
                 work_tx
                     .send(Work::Prompt {
-                        text: "slow".into(),
-                        context: Vec::new(),
+                        input: PromptInput::ready(
+                            "slow".into(),
+                            Vec::new(),
+                            "channel".into(),
+                            None,
+                            "user".into(),
+                            "U1".into(),
+                        ),
                         conversation: "conversation-busy".into(),
-                        channel: "channel".into(),
-                        thread_ts: None,
-                        user: "user".into(),
-                        slack_user_id: "U1".into(),
                         reply_tx: prompt_reply_tx,
                         progress_tx,
                     })
@@ -2734,7 +3523,7 @@ mod tests {
                         reply_tx: status_tx,
                     })
                     .unwrap();
-                assert!(status_rx.await.unwrap().contains("*Request:* active"));
+                assert!(status_rx.await.unwrap().contains("**Request:** active"));
 
                 let (shutdown_tx, shutdown_rx) = oneshot::channel();
                 work_tx

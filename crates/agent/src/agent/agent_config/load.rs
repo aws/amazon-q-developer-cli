@@ -1,5 +1,6 @@
 //! Agent loading logic with path resolution.
 
+use std::collections::HashMap;
 use std::path::{
     Path,
     PathBuf,
@@ -28,6 +29,38 @@ use crate::agent::consts::{
 };
 use crate::agent::util::path::canonicalize_path_sys;
 use crate::agent::util::providers::SystemProvider;
+
+const AGENT_CONFIG_DIR_ENV: &str = "KIRO_AGENT_CONFIG_DIR";
+const KIRO_HOME_ENV: &str = "KIRO_HOME";
+
+pub(crate) fn configured_agent_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
+    system
+        .var(AGENT_CONFIG_DIR_ENV)
+        .ok()
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+}
+
+fn kiro_home_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
+    system
+        .var(KIRO_HOME_ENV)
+        .ok()
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| system.home().map(|home| home.join(".kiro")))
+}
+
+fn is_configured_agent_dir<P: SystemProvider>(dir: &Path, system: &P) -> bool {
+    let Some(configured) = configured_agent_dir(system) else {
+        return false;
+    };
+    let configured = canonicalize_path_sys(configured.to_string_lossy(), system);
+    let loaded = canonicalize_path_sys(dir.to_string_lossy(), system);
+    configured
+        .ok()
+        .zip(loaded.ok())
+        .is_some_and(|(configured, loaded)| configured == loaded)
+}
 
 /// Load all agent configs from workspace and global directories.
 ///
@@ -106,6 +139,9 @@ pub async fn load_agents<P: SystemProvider>(
 }
 
 pub(crate) fn resolve_workspace_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
+    if configured_agent_dir(system).is_some() {
+        return None;
+    }
     let cwd = system.cwd().ok()?;
     let kiro_path = cwd.join(".kiro").join("agents");
     if kiro_path.exists() {
@@ -119,19 +155,23 @@ pub(crate) fn resolve_workspace_agents_dir(system: &dyn SystemProvider) -> Optio
 }
 
 pub(crate) fn resolve_global_agents_dir(system: &dyn SystemProvider) -> Option<PathBuf> {
+    if let Some(dir) = configured_agent_dir(system) {
+        return Some(dir);
+    }
+
     // Check test override first
-    if let Ok(test_dir) = std::env::var("KIRO_TEST_AGENTS_DIR") {
+    if let Ok(test_dir) = system.var("KIRO_TEST_AGENTS_DIR") {
         let path = PathBuf::from(test_dir);
         if path.exists() {
             return Some(path);
         }
     }
 
-    let home = system.home()?;
-    let kiro_path = crate::agent::util::directories::kiro_home_dir_in(&home).join("agents");
+    let kiro_path = kiro_home_dir(system)?.join("agents");
     if kiro_path.exists() {
         return Some(kiro_path);
     }
+    let home = system.home()?;
     let amazonq_path = home.join(".aws").join("amazonq").join("cli-agents");
     if amazonq_path.exists() {
         return Some(amazonq_path);
@@ -173,10 +213,7 @@ pub fn append_default_agent_resources(config: &mut AgentConfig, system: &dyn Sys
     // this at load time rather than as a static `~/.kiro/...` entry so the
     // override takes effect. Skip if it would duplicate the workspace-relative
     // skill path already in DEFAULT_AGENT_RESOURCES.
-    let global_kiro_home_canonical = system
-        .home()
-        .map(|h| crate::agent::util::directories::kiro_home_dir_in(&h))
-        .and_then(|p| p.canonicalize().ok());
+    let global_kiro_home_canonical = kiro_home_dir(system).and_then(|path| path.canonicalize().ok());
     let workspace_kiro_dir_canonical = system
         .cwd()
         .ok()
@@ -188,8 +225,7 @@ pub fn append_default_agent_resources(config: &mut AgentConfig, system: &dyn Sys
         .zip(workspace_kiro_dir_canonical.as_ref())
         .is_some_and(|(g, w)| g == w);
 
-    if !skills_is_duplicate && let Some(home) = system.home() {
-        let kiro_home = crate::agent::util::directories::kiro_home_dir_in(&home);
+    if !skills_is_duplicate && let Some(kiro_home) = kiro_home_dir(system) {
         let skills_pattern = format!("skill://{}/skills/*/SKILL.md", kiro_home.display());
         if let Ok(resource) = skills_pattern.parse() {
             config.add_resource(resource);
@@ -197,8 +233,8 @@ pub fn append_default_agent_resources(config: &mut AgentConfig, system: &dyn Sys
     }
 
     // Add global steering if exists
-    let global_steering_canonical = system.home().and_then(|home| {
-        let global_steering = crate::agent::util::directories::kiro_home_dir_in(&home).join("steering");
+    let global_steering_canonical = kiro_home_dir(system).and_then(|kiro_home| {
+        let global_steering = kiro_home.join("steering");
         if global_steering.exists()
             && let Ok(resource) = format!("file://{}/**/*.md", global_steering.display()).parse()
         {
@@ -378,6 +414,8 @@ async fn load_agents_from_dir<P: SystemProvider>(
 
     let mut agents: Vec<LoadedAgentConfig> = Vec::new();
     let mut invalid_agents = Vec::new();
+    let reject_unsafe_configs = is_configured_agent_dir(dir, system);
+    let mut configured_names = HashMap::<String, PathBuf>::new();
 
     // Collect and sort entries by filename for deterministic processing order
     let mut entries = Vec::new();
@@ -433,6 +471,20 @@ async fn load_agents_from_dir<P: SystemProvider>(
                     });
                     continue;
                 }
+                if reject_unsafe_configs {
+                    let name = config.name().to_string();
+                    if let Some(existing_path) = configured_names.insert(name.clone(), entry_path.clone()) {
+                        agents.retain(|agent| agent.name() != name);
+                        invalid_agents.push(AgentConfigError::InvalidAgentConfig {
+                            path: entry_path.to_string_lossy().to_string(),
+                            message: format!(
+                                "duplicate agent name '{name}' also declared by {}",
+                                existing_path.display()
+                            ),
+                        });
+                        continue;
+                    }
+                }
                 if let Some(existing) = agents.iter().find(|a| a.name() == config.name()) {
                     let existing_path = match existing.source() {
                         ConfigSource::Workspace { path } | ConfigSource::Global { path } => {
@@ -459,6 +511,13 @@ async fn load_agents_from_dir<P: SystemProvider>(
                 };
                 let base_dir = entry_path.parent().unwrap_or(dir);
                 let resolved_prompt = resolve_global_prompt(config.global_prompt(), base_dir, system).await;
+                if reject_unsafe_configs && matches!(resolved_prompt, ResolvedGlobalPrompt::ResolutionFailed) {
+                    invalid_agents.push(AgentConfigError::InvalidAgentConfig {
+                        path: entry_path.to_string_lossy().to_string(),
+                        message: "declared prompt could not be resolved".to_string(),
+                    });
+                    continue;
+                }
                 agents.push(LoadedAgentConfig::new(config, source, resolved_prompt));
             },
             Err(e) => {
@@ -681,7 +740,11 @@ mod tests {
             ))
             .await;
 
-        let (agents, _) = load_agents(base.provider(), true).await.unwrap();
+        let (agents, errors) = load_agents(base.provider(), true).await.unwrap();
+        assert!(
+            errors.is_empty(),
+            "normal CLI loading should preserve compatibility: {errors:?}"
+        );
 
         let cases = [
             ("inline", Some("inline text")),
@@ -695,9 +758,145 @@ mod tests {
             let agent = agents
                 .iter()
                 .find(|a| a.name() == name)
-                .expect(&format!("{name}: agent not found"));
+                .unwrap_or_else(|| panic!("{name}: agent not found"));
             assert_eq!(agent.global_prompt().as_deref(), expected, "case: {name}");
         }
+    }
+
+    #[tokio::test]
+    async fn configured_agent_dir_excludes_workspace_shadow() {
+        let base = TestBase::new()
+            .await
+            .with_file((
+                ".kiro/agents/kiro-help.json",
+                r#"{"name":"kiro-help","prompt":"workspace prompt"}"#,
+            ))
+            .await
+            .with_file((
+                "packaged-agents/kiro-help.json",
+                r#"{"name":"kiro-help","prompt":"file://kiro_help_prompt.md"}"#,
+            ))
+            .await
+            .with_file(("packaged-agents/kiro_help_prompt.md", "packaged prompt"))
+            .await;
+        let packaged_dir = base.join("packaged-agents");
+        let provider = base
+            .provider()
+            .clone()
+            .with_var(AGENT_CONFIG_DIR_ENV, packaged_dir.to_string_lossy());
+
+        let (agents, errors) = load_agents(&provider, false).await.unwrap();
+
+        assert!(errors.is_empty(), "expected no errors, got: {errors:?}");
+        let matches = agents
+            .iter()
+            .filter(|agent| agent.name() == "kiro-help")
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].global_prompt().as_deref(), Some("packaged prompt"));
+        assert!(matches!(
+            matches[0].source(),
+            ConfigSource::Global { path } if path.starts_with(&packaged_dir)
+        ));
+        assert!(resolve_workspace_agents_dir(&provider).is_none());
+    }
+
+    #[tokio::test]
+    async fn configured_agent_dir_rejects_unresolved_prompt() {
+        let base = TestBase::new()
+            .await
+            .with_file((
+                "packaged-agents/kiro-help.json",
+                r#"{"name":"kiro-help","prompt":"file://missing.md"}"#,
+            ))
+            .await;
+        let packaged_dir = base.join("packaged-agents");
+        let provider = base
+            .provider()
+            .clone()
+            .with_var(AGENT_CONFIG_DIR_ENV, packaged_dir.to_string_lossy());
+
+        let (agents, errors) = load_agents(&provider, false).await.unwrap();
+
+        assert!(agents.iter().all(|agent| agent.name() != "kiro-help"));
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            AgentConfigError::InvalidAgentConfig { path, message }
+                if path.ends_with("kiro-help.json") && message.contains("prompt could not be resolved")
+        )));
+    }
+
+    #[tokio::test]
+    async fn configured_agent_dir_rejects_duplicate_names() {
+        let base = TestBase::new()
+            .await
+            .with_file((
+                "packaged-agents/00-shadow.json",
+                r#"{"name":"kiro-help","prompt":"shadow"}"#,
+            ))
+            .await
+            .with_file((
+                "packaged-agents/kiro-help.json",
+                r#"{"name":"kiro-help","prompt":"packaged"}"#,
+            ))
+            .await;
+        let packaged_dir = base.join("packaged-agents");
+        let provider = base
+            .provider()
+            .clone()
+            .with_var(AGENT_CONFIG_DIR_ENV, packaged_dir.to_string_lossy());
+
+        let (agents, errors) = load_agents(&provider, false).await.unwrap();
+
+        assert!(
+            agents.iter().all(|agent| agent.name() != "kiro-help"),
+            "a duplicate name must make every candidate unselectable"
+        );
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            AgentConfigError::InvalidAgentConfig { message, .. }
+                if message.contains("duplicate agent name 'kiro-help'")
+        )));
+    }
+
+    #[tokio::test]
+    async fn configured_agent_resource_resolves_from_custom_kiro_home() {
+        use crate::agent::agent_config::parse::ResourceKind;
+
+        let base = TestBase::new()
+            .await
+            .with_file((
+                "custom-home/agents/kiro-help.json",
+                r#"{
+                    "name":"kiro-help",
+                    "prompt":"file://kiro_help_prompt.md",
+                    "resources":["skill://$KIRO_HOME/agents/SKILL.md"]
+                }"#,
+            ))
+            .await
+            .with_file(("custom-home/agents/kiro_help_prompt.md", "packaged prompt"))
+            .await
+            .with_file(("custom-home/agents/SKILL.md", "packaged skill"))
+            .await;
+        let custom_home = base.join("custom-home");
+        let packaged_dir = custom_home.join("agents");
+        let provider = base
+            .provider()
+            .clone()
+            .with_var(KIRO_HOME_ENV, custom_home.to_string_lossy())
+            .with_var(AGENT_CONFIG_DIR_ENV, packaged_dir.to_string_lossy());
+
+        let (agents, errors) = load_agents(&provider, false).await.unwrap();
+
+        assert!(errors.is_empty(), "expected no errors, got: {errors:?}");
+        let agent = agents.iter().find(|agent| agent.name() == "kiro-help").unwrap();
+        let resources = agent.resources();
+        let resource = resources[0].as_ref();
+        assert!(matches!(
+            ResourceKind::parse(resource, &provider).unwrap(),
+            ResourceKind::Skill { file_path, .. }
+                if Path::new(&file_path) == packaged_dir.join("SKILL.md")
+        ));
     }
 
     #[tokio::test]

@@ -7,12 +7,12 @@
 //! Semantics:
 //!
 //! - `dedupe_event` — conditional `PutItem` on the dedup table with
-//!   `attribute_not_exists(slack_event_id)`. Returns `true` on success, `false` on
-//!   `ConditionalCheckFailedException`.
-//! - `try_acquire` — conditional `PutItem` on the leases table allowing the write iff
+//!   `attribute_not_exists(slack_event_id)`. Returns distinct accepted, duplicate, and unavailable
+//!   outcomes; accepted rows carry a generation token for conditional cleanup.
+//! - `acquire_lease` — conditional `PutItem` on the leases table allowing the write iff
 //!   `attribute_not_exists(owner_task_arn)` OR the existing lease is past `lease_expires_at`. On
-//!   conflict we `GetItem` to return `LeaseOutcome::Held { peer }`. Any other error → `Unavailable`
-//!   (and log).
+//!   conflict we `GetItem` to return `LeaseAcquisition::Held { peer }`. Any other error →
+//!   `Unavailable` (and log).
 //! - `renew` — conditional `UpdateItem` requiring `owner_task_arn = :me`.
 //! - `release` — conditional `DeleteItem` with the same condition.
 //! - `append_turn` — atomic `UpdateItem ADD` on a `<conv_id>:counter` row to mint the next
@@ -41,22 +41,46 @@ use tracing::warn;
 
 use crate::engine::coordinator::{
     Coordinator,
+    DedupeOutcome,
+    DedupeToken,
     ForwardEvent,
-    LeaseOutcome,
+    LeaseAcquisition,
+    LeaseToken,
+    RateLimitOutcome,
     Turn,
     TurnRole,
 };
 
 const DEFAULT_LEASE_TTL_SECS: i64 = 300;
 const DEFAULT_TRANSCRIPT_RETENTION_DAYS: i64 = 30;
-const DEFAULT_DEDUP_RETENTION_SECS: i64 = 5 * 60;
+const DEFAULT_DEDUP_RETENTION_SECS: i64 = 24 * 60 * 60;
+const AMBIGUOUS_DEDUP_READ_ATTEMPTS: usize = 3;
+const AMBIGUOUS_DEDUP_CLEANUP_ATTEMPTS: usize = 3;
+const AMBIGUOUS_DEDUP_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(25);
+
+fn rate_window_bounds(now: i64, window: std::time::Duration) -> anyhow::Result<(i64, i64, i64)> {
+    let window_secs = i64::try_from(window.as_secs()).context("rate-limit window is too large")?;
+    anyhow::ensure!(window_secs > 0, "rate-limit window must be greater than zero");
+    let window_start = now
+        .checked_sub(now.rem_euclid(window_secs))
+        .context("rate-limit window start overflowed")?;
+    let window_end = window_start
+        .checked_add(window_secs)
+        .context("rate-limit window end overflowed")?;
+    let expires_at = window_end
+        .checked_add(crate::engine::rate_limit::RECORD_TTL_GRACE_SECS)
+        .context("rate-limit record expiry overflowed")?;
+    Ok((window_start, window_end, expires_at))
+}
 
 /// Column names — keep in sync with `KiroBotStorageStack` in Kiro-botCDK.
 mod col {
     pub const CONVERSATION_ID: &str = "conversation_id";
     pub const OWNER_TASK_ARN: &str = "owner_task_arn";
+    pub const LEASE_TOKEN: &str = "lease_token";
     pub const LEASE_EXPIRES_AT: &str = "lease_expires_at";
     pub const SLACK_EVENT_ID: &str = "slack_event_id";
+    pub const DEDUPE_TOKEN: &str = "dedupe_token";
     pub const PROCESSED_AT: &str = "processed_at";
     pub const TURN_SEQ: &str = "turn_seq";
     pub const ROLE: &str = "role";
@@ -65,6 +89,7 @@ mod col {
     pub const EXPIRES_AT: &str = "expires_at";
     pub const CHUNK_IDS: &str = "chunk_ids";
     pub const SLACK_MSG_TS: &str = "slack_msg_ts";
+    pub const RATE_COUNT: &str = "rate_count";
 }
 
 /// One DDB-backed coordinator. Cheap to clone (`Client` is `Arc`-internal).
@@ -150,41 +175,59 @@ impl DynamoCoordinator {
 
 #[async_trait::async_trait]
 impl Coordinator for DynamoCoordinator {
-    async fn dedupe_event(&self, slack_event_id: &str) -> bool {
+    async fn dedupe_event_outcome(&self, slack_event_id: &str) -> DedupeOutcome {
         let now = self.now().timestamp();
         let expires = now + DEFAULT_DEDUP_RETENTION_SECS;
+        let token = DedupeToken::new(&self.own_task_arn);
         let result = self
             .client
             .put_item()
             .table_name(&self.dedup_table)
             .item(col::SLACK_EVENT_ID, Self::s(slack_event_id))
+            .item(col::DEDUPE_TOKEN, Self::s(token.as_str()))
             .item(col::PROCESSED_AT, Self::n(now))
             .item(col::EXPIRES_AT, Self::n(expires))
             .condition_expression(format!("attribute_not_exists({})", col::SLACK_EVENT_ID))
             .send()
             .await;
         match result {
-            Ok(_) => true,
-            Err(e) if is_conditional_check_failed_put(&e) => false,
+            Ok(_) => DedupeOutcome::Accepted { token },
+            Err(e) if is_conditional_check_failed_put(&e) => DedupeOutcome::Duplicate,
             Err(e) => {
-                warn!(
-                    ?e,
-                    "dedupe_event PutItem failed; treating as duplicate (safer than double-process)"
-                );
-                false
+                warn!(?e, "dedupe_event PutItem response was ambiguous");
+                self.resolve_ambiguous_dedup(slack_event_id, token).await
             },
         }
     }
 
-    async fn try_acquire(&self, conversation_id: &str) -> LeaseOutcome {
+    async fn release_dedup(&self, slack_event_id: &str, token: &DedupeToken) -> anyhow::Result<()> {
+        let result = self
+            .client
+            .delete_item()
+            .table_name(&self.dedup_table)
+            .key(col::SLACK_EVENT_ID, Self::s(slack_event_id))
+            .condition_expression(format!("{} = :token", col::DEDUPE_TOKEN))
+            .expression_attribute_values(":token", Self::s(token.as_str()))
+            .send()
+            .await;
+        match result {
+            Ok(_) => Ok(()),
+            Err(error) if is_conditional_check_failed_delete(&error) => Ok(()),
+            Err(error) => Err(anyhow::Error::new(error).context("release_dedup DeleteItem")),
+        }
+    }
+
+    async fn acquire_lease(&self, conversation_id: &str) -> LeaseAcquisition {
         let now = self.now().timestamp_millis();
         let expires = now + self.lease_ttl.num_milliseconds();
+        let token = LeaseToken::new(&self.own_task_arn);
         let result = self
             .client
             .put_item()
             .table_name(&self.leases_table)
             .item(col::CONVERSATION_ID, Self::s(conversation_id))
             .item(col::OWNER_TASK_ARN, Self::s(&self.own_task_arn))
+            .item(col::LEASE_TOKEN, Self::s(token.as_str()))
             .item(col::LEASE_EXPIRES_AT, Self::n(expires))
             // expires_at TTL — DDB sweeps the row a while after the lease
             // window. Set it well past lease_ttl so a paused task can still
@@ -200,66 +243,39 @@ impl Coordinator for DynamoCoordinator {
             .await;
 
         match result {
-            Ok(_) => LeaseOutcome::Acquired,
+            Ok(_) => LeaseAcquisition::Acquired { token },
             Err(e) if is_conditional_check_failed_put(&e) => {
                 // Someone else has it (or held it within the TTL) — read who.
-                match self.read_lease_owner(conversation_id).await {
-                    Ok(Some(owner)) if owner != self.own_task_arn => LeaseOutcome::Held { peer: owner },
-                    // Same task already owns the lease — renew expires_at and
-                    // treat as Acquired so follow-up turns in an in-progress
-                    // conversation don't fall through to Unavailable.
-                    Ok(Some(_)) => match self.renew(conversation_id).await {
-                        Ok(()) => LeaseOutcome::Acquired,
-                        Err(renew_err) => {
-                            warn!(?renew_err, "self-owned lease renew failed");
-                            LeaseOutcome::Unavailable
+                match self.read_lease(conversation_id).await {
+                    Ok(Some(existing)) if existing.owner != self.own_task_arn => {
+                        LeaseAcquisition::Held { peer: existing.owner }
+                    },
+                    Ok(Some(existing)) => match self
+                        .reacquire_self_owned(conversation_id, existing.token.as_ref())
+                        .await
+                    {
+                        Ok(Some(token)) => LeaseAcquisition::Acquired { token },
+                        Ok(None) => LeaseAcquisition::Unavailable,
+                        Err(reacquire_err) => {
+                            warn!(?reacquire_err, "self-owned lease reacquisition failed");
+                            LeaseAcquisition::Unavailable
                         },
                     },
-                    Ok(None) => LeaseOutcome::Unavailable, // raced — no owner now
+                    Ok(None) => LeaseAcquisition::Unavailable, // raced — no owner now
                     Err(read_err) => {
                         warn!(?read_err, "lease read after conflict failed");
-                        LeaseOutcome::Unavailable
+                        LeaseAcquisition::Unavailable
                     },
                 }
             },
             Err(e) => {
-                warn!(?e, "try_acquire PutItem failed");
-                LeaseOutcome::Unavailable
+                warn!(?e, "acquire_lease PutItem failed");
+                LeaseAcquisition::Unavailable
             },
         }
     }
 
-    async fn force_acquire(&self, conversation_id: &str, dead_peer: &str) -> bool {
-        let now = self.now().timestamp_millis();
-        let expires = now + self.lease_ttl.num_milliseconds();
-        let result = self
-            .client
-            .put_item()
-            .table_name(&self.leases_table)
-            .item(col::CONVERSATION_ID, Self::s(conversation_id))
-            .item(col::OWNER_TASK_ARN, Self::s(&self.own_task_arn))
-            .item(col::LEASE_EXPIRES_AT, Self::n(expires))
-            .item(col::EXPIRES_AT, Self::n((expires / 1000) + 24 * 3600))
-            .condition_expression(format!(
-                "attribute_not_exists({owner}) OR {expires_col} < :now OR {owner} = :dead",
-                owner = col::OWNER_TASK_ARN,
-                expires_col = col::LEASE_EXPIRES_AT,
-            ))
-            .expression_attribute_values(":now", Self::n(now))
-            .expression_attribute_values(":dead", Self::s(dead_peer))
-            .send()
-            .await;
-        match result {
-            Ok(_) => true,
-            Err(e) if is_conditional_check_failed_put(&e) => false,
-            Err(e) => {
-                warn!(?e, "force_acquire PutItem failed");
-                false
-            },
-        }
-    }
-
-    async fn renew(&self, conversation_id: &str) -> anyhow::Result<()> {
+    async fn renew(&self, conversation_id: &str, token: &LeaseToken) -> anyhow::Result<()> {
         let now = self.now().timestamp_millis();
         let expires = now + self.lease_ttl.num_milliseconds();
         self.client
@@ -267,10 +283,15 @@ impl Coordinator for DynamoCoordinator {
             .table_name(&self.leases_table)
             .key(col::CONVERSATION_ID, Self::s(conversation_id))
             .update_expression("SET #lea = :exp")
-            .condition_expression(format!("{} = :me", col::OWNER_TASK_ARN))
+            .condition_expression(format!(
+                "{} = :me AND {} = :token",
+                col::OWNER_TASK_ARN,
+                col::LEASE_TOKEN
+            ))
             .expression_attribute_names("#lea", col::LEASE_EXPIRES_AT)
             .expression_attribute_values(":exp", Self::n(expires))
             .expression_attribute_values(":me", Self::s(&self.own_task_arn))
+            .expression_attribute_values(":token", Self::s(token.as_str()))
             .send()
             .await
             .map_err(|e| {
@@ -297,14 +318,19 @@ impl Coordinator for DynamoCoordinator {
             .unwrap_or_else(|_| std::time::Duration::from_secs(DEFAULT_LEASE_TTL_SECS as u64))
     }
 
-    async fn release(&self, conversation_id: &str) -> anyhow::Result<()> {
+    async fn release(&self, conversation_id: &str, token: &LeaseToken) -> anyhow::Result<()> {
         let result = self
             .client
             .delete_item()
             .table_name(&self.leases_table)
             .key(col::CONVERSATION_ID, Self::s(conversation_id))
-            .condition_expression(format!("{} = :me", col::OWNER_TASK_ARN))
+            .condition_expression(format!(
+                "{} = :me AND {} = :token",
+                col::OWNER_TASK_ARN,
+                col::LEASE_TOKEN
+            ))
             .expression_attribute_values(":me", Self::s(&self.own_task_arn))
+            .expression_attribute_values(":token", Self::s(token.as_str()))
             .send()
             .await;
         match result {
@@ -465,10 +491,141 @@ impl Coordinator for DynamoCoordinator {
         }
         Ok(item.get(col::OWNER_TASK_ARN).and_then(|v| v.as_s().ok().cloned()))
     }
+
+    async fn admit_prompt(
+        &self,
+        user_id: &str,
+        max_prompts: u32,
+        window: std::time::Duration,
+    ) -> anyhow::Result<RateLimitOutcome> {
+        let now = self.now().timestamp();
+        let (window_start, window_end, expires_at) = rate_window_bounds(now, window)?;
+        let key = format!("rate:{user_id}:{window_start}");
+        let result = self
+            .client
+            .update_item()
+            .table_name(&self.dedup_table)
+            .key(col::SLACK_EVENT_ID, Self::s(key))
+            .update_expression("SET #expires = :expires ADD #count :one")
+            .condition_expression("attribute_not_exists(#count) OR #count < :limit")
+            .expression_attribute_names("#count", col::RATE_COUNT)
+            .expression_attribute_names("#expires", col::EXPIRES_AT)
+            .expression_attribute_values(":one", Self::n(1))
+            .expression_attribute_values(":limit", Self::n(i64::from(max_prompts)))
+            .expression_attribute_values(":expires", Self::n(expires_at))
+            .send()
+            .await;
+        match result {
+            Ok(_) => Ok(RateLimitOutcome::Allowed),
+            Err(error) if is_conditional_check_failed_update(&error) => {
+                let retry_seconds = window_end
+                    .checked_sub(now)
+                    .context("rate-limit retry interval overflowed")?
+                    .max(1);
+                Ok(RateLimitOutcome::Limited {
+                    retry_after: std::time::Duration::from_secs(
+                        u64::try_from(retry_seconds).context("rate-limit retry interval was negative")?,
+                    ),
+                })
+            },
+            Err(error) => Err(error).context("fleet rate-limit UpdateItem"),
+        }
+    }
 }
 
 impl DynamoCoordinator {
-    async fn read_lease_owner(&self, conversation_id: &str) -> anyhow::Result<Option<String>> {
+    async fn resolve_ambiguous_dedup(&self, slack_event_id: &str, token: DedupeToken) -> DedupeOutcome {
+        for attempt in 1..=AMBIGUOUS_DEDUP_READ_ATTEMPTS {
+            let result = self
+                .client
+                .get_item()
+                .table_name(&self.dedup_table)
+                .key(col::SLACK_EVENT_ID, Self::s(slack_event_id))
+                .consistent_read(true)
+                .send()
+                .await;
+            match result {
+                Ok(output) => {
+                    return match output
+                        .item
+                        .as_ref()
+                        .and_then(|item| item.get(col::DEDUPE_TOKEN))
+                        .and_then(|value| value.as_s().ok())
+                    {
+                        Some(stored_token) if stored_token == token.as_str() => DedupeOutcome::Accepted { token },
+                        Some(_) => DedupeOutcome::Duplicate,
+                        None => DedupeOutcome::Unavailable,
+                    };
+                },
+                Err(error) => {
+                    warn!(?error, attempt, "dedupe_event ownership read failed");
+                    if attempt < AMBIGUOUS_DEDUP_READ_ATTEMPTS {
+                        tokio::time::sleep(AMBIGUOUS_DEDUP_RETRY_DELAY).await;
+                    }
+                },
+            }
+        }
+
+        self.cleanup_ambiguous_dedup(slack_event_id, &token).await;
+        DedupeOutcome::Unavailable
+    }
+
+    async fn cleanup_ambiguous_dedup(&self, slack_event_id: &str, token: &DedupeToken) {
+        for attempt in 1..=AMBIGUOUS_DEDUP_CLEANUP_ATTEMPTS {
+            match self.release_dedup(slack_event_id, token).await {
+                Ok(()) => return,
+                Err(error) => {
+                    warn!(?error, attempt, "ambiguous dedupe reservation cleanup failed");
+                    if attempt < AMBIGUOUS_DEDUP_CLEANUP_ATTEMPTS {
+                        tokio::time::sleep(AMBIGUOUS_DEDUP_RETRY_DELAY).await;
+                    }
+                },
+            }
+        }
+    }
+
+    async fn reacquire_self_owned(
+        &self,
+        conversation_id: &str,
+        previous_token: Option<&LeaseToken>,
+    ) -> anyhow::Result<Option<LeaseToken>> {
+        let now = self.now().timestamp_millis();
+        let expires = now + self.lease_ttl.num_milliseconds();
+        let token = LeaseToken::new(&self.own_task_arn);
+        let mut request = self
+            .client
+            .put_item()
+            .table_name(&self.leases_table)
+            .item(col::CONVERSATION_ID, Self::s(conversation_id))
+            .item(col::OWNER_TASK_ARN, Self::s(&self.own_task_arn))
+            .item(col::LEASE_TOKEN, Self::s(token.as_str()))
+            .item(col::LEASE_EXPIRES_AT, Self::n(expires))
+            .item(col::EXPIRES_AT, Self::n((expires / 1000) + 24 * 3600))
+            .expression_attribute_values(":me", Self::s(&self.own_task_arn));
+        request = if let Some(previous_token) = previous_token {
+            request
+                .condition_expression(format!(
+                    "{} = :me AND {} = :previous_token",
+                    col::OWNER_TASK_ARN,
+                    col::LEASE_TOKEN
+                ))
+                .expression_attribute_values(":previous_token", Self::s(previous_token.as_str()))
+        } else {
+            request.condition_expression(format!(
+                "{} = :me AND attribute_not_exists({})",
+                col::OWNER_TASK_ARN,
+                col::LEASE_TOKEN
+            ))
+        };
+
+        match request.send().await {
+            Ok(_) => Ok(Some(token)),
+            Err(error) if is_conditional_check_failed_put(&error) => Ok(None),
+            Err(error) => Err(anyhow::Error::new(error).context("self-owned lease PutItem")),
+        }
+    }
+
+    async fn read_lease(&self, conversation_id: &str) -> anyhow::Result<Option<LeaseRecord>> {
         let resp = self
             .client
             .get_item()
@@ -476,13 +633,29 @@ impl DynamoCoordinator {
             .key(col::CONVERSATION_ID, Self::s(conversation_id))
             .send()
             .await
-            .context("read_lease_owner GetItem")?;
-        Ok(resp
-            .item
-            .as_ref()
-            .and_then(|m| m.get(col::OWNER_TASK_ARN))
-            .and_then(|v| v.as_s().ok().cloned()))
+            .context("read_lease GetItem")?;
+        let Some(item) = resp.item else {
+            return Ok(None);
+        };
+        let Some(owner) = item
+            .get(col::OWNER_TASK_ARN)
+            .and_then(|value| value.as_s().ok())
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let token = item
+            .get(col::LEASE_TOKEN)
+            .and_then(|value| value.as_s().ok())
+            .cloned()
+            .map(LeaseToken::from_stored);
+        Ok(Some(LeaseRecord { owner, token }))
     }
+}
+
+struct LeaseRecord {
+    owner: String,
+    token: Option<LeaseToken>,
 }
 
 fn item_to_turn(item: &HashMap<String, AttributeValue>) -> Option<Turn> {
@@ -531,9 +704,157 @@ fn is_conditional_check_failed_delete(err: &SdkError<DeleteItemError>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        Mutex,
+    };
+
+    use aws_sdk_dynamodb::config::retry::RetryConfig;
+    use aws_sdk_dynamodb::operation::delete_item::{
+        DeleteItemError,
+        DeleteItemOutput,
+    };
+    use aws_sdk_dynamodb::operation::get_item::{
+        GetItemError,
+        GetItemOutput,
+    };
+    use aws_sdk_dynamodb::operation::put_item::PutItemError;
+    use aws_sdk_dynamodb::types::error::{
+        ConditionalCheckFailedException,
+        InternalServerError,
+    };
+    use aws_smithy_mocks::{
+        MockResponse,
+        Rule,
+        RuleMode,
+        mock,
+        mock_client,
+    };
     use chrono::TimeZone;
 
     use super::*;
+
+    fn ambiguous_dedup_coordinator(use_attempt_token: bool) -> (DynamoCoordinator, Arc<Mutex<Option<String>>>, Rule) {
+        let attempted_token = Arc::new(Mutex::new(None));
+        let captured_token = attempted_token.clone();
+        let put_rule = mock!(aws_sdk_dynamodb::Client::put_item).then_compute_response(move |input| {
+            let token = input
+                .item()
+                .and_then(|item| item.get(col::DEDUPE_TOKEN))
+                .and_then(|value| value.as_s().ok())
+                .cloned()
+                .expect("dedup PutItem must carry its ownership token");
+            *captured_token.lock().expect("captured token poisoned") = Some(token);
+            MockResponse::Error(PutItemError::InternalServerError(
+                InternalServerError::builder().message("response lost").build(),
+            ))
+        });
+
+        let returned_token = attempted_token.clone();
+        let get_rule = mock!(aws_sdk_dynamodb::Client::get_item)
+            .match_requests(|input| input.consistent_read() == Some(true))
+            .then_compute_output(move |_| {
+                let token = if use_attempt_token {
+                    returned_token
+                        .lock()
+                        .expect("captured token poisoned")
+                        .clone()
+                        .expect("PutItem must run before GetItem")
+                } else {
+                    "competing-task:1".to_string()
+                };
+                GetItemOutput::builder()
+                    .item(col::SLACK_EVENT_ID, AttributeValue::S("EvAmbiguous".to_string()))
+                    .item(col::DEDUPE_TOKEN, AttributeValue::S(token))
+                    .build()
+            });
+
+        let delete_rule =
+            mock!(aws_sdk_dynamodb::Client::delete_item).then_output(|| DeleteItemOutput::builder().build());
+        let client = mock_client!(
+            aws_sdk_dynamodb,
+            RuleMode::MatchAny,
+            [&put_rule, &get_rule, &delete_rule],
+            |builder| builder.retry_config(RetryConfig::disabled())
+        );
+        (
+            DynamoCoordinator::new(client, "leases", "transcripts", "dedup", "attempting-task"),
+            attempted_token,
+            delete_rule,
+        )
+    }
+
+    type CapturedDelete = Arc<Mutex<Option<(String, String)>>>;
+
+    fn unreadable_ambiguous_dedup_coordinator(
+        competing_owner: bool,
+    ) -> (
+        DynamoCoordinator,
+        Arc<Mutex<Option<String>>>,
+        CapturedDelete,
+        Rule,
+        Rule,
+    ) {
+        let attempted_token = Arc::new(Mutex::new(None));
+        let captured_token = attempted_token.clone();
+        let put_rule = mock!(aws_sdk_dynamodb::Client::put_item).then_compute_response(move |input| {
+            let token = input
+                .item()
+                .and_then(|item| item.get(col::DEDUPE_TOKEN))
+                .and_then(|value| value.as_s().ok())
+                .cloned()
+                .expect("dedup PutItem must carry its ownership token");
+            *captured_token.lock().expect("captured token poisoned") = Some(token);
+            MockResponse::Error(PutItemError::InternalServerError(
+                InternalServerError::builder().message("response lost").build(),
+            ))
+        });
+        let get_rule = mock!(aws_sdk_dynamodb::Client::get_item)
+            .match_requests(|input| input.consistent_read() == Some(true))
+            .then_error(|| {
+                GetItemError::InternalServerError(InternalServerError::builder().message("read unavailable").build())
+            });
+
+        let captured_delete = Arc::new(Mutex::new(None));
+        let delete_request = captured_delete.clone();
+        let delete_rule = mock!(aws_sdk_dynamodb::Client::delete_item)
+            .match_requests(move |input| {
+                let condition = input.condition_expression().unwrap_or_default().to_string();
+                let token = input
+                    .expression_attribute_values()
+                    .and_then(|values| values.get(":token"))
+                    .and_then(|value| value.as_s().ok())
+                    .cloned()
+                    .unwrap_or_default();
+                *delete_request.lock().expect("captured delete poisoned") = Some((condition, token));
+                true
+            })
+            .then_compute_response(move |_| {
+                if competing_owner {
+                    MockResponse::Error(DeleteItemError::ConditionalCheckFailedException(
+                        ConditionalCheckFailedException::builder()
+                            .message("token changed")
+                            .build(),
+                    ))
+                } else {
+                    MockResponse::Output(DeleteItemOutput::builder().build())
+                }
+            });
+
+        let client = mock_client!(
+            aws_sdk_dynamodb,
+            RuleMode::MatchAny,
+            [&put_rule, &get_rule, &delete_rule],
+            |builder| builder.retry_config(RetryConfig::disabled())
+        );
+        (
+            DynamoCoordinator::new(client, "leases", "transcripts", "dedup", "attempting-task"),
+            attempted_token,
+            captured_delete,
+            get_rule,
+            delete_rule,
+        )
+    }
 
     /// Smoke test: the table-name plumbing accepts owned strings + slices and
     /// the resulting `DynamoCoordinator` is `Clone + Send + Sync`. Live AWS
@@ -566,6 +887,111 @@ mod tests {
         let _cloned = coord.clone();
         // Send + Sync: stash in an Arc<dyn Coordinator>.
         let _erased: std::sync::Arc<dyn Coordinator> = std::sync::Arc::new(coord);
+    }
+
+    #[test]
+    fn dedup_records_are_retained_for_twenty_four_hours() {
+        assert_eq!(DEFAULT_DEDUP_RETENTION_SECS, 24 * 60 * 60);
+    }
+
+    #[tokio::test]
+    async fn ambiguous_dedup_write_accepts_committed_attempt_token() {
+        let (coordinator, attempted_token, delete_rule) = ambiguous_dedup_coordinator(true);
+
+        let outcome = coordinator.dedupe_event_outcome("EvAmbiguous").await;
+
+        let DedupeOutcome::Accepted { token } = outcome else {
+            panic!("committed attempt must be accepted");
+        };
+        assert_eq!(
+            Some(token.as_str()),
+            attempted_token.lock().expect("captured token poisoned").as_deref()
+        );
+        assert_eq!(delete_rule.num_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn ambiguous_dedup_write_reports_competing_token_as_duplicate() {
+        let (coordinator, _, delete_rule) = ambiguous_dedup_coordinator(false);
+
+        assert_eq!(
+            coordinator.dedupe_event_outcome("EvAmbiguous").await,
+            DedupeOutcome::Duplicate
+        );
+        assert_eq!(delete_rule.num_calls(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ambiguous_dedup_read_failure_conditionally_cleans_attempted_reservation() {
+        let (coordinator, attempted_token, captured_delete, get_rule, delete_rule) =
+            unreadable_ambiguous_dedup_coordinator(false);
+
+        assert_eq!(
+            coordinator.dedupe_event_outcome("EvAmbiguous").await,
+            DedupeOutcome::Unavailable
+        );
+        assert_eq!(get_rule.num_calls(), AMBIGUOUS_DEDUP_READ_ATTEMPTS);
+        assert_eq!(delete_rule.num_calls(), 1);
+        assert_eq!(
+            *captured_delete.lock().expect("captured delete poisoned"),
+            Some((
+                format!("{} = :token", col::DEDUPE_TOKEN),
+                attempted_token
+                    .lock()
+                    .expect("captured token poisoned")
+                    .clone()
+                    .expect("PutItem token missing"),
+            ))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ambiguous_dedup_cleanup_never_deletes_competing_reservation() {
+        let (coordinator, attempted_token, captured_delete, get_rule, delete_rule) =
+            unreadable_ambiguous_dedup_coordinator(true);
+
+        assert_eq!(
+            coordinator.dedupe_event_outcome("EvAmbiguous").await,
+            DedupeOutcome::Unavailable
+        );
+        assert_eq!(get_rule.num_calls(), AMBIGUOUS_DEDUP_READ_ATTEMPTS);
+        assert_eq!(delete_rule.num_calls(), 1);
+        assert_eq!(
+            *captured_delete.lock().expect("captured delete poisoned"),
+            Some((
+                format!("{} = :token", col::DEDUPE_TOKEN),
+                attempted_token
+                    .lock()
+                    .expect("captured token poisoned")
+                    .clone()
+                    .expect("PutItem token missing"),
+            ))
+        );
+    }
+
+    #[test]
+    fn rate_window_accepts_largest_ttl_safe_boundary() {
+        let (start, end, expires) = rate_window_bounds(
+            0,
+            std::time::Duration::from_secs(crate::engine::rate_limit::MAX_WINDOW_SECS),
+        )
+        .unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, crate::engine::rate_limit::MAX_WINDOW_SECS as i64);
+        assert_eq!(expires, i64::MAX);
+    }
+
+    #[test]
+    fn rate_window_rejects_zero_and_overflowing_values() {
+        assert!(rate_window_bounds(0, std::time::Duration::ZERO).is_err());
+        assert!(
+            rate_window_bounds(
+                0,
+                std::time::Duration::from_secs(crate::engine::rate_limit::MAX_WINDOW_SECS + 1),
+            )
+            .is_err()
+        );
+        assert!(rate_window_bounds(0, std::time::Duration::from_secs(u64::MAX)).is_err());
     }
 
     #[test]

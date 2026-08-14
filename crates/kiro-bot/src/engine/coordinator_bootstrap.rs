@@ -7,7 +7,7 @@
 //! [`NoopCoordinator`] so local CLI runs (`cmd_chat`) and unit tests are
 //! unaffected.
 //!
-//! The engine integration (`dedupe_event`, `try_acquire`, `forward`,
+//! The engine integration (`dedupe_event`, `acquire_lease`, `forward`,
 //! `release`) is wired into [`crate::engine::core::dispatch`]: every
 //! Slack-delivered message is deduped and lease-arbitrated cluster-wide
 //! before any reply is sent, so a multi-task fleet posts exactly one
@@ -91,18 +91,20 @@ impl BotCoreDispatcher {
 
 #[async_trait::async_trait]
 impl crate::engine::dispatch_server::Dispatcher for BotCoreDispatcher {
-    async fn process_as_if_from_slack(&self, event: serde_json::Value) {
+    async fn process_as_if_from_slack(&self, event: serde_json::Value) -> anyhow::Result<()> {
         let parsed: slack_morphism::prelude::SlackPushEventCallback = match serde_json::from_value(event.clone()) {
             Ok(v) => v,
             Err(e) => {
                 warn!(error = %e, "dispatch: failed to parse forwarded Slack event JSON");
                 tracing::debug!(?event, "unparsable payload");
-                return;
+                return Err(anyhow::Error::new(e).context("parse forwarded Slack event"));
             },
         };
         if let Err(e) = crate::frontend::slack::dispatch_event(parsed, &self.state, true).await {
             warn!(error = %e, "dispatch: forwarded event handler returned error");
+            anyhow::bail!("forwarded event routing failed: {e}");
         }
+        Ok(())
     }
 }
 
@@ -127,8 +129,11 @@ mod tests {
         clear_env();
         let coord = build_coordinator("test-self".into()).await;
         // Noop always returns Acquired.
-        let outcome = coord.try_acquire("convo-test").await;
-        assert_eq!(outcome, crate::engine::coordinator::LeaseOutcome::Acquired);
+        let outcome = coord.acquire_lease("convo-test").await;
+        assert!(matches!(
+            outcome,
+            crate::engine::coordinator::LeaseAcquisition::Acquired { .. }
+        ));
     }
 
     /// Sanity check: the JSON shape we expect from a peer's `forward` POST
