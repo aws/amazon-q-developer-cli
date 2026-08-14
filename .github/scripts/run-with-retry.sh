@@ -5,6 +5,7 @@ set -euo pipefail
 attempts=1
 delay_seconds=15
 label="command"
+status_file=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -18,6 +19,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --label)
       label="$2"
+      shift 2
+      ;;
+    --status-file)
+      status_file="$2"
       shift 2
       ;;
     --)
@@ -49,11 +54,23 @@ fi
 command=("$@")
 attempt=1
 
+write_status() {
+  if [[ -z "$status_file" ]]; then
+    return
+  fi
+
+  mkdir -p "$(dirname "$status_file")"
+  printf '%s\n' "$1" > "$status_file"
+}
+
 while true; do
   echo "[$label] attempt $attempt/$attempts"
   if "${command[@]}"; then
     if [[ "$attempt" -gt 1 ]]; then
       echo "[$label] recovered on attempt $attempt/$attempts"
+      write_status "recovered on attempt $attempt/$attempts"
+    else
+      write_status "passed on attempt 1/$attempts"
     fi
     exit 0
   else
@@ -62,6 +79,7 @@ while true; do
 
   if [[ "$attempt" -ge "$attempts" ]]; then
     echo "[$label] failed after $attempt/$attempts attempts" >&2
+    write_status "failed after $attempt/$attempts attempts"
     exit "$exit_code"
   fi
 

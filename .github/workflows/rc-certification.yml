@@ -2,11 +2,6 @@ name: RC Certification
 
 on:
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '.changes/**'
-      - 'scripts/testing-cert-status/**'
-      - '*.md'
   schedule:
     - cron: '0 2 * * *'
   workflow_dispatch:
@@ -23,6 +18,14 @@ on:
         description: Run visual story certification
         type: boolean
         default: false
+      run_integration:
+        description: Run UI and ACP integration tests
+        type: boolean
+        default: true
+      run_e2e:
+        description: Run end-to-end tests
+        type: boolean
+        default: true
       live_engine:
         description: Optional live smoke engine lane
         type: choice
@@ -82,6 +85,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
   id-token: write
 
 env:
@@ -98,6 +102,8 @@ jobs:
       run_smoke: ${{ steps.resolve.outputs.run_smoke }}
       run_scenarios: ${{ steps.resolve.outputs.run_scenarios }}
       run_visual: ${{ steps.resolve.outputs.run_visual }}
+      run_integration: ${{ steps.resolve.outputs.run_integration }}
+      run_e2e: ${{ steps.resolve.outputs.run_e2e }}
       live_engines: ${{ steps.resolve.outputs.live_engines }}
       smoke_priority: ${{ steps.resolve.outputs.smoke_priority }}
       visual_suite: ${{ steps.resolve.outputs.visual_suite }}
@@ -108,6 +114,20 @@ jobs:
       lane_retry_delay_seconds: ${{ steps.resolve.outputs.lane_retry_delay_seconds }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Detect verification changes
+        id: paths
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          predicate-quantifier: every
+          filters: |
+            verification:
+              - '**'
+              - '!docs/**'
+              - '!.changes/**'
+              - '!scripts/testing-cert-status/**'
+              - '!*.md'
 
       - name: Read pinned Bun version
         id: bun-ver
@@ -127,10 +147,12 @@ jobs:
           LIVE_ENGINE: ${{ inputs.live_engine }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            if [ "${{ github.event.pull_request.head.repo.fork || false }}" = "true" ]; then
+            if [ "${{ github.event.pull_request.head.repo.fork || false }}" = "true" ] || [ "${{ steps.paths.outputs.verification }}" != "true" ]; then
               echo "run_smoke=false" >> "$GITHUB_OUTPUT"
               echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
               echo "run_visual=false" >> "$GITHUB_OUTPUT"
+              echo "run_integration=false" >> "$GITHUB_OUTPUT"
+              echo "run_e2e=false" >> "$GITHUB_OUTPUT"
               echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
               echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
               echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -145,6 +167,8 @@ jobs:
             echo "run_smoke=true" >> "$GITHUB_OUTPUT"
             echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
             echo "run_visual=false" >> "$GITHUB_OUTPUT"
+            echo "run_integration=true" >> "$GITHUB_OUTPUT"
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
             echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
             echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -160,6 +184,8 @@ jobs:
             echo "run_smoke=true" >> "$GITHUB_OUTPUT"
             echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
             echo "run_visual=false" >> "$GITHUB_OUTPUT"
+            echo "run_integration=true" >> "$GITHUB_OUTPUT"
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
             echo 'live_engines=["v2","kas"]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
             echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -190,7 +216,7 @@ jobs:
               ;;
           esac
 
-          if [ "${{ inputs.run_smoke }}" != "true" ] && [ "${{ inputs.run_scenarios }}" != "true" ] && [ "${{ inputs.run_visual }}" != "true" ] && [ "$LIVE_ENGINES" = '[]' ]; then
+          if [ "${{ inputs.run_smoke }}" != "true" ] && [ "${{ inputs.run_scenarios }}" != "true" ] && [ "${{ inputs.run_visual }}" != "true" ] && [ "${{ inputs.run_integration }}" != "true" ] && [ "${{ inputs.run_e2e }}" != "true" ] && [ "$LIVE_ENGINES" = '[]' ]; then
             echo "Select at least one verification lane or live engine to run." >&2
             exit 1
           fi
@@ -208,6 +234,8 @@ jobs:
           echo "run_smoke=${{ inputs.run_smoke }}" >> "$GITHUB_OUTPUT"
           echo "run_scenarios=${{ inputs.run_scenarios }}" >> "$GITHUB_OUTPUT"
           echo "run_visual=${{ inputs.run_visual }}" >> "$GITHUB_OUTPUT"
+          echo "run_integration=${{ inputs.run_integration }}" >> "$GITHUB_OUTPUT"
+          echo "run_e2e=${{ inputs.run_e2e }}" >> "$GITHUB_OUTPUT"
           echo "smoke_priority=${{ inputs.smoke_priority }}" >> "$GITHUB_OUTPUT"
           echo "visual_suite=$VISUAL_SUITE" >> "$GITHUB_OUTPUT"
           echo "scenario_categories=$SCENARIO_CATEGORIES" >> "$GITHUB_OUTPUT"
@@ -219,13 +247,13 @@ jobs:
   build-assets:
     name: Build Verification Assets (${{ matrix.os }})
     needs: resolve
-    if: needs.resolve.outputs.run_smoke == 'true' || needs.resolve.outputs.run_scenarios == 'true' || needs.resolve.outputs.run_visual == 'true' || needs.resolve.outputs.live_engines != '[]'
+    if: needs.resolve.outputs.run_smoke == 'true' || needs.resolve.outputs.run_scenarios == 'true' || needs.resolve.outputs.run_visual == 'true' || needs.resolve.outputs.run_integration == 'true' || needs.resolve.outputs.run_e2e == 'true' || needs.resolve.outputs.live_engines != '[]'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
+        os: [ubuntu-latest-8-cores, macos-latest, windows-x64-latest-16-cores]
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-latest-8-cores
             artifact_suffix: linux
             binary_path: target/release/chat_cli
           - os: macos-latest
@@ -296,6 +324,10 @@ jobs:
             cargo build -p chat_cli --release
           fi
 
+      - name: Show sccache statistics
+        if: always()
+        run: sccache --show-stats
+
       - name: Build twinki package
         run: bun run build
         working-directory: packages/twinki/packages/twinki
@@ -313,6 +345,227 @@ jobs:
             packages/tui/dist/tui.js
             packages/twinki/packages/twinki/dist/
           retention-days: 7
+
+  ui-integration:
+    name: UI Integration (ubuntu-latest-8-cores)
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.run_integration == 'true'
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-bundle-linux
+          path: .
+
+      - name: Restore binary mode
+        run: chmod +x target/release/chat_cli
+
+      - name: Run UI integration tests
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/release/chat_cli
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "UI integration" \
+            --status-file "$GITHUB_WORKSPACE/verification-results/retries/ui-integration-linux.txt" \
+            -- bun run test:integ
+        working-directory: packages/tui
+
+      - name: Upload UI integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-ui-integration-linux
+          path: packages/tui/integ_tests/test-outputs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload UI integration retry status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-retry-ui-integration-linux
+          path: verification-results/retries/ui-integration-linux.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  acp-integration:
+    name: ACP Integration (${{ matrix.os }})
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.run_integration == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest-8-cores, macos-latest, windows-x64-latest-16-cores]
+        include:
+          - os: ubuntu-latest-8-cores
+            artifact_suffix: linux
+            binary_path: target/release/chat_cli
+          - os: macos-latest
+            artifact_suffix: macos
+            binary_path: target/release/chat_cli
+          - os: windows-x64-latest-16-cores
+            artifact_suffix: windows
+            binary_path: target/release/chat_cli.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-bundle-${{ matrix.artifact_suffix }}
+          path: .
+
+      - name: Restore binary mode
+        if: runner.os != 'Windows'
+        run: chmod +x ${{ matrix.binary_path }}
+
+      - name: Run ACP integration tests
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/${{ matrix.binary_path }}
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "ACP integration:${{ matrix.artifact_suffix }}" \
+            --status-file "$GITHUB_WORKSPACE/verification-results/retries/acp-integration-${{ matrix.artifact_suffix }}.txt" \
+            -- bun run test:acp-integ
+        working-directory: packages/tui
+
+      - name: Upload ACP integration retry status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-retry-acp-integration-${{ matrix.artifact_suffix }}
+          path: verification-results/retries/acp-integration-${{ matrix.artifact_suffix }}.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  e2e:
+    name: E2E (${{ matrix.os }})
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.run_e2e == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest-8-cores, macos-latest, windows-x64-latest-16-cores]
+        include:
+          - os: ubuntu-latest-8-cores
+            artifact_suffix: linux
+            binary_path: target/release/chat_cli
+          - os: macos-latest
+            artifact_suffix: macos
+            binary_path: target/release/chat_cli
+          - os: windows-x64-latest-16-cores
+            artifact_suffix: windows
+            binary_path: target/release/chat_cli.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-bundle-${{ matrix.artifact_suffix }}
+          path: .
+
+      - name: Restore binary mode
+        if: runner.os != 'Windows'
+        run: chmod +x ${{ matrix.binary_path }}
+
+      - name: Run E2E tests
+        shell: bash
+        env:
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/${{ matrix.binary_path }}
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "E2E:${{ matrix.artifact_suffix }}" \
+            --status-file "$GITHUB_WORKSPACE/verification-results/retries/e2e-${{ matrix.artifact_suffix }}.txt" \
+            -- bun test --max-concurrency=4 ./e2e_tests/
+        working-directory: packages/tui
+
+      - name: Upload E2E logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-e2e-${{ matrix.artifact_suffix }}
+          path: packages/tui/e2e_tests/test-outputs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload E2E retry status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-retry-e2e-${{ matrix.artifact_suffix }}
+          path: verification-results/retries/e2e-${{ matrix.artifact_suffix }}.txt
+          retention-days: 7
+          if-no-files-found: warn
 
   smoke:
     name: Smoke Lane (${{ matrix.os }})
@@ -619,11 +872,24 @@ jobs:
   summary:
     name: Publish Verification Summary
     needs:
-      [resolve, build-assets, smoke, scenario-categories, visual, live-parity]
+      [
+        resolve,
+        build-assets,
+        ui-integration,
+        acp-integration,
+        e2e,
+        smoke,
+        scenario-categories,
+        visual,
+        live-parity,
+      ]
     if: |
       always() && (
         needs.resolve.result == 'failure' ||
         needs.build-assets.result == 'failure' ||
+        needs.ui-integration.result != 'skipped' ||
+        needs.acp-integration.result != 'skipped' ||
+        needs.e2e.result != 'skipped' ||
         needs.smoke.result != 'skipped' ||
         needs.scenario-categories.result != 'skipped' ||
         needs.visual.result != 'skipped' ||
@@ -670,8 +936,52 @@ jobs:
           pattern: verification-live-*
           path: verification-artifacts
 
+      - name: Download test retry status
+        if: |
+          needs.ui-integration.result != 'skipped' ||
+          needs.acp-integration.result != 'skipped' ||
+          needs.e2e.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: verification-retry-*
+          path: verification-artifacts/retries
+          merge-multiple: true
+
       - name: Build summary bundle
         run: bun packages/tui/e2e_tests/verification/build-verification-report.ts --root verification-artifacts --out-dir verification-artifacts/summary
+
+      - name: Append test lane results
+        shell: bash
+        run: |
+          retry_status() {
+            local prefix="$1"
+            local files=(verification-artifacts/retries/"$prefix"-*.txt)
+            if [[ ! -e "${files[0]}" ]]; then
+              printf 'not recorded'
+              return
+            fi
+
+            local values=()
+            for file in "${files[@]}"; do
+              local platform
+              platform="$(basename "$file" .txt)"
+              platform="${platform#"$prefix"-}"
+              values+=("$platform: $(<"$file")")
+            done
+            local IFS='; '
+            printf '%s' "${values[*]}"
+          }
+
+          {
+            echo
+            echo "## Test lanes"
+            echo
+            echo "| Lane | Result | Attempts |"
+            echo "| --- | --- | --- |"
+            echo "| UI integration | ${{ needs.ui-integration.result }} | $(retry_status ui-integration) |"
+            echo "| ACP integration | ${{ needs.acp-integration.result }} | $(retry_status acp-integration) |"
+            echo "| E2E | ${{ needs.e2e.result }} | $(retry_status e2e) |"
+          } >> verification-artifacts/summary/summary.md
 
       - name: Publish workflow summary
         shell: bash
@@ -688,8 +998,55 @@ jobs:
         if: |
           needs.resolve.result == 'failure' ||
           needs.build-assets.result == 'failure' ||
+          needs.ui-integration.result == 'failure' ||
+          needs.acp-integration.result == 'failure' ||
+          needs.e2e.result == 'failure' ||
           needs.smoke.result == 'failure' ||
           needs.scenario-categories.result == 'failure' ||
           needs.visual.result == 'failure' ||
           needs.live-parity.result == 'failure'
         run: exit 1
+
+  tui-integ-tests-required:
+    name: 'TUI: Integration Tests (required)'
+    if: always()
+    needs: [resolve, ui-integration, acp-integration]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        shell: bash
+        run: |
+          if [[ "${{ needs.resolve.result }}" != "success" ]]; then
+            echo "::error::RC verification matrix resolution failed"
+            exit 1
+          fi
+          if [[ "${{ needs.resolve.outputs.run_integration }}" != "true" ]]; then
+            echo "Integration tests are disabled for this run"
+            exit 0
+          fi
+          if [[ "${{ needs.ui-integration.result }}" != "success" || "${{ needs.acp-integration.result }}" != "success" ]]; then
+            echo "::error::TUI integration tests failed"
+            exit 1
+          fi
+
+  tui-e2e-required:
+    name: 'TUI: E2E Tests (required)'
+    if: always()
+    needs: [resolve, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        shell: bash
+        run: |
+          if [[ "${{ needs.resolve.result }}" != "success" ]]; then
+            echo "::error::RC verification matrix resolution failed"
+            exit 1
+          fi
+          if [[ "${{ needs.resolve.outputs.run_e2e }}" != "true" ]]; then
+            echo "E2E tests are disabled for this run"
+            exit 0
+          fi
+          if [[ "${{ needs.e2e.result }}" != "success" ]]; then
+            echo "::error::TUI E2E tests failed"
+            exit 1
+          fi

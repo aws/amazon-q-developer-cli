@@ -1,16 +1,9 @@
 /**
  * Locating the `chat_cli` binary for tests, knight-rider, and dev scripts.
  *
- * Prefers the workspace build (`CARGO_TARGET_DIR/debug/chat_cli`, then the
- * repo's `target/debug/chat_cli`) so tests exercise locally-built changes.
- * `KIRO_CHAT_CLI_BIN` is honored only as a last resort, when no workspace
- * build is present: the launcher always sets that variable while Kiro is
- * running, so prioritizing it would silently hijack tests spawned from
- * within a Kiro session into exercising the installed binary instead of the
- * workspace build.
- *
- * Not for production use - production code reads `KIRO_CHAT_CLI_BIN`
- * directly via `resolveChatCliBinFromEnv` in `src/utils/chat-cli-bin.ts`.
+ * CI prioritizes `KIRO_CHAT_CLI_BIN` so certification uses its downloaded
+ * artifact. Local runs prefer workspace builds to avoid inheriting the
+ * installed binary from a parent Kiro session.
  */
 
 import * as fs from 'node:fs';
@@ -37,27 +30,29 @@ export const REPO_ROOT: string = (() => {
 })();
 
 /**
- * Ordered candidate paths for the debug `chat_cli` binary: the workspace
- * build first, then `KIRO_CHAT_CLI_BIN` as a last resort.
+ * Ordered candidate paths for the `chat_cli` binary.
  */
 function candidateBins(): string[] {
   const candidates: string[] = [];
+  const env = process.env.KIRO_CHAT_CLI_BIN;
+  const isCI = process.env.CI !== undefined && process.env.CI !== 'false';
+  if (isCI && env) {
+    candidates.push(env);
+  }
+
   const cargoTargetDir = process.env.CARGO_TARGET_DIR;
-  if (cargoTargetDir && cargoTargetDir.length > 0) {
+  if (cargoTargetDir) {
     candidates.push(path.join(cargoTargetDir, 'debug', BINARY_NAME));
   }
   candidates.push(path.join(REPO_ROOT, 'target', 'debug', BINARY_NAME));
-  const env = process.env.KIRO_CHAT_CLI_BIN;
-  if (env && env.length > 0) {
+  if (!isCI && env) {
     candidates.push(env);
   }
   return candidates;
 }
 
 /**
- * Resolve the debug `chat_cli` binary path, preferring the workspace build.
- * Returns the first candidate that exists on disk; if none exist, returns
- * the repo `target/debug` path so callers surface a clear not-found error.
+ * Resolve the first available test binary.
  */
 export function resolveChatCliBin(): string {
   const repoTarget = path.join(REPO_ROOT, 'target', 'debug', BINARY_NAME);

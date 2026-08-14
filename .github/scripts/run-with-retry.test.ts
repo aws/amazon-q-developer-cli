@@ -28,6 +28,8 @@ describe('run-with-retry.sh', () => {
   });
 
   it('preserves the last exit code after exhausting retries', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-with-retry-'));
+    const statusPath = path.join(tempDir, 'status.txt');
     const result = Bun.spawnSync({
       cmd: [
         'bash',
@@ -36,6 +38,8 @@ describe('run-with-retry.sh', () => {
         '2',
         '--delay-seconds',
         '0',
+        '--status-file',
+        statusPath,
         '--',
         'bash',
         '-lc',
@@ -46,11 +50,15 @@ describe('run-with-retry.sh', () => {
     });
 
     expect(result.exitCode).toBe(5);
+    expect(fs.readFileSync(statusPath, 'utf8')).toBe(
+      'failed after 2/2 attempts\n'
+    );
   });
 
   it('returns success when a later retry succeeds', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-with-retry-'));
     const statePath = path.join(tempDir, 'attempt-count');
+    const statusPath = path.join(tempDir, 'status.txt');
     const command = `count=0
 if [ -f "${statePath}" ]; then
   count=$(cat "${statePath}")
@@ -70,6 +78,8 @@ exit 0`;
         '2',
         '--delay-seconds',
         '0',
+        '--status-file',
+        statusPath,
         '--',
         'bash',
         '-lc',
@@ -81,5 +91,34 @@ exit 0`;
 
     expect(result.exitCode).toBe(0);
     expect(fs.readFileSync(statePath, 'utf8')).toBe('2');
+    expect(fs.readFileSync(statusPath, 'utf8')).toBe(
+      'recovered on attempt 2/2\n'
+    );
+  });
+
+  it('records a first-attempt pass', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-with-retry-'));
+    const statusPath = path.join(tempDir, 'status.txt');
+    const result = Bun.spawnSync({
+      cmd: [
+        'bash',
+        scriptPath,
+        '--attempts',
+        '2',
+        '--delay-seconds',
+        '0',
+        '--status-file',
+        statusPath,
+        '--',
+        'bash',
+        '-lc',
+        'exit 0',
+      ],
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(fs.readFileSync(statusPath, 'utf8')).toBe('passed on attempt 1/2\n');
   });
 });
