@@ -71,6 +71,7 @@ chat.log
 !.kiro/skills/acp-session-storage/
 !.kiro/skills/gh-issues/
 !.kiro/skills/kas-agent/
+!.kiro/skills/kas-dev/
 !.kiro/skills/pragmatic-reviewer/
 !.kiro/skills/semantic-pr-reviewer/
 !.kiro/skills/pr-memory/

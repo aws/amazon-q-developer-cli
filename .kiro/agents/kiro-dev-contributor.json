@@ -1,0 +1,165 @@
+{
+  "name": "kiro-dev-contributor",
+  "description": "Skills-first contribution agent for kiro-cli and KAS (kiro-agent) development. Evolution of kiro-dev-v2: same TUI/ACP scope plus cross-repo KAS workflows and the full contribution gate (changelog fragments, coverage, conventional commits).",
+  "model": "claude-fable-5",
+  "prompt": "file://resources/KIRO_DEV_CONTRIBUTOR_PROMPT.md",
+  "tools": [
+    "code",
+    "glob",
+    "grep",
+    "introspect",
+    "knowledge",
+    "read",
+    "shell",
+    "subagent/kiro-research-agent",
+    "subagent/kiro_default",
+    "todo_list",
+    "web",
+    "web_fetch",
+    "write"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "grep",
+    "glob",
+    "introspect",
+    "knowledge"
+  ],
+  "keyboardShortcut": "ctrl+5",
+  "welcomeMessage": "Hi! I'm the Kiro-Dev-Contributor agent for kiro-cli and KAS (kiro-agent) development. I work skills-first: tell me what you want to build or fix, and I'll load the relevant skill before touching code. I also drive the contribution gate — changelog fragments, coverage, and PR conventions — so your change lands review-ready.\n\nTip: this agent is tuned for deep work — run `/effort xhigh` (or launch with `--effort xhigh`) to match its intended reasoning depth.",
+  "toolsSettings": {
+    "execute_bash": {
+      "autoAllowReadonly": true,
+      "allowedCommands": [
+        "^git status$",
+        "^git diff[^&;|]*$",
+        "^git log[^&;|]*$",
+        "^git add[^&;|]*$",
+        "^git commit[^&;|]*$",
+        "^git checkout -b [^&;|]*$",
+        "^git fetch[^&;|]*$",
+        "^cargo clippy[^&;]*$",
+        "^cargo \\+nightly fmt[^&;]*$",
+        "^cargo build[^&;]*$",
+        "^cargo test[^&;]*$",
+        "^bun install$",
+        "^bun test[^&;|]*$",
+        "^bun run[^&;|]*$",
+        "^npm run dev:build-cli[^&;|]*$",
+        "^npm run (build|test|lint|typecheck)[^&;|]*$",
+        "^\\./scripts/generate-types\\.sh$",
+        "^\\./scripts/test-kas\\.sh[^&;|]*$",
+        "^\\./scripts/new-change\\.sh [^&;|]*$",
+        "^\\./scripts/codeartifact-login\\.sh$",
+        "^cat[^&;|]*$",
+        "^ls[^&;|]*$",
+        "^pwd$",
+        "^wc[^&;|]*$",
+        "^head[^&;|]*$",
+        "^tail[^&;|]*$",
+        "^gh pr view[^&;|]*$",
+        "^gh pr list[^&;|]*$",
+        "^gh pr diff[^&;|]*$",
+        "^gh pr checks[^&;|]*$",
+        "^gh issue view[^&;|]*$",
+        "^gh issue list[^&;|]*$"
+      ]
+    },
+    "subagent": {
+      "trustedAgents": [
+        "kiro-research-agent"
+      ],
+      "availableAgents": [
+        "kiro-research-agent",
+        "kiro_default"
+      ]
+    }
+  },
+  "resources": [
+    "file://AGENTS.md",
+    "file://README.md",
+    "file://CONTRIBUTING.md",
+    "file://crates/chat-cli-v2/README.md",
+    "file://packages/tui/TESTING.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ],
+  "hooks": [
+    {
+      "name": "agentSpawn-0",
+      "trigger": "agentSpawn",
+      "action": {
+        "type": "command",
+        "command": "git status"
+      },
+      "timeout": 10
+    },
+    {
+      "name": "agentSpawn-1",
+      "trigger": "agentSpawn",
+      "action": {
+        "type": "command",
+        "command": "pwd"
+      },
+      "timeout": 10
+    }
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "git status",
+          "git diff*",
+          "git log*",
+          "git add*",
+          "git commit*",
+          "git checkout -b *",
+          "git fetch*",
+          "cargo clippy*",
+          "cargo +nightly fmt*",
+          "cargo build*",
+          "cargo test*",
+          "bun install",
+          "bun test*",
+          "bun run*",
+          "npm run dev:build-cli*",
+          "npm run build*",
+          "npm run test*",
+          "npm run lint*",
+          "npm run typecheck*",
+          "./scripts/generate-types.sh",
+          "./scripts/test-kas.sh*",
+          "./scripts/new-change.sh *",
+          "./scripts/codeartifact-login.sh",
+          "cat*",
+          "ls*",
+          "pwd",
+          "wc*",
+          "head*",
+          "tail*",
+          "gh pr view*",
+          "gh pr list*",
+          "gh pr diff*",
+          "gh pr checks*",
+          "gh issue view*",
+          "gh issue list*"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "subagent",
+        "match": [
+          "kiro-research-agent"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      }
+    ],
+    "policies": [
+      "read-only-shell"
+    ]
+  }
+}
