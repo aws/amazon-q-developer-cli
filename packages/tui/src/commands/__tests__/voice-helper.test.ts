@@ -1,5 +1,6 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { EventEmitter } from 'events';
+import { startPTTRecording, type VoiceHelperDeps } from '../voice-helper';
 
 interface MockChild extends EventEmitter {
   stdin: {
@@ -26,22 +27,21 @@ function createMockChild(): MockChild {
 let child: MockChild;
 const mockSpawn = mock(() => child);
 
-mock.module('child_process', () => ({ spawn: mockSpawn }));
-
-const { startPTTRecording } = await import('../voice-helper');
+/** Every case drives the same wiring, so the spawner override lives in one place. */
+function startWithMockSpawn() {
+  return startPTTRecording(undefined, undefined, true, false, {
+    spawn: mockSpawn as unknown as VoiceHelperDeps['spawn'],
+  });
+}
 
 beforeEach(() => {
   child = createMockChild();
   mockSpawn.mockClear();
 });
 
-afterAll(() => {
-  mock.restore();
-});
-
 describe('startPTTRecording', () => {
   it('rejects when the helper exits unsuccessfully without a structured error', async () => {
-    const session = startPTTRecording();
+    const session = startWithMockSpawn();
 
     child.emit('close', 2, null);
 
@@ -51,7 +51,7 @@ describe('startPTTRecording', () => {
   });
 
   it('resolves no speech only after a successful empty transcription', async () => {
-    const session = startPTTRecording();
+    const session = startWithMockSpawn();
 
     child.emit('close', 0, null);
 
@@ -59,7 +59,7 @@ describe('startPTTRecording', () => {
   });
 
   it('resolves cancellation without surfacing the termination signal', async () => {
-    const session = startPTTRecording();
+    const session = startWithMockSpawn();
 
     session.cancel();
     child.emit('close', null, 'SIGKILL');
@@ -69,7 +69,7 @@ describe('startPTTRecording', () => {
   });
 
   it('preserves structured helper errors', async () => {
-    const session = startPTTRecording();
+    const session = startWithMockSpawn();
     child.stdout.emit(
       'data',
       Buffer.from(
@@ -83,7 +83,7 @@ describe('startPTTRecording', () => {
   });
 
   it('returns text emitted by a successful helper', async () => {
-    const session = startPTTRecording();
+    const session = startWithMockSpawn();
     child.stdout.emit('data', Buffer.from('{"type":"text","value":"hello"}\n'));
 
     child.emit('close', 0, null);

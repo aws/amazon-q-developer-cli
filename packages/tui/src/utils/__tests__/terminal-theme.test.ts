@@ -12,7 +12,12 @@ const mockExecSync = mock((_cmd?: unknown, _opts?: unknown): string => {
   throw new Error('not available');
 });
 
+import * as realChildProcess from 'child_process';
+// A module mock is process-wide, so the real exports are carried over rather
+// than dropped: a suite loaded later that imports a different export would
+// otherwise resolve against a module that no longer provides it.
 mock.module('child_process', () => ({
+  ...realChildProcess,
   execSync: mockExecSync,
 }));
 

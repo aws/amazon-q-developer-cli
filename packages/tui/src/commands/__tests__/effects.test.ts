@@ -10,9 +10,16 @@ import {
 } from 'bun:test';
 
 // --- Module mocks MUST be declared before importing the module under test ---
+import * as realChildProcess from 'child_process';
 const mockSpawnSync = mock(() => ({ status: 1 }));
 
-mock.module('child_process', () => ({ spawnSync: mockSpawnSync }));
+// A module mock is process-wide, so the real exports are carried over rather
+// than dropped: a suite loaded later that imports a different export would
+// otherwise resolve against a module that no longer provides it.
+mock.module('child_process', () => ({
+  ...realChildProcess,
+  spawnSync: mockSpawnSync,
+}));
 
 import * as fs from 'fs';
 const mockWriteFileSync = spyOn(fs, 'writeFileSync').mockImplementation(

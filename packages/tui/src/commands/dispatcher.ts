@@ -32,20 +32,21 @@ import {
  */
 async function runVoiceCapture(
   ctx: CommandContext,
-  confirmDownload: boolean
+  confirmDownload: boolean,
+  startVoice: typeof startPTTRecording
 ): Promise<void> {
   const remoteServerUrl = process.env.KIRO_VOICE_SERVER_URL ?? undefined;
   let terminal = false; // true when the round ended without a transcript (download/confirm/cancel)
   let cancelled = false;
 
-  const session = startPTTRecording(
+  const session = startVoice(
     remoteServerUrl,
     {
       onLevel: (level: number) => ctx.setVoiceLevel(level),
       onPartial: (text: string) => ctx.setVoicePartialText(text),
       onNeedsDownload: (info: ModelDownloadInfo) => {
         terminal = true;
-        promptModelDownload(ctx, info);
+        promptModelDownload(ctx, info, startVoice);
       },
       onStatus: (status: string) => {
         if (status === 'recording') {
@@ -108,7 +109,8 @@ async function runVoiceCapture(
  */
 function promptModelDownload(
   ctx: CommandContext,
-  info: ModelDownloadInfo
+  info: ModelDownloadInfo,
+  startVoice: typeof startPTTRecording
 ): void {
   ctx.setVoiceDownloadConfirm({
     info,
@@ -116,7 +118,7 @@ function promptModelDownload(
       ctx.setVoiceDownloadConfirm(null);
       ctx.showAlert('Downloading voice model…', 'success', 120000);
       // Re-run with confirmation. Fire-and-forget: errors surface via alert.
-      runVoiceCapture(ctx, true).catch((error) => {
+      runVoiceCapture(ctx, true, startVoice).catch((error) => {
         const msg =
           error instanceof Error ? error.message : 'Voice download failed';
         ctx.showAlert(msg, 'error', 3000);
@@ -136,6 +138,13 @@ function promptModelDownload(
 export interface DispatchOptions {
   /** True when args were provided programmatically rather than typed by the user. */
   argIsSynthetic?: boolean;
+  /**
+   * Voice capture entry point. Injectable because the alternative — a module
+   * mock of the voice helper — replaces it for every suite sharing the test
+   * process, so a later suite exercising the real helper receives a fake
+   * session and awaits a transcript nothing ever resolves.
+   */
+  startVoiceRecording?: typeof startPTTRecording;
 }
 
 /**
@@ -256,7 +265,11 @@ export async function dispatch(
   // Voice command: spawn local voice helper, capture text, place in input or auto-submit
   if (cmdName === 'voice') {
     try {
-      await runVoiceCapture(ctx, false);
+      await runVoiceCapture(
+        ctx,
+        false,
+        options?.startVoiceRecording ?? startPTTRecording
+      );
     } catch (error) {
       // runVoiceCapture tears down its own UI state in a finally; here we just
       // surface the failure (e.g. model download failed) to the user.

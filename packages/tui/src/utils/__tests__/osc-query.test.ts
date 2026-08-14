@@ -9,7 +9,14 @@ import {
 } from 'bun:test';
 
 const mockExecSync = mock((): string => '');
-mock.module('child_process', () => ({ execSync: mockExecSync }));
+import * as realChildProcess from 'child_process';
+// A module mock is process-wide, so the real exports are carried over rather
+// than dropped: a suite loaded later that imports a different export would
+// otherwise resolve against a module that no longer provides it.
+mock.module('child_process', () => ({
+  ...realChildProcess,
+  execSync: mockExecSync,
+}));
 
 afterAll(() => {
   mock.restore();

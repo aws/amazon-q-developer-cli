@@ -62,7 +62,14 @@ const mockSpawn = mock(() => ({
   pid: 4242,
   on: mock(() => {}),
 }));
-mock.module('child_process', () => ({ spawn: mockSpawn }));
+import * as realChildProcess from 'child_process';
+// A module mock is process-wide, so the real exports are carried over rather
+// than dropped: a suite loaded later that imports a different export would
+// otherwise resolve against a module that no longer provides it.
+mock.module('child_process', () => ({
+  ...realChildProcess,
+  spawn: mockSpawn,
+}));
 mock.module('node:child_process', () => ({ spawn: mockSpawn }));
 
 let promptStopReason = 'end_turn';

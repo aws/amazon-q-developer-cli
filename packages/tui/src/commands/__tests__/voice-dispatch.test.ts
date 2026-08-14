@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, afterAll } from 'bun:test';
+import { describe, it, expect, mock } from 'bun:test';
 import type {
   ModelDownloadInfo,
   PTTSession,
@@ -40,17 +40,20 @@ const startPTTRecordingMock = mock(
   }
 );
 
-mock.module('../voice-helper', () => ({
-  startPTTRecording: startPTTRecordingMock,
-}));
-
-afterAll(() => {
-  mock.restore();
-});
-
 import { dispatch } from '../dispatcher';
 import type { SlashCommand } from '../../stores/app-store';
 import { createMockCommandContext } from './test-helpers.js';
+
+/**
+ * Every case drives the same wiring, so the injected voice starter lives in one
+ * place. It is injected rather than module-mocked because a module mock of the
+ * voice helper persists for every suite sharing the test process.
+ */
+function dispatchVoice(ctx: ReturnType<typeof createMockCommandContext>) {
+  return dispatch(voiceCmd(), '', ctx, {
+    startVoiceRecording: startPTTRecordingMock,
+  });
+}
 
 function voiceCmd(): SlashCommand {
   return {
@@ -78,7 +81,7 @@ describe('/voice dispatch', () => {
     startPTTRecordingMock.mockClear();
     const ctx = createMockCommandContext();
 
-    const dispatched = dispatch(voiceCmd(), '', ctx);
+    const dispatched = dispatchVoice(ctx);
     const s = latest();
     // Subprocess reports the model is missing, then exits without a transcript.
     s.callbacks?.onNeedsDownload?.(DOWNLOAD_INFO);
@@ -102,7 +105,7 @@ describe('/voice dispatch', () => {
     startPTTRecordingMock.mockClear();
     const ctx = createMockCommandContext();
 
-    const dispatched = dispatch(voiceCmd(), '', ctx);
+    const dispatched = dispatchVoice(ctx);
     const first = latest();
     first.callbacks?.onNeedsDownload?.(DOWNLOAD_INFO);
     first.resolve(null);
@@ -128,7 +131,7 @@ describe('/voice dispatch', () => {
     startPTTRecordingMock.mockClear();
     const ctx = createMockCommandContext();
 
-    const dispatched = dispatch(voiceCmd(), '', ctx);
+    const dispatched = dispatchVoice(ctx);
     const first = latest();
     first.callbacks?.onNeedsDownload?.(DOWNLOAD_INFO);
     first.resolve(null);
@@ -150,7 +153,7 @@ describe('/voice dispatch', () => {
     startPTTRecordingMock.mockClear();
     const ctx = createMockCommandContext();
 
-    const dispatched = dispatch(voiceCmd(), '', ctx);
+    const dispatched = dispatchVoice(ctx);
     latest().reject(new Error('Model download failed: network down'));
     await dispatched;
 
@@ -169,7 +172,7 @@ describe('/voice dispatch', () => {
     startPTTRecordingMock.mockClear();
     const ctx = createMockCommandContext();
 
-    const dispatched = dispatch(voiceCmd(), '', ctx);
+    const dispatched = dispatchVoice(ctx);
     latest().resolve('refactor the parser');
     await dispatched;
 
@@ -184,7 +187,7 @@ describe('/voice dispatch', () => {
     startPTTRecordingMock.mockClear();
     const ctx = createMockCommandContext();
 
-    const dispatched = dispatch(voiceCmd(), '', ctx);
+    const dispatched = dispatchVoice(ctx);
     latest().resolve(null);
     await dispatched;
 

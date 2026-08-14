@@ -56,6 +56,16 @@ export interface VoiceHelperCallbacks {
   onNeedsDownload?: (info: ModelDownloadInfo) => void;
 }
 
+/**
+ * Overrides for process-level collaborators. The spawner is injectable because
+ * the alternative — replacing `child_process` with a module mock — swaps it for
+ * every suite sharing the test process, so any other suite that spawns for real
+ * would wait on a child that never reports.
+ */
+export interface VoiceHelperDeps {
+  spawn?: typeof spawn;
+}
+
 export interface PTTSession {
   /** Send the stop signal (does not wait for transcription). */
   stop: () => void;
@@ -206,7 +216,8 @@ export function startPTTRecording(
   remoteServerUrl?: string,
   callbacks?: VoiceHelperCallbacks,
   ptt = true,
-  confirmDownload = false
+  confirmDownload = false,
+  deps: VoiceHelperDeps = {}
 ): PTTSession {
   // When a remote server is configured, use it directly — skip local binary
   if (remoteServerUrl) {
@@ -219,7 +230,7 @@ export function startPTTRecording(
   if (confirmDownload) args.push('--confirm-download');
   logger.debug('[voice] spawning voice helper:', binary, args);
 
-  const child = spawn(binary, args, {
+  const child = (deps.spawn ?? spawn)(binary, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
