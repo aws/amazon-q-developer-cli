@@ -280,10 +280,15 @@ export function startPTTRecording(
   child.stdout?.on('data', (data: Buffer) => parseStdoutChunk(data.toString()));
 
   let settled = false;
+  let cancelled = false;
 
   child.on('error', (err) => {
     if (settled) return;
     settled = true;
+    if (cancelled) {
+      resolveText!(null);
+      return;
+    }
     logger.debug('[voice] PTT helper error:', err.message);
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       rejectText!(
@@ -296,7 +301,7 @@ export function startPTTRecording(
     rejectText!(new Error(`Voice helper failed: ${err.message}`));
   });
 
-  child.on('close', (code) => {
+  child.on('close', (code, signal) => {
     if (settled) return;
     settled = true;
     // Flush remaining buffer
@@ -313,12 +318,18 @@ export function startPTTRecording(
       }
     }
 
-    if (voiceError) {
-      rejectText!(new Error(voiceError.message || 'Voice failed'));
-    } else if (code === 0 && finalText) {
-      resolveText!(finalText);
-    } else {
+    if (cancelled) {
       resolveText!(null);
+    } else if (voiceError) {
+      rejectText!(new Error(voiceError.message || 'Voice failed'));
+    } else if (code === 0) {
+      resolveText!(finalText);
+    } else if (signal) {
+      rejectText!(new Error(`Voice helper terminated by ${signal}`));
+    } else {
+      rejectText!(
+        new Error(`Voice helper exited with code ${code ?? 'unknown'}`)
+      );
     }
   });
 
@@ -333,7 +344,7 @@ export function startPTTRecording(
   };
 
   const cancel = () => {
-    // Kill the subprocess — non-zero exit resolves the promise with null
+    cancelled = true;
     try {
       child.kill('SIGKILL');
     } catch {

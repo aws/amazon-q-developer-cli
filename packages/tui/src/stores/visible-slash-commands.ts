@@ -13,6 +13,7 @@
  */
 
 import type { AppState } from './app-store.js';
+import { isVoiceInputAvailable } from '../features.js';
 import type {
   AvailableCommand,
   PromptEntry,
@@ -121,6 +122,7 @@ export const selectVisibleSlashCommands = (
   const deduped: AvailableCommand[] = [];
   for (const cmd of ordered) {
     if (seen.has(cmd.name)) continue;
+    if (cmd.name === '/voice' && !isVoiceInputAvailable()) continue;
     // Cloud-only commands (e.g. `/repo`) are hidden from autocomplete unless the
     // current session is a cloud session — so existing local-only users
     // never see them (dark-ship). `cloudSessionActive` is false on released builds.

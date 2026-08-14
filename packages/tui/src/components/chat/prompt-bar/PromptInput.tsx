@@ -1740,9 +1740,18 @@ export const PromptInput = React.memo(function PromptInput({
                   });
                 }
               })
-              .catch(() => {
+              .catch((error: unknown) => {
                 setVoiceStop(null);
                 setVoiceLevel(null);
+                setVoicePartialText(null);
+                showTransientAlert({
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : 'Voice input failed',
+                  status: 'error',
+                  autoHideMs: 3000,
+                });
               });
           } else {
             // Hold was released before activation -- insert the space

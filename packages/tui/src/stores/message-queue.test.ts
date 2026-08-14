@@ -516,6 +516,51 @@ describe('Message queue (backend-driven)', () => {
       expect(mockSteerMessage).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['tui', false],
+      ['tui', true],
+      ['lite', false],
+      ['lite', true],
+    ] as const)(
+      'rejects unavailable /voice in %s mode when processing is %p',
+      async (uiMode, isProcessing) => {
+        const previousSupported = process.env.KIRO_VOICE_SUPPORTED;
+        const previousServerUrl = process.env.KIRO_VOICE_SERVER_URL;
+        process.env.KIRO_VOICE_SUPPORTED = '0';
+        delete process.env.KIRO_VOICE_SERVER_URL;
+        try {
+          const store = createTestStore();
+          const kiro = store.getState().kiro as any;
+          const streamMessage = mock(() => Promise.resolve());
+          kiro.streamMessage = streamMessage;
+          store.setState({
+            uiMode,
+            isProcessing,
+            sessionId: 'session-abc',
+            activeInterruptMode: 'steer',
+          });
+
+          await store.getState().handleUserInput('/voice');
+
+          expect(streamMessage).not.toHaveBeenCalled();
+          expect(kiro.steerMessage).not.toHaveBeenCalled();
+          expect(store.getState().queuedMessages).toEqual([]);
+          expect(store.getState().pendingSteerContent).toBeNull();
+          expect(store.getState().transientAlert?.status).toBe('error');
+          expect(store.getState().transientAlert?.message).toContain(
+            'voice.serverUrl'
+          );
+        } finally {
+          if (previousSupported === undefined)
+            delete process.env.KIRO_VOICE_SUPPORTED;
+          else process.env.KIRO_VOICE_SUPPORTED = previousSupported;
+          if (previousServerUrl === undefined)
+            delete process.env.KIRO_VOICE_SERVER_URL;
+          else process.env.KIRO_VOICE_SERVER_URL = previousServerUrl;
+        }
+      }
+    );
+
     it('rejects slash commands with a warning when processing', async () => {
       const store = createTestStore();
       const mockSteerMessage = mock(() => Promise.resolve());

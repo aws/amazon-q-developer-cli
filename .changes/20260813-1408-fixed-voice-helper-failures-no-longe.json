@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Voice helper failures no longer appear as \"No speech detected\""
+}

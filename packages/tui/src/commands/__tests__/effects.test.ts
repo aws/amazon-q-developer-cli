@@ -248,6 +248,48 @@ describe('runEffect routing', () => {
     expect(call[1].length).toBeGreaterThanOrEqual(2);
   });
 
+  it('/help hides backend voice when voice input is unavailable', () => {
+    const original = process.env.KIRO_VOICE_SUPPORTED;
+    const originalServerUrl = process.env.KIRO_VOICE_SERVER_URL;
+    process.env.KIRO_VOICE_SUPPORTED = '0';
+    delete process.env.KIRO_VOICE_SERVER_URL;
+
+    try {
+      const helpCmd: SlashCommand = {
+        name: '/help',
+        description: 'Show help',
+        source: 'backend',
+      };
+      const ctx = createMockCommandContext({ slashCommands: [helpCmd] });
+      const result = {
+        success: true,
+        message: 'Help',
+        data: {
+          commands: [
+            { name: '/help', description: 'Show help', usage: '/help' },
+            { name: '/voice', description: 'Record voice', usage: '/voice' },
+          ],
+        },
+      };
+
+      runEffect(helpCmd, result, ctx, '');
+
+      const commands = ctx._spies.setShowHelpPanel!.mock.calls[0]![1];
+      expect(
+        commands.some((command: { name: string }) => command.name === '/voice')
+      ).toBe(false);
+      expect(
+        commands.some((command: { name: string }) => command.name === '/help')
+      ).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env.KIRO_VOICE_SUPPORTED;
+      else process.env.KIRO_VOICE_SUPPORTED = original;
+      if (originalServerUrl === undefined)
+        delete process.env.KIRO_VOICE_SERVER_URL;
+      else process.env.KIRO_VOICE_SERVER_URL = originalServerUrl;
+    }
+  });
+
   it('/usage calls setShowUsagePanel', () => {
     const cmd: SlashCommand = {
       name: '/usage',

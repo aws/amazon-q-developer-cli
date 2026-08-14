@@ -13,7 +13,8 @@ class FeatureManager {
   }
 
   isEnabled(feature: Feature): boolean {
-    return this.enabledSet.has(feature);
+    if (!this.enabledSet.has(feature)) return false;
+    return feature !== Feature.Voice || isVoiceInputAvailable();
   }
 
   get isInternalUser(): boolean {
@@ -36,6 +37,11 @@ function parseEnabledFeatures(raw: string | undefined): ReadonlySet<string> {
     // Malformed: all features off.
   }
   return new Set();
+}
+
+export function isVoiceInputAvailable(): boolean {
+  if (process.env.KIRO_VOICE_SERVER_URL?.trim()) return true;
+  return process.env.KIRO_VOICE_SUPPORTED !== '0';
 }
 
 export const features = new FeatureManager();

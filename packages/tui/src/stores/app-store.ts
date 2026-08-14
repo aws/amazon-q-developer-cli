@@ -16,7 +16,7 @@ import {
   type RosterEntry,
 } from '../utils/session-roster';
 import type { SessionRepositoryEntry } from '../utils/session-repositories';
-import { Feature, features } from '../features';
+import { Feature, features, isVoiceInputAvailable } from '../features';
 import type { ConfigCategoryId } from '../components/ui/config-panel-model.js';
 import { deriveToolDenial, type ToolDenial } from '../utils/tool-denial';
 import type { SourceProviderResource } from '@kiro/acp-type-covenant';
@@ -6697,7 +6697,10 @@ export const createAppStore = (props: AppStoreProps) => {
         const localCommands = state.slashCommands.filter(
           (cmd) => cmd.source === 'local'
         );
-        return { slashCommands: [...localCommands, ...commands] };
+        const availableCommands = commands.filter(
+          (cmd) => cmd.name !== '/voice' || isVoiceInputAvailable()
+        );
+        return { slashCommands: [...localCommands, ...availableCommands] };
       });
     },
 
@@ -9039,6 +9042,19 @@ export const createAppStore = (props: AppStoreProps) => {
 
       const state = get();
       state.resetExitSequence();
+
+      const commandToken = trimmed.split(/\s+/, 1)[0]?.toLowerCase();
+      if (commandToken === '/voice' && !isVoiceInputAvailable()) {
+        state.clearInput();
+        state.clearCommandInput();
+        state.showTransientAlert({
+          message:
+            "Voice input isn't available in this build. Configure voice.serverUrl to use a remote voice server.",
+          status: 'error',
+          autoHideMs: 5000,
+        });
+        return;
+      }
 
       // Queue if processing, loading a session, or not yet initialized — but
       // always allow /quit and /exit through. loadingMessage covers the

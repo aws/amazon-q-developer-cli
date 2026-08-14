@@ -2254,6 +2254,47 @@ describe('setSlashCommands', () => {
     // Local commands preserved
     expect(cmds.some((c: any) => c.name === '/editor')).toBe(true);
   });
+
+  it('gates backend voice commands on local or remote availability', () => {
+    const original = process.env.KIRO_VOICE_SUPPORTED;
+    const originalServerUrl = process.env.KIRO_VOICE_SERVER_URL;
+    process.env.KIRO_VOICE_SUPPORTED = '0';
+    delete process.env.KIRO_VOICE_SERVER_URL;
+
+    try {
+      const store = makeStore();
+      const voiceCommand = {
+        name: '/voice',
+        description: 'Voice',
+        source: 'backend' as any,
+      };
+      store
+        .getState()
+        .setSlashCommands([
+          voiceCommand,
+          { name: '/test', description: 'Test', source: 'backend' as any },
+        ]);
+
+      expect(
+        store.getState().slashCommands.some((c: any) => c.name === '/voice')
+      ).toBe(false);
+      expect(
+        store.getState().slashCommands.some((c: any) => c.name === '/test')
+      ).toBe(true);
+
+      process.env.KIRO_VOICE_SERVER_URL = 'http://127.0.0.1:19876';
+      store.getState().setSlashCommands([voiceCommand]);
+      expect(
+        store.getState().slashCommands.some((c: any) => c.name === '/voice')
+      ).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env.KIRO_VOICE_SUPPORTED;
+      else process.env.KIRO_VOICE_SUPPORTED = original;
+      if (originalServerUrl === undefined)
+        delete process.env.KIRO_VOICE_SERVER_URL;
+      else process.env.KIRO_VOICE_SERVER_URL = originalServerUrl;
+    }
+  });
 });
 
 describe('resetMessages', () => {

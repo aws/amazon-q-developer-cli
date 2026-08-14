@@ -30,6 +30,7 @@ import { extractRpcErrorMessage } from '../utils/error-handling.js';
 import { runSessionLoad } from './session-load.js';
 import { Kiro } from '../kiro.js';
 import { getActiveGlyphs } from '../hooks/useGlyphs.js';
+import { isVoiceInputAvailable } from '../features.js';
 import {
   describeSpecDocuments,
   findSpecFeature,
@@ -268,8 +269,11 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
           description: c.description,
           usage: c.name,
         }));
-      const allCommands = [...data.commands, ...localHelpEntries].sort((a, b) =>
-        a.name.localeCompare(b.name)
+      const backendHelpEntries = data.commands.filter(
+        (command) => command.name !== '/voice' || isVoiceInputAvailable()
+      );
+      const allCommands = [...backendHelpEntries, ...localHelpEntries].sort(
+        (a, b) => a.name.localeCompare(b.name)
       );
       ctx.setShowHelpPanel(true, allCommands);
     }

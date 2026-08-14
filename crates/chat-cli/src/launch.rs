@@ -62,6 +62,7 @@ use crate::util::consts::env_var::{
     KIRO_TUI_READY_FILE,
     KIRO_TUI_READY_TOKEN,
     KIRO_VERSION_OVERRIDE,
+    KIRO_VOICE_SUPPORTED,
 };
 use crate::util::launch_spinner::start_launch_spinner;
 
@@ -532,6 +533,10 @@ fn tui_child_env(
         // transcription. Engine-agnostic: V2 and KAS both route their slash
         // commands through the same Rust binary.
         (KIRO_CHAT_CLI_BIN, current_exe.as_os_str().to_owned()),
+        (
+            KIRO_VOICE_SUPPORTED,
+            OsString::from(if cfg!(feature = "voice") { "1" } else { "0" }),
+        ),
         // Forward the resolved version so the TUI bundle reports the real
         // release version (consumed by `getCliVersion()` in
         // `packages/tui/src/utils/version.ts`) instead of its baked-in
@@ -667,7 +672,6 @@ async fn launch_acp_interactive(
 
     // Propagate voice.serverUrl setting so the TUI uses a remote voice server
     // (cloud desktop scenario) instead of spawning the local voice binary.
-    #[cfg(feature = "voice")]
     if let Some(url) = os
         .database
         .settings
@@ -1681,6 +1685,26 @@ mod tests {
             version.as_deref(),
             Some(OsString::from("7.7.7-test").as_os_str()),
             "TUI child env must forward the caller-resolved override value verbatim"
+        );
+    }
+
+    #[test]
+    fn test_tui_child_env_forwards_voice_support() {
+        let exe = Path::new("/tmp/kiro-cli");
+        let env = tui_child_env(
+            exe,
+            OsString::from("7.7.7-test"),
+            uuid::uuid!("ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e"),
+            None,
+        );
+        let supported = env
+            .iter()
+            .find(|(key, _)| *key == KIRO_VOICE_SUPPORTED)
+            .map(|(_, value)| value.clone());
+
+        assert_eq!(
+            supported,
+            Some(OsString::from(if cfg!(feature = "voice") { "1" } else { "0" }))
         );
     }
 

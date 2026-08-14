@@ -275,6 +275,36 @@ describe('kas-commands', () => {
         expect(getKasCommands().some((c) => c.name === '/voice')).toBe(true);
       });
     });
+
+    it('requires local or remote voice support after rollout enablement', async () => {
+      const { features } = await import('../features');
+      const { getKasCommands } = await import('../kas-commands');
+      const originalSupported = process.env.KIRO_VOICE_SUPPORTED;
+      const originalServerUrl = process.env.KIRO_VOICE_SERVER_URL;
+
+      try {
+        process.env.KIRO_VOICE_SUPPORTED = '0';
+        delete process.env.KIRO_VOICE_SERVER_URL;
+        await withEnabledFeatures([Feature.Voice], () => {
+          expect(getKasCommands().some((c) => c.name === '/voice')).toBe(false);
+
+          process.env.KIRO_VOICE_SERVER_URL = 'http://127.0.0.1:19876';
+          expect(getKasCommands().some((c) => c.name === '/voice')).toBe(true);
+        });
+      } finally {
+        if (originalSupported === undefined) {
+          delete process.env.KIRO_VOICE_SUPPORTED;
+        } else {
+          process.env.KIRO_VOICE_SUPPORTED = originalSupported;
+        }
+        if (originalServerUrl === undefined) {
+          delete process.env.KIRO_VOICE_SERVER_URL;
+        } else {
+          process.env.KIRO_VOICE_SERVER_URL = originalServerUrl;
+        }
+        features._resetForTests();
+      }
+    });
   });
 
   describe('Conditional /spec command visibility', () => {

@@ -204,6 +204,55 @@ describe('selectVisibleSlashCommands', () => {
   });
 });
 
+describe('/voice runtime availability gate', () => {
+  const withVoiceEnvironment = (
+    supported: string,
+    serverUrl: string | undefined,
+    assertion: () => void
+  ) => {
+    const previousSupported = process.env.KIRO_VOICE_SUPPORTED;
+    const previousServerUrl = process.env.KIRO_VOICE_SERVER_URL;
+    process.env.KIRO_VOICE_SUPPORTED = supported;
+    if (serverUrl === undefined) delete process.env.KIRO_VOICE_SERVER_URL;
+    else process.env.KIRO_VOICE_SERVER_URL = serverUrl;
+    try {
+      assertion();
+    } finally {
+      if (previousSupported === undefined)
+        delete process.env.KIRO_VOICE_SUPPORTED;
+      else process.env.KIRO_VOICE_SUPPORTED = previousSupported;
+      if (previousServerUrl === undefined)
+        delete process.env.KIRO_VOICE_SERVER_URL;
+      else process.env.KIRO_VOICE_SERVER_URL = previousServerUrl;
+      features._resetForTests();
+    }
+  };
+
+  const visibleVoiceCommand = () => {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
+    store
+      .getState()
+      .setSlashCommands([
+        { name: '/voice', description: 'Record voice input', source: 'local' },
+      ]);
+    return selectVisibleSlashCommands(store.getState()).find(
+      (command) => command.name === '/voice'
+    );
+  };
+
+  it('hides /voice without local or remote support', () => {
+    withVoiceEnvironment('0', undefined, () => {
+      expect(visibleVoiceCommand()).toBeUndefined();
+    });
+  });
+
+  it('shows /voice with a remote server in a build without local support', () => {
+    withVoiceEnvironment('0', 'http://127.0.0.1:19876', () => {
+      expect(visibleVoiceCommand()).toBeDefined();
+    });
+  });
+});
+
 describe('/repo cloud-only visibility gate (dark-ship)', () => {
   it('hides /repo in a non-cloud KAS session', () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });

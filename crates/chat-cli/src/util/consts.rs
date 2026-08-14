@@ -196,6 +196,10 @@ pub mod env_var {
         ///     session listing, etc. - see `packages/tui/src/utils/chat-cli-bin.ts`)
         KIRO_CHAT_CLI_BIN = "KIRO_CHAT_CLI_BIN",
 
+        /// Whether this binary was compiled with local voice support. The TUI
+        /// combines this with KIRO_VOICE_SERVER_URL before exposing voice input.
+        KIRO_VOICE_SUPPORTED = "KIRO_VOICE_SUPPORTED",
+
         /// Overrides the version reported by the TUI bundle. Set by the
         /// kiro-cli launcher when spawning the TUI so the JS side
         /// (`getCliVersion()` in `packages/tui/src/utils/version.ts`) reports
