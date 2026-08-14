@@ -32,6 +32,14 @@ export const kiroSafe: Theme = {
         background: { named: 'magenta' },
         text: { named: 'white' },
       },
+      dashboard: {
+        selectedText: { named: 'black' },
+        bandBackground: { named: 'blackBright' },
+        bandText: { named: 'white' },
+        bandMutedText: { named: 'white' },
+        tagBackground: { named: 'blackBright' },
+        tagText: { named: 'white' },
+      },
     },
     syntax: {
       keyword: { named: 'magenta' },

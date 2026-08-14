@@ -64,6 +64,18 @@ export interface Theme {
         background: TerminalColor;
         text: TerminalColor;
       };
+      dashboard: {
+        /** Text rendered ON a brand-colored selection strip. */
+        selectedText: TerminalColor;
+        /** Group-header band strip background. */
+        bandBackground: TerminalColor;
+        /** Primary text rendered on a group-header band. */
+        bandText: TerminalColor;
+        /** Secondary text rendered on a group-header band. */
+        bandMutedText: TerminalColor;
+        tagBackground: TerminalColor;
+        tagText: TerminalColor;
+      };
     };
     syntax: {
       keyword: TerminalColor;

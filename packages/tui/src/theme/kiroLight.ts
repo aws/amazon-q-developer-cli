@@ -24,6 +24,14 @@ export const kiroLight: Theme = {
         background: { truecolor: '#552B99', color256: 55 }, // Always dark purple (same as dark mode)
         text: { truecolor: '#ffffff', color256: 15 }, // Always bright purple (same as dark mode)
       },
+      dashboard: {
+        selectedText: { truecolor: '#ffffff', color256: 15 },
+        bandBackground: { truecolor: '#e4e4e4', color256: 254 },
+        bandText: { truecolor: '#222222', color256: 235 },
+        bandMutedText: { truecolor: '#626262', color256: 241 },
+        tagBackground: { truecolor: '#dddddd', color256: 253 },
+        tagText: { truecolor: '#444444', color256: 238 },
+      },
     },
     syntax: {
       keyword: { truecolor: '#9370d1', color256: 134 }, // keyword.control - darker purple (from #C2A0FD)

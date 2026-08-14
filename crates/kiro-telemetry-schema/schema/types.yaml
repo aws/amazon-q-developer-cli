@@ -85,6 +85,15 @@ attributes:
   - name: ui_mode
     description: First-party interactive layout selected at session start.
     allowed_values: [tui, lite, unknown]
+  - name: outcome
+    description: Terminal outcome of a session dashboard visit.
+    allowed_values: [resumed, resumed_cross_workspace, closed, _other_]
+  - name: via
+    description: Discovery path used to select a session from the dashboard.
+    allowed_values: [search, browse, _none_, _other_]
+  - name: entry
+    description: Entry point that opened the session dashboard.
+    allowed_values: [slash, ctrl_e, boot, _other_]
   - name: release_channel
     description: Release channel derived from the full CLI version.
     allowed_values: [stable, nightly, beta, unknown]

@@ -43,7 +43,8 @@ export type CommandEffectName =
   | 'switchToPlanMode'
   | 'verbosityConfig'
   | 'rewindAction'
-  | 'updateTitle';
+  | 'updateTitle'
+  | 'openSessionDashboard';
 
 interface LocalCommandDefinition {
   description: string;
@@ -167,6 +168,7 @@ export const COMMAND_REGISTRY = {
   guide: { effect: 'switchToGuideAgent' },
   goal: { effect: 'showGoalPanel', panelState: 'showGoalPanel' },
   rewind: { effect: 'rewindAction', panelState: 'showRewindExplorer' },
+  sessions: { effect: 'openSessionDashboard' },
   repo: { panelState: 'showRepoPicker', kasOnly: true },
   tangent: { panelState: 'showTangentExplorer', kasOnly: true },
   memories: { panelState: 'showMemoriesPanel', kasOnly: true },

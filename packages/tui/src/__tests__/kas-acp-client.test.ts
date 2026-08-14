@@ -222,6 +222,17 @@ const MockKiroClient = class {
   }
 };
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '@kiro/client',
+  '@agentclientprotocol/sdk',
+  '../utils/logger',
+  '../utils/tui-telemetry-observer',
+]);
+
 mock.module('@kiro/client', () => ({
   KiroClient: MockKiroClient,
 }));
@@ -869,6 +880,47 @@ describe('KasAcpClient', () => {
   });
 
   // Same boundary, the event side: a client that keeps handling workflow
+
+  it('resolves a committed load when workflow restoration fails', async () => {
+    setWorkflowsEnabled(true);
+    const client = new KasAcpClient();
+    await client.initialize();
+    const workflow = client.workflowConversation;
+    workflow.restoreParentRuns = mock(async () => {
+      throw new Error('restore failed');
+    });
+
+    await expect(client.loadSession('loaded-session')).resolves.toEqual(
+      expect.objectContaining({ sessionId: 'loaded-session' })
+    );
+  });
+
+  it('an abandoned load rejects late and never takes session ownership', async () => {
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    const before = client.sessionId;
+
+    // Gate the RPC so the deadline can fire while it is in flight.
+    let releaseRpc!: (value: unknown) => void;
+    mockKiroLoadSession.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseRpc = resolve;
+        })
+    );
+    const pending = client.loadSession('late-session');
+    client.abandonPendingLoad();
+    releaseRpc({ sessionId: 'late-session' });
+
+    await expect(pending).rejects.toThrow('abandoned');
+    expect(client.sessionId).toBe(before);
+
+    // The client is still live and a fresh load succeeds normally.
+    await expect(client.loadSession('next-session')).resolves.toEqual(
+      expect.objectContaining({ sessionId: 'next-session' })
+    );
+  });
 
   it('applies a pre-session delivery toggle to new and loaded sessions', async () => {
     setWorkflowsEnabled(true);
@@ -1965,6 +2017,35 @@ describe('KasAcpClient', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(events.length).toBe(eventsAfterPush);
+  });
+
+  it('deletes a cloud session from the remote store', async () => {
+    mockKiroSendExtMethod.mockResolvedValueOnce({ success: true });
+    const client = new KasAcpClient();
+
+    await expect(
+      client.deleteSessionById('cloud-1', { source: 'remote' })
+    ).resolves.toBe(true);
+    expect(mockKiroSendExtMethod).toHaveBeenLastCalledWith(
+      '_kiro/session/delete',
+      {
+        sessionId: 'cloud-1',
+        sessionSource: 'remote',
+      }
+    );
+  });
+
+  it('omits the store hint when deleting a local session without a source', async () => {
+    mockKiroSendExtMethod.mockResolvedValueOnce({ success: true });
+    const client = new KasAcpClient();
+
+    await expect(client.deleteSessionById('local-1')).resolves.toBe(true);
+    expect(mockKiroSendExtMethod).toHaveBeenLastCalledWith(
+      '_kiro/session/delete',
+      {
+        sessionId: 'local-1',
+      }
+    );
   });
 
   it('newSession() captures _meta.kiro.repositories from the create response', async () => {
@@ -3870,6 +3951,196 @@ describe('KasAcpClient', () => {
     const local = result.sessions.find((s) => s.sessionId === 'loc1')!;
     expect(local.executionTarget).toBeUndefined();
     expect(local.source).toBeUndefined();
+  });
+
+  it('lists all workspaces without cwd while preserving remote scope metadata', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            sessionSources: ['local', 'remote'],
+            sessionListScopes: ['workspace', 'user'],
+          },
+        },
+      },
+    });
+    mockKiroListSessions.mockResolvedValueOnce({
+      sessions: [
+        {
+          sessionId: 'cloud-anywhere',
+          cwd: '/sandbox',
+          _meta: { kiro: { source: 'remote' } },
+        },
+      ],
+    });
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    const result = await client.listAllWorkspaceSessions();
+
+    const req = mockKiroListSessions.mock.calls.at(-1)?.[0] as any;
+    expect(req?.cwd).toBeUndefined();
+    expect(req?._meta?.kiro).toEqual({
+      sessionSource: 'all',
+      listScope: 'both',
+    });
+    expect(result.sessions[0]).toMatchObject({
+      sessionId: 'cloud-anywhere',
+      source: 'remote',
+    });
+  });
+
+  it('queries the remote user slice when the combined listing returns only local rows', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            sessionSources: ['local', 'remote'],
+            sessionListScopes: ['workspace', 'user'],
+          },
+        },
+      },
+    });
+    mockKiroListSessions
+      .mockResolvedValueOnce({
+        sessions: [{ sessionId: 'local-only', cwd: '/workspace' }],
+      })
+      .mockResolvedValueOnce({
+        sessions: [
+          {
+            sessionId: 'cloud-recovered',
+            cwd: '',
+            _meta: {
+              kiro: {
+                source: 'remote',
+                executionTarget: { kind: 'cloud-sandbox' },
+              },
+            },
+          },
+        ],
+      });
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    const result = await client.listAllWorkspaceSessions();
+
+    expect(mockKiroListSessions).toHaveBeenCalledTimes(2);
+    expect(mockKiroListSessions.mock.calls[0]?.[0]).toMatchObject({
+      _meta: {
+        kiro: { sessionSource: 'all', listScope: 'both' },
+      },
+    });
+    expect(mockKiroListSessions.mock.calls[1]?.[0]).toEqual({
+      _meta: {
+        kiro: { sessionSource: 'remote', listScope: 'user' },
+      },
+    });
+    expect(result.sessions.map((s) => s.sessionId)).toEqual([
+      'local-only',
+      'cloud-recovered',
+    ]);
+  });
+
+  it('marks the catalog incomplete when the remote user slice fails', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            sessionSources: ['local', 'remote'],
+            sessionListScopes: ['workspace', 'user'],
+          },
+        },
+      },
+    });
+    mockKiroListSessions
+      .mockResolvedValueOnce({
+        sessions: [{ sessionId: 'local-only', cwd: '/workspace' }],
+      })
+      .mockRejectedValueOnce(new Error('remote unavailable'));
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    const result = await client.listAllWorkspaceSessions();
+
+    expect(result.sessions.map((session) => session.sessionId)).toEqual([
+      'local-only',
+    ]);
+    expect(result.complete).toBe(false);
+  });
+
+  it('marks a cwd-scoped fallback incomplete after all-workspace failure', async () => {
+    mockKiroListSessions
+      .mockRejectedValueOnce(new Error('all-workspace unavailable'))
+      .mockResolvedValueOnce({
+        sessions: [{ sessionId: 'scoped-only', cwd: process.cwd() }],
+      });
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    const result = await client.listAllWorkspaceSessions();
+
+    expect(result.sessions.map((session) => session.sessionId)).toEqual([
+      'scoped-only',
+    ]);
+    expect(result.complete).toBe(false);
+  });
+
+  it('does not request an unadvertised remote user slice for local-only capabilities', async () => {
+    mockKiroInitialize.mockResolvedValueOnce({
+      protocolVersion: '1.0',
+      agentCapabilities: {
+        _meta: {
+          kiro: {
+            sessionSources: ['local'],
+            sessionListScopes: ['workspace'],
+          },
+        },
+      },
+    });
+    mockKiroListSessions.mockResolvedValueOnce({
+      sessions: [{ sessionId: 'local-only', cwd: '/workspace' }],
+    });
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    const result = await client.listAllWorkspaceSessions();
+
+    expect(mockKiroListSessions).toHaveBeenCalledTimes(1);
+    expect(mockKiroListSessions.mock.calls[0]?.[0]).toEqual({});
+    expect(result.sessions.map((s) => s.sessionId)).toEqual(['local-only']);
+  });
+
+  it('does not probe remote listing when older KAS omits list capability arrays', async () => {
+    mockKiroListSessions.mockResolvedValueOnce({
+      sessions: [{ sessionId: 'older-local', cwd: '/workspace' }],
+    });
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    const result = await client.listAllWorkspaceSessions();
+
+    expect(mockKiroListSessions).toHaveBeenCalledTimes(1);
+    expect(mockKiroListSessions.mock.calls[0]?.[0]).toEqual({});
+    expect(result.sessions.map((s) => s.sessionId)).toEqual(['older-local']);
+  });
+
+  it('falls back to cwd-scoped listing when all-workspace listing fails', async () => {
+    mockKiroListSessions
+      .mockRejectedValueOnce(new Error('cwd required'))
+      .mockResolvedValueOnce({
+        sessions: [{ sessionId: 'local-fallback', cwd: process.cwd() }],
+      });
+    const client = new KasAcpClient();
+
+    const result = await client.listAllWorkspaceSessions();
+
+    expect(mockKiroListSessions).toHaveBeenCalledTimes(2);
+    expect(mockKiroListSessions.mock.calls[0]?.[0]?.cwd).toBeUndefined();
+    expect(mockKiroListSessions.mock.calls[1]?.[0]?.cwd).toBe(process.cwd());
+    expect(result.sessions[0]?.sessionId).toBe('local-fallback');
   });
 
   it('omits _meta.kiro on session/list when KAS advertises no remote caps (existing-user path)', async () => {

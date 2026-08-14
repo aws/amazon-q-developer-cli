@@ -10,6 +10,12 @@ import {
 
 const mockExecSync = mock((): string => '');
 import * as realChildProcess from 'child_process';
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+// mock.module is process-global and survives this file — restore the real
+// modules afterAll so the mocks cannot leak into other files.
+restoreRealModulesAfterAll(import.meta.dir, ['child_process']);
+
 // A module mock is process-wide, so the real exports are carried over rather
 // than dropped: a suite loaded later that imports a different export would
 // otherwise resolve against a module that no longer provides it.

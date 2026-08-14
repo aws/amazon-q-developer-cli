@@ -6,6 +6,7 @@ import { SessionViewScreen } from './SessionViewScreen';
 import { WorkflowMonitorScreen } from './workflow-monitor/index.js';
 import { MonitorApprovalBanner } from './MonitorApprovalBanner.js';
 import { SpecReviewScreen } from './SpecReviewScreen.js';
+import { SessionDashboardScreen } from './SessionDashboardScreen';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
 import { useAppStore } from '../../stores/app-store';
 import { useKeypress } from '../../hooks/useKeypress';
@@ -312,6 +313,7 @@ export const AppContainer: React.FC = () => {
       {mode === 'crew-monitor' && <CrewMonitorScreen />}
       {mode === 'workflow-monitor' && <WorkflowMonitorScreen />}
       {mode === 'session-view' && <SessionViewScreen />}
+      {mode === 'session-dashboard' && <SessionDashboardScreen />}
     </AnimationPausedContext.Provider>
   );
 };

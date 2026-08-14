@@ -69,6 +69,9 @@ const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
 const HEARTBEAT_DATE_KEY_PREFIX: &str = "telemetry.lastHeartbeatDate";
 
+type StoredConversation = (String, String, ConversationState, i64);
+type ConversationListing = (Vec<StoredConversation>, bool);
+
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
     "001_history_table",
@@ -635,6 +638,42 @@ impl Database {
         }
 
         Ok(result)
+    }
+
+    /// List conversations across every path, most recent first. Returns the
+    /// stored path alongside each conversation. The completeness flag is false
+    /// when any row could not be deserialized.
+    pub fn list_all_conversations(&self) -> Result<ConversationListing, DatabaseError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT key, conversation_id, value, updated_at
+             FROM conversations_v2
+             ORDER BY updated_at DESC",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+
+        let mut result = Vec::new();
+        let mut complete = true;
+        for row in rows {
+            let (path, id, value, updated) = row?;
+            match serde_json::from_str(&value) {
+                Ok(state) => result.push((path, id, state, updated)),
+                Err(e) => {
+                    complete = false;
+                    tracing::warn!(conversation_id = %id, error = %e, "Skipping conversation with invalid state");
+                },
+            }
+        }
+
+        Ok((result, complete))
     }
 
     /// Get a specific conversation by its ID.

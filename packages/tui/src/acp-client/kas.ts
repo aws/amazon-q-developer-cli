@@ -38,6 +38,7 @@ import type {
   ExecutionTarget,
   KiroAgentCapabilities,
   SessionsChangedNotification,
+  SessionDiscoverySource,
   KasContextShowResponse,
   KasContextMutationResponse,
   CreatedReason,
@@ -537,12 +538,7 @@ export class KasAcpClient extends BaseAcpClient {
    */
   private readonly repos?: string[];
 
-  /**
-   * Kiro-namespaced capabilities advertised by KAS on the `initialize`
-   * handshake (`agentCapabilities._meta.kiro`). Empty until `initialize()`
-   * populates it; an older KAS leaves it empty and the client degrades
-   * gracefully (never requests an unadvertised placement/source/scope/method).
-   */
+  /** KAS capabilities captured at initialize; absent fields remain unsupported. */
   private kiroCapabilities: KiroAgentCapabilities = {};
 
   /**
@@ -846,8 +842,27 @@ export class KasAcpClient extends BaseAcpClient {
 
   private assertActive(operation: string): void {
     if (this.retired) {
-      throw new Error(`KAS client closed during ${operation}`);
+      // The reason matters: a client retired to contain an abandoned load
+      // leaves a UI that still looks normal, so every later call must say
+      // what happened and what the user has to do about it.
+      throw new Error(
+        this.retiredReason
+          ? `${this.retiredReason} (failed during ${operation})`
+          : `KAS client closed during ${operation}`
+      );
     }
+  }
+
+  /** Set when the client retires itself, so later calls can explain why. */
+  private retiredReason: string | null = null;
+
+  /** Bumped when a pending session/load is abandoned (deadline fired and the
+   *  caller rolled back). The in-flight load compares its own generation at
+   *  every post-await juncture so it can never commit ownership afterwards. */
+  private loadGeneration = 0;
+
+  abandonPendingLoad(): void {
+    this.loadGeneration++;
   }
 
   /**
@@ -1870,6 +1885,7 @@ export class KasAcpClient extends BaseAcpClient {
     options?: { source?: 'local' | 'remote' }
   ): Promise<SessionResult> {
     this.assertActive('session load');
+    const loadGeneration = ++this.loadGeneration;
     const previousSessionId = this.sessionId;
     // While the switch RPC is in flight, pushes tagged with the OUTGOING id are
     // the departing session's own traffic, not the incoming session's.
@@ -1958,6 +1974,16 @@ export class KasAcpClient extends BaseAcpClient {
 
     replayUpdateSubscription.dispose();
     replayPermissionSubscription.dispose();
+    // Abandoned while the RPC was in flight: the deadline fired and the
+    // caller already rolled back locks and UI. Nothing has been committed
+    // yet — restore the departing session's listeners and refuse ownership.
+    if (loadGeneration !== this.loadGeneration) {
+      this.loadTargetSessionId = null;
+      if (previousSessionId === sessionId) {
+        this.wireSessionListeners(sessionId);
+      }
+      throw new Error('Session load abandoned after its deadline');
+    }
     this.loadTargetSessionId = null;
     this.sessionId = sessionId;
     // The load succeeded, so the candidate policy is now the active one. This
@@ -1979,12 +2005,30 @@ export class KasAcpClient extends BaseAcpClient {
         });
       }
     }
-    const workflowRestore = await this.workflowExtension?.restoreParentRuns([
-      process.cwd(),
-    ]);
+    try {
+      const workflowRestore = await this.workflowExtension?.restoreParentRuns([
+        process.cwd(),
+      ]);
+      if (workflowRestore) {
+        recordTuiWorkflowRestoreSummary(workflowRestore, this.version);
+      }
+    } catch (error) {
+      logger.warn(
+        '[acp-client] session loaded but workflow restoration failed:',
+        error
+      );
+    }
     this.assertActive('session load');
-    if (workflowRestore) {
-      recordTuiWorkflowRestoreSummary(workflowRestore, this.version);
+    // Abandoned after ownership was committed (the deadline fired during
+    // replay or workflow restore): the caller rolled back its locks, so this
+    // client now owns a session nothing else knows about. State cannot be
+    // un-committed — retire the client so the next initialize replaces it
+    // rather than letting a second writer share the store.
+    if (loadGeneration !== this.loadGeneration) {
+      this.retiredReason =
+        'The session agent was replaced after a session load passed its deadline — reopen a session to continue';
+      this.close();
+      throw new Error(this.retiredReason);
     }
     logger.debug(
       '[acp-client] KAS loadSession completed for session:',
@@ -3167,70 +3211,156 @@ export class KasAcpClient extends BaseAcpClient {
     });
   }
 
-  async listSessions(cwd: string): Promise<ListSessionsResponse> {
+  private async requestSessionList(
+    cwd?: string,
+    requestKind: 'combined' | 'remote' = 'combined'
+  ): Promise<ListSessionsResponse> {
     try {
-      // Request the remote dimensions under `_meta.kiro`, each gated on its OWN
-      // advertised capability. When neither is advertised, `_meta.kiro` is omitted
-      // and the wire is byte-identical to a plain listing.
       const caps = this.kiroCapabilities;
       const kiroMeta: Record<string, unknown> = {};
-      // Which store: span BOTH local + remote when a remote store is advertised;
-      // else local-only (the default). Requesting 'remote'/'all' unadvertised is a
-      // typed error server-side, so gate on the cap.
-      if (caps.sessionSources?.includes('remote'))
-        kiroMeta.sessionSource = 'all';
-      // Breadth: the user slice comes from the (user-scoped) remote store; request
-      // 'both' only when 'user' scope is advertised, else 'workspace' (the default).
-      if (caps.sessionListScopes?.includes('user')) kiroMeta.listScope = 'both';
+      if (requestKind === 'remote') {
+        kiroMeta.sessionSource = 'remote';
+        kiroMeta.listScope = 'user';
+      } else {
+        if (caps.sessionSources?.includes('remote'))
+          kiroMeta.sessionSource = 'all';
+        if (caps.sessionListScopes?.includes('user'))
+          kiroMeta.listScope = 'both';
+      }
 
-      const params: acp.ListSessionsRequest = { cwd };
+      const params: acp.ListSessionsRequest = cwd === undefined ? {} : { cwd };
       if (Object.keys(kiroMeta).length > 0) {
         params._meta = { kiro: kiroMeta };
       }
       const r = await this.kiroClient.listSessions(params);
-      logger.debug('[kas] listSessions raw:', JSON.stringify(r));
 
-      // Graceful degradation (e.g. the remote store is down on a both+all query):
-      // KAS returns the local rows plus a `_meta.kiro.warnings` entry. Surface it;
-      // don't fail the listing (local is authoritative).
       const warnings = (r as { _meta?: { kiro?: { warnings?: unknown } } })
         ._meta?.kiro?.warnings;
       if (Array.isArray(warnings) && warnings.length > 0) {
         logger.warn('[kas] session/list warnings:', JSON.stringify(warnings));
       }
 
-      return {
-        sessions: r.sessions.map((s) => {
-          // Per-row remote dimensions ride `_meta.kiro`, typed by the covenant
-          // list-item meta. Absent == local; `executionTarget` is the WHERE the
-          // picker surfaces, `source` is the store to route a later load/delete
-          // to, `status` a cold snapshot.
-          const k: Partial<KiroSessionListItemMeta> =
-            (s._meta as { kiro?: KiroSessionListItemMeta } | undefined)?.kiro ??
-            {};
-          return {
-            sessionId: s.sessionId,
-            cwd: s.cwd,
-            title: s.title ?? undefined,
-            updatedAt:
-              s.updatedAt ??
-              (s._meta as { createdAt?: string } | undefined)?.createdAt ??
-              k.createdAt,
-            parentSessionId: k.parentSessionId,
-            executionTarget: k.executionTarget,
-            source: k.source,
-            status: k.status,
-          };
-        }),
-      };
+      const sessions = r.sessions.map((s) => {
+        const k: Partial<KiroSessionListItemMeta> =
+          (s._meta as { kiro?: KiroSessionListItemMeta } | undefined)?.kiro ??
+          {};
+        return {
+          sessionId: s.sessionId,
+          cwd: s.cwd,
+          engine: 'v3' as const,
+          title: s.title ?? undefined,
+          updatedAt:
+            s.updatedAt ??
+            (s._meta as { createdAt?: string } | undefined)?.createdAt ??
+            k.createdAt,
+          parentSessionId: k.parentSessionId,
+          executionTarget: k.executionTarget,
+          source: k.source,
+          status: k.status,
+        };
+      });
+      const remoteCount = sessions.filter(
+        (s) =>
+          s.source === 'remote' || s.executionTarget?.kind === 'cloud-sandbox'
+      ).length;
+      logger.debug('[kas] session/list', {
+        cwd,
+        requestKind,
+        sessionSources: caps.sessionSources ?? [],
+        sessionListScopes: caps.sessionListScopes ?? [],
+        requestMeta: Object.keys(kiroMeta).length > 0 ? kiroMeta : null,
+        totalCount: sessions.length,
+        remoteCount,
+        warningCount: Array.isArray(warnings) ? warnings.length : 0,
+      });
+
+      return { sessions };
     } catch (e) {
-      logger.debug('[kas] listSessions failed:', e);
+      logger.debug('[kas] session/list failed:', e);
       return { sessions: [], failed: true };
     }
   }
 
+  async listSessions(cwd: string): Promise<ListSessionsResponse> {
+    return this.requestSessionList(cwd);
+  }
+
+  async listAllWorkspaceSessions(): Promise<ListSessionsResponse> {
+    const result = await this.requestSessionList();
+    if (result.failed) {
+      const scoped = await this.requestSessionList(process.cwd());
+      return { ...scoped, complete: false };
+    }
+
+    const caps = this.kiroCapabilities;
+    const supportsRemoteUserSlice =
+      caps.sessionSources?.includes('remote') &&
+      caps.sessionListScopes?.includes('user');
+    const containsRemote = result.sessions.some(
+      (s) =>
+        s.source === 'remote' || s.executionTarget?.kind === 'cloud-sandbox'
+    );
+    if (containsRemote || !supportsRemoteUserSlice) return result;
+
+    const remote = await this.requestSessionList(undefined, 'remote');
+    if (remote.failed) return { ...result, complete: false };
+    const byId = new Map(result.sessions.map((s) => [s.sessionId, s]));
+    for (const session of remote.sessions) {
+      if (
+        session.source === 'remote' ||
+        session.executionTarget?.kind === 'cloud-sandbox'
+      ) {
+        byId.set(session.sessionId, session);
+      }
+    }
+    return { sessions: [...byId.values()], complete: true };
+  }
+
   async listSettings(): Promise<Record<string, unknown>> {
     return readCliSettings();
+  }
+
+  /**
+   * Delete a session via `_kiro/session/delete`. The agent owns the routing:
+   * a local row is removed across every workspace bucket, a remote row is
+   * deleted from the backend. Resolves false only when the agent ANSWERED and
+   * refused; an unanswerable call (transport error, or an agent predating the
+   * method — it is served unconditionally and never listed in
+   * `extensionMethods`) throws, so callers can tell "refused" from "cannot"
+   * and keep their own fallback for the latter.
+   */
+  async deleteSessionById(
+    sessionId: string,
+    options?: { source?: SessionDiscoverySource }
+  ): Promise<boolean> {
+    const r = await this.kiroClient.sendExtMethod('_kiro/session/delete', {
+      sessionId,
+      ...(options?.source ? { sessionSource: options.source } : {}),
+    });
+    return (r as { success?: boolean } | undefined)?.success === true;
+  }
+
+  /**
+   * Rename a session via `_kiro/session/rename`, persisting the title on the
+   * session record (marked user-set, so the agent stops auto-titling it).
+   * False on refusal or when the agent predates the method.
+   */
+  async renameSessionById(
+    sessionId: string,
+    title: string,
+    options?: { source?: SessionDiscoverySource }
+  ): Promise<boolean> {
+    try {
+      const r = await this.kiroClient.sendExtMethod('_kiro/session/rename', {
+        sessionId,
+        title,
+        ...(options?.source ? { sessionSource: options.source } : {}),
+      });
+      return (r as { success?: boolean } | undefined)?.success === true;
+    } catch (e) {
+      logger.debug('[kas] session/rename failed:', e);
+      return false;
+    }
   }
 
   async setSetting(key: string, value: unknown): Promise<void> {

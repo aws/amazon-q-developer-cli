@@ -113,11 +113,47 @@ export interface SessionClient {
   }>;
 
   /**
+   * Optional: abandon the pending `loadSession`, guaranteeing it can no
+   * longer commit session ownership. Called when a load deadline fires and
+   * the caller is about to roll back locks and UI state.
+   */
+  abandonPendingLoad?(): void;
+
+  /**
    * Lists sessions, optionally filtered by working directory.
    *
    * @param cwd - Working directory to filter by
    */
   listSessions(cwd: string): Promise<ListSessionsResponse>;
+
+  /**
+   * Lists sessions across every workspace. Optional: clients without an
+   * all-workspace listing fall back to the cwd-scoped one.
+   */
+  listAllWorkspaceSessions?(): Promise<ListSessionsResponse>;
+
+  /**
+   * Delete a session by id through the agent (which routes local vs remote
+   * store and removes cross-bucket residue). Optional: clients without the
+   * RPC (or agents predating it) resolve false, and callers fall back to
+   * direct store deletion.
+   */
+  deleteSessionById?(
+    sessionId: string,
+    options?: { source?: SessionDiscoverySource }
+  ): Promise<boolean>;
+
+  /**
+   * Rename a session by id through the agent, persisting the title on the
+   * session record itself (visible to every KAS surface, not just this CLI).
+   * Optional: resolves false when unsupported; callers keep their local
+   * title override as the fallback.
+   */
+  renameSessionById?(
+    sessionId: string,
+    title: string,
+    options?: { source?: SessionDiscoverySource }
+  ): Promise<boolean>;
 
   /**
    * Registers a callback to receive events about the agent's execution during a prompt turn lifecycle.
@@ -468,6 +504,8 @@ export interface ListSessionsResponse {
    * failure from "no sessions" and abort instead of mutating state.
    */
   failed?: boolean;
+  /** False when the response is a scoped or partial fallback. */
+  complete?: boolean;
 }
 
 /** Reason a session was forked. A closed set produced by the TUI. */
@@ -482,6 +520,8 @@ export interface SessionInfoEntry {
   title?: string;
   updatedAt?: string;
   messageCount?: number;
+  /** Agent engine that produced this listing row. */
+  engine?: 'classic' | 'v2' | 'v3';
   /**
    * Where the session runs. Absent == local (today's behavior). Populated for
    * cloud sessions once KAS reports it on list entries.
@@ -491,6 +531,6 @@ export interface SessionInfoEntry {
   source?: SessionDiscoverySource;
   /** Liveness snapshot at list time; live updates via `_kiro/sessions/changed`. */
   status?: SessionActivityStatus;
-  /** Parent session id when this session was forked (tangent/rewind/subagent). */
+  /** Parent session id when this row is a derived session (subagent/fork). */
   parentSessionId?: string;
 }

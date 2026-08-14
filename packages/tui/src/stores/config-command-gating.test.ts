@@ -11,6 +11,12 @@ import { createAppStore } from './app-store';
 import { Kiro } from '../kiro';
 import { features } from '../features';
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../kiro']);
+
 mock.module('../kiro', () => ({
   Kiro: mock(() => ({
     sendMessageStream: mock(),

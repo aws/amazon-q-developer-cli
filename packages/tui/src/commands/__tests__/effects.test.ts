@@ -13,6 +13,12 @@ import {
 import * as realChildProcess from 'child_process';
 const mockSpawnSync = mock(() => ({ status: 1 }));
 
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+// mock.module is process-global and survives this file — restore the real
+// modules afterAll so the mocks cannot leak into other files.
+restoreRealModulesAfterAll(import.meta.dir, ['child_process']);
+
 // A module mock is process-wide, so the real exports are carried over rather
 // than dropped: a suite loaded later that imports a different export would
 // otherwise resolve against a module that no longer provides it.
@@ -2370,5 +2376,138 @@ describe('sendSpecRevision', () => {
     await sendSpecRevision(deps, 'request', 'summary', onSent);
 
     expect(onSent).not.toHaveBeenCalled();
+  });
+});
+
+describe('/sessions rename discovery source', () => {
+  const sessionsCmd: SlashCommand = {
+    name: '/sessions',
+    description: '',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  let sandbox: string;
+  let previousSessionsDir: string | undefined;
+  let activeWriteSpy = mockWriteFileSync;
+
+  beforeEach(() => {
+    // The sidecar title write must really happen or the effect returns
+    // before the rename RPC, so the file-wide writeFileSync no-op is
+    // suspended per test and a fresh no-op spy is reinstated afterward.
+    activeWriteSpy.mockRestore();
+    sandbox = require('fs').mkdtempSync(
+      require('path').join(require('os').tmpdir(), 'sessions-rename-')
+    );
+    previousSessionsDir = process.env.KIRO_TEST_SESSIONS_DIR;
+    process.env.KIRO_TEST_SESSIONS_DIR = sandbox;
+    require('../../utils/session-bookmarks.js').resetSessionBookmarkStore();
+  });
+
+  afterEach(() => {
+    activeWriteSpy = spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    if (previousSessionsDir === undefined) {
+      delete process.env.KIRO_TEST_SESSIONS_DIR;
+    } else {
+      process.env.KIRO_TEST_SESSIONS_DIR = previousSessionsDir;
+    }
+    require('../../utils/session-bookmarks.js').resetSessionBookmarkStore();
+    require('fs').rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  function renameCtx(cloudActive: boolean) {
+    const renameSessionById = mock(() => Promise.resolve(true));
+    const ctx = createMockCommandContext({
+      kiro: {
+        sessionId: 'active-session',
+        isCloudSessionActive: () => cloudActive,
+        renameSessionById,
+      },
+    });
+    (ctx as { agentEngine: string }).agentEngine = 'kas';
+    return { ctx, renameSessionById };
+  }
+
+  it('qualifies a local active session rename with source local', () => {
+    const { ctx, renameSessionById } = renameCtx(false);
+
+    runEffect(sessionsCmd, null, ctx, 'rename kept conversation');
+
+    expect(renameSessionById).toHaveBeenCalledWith(
+      'active-session',
+      'kept conversation',
+      { source: 'local' }
+    );
+  });
+
+  it('qualifies a cloud-active session rename with source remote', () => {
+    const { ctx, renameSessionById } = renameCtx(true);
+
+    runEffect(sessionsCmd, null, ctx, 'rename remote work');
+
+    expect(renameSessionById).toHaveBeenCalledWith(
+      'active-session',
+      'remote work',
+      { source: 'remote' }
+    );
+  });
+});
+
+describe('/sessions dashboard opens regardless of cloud state', () => {
+  const sessionsCmd: SlashCommand = {
+    name: '/sessions',
+    description: '',
+    source: 'local' as const,
+    meta: { local: true },
+  };
+
+  function dashboardCtx(cloudActive: boolean) {
+    const ctx = createMockCommandContext({ cloudSessionActive: cloudActive });
+    (ctx as { agentEngine: string }).agentEngine = 'kas';
+    return ctx;
+  }
+
+  function openDashboard(ctx: ReturnType<typeof dashboardCtx>) {
+    // The effect enters the alt screen via a raw stdout escape; stub it so the
+    // test doesn't scribble control codes into the runner output.
+    const stdoutSpy = spyOn(process.stdout, 'write').mockImplementation(
+      () => true
+    );
+    try {
+      runEffect(sessionsCmd, null, ctx, '');
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  }
+
+  it('bare /sessions opens the full-screen dashboard inside a cloud session', () => {
+    const ctx = dashboardCtx(true);
+    openDashboard(ctx);
+    expect(ctx._spies.setShowSessionDashboard).toHaveBeenCalledTimes(1);
+    expect((ctx._spies.setShowSessionDashboard as any).mock.calls[0][0]).toBe(
+      true
+    );
+    expect(ctx._spies.setMode).toHaveBeenCalledWith('session-dashboard');
+  });
+
+  it('bare /sessions opens the same dashboard outside a cloud session', () => {
+    const ctx = dashboardCtx(false);
+    openDashboard(ctx);
+    expect(ctx._spies.setShowSessionDashboard).toHaveBeenCalledTimes(1);
+    expect(ctx._spies.setMode).toHaveBeenCalledWith('session-dashboard');
+  });
+
+  it('warns and does not open the dashboard on a non-KAS engine', () => {
+    const ctx = createMockCommandContext({});
+    (ctx as { agentEngine: string }).agentEngine = 'v2';
+    openDashboard(ctx as ReturnType<typeof dashboardCtx>);
+    expect(ctx._spies.setShowSessionDashboard).not.toHaveBeenCalled();
+    expect(ctx._spies.setMode).not.toHaveBeenCalled();
+    const showAlert = ctx._spies.showAlert as any;
+    expect(
+      showAlert.mock.calls.some((c: any[]) =>
+        String(c[0]).includes('V3 (KAS) engine only')
+      )
+    ).toBe(true);
   });
 });

@@ -35,6 +35,7 @@ import type {
   WorkflowRestoreMetricResult,
   WorkflowTelemetryObservation,
 } from './workflow-telemetry.js';
+import { getCliVersion } from './version';
 
 export const TUI_SCOPE = 'kiro.tui';
 /**
@@ -1390,6 +1391,86 @@ export function recordTuiProcessHealth(
       TUI_LATENCY_BOUNDS_S
     );
   }
+}
+
+/** How a session-dashboard visit ended. */
+export type SessionDashboardOutcome =
+  | 'resumed'
+  | 'resumed_cross_workspace'
+  | 'closed'
+  | '_other_';
+
+/** Which door opened the dashboard. */
+export type SessionDashboardEntryPoint =
+  | 'slash'
+  | 'ctrl_e'
+  | 'boot'
+  | '_other_';
+
+const DASHBOARD_OUTCOMES: readonly SessionDashboardOutcome[] = [
+  'resumed',
+  'resumed_cross_workspace',
+  'closed',
+  '_other_',
+];
+const DASHBOARD_VIA = ['search', 'browse', '_none_', '_other_'] as const;
+const DASHBOARD_ENTRIES: readonly SessionDashboardEntryPoint[] = [
+  'slash',
+  'ctrl_e',
+  'boot',
+  '_other_',
+];
+
+/**
+ * A session-dashboard visit ended (`kiro_cli_session_dashboard_total`):
+ * `resumed` (a session in the current workspace was opened), `
+ * resumed_cross_workspace` (the resume re-rooted into another directory —
+ * the cross-project capability the dashboard exists for), or `closed`
+ * (left without resuming). `via` records how a resumed session was found —
+ * search or scrolling — which is what decides whether search investment is
+ * warranted. `entry` records which door opened the visit (`/sessions`,
+ * Ctrl+E, or the `--sessions` boot flag). One event per visit, emitted at
+ * close. No content: no titles, no queries, no paths, no session ids.
+ */
+export function recordTuiSessionDashboard(
+  args: {
+    outcome: SessionDashboardOutcome;
+    via?: 'search' | 'browse';
+    entry?: SessionDashboardEntryPoint;
+    engine?: 'v1' | Engine;
+    version?: string;
+  },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  const outcome = DASHBOARD_OUTCOMES.includes(args.outcome)
+    ? args.outcome
+    : '_other_';
+  const via = args.via
+    ? DASHBOARD_VIA.includes(args.via)
+      ? args.via
+      : '_other_'
+    : '_none_';
+  const entry =
+    args.entry && DASHBOARD_ENTRIES.includes(args.entry)
+      ? args.entry
+      : '_other_';
+  const agentEngine =
+    args.engine === 'v1' || args.engine === 'v2' || args.engine === 'v3'
+      ? args.engine
+      : 'unknown';
+  counterFn(deps)(
+    'kiro_cli_session_dashboard_total',
+    1,
+    {
+      version_full: args.version ?? getCliVersion(),
+      agent_engine: agentEngine,
+      outcome,
+      via,
+      entry,
+    },
+    TUI_SCOPE
+  );
 }
 
 /**

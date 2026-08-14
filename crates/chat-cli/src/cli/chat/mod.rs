@@ -291,6 +291,23 @@ pub struct ChatArgs {
     /// Interactively select a conversation to resume from this directory.
     #[arg(long, conflicts_with = "resume")]
     pub resume_picker: bool,
+    /// Launch straight into the session dashboard (V3/KAS only); closing it
+    /// exits rather than dropping into a chat.
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "resume",
+            "resume_id",
+            "resume_picker",
+            "no_interactive",
+            "list_sessions",
+            "list_models",
+            "delete_session",
+            "input",
+            "legacy_ui"
+        ]
+    )]
+    pub sessions: bool,
     /// Context profile to use
     #[arg(long = "agent", alias = "profile")]
     pub agent: Option<String>,
@@ -313,6 +330,10 @@ pub struct ChatArgs {
     /// List all saved chat sessions for the current directory.
     #[arg(short = 'l', long)]
     pub list_sessions: bool,
+    /// With --list-sessions: span every workspace (local stores only),
+    /// emitting one envelope per cwd in JSON output.
+    #[arg(long, requires = "list_sessions")]
+    pub all_cwds: bool,
     /// List available models and exit.
     #[arg(long)]
     pub list_models: bool,
@@ -398,6 +419,53 @@ where
 }
 
 impl ChatArgs {
+    pub(crate) fn validate_sessions_mode(&self) -> Result<()> {
+        if !self.sessions {
+            return Ok(());
+        }
+
+        let mut conflicts = Vec::new();
+        if self.resume {
+            conflicts.push("--resume");
+        }
+        if self.resume_id.is_some() {
+            conflicts.push("--resume-id");
+        }
+        if self.resume_picker {
+            conflicts.push("--resume-picker");
+        }
+        if self.no_interactive {
+            conflicts.push("--no-interactive");
+        }
+        if self.list_sessions || self.all_cwds {
+            conflicts.push("--list-sessions");
+        }
+        if self.list_models {
+            conflicts.push("--list-models");
+        }
+        if self.delete_session.is_some() || self.session_source.is_some() {
+            conflicts.push("--delete-session");
+        }
+        if self.input.is_some() {
+            conflicts.push("an input prompt");
+        }
+        if self.legacy_ui {
+            conflicts.push("--legacy-ui");
+        }
+        if self.command.is_some() {
+            conflicts.push("an internal chat command");
+        }
+
+        if conflicts.is_empty() {
+            Ok(())
+        } else {
+            bail!(
+                "--sessions opens only the interactive session dashboard and cannot be combined with {}",
+                conflicts.join(", ")
+            )
+        }
+    }
+
     /// Rollout gate for `--cloud` / `--repo`. The feature is ramped to every
     /// segment and channel at 100% — enabled for every user, including those
     /// without a persisted client id — so this rejects nothing in normal
@@ -485,7 +553,7 @@ impl ChatArgs {
             AgentEngine::Kas
         } else if let Some(engine) = self.agent_engine {
             engine
-        } else if cloud_implies_kas {
+        } else if cloud_implies_kas || self.sessions {
             AgentEngine::Kas
         } else if let Some(engine) = self.engine_for_resume_id(os) {
             engine
@@ -502,6 +570,14 @@ impl ChatArgs {
         } else {
             self.default_engine(os)
         };
+
+        if self.sessions && engine != AgentEngine::Kas {
+            bail!(
+                "Conflicting options: --sessions requires the V3 agent and cannot be used with \
+                 --agent-engine={}. Remove the explicit engine or use --agent-engine=v3.",
+                engine.user_label()
+            );
+        }
 
         // Validate: --legacy-ui conflicts with non-V1 engines
         if self.legacy_ui && engine != AgentEngine::V1 {

@@ -33,6 +33,17 @@ import {
 // `acp_integ_tests/chat-command.test.ts`.
 const mockExportSession = mock();
 const mockImportSession = mock();
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../../../utils/session-archive-cli',
+  '../../effects',
+  '../../../utils/ensure-session-cli',
+  '../../../agent-engine',
+]);
+
 mock.module('../../../utils/session-archive-cli', () => ({
   exportSession: (...args: unknown[]) =>
     mockExportSession(...(args as Parameters<typeof mockExportSession>)),
@@ -103,7 +114,7 @@ mock.module('../../../agent-engine', () => ({
   resolveAgentEngine: () => mockResolveAgentEngine(),
 }));
 
-import { handleChat } from '../chat';
+import { handleChat, loadExistingSession } from '../chat';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
 import type { KasCommand } from '../../../kas-commands';
 import { KasCommandName } from '../../../kas-commands';
@@ -147,6 +158,40 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(rows.map((r: any) => r.sessionId)).toEqual(['aaaa1111']);
     });
 
+    it('excludes the current KAS session under its sess_ alias', async () => {
+      mockListAllSessions.mockResolvedValueOnce({
+        ok: true,
+        cwd: '/x',
+        sessions: [
+          {
+            sessionId: 'active',
+            source: 'v3',
+            title: 'Current alias',
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            sessionId: 'other',
+            source: 'v3',
+            title: 'Other',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          sessionId: 'sess_active',
+          listSessions: async () => ({ sessions: [] }),
+        } as any,
+      });
+
+      await handleChat(CHAT_CMD, '', ctx);
+
+      const showPicker = ctx._spies.setShowSessionPicker as any;
+      const rows = showPicker.mock.calls[0][1];
+      expect(rows.map((row: any) => row.sessionId)).toEqual(['other']);
+    });
+
     it('dark-ship: feature OFF keeps the legacy selection menu (no columnar panel, no live overlay)', async () => {
       delete process.env.KIRO_ENABLED_FEATURES;
       features._resetForTests();
@@ -187,6 +232,30 @@ describe('handleChat (KAS-mode dispatch)', () => {
       });
       await handleChat(CHAT_CMD, 'other', ctx, { argIsSynthetic: true });
       expect(ctx._spies.resetCloudSessionScope).toHaveBeenCalled();
+    });
+
+    it('passes the selected storage engine to local session conversion', async () => {
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: {
+          sessionId: 'cur',
+          loadSession: async () => ({ sessionId: 'classic-session' }),
+        } as any,
+      });
+
+      const loaded = await loadExistingSession(ctx, 'classic-session', {
+        source: 'local',
+        sourceFormat: 'classic',
+      });
+
+      expect(loaded).toBe(true);
+      expect(mockEnsureSession).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          sourceSessionId: 'classic-session',
+          sourceFormat: 'classic',
+          targetFormat: 'kas',
+        })
+      );
     });
 
     it('surfaces cloud rows from the live client that the shell-out omitted', async () => {
@@ -989,6 +1058,46 @@ describe('handleChat (KAS-mode dispatch)', () => {
       expect(
         addSystemMessage.mock.calls.some(
           (c: any[]) => c[0] === 'Loaded session sid'
+        )
+      ).toBe(true);
+    });
+
+    it('bare id unresolved in a cloud session loads from the remote store (never local-first)', async () => {
+      // ensure-session finds no local session for the id; inside a cloud
+      // session it must load explicitly as remote so an id the local store
+      // lacks can't spawn a fresh empty session.
+      mockEnsureSession.mockImplementationOnce(() =>
+        Promise.resolve({ ok: false, message: 'not found' })
+      );
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, isCloudSessionActive: () => true } as any,
+      });
+      ctx.cloudSessionActive = true;
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(loadSession).toHaveBeenCalledTimes(1);
+      const call = (loadSession as any).mock.calls[0];
+      expect(call[0]).toBe('sid');
+      expect(call[2]).toEqual({ source: 'remote' });
+    });
+
+    it('bare id unresolved outside a cloud session surfaces not-found and does not load', async () => {
+      mockEnsureSession.mockImplementationOnce(() =>
+        Promise.resolve({ ok: false, message: 'not found' })
+      );
+      const loadSession = mock(() => Promise.resolve({ sessionId: 'sid' }));
+      const ctx = createMockCommandContext({
+        kasCommands: [CHAT_CMD],
+        kiro: { loadSession, isCloudSessionActive: () => false } as any,
+      });
+      ctx.cloudSessionActive = false;
+      await handleChat(CHAT_CMD, 'sid', ctx, { argIsSynthetic: true });
+      expect(loadSession).not.toHaveBeenCalled();
+      const showAlert = ctx._spies.showAlert as any;
+      expect(
+        showAlert.mock.calls.some((c: any[]) =>
+          String(c[0]).includes('Failed to load session')
         )
       ).toBe(true);
     });

@@ -255,6 +255,8 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SessionLock {
     pid: u32,
+    /// Alias: earlier TUI builds wrote the camelCase spelling.
+    #[serde(alias = "startedAt")]
     started_at: DateTime<Utc>,
 }
 
@@ -355,7 +357,20 @@ fn acquire_lock_impl(
                 });
             }
 
-            // Stale lock (process died without cleanup) - remove and retry once
+            // Stale lock (process died without cleanup) - remove and retry once.
+            // Re-read immediately before removing: another implementation (the
+            // TUI reclaims stale locks too) may have replaced this lock since
+            // the first read, and removing it would steal a fresh lock.
+            let recheck = fs::read_to_string(lock_path)
+                .map_err(|e| SessionError::io(e, format!("failed to re-read lock file {:?}", lock_path)))?;
+            let recheck_lock: SessionLock = serde_json::from_str(&recheck)
+                .map_err(|e| SessionError::json(e, format!("failed to parse lock file {:?}", lock_path)))?;
+            if recheck_lock.pid != lock.pid || recheck_lock.started_at != lock.started_at {
+                return Err(SessionError::ActiveSession {
+                    pid: recheck_lock.pid,
+                    started_at: recheck_lock.started_at,
+                });
+            }
             fs::remove_file(lock_path)
                 .map_err(|e| SessionError::io(e, format!("failed to remove stale lock file {:?}", lock_path)))?;
 
@@ -405,6 +420,10 @@ fn is_pid_alive(pid: u32) -> bool {
         name.starts_with(crate::util::CLI_BINARY_NAME)
             // "chat_cli" is the binary name for cargo debug builds
             || name.starts_with("chat_cli")
+            // The TUI holds session locks too, and its process is the
+            // extracted bun runtime.
+            || name == "bun"
+            || name == "bun.exe"
     })
 }
 
@@ -890,6 +909,17 @@ pub fn list_sessions(sessions_dir: &Path, cwd: Option<&Path>) -> Result<Vec<Sess
         s.message_count = count_log_lines(sessions_dir, &s.session_id);
     }
     Ok(sessions)
+}
+
+/// Like [`list_sessions`] but without the per-session transcript scan that
+/// fills `message_count` (left 0). Reading every log to count lines is the
+/// dominant cost on large stores, and bulk consumers that derive counts
+/// elsewhere should not pay it.
+pub fn list_sessions_metadata_only(
+    sessions_dir: &Path,
+    cwd: Option<&Path>,
+) -> Result<Vec<SessionDataView>, SessionError> {
+    list_sessions_impl(sessions_dir, cwd)
 }
 
 /// Count lines in a session's JSONL log by counting `\n` bytes.

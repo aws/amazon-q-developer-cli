@@ -33,13 +33,15 @@ export type KeybindingName =
   | 'cancelStream'
   | 'closeMenu'
   | 'quit'
-  | 'toggleInterruptMode';
+  | 'toggleInterruptMode'
+  | 'toggleSessionDashboard';
 
 const DEFAULTS: Record<KeybindingName, string> = {
   cancelStream: 'esc',
   closeMenu: 'esc',
   quit: 'ctrl+c',
   toggleInterruptMode: 'ctrl+s',
+  toggleSessionDashboard: 'ctrl+e',
 };
 
 const SETTING_KEYS: Record<KeybindingName, string> = {
@@ -47,6 +49,7 @@ const SETTING_KEYS: Record<KeybindingName, string> = {
   closeMenu: Settings.CHAT_KEYBINDINGS_CLOSE_MENU,
   quit: Settings.CHAT_KEYBINDINGS_QUIT,
   toggleInterruptMode: Settings.CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR,
+  toggleSessionDashboard: Settings.CHAT_KEYBINDINGS_TOGGLE_SESSION_DASHBOARD,
 };
 
 // Key aliases: user-facing → canonical
@@ -111,9 +114,26 @@ export function parseKeybinding(spec: string): Keybinding | null {
   return { ctrl, shift, meta, key };
 }
 
+export function keybindingsEqual(a: Keybinding, b: Keybinding): boolean {
+  return (
+    a.ctrl === b.ctrl &&
+    a.shift === b.shift &&
+    a.meta === b.meta &&
+    a.key === b.key
+  );
+}
+
+function isReservedDashboardBinding(binding: Keybinding): boolean {
+  return (
+    binding.ctrl &&
+    !binding.meta &&
+    ['c', 'd', 'g', 'y', 'z'].includes(binding.key)
+  );
+}
+
 /**
  * Resolve a binding by name, falling back to the default when the setting is
- * missing, not a string, or not parseable.
+ * missing, not a string, not parseable, or reserved by a global action.
  */
 export function resolveKeybinding(
   settings: Record<string, unknown> | null | undefined,
@@ -122,9 +142,14 @@ export function resolveKeybinding(
   const raw = settings?.[SETTING_KEYS[name]];
   if (typeof raw === 'string') {
     const parsed = parseKeybinding(raw);
-    if (parsed) return parsed;
+    if (
+      parsed &&
+      (name !== 'toggleSessionDashboard' || !isReservedDashboardBinding(parsed))
+    ) {
+      return parsed;
+    }
     logger.warn(
-      `[keybindings] Invalid binding for ${SETTING_KEYS[name]}: ${JSON.stringify(raw)}. Using default "${DEFAULTS[name]}".`
+      `[keybindings] Invalid or reserved binding for ${SETTING_KEYS[name]}: ${JSON.stringify(raw)}. Using default "${DEFAULTS[name]}".`
     );
   }
   // parseKeybinding on the default is guaranteed to succeed.

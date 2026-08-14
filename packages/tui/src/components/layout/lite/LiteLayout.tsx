@@ -106,9 +106,14 @@ import {
   BackendPanels,
   useBackendPanelVisibility,
 } from '../shared/BackendPanels.js';
+import {
+  getCachedAllWorkspaceSessions,
+  scanAllWorkspaceSessions,
+} from '../../../utils/all-workspace-sessions.js';
 import { SourceProviderGate } from '../../ui/SourceProviderGate.js';
 import { openUrlInBrowser } from '../../../utils/browser.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../../utils/cloud-urls.js';
+import { Feature, features } from '../../../features.js';
 import { getPlaceholder } from '../getPlaceholder.js';
 import { useStatusSurfaceProps } from '../useStatusSurfaceProps.js';
 import { useBackendPanelHandlers } from '../shared/useBackendPanelHandlers.js';
@@ -431,6 +436,44 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     if (anyPanelOpenRef.current) return;
     if (subagentOpenIndexRef.current != null) return;
     toggleActivityTray();
+  });
+
+  // Ctrl+E — enter the full-screen session dashboard (KAS only).
+  const setShowSessionDashboard = useAppStore((s) => s.setShowSessionDashboard);
+  const liteAgentEngine = useAppStore((s) => s.agentEngine);
+  // Warm the cross-workspace scan cache at boot so the first toggle is
+  // instant, same as the tui surface.
+  useEffect(() => {
+    if (
+      liteAgentEngine === 'kas' &&
+      features.isEnabled(Feature.SessionDashboard)
+    ) {
+      void scanAllWorkspaceSessions();
+    }
+  }, [liteAgentEngine]);
+  const liteSetMode = useAppStore((s) => s.setMode);
+  const litePromptEmpty = useAppStore(
+    (s) =>
+      s.commandInputValue.length === 0 &&
+      s.input.lines.every((l) => l.length === 0)
+  );
+  useKeypress((input, key) => {
+    if (!keybindings.matches('toggleSessionDashboard', input, key)) return;
+    if (liteAgentEngine !== 'kas') return;
+    if (!features.isEnabled(Feature.SessionDashboard)) return;
+    // Mid-prompt, Ctrl+E means end-of-line (readline). Only an empty prompt
+    // lets the chord open the dashboard.
+    if (!litePromptEmpty) return;
+    if (isProcessing) return;
+    if (anyPanelOpen) return;
+    if (activeCommand) return;
+    if (pendingApprovalRef.current || pendingQuestionRef.current) return;
+    if (isEditingEntry() || subagentOpenIndexRef.current != null) return;
+    // Enter alt screen before the re-render so the full-screen dashboard
+    // doesn't pollute lite's append-only scrollback (same as crew monitor).
+    setShowSessionDashboard(true, getCachedAllWorkspaceSessions(), 'ctrl_e');
+    process.stdout.write('\x1b[?1049h');
+    liteSetMode('session-dashboard');
   });
 
   const interactionReady = useInteractionReady(

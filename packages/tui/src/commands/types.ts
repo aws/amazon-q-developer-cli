@@ -23,6 +23,7 @@ import type { SessionPickerRow } from '../components/ui/SessionPickerPanel.js';
 import type { ConfigCategoryId } from '../components/ui/config-panel-model.js';
 import type { WorkflowRunSummary } from '../types/workflow-history.js';
 import type { WorkflowLifecycleNotice } from '../types/workflow-lifecycle.js';
+import type { SessionInfoEntry } from '../types/session-client.js';
 import type {
   AgentEntry,
   EffortEntry,
@@ -240,6 +241,12 @@ export interface CommandContext {
     rows?: SessionPickerRow[],
     invokedAs?: string
   ) => void;
+  /** Open/close the Session Dashboard (KAS only). */
+  setShowSessionDashboard: (
+    show: boolean,
+    sessions?: SessionInfoEntry[],
+    entry?: 'slash' | 'ctrl_e' | 'boot' | '_other_'
+  ) => void;
   /** Clear the per-session cloud scope (bound repo/branch/attached set) when
    *  switching sessions, so the footer never shows the previous sandbox. */
   resetCloudSessionScope: () => void;
@@ -373,7 +380,12 @@ export interface CommandContext {
   sessions: Map<string, any>;
   /** Set app mode */
   setMode: (
-    mode: 'inline' | 'expanded' | 'crew-monitor' | 'session-view'
+    mode:
+      | 'inline'
+      | 'expanded'
+      | 'crew-monitor'
+      | 'session-view'
+      | 'session-dashboard'
   ) => void;
   /** Get current conversation messages */
   getMessages: () => Array<{

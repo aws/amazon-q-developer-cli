@@ -144,24 +144,12 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
     },
   },
   {
-    // Cloud-gated alias of /chat: same subcommands and selection view.
     name: KasCommandName.Sessions,
-    description: 'Load a previous session, save, or start a new one',
+    description:
+      'Browse sessions (dashboard); "/sessions clean" removes empty ones',
+    feature: Feature.SessionDashboard,
     meta: {
-      inputType: 'selection',
       local: true,
-      cloudOnly: true,
-      subcommands: ['new', 'save', 'load'],
-      subcommandDescriptions: {
-        new: 'Start a fresh session',
-        save: 'Save the conversation to a file',
-        load: 'Load a conversation from a file',
-      },
-      subcommandHints: {
-        new: '[prompt]',
-        save: '[--force] <path>',
-        load: '<path>',
-      },
     },
   },
   {

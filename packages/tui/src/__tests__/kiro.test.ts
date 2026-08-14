@@ -1,4 +1,13 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { KAS_DEFAULT_AGENT_ID } from '../constants/agents.js';
 import { AgentEventType } from '../types/agent-events';
 import type {
@@ -20,8 +29,15 @@ import type {
   WorkflowInvokeResponse,
   WorkflowRecipeDescriptor,
 } from '../types/workflow-launch.js';
+import { releaseSessionLock } from '../utils/session-lock.js';
 
 // --- Mock logger ---
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../utils/logger']);
+
 mock.module('../utils/logger', () => ({
   logger: {
     debug: () => {},
@@ -91,6 +107,7 @@ function broadcastMockUpdate(event: AgentStreamEvent): void {
 
 const mockSessionClient = {
   sessionId: undefined as string | undefined,
+  abandonPendingLoad: undefined as (() => void) | undefined,
   initialize: mock(() => Promise.resolve()),
   newSession: mock(() => {
     mockSessionClient.sessionId = 'session-1';
@@ -161,7 +178,16 @@ const MockAcpClientClass = class MockAcpClient {
     });
     return result;
   };
-  loadSession = mockSessionClient.loadSession;
+  loadSession = (...args: Parameters<typeof mockSessionClient.loadSession>) => {
+    const result = mockSessionClient.loadSession(...args);
+    void result.then(
+      (response) => {
+        this.sessionId = response.sessionId;
+      },
+      () => {}
+    );
+    return result;
+  };
   prompt = mockSessionClient.prompt;
   cancel = mockSessionClient.cancel;
   close = mockSessionClient.close;
@@ -175,6 +201,8 @@ const MockAcpClientClass = class MockAcpClient {
   listSettings = mockSessionClient.listSettings;
   setSetting = mockSessionClient.setSetting;
   terminateSession = mockSessionClient.terminateSession;
+  // Lazy delegate: tests install the spy after this instance is constructed.
+  abandonPendingLoad = () => mockSessionClient.abandonPendingLoad?.();
   listSessions = mockSessionClient.listSessions;
   resolveSpecSession = mockSessionClient.resolveSpecSession;
   invokeSpec = mockSessionClient.invokeSpec;
@@ -191,6 +219,11 @@ const MockAcpClientClass = class MockAcpClient {
 // @ts-expect-error — query-string specifier bypasses bun's mock registry
 const realAcpClient = await import('../acp-client?real');
 
+// Captured from the query-suffixed import above: this module's graph contains
+// top-level await, so it cannot be required at module scope when this file
+// runs alone.
+restoreRealModulesAfterAll(import.meta.dir, [['../acp-client', realAcpClient]]);
+
 mock.module('../acp-client', () => ({
   ...realAcpClient,
   AcpClient: MockAcpClientClass,
@@ -201,7 +234,13 @@ const recordTuiWorkflowControl = mock(
   (_action: string, _result: string, _version: string): void => {}
 );
 
+const initialAgentEngine = process.env.KIRO_AGENT_ENGINE;
 afterAll(() => {
+  if (initialAgentEngine === undefined) {
+    delete process.env.KIRO_AGENT_ENGINE;
+  } else {
+    process.env.KIRO_AGENT_ENGINE = initialAgentEngine;
+  }
   mock.restore();
 });
 
@@ -213,6 +252,7 @@ const { Kiro } = await import('../kiro?real');
 
 describe('Kiro', () => {
   beforeEach(() => {
+    process.env.KIRO_AGENT_ENGINE = 'v2';
     mockSessionClient.sessionId = undefined;
     mockSessionClient.initialize.mockClear();
     mockSessionClient.newSession.mockClear();
@@ -395,6 +435,39 @@ describe('Kiro', () => {
     });
   });
 
+  it('rejects createSession when the returned session cannot be locked', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kiro-lock-failure-'));
+    const previousRoot = process.env.KIRO_TEST_SESSIONS_ROOT;
+    process.env.KIRO_TEST_SESSIONS_ROOT = root;
+    const dir = join(root, 'hash', 'sess_session-1');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'session.json'),
+      JSON.stringify({ id: 'sess_session-1' })
+    );
+    writeFileSync(join(dir, '.lock'), '{"pid":');
+
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+
+      await expect(kiro.createSession()).rejects.toThrow(
+        'malformed or unreadable'
+      );
+      expect(mockSessionClient.terminateSession).toHaveBeenCalledWith(
+        'session-1'
+      );
+    } finally {
+      releaseSessionLock();
+      if (previousRoot === undefined) {
+        delete process.env.KIRO_TEST_SESSIONS_ROOT;
+      } else {
+        process.env.KIRO_TEST_SESSIONS_ROOT = previousRoot;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('subscribes before newSession can replay workflow child events', async () => {
     const received: string[] = [];
     let sessionEventHandler: ((event: any) => void) | undefined;
@@ -440,6 +513,188 @@ describe('Kiro', () => {
     expect(mockSessionClient.onSessionEvent).toHaveBeenCalledTimes(1);
     expect(mockSessionClient.onMultiSessionUpdate).toHaveBeenCalledTimes(1);
     expect(mockSessionClient.onSubagentListUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the active lock when a remote same-id local copy is locked and load fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kiro-lock-transfer-'));
+    const previousRoot = process.env.KIRO_TEST_SESSIONS_ROOT;
+    const previousEngine = process.env.KIRO_AGENT_ENGINE;
+    process.env.KIRO_TEST_SESSIONS_ROOT = root;
+    process.env.KIRO_AGENT_ENGINE = 'v2';
+    const sessionDir = join(root, 'hash', 'sess_session-1');
+    const collisionDir = join(root, 'hash', 'sess_remote-only');
+    mkdirSync(sessionDir, { recursive: true });
+    mkdirSync(collisionDir, { recursive: true });
+    writeFileSync(
+      join(sessionDir, 'session.json'),
+      JSON.stringify({ id: 'sess_session-1' })
+    );
+    writeFileSync(
+      join(collisionDir, 'session.json'),
+      JSON.stringify({ id: 'sess_remote-only' })
+    );
+    writeFileSync(join(collisionDir, '.lock'), '{"pid":');
+
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      await kiro.createSession();
+      const lockPath = join(sessionDir, '.lock');
+      expect(existsSync(lockPath)).toBe(true);
+
+      mockSessionClient.loadSession.mockRejectedValueOnce(
+        new Error('load failed')
+      );
+      await expect(
+        kiro.loadSession('remote-only', undefined, { source: 'remote' })
+      ).rejects.toThrow('load failed');
+      expect(existsSync(lockPath)).toBe(true);
+    } finally {
+      releaseSessionLock();
+      if (previousRoot === undefined) {
+        delete process.env.KIRO_TEST_SESSIONS_ROOT;
+      } else {
+        process.env.KIRO_TEST_SESSIONS_ROOT = previousRoot;
+      }
+      if (previousEngine === undefined) {
+        delete process.env.KIRO_AGENT_ENGINE;
+      } else {
+        process.env.KIRO_AGENT_ENGINE = previousEngine;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('releases a failed createSession resume target lock', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kiro-failed-resume-'));
+    const previousRoot = process.env.KIRO_TEST_SESSIONS_ROOT;
+    process.env.KIRO_TEST_SESSIONS_ROOT = root;
+    const sessionDir = join(root, 'hash', 'sess_target');
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      join(sessionDir, 'session.json'),
+      JSON.stringify({ id: 'sess_target' })
+    );
+
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      mockSessionClient.loadSession.mockRejectedValueOnce(
+        new Error('resume failed')
+      );
+
+      await expect(kiro.createSession('target')).rejects.toThrow(
+        'resume failed'
+      );
+      expect(existsSync(join(sessionDir, '.lock'))).toBe(false);
+    } finally {
+      releaseSessionLock();
+      if (previousRoot === undefined) {
+        delete process.env.KIRO_TEST_SESSIONS_ROOT;
+      } else {
+        process.env.KIRO_TEST_SESSIONS_ROOT = previousRoot;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('serializes overlapping loads and leaves only the final lock held', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kiro-overlap-load-'));
+    const previousRoot = process.env.KIRO_TEST_SESSIONS_ROOT;
+    process.env.KIRO_TEST_SESSIONS_ROOT = root;
+    for (const id of ['first', 'second']) {
+      const dir = join(root, 'hash', `sess_${id}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'session.json'),
+        JSON.stringify({ id: `sess_${id}` })
+      );
+    }
+
+    let resolveFirst!: (value: {
+      sessionId: string;
+      currentModel: { id: string; name: string };
+      currentAgent: { name: string };
+    }) => void;
+    let resolveSecond!: typeof resolveFirst;
+    const firstResult = new Promise<{
+      sessionId: string;
+      currentModel: { id: string; name: string };
+      currentAgent: { name: string };
+    }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondResult = new Promise<{
+      sessionId: string;
+      currentModel: { id: string; name: string };
+      currentAgent: { name: string };
+    }>((resolve) => {
+      resolveSecond = resolve;
+    });
+    mockSessionClient.loadSession.mockImplementation((id: string) =>
+      id === 'first' ? firstResult : secondResult
+    );
+
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      const firstLoad = kiro.loadSession('first');
+      const secondLoad = kiro.loadSession('second');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockSessionClient.loadSession).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(root, 'hash', 'sess_first', '.lock'))).toBe(true);
+      expect(existsSync(join(root, 'hash', 'sess_second', '.lock'))).toBe(
+        false
+      );
+
+      resolveFirst({
+        sessionId: 'first',
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: { name: 'test-agent' },
+      });
+      await firstLoad;
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockSessionClient.loadSession).toHaveBeenCalledTimes(2);
+      expect(existsSync(join(root, 'hash', 'sess_first', '.lock'))).toBe(true);
+      expect(existsSync(join(root, 'hash', 'sess_second', '.lock'))).toBe(true);
+
+      resolveSecond({
+        sessionId: 'second',
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: { name: 'test-agent' },
+      });
+      await secondLoad;
+      expect(existsSync(join(root, 'hash', 'sess_first', '.lock'))).toBe(false);
+      expect(existsSync(join(root, 'hash', 'sess_second', '.lock'))).toBe(true);
+    } finally {
+      releaseSessionLock();
+      if (previousRoot === undefined) {
+        delete process.env.KIRO_TEST_SESSIONS_ROOT;
+      } else {
+        process.env.KIRO_TEST_SESSIONS_ROOT = previousRoot;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('never terminates the target when same-target loads are queued', async () => {
+    const kiro = new Kiro();
+    await kiro.initialize('/path/to/agent');
+    await kiro.createSession('outgoing');
+    mockSessionClient.loadSession.mockClear();
+    mockSessionClient.terminateSession.mockClear();
+
+    const first = kiro.loadSession('target');
+    const second = kiro.loadSession('target');
+    await Promise.all([first, second]);
+
+    expect(mockSessionClient.loadSession).toHaveBeenCalledTimes(2);
+    expect(mockSessionClient.terminateSession).toHaveBeenCalledTimes(1);
+    expect(mockSessionClient.terminateSession).toHaveBeenCalledWith('outgoing');
+    expect(mockSessionClient.terminateSession).not.toHaveBeenCalledWith(
+      'target'
+    );
   });
 
   it('subscribes before loadSession can replay workflow child events', async () => {
@@ -927,23 +1182,108 @@ describe('Kiro', () => {
     ).rejects.toThrow('Kiro not initialized');
   });
 
-  it('newSession creates session and terminates previous', async () => {
-    const kiro = new Kiro();
-    await kiro.initialize('/path/to/agent');
-    await kiro.createSession();
+  it('newSession serializes the transition and moves the held lock', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kiro-new-session-'));
+    const previousRoot = process.env.KIRO_TEST_SESSIONS_ROOT;
+    process.env.KIRO_TEST_SESSIONS_ROOT = root;
+    for (const id of ['session-1', 'session-2']) {
+      const dir = join(root, 'hash', `sess_${id}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'session.json'),
+        JSON.stringify({ id: `sess_${id}` })
+      );
+    }
 
-    mockSessionClient.newSession.mockClear();
-    mockSessionClient.newSession.mockImplementation(() => {
-      return Promise.resolve({
-        sessionId: 'session-2',
-        currentModel: undefined as any,
-        currentAgent: undefined as any,
-      });
-    });
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      await kiro.createSession();
+      expect(existsSync(join(root, 'hash', 'sess_session-1', '.lock'))).toBe(
+        true
+      );
 
-    const result = await kiro.newSession();
-    expect(result.sessionId).toBe('session-2');
-    expect(mockSessionClient.terminateSession).toHaveBeenCalled();
+      mockSessionClient.newSession.mockClear();
+      mockSessionClient.newSession.mockImplementation(() =>
+        Promise.resolve({
+          sessionId: 'session-2',
+          currentModel: undefined as any,
+          currentAgent: undefined as any,
+        })
+      );
+
+      const result = await kiro.newSession();
+      expect(result.sessionId).toBe('session-2');
+      expect(mockSessionClient.terminateSession).toHaveBeenCalledWith(
+        'session-1'
+      );
+      expect(existsSync(join(root, 'hash', 'sess_session-1', '.lock'))).toBe(
+        false
+      );
+      expect(existsSync(join(root, 'hash', 'sess_session-2', '.lock'))).toBe(
+        true
+      );
+    } finally {
+      releaseSessionLock();
+      if (previousRoot === undefined) {
+        delete process.env.KIRO_TEST_SESSIONS_ROOT;
+      } else {
+        process.env.KIRO_TEST_SESSIONS_ROOT = previousRoot;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('retires a new session after lock adoption rolls back successfully', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kiro-new-session-rollback-'));
+    const previousRoot = process.env.KIRO_TEST_SESSIONS_ROOT;
+    process.env.KIRO_TEST_SESSIONS_ROOT = root;
+    const previousDir = join(root, 'hash', 'sess_session-1');
+    const newDir = join(root, 'hash', 'sess_session-2');
+    mkdirSync(previousDir, { recursive: true });
+    mkdirSync(newDir, { recursive: true });
+    writeFileSync(
+      join(previousDir, 'session.json'),
+      JSON.stringify({ id: 'sess_session-1' })
+    );
+    writeFileSync(
+      join(newDir, 'session.json'),
+      JSON.stringify({ id: 'sess_session-2' })
+    );
+    writeFileSync(join(newDir, '.lock'), '{"pid":');
+
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      await kiro.createSession();
+      mockSessionClient.newSession.mockImplementationOnce(() =>
+        Promise.resolve({
+          sessionId: 'session-2',
+          currentModel: undefined as any,
+          currentAgent: undefined as any,
+        })
+      );
+
+      await expect(kiro.newSession()).rejects.toThrow(
+        'malformed or unreadable'
+      );
+
+      expect(mockSessionClient.loadSession).toHaveBeenLastCalledWith(
+        'session-1'
+      );
+      expect(mockSessionClient.terminateSession).toHaveBeenCalledWith(
+        'session-2'
+      );
+      expect(existsSync(join(previousDir, '.lock'))).toBe(true);
+    } finally {
+      releaseSessionLock();
+      if (previousRoot === undefined) {
+        delete process.env.KIRO_TEST_SESSIONS_ROOT;
+      } else {
+        process.env.KIRO_TEST_SESSIONS_ROOT = previousRoot;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('settings returns empty object initially, populated after initialize', async () => {
@@ -1779,6 +2119,90 @@ describe('Kiro — session methods', () => {
     const result = await kiro.loadSession('session-new');
     expect(result.sessionId).toBe('session-new');
     expect(mockSessionClient.terminateSession).toHaveBeenCalled();
+  });
+
+  it('loadSession rejects after the deadline instead of wedging transitions', async () => {
+    const previousTimeout = process.env.KIRO_SESSION_LOAD_TIMEOUT_MS;
+    process.env.KIRO_SESSION_LOAD_TIMEOUT_MS = '25';
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      await kiro.createSession();
+      mockSessionClient.loadSession.mockImplementation(
+        () => new Promise(() => {}) // never settles
+      );
+      await expect(kiro.loadSession('session-hung')).rejects.toThrow(
+        'timed out'
+      );
+      // The transition chain must be free again: a subsequent load works.
+      mockSessionClient.loadSession.mockImplementation((id: string) =>
+        Promise.resolve({
+          sessionId: id,
+          currentModel: { id: 'model-1', name: 'Test Model' },
+          currentAgent: { name: 'test-agent' },
+        })
+      );
+      const result = await kiro.loadSession('session-after');
+      expect(result.sessionId).toBe('session-after');
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.KIRO_SESSION_LOAD_TIMEOUT_MS;
+      } else {
+        process.env.KIRO_SESSION_LOAD_TIMEOUT_MS = previousTimeout;
+      }
+    }
+  });
+
+  it('tells the client to abandon a load that missed its deadline', async () => {
+    const previousTimeout = process.env.KIRO_SESSION_LOAD_TIMEOUT_MS;
+    process.env.KIRO_SESSION_LOAD_TIMEOUT_MS = '25';
+    const abandoned = mock(() => {});
+    try {
+      const kiro = new Kiro();
+      await kiro.initialize('/path/to/agent');
+      await kiro.createSession();
+
+      // A load that misses the deadline: the client must be told before the
+      // caller rolls back, so a late RPC response cannot seize ownership.
+      let releaseLoad!: (value: {
+        sessionId: string;
+        currentModel: { id: string; name: string };
+        currentAgent: { name: string };
+      }) => void;
+      mockSessionClient.abandonPendingLoad = abandoned;
+      mockSessionClient.loadSession.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseLoad = resolve;
+          })
+      );
+      await expect(kiro.loadSession('session-late')).rejects.toThrow(
+        'timed out'
+      );
+      expect(abandoned).toHaveBeenCalledTimes(1);
+
+      // Settle the abandoned RPC so nothing dangles into the next test.
+      releaseLoad({
+        sessionId: 'session-late',
+        currentModel: { id: 'model-1', name: 'Test Model' },
+        currentAgent: { name: 'test-agent' },
+      });
+      await new Promise((r) => setTimeout(r, 5));
+    } finally {
+      mockSessionClient.abandonPendingLoad = undefined;
+      mockSessionClient.loadSession.mockImplementation((id: string) =>
+        Promise.resolve({
+          sessionId: id,
+          currentModel: { id: 'model-1', name: 'Test Model' },
+          currentAgent: { name: 'test-agent' },
+        })
+      );
+      if (previousTimeout === undefined) {
+        delete process.env.KIRO_SESSION_LOAD_TIMEOUT_MS;
+      } else {
+        process.env.KIRO_SESSION_LOAD_TIMEOUT_MS = previousTimeout;
+      }
+    }
   });
 
   it('loadSession calls onHistoryEvent handler', async () => {

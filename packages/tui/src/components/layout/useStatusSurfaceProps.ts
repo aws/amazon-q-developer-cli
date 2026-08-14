@@ -2,8 +2,6 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../stores/app-store.js';
 import type { StatusSurfaceProps } from './status-surface.js';
 
-const workspacePath = process.cwd();
-
 // Taking the required complement forces every status prop to be classified as
 // shared (returned below) or layout-specific (named here) — a new prop cannot
 // silently reach only one surface.
@@ -40,7 +38,11 @@ export function useStatusSurfaceProps(): SharedStatusSurfaceProps {
         cloudBranch: s.cloudBranch,
         cloudExtraRepos: s.cloudExtraRepos,
         codeIntelligenceActive: s.codeIntelligenceActive,
-        workspacePath,
+        // Read live, not once at module load: resuming a session from another
+        // workspace calls process.chdir(), and the chip must follow. The
+        // accompanying store update (the switch's system message) re-runs this
+        // selector; useShallow keeps identity stable while the cwd is unchanged.
+        workspacePath: process.cwd(),
       })
     )
   );

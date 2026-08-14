@@ -60,14 +60,26 @@ export const KeybindingsPanel: React.FC<KeybindingsPanelProps> = ({
   onClose,
 }) => {
   const { getColor } = useTheme();
-  const { label, cancelStream, closeMenu, quit, toggleInterruptMode } =
-    useKeybindings();
+  const {
+    label,
+    cancelStream,
+    closeMenu,
+    quit,
+    toggleInterruptMode,
+    toggleSessionDashboard,
+  } = useKeybindings();
   const dim = getColor('secondary');
   const primary = getColor('primary');
   // Drives the ESC hint label only — back-nav itself happens upstream.
   const fromSettings = useAppStore((state) => state.settingsReturnOnEscape);
 
-  const bindings = { cancelStream, closeMenu, quit, toggleInterruptMode };
+  const bindings = {
+    cancelStream,
+    closeMenu,
+    quit,
+    toggleInterruptMode,
+    toggleSessionDashboard,
+  };
 
   return (
     <Panel

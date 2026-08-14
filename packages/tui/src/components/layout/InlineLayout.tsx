@@ -11,6 +11,7 @@ import { WelcomeScreen } from '../welcome-screen/index.js';
 import { SourceProviderGate } from '../ui/SourceProviderGate.js';
 import { openUrlInBrowser } from '../../utils/browser.js';
 import { SOURCE_PROVIDER_SETUP_URL } from '../../utils/cloud-urls.js';
+import { Feature, features } from '../../features.js';
 import { formatCloudStartupChecklist } from './shared/cloud-startup-checklist.js';
 import { cloudConnectStage } from './shared/cloud-connect-stage.js';
 import { ExitHint } from '../ui/ExitHint';
@@ -37,6 +38,10 @@ import {
 import { SpecCheckpointChip } from '../ui/SpecCheckpointChip.js';
 import { useCheckpointAnswer } from '../../hooks/useCheckpointAnswer.js';
 import { useBackendPanelHandlers } from './shared/useBackendPanelHandlers.js';
+import {
+  getCachedAllWorkspaceSessions,
+  scanAllWorkspaceSessions,
+} from '../../utils/all-workspace-sessions.js';
 import type { VariantLayoutProps } from './variant-layout.js';
 
 import {
@@ -369,6 +374,53 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
     {
       isActive: canToggleToolOutputs || announcementTruncated,
     }
+  );
+
+  // Ctrl+E enters the full-screen session dashboard (KAS only).
+  const setShowSessionDashboard = useAppStore((s) => s.setShowSessionDashboard);
+  const inlineAgentEngine = useAppStore((s) => s.agentEngine);
+  // Mid-prompt, Ctrl+E means end-of-line (readline). Only an empty prompt
+  // lets the chord open the dashboard.
+  const inlinePromptEmpty = useAppStore(
+    (s) =>
+      s.commandInputValue.length === 0 &&
+      s.input.lines.every((l) => l.length === 0)
+  );
+  // Warm the cross-workspace scan cache at boot so the first toggle is instant.
+  useEffect(() => {
+    if (
+      inlineAgentEngine === 'kas' &&
+      features.isEnabled(Feature.SessionDashboard)
+    ) {
+      void scanAllWorkspaceSessions();
+    }
+  }, [inlineAgentEngine]);
+  useKeypress(
+    (input, key) => {
+      if (keybindings.matches('toggleSessionDashboard', input, key)) {
+        if (
+          features.isEnabled(Feature.SessionDashboard) &&
+          inlineAgentEngine === 'kas' &&
+          inlinePromptEmpty &&
+          !isProcessing &&
+          !backendPanelVisibility.any &&
+          !activeCommand &&
+          !pendingApproval &&
+          !pendingQuestion
+        ) {
+          // Enter alt screen immediately (before React re-renders) so the
+          // full-screen dashboard doesn't pollute main-screen scrollback.
+          setShowSessionDashboard(
+            true,
+            getCachedAllWorkspaceSessions(),
+            'ctrl_e'
+          );
+          process.stdout.write('\x1b[?1049h');
+          setMode('session-dashboard');
+        }
+      }
+    },
+    { isActive: inlineAgentEngine === 'kas' }
   );
 
   // Handle Esc to collapse expanded outputs

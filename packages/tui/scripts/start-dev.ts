@@ -159,6 +159,45 @@ function buildTwinki(): boolean {
   return result.status === 0;
 }
 
+/**
+ * Stage-keyed remote-sessions endpoint, mirroring launch.rs
+ * default_remote_sessions_endpoint. An unrecognized portal maps to prod.
+ */
+function defaultRemoteSessionsEndpoint(authPortalUrl?: string): string {
+  switch (authPortalUrl?.trim()) {
+    case 'https://gamma.app.kiro.dev':
+      return 'https://gamma.app.kiro.dev';
+    case 'https://beta.app.kiro.dev':
+      return 'https://beta.app.kiro.dev';
+    default:
+      return 'https://app.kiro.dev';
+  }
+}
+
+/**
+ * KIRO_ENABLED_FEATURES is the authoritative feature set (a JSON string
+ * array). Prod's launcher computes it from rollout.json; bun run dev bypasses
+ * that, so features gate off. Merge `tangent` and `session_dashboard` in
+ * (keeping any features the caller already listed) so /tangent and the
+ * `/sessions` dashboard are testable locally.
+ */
+function devEnabledFeatures(existing?: string): string {
+  const set = new Set<string>();
+  if (existing) {
+    try {
+      const parsed: unknown = JSON.parse(existing);
+      if (Array.isArray(parsed)) {
+        for (const f of parsed) if (typeof f === 'string') set.add(f);
+      }
+    } catch {
+      /* malformed — start from an empty set */
+    }
+  }
+  set.add('tangent');
+  set.add('session_dashboard');
+  return JSON.stringify([...set]);
+}
+
 function startTUI() {
   if (!existsSync(RUST_BIN)) {
     console.error(`\nError: Rust binary not found at ${RUST_BIN}`);
@@ -189,6 +228,19 @@ function startTUI() {
       // of the active engine.
       KIRO_CHAT_CLI_BIN: RUST_BIN,
       JSC_numberOfGCMarkers: '1',
+      // Cloud/remote sessions are KAS's opt-in: it only advertises the
+      // `remote` session source when launched with this endpoint. Prod sets it
+      // in launch.rs (remote_sandbox rollout, 100%/all); bun run dev bypasses
+      // that launcher, so mirror it here or cloud sessions never list. Stage is
+      // keyed to the auth portal, matching default_remote_sessions_endpoint.
+      KIRO_REMOTE_SESSIONS_ENDPOINT:
+        process.env.KIRO_REMOTE_SESSIONS_ENDPOINT?.trim() ||
+        defaultRemoteSessionsEndpoint(process.env.KIRO_AUTH_PORTAL_URL),
+      // Enable /tangent locally (prod's launcher includes it in the feature
+      // set; dev bypasses that launcher).
+      KIRO_ENABLED_FEATURES: devEnabledFeatures(
+        process.env.KIRO_ENABLED_FEATURES
+      ),
       // Dev mirrors a lite-cohort user so a persisted chat.ui.mode='lite' is
       // honored (resolveUiMode gates on this; prod gets it from launch.rs).
       KIRO_LITE_ROLLOUT_ENABLED: process.env.KIRO_LITE_ROLLOUT_ENABLED ?? '1',

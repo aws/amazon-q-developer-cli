@@ -118,6 +118,10 @@ export function dispatchAppKeypress(
     return true;
   }
 
+  // The dashboard owns every key while mounted, including modifiers used by
+  // confirmation dialogs. Twinki broadcasts keypresses to active handlers.
+  if (state.mode === 'session-dashboard') return false;
+
   if (key.ctrl && input === 'z') {
     // The lite subagent panel rebinds Ctrl+Z to "jump to bottom of trace".
     // Letting the global suspend fire here would background the process the

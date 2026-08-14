@@ -5,6 +5,14 @@ import { afterEach, describe, expect, it, mock } from 'bun:test';
 // decides where subjects break.
 const DEFAULT_TERM_WIDTH = 120;
 const TERM_SIZE = { width: DEFAULT_TERM_WIDTH, height: 16 };
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../../../../hooks/useTerminalSize.js',
+]);
+
 mock.module('../../../../hooks/useTerminalSize.js', () => ({
   useTerminalSize: () => ({ ...TERM_SIZE }),
   setTerminalSizeForTests: () => {},

@@ -37,9 +37,9 @@ pub trait KasSessionClient {
     /// Sent as the top-level `sessionSource` param on `_kiro/session/delete`,
     /// omitted when `None`.
     ///
-    /// KAS does not currently report whether the session actually existed,
-    /// so the success case is `Result<()>` rather than `Result<bool>`.
-    async fn delete_session(&self, session_id: &str, session_source: Option<&str>) -> Result<()>;
+    /// Returns the backend's `{ success }` value without treating transport
+    /// success as deletion success.
+    async fn delete_session(&self, session_id: &str, session_source: Option<&str>) -> Result<bool>;
 }
 
 /// ACP-backed [`KasSessionClient`]. Owns a connected KAS child and issues
@@ -240,7 +240,7 @@ impl KasSessionClient for KasAcpSessionClient {
         Ok(entries)
     }
 
-    async fn delete_session(&self, session_id: &str, session_source: Option<&str>) -> Result<()> {
+    async fn delete_session(&self, session_id: &str, session_source: Option<&str>) -> Result<bool> {
         debug!(%session_id, ?session_source, "deleting KAS session via _kiro/session/delete ext_method");
         let request = DeleteSessionRequest {
             session_id,
@@ -252,10 +252,10 @@ impl KasSessionClient for KasAcpSessionClient {
             .ext_method(acp::ExtRequest::new("kiro/session/delete", raw.into()))
             .await
             .wrap_err_with(|| format!("failed to delete KAS session '{session_id}'"))?;
-        let DeleteSessionResponse { success: _ } =
+        let DeleteSessionResponse { success } =
             serde_json::from_str(resp.0.get()).wrap_err("failed to parse KAS _kiro/session/delete response")?;
-        debug!(%session_id, "KAS session delete dispatched");
-        Ok(())
+        debug!(%session_id, success, "KAS session delete completed");
+        Ok(success)
     }
 }
 
@@ -340,6 +340,7 @@ impl acp::Client for MinimalAcpClient {
 /// `#[cfg(test)]` items aren't visible.
 pub mod test {
     use std::cell::RefCell;
+    use std::collections::VecDeque;
     use std::path::Path;
 
     use eyre::Result;
@@ -349,12 +350,12 @@ pub mod test {
         SessionInfoEntry,
     };
 
-    /// In-memory stub of [`KasSessionClient`]. Each stubbed result is
-    /// consumed on first call; a second unstubbed call panics.
+    /// In-memory stub of [`KasSessionClient`]. Stubbed results are consumed
+    /// in FIFO order, one per call; a call with no queued result panics.
     #[derive(Default)]
     pub struct KasMockSessionClient {
-        list_result: RefCell<Option<Result<Vec<SessionInfoEntry>>>>,
-        delete_result: RefCell<Option<Result<()>>>,
+        list_results: RefCell<VecDeque<Result<Vec<SessionInfoEntry>>>>,
+        delete_results: RefCell<VecDeque<Result<bool>>>,
     }
 
     impl KasMockSessionClient {
@@ -363,24 +364,28 @@ pub mod test {
         }
 
         pub fn with_list(self, entries: Vec<SessionInfoEntry>) -> Self {
-            *self.list_result.borrow_mut() = Some(Ok(entries));
+            self.list_results.borrow_mut().push_back(Ok(entries));
             self
         }
 
         pub fn with_list_err(self, message: impl Into<String>) -> Self {
             let msg = message.into();
-            *self.list_result.borrow_mut() = Some(Err(eyre::eyre!(msg)));
+            self.list_results.borrow_mut().push_back(Err(eyre::eyre!(msg)));
+            self
+        }
+
+        pub fn with_delete_result(self, deleted: bool) -> Self {
+            self.delete_results.borrow_mut().push_back(Ok(deleted));
             self
         }
 
         pub fn with_delete_ok(self) -> Self {
-            *self.delete_result.borrow_mut() = Some(Ok(()));
-            self
+            self.with_delete_result(true)
         }
 
         pub fn with_delete_err(self, message: impl Into<String>) -> Self {
             let msg = message.into();
-            *self.delete_result.borrow_mut() = Some(Err(eyre::eyre!(msg)));
+            self.delete_results.borrow_mut().push_back(Err(eyre::eyre!(msg)));
             self
         }
     }
@@ -388,20 +393,27 @@ pub mod test {
     #[async_trait::async_trait(?Send)]
     impl KasSessionClient for KasMockSessionClient {
         async fn list_sessions(&self, _cwd: &Path) -> Result<Vec<SessionInfoEntry>> {
-            match self.list_result.borrow_mut().take() {
+            match self.list_results.borrow_mut().pop_front() {
                 Some(Ok(v)) => Ok(v),
                 Some(Err(e)) => Err(eyre::eyre!("{e:#}")),
                 None => panic!("KasMockSessionClient: list_sessions called but not stubbed"),
             }
         }
 
-        async fn delete_session(&self, _id: &str, _session_source: Option<&str>) -> Result<()> {
-            match self.delete_result.borrow_mut().take() {
-                Some(Ok(())) => Ok(()),
+        async fn delete_session(&self, _id: &str, _session_source: Option<&str>) -> Result<bool> {
+            match self.delete_results.borrow_mut().pop_front() {
+                Some(Ok(deleted)) => Ok(deleted),
                 Some(Err(e)) => Err(eyre::eyre!("{e:#}")),
                 None => panic!("KasMockSessionClient: delete_session called but not stubbed"),
             }
         }
+    }
+
+    #[test]
+    fn delete_response_preserves_backend_rejection() {
+        let response: super::DeleteSessionResponse =
+            serde_json::from_value(serde_json::json!({ "success": false })).unwrap();
+        assert!(!response.success);
     }
 
     /// The top-level `sessionSource` param is sent only when routing a remote

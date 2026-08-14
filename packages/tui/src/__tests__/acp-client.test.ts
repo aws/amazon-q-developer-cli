@@ -43,11 +43,18 @@ import * as realChildProcess from 'child_process';
 // A module mock is process-wide, so the real exports are carried over rather
 // than dropped: a suite loaded later that imports a different export would
 // otherwise resolve against a module that no longer provides it.
+
+// These mocks are not restored afterAll: this file top-level-awaits an async
+// import, and a module in that graph cannot be captured synchronously before
+// the mocks register. Spreading the real exports above is what keeps a later
+// suite from resolving against a module that no longer provides them.
+
 mock.module('child_process', () => ({
   ...realChildProcess,
   spawn: mockSpawn,
 }));
 mock.module('node:child_process', () => ({
+  ...realChildProcess,
   spawn: mockSpawn,
 }));
 

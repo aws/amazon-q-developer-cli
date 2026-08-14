@@ -8,6 +8,15 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AgentEventType } from '../types/agent-events';
 
 const actualObserver = await import('../utils/tui-telemetry-observer');
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../utils/tui-telemetry-observer',
+  '../kiro',
+]);
+
 const mockRecordTuiConfigPanel = mock((_a: unknown) => {});
 const mockRecordTuiCloudConfigDiagnostics = mock((_a: unknown) => {});
 mock.module('../utils/tui-telemetry-observer', () => ({

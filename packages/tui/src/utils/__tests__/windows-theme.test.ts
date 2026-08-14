@@ -24,6 +24,14 @@ import {
  * an args array, never a bare `powershell` through cmd.exe.
  *
  * The exec dependency is injected directly. We deliberately do NOT use
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  'child_process',
+]);
+
  * `mock.module('child_process', ...)`: bun's module mocks are process-global
  * and leak into every other test file in the run. detectWindowsTerminalTheme
  * uses the real `fs` against a per-test tmpdir, so it needs no mocking.

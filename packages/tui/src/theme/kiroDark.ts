@@ -24,6 +24,14 @@ export const kiroDark: Theme = {
         background: { truecolor: '#552B99', color256: 54 }, // Always dark purple (same as dark mode)
         text: { truecolor: '#ffffff', color256: 15 }, // Always bright purple (same as dark mode)
       },
+      dashboard: {
+        selectedText: { truecolor: '#1a1a1a', color256: 234 },
+        bandBackground: { truecolor: '#2a2a2a', color256: 235 },
+        bandText: { truecolor: '#ffffff', color256: 15 },
+        bandMutedText: { truecolor: '#bbbbbb', color256: 250 },
+        tagBackground: { truecolor: '#333333', color256: 236 },
+        tagText: { truecolor: '#bbbbbb', color256: 250 },
+      },
     },
     syntax: {
       keyword: { truecolor: '#C2A0FD', color256: 183 }, // keyword.control - purple (function, return, etc)

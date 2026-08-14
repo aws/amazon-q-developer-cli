@@ -16,6 +16,9 @@
  * once the CI supports multiple unit test steps.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   AsyncSpawner,
   ListAllSessionsResult,
@@ -23,6 +26,8 @@ import type {
   SessionSource,
 } from '../list-all-sessions-cli';
 import { resolveChatCliBinFromEnv } from '../chat-cli-bin';
+
+const importUnmocked = (specifier: string) => import(specifier);
 
 // --- Local copy of listAllSessions (immune to mock.module pollution) ---
 
@@ -289,5 +294,59 @@ describe('listAllSessions', () => {
     });
     const result = await listAllSessions(spawner);
     expect(result.ok).toBe(true);
+  });
+  it.skipIf(process.platform === 'win32')(
+    'terminates a child whose stdout exceeds the resource cap',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'session-list-output-cap-'));
+      const script = join(dir, 'oversized-output.sh');
+      writeFileSync(
+        script,
+        "#!/bin/sh\nhead -c 4194305 /dev/zero | tr '\\0' x\n"
+      );
+      chmodSync(script, 0o755);
+      process.env.KIRO_CHAT_CLI_BIN = script;
+      try {
+        const { listAllSessions: listWithRealSpawner } = await importUnmocked(
+          '../list-all-sessions-cli?output-cap'
+        );
+
+        const result = await listWithRealSpawner(undefined, 10_000);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toContain('exceeded 4 MiB');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+});
+
+describe('deleteClassicSession', () => {
+  it('aborts the destructive child when the deadline expires', async () => {
+    const { deleteClassicSession } = await importUnmocked(
+      '../list-all-sessions-cli?classic-delete-timeout'
+    );
+    let observedSignal: AbortSignal | undefined;
+    const spawner: AsyncSpawner = (_bin, _args, signal) =>
+      new Promise((resolve) => {
+        observedSignal = signal;
+        signal?.addEventListener(
+          'abort',
+          () =>
+            resolve({
+              exitCode: null,
+              stdout: '',
+              stderr: '',
+              error: new Error('aborted'),
+            }),
+          { once: true }
+        );
+      });
+
+    const result = await deleteClassicSession('classic-1', spawner, 5);
+
+    expect(result.ok).toBe(false);
+    expect(observedSignal?.aborted).toBe(true);
   });
 });

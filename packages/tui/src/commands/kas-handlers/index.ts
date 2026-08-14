@@ -19,6 +19,7 @@ import { handleAgent } from './agent';
 import { handleAutonomous } from './autonomous';
 import { handleEffort } from './effort';
 import { handleRepo } from './repo';
+import { handleSessions } from './sessions';
 import { handleMcp } from './mcp';
 import { handleWorkflow } from './workflow';
 import type { KasHandlerCommandName } from '../command-registry.js';
@@ -32,7 +33,7 @@ export type KasHandler = (
 
 export const kasHandlers = {
   [KasCommandName.Chat]: handleChat,
-  [KasCommandName.Sessions]: handleChat,
+  [KasCommandName.Sessions]: handleSessions,
   [KasCommandName.Disconnect]: handleDisconnect,
   [KasCommandName.Compact]: handleCompact,
   [KasCommandName.Context]: handleContext,

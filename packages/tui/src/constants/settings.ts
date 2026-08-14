@@ -55,6 +55,9 @@ export const Settings = {
   CHAT_DEFAULT_INTERRUPT_BEHAVIOR: 'chat.defaultInterruptBehavior',
   CHAT_KEYBINDINGS_TOGGLE_INTERRUPT_BEHAVIOR:
     'chat.keybindings.toggleInterruptBehavior',
+  CHAT_KEYBINDINGS_TOGGLE_SESSION_DASHBOARD:
+    'chat.keybindings.toggleSessionDashboard',
+  CHAT_SESSION_DASHBOARD_GROUP_BY: 'chat.sessionDashboard.groupBy',
   // Sticky-default storage keys (shared with v2). `chat.defaultModel` holds the
   // single global default model id; `chat.modelDefaults` holds the per-model
   // nested defaults object (effort lives under each model's family schema path).

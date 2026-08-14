@@ -68,6 +68,12 @@ pub enum Feature {
     /// listings (`/mcp` Source column). Dark outside internal nightly, same
     /// ramp shape as `remote_sandbox`.
     CloudConfig,
+    /// Session dashboard: the full-screen `/sessions` browser, the `--sessions`
+    /// launch flag, and (on v3) routing `--resume-picker` into the dashboard.
+    /// Nightly-only preview (`channel: nightly` in `rollout.json`); the launcher
+    /// includes `session_dashboard` in `KIRO_ENABLED_FEATURES` and both the Rust
+    /// launch gate and the TUI honor it.
+    SessionDashboard,
     #[cfg(test)]
     #[typeshare(skip)]
     Test,
@@ -579,6 +585,31 @@ mod tests {
                 r.is_enabled(Feature::AutoAgentUpgrade),
                 expected,
                 "auto_agent_upgrade enabled={expected} for internal={is_internal}, nightly={is_nightly}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_session_dashboard_enabled_only_on_nightly() {
+        let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        assert!(
+            features.contains_key(<&str>::from(Feature::SessionDashboard)),
+            "session_dashboard must be declared in rollout.json"
+        );
+
+        // channel=nightly, segment=all: every nightly user (internal or not)
+        // gets it; stable/rc builds stay dark.
+        for (is_internal, is_nightly, expected) in [
+            (false, false, false),
+            (false, true, true),
+            (true, false, false),
+            (true, true, true),
+        ] {
+            let r = Rollout::new_for_test(is_internal, is_nightly);
+            assert_eq!(
+                r.is_enabled(Feature::SessionDashboard),
+                expected,
+                "session_dashboard enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

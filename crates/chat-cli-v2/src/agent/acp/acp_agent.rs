@@ -666,6 +666,10 @@ pub struct AcpSessionConfig {
 
 impl AcpSessionConfig {
     pub fn new(session_id: String, cwd: PathBuf) -> Self {
+        // A relative cwd (some ACP clients pass ".") would be persisted
+        // verbatim and rendered as-is in session listings forever; resolve
+        // it against the process working directory before it's stored.
+        let cwd = std::path::absolute(&cwd).unwrap_or(cwd);
         Self {
             session_id,
             cwd,
@@ -5719,5 +5723,25 @@ mod mcp_init_timeout_tests {
             resolve_mcp_init_timeout(false, Some(&ClientName::Kiro), Some(0), None),
             Some(Duration::ZERO)
         );
+    }
+}
+
+#[cfg(test)]
+mod acp_session_config_cwd_tests {
+    use std::path::PathBuf;
+
+    use super::AcpSessionConfig;
+
+    #[test]
+    fn relative_cwd_is_absolutized_before_storage() {
+        let config = AcpSessionConfig::new("sid".to_string(), PathBuf::from("."));
+        assert!(config.cwd.is_absolute(), "got {:?}", config.cwd);
+    }
+
+    #[test]
+    fn absolute_cwd_is_preserved() {
+        let cwd = std::env::temp_dir();
+        let config = AcpSessionConfig::new("sid".to_string(), cwd.clone());
+        assert_eq!(config.cwd, cwd);
     }
 }

@@ -6,7 +6,10 @@ import {
   importSession as runImportSession,
 } from '../../utils/session-archive-cli';
 import { listAllSessions } from '../../utils/list-all-sessions-cli';
-import { ensureSession } from '../../utils/ensure-session-cli';
+import {
+  ensureSession,
+  type SourceFormat,
+} from '../../utils/ensure-session-cli';
 import {
   isActiveEngineSource,
   isResumableSource,
@@ -16,6 +19,7 @@ import { formatSessionState } from '../../utils/session-picker';
 import { isCloudExecutionTargetKind } from '../../types/multi-session';
 import { Feature, features } from '../../features';
 import { sanitizeSessionTitleForDisplay } from '../../utils/sanitize-title';
+import { normalizeSessionId } from '../../utils/session-store';
 import { unquote } from '../../utils/string';
 import type { SessionPickerRow } from '../../components/ui/SessionPickerPanel';
 import { basename } from 'node:path';
@@ -72,9 +76,23 @@ export async function handleChat(
     return startNewSession(ctx, prompt);
   }
   if (options?.argIsSynthetic) {
-    return loadExistingSession(ctx, trimmed);
+    await loadExistingSession(ctx, trimmed);
+    return;
   }
   ctx.showAlert(`Unknown ${cmd.name} subcommand: ${trimmed}`, 'error', 3000);
+}
+
+function matchesCurrentSession(
+  sessionId: string,
+  currentSessionId: string | undefined,
+  kasNative: boolean
+): boolean {
+  if (!currentSessionId) return false;
+  return (
+    sessionId === currentSessionId ||
+    (kasNative &&
+      normalizeSessionId(sessionId) === normalizeSessionId(currentSessionId))
+  );
 }
 
 async function showSessionPicker(
@@ -98,7 +116,14 @@ async function showSessionPicker(
   // columnar panel) — released users see zero change.
   if (!features.isEnabled(Feature.RemoteSandbox)) {
     const options = listing.sessions
-      .filter((s) => s.sessionId !== currentSessionId)
+      .filter(
+        (s) =>
+          !matchesCurrentSession(
+            s.sessionId,
+            currentSessionId,
+            s.source === 'v3'
+          )
+      )
       .filter((s) => isResumableSource(s.source, activeIsKas))
       .map((s) => {
         const native = isActiveEngineSource(s.source, activeIsKas);
@@ -127,14 +152,17 @@ async function showSessionPicker(
     .catch(() => ({ sessions: [] }));
   const liveMeta = new Map(liveByCwd.sessions.map((s) => [s.sessionId, s]));
   const resumable = listing.sessions
-    .filter((s) => s.sessionId !== currentSessionId)
+    .filter(
+      (s) =>
+        !matchesCurrentSession(s.sessionId, currentSessionId, s.source === 'v3')
+    )
     .filter((s) => isResumableSource(s.source, activeIsKas));
   // Cloud rows the live client knows about but the shell-out omitted entirely.
   const shellIds = new Set(listing.sessions.map((s) => s.sessionId));
   const liveOnly = liveByCwd.sessions
     .filter(
       (s) =>
-        s.sessionId !== currentSessionId &&
+        !matchesCurrentSession(s.sessionId, currentSessionId, true) &&
         !shellIds.has(s.sessionId) &&
         isCloudExecutionTargetKind(s.executionTarget?.kind)
     )
@@ -258,36 +286,47 @@ async function startNewSession(
 export async function loadExistingSession(
   ctx: CommandContext,
   inputId: string,
-  options?: { systemMessage?: string; source?: 'local' | 'remote' }
-): Promise<void> {
+  options?: {
+    systemMessage?: string;
+    source?: 'local' | 'remote';
+    sourceFormat?: SourceFormat;
+  }
+): Promise<boolean> {
   // A remote session has no local on-disk record, so skip ensure-session's
   // local probes and load the id straight through the connected client, which
   // routes `session/load` to the remote store.
   let sessionId: string;
+  // Store the incoming load resolves against. Defaults to the caller's hint;
+  // the cloud fallthrough below pins it to 'remote' so an id that isn't a
+  // local session can't be loaded local-first (which spawns an empty session).
+  let loadSource: 'local' | 'remote' | undefined = options?.source;
   if (options?.source === 'remote') {
     sessionId = inputId;
   } else {
     ctx.setLoadingMessage(`Resolving session ${inputId}...`);
     const ensured = await ensureSession({
-      sourceFormat: 'auto',
+      sourceFormat: options?.sourceFormat ?? 'auto',
       sourceSessionId: inputId,
       targetFormat: 'kas',
       cwd: process.cwd(),
     });
     ctx.setLoadingMessage(null);
     if (!ensured.ok) {
-      // Local stores don't have it — if this is a cloud session, treat the id as
-      // a remote one and let the connected client load it. Otherwise surface the
-      // original not-found.
+      // No local session resolves for this id. Inside a cloud session the id is
+      // almost certainly a remote/cloud session (bare UUID), so load it from the
+      // remote store explicitly — never local-first, which would create a fresh
+      // empty session for an id the local store doesn't have. Outside a cloud
+      // session, surface the original not-found.
       if (ctx.cloudSessionActive) {
         sessionId = inputId;
+        loadSource = 'remote';
       } else {
         ctx.showAlert(
           `Failed to load session: ${ensured.message}`,
           'error',
           5000
         );
-        return;
+        return false;
       }
     } else {
       sessionId = ensured.sessionId;
@@ -320,7 +359,7 @@ export async function loadExistingSession(
     const session = await ctx.kiro.loadSession(
       sessionId,
       (e) => buffered.push(e),
-      options?.source ? { source: options.source } : undefined
+      loadSource ? { source: loadSource } : undefined
     );
     logger.debug('[chat] loadSession resolved', {
       sessionId,
@@ -386,6 +425,7 @@ export async function loadExistingSession(
     if (session.currentAgent)
       ctx.setCurrentAgent(session.currentAgent, { suppressWelcome: true });
     ctx.showAlert('Session loaded', 'success', 3000);
+    return true;
   } catch (err) {
     restoreKasSession();
     // The previous session is still the active one — bring its footer
@@ -402,6 +442,7 @@ export async function loadExistingSession(
       'error',
       5000
     );
+    return false;
   }
 }
 

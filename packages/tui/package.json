@@ -20,6 +20,7 @@
     "lint:fix": "eslint . --fix && prettier --write src acp_integ_tests",
     "format": "prettier --write src acp_integ_tests",
     "test": "bun test",
+    "test:perf": "KIRO_PERF_TESTS=1 bun test src/components/layout/__tests__/SessionDashboardScreen.perf.test.tsx && KIRO_PERF_TESTS=1 bun test src/components/ui/__tests__/SessionDashboard.realstore-perf.test.tsx && bun test src/utils/__tests__/session-dashboard-perf.test.ts",
     "test:vitest": "vitest run --config vitest.config.ts",
     "test:watch": "bun test --watch",
     "test:integ": "bun test ./integ_tests/",

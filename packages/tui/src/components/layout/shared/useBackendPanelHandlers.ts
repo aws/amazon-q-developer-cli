@@ -32,6 +32,7 @@ export function useBackendPanelHandlers() {
     setShowRepoPicker,
     retrySourceProviderConnection,
     setShowSessionPicker,
+    setShowSessionDashboard,
     setShowKnowledgePanel,
     setShowCodePanel,
     setShowChangelogPanel,
@@ -112,6 +113,7 @@ export function useBackendPanelHandlers() {
     }),
     handleCloseRepoPicker: makeClose(setShowRepoPicker),
     handleCloseSessionPicker: makeClose(setShowSessionPicker),
+    handleCloseSessionDashboard: makeClose(setShowSessionDashboard),
     handleCloseKnowledgePanel: makeClose(setShowKnowledgePanel),
     handleCloseCodePanel: makeClose(setShowCodePanel),
     handleCloseChangelogPanel: makeClose(setShowChangelogPanel),
@@ -247,9 +249,11 @@ export function useBackendPanelHandlers() {
   // Resume the chosen session via the store's resumeSession action, which fires
   // the synthetic `/chat <id>` dispatch so the KAS handler's loadExistingSession
   // flow resolves + loads it (native or cross-engine), same as the old menu path.
+  // `targetCwd` (set for cross-workspace loads) switches the working directory
+  // first so the session loads in its own project.
   const handleSessionSelect = useCallback(
-    (sessionId: string, environment: 'local' | 'cloud') => {
-      void resumeSession(sessionId, environment);
+    (sessionId: string, environment: 'local' | 'cloud', targetCwd?: string) => {
+      void resumeSession(sessionId, environment, targetCwd);
     },
     [resumeSession]
   );

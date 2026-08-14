@@ -108,6 +108,7 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
             .expect_valid(),
         workflow_dimensions(gauge("kiro_cli_workflow_concurrent_runs", 2.0)).expect_valid(),
         record_ui_mode_session_started(UiMode::Tui),
+        record_session_dashboard("resumed_cross_workspace", "search", "ctrl_e", engine),
         record_daily_heartbeat(ReleaseChannel::Stable, os, InstallSource::Internal),
         record_slash_command("/help", engine),
         record_top_level_command("chat"),

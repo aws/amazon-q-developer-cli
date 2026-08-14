@@ -53,6 +53,12 @@ export interface Glyphs {
   wrench: string;
   emDash: string;
   cloud: string;
+  dotDouble: string;
+  dotDashed: string;
+  search: string;
+  rewind: string;
+  shift: string;
+  gear: string;
 }
 
 export interface Spinners {
@@ -115,6 +121,12 @@ export const UNICODE_GLYPHS: Glyphs = {
   wrench: '🔧',
   emDash: '—',
   cloud: '☁️',
+  dotDouble: '◉',
+  dotDashed: '◌',
+  search: '⌕',
+  rewind: '↩',
+  shift: '⇧',
+  gear: '⚙',
 };
 
 export const ASCII_GLYPHS: Glyphs = {
@@ -170,6 +182,12 @@ export const ASCII_GLYPHS: Glyphs = {
   wrench: 'T',
   emDash: '-',
   cloud: '*',
+  dotDouble: '@',
+  dotDashed: 'o',
+  search: '?',
+  rewind: '<',
+  shift: 'shift+',
+  gear: '*',
 };
 
 export const UNICODE_SPINNERS: Spinners = {

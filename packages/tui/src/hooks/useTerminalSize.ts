@@ -42,6 +42,10 @@ export function connectResizeSource(instance: Instance): void {
   if (registered) return;
   registered = true;
   instance.onResize(updateSize);
+  // The module-load snapshot can predate the terminal being sized (or use
+  // a stale stdout value); resize callbacks only fire on CHANGES, so sync
+  // once now or a wrong initial height persists until a physical resize.
+  updateSize();
 }
 
 function subscribe(callback: () => void): () => void {

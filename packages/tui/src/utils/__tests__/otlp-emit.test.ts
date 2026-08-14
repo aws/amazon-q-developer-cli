@@ -12,6 +12,12 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 
 // Register a COMPLETE spy logger before importing the module under test.
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../logger.js']);
+
 // Several sibling test files `mock.module('../logger.js', …)` with a partial
 // logger (some omit `.trace`); Bun's module mocks are process-global, so
 // asserting via `spyOn` on the shared singleton is order-dependent and flaky

@@ -28,6 +28,7 @@ describe('Glyph registry', () => {
       'midEllipsis',
       'enter',
       'pause',
+      'shift',
     ]);
     for (const [key, value] of Object.entries(ASCII_GLYPHS)) {
       if (multiCharAllowed.has(key)) continue;
@@ -39,10 +40,10 @@ describe('Glyph registry', () => {
     const multiCharAllowed = new Set([
       'clipboard', // 📋 emoji
       'sparkle', // ✨ emoji
+      'cloud', // ☁️ emoji (variation selector, JS length 2)
       'treeCorner', // └──
       'treeBranch', // ├──
       'wrench', // 🔧 astral emoji (JS length 2)
-      'cloud', // ☁️ emoji-presentation (base + VS16, JS length 2)
     ]);
     for (const [key, value] of Object.entries(UNICODE_GLYPHS)) {
       if (multiCharAllowed.has(key)) continue;

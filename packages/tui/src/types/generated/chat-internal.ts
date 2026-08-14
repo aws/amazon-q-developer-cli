@@ -114,11 +114,25 @@ export enum Feature {
 	 */
 	RemoteChangelog = "remote_changelog",
 	/**
+	 * Auto-upgrade of V2-only agent configs to the universal format when
+	 * launching the V3/KAS engine. Internal nightly only for now; the launcher
+	 * only runs the migration prompt/scan when this is enabled.
+	 */
+	AutoAgentUpgrade = "auto_agent_upgrade",
+	/**
 	 * Consolidated `/config` panel and cloud/local source labels on config
 	 * listings (`/mcp` Source column). Dark outside internal nightly, same
 	 * ramp shape as `remote_sandbox`.
 	 */
 	CloudConfig = "cloud_config",
+	/**
+	 * Session dashboard: the full-screen `/sessions` browser, the `--sessions`
+	 * launch flag, and (on v3) routing `--resume-picker` into the dashboard.
+	 * Nightly-only preview (`channel: nightly` in `rollout.json`); the launcher
+	 * includes `session_dashboard` in `KIRO_ENABLED_FEATURES` and both the Rust
+	 * launch gate and the TUI honor it.
+	 */
+	SessionDashboard = "session_dashboard",
 }
 
 /**

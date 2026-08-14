@@ -108,6 +108,20 @@ describe('resolveKeybinding', () => {
     });
   });
 
+  it('falls back when the dashboard chord is reserved globally', () => {
+    expect(
+      resolveKeybinding(
+        { 'chat.keybindings.toggleSessionDashboard': 'ctrl+z' },
+        'toggleSessionDashboard'
+      )
+    ).toEqual({
+      ctrl: true,
+      shift: false,
+      meta: false,
+      key: 'e',
+    });
+  });
+
   it('uses the user value when parseable', () => {
     const binding = resolveKeybinding(
       { 'chat.keybindings.cancelStream': 'ctrl+g' },

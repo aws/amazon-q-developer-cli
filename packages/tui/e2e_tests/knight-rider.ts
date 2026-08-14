@@ -76,6 +76,7 @@ const KAS_REBUILD = hasFlag('kas-rebuild');
 // launch dir. The TUI entry is resolved by absolute path below so it still loads
 // regardless of cwd.
 const WORKSPACE = arg('workspace');
+const APP_ARGS = arg('app-args') ?? '';
 const OUTPUT_DIR = arg('out') ?? path.join(__dirname, 'test-outputs', `knight-rider-${Date.now()}`);
 const WIDTH = 120;
 const HEIGHT = 40;
@@ -151,7 +152,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
   if (USE_KAS) {
     const serverPath = KAS_REPO ? buildKasServer(KAS_REPO) : undefined;
     return {
-      cmd: `bun ${TUI_ENTRY}`,
+      cmd: `bun ${TUI_ENTRY}${APP_ARGS ? ` ${APP_ARGS}` : ''}`,
       env: {
         KIRO_AGENT_ENGINE: 'kas',
         KIRO_KAS_NODE_PATH: 'node',

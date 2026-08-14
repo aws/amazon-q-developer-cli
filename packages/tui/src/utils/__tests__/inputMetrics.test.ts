@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, mock, afterAll } from 'bun:test';
 
 // Mock logger BEFORE importing inputMetrics to suppress file I/O
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, ['../logger.js']);
+
 mock.module('../logger.js', () => ({
   logger: {
     info: () => {},

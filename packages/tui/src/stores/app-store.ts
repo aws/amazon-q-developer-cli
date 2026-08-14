@@ -32,6 +32,7 @@ import {
   recordTuiCloudConfigDiagnostics,
   recordTuiCloudRepoAttach,
   recordTuiConfigPanel,
+  type SessionDashboardEntryPoint,
 } from '../utils/tui-telemetry-observer';
 import { getCliVersion } from '../utils/version';
 import { type AgentEngine, resolveAgentEngine } from '../agent-engine';
@@ -101,6 +102,7 @@ import type {
   SessionsChangedNotification,
   ProvisioningFailureCode,
 } from '../types/session-client';
+import type { SessionListingInput } from '../utils/session-dashboard.js';
 import type {
   WorkflowLifecycleNotice,
   WorkflowLifecycleStatus,
@@ -1463,11 +1465,14 @@ interface BaseAppActions {
   // Command UI actions
   setActiveCommand: (command: ActiveCommand | null) => void;
   executeCommandWithArg: (arg: string) => Promise<void>;
-  /** Resume the session chosen in the `/sessions` panel (synthetic `/chat <id>`). */
+  /** Resume the session chosen in the `/sessions` panel (synthetic `/chat <id>`).
+   *  `targetCwd` switches the working directory first for a cross-workspace load. */
   resumeSession: (
     sessionId: string,
-    environment?: 'local' | 'cloud'
-  ) => Promise<void>;
+    environment?: 'local' | 'cloud',
+    targetCwd?: string,
+    sourceEngine?: 'classic' | 'v2' | 'v3'
+  ) => Promise<boolean>;
   setCommandInput: (value: string) => void;
   setActiveTrigger: (
     trigger: { key: string; position: number; type: 'start' | 'inline' } | null
@@ -1659,6 +1664,21 @@ interface BaseAppActions {
     show: boolean,
     rows?: SessionPickerRow[],
     invokedAs?: string
+  ) => void;
+  /** Open/close the Session Dashboard (V3/KAS only). `entry` names the
+   *  door that opened it, for the dashboard-outcome telemetry. */
+  setShowSessionDashboard: (
+    show: boolean,
+    sessions?: SessionListingInput[],
+    entry?: SessionDashboardEntryPoint
+  ) => void;
+  /** Mirror of the dashboard list cursor (for the full-screen preview pane). */
+  setDashboardHighlightedSession: (
+    session: {
+      sessionId: string;
+      engine?: 'classic' | 'v2' | 'v3';
+      source?: 'local' | 'remote';
+    } | null
   ) => void;
   setShowKeybindingsPanel: (show: boolean) => void;
   setShowDisplaySettingsPanel: (show: boolean) => void;
@@ -2394,6 +2414,18 @@ export interface AppState {
   sessionPickerRows: SessionPickerRow[];
   /** Panel title = the command the user typed (`/chat` or `/sessions`). */
   sessionPickerTitle: string;
+  /** Session Dashboard (V3/KAS): open flag + all-workspace sessions. */
+  showSessionDashboard: boolean;
+  sessionDashboardSessions: SessionListingInput[];
+  /** How the current dashboard visit was opened (telemetry attribute). */
+  sessionDashboardEntry: SessionDashboardEntryPoint;
+  /** Session highlighted in the dashboard list — drives the full-screen
+   *  mode's wide preview pane. */
+  dashboardHighlightedSession: {
+    sessionId: string;
+    engine?: 'classic' | 'v2' | 'v3';
+    source?: 'local' | 'remote';
+  } | null;
   showKeybindingsPanel: boolean;
   showDisplaySettingsPanel: boolean;
   showThemePanel: boolean;
@@ -2988,6 +3020,7 @@ export function buildCommandContext(
     hooksList: state.hooksList,
     setShowRepoPicker: state.setShowRepoPicker,
     setShowSessionPicker: state.setShowSessionPicker,
+    setShowSessionDashboard: state.setShowSessionDashboard,
     resetCloudSessionScope: state.resetCloudSessionScope,
     stashCloudSessionScope: state.stashCloudSessionScope,
     restoreCloudSessionScope: state.restoreCloudSessionScope,
@@ -3161,6 +3194,7 @@ export const createAppStore = (props: AppStoreProps) => {
   let interruptModeSyncVersion = 0;
   let pendingInterruptModeSyncs = 0;
   let interruptModeSyncQueue = Promise.resolve();
+  let resumeSessionInFlight = false;
   const store = createStore<AppState & AppActions>((set, get) => ({
     // Initial state
     messages: [],
@@ -3342,6 +3376,10 @@ export const createAppStore = (props: AppStoreProps) => {
     showSessionPicker: false,
     sessionPickerRows: [],
     sessionPickerTitle: '/sessions',
+    showSessionDashboard: false,
+    sessionDashboardSessions: [],
+    sessionDashboardEntry: '_other_' as SessionDashboardEntryPoint,
+    dashboardHighlightedSession: null,
     showKeybindingsPanel: false,
     showDisplaySettingsPanel: false,
     showThemePanel: false,
@@ -6818,30 +6856,109 @@ export const createAppStore = (props: AppStoreProps) => {
       }
     },
 
-    resumeSession: async (sessionId, environment) => {
-      // Resume a session chosen in the `/sessions` panel. The picker knows the
-      // row's store, so route the load to it explicitly — a cloud row must not
-      // be probed against local stores (not-found), and a local row picked from
-      // inside a cloud session must not be sent to the remote store.
-      set({
-        showSessionPicker: false,
-        sessionPickerRows: [],
-        activeCommand: null,
-      });
-      const state = get();
-      const ctx: CommandContext = buildCommandContext(state, set, get, {
-        showChangelogPanel: false,
-        showMemoriesPanel: false,
-        showCodePanel: false,
-        codeData: null,
-      });
-      applyLiteAlertRouting(ctx, state, set);
-      if (environment) {
-        await loadExistingSession(ctx, sessionId, {
-          source: environment === 'cloud' ? 'remote' : 'local',
+    resumeSession: async (sessionId, environment, targetCwd, sourceEngine) => {
+      if (resumeSessionInFlight) return false;
+      resumeSessionInFlight = true;
+      try {
+        // Resume a session chosen in the `/sessions` panel. The picker knows the
+        // row's store, so route the load to it explicitly — a cloud row must not
+        // be probed against local stores (not-found), and a local row picked from
+        // inside a cloud session must not be sent to the remote store.
+        const beforeResume = get();
+        const resumeSurface = {
+          showSessionPicker: beforeResume.showSessionPicker,
+          sessionPickerRows: beforeResume.sessionPickerRows,
+          showSessionDashboard: beforeResume.showSessionDashboard,
+          sessionDashboardSessions: beforeResume.sessionDashboardSessions,
+          activeCommand: beforeResume.activeCommand,
+          mode: beforeResume.mode,
+        };
+        set({
+          showSessionPicker: false,
+          sessionPickerRows: [],
+          showSessionDashboard: false,
+          sessionDashboardSessions: [],
+          activeCommand: null,
+          mode: 'inline',
         });
-      } else {
-        await executeCommandWithArg('chat', sessionId, ctx);
+        // Cross-workspace load: switch the process working directory FIRST so
+        // the subsequent load (which sends `cwd: process.cwd()` to KAS) and the
+        // TUI's cwd-relative surfaces (footer branch, @ file-search, title) all
+        // operate in the session's own project. A failed chdir REFUSES the
+        // load: opening a session against the wrong tree means every relative
+        // path in it resolves somewhere unintended.
+        const previousCwd = process.cwd();
+        if (targetCwd) {
+          try {
+            process.chdir(targetCwd);
+          } catch {
+            const state = get();
+            const ctx: CommandContext = buildCommandContext(state, set, get, {
+              showChangelogPanel: false,
+              showCodePanel: false,
+              codeData: null,
+            });
+            applyLiteAlertRouting(ctx, state, set);
+            ctx.showAlert(
+              `Not opened: directory ${targetCwd} no longer exists ` +
+                `(session ${sessionId})`,
+              'error',
+              8000
+            );
+            set(resumeSurface);
+            return false;
+          }
+        }
+        const state = get();
+        const ctx: CommandContext = buildCommandContext(state, set, get, {
+          showChangelogPanel: false,
+          showMemoriesPanel: false,
+          showCodePanel: false,
+          codeData: null,
+        });
+        applyLiteAlertRouting(ctx, state, set);
+        let loaded = true;
+        if (environment) {
+          const sourceFormat =
+            sourceEngine === 'classic'
+              ? 'classic'
+              : sourceEngine === 'v3'
+                ? 'kas'
+                : (sourceEngine ?? 'auto');
+          loaded = await loadExistingSession(ctx, sessionId, {
+            source: environment === 'cloud' ? 'remote' : 'local',
+            sourceFormat,
+          });
+        } else {
+          await executeCommandWithArg('chat', sessionId, ctx);
+        }
+        if (!loaded) {
+          if (targetCwd) {
+            try {
+              process.chdir(previousCwd);
+            } catch (err) {
+              const message =
+                err instanceof Error ? err.message : 'unknown filesystem error';
+              logger.error('[store] failed to restore cwd after session load', {
+                previousCwd,
+                message,
+              });
+              ctx.showAlert(
+                `Session load failed and the previous directory could not be restored: ${previousCwd} (${message})`,
+                'error',
+                0
+              );
+            }
+          }
+          set(resumeSurface);
+          return false;
+        }
+        if (targetCwd) {
+          ctx.addSystemMessage(`Switched directory to ${process.cwd()}`, true);
+        }
+        return true;
+      } finally {
+        resumeSessionInFlight = false;
       }
     },
 
@@ -8357,6 +8474,20 @@ export const createAppStore = (props: AppStoreProps) => {
         sessionPickerRows: show ? rows : [],
         sessionPickerTitle: show ? (invokedAs ?? '/sessions') : '/sessions',
       });
+    },
+
+    setShowSessionDashboard: (show, sessions = [], entry) => {
+      set((s) => ({
+        showSessionDashboard: show,
+        sessionDashboardSessions: show ? sessions : [],
+        // Only the door sets the entry; listing refreshes re-call this
+        // action mid-visit without one and must not erase it.
+        sessionDashboardEntry: entry ?? s.sessionDashboardEntry,
+      }));
+    },
+
+    setDashboardHighlightedSession: (session) => {
+      set({ dashboardHighlightedSession: session });
     },
 
     setShowKeybindingsPanel: (show) => {

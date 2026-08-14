@@ -10,6 +10,14 @@ import { getOSAppearance, type OSAppearanceDeps } from '../os-appearance.js';
  * `.\reg.exe` at pre-trust startup).
  *
  * Exec dependencies are injected directly. We deliberately do NOT use
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  'child_process',
+]);
+
  * `mock.module('child_process', ...)` here: bun's module mocks are
  * process-global and leak into every other test file in the run.
  */

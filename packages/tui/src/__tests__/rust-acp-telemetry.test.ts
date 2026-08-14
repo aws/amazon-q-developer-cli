@@ -15,6 +15,18 @@ const recordTuiSessionStarted = mock((_args: RecordFnArgs) => {});
 const recordTuiUserTurn = mock((_args: RecordFnArgs) => {});
 const textPrompt = (text: string): ContentBlock[] => [{ type: 'text', text }];
 
+// mock.module is process-global and survives this file — snapshot the real
+// modules and re-register them afterAll so mocks cannot leak into other files.
+import { restoreRealModulesAfterAll } from '../test-utils/restore-modules.js';
+
+restoreRealModulesAfterAll(import.meta.dir, [
+  '../utils/tui-telemetry-observer',
+  'child_process',
+  'node:child_process',
+  '@agentclientprotocol/sdk',
+  '../utils/logger',
+]);
+
 mock.module('../utils/tui-telemetry-observer', () => ({
   DEFAULT_ENGINE: 'v3',
   TUI_SCOPE: 'kiro.tui',
@@ -70,7 +82,10 @@ mock.module('child_process', () => ({
   ...realChildProcess,
   spawn: mockSpawn,
 }));
-mock.module('node:child_process', () => ({ spawn: mockSpawn }));
+mock.module('node:child_process', () => ({
+  ...realChildProcess,
+  spawn: mockSpawn,
+}));
 
 let promptStopReason = 'end_turn';
 let promptMeta: Record<string, unknown> | undefined;
