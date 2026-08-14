@@ -1186,10 +1186,9 @@ fn non_negative(value: f64) -> bool {
 }
 
 fn bounded_name<'a>(value: &'a str, allowed: &[&str]) -> &'a str {
-    if allowed.contains(&value) { value } else { "unknown" }
+    bounded_or(value, allowed, "unknown")
 }
 
-/// Like `bounded_name`, for attributes whose schema fallback is not "unknown".
 fn bounded_or<'a>(value: &'a str, allowed: &[&str], fallback: &'a str) -> &'a str {
     if allowed.contains(&value) { value } else { fallback }
 }
