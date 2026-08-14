@@ -18,6 +18,7 @@ use agent::agent_loop::types::{
     MetadataService,
     MetadataUsage,
     MeteringUsageInfo,
+    RefusalInfo,
     RetryWarningEvent,
     Role,
     StreamError,
@@ -76,6 +77,13 @@ fn make_observer_with_subagent(is_subagent: bool) -> (TelemetryObserver, mpsc::U
 
 fn make_observer() -> (TelemetryObserver, mpsc::UnboundedReceiver<Event>) {
     make_observer_with_subagent(false)
+}
+
+fn make_external_observer() -> (TelemetryObserver, mpsc::UnboundedReceiver<Event>) {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let client_info = Some(AcpClientInfo::new("external-test-client".into(), "1.0.0".into()));
+    let ctx = TelemetryContext::new(model_provider("claude-4-sonnet"), client_info, false);
+    (TelemetryObserver::new_for_test(tx, ctx), rx)
 }
 
 fn make_loop_event(kind: AgentLoopEventKind) -> AgentEvent {
@@ -161,6 +169,84 @@ fn test_successful_request_emits_add_chat_message() {
 }
 
 #[test]
+fn typed_refusal_emits_refusal_model_request_failure() {
+    let (mut obs, mut rx) = make_external_observer();
+    let mut response = success_stream_end();
+    let AgentLoopEventKind::ResponseStreamEnd { metadata, .. } = &mut response else {
+        unreachable!();
+    };
+    let stream = metadata.stream.as_mut().expect("stream metadata");
+    stream.stop_reason = Some("CONTENT_FILTERED".to_string());
+    stream.refusal = Some(Box::new(RefusalInfo {
+        category: Some("policy".to_string()),
+        explanation: None,
+        recommended_model: None,
+    }));
+
+    obs.handle_event("test-session", &make_loop_event(response));
+
+    assert!(matches!(rx.try_recv().unwrap().ty, EventType::ChatAddedMessage {
+        result: TelemetryResult::Failed,
+        ..
+    }));
+    let failure = rx.try_recv().unwrap();
+    assert!(matches!(failure.ty, EventType::MessageResponseError { .. }));
+    let records = event_to_otel_metric_records(&failure);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].name, "kiro_cli_model_request_failure_total");
+    assert!(
+        records[0]
+            .attributes
+            .iter()
+            .any(|attribute| attribute.key == "error_kind" && attribute.value == "refusal")
+    );
+
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::EndTurn(UserTurnMetadata {
+            loop_id: test_loop_id(),
+            result: None,
+            message_ids: vec![],
+            total_request_count: 1,
+            number_of_cycles: 0,
+            builtin_tool_uses: 0,
+            turn_duration: Some(Duration::from_secs(1)),
+            end_reason: LoopEndReason::UserTurnEnd,
+            end_timestamp: chrono::Utc::now(),
+            input_token_count: 0,
+            output_token_count: 0,
+            cache_read_input_token_count: 0,
+            cache_write_input_token_count: 0,
+            model: None,
+            assistant_response_length: 0,
+            request_attempts: None,
+            context_usage_percentage: None,
+            final_context_usage_percentage: None,
+            metering_usage: Vec::new(),
+            user_prompt_length: 0,
+        }),
+    );
+
+    let turn = rx.try_recv().unwrap();
+    assert!(matches!(
+        &turn.ty,
+        EventType::RecordUserTurnCompletion {
+            result: TelemetryResult::Failed,
+            args,
+            ..
+        } if args.reason.as_deref() == Some("ModelRefusal")
+    ));
+    let records = event_to_otel_metric_records(&turn);
+    assert!(records.iter().any(|record| {
+        record.name == "kiro_cli_turn_failure_total"
+            && record
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == "turn_failure_reason" && attribute.value == "model_error")
+    }));
+}
+
+#[test]
 fn mcp_initialize_update_emits_mcp_server_init_event() {
     let (mut obs, mut rx) = make_observer();
     obs.handle_event(
@@ -171,6 +257,7 @@ fn mcp_initialize_update_emits_mcp_server_init_event() {
             serve_duration: Duration::from_millis(25),
             list_tools_duration: Some(Duration::from_millis(10)),
             list_prompts_duration: None,
+            tool_token_count_estimate: 128,
         })),
     );
 
@@ -185,6 +272,7 @@ fn mcp_initialize_update_emits_mcp_server_init_event() {
             all_tool_names,
             loaded_tool_names,
             all_tools_count,
+            mcp_tools_token_count_estimate,
         } => {
             assert_eq!(conversation_id, "test-session");
             assert_eq!(server_name, "code");
@@ -194,9 +282,16 @@ fn mcp_initialize_update_emits_mcp_server_init_event() {
             assert!(all_tool_names.is_none());
             assert!(loaded_tool_names.is_none());
             assert_eq!(*all_tools_count, 0);
+            assert_eq!(*mcp_tools_token_count_estimate, Some(128));
         },
         other => panic!("expected McpServerInit, got {other:?}"),
     }
+
+    let records = event_to_otel_metric_records(&event);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].name, "kiro_cli_mcp_server_init_total");
+    assert_eq!(records[1].name, "kiro_cli_mcp_tools_token_count_estimate");
+    assert_eq!(records[1].value, kiro_telemetry::MetricValue::Histogram(128.0));
 }
 
 #[test]
@@ -230,6 +325,30 @@ fn mcp_runtime_error_emits_failed_mcp_server_init_event() {
         },
         other => panic!("expected McpServerInit, got {other:?}"),
     }
+
+    let records = event_to_otel_metric_records(&event);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].name, "kiro_cli_mcp_server_init_total");
+    assert!(
+        records[0]
+            .attributes
+            .iter()
+            .all(|attribute| attribute.key != "mcp_error_kind" && attribute.key != "mcp_failure_stage")
+    );
+}
+
+#[test]
+fn mcp_status_refresh_is_not_an_initialization_attempt() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Mcp(agent::mcp::McpServerEvent::StatusRefresh {
+            server_name: "code".to_string(),
+            source: agent::agent_config::McpServerConfigSource::Registry,
+        }),
+    );
+
+    assert!(rx.try_recv().is_err());
 }
 
 #[test]
@@ -277,9 +396,10 @@ fn successful_retried_request_emits_recovered_operation() {
         additional_attempts: 2,
         outcome: metric::RetryOutcome::Recovered,
     }));
-    let records = event_to_otel_metric_records(&event);
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].name, "kiro_cli_automatic_retries_per_operation");
+    assert!(
+        event_to_otel_metric_records(&event).is_empty(),
+        "retry lifecycle remains available to legacy/local diagnostics but is not a KUTS metric"
+    );
 }
 
 #[test]

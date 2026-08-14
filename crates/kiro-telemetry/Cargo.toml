@@ -39,6 +39,9 @@ opentelemetry-proto = { workspace = true, features = ["gen-tonic-messages", "met
 prost = "0.14.3"
 tempfile.workspace = true
 
+[build-dependencies]
+kiro-telemetry-schema = { path = "../kiro-telemetry-schema" }
+
 [[test]]
 name = "catalog_coverage"
 required-features = ["test-support"]

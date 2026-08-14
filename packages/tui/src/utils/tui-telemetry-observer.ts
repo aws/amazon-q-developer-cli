@@ -27,6 +27,7 @@ import {
   type AgentStreamEvent,
 } from '../types/agent-events';
 import { canonicalSlashCommandName } from './slash-command-telemetry';
+import type { TurnFailureReason as GeneratedTurnFailureReason } from '../types/generated/telemetry.js';
 import type { WorkflowRestoreSummary } from '../types/workflow.js';
 import type {
   WorkflowControlAction,
@@ -116,15 +117,8 @@ export function resultFromStatus(
   }
 }
 
-/** Bounded failure reasons for a terminal user turn. */
-export type TurnFailureReason =
-  | 'model_error'
-  | 'tool_error'
-  | 'timeout'
-  | 'context_limit'
-  | 'execution_limit'
-  | 'internal_error'
-  | 'unknown';
+/** Bounded failure reasons for a terminal user turn, generated from the schema crate. */
+export type TurnFailureReason = `${GeneratedTurnFailureReason}`;
 
 /**
  * Bucket a KAS turn-completion status into the `turn_failure_reason` enum for
@@ -251,7 +245,7 @@ export function recordTuiSlashCommand(
     {
       version_full: args.version,
       agent_engine: args.engine ?? DEFAULT_ENGINE,
-      command: canonicalSlashCommandName(args.command),
+      slash_command: canonicalSlashCommandName(args.command),
     },
     TUI_SCOPE,
     args.logProperties

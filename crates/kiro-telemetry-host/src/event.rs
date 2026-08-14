@@ -425,6 +425,8 @@ pub enum EventType {
         all_tool_names: Option<String>,
         loaded_tool_names: Option<String>,
         all_tools_count: usize,
+        #[serde(default)]
+        mcp_tools_token_count_estimate: Option<u64>,
     },
     AgentConfigInit {
         conversation_id: String,

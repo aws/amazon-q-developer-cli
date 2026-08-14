@@ -2303,10 +2303,9 @@ impl Agent {
         }
     }
 
-    /// Push a synthetic MCP `Initialized` event for `server_name` so the UI
-    /// refreshes a server whose underlying state is unchanged. Used after dropping
-    /// a reauth shadow (abort or shadow failure) to clear the pending-OAuth state
-    /// that was shown on the still-running original during the attempt.
+    /// Push an MCP status refresh for `server_name` without representing it as
+    /// a new initialization attempt. Used after dropping a reauth shadow (abort or
+    /// shadow failure) to clear pending-OAuth state on the still-running original.
     fn refresh_mcp_server_in_ui(&mut self, server_name: &str) {
         let source = self
             .cached_mcp_configs
@@ -2314,13 +2313,11 @@ impl Agent {
             .iter()
             .find(|config| config.server_name == server_name)
             .map_or(agent_config::McpServerConfigSource::Unknown, |config| config.source);
-        self.agent_event_buf.push(AgentEvent::Mcp(McpServerEvent::Initialized {
-            server_name: server_name.to_string(),
-            source,
-            serve_duration: std::time::Duration::ZERO,
-            list_tools_duration: None,
-            list_prompts_duration: None,
-        }));
+        self.agent_event_buf
+            .push(AgentEvent::Mcp(McpServerEvent::StatusRefresh {
+                server_name: server_name.to_string(),
+                source,
+            }));
     }
 
     /// Relaunch a remote MCP server under the normal (non-forced) flow.
@@ -4675,7 +4672,9 @@ impl Agent {
                     self.reload_mcp_server_normally(&target).await;
                 }
             },
-            McpServerEvent::Initializing { .. } | McpServerEvent::ToolListChanged { .. } => {
+            McpServerEvent::Initializing { .. }
+            | McpServerEvent::StatusRefresh { .. }
+            | McpServerEvent::ToolListChanged { .. } => {
                 // Suppress: the shadow must stay invisible. The `authenticating`
                 // flag (from GetMcpServerInfo) conveys progress on the target.
             },

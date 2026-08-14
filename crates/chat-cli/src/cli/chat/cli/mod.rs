@@ -383,7 +383,7 @@ mod tests {
             let value = record
                 .attributes
                 .iter()
-                .find(|attribute| attribute.key == "command")
+                .find(|attribute| attribute.key == "slash_command")
                 .map(|attribute| attribute.value.as_str());
             assert_ne!(
                 value,

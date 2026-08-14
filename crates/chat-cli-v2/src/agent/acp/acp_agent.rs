@@ -70,6 +70,7 @@ use agent::{
     TOOL_USES_INTERRUPTED_MESSAGE,
 };
 use code_agent_sdk::CodeIntelligence;
+use kiro_telemetry::metric::TurnFailureReason;
 use sacp::schema::{
     AGENT_METHOD_NAMES,
     AgentCapabilities,
@@ -1060,6 +1061,8 @@ struct AcpSession {
     pending_plan: Option<String>,
     pending_swap: Option<agent::agent_config::LoadedAgentConfig>,
     pending_prompt_response: Option<tokio::sync::Mutex<Responder<PromptResponse>>>,
+    /// Bounded failure for the latest model response in the active prompt.
+    pending_turn_failure_reason: Option<TurnFailureReason>,
     /// Agent config to swap to when the session becomes idle (set by registry refresh)
     pending_mcp_registry: Option<Box<dyn agent::mcp::McpRegistry>>,
     /// Set when the file watcher reports an agent/mcp.json change. Applied as a
@@ -1088,6 +1091,22 @@ struct AcpSession {
 }
 
 impl AcpSession {
+    fn prompt_response(stop_reason: StopReason, failure_reason: Option<TurnFailureReason>) -> PromptResponse {
+        let response = PromptResponse::new(stop_reason);
+        let Some(failure_reason) = failure_reason else {
+            return response;
+        };
+
+        let mut kiro = serde_json::Map::new();
+        kiro.insert(
+            "turnFailureReason".to_string(),
+            serde_json::Value::String(failure_reason.as_str().to_string()),
+        );
+        let mut meta = Meta::new();
+        meta.insert("kiro".to_string(), serde_json::Value::Object(kiro));
+        response.meta(meta)
+    }
+
     fn welcome_message_for(&self, agent_name: &str) -> Option<String> {
         self.available_agents
             .iter()
@@ -1358,8 +1377,9 @@ impl AcpSession {
     async fn release_goal_response(&mut self) {
         if let Some(respond_to) = self.pending_prompt_response.take() {
             self.persist_session_state().await;
+            let failure_reason = self.pending_turn_failure_reason.take();
             let respond_to = respond_to.into_inner();
-            let _ = respond_to.respond(PromptResponse::new(StopReason::EndTurn));
+            let _ = respond_to.respond(Self::prompt_response(StopReason::EndTurn, failure_reason));
         }
     }
 
@@ -1461,7 +1481,12 @@ impl AcpSession {
                     agent::agent_loop::protocol::LoopEndReason::Cancelled => StopReason::Cancelled,
                     _ => StopReason::EndTurn,
                 };
-                let _ = respond_to.respond(PromptResponse::new(stop_reason));
+                let failure_reason = self.pending_turn_failure_reason.take().or(match md.end_reason {
+                    agent::agent_loop::protocol::LoopEndReason::Error => Some(TurnFailureReason::ModelError),
+                    agent::agent_loop::protocol::LoopEndReason::DidNotRun => Some(TurnFailureReason::InternalError),
+                    _ => None,
+                });
+                let _ = respond_to.respond(Self::prompt_response(stop_reason, failure_reason));
             }
         }
     }
@@ -1854,6 +1879,7 @@ impl AcpSession {
             rts_state,
             api_client,
             pending_prompt_response: None,
+            pending_turn_failure_reason: None,
             pending_mcp_registry: None,
             reconcile_pending: false,
             compaction_summary: None,
@@ -2129,6 +2155,7 @@ impl AcpSession {
                     let _ = request_cx.respond_with_error(sacp::util::internal_error("Prompt already in progress"));
                     return;
                 }
+                self.pending_turn_failure_reason = None;
 
                 // Check for slash command
                 if let Some(route) = slash_router::parse(&request.prompt) {
@@ -2708,10 +2735,13 @@ impl AcpSession {
             self.record_request_stats(result, metadata);
 
             // Surface provider refusals / content-filtered stops to the TUI as soon as the
-            // stream ends, carrying the refusal explanation when the model provides one.
+            // stream ends, carrying the refusal explanation when the model provides one. Also
+            // retain the bounded outcome for the terminal ACP PromptResponse consumed by telemetry.
             if let Some(stream) = metadata.stream.as_ref() {
-                let is_content_filtered = stream.stop_reason.as_deref() == Some("CONTENT_FILTERED");
-                if stream.refusal.is_some() || is_content_filtered {
+                let provider_refused =
+                    stream.refusal.is_some() || stream.stop_reason.as_deref() == Some("CONTENT_FILTERED");
+                self.pending_turn_failure_reason = provider_refused.then_some(TurnFailureReason::ModelError);
+                if provider_refused {
                     let notification = super::schema::MetadataNotification {
                         session_id: self.session_id_str.clone(),
                         context_usage_percentage: None,
@@ -2726,6 +2756,8 @@ impl AcpSession {
                         warn!("Failed to send refusal metadata: {}", e);
                     }
                 }
+            } else {
+                self.pending_turn_failure_reason = None;
             }
 
             // Push a live context-usage update mid-turn (between tool calls), so the TUI
@@ -3140,7 +3172,7 @@ impl AcpSession {
                     oauth_url,
                 })
             },
-            McpServerEvent::Initialized { server_name, .. } => {
+            McpServerEvent::Initialized { server_name, .. } | McpServerEvent::StatusRefresh { server_name, .. } => {
                 info!(?server_name, "Forwarding MCP server initialized to client");
                 self.send_ext_notification(methods::MCP_SERVER_INITIALIZED, McpServerInitializedNotification {
                     session_id: self.session_id.clone(),
@@ -5543,7 +5575,7 @@ mod slash_command_metric_tests {
             let value = record
                 .attributes
                 .iter()
-                .find(|attribute| attribute.key == "command")
+                .find(|attribute| attribute.key == "slash_command")
                 .map(|attribute| attribute.value.as_str());
             assert_ne!(value, Some("/custom"), "missing metric identity for {}", command.name());
         }

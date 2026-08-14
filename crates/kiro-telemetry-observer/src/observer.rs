@@ -140,6 +140,8 @@ struct TurnState {
     message_meta_tags: Vec<MessageMetaTag>,
     /// Stored from the last failed request for propagation to turn-level telemetry.
     last_error: Option<ErrorInfo>,
+    /// Whether the final model request ended in a typed provider refusal.
+    last_request_refused: bool,
     /// Number of HTTP-level attempts for the last request in the turn. Pairs with
     /// `last_error` semantics so a turn that ends with a failed request has both
     /// the error reason and the attempt count for that request.
@@ -423,7 +425,10 @@ impl TelemetryObserver {
     fn handle_mcp_event(&self, session_id: &str, event: &agent::mcp::McpServerEvent) {
         match event {
             agent::mcp::McpServerEvent::Initialized {
-                server_name, source, ..
+                server_name,
+                source,
+                tool_token_count_estimate,
+                ..
             } => {
                 self.emit(EventType::McpServerInit {
                     conversation_id: session_id.to_string(),
@@ -434,6 +439,7 @@ impl TelemetryObserver {
                     all_tool_names: None,
                     loaded_tool_names: None,
                     all_tools_count: 0,
+                    mcp_tools_token_count_estimate: Some(*tool_token_count_estimate),
                 });
             },
             agent::mcp::McpServerEvent::InitializeError {
@@ -450,10 +456,12 @@ impl TelemetryObserver {
                     all_tool_names: None,
                     loaded_tool_names: None,
                     all_tools_count: 0,
+                    mcp_tools_token_count_estimate: None,
                 });
             },
             agent::mcp::McpServerEvent::Initializing { .. }
             | agent::mcp::McpServerEvent::OauthRequest { .. }
+            | agent::mcp::McpServerEvent::StatusRefresh { .. }
             | agent::mcp::McpServerEvent::ToolListChanged { .. } => {},
         }
     }
@@ -509,24 +517,36 @@ impl TelemetryObserver {
             .message_meta_tags
             .clone();
 
-        let (telemetry_result, reason, reason_desc, err_status_code) = match result {
-            Ok(_) => (TelemetryResult::Succeeded, None, None, None),
-            Err(LoopError::Stream(stream_err)) => {
-                let (r, rd, sc) = self.extract_reason(stream_err);
-                (TelemetryResult::Failed, Some(r), Some(rd), sc)
-            },
-            Err(LoopError::InvalidJson { .. }) => (
+        let refusal = metadata.stream.as_ref().is_some_and(|stream| {
+            stream.refusal.is_some() || stream.stop_reason.as_deref() == Some("CONTENT_FILTERED")
+        });
+        let (telemetry_result, reason, reason_desc, err_status_code) = if refusal {
+            (
                 TelemetryResult::Failed,
-                Some(REASON_INVALID_JSON.to_string()),
-                Some("Model produced invalid JSON".to_string()),
+                Some("ModelRefusal".to_string()),
+                Some("Model refused the request".to_string()),
                 None,
-            ),
-            Err(LoopError::EmptyResponse) => (
-                TelemetryResult::Failed,
-                Some(REASON_EMPTY_RESPONSE.to_string()),
-                Some("Model returned an empty response".to_string()),
-                None,
-            ),
+            )
+        } else {
+            match result {
+                Ok(_) => (TelemetryResult::Succeeded, None, None, None),
+                Err(LoopError::Stream(stream_err)) => {
+                    let (r, rd, sc) = self.extract_reason(stream_err);
+                    (TelemetryResult::Failed, Some(r), Some(rd), sc)
+                },
+                Err(LoopError::InvalidJson { .. }) => (
+                    TelemetryResult::Failed,
+                    Some(REASON_INVALID_JSON.to_string()),
+                    Some("Model produced invalid JSON".to_string()),
+                    None,
+                ),
+                Err(LoopError::EmptyResponse) => (
+                    TelemetryResult::Failed,
+                    Some(REASON_EMPTY_RESPONSE.to_string()),
+                    Some("Model returned an empty response".to_string()),
+                    None,
+                ),
+            }
         };
 
         let final_status_code = err_status_code.or(status_code);
@@ -612,6 +632,7 @@ impl TelemetryObserver {
 
         // Accumulate into turn state
         let session = self.sessions.entry(session_id.to_string()).or_default();
+        session.turn_state.last_request_refused = refusal;
         session.turn_state.message_ids.extend(message_id);
         session.turn_state.request_ids.push(request_id);
         session.turn_state.time_to_first_chunks_ms.push(time_to_first_chunk_ms);
@@ -660,6 +681,7 @@ impl TelemetryObserver {
         let session = self.sessions.entry(session_id.to_string()).or_default();
 
         let result = match metadata.end_reason {
+            LoopEndReason::UserTurnEnd if session.turn_state.last_request_refused => TelemetryResult::Failed,
             LoopEndReason::UserTurnEnd | LoopEndReason::ToolUseRejected => TelemetryResult::Succeeded,
             LoopEndReason::Cancelled => TelemetryResult::Cancelled,
             LoopEndReason::Error | LoopEndReason::DidNotRun => TelemetryResult::Failed,

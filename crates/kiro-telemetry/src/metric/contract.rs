@@ -1,3 +1,9 @@
+pub use kiro_telemetry_schema::TurnFailureReason;
+use kiro_telemetry_schema::{
+    SlashCommandMetricName,
+    TopLevelCommandMetricName,
+};
+
 use super::{
     CloudSessionEvent,
     Engine,
@@ -5,7 +11,6 @@ use super::{
     OsType,
     ProcessRole,
     RenderKind,
-    RetryReason,
     UiMode,
     counter,
     counter_f64,
@@ -333,7 +338,6 @@ impl McpServerSource {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum McpInitOutcome {
     Success,
-    Degraded,
     Failure,
     #[default]
     Unknown,
@@ -343,56 +347,7 @@ impl McpInitOutcome {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Success => "success",
-            Self::Degraded => "degraded",
             Self::Failure => "failure",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum McpErrorKind {
-    Timeout,
-    Authentication,
-    Configuration,
-    ProcessLaunch,
-    Connection,
-    Protocol,
-    Unknown,
-}
-
-impl McpErrorKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Timeout => "timeout",
-            Self::Authentication => "authentication",
-            Self::Configuration => "configuration",
-            Self::ProcessLaunch => "process_launch",
-            Self::Connection => "connection",
-            Self::Protocol => "protocol",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum McpFailureStage {
-    Configuration,
-    ProcessLaunch,
-    Connection,
-    Handshake,
-    CapabilityDiscovery,
-    Unknown,
-}
-
-impl McpFailureStage {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Configuration => "configuration",
-            Self::ProcessLaunch => "process_launch",
-            Self::Connection => "connection",
-            Self::Handshake => "handshake",
-            Self::CapabilityDiscovery => "capability_discovery",
             Self::Unknown => "unknown",
         }
     }
@@ -437,32 +392,6 @@ impl GoalOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum TurnFailureReason {
-    ContextLimit,
-    Timeout,
-    ModelError,
-    ToolError,
-    ExecutionLimit,
-    InternalError,
-    #[default]
-    Unknown,
-}
-
-impl TurnFailureReason {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::ContextLimit => "context_limit",
-            Self::Timeout => "timeout",
-            Self::ModelError => "model_error",
-            Self::ToolError => "tool_error",
-            Self::ExecutionLimit => "execution_limit",
-            Self::InternalError => "internal_error",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AuthFailureReason {
     AuthorizationDenied,
     InvalidOrExpiredCredential,
@@ -487,28 +416,6 @@ impl AuthFailureReason {
             Self::Configuration => "configuration",
             Self::Storage => "storage",
             Self::IdentityMismatch => "identity_mismatch",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum TelemetryChannelName {
-    LegacyToolkit,
-    LegacyCodewhisperer,
-    Otel,
-    Kuts,
-    #[default]
-    Unknown,
-}
-
-impl TelemetryChannelName {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::LegacyToolkit => "legacy_toolkit",
-            Self::LegacyCodewhisperer => "legacy_codewhisperer",
-            Self::Otel => "otel",
-            Self::Kuts => "kuts",
             Self::Unknown => "unknown",
         }
     }
@@ -776,14 +683,17 @@ pub fn record_slash_command(command: &str, engine: Engine) -> MetricRecord {
     counter("kiro_cli_slash_command_invoked_total", 1)
         .attribute("version_full", version_attr())
         .attribute("agent_engine", engine.as_str())
-        .attribute("command", slash_command_name(command))
+        .attribute("slash_command", SlashCommandMetricName::from_name(command).as_str())
         .expect_valid()
 }
 
 pub fn record_top_level_command(command: &str) -> MetricRecord {
     counter("kiro_cli_top_level_command_invoked_total", 1)
         .attribute("version_full", version_attr())
-        .attribute("command", top_level_command_name(command))
+        .attribute(
+            "top_level_command",
+            TopLevelCommandMetricName::from_name(command).as_str(),
+        )
         .expect_valid()
 }
 
@@ -931,22 +841,6 @@ pub fn record_startup_duration_seconds(
     })
 }
 
-pub fn record_startup_failure(
-    session_interface: SessionInterface,
-    engine: Engine,
-    os_type: OsType,
-    failure_stage: StartupFailureStage,
-) -> MetricRecord {
-    with_common_product_dimensions(
-        counter("kiro_cli_startup_failure_total", 1),
-        session_interface,
-        engine,
-        Some(os_type),
-    )
-    .attribute("startup_failure_stage", failure_stage.as_str())
-    .expect_valid()
-}
-
 pub fn record_model_request_failure(engine: Engine, model: Option<&str>, error_kind: ErrorKind) -> MetricRecord {
     counter("kiro_cli_model_request_failure_total", 1)
         .attribute("version_full", version_attr())
@@ -954,25 +848,6 @@ pub fn record_model_request_failure(engine: Engine, model: Option<&str>, error_k
         .attribute("model", model_attr(model))
         .attribute("error_kind", error_kind.as_str())
         .expect_valid()
-}
-
-pub fn record_automatic_retries(
-    additional_attempts: u32,
-    engine: Engine,
-    retry_reason: RetryReason,
-    outcome: RetryOutcome,
-) -> Option<MetricRecord> {
-    (additional_attempts > 0).then(|| {
-        histogram(
-            "kiro_cli_automatic_retries_per_operation",
-            f64::from(additional_attempts),
-        )
-        .attribute("version_full", version_attr())
-        .attribute("agent_engine", engine.as_str())
-        .attribute("retry_reason", retry_reason.as_str())
-        .attribute("retry_outcome", outcome.as_str())
-        .expect_valid()
-    })
 }
 
 fn process_dimensions(
@@ -1102,14 +977,11 @@ pub fn record_tool_execution_duration_ms(milliseconds: f64, metric: ToolMetric<'
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn record_mcp_server_init(
     engine: Engine,
     source: McpServerSource,
     outcome: McpInitOutcome,
     server_name: Option<&str>,
-    error_kind: Option<McpErrorKind>,
-    failure_stage: Option<McpFailureStage>,
 ) -> MetricRecord {
     counter("kiro_cli_mcp_server_init_total", 1)
         .attribute("version_full", version_attr())
@@ -1117,8 +989,20 @@ pub fn record_mcp_server_init(
         .attribute("mcp_server_source", source.as_str())
         .attribute("mcp_init_outcome", outcome.as_str())
         .optional_attribute("mcp_server_name", server_name.filter(|name| !name.trim().is_empty()))
-        .optional_attribute("mcp_failure_stage", failure_stage.map(McpFailureStage::as_str))
-        .optional_attribute("mcp_error_kind", error_kind.map(McpErrorKind::as_str))
+        .expect_valid()
+}
+
+pub fn record_mcp_tools_token_count_estimate(
+    estimate: u64,
+    engine: Engine,
+    source: McpServerSource,
+    server_name: Option<&str>,
+) -> MetricRecord {
+    histogram("kiro_cli_mcp_tools_token_count_estimate", estimate as f64)
+        .attribute("version_full", version_attr())
+        .attribute("agent_engine", engine.as_str())
+        .attribute("mcp_server_source", source.as_str())
+        .optional_attribute("mcp_server_name", server_name.filter(|name| !name.trim().is_empty()))
         .expect_valid()
 }
 
@@ -1143,13 +1027,6 @@ pub fn record_goal_outcome(engine: Engine, outcome: GoalOutcome) -> MetricRecord
         .attribute("version_full", version_attr())
         .attribute("agent_engine", engine.as_str())
         .attribute("goal_outcome", outcome.as_str())
-        .expect_valid()
-}
-
-pub fn record_prohibited_telemetry_channel_enabled(channel: TelemetryChannelName) -> MetricRecord {
-    counter("kiro_cli_prohibited_telemetry_channel_enabled_total", 1)
-        .attribute("version_full", version_attr())
-        .attribute("telemetry_channel", channel.as_str())
         .expect_valid()
 }
 
@@ -1297,55 +1174,12 @@ fn bounded_name<'a>(value: &'a str, allowed: &[&str]) -> &'a str {
     if allowed.contains(&value) { value } else { "unknown" }
 }
 
-fn slash_command_name(command: &str) -> String {
-    let normalized = command.trim().to_ascii_lowercase();
-    let canonical = if normalized.starts_with('/') {
-        normalized
-    } else {
-        format!("/{normalized}")
-    };
-    let allowed = kiro_telemetry_schema::registry()
-        .attribute("command")
-        .expect("command attribute must exist");
-    if canonical.starts_with('/') && allowed.accepts_value(&canonical) {
-        canonical
-    } else {
-        "/custom".to_string()
-    }
-}
-
-fn top_level_command_name(command: &str) -> String {
-    let normalized = command.trim().to_ascii_lowercase().replace('-', "_");
-    match normalized.as_str() {
-        "chat" | "login" | "logout" | "profile" | "issue" | "doctor" | "update" | "settings" | "mcp" | "agent"
-        | "completion" | "help" | "version" => normalized,
-        _ => "unknown".to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        AgentMode,
-        RetryOutcome,
-        slash_command_name,
-    };
-
-    #[test]
-    fn slash_command_name_accepts_bare_v1_names_and_buckets_unknown_names() {
-        assert_eq!(slash_command_name("/help"), "/help");
-        assert_eq!(slash_command_name("help"), "/help");
-        assert_eq!(slash_command_name("/future-command"), "/custom");
-        assert_eq!(slash_command_name("/cafe\u{301}"), "/custom");
-    }
+    use super::AgentMode;
 
     #[test]
     fn built_in_default_agent_uses_default_bucket() {
         assert_eq!(AgentMode::from_id(Some("kiro_default")), AgentMode::Default);
-    }
-
-    #[test]
-    fn unknown_retry_outcome_stays_unknown() {
-        assert_eq!(RetryOutcome::Unknown.as_str(), "unknown");
     }
 }

@@ -86,7 +86,11 @@ const SECONDS_LATENCY_BOUNDARIES: &[f64] = &[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0
 /// `0.4` lands in the same bucket as everything `>= 0.0`.
 const RATIO_BOUNDARIES: &[f64] = &[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
 
-const RETRY_COUNT_BOUNDARIES: &[f64] = &[1.0, 2.0, 3.0, 5.0, 8.0, 13.0];
+/// Explicit boundaries for estimated MCP tool-schema token counts.
+const TOKEN_COUNT_BOUNDARIES: &[f64] = &[
+    250.0, 500.0, 1_000.0, 2_500.0, 5_000.0, 10_000.0, 25_000.0, 50_000.0, 100_000.0,
+];
+
 const MEMORY_BYTES_BOUNDARIES: &[f64] = &[
     67_108_864.0,
     134_217_728.0,
@@ -115,7 +119,7 @@ fn histogram_boundaries(name: &str) -> Option<&'static [f64]> {
         | "kiro_cli_tui_render_duration_seconds" => Some(SECONDS_LATENCY_BOUNDARIES),
         // Unit-interval ratios (0..=1).
         "kiro_cli_process_cpu_utilization_ratio" => Some(RATIO_BOUNDARIES),
-        "kiro_cli_automatic_retries_per_operation" => Some(RETRY_COUNT_BOUNDARIES),
+        "kiro_cli_mcp_tools_token_count_estimate" => Some(TOKEN_COUNT_BOUNDARIES),
         "kiro_cli_process_peak_rss_bytes" => Some(MEMORY_BYTES_BOUNDARIES),
         _ => None,
     }
@@ -703,12 +707,13 @@ mod tests {
             Some(RATIO_BOUNDARIES)
         );
         assert_eq!(
-            histogram_boundaries("kiro_cli_automatic_retries_per_operation"),
-            Some(RETRY_COUNT_BOUNDARIES)
-        );
-        assert_eq!(
             histogram_boundaries("kiro_cli_process_peak_rss_bytes"),
             Some(MEMORY_BYTES_BOUNDARIES)
+        );
+        // Estimated token counts need useful tail resolution beyond the SDK's 10k ceiling.
+        assert_eq!(
+            histogram_boundaries("kiro_cli_mcp_tools_token_count_estimate"),
+            Some(TOKEN_COUNT_BOUNDARIES)
         );
 
         // Genuine millisecond latencies keep the SDK default buckets (no override).
@@ -718,7 +723,7 @@ mod tests {
         for boundaries in [
             SECONDS_LATENCY_BOUNDARIES,
             RATIO_BOUNDARIES,
-            RETRY_COUNT_BOUNDARIES,
+            TOKEN_COUNT_BOUNDARIES,
             MEMORY_BYTES_BOUNDARIES,
         ] {
             Stream::builder()

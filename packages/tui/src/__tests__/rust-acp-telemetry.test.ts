@@ -8,6 +8,7 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { ContentBlock } from '@agentclientprotocol/sdk';
 import { AgentEventType, type AgentStreamEvent } from '../types/agent-events';
+import { TurnFailureReason } from '../types/generated/telemetry';
 
 type RecordFnArgs = Record<string, unknown>;
 const recordTuiSessionStarted = mock((_args: RecordFnArgs) => {});
@@ -24,6 +25,7 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   turnFailureReasonFromStatus: () => undefined,
   recordTuiSessionStarted,
   recordTuiUserTurn,
+  recordTuiSlashCommand: mock(() => {}),
   recordTuiCloudSession: mock(() => {}),
   recordTuiCloudSessionReady: mock(() => {}),
   recordTuiCreditsConsumed: mock(() => {}),
@@ -64,6 +66,7 @@ mock.module('child_process', () => ({ spawn: mockSpawn }));
 mock.module('node:child_process', () => ({ spawn: mockSpawn }));
 
 let promptStopReason = 'end_turn';
+let promptMeta: Record<string, unknown> | undefined;
 let promptError: Error | undefined;
 let promptPending = false;
 let connectionAbortController = new AbortController();
@@ -72,7 +75,7 @@ const mockPrompt = mock(() =>
     ? Promise.reject(promptError)
     : promptPending
       ? new Promise<never>(() => {})
-      : Promise.resolve({ stopReason: promptStopReason })
+      : Promise.resolve({ stopReason: promptStopReason, _meta: promptMeta })
 );
 class MockClientSideConnection {
   signal = connectionAbortController.signal;
@@ -113,6 +116,7 @@ beforeEach(() => {
   recordTuiSessionStarted.mockClear();
   recordTuiUserTurn.mockClear();
   promptStopReason = 'end_turn';
+  promptMeta = undefined;
   promptError = undefined;
   promptPending = false;
   connectionAbortController = new AbortController();
@@ -146,6 +150,59 @@ describe('Rust ACP telemetry ownership', () => {
       engine: 'v2',
     });
     expect(recordTuiUserTurn).toHaveBeenCalledTimes(1);
+  });
+
+  for (const failureReason of Object.values(TurnFailureReason)) {
+    it(`records generated turn failure reason ${failureReason}`, async () => {
+      const client = new AcpClient('/agent', [], '9.9.9-test');
+      await client.newSession();
+      recordTuiUserTurn.mockClear();
+      promptMeta = { kiro: { turnFailureReason: failureReason } };
+
+      await client.prompt(textPrompt('failed turn'));
+
+      expect(recordTuiUserTurn).toHaveBeenCalledTimes(1);
+      expect(recordTuiUserTurn.mock.calls[0]?.[0]).toMatchObject({
+        result: 'failed',
+        failureReason,
+        engine: 'v2',
+      });
+    });
+  }
+
+  it('keeps cancellation authoritative over failure metadata', async () => {
+    const client = new AcpClient('/agent', [], '9.9.9-test');
+    await client.newSession();
+    recordTuiUserTurn.mockClear();
+    promptStopReason = 'cancelled';
+    promptMeta = { kiro: { turnFailureReason: 'model_error' } };
+
+    await client.prompt(textPrompt('cancelled after refusal'));
+
+    expect(recordTuiUserTurn.mock.calls[0]?.[0]).toMatchObject({
+      result: 'cancelled',
+      engine: 'v2',
+    });
+    expect(recordTuiUserTurn.mock.calls[0]?.[0]).not.toHaveProperty(
+      'failureReason'
+    );
+  });
+
+  it('ignores an unknown turn failure reason', async () => {
+    const client = new AcpClient('/agent', [], '9.9.9-test');
+    await client.newSession();
+    recordTuiUserTurn.mockClear();
+    promptMeta = { kiro: { turnFailureReason: 'future_reason' } };
+
+    await client.prompt(textPrompt('future metadata'));
+
+    expect(recordTuiUserTurn.mock.calls[0]?.[0]).toMatchObject({
+      result: 'success',
+      engine: 'v2',
+    });
+    expect(recordTuiUserTurn.mock.calls[0]?.[0]).not.toHaveProperty(
+      'failureReason'
+    );
   });
 
   it('records one internal failure and preserves a rejected prompt', async () => {
@@ -214,6 +271,8 @@ describe('Rust ACP telemetry ownership', () => {
 
     promptStopReason = 'cancelled';
     await client.prompt(textPrompt('cancel'));
+    promptStopReason = 'refusal';
+    await client.prompt(textPrompt('reject tool'));
     promptStopReason = 'max_turn_requests';
     await client.prompt(textPrompt('limit'));
 
@@ -221,6 +280,9 @@ describe('Rust ACP telemetry ownership', () => {
       result: 'cancelled',
     });
     expect(recordTuiUserTurn.mock.calls[1]?.[0]).toMatchObject({
+      result: 'cancelled',
+    });
+    expect(recordTuiUserTurn.mock.calls[2]?.[0]).toMatchObject({
       result: 'failed',
       failureReason: 'execution_limit',
     });

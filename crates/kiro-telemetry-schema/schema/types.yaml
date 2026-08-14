@@ -1,6 +1,7 @@
 attributes:
   - name: version_full
     description: Full CLI version, including nightly or prerelease suffixes.
+    cloudwatch_cardinality_hint: 35
   - name: session_interface
     description: Interface through which the agent session is used.
     allowed_values: [interactive_cli, noninteractive_cli, external_acp]
@@ -90,8 +91,8 @@ attributes:
   - name: install_method
     description: Installation mechanism known from a trusted local receipt.
     allowed_values: [brew, internal_toolbox, unknown]
-  - name: command
-    description: Canonical recognized slash-command or top-level command name.
+  - name: slash_command
+    description: Canonical recognized slash-command family.
     allowed_values:
       - /agent
       - /autonomous
@@ -160,6 +161,9 @@ attributes:
       - /workflow-run
       - /workflow-status
       - /workflows
+  - name: top_level_command
+    description: Canonical recognized top-level CLI command.
+    allowed_values:
       - agent
       - chat
       - completion
@@ -207,11 +211,12 @@ attributes:
     allowed_values: [main, subagent]
   - name: model
     description: Canonical model identifier supplied by the trusted agent or model service.
+    cloudwatch_cardinality_hint: 12
   - name: model_request_outcome
     description: Terminal result of one logical model request.
     allowed_values: [success, failure, cancelled, unknown]
   - name: run_outcome
-    description: Terminal result of one CLI process invocation.
+    description: Launcher-observed terminal result of one top-level CLI process invocation; nonzero command or child exits are failures, not crash inference.
     allowed_values: [success, user_interrupt, failure, unknown]
   - name: process_role
     description: Process in the agent process tree that owns an observation.
@@ -219,18 +224,9 @@ attributes:
   - name: crash_kind
     description: Durable client-observable class of an abnormal process termination.
     allowed_values: [panic, unclean_exit, unknown]
-  - name: startup_failure_stage
-    description: Coarse startup phase that failed before the interface became ready.
-    allowed_values: [runtime_setup, agent_launch, protocol_init, interface_init, unknown]
   - name: error_kind
     description: Typed coarse cause of a failed logical model request.
-    allowed_values: [throttling, context_limit, timeout, connection, server_error, access_denied, invalid_request, model_error, unknown]
-  - name: retry_reason
-    description: Typed cause that initiated an automatic retry sequence.
-    allowed_values: [throttled, timeout, connection, server_error, empty_response, context_recovery, unknown]
-  - name: retry_outcome
-    description: Terminal result of an automatic retry sequence.
-    allowed_values: [recovered, exhausted, cancelled, unknown]
+    allowed_values: [throttling, context_limit, timeout, connection, server_error, access_denied, invalid_request, empty_response, refusal, unknown]
   - name: token_type
     description: Service-reported token category.
     allowed_values: [input_uncached, input_cache_read, output, reasoning]
@@ -242,19 +238,10 @@ attributes:
     metric_allowed: true
   - name: mcp_init_outcome
     description: Availability of an MCP server after initialization.
-    allowed_values: [success, degraded, failure, unknown]
-  - name: mcp_failure_stage
-    description: MCP initialization phase in which a failure occurred.
-    allowed_values: [configuration, process_launch, connection, handshake, capability_discovery, unknown]
-  - name: mcp_error_kind
-    description: Typed coarse cause of an MCP initialization failure.
-    allowed_values: [timeout, authentication, configuration, process_launch, connection, protocol, unknown]
+    allowed_values: [success, failure, unknown]
   - name: goal_outcome
     description: Observed terminal result of an explicit goal workflow.
     allowed_values: [completed, cancelled, iteration_limit, dispatch_failure, reinjection_failure, agent_error, unknown]
-  - name: telemetry_channel
-    description: Telemetry transport whose activation violated partition policy.
-    allowed_values: [legacy_toolkit, legacy_codewhisperer, otel, kuts, unknown]
   - name: drop_reason
     description: Typed point at which telemetry records became permanently undeliverable.
     allowed_values: [oversize, invalid_record, encoding_failure, retry_exhausted, permanent_rejection, unknown]

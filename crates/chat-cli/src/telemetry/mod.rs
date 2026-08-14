@@ -809,6 +809,7 @@ impl TelemetryThread {
         all_tool_names: Option<String>,
         loaded_tool_names: Option<String>,
         all_tools_count: usize,
+        mcp_tools_token_count_estimate: Option<u64>,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
@@ -819,6 +820,7 @@ impl TelemetryThread {
             all_tool_names,
             loaded_tool_names,
             all_tools_count,
+            mcp_tools_token_count_estimate,
         });
         set_event_metadata(database, &mut telemetry_event).await;
 
@@ -1114,17 +1116,6 @@ fn govcloud_partition(region: &str) -> Option<&'static str> {
     }
 }
 
-fn govcloud_channel_leak_record(channel: &str) -> MetricRecord {
-    let channel = match channel {
-        "legacy_toolkit" => metric::TelemetryChannelName::LegacyToolkit,
-        "legacy_codewhisperer" => metric::TelemetryChannelName::LegacyCodewhisperer,
-        "otel" => metric::TelemetryChannelName::Otel,
-        "kuts" => metric::TelemetryChannelName::Kuts,
-        _ => metric::TelemetryChannelName::Unknown,
-    };
-    metric::record_prohibited_telemetry_channel_enabled(channel)
-}
-
 fn should_build_toolkit_telemetry_client(telemetry_enabled: bool, govcloud_partition: Option<&str>) -> bool {
     telemetry_enabled && govcloud_partition.is_none() && cfg!(feature = "legacy_toolkit_sink")
 }
@@ -1216,12 +1207,6 @@ impl TelemetryClient {
         let otel_providers = init_otel(&otel_config);
         let otel_telemetry_client = OtelTelemetryClient::new(otel_config.clone())
             .with_sink(std::sync::Arc::new(OtelMetricsSink::new(kiro_telemetry::meter())));
-        if govcloud_partition.is_some()
-            && toolkit_telemetry_client.is_some()
-            && let Err(err) = otel_telemetry_client.emit(govcloud_channel_leak_record("legacy_toolkit"))
-        {
-            trace!(%err, "failed to emit prohibited GovCloud telemetry-channel counter");
-        }
         let otel_telemetry_client = Arc::new(otel_telemetry_client);
 
         let client = Self {
@@ -1700,24 +1685,6 @@ mod test {
         assert_eq!(govcloud_partition(US_GOV_EAST), Some("aws-us-gov"));
         assert_eq!(govcloud_partition(US_GOV_WEST), Some("aws-us-gov"));
         assert_eq!(govcloud_partition("us-east-1"), None);
-    }
-
-    #[test]
-    fn prohibited_govcloud_channel_record_shape() {
-        let record = govcloud_channel_leak_record("legacy_toolkit");
-
-        assert_eq!(record.name, "kiro_cli_prohibited_telemetry_channel_enabled_total");
-        assert_eq!(record.value, kiro_telemetry::MetricValue::Counter(1));
-        assert!(
-            record
-                .attributes
-                .iter()
-                .any(|attribute| { attribute.key == "telemetry_channel" && attribute.value == "legacy_toolkit" })
-        );
-        assert!(
-            record.attributes.iter().all(|attribute| attribute.key != "partition"),
-            "prohibited-channel metrics must not create a partition dimension"
-        );
     }
 
     #[test]

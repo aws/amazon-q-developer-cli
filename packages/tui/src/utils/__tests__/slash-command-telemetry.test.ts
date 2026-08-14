@@ -24,10 +24,8 @@ describe('slash-command telemetry names', () => {
       attributes: Array<{ name: string; allowed_values?: string[] }>;
     };
     const schemaNames =
-      schema.attributes
-        .find((attribute) => attribute.name === 'command')
-        ?.allowed_values?.filter((value) => value.startsWith('/'))
-        .filter((value) => value !== '/custom') ?? [];
+      schema.attributes.find((attribute) => attribute.name === 'slash_command')
+        ?.allowed_values ?? [];
 
     expect(schemaNames).toEqual([...SLASH_COMMAND_METRIC_NAMES]);
   });

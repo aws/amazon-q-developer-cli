@@ -24,7 +24,10 @@ use std::time::{
     Instant,
 };
 
-use agent::consts::LARGE_TOOL_DESCRIPTION_THRESHOLD;
+use agent::consts::{
+    BYTES_PER_TOKEN,
+    LARGE_TOOL_DESCRIPTION_THRESHOLD,
+};
 use crossterm::{
     cursor,
     execute,
@@ -614,7 +617,7 @@ impl ToolManagerBuilder {
             })
             .collect::<Vec<_>>();
 
-        for (mut name, source, mcp_client) in pre_initialized {
+        for (mut name, _source, mcp_client) in pre_initialized {
             let init_res = mcp_client.init(os).await;
             match init_res {
                 Ok(mut running_service) => {
@@ -627,25 +630,13 @@ impl ToolManagerBuilder {
                 },
                 Err(e) => {
                     error!("Error initializing mcp client for server {}: {:?}", name, &e);
-                    os.telemetry
-                        .send_mcp_server_init(
-                            &os.database,
-                            conversation_id.clone(),
-                            name.clone(),
-                            source,
-                            Some(e.to_string()),
-                            0,
-                            Some("".to_string()),
-                            Some("".to_string()),
-                            0,
-                        )
-                        .await
-                        .ok();
-
+                    let init_failure = ServiceError::McpError(rmcp::ErrorData::new(
+                        rmcp::model::ErrorCode::INTERNAL_ERROR,
+                        e.to_string(),
+                        None,
+                    ));
                     let temp_messenger = messenger_builder.build_with_name(name);
-                    let _ = temp_messenger
-                        .send_tools_list_result(Err(ServiceError::UnexpectedResponse), None)
-                        .await;
+                    let _ = temp_messenger.send_tools_list_result(Err(init_failure), None).await;
                 },
             }
         }
@@ -1941,6 +1932,7 @@ fn spawn_orchestrator_task(
                     result,
                     peer,
                 } => {
+                    let is_initial_result = !initialized.contains(&server_name);
                     let time_taken = loading_servers
                         .remove(&server_name)
                         .map_or("0.0".to_owned(), |init_time| {
@@ -2035,9 +2027,11 @@ fn spawn_orchestrator_task(
                                     input_schema: crate::cli::chat::tools::InputSchema(v.schema_as_json_value()),
                                     tool_origin: ToolOrigin::Native,
                                 })
-                                .filter(|spec| tool_filter.should_include(&spec.name))
-                                .filter(|spec| !disabled_tools_set.contains(&spec.name))
                                 .collect::<Vec<_>>();
+                            let raw_tool_token_count_estimate = estimate_raw_mcp_tool_spec_tokens(&specs);
+                            specs.retain(|spec| {
+                                tool_filter.should_include(&spec.name) && !disabled_tools_set.contains(&spec.name)
+                            });
 
                             // Validate that requested tools are actually available from the MCP server
                             let tool_validation_warning = if let ToolFilter::List(ref requested_tools) = tool_filter {
@@ -2074,6 +2068,8 @@ fn spawn_orchestrator_task(
                                 regex,
                                 telemetry_clone,
                                 &result_tools,
+                                raw_tool_token_count_estimate,
+                                is_initial_result,
                             )
                             .await;
 
@@ -2147,6 +2143,22 @@ fn spawn_orchestrator_task(
                         Err(e) => {
                             // Log error to chat Log
                             error!("Error loading server {server_name}: {:?}", e);
+                            if is_initial_result {
+                                let _ = telemetry_clone
+                                    .send_mcp_server_init(
+                                        database,
+                                        conv_id.to_string(),
+                                        server_name.clone(),
+                                        mcp_server_sources.get(&server_name).copied().unwrap_or_default(),
+                                        Some(e.to_string()),
+                                        0,
+                                        None,
+                                        None,
+                                        0,
+                                        None,
+                                    )
+                                    .await;
+                            }
                             // Maintain a record of the server load:
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                             let fail_load_msg = eyre::eyre!("{}", e);
@@ -2186,11 +2198,12 @@ fn spawn_orchestrator_task(
                             }
                         },
                     }
-                    if let Some(notify) = notify_weak.upgrade() {
-                        initialized.insert(server_name);
-                        if initialized.len() >= total {
-                            notify.notify_one();
-                        }
+                    let was_initial_result = initialized.insert(server_name);
+                    if was_initial_result
+                        && initialized.len() >= total
+                        && let Some(notify) = notify_weak.upgrade()
+                    {
+                        notify.notify_one();
                     }
                 },
                 UpdateEventMessage::ListPromptsResult {
@@ -2339,6 +2352,20 @@ fn spawn_orchestrator_task(
     });
 }
 
+/// Estimate the model-context footprint of raw MCP tool specifications before any
+/// allowlist, disabled-tool, alias, sanitization, or validation filtering.
+fn estimate_raw_mcp_tool_spec_tokens(specs: &[ToolSpec]) -> u64 {
+    specs
+        .iter()
+        .map(|spec| {
+            (spec.name.len()
+                + spec.description.len()
+                + serde_json::to_string(&spec.input_schema).map_or(0, |schema| schema.len()))
+                / BYTES_PER_TOKEN
+        })
+        .sum::<usize>() as u64
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn process_tool_specs(
     database: &Database,
@@ -2351,6 +2378,8 @@ async fn process_tool_specs(
     regex: &Regex,
     telemetry: &TelemetryThread,
     result_tools: &[String],
+    raw_tool_token_count_estimate: u64,
+    emit_init_metric: bool,
 ) -> eyre::Result<()> {
     // Tools are subjected to the following validations:
     // 1. ^[a-zA-Z][a-zA-Z0-9_]*$,
@@ -2413,21 +2442,24 @@ async fn process_tool_specs(
     } else {
         Some(specs.iter().map(|spec| spec.name.clone()).collect::<Vec<_>>().join(","))
     };
-    // Send server load success metric datum
-    let conversation_id = conversation_id.to_string();
-    let _ = telemetry
-        .send_mcp_server_init(
-            database,
-            conversation_id,
-            server_name.to_string(),
-            source,
-            None,
-            number_of_tools,
-            all_tool_names,
-            loaded_tool_names,
-            number_of_tools_in_mcp_server,
-        )
-        .await;
+    // Dynamic tool-list refreshes update runtime state but are not new initialization attempts.
+    if emit_init_metric {
+        let conversation_id = conversation_id.to_string();
+        let _ = telemetry
+            .send_mcp_server_init(
+                database,
+                conversation_id,
+                server_name.to_string(),
+                source,
+                None,
+                number_of_tools,
+                all_tool_names,
+                loaded_tool_names,
+                number_of_tools_in_mcp_server,
+                Some(raw_tool_token_count_estimate),
+            )
+            .await;
+    }
     // Tool name translation. This is beyond of the scope of what is
     // considered a "server load". Reasoning being:
     // - Failures here are not related to server load
@@ -2679,6 +2711,33 @@ mod tests {
         fn drop(&mut self) {
             self.0.store(true, Ordering::Release);
         }
+    }
+
+    #[test]
+    fn estimates_raw_mcp_tool_specs_before_runtime_filtering() {
+        let specs = vec![
+            ToolSpec {
+                name: "kept".to_string(),
+                description: "description".to_string(),
+                input_schema: InputSchema(serde_json::json!({"type": "object"})),
+                tool_origin: ToolOrigin::Native,
+            },
+            ToolSpec {
+                name: "filtered".to_string(),
+                description: String::new(),
+                input_schema: InputSchema(serde_json::json!({"type": "object", "properties": {}})),
+                tool_origin: ToolOrigin::Native,
+            },
+        ];
+        let expected = specs
+            .iter()
+            .map(|spec| {
+                (spec.name.len() + spec.description.len() + serde_json::to_string(&spec.input_schema).unwrap().len())
+                    / 4
+            })
+            .sum::<usize>() as u64;
+
+        assert_eq!(estimate_raw_mcp_tool_spec_tokens(&specs), expected);
     }
 
     fn pending_client(

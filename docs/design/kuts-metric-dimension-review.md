@@ -57,7 +57,7 @@ The review started from the following production state:
   the TUI). It was producer provenance, not a product-analysis dimension.
 
 That 100-entry inventory is retained below only as the reconciliation ledger. The implemented client
-catalog contains 42 emitted metrics.
+catalog contains 54 emitted metrics.
 
 ## Review rules
 
@@ -130,11 +130,11 @@ status and final names are recorded in the current emitted catalog below.
 | `kiro_cli_run_outcome_total` | How do top-level CLI invocations terminate when the launcher can observe the result? | `version_full`, `session_interface`, `agent_engine`, `os_type`, `run_outcome` | Add as the canonical launcher-observed run outcome counter. |
 | `kiro_cli.crash.total` | How many CLI runs experienced an abnormal process termination, and in which process role? | `version_full`, `agent_engine`, `os_type`, `process_role`, `crash_kind` | Rename to `kiro_cli_crash_total` and implement a durable crash-receipt producer. The pre-review instrument was catalog/test-only. |
 | `kiro_cli.startup.duration` | How long from process entry until the selected interface is ready for useful work? | `version_full`, `session_interface`, `agent_engine`, `os_type` | Rename to `kiro_cli_startup_duration_seconds` and wire a real producer. Record successful startups only; remove `cold_start`. |
-| `kiro_cli.startup.failures` | How many CLI runs fail before becoming ready, and at which bounded stage? | `version_full`, `session_interface`, `agent_engine`, `os_type`, `startup_failure_stage` | Rename to `kiro_cli_startup_failure_total` and wire a real producer. Count one terminal startup failure per run. |
-| `kiro_cli.retry.attempts` | Previously counted each additional automatic retry attempt separately. | None | Replace with `kiro_cli_automatic_retries_per_operation`. |
-| `kiro_cli.retry.exhausted` | Previously counted retry sequences that ended without recovery. | None | Remove as a dedicated metric. Use `kiro_cli_automatic_retries_per_operation{retry_outcome=exhausted}`. |
-| `kiro_cli.bedrock.empty_response.retries` | V1-specific automatic empty-response recovery with recovered/still-empty outcomes. | None | Remove as a dedicated metric. Fold it into `kiro_cli_automatic_retries_per_operation` with `retry_reason=empty_response`. |
-| `kiro_cli_automatic_retries_per_operation` | How often do operations require automatic retries, how deep are the retry sequences, and do they recover? | `version_full`, `agent_engine`, `retry_reason`, `retry_outcome` | Add as a histogram observed once when an automatically retried operation finishes. Record the number of additional attempts, excluding the original attempt and user-initiated retries. |
+| `kiro_cli.startup.failures` | Previously counted pre-ready failures by inferred stage. | None | Remove. Successful readiness is measured by `kiro_cli_startup_duration_seconds`; detailed failure stages remain in local logs. |
+| `kiro_cli.retry.attempts` | Previously counted each additional automatic retry attempt separately. | None | Remove from CloudWatch; retain typed retry state in local diagnostics. |
+| `kiro_cli.retry.exhausted` | Previously counted retry sequences that ended without recovery. | None | Remove; terminal request failures remain in `kiro_cli_model_request_failure_total`. |
+| `kiro_cli.bedrock.empty_response.retries` | V1-specific automatic empty-response recovery. | None | Remove; unrecovered empty responses use `error_kind=empty_response`. |
+| `kiro_cli_automatic_retries_per_operation` | Proposed retry-depth distribution. | None | Remove. The available producers mixed transport retries and logical recovery requests, making the dashboard interpretation unreliable. |
 | `kiro_cli.agent.loop.stuck` | Proposed detecting agent loops that stop making progress, but no production watchdog emits it. | None | Remove the dormant metric, constructor, and schema entry. Use request, tool, and turn timeout signals plus local diagnostic logs instead. |
 | `kiro_cli.upstream.dependency.up` | Proposed a client-emitted `1/0` gauge for upstream service availability, but has no production emitter. | None | Remove the dormant metric, constructor, and schema entry. Use service-side canaries for global availability and client request, retry, and authentication failures for user impact. |
 | `kiro_cli_ui_mode_session_started_total` | How many first-party interactive CLI launches start in the full TUI versus Lite? Count once after resolving the launch layout. | `version_full`, `ui_mode` | Keep. Bound `ui_mode` to `tui` or `lite`; move selection source and persisted-default detail to logs or Amplitude. |
@@ -230,7 +230,7 @@ tracks adding an `installation_script` receipt to the installer and consuming it
 
 ## Implemented client work
 
-- The schema now contains exactly 42 emitted metrics with separate `attributes` and
+- The schema now contains exactly 54 emitted metrics with separate `attributes` and
   `cloudwatch_dimensions` contracts.
 - Typed Rust constructors and TUI observer functions emit only the reviewed dimensions.
 - V1, V2, KAS, and TUI producers use bounded `agent_mode`, trusted `session_interface`, and
@@ -238,8 +238,8 @@ tracks adding an `installation_script` receipt to the installer and consuming it
 - Session-start ownership is deduplicated and chat sessions count at creation.
 - Heartbeats carry exact version, release channel, OS, and install method, and the local guard is
   version-aware.
-- Automatic retry depth records once at terminal operation completion with recovered or exhausted
-  outcome; a missing typed transport cause maps to `retry_reason=unknown`.
+- Automatic retry lifecycle remains available to legacy and local diagnostics, but the ambiguous
+  retry-depth KUTS metric is removed.
 - Retired client metrics and unproduced adoption gauges are removed.
 - Crash receipts and telemetry-export-drop receipts are bounded, replayed after recovery, and removed
   after a successful flush.
@@ -268,13 +268,15 @@ disposition below:
 | Remove | 45 | Remove without a client-emitted metric replacement. |
 | **Total** | **100** | Complete coverage of the 2026-07-23 catalog. |
 
-Renames and replacements converge on shared targets, so the reconciled client catalog contains 42
-unique emitted instruments rather than 60 retained rows. CloudWatch metric-math expressions remain
-dashboard configuration and are not additional client instruments.
+The original review converged on 42 unique emitted instruments rather than 60 retained rows.
+Subsequent mainline config, cloud, autonomous, and workflow telemetry expanded the catalog to 56.
+This follow-up removes three reviewed-away instruments and adds the MCP tool-schema estimate, producing
+54 emitted instruments. CloudWatch metric-math expressions remain dashboard configuration and are not
+additional client instruments.
 
 ### Current emitted catalog
 
-This is the 42-metric catalog implemented by the client change. The dimension column lists CloudWatch
+This is the 54-metric catalog implemented by the client change. The dimension column lists CloudWatch
 dimensions, not every OTel datapoint attribute.
 
 | Final metric | Kind | CloudWatch dimensions and notes |
@@ -284,10 +286,24 @@ dimensions, not every OTel datapoint attribute.
 | `kiro_cli_chat_session_started_total` | Counter | `version_full`, `session_interface`, `agent_mode`, `agent_engine` |
 | `kiro_cli_cloud_session_lifecycle_total` | Counter | `version_full`, `cloud_event` |
 | `kiro_cli_cloud_session_ready_seconds` | Histogram | `version_full` |
+| `kiro_cli_autonomous_mode_total` | Counter | `version_full`, `autonomous_event`, `agent_engine` |
+| `kiro_cli_cloud_repo_attach_total` | Counter | `version_full`, `repo_attach_event`, `repo_count_bucket`, `agent_engine` |
+| `kiro_cli_cloud_error_total` | Counter | `version_full`, `cloud_op`, `cloud_error_kind`, `agent_engine` |
+| `kiro_cli_cloud_attach_total` | Counter | `version_full`, `attach_kind`, `attach_size_bucket`, `agent_engine` |
+| `kiro_cli_config_panel_total` | Counter | `version_full`, `agent_engine`, `config_category` |
+| `kiro_cli_cloud_config_diagnostic_total` | Counter | `version_full`, `agent_engine`, `diagnostic_severity` |
+| `kiro_cli_cloud_config_source_total` | Counter | `version_full`, `agent_engine`, `config_surface` |
+| `kiro_cli_workflow_run_total` | Counter | `version_full`, `workflow_run_event`, `workflow_topology`, `workflow_step_bucket`, `agent_engine` |
+| `kiro_cli_workflow_run_duration_seconds` | Histogram | `version_full`, `workflow_outcome`, `workflow_topology`, `workflow_step_bucket`, `agent_engine` |
+| `kiro_cli_workflow_node_total` | Counter | `version_full`, `workflow_node_type`, `workflow_node_outcome`, `agent_engine` |
+| `kiro_cli_workflow_node_duration_seconds` | Histogram | `version_full`, `workflow_node_type`, `workflow_node_outcome`, `agent_engine` |
+| `kiro_cli_workflow_control_total` | Counter | `version_full`, `workflow_control_action`, `workflow_control_result`, `agent_engine` |
+| `kiro_cli_workflow_restore_total` | Counter | `version_full`, `workflow_restore_result`, `agent_engine` |
+| `kiro_cli_workflow_concurrent_runs` | Observable gauge | `version_full`, `agent_engine` |
 | `kiro_cli_ui_mode_session_started_total` | Counter | `version_full`, `ui_mode` |
 | `kiro_cli_daily_heartbeat` | Counter | `version_full`, `release_channel`, `os_type`, `install_method` |
-| `kiro_cli_slash_command_invoked_total` | Counter | `version_full`, `agent_engine`, `command` |
-| `kiro_cli_top_level_command_invoked_total` | Counter | `version_full`, `command` |
+| `kiro_cli_slash_command_invoked_total` | Counter | `version_full`, `agent_engine`, `slash_command` |
+| `kiro_cli_top_level_command_invoked_total` | Counter | `version_full`, `top_level_command` |
 | `kiro_cli_tool_call_total` | Counter | `version_full`, `agent_engine`, `tool_origin`, `tool_outcome`, `execution_context`; add bounded `builtin_tool_name` only for built-in tools |
 | `kiro_cli_model_invocations_total` | Counter | `version_full`, `agent_engine`, `model` |
 | `kiro_cli_model_time_to_first_content_ms` | Histogram | `version_full`, `agent_engine`, `model` |
@@ -297,9 +313,7 @@ dimensions, not every OTel datapoint attribute.
 | `kiro_cli_run_outcome_total` | Counter | `version_full`, `session_interface`, `agent_engine`, `os_type`, `run_outcome` |
 | `kiro_cli_crash_total` | Counter | `version_full`, `agent_engine`, `os_type`, `process_role`, `crash_kind` |
 | `kiro_cli_startup_duration_seconds` | Histogram | `version_full`, `session_interface`, `agent_engine`, `os_type` |
-| `kiro_cli_startup_failure_total` | Counter | `version_full`, `session_interface`, `agent_engine`, `os_type`, `startup_failure_stage` |
 | `kiro_cli_model_request_failure_total` | Counter | `version_full`, `agent_engine`, `model`, `error_kind` |
-| `kiro_cli_automatic_retries_per_operation` | Histogram | `version_full`, `agent_engine`, `retry_reason`, `retry_outcome` |
 | `kiro_cli_process_memory_rss_bytes` | Observable gauge | `version_full`, `os_type`, `agent_engine`, `process_role` |
 | `kiro_cli_process_cpu_utilization_ratio` | Histogram | `version_full`, `os_type`, `agent_engine`, `process_role` |
 | `kiro_cli_process_open_file_descriptor_count` | Observable gauge | `version_full`, `os_type`, `agent_engine`, `process_role`; macOS and Linux only |
@@ -308,10 +322,10 @@ dimensions, not every OTel datapoint attribute.
 | `kiro_cli_tokens_consumed` | Counter | `version_full`, `agent_engine`, `model`, `token_type` |
 | `kiro_cli_credits_consumed` | Counter | `version_full`, `model` |
 | `kiro_cli_tool_execution_duration_ms` | Histogram | `version_full`, `agent_engine`, `tool_origin`, `tool_outcome`, `execution_context`; add bounded `builtin_tool_name` only for built-in tools |
-| `kiro_cli_mcp_server_init_total` | Counter | `version_full`, `agent_engine`, `mcp_server_source`, `mcp_init_outcome`; keep `mcp_server_name`, `mcp_error_kind`, and `mcp_failure_stage` as non-dimension EMF fields |
+| `kiro_cli_mcp_server_init_total` | Counter | `version_full`, `agent_engine`, `mcp_server_source`, `mcp_init_outcome`; keep `mcp_server_name` as a non-dimension EMF field |
+| `kiro_cli_mcp_tools_token_count_estimate` | Histogram | `version_full`, `agent_engine`, `mcp_server_source`; keep `mcp_server_name` as a non-dimension EMF field |
 | `kiro_cli_user_turns` | Counter | `version_full`, `session_interface`, `agent_mode`, `agent_engine` |
 | `kiro_cli_goal_outcome_total` | Counter | `version_full`, `agent_engine`, `goal_outcome` |
-| `kiro_cli_prohibited_telemetry_channel_enabled_total` | Counter | `version_full`, `telemetry_channel` |
 | `kiro_cli_telemetry_export_dropped_total` | Counter | `version_full`, `drop_reason` |
 | `kiro_cli_turn_failure_total` | Counter | `version_full`, `session_interface`, `agent_mode`, `agent_engine`, `turn_failure_reason` |
 | `kiro_cli_turn_cancelled_total` | Counter | `version_full`, `session_interface`, `agent_mode`, `agent_engine` |
@@ -334,7 +348,7 @@ instead of a separate metric.
 | 3 | `kiro_cli_chat_session_started_total` | Keep | Same name with reviewed session dimensions |
 | 4 | `kiro_cli_cloud_session_total` | Rename | `kiro_cli_cloud_session_lifecycle_total` |
 | 5 | `kiro_cli_cloud_session_ready_seconds` | Keep | Same name with `version_full` only |
-| 6 | `kiro_cli_cloud_repo_attach_total` | Remove | Use Amplitude for the repository-picker funnel |
+| 6 | `kiro_cli_cloud_repo_attach_total` | Keep | Bounded repository-picker funnel by event and repository-count bucket |
 | 7 | `kiro_cli_ui_mode_session_started_total` | Keep | Same name with `version_full`, `ui_mode` |
 | 8 | `kiro_cli_ui_mode_changed_total` | Remove | Use Amplitude for mode-switch funnels |
 | 9 | `kiro_cli_ui_mode_default_changed_total` | Remove | Use actual launch mode and Amplitude |
@@ -368,11 +382,11 @@ instead of a separate metric.
 | 37 | `kiro_cli_time_to_first_chunk_ms` | Replace | `kiro_cli_model_time_to_first_content_ms` and `kiro_cli_time_to_first_visible_response_ms` |
 | 38 | `kiro_cli.session.completed` | Replace | `kiro_cli_run_outcome_total` |
 | 39 | `kiro_cli.crash.total` | Rename | `kiro_cli_crash_total` |
-| 40 | `kiro_cli.startup.failures` | Rename | `kiro_cli_startup_failure_total` |
+| 40 | `kiro_cli.startup.failures` | Remove | Use startup-duration sample count and local startup logs |
 | 41 | `kiro_cli.bedrock.request.errors` | Replace | `kiro_cli_model_request_failure_total` |
-| 42 | `kiro_cli.bedrock.empty_response.retries` | Replace | `kiro_cli_automatic_retries_per_operation{retry_reason=empty_response}` |
-| 43 | `kiro_cli.retry.attempts` | Replace | `kiro_cli_automatic_retries_per_operation` |
-| 44 | `kiro_cli.retry.exhausted` | Replace | `kiro_cli_automatic_retries_per_operation{retry_outcome=exhausted}` |
+| 42 | `kiro_cli.bedrock.empty_response.retries` | Remove | Use `error_kind=empty_response` for unrecovered requests |
+| 43 | `kiro_cli.retry.attempts` | Remove | Keep attempt count in local diagnostics |
+| 44 | `kiro_cli.retry.exhausted` | Remove | Use terminal request failures |
 | 45 | `kiro_cli.agent.loop.stuck` | Remove | Use typed timeout failures and structured diagnostics |
 | 46 | `kiro_cli.upstream.dependency.up` | Remove | Use service canaries and client failure incidence |
 | 47 | `kiro_cli.slo.success_rate` | Derive | Explicit login success and turn failure-incidence expressions |
@@ -404,8 +418,8 @@ instead of a separate metric.
 | 73 | `kiro_cli_pii_redaction_matches_total` | Remove | Match counts do not prove complete outbound coverage |
 | 74 | `kiro_cli_pii_redaction_errors_total` | Remove | No reachable redaction-error state exists |
 | 75 | `kiro_cli_pii_redaction_coverage_ratio` | Remove | Enforce schema-aware coverage in tests |
-| 76 | `kiro_cli_govcloud_channel_disabled_total` | Replace | `kiro_cli_prohibited_telemetry_channel_enabled_total` |
-| 77 | `kiro_cli_govcloud_channel_leak_total` | Replace | `kiro_cli_prohibited_telemetry_channel_enabled_total` |
+| 76 | `kiro_cli_govcloud_channel_disabled_total` | Remove | Enforce with the local construction invariant |
+| 77 | `kiro_cli_govcloud_channel_leak_total` | Remove | Enforce with the local construction invariant |
 | 78 | `kiro_cli_kuts_export_oversize_total` | Replace | `kiro_cli_telemetry_export_dropped_total{drop_reason=oversize}` |
 | 79 | `kiro_cli_consent_record_integrity_total` | Remove | Validate settings locally and fail closed |
 | 80 | `kiro_cli_auth_credential_failure_total` | Rename | `kiro_cli_auth_failure_total` |
@@ -445,7 +459,7 @@ kinds. The client implementation applies these rules:
   exports only its declared dimension keys.
 - The schema defines the ten dimension or diagnostic attributes introduced by the review:
   `session_interface`, `auth_method`, `auth_flow`, `agent_mode`, `execution_context`, `run_outcome`,
-  `mcp_server_source`, `goal_outcome`, `telemetry_channel`, and `mcp_error_kind`. Retained attributes
+  `mcp_server_source` and `goal_outcome`. Retained attributes
   such as `agent_engine`, `os_type`, `install_method`, metric-specific outcomes, stages, and failure
   reasons use their reviewed vocabularies.
 - Legacy Toolkit and CodeWhisperer events stay in place until their independent channel cutover is
@@ -458,12 +472,19 @@ implicit dimension set.
 KUTS declarations require a compatibility rollout:
 
 1. First deploy the declarations in `CR-291574951` for all 89 pre-migration metric instruments plus
-   all 42 final names. Use only the safe intersection of historical attributes and reviewed dimensions for old names, with a
-   dimensionless fallback where necessary. This stops new cardinality growth without dropping metrics
+   all 54 final names. Use only the safe intersection of historical attributes and reviewed dimensions for old names, with a
+   dimensionless fallback where necessary. For retained metric names whose dimension keys change,
+   deploy both shapes during the supported-client window: `kiro_cli_slash_command_invoked_total` must
+   accept both `command` and `slash_command`, and `kiro_cli_top_level_command_invoked_total` must accept
+   both `command` and `top_level_command`. This stops new cardinality growth without dropping metrics
    from clients that have not upgraded. The eight `log_event` and three `derived` catalog entries do
    not receive EMF metric declarations.
-2. Then deploy the client schema and producer migration. Validate that all 42 final names arrive with
-   only their declared dimensions and that MCP diagnostic fields remain queryable in EMF.
+2. Then deploy the client schema and producer migration. Validate that all 54 final names arrive with
+   only their declared dimensions and that MCP diagnostic fields remain queryable in EMF. This client
+   rollout also reclassifies V2 `StopReason::Refusal` (including a rejected tool use) from
+   `kiro_cli_turn_failure_total{turn_failure_reason=model_error}` to
+   `kiro_cli_turn_cancelled_total`; update dashboards and alarms to preserve turn-outcome continuity
+   across the deployment.
 3. After the supported client-adoption window, remove declarations for retired names. Old CloudWatch
    series stop receiving data immediately after step 1 but may remain discoverable until their prior
    samples age out of the dashboard query window.
@@ -660,47 +681,27 @@ The dimension set is `version_full`, `agent_engine`, `mcp_server_source`, and `m
 `execution_context` is explicitly omitted. This answers whether a CLI release or agent engine
 introduced an initialization regression and whether reliability differs by trusted server source.
 
-Replace the pre-review error-string-derived outcome with three structured metric values:
+Record one `kiro_cli_mcp_server_init_total` point for each terminal initialization attempt:
 
 | Outcome | Determination |
 |---|---|
-| `success` | The MCP handshake completed and every advertised tools/prompts capability that Kiro attempted to discover was listed successfully. |
-| `degraded` | The MCP handshake completed, but at least one advertised tools/prompts capability failed discovery. |
-| `failure` | The MCP handshake did not complete. |
+| `success` | The server reached the real `Initialized` event. |
+| `failure` | The server reached `InitializeError`. |
 
-Detailed causes do not belong in the CloudWatch dimension set. Carry two structured, non-dimension EMF
-fields when a typed cause is available:
+`OauthRequest` is an intermediate state in the current MCP lifecycle, not a terminal attempt. The
+same launch later produces `Initialized` or `InitializeError`, so emitting at the OAuth request would
+double-count one attempt. Post-initialization OAuth refreshes also do not create initialization points.
+UI-only status refreshes use a distinct event and are ignored by telemetry.
 
-- `mcp_failure_stage`: `configuration`, `process_launch`, `connection`, `handshake`,
-  `capability_discovery`, or `unknown`.
-- `mcp_error_kind`: `timeout`, `authentication`, `configuration`, `process_launch`, `connection`,
-  `protocol`, or `unknown`.
+Do not infer failure stage or error kind from rendered error strings. Keep raw `mcp_server_name` as a
+non-dimension EMF field for Logs Insights, while CloudWatch uses only `version_full`, `agent_engine`,
+`mcp_server_source`, and `mcp_init_outcome`.
 
-Select both fields from typed errors at the failure source rather than rendered error text. Do not
-attach the rendered error message. Successful initializations do not need either field.
-
-Do not add an MCP server identity dimension. The MCP ecosystem and registry contents change too
-quickly for a maintained identity allowlist to remain useful. Use the metric for aggregate
-availability:
-
-- Initialization attempts: all `kiro_cli_mcp_server_init_total` records.
-- Fully available: `mcp_init_outcome=success`.
-- Connected but degraded: `mcp_init_outcome=degraded`.
-- Unavailable: `mcp_init_outcome=failure`.
-- Overall MCP call volume: `kiro_cli_tool_call_total{tool_origin=mcp}` without server identity.
-
-Use the EMF records produced from `kiro_cli_mcp_server_init_total` for server-specific investigation.
-Keep raw `mcp_server_name`, bounded `mcp_error_kind`, and bounded `mcp_failure_stage` as datapoint
-attributes but declare only `version_full`, `agent_engine`, `mcp_server_source`, and `mcp_init_outcome`
-as CloudWatch dimensions. This lets CloudWatch Logs Insights identify which servers are failing
-without creating one CloudWatch metric series per server.
-
-These diagnostic attributes still create distinct OTel attribute sets before export. That cost is
-local to one CLI process rather than global across all installations, and initialization records are
-bounded in normal use by the servers configured on that installation. The Rust OTel SDK currently
-overflows after 2,000 distinct attribute sets per instrument by default. Add a lower explicit
-per-instrument limit during implementation only if load testing shows the normal server and retry
-combinations fit beneath it without hiding useful failures.
+On terminal success, also emit `kiro_cli_mcp_tools_token_count_estimate` once for that server. The
+estimate is calculated from the raw advertised tool name, description, and compact input-schema JSON
+at four bytes per token, before aliases, sanitization, allowlists, or tool-search deferral. Its
+CloudWatch dimensions are `version_full`, `agent_engine`, and `mcp_server_source`; server identity
+remains an EMF-only diagnostic field. A server with no tools emits zero.
 
 ## Turn and model count points
 
@@ -785,7 +786,7 @@ the failure source:
 | `context_limit` | Context-window overflow |
 | `timeout` | Model, tool, or overall turn deadline |
 | `model_error` | Upstream failure, throttling, invalid model, refusal, or empty/invalid model response |
-| `tool_error` | An unrecovered tool-execution failure that terminates the turn |
+| `tool_error` | Unrecovered failure while executing a tool |
 | `execution_limit` | Maximum output tokens, turn requests, or iteration budget |
 | `internal_error` | Agent, IPC, request-validation, storage, or other client failure |
 | `unknown` | A terminal failure with no structured cause |
@@ -862,53 +863,18 @@ Record successful startups only. Do not use a `cold_start` dimension: one Boolea
 describe runtime extraction, local caches, database state, and KAS initialization. Detailed phase
 timings belong in structured startup logs when diagnosis is needed.
 
-`kiro_cli_startup_failure_total` records once when a run terminates before reaching its interface-ready
-point. It carries the same dimensions as run starts plus one `startup_failure_stage`:
-
-- `runtime_setup`
-- `agent_launch`
-- `protocol_init`
-- `interface_init`
-- `unknown`
-
-Record the terminal stage, not every intermediate error. User interruption is a run outcome rather than
-a startup failure. Detailed failure causes remain in structured startup logs.
+Startup failures remain visible through `kiro_cli_run_outcome_total{run_outcome=failure}` and local
+structured startup logs. There is no separate startup-failure metric or inferred stage dimension.
+The share of runs that reach readiness can be derived from successful startup histogram sample count
+divided by run starts.
 
 ### Automatic retries
 
-`kiro_cli_automatic_retries_per_operation` is a histogram observed once when an automatically retried
-operation finishes. Its value is the number of additional attempts initiated automatically by Kiro. It
-does not include the original attempt or a user manually trying again, and it is not observed for
-operations that required no retry.
-
-Transport retries happen inside one logical model request and therefore do not add a model invocation.
-Agent recovery retries issue another logical model request and increment
-`kiro_cli_model_invocations_total`. Both types produce one retry histogram observation after the retry
-sequence finishes. Normal tool-loop continuations are model invocations but are not retries.
-
-Use bounded `retry_outcome` values:
-
-- `recovered`
-- `exhausted`
-- `cancelled`
-
-Use typed `retry_reason` values:
-
-- `throttled`
-- `timeout`
-- `connection`
-- `server_error`
-- `empty_response`
-- `context_recovery`
-- `unknown`
-
-Transport retries use their typed retry classifier when it is exposed. `context_recovery` is emitted
-only by the actual typed auto-compaction or truncation lifecycle, never inferred from a final context
-window error and an HTTP attempt count. Recovered requests use `unknown` when the transport exposes no
-typed cause. Do not parse warning or error text. In CloudWatch, `Sum` gives total additional attempts,
-`SampleCount` gives operations requiring retries, `Average` gives mean retry depth, and
-`retry_outcome` filters
-show recovery and exhaustion rates. Percentiles expose unusually deep retry sequences.
+Do not emit a CloudWatch retry-depth metric. Transport attempts and logical recovery requests have
+different semantics, and combining them produced a misleading distribution. Keep typed attempt counts
+in local diagnostics. Unrecovered request failures are counted by
+`kiro_cli_model_request_failure_total`; additional logical requests remain visible in
+`kiro_cli_model_invocations_total`.
 
 ### Model request failures
 
@@ -925,7 +891,8 @@ Use bounded `error_kind` values:
 - `server_error`
 - `access_denied`
 - `invalid_request`
-- `model_error`
+- `empty_response`
+- `refusal`
 - `unknown`
 
 Do not use `operation`, `status_class`, or `failure_reason_code` as CloudWatch dimensions. The current
@@ -971,7 +938,7 @@ client from exporting the zero value. Aggregating the latest observations from m
 not produce a meaningful global availability signal.
 
 Measure global dependency availability with service-side canaries and service-owned alarms. Use
-`kiro_cli_model_request_failure_total`, `kiro_cli_automatic_retries_per_operation`, and authentication
+`kiro_cli_model_request_failure_total` and authentication
 failure metrics to measure client-observed impact.
 
 ### UI mode at launch
@@ -1106,13 +1073,12 @@ timer immediately before `session/new`.
 
 ### Cloud repository picker
 
-Remove `kiro_cli_cloud_repo_attach_total` from CloudWatch metrics. It measures `/repo` picker opens and
-submissions rather than confirmed repository attachments, excludes repositories selected during
-initial cloud-session creation, and can be distorted by repeated picker opens. The current submission
-path sends a natural-language clone prompt and cannot observe whether attachment succeeds.
+Keep `kiro_cli_cloud_repo_attach_total` as a bounded repository-picker funnel metric. It measures
+`/repo` picker opens and submissions by `repo_attach_event` and `repo_count_bucket`; it does not claim
+that a repository was successfully attached. Use `kiro_cli_cloud_error_total` and cloud-session
+lifecycle metrics for reliability, and use Amplitude when user-level funnel analysis is required.
 
-Capture the picker funnel in Amplitude. Keep CloudWatch cloud metrics focused on lifecycle reliability
-and provisioning latency.
+Do not add repository identifiers, session identifiers, or raw error values as dimensions.
 
 ### User feedback sentiment
 
@@ -1401,18 +1367,9 @@ real fallible outcome that drops the unsafe payload.
 
 ### Prohibited telemetry channels
 
-Replace `kiro_cli_govcloud_channel_disabled_total` and `kiro_cli_govcloud_channel_leak_total` with one
-failure-only counter: `kiro_cli_prohibited_telemetry_channel_enabled_total`.
-
-Count once per process startup when Kiro detects that a telemetry channel forbidden for the active AWS
-partition was initialized or enabled. Block that channel before any send. Use these dimensions:
-
-- `version_full`
-- `telemetry_channel`
-
-Any value above zero should alarm. Expected GovCloud channel blocking is a tested configuration
-invariant and emits no per-event metric. The existing leak metric only detects that a prohibited client
-was constructed; it does not prove that data left the process.
+Remove the proposed prohibited-channel counter. The legacy Toolkit client constructor already fails
+closed in GovCloud, making the metric's producer condition unreachable. Keep the local construction
+invariant test; do not initialize a forbidden channel merely to report that it was blocked.
 
 ### Consent record integrity
 
@@ -1561,17 +1518,15 @@ Sum all `turn_failure_reason` values for the overall numerator. Retain `turn_fai
 explanatory breakdowns. The shared selectable breakdowns are `version_full`, `session_interface`,
 `agent_mode`, and `agent_engine`.
 
-Startup availability is:
+Startup readiness rate is:
 
 ```text
-1 - (
-  SUM(kiro_cli_startup_failure_total)
-  /
-  SUM(kiro_cli_run_started_total)
-)
+SampleCount(kiro_cli_startup_duration_seconds) / SUM(kiro_cli_run_started_total)
 ```
 
-Its shared breakdowns are `version_full`, `session_interface`, `agent_engine`, and `os_type`.
+Its shared breakdowns are `version_full`, `session_interface`, `agent_engine`, and `os_type`. It
+measures the share of observable runs that reached the prompt-ready point; detailed pre-ready failure
+stages remain in local logs.
 
 Login availability is the same valid expression as login success rate:
 
@@ -1603,16 +1558,14 @@ These are dashboard metric-math expressions or recording rules, not client-emitt
 | UI-mode launch share | `SUM(kiro_cli_ui_mode_session_started_total{ui_mode=selected}) / SUM(kiro_cli_ui_mode_session_started_total)` | `version_full`; calculate separately for `tui` and `lite`. |
 | Tool outcome rate | `SUM(kiro_cli_tool_call_total{tool_outcome=...}) / SUM(kiro_cli_tool_call_total)` | `version_full`, `agent_engine`, `tool_origin`, `execution_context`, and bounded built-in tool name where applicable. |
 | MCP full-availability rate | `SUM(kiro_cli_mcp_server_init_total{mcp_init_outcome=success}) / SUM(kiro_cli_mcp_server_init_total)` | `version_full`, `agent_engine`, `mcp_server_source`. |
-| MCP usable-connection rate | `(SUM(kiro_cli_mcp_server_init_total{mcp_init_outcome=success}) + SUM(kiro_cli_mcp_server_init_total{mcp_init_outcome=degraded})) / SUM(kiro_cli_mcp_server_init_total)` | Same breakdowns. Server-specific diagnosis uses non-dimension fields on the metric's EMF records. |
 | Model-request failure incidence | `SUM(kiro_cli_model_request_failure_total) / SUM(kiro_cli_model_invocations_total)` | `version_full`, `agent_engine`, `model`; sum `error_kind` for the overall rate. |
 | Credits per model invocation | `SUM(kiro_cli_credits_consumed) / SUM(kiro_cli_model_invocations_total)` | `version_full`, `model`; aggregate model invocations across `agent_engine` before division. |
 | Credits per user turn | `SUM(kiro_cli_credits_consumed) / SUM(kiro_cli_user_turns)` | `version_full`; aggregate credits across `model` and turns across interface, mode, and engine. |
-| Retry recovery or exhaustion share | `SampleCount(kiro_cli_automatic_retries_per_operation{retry_outcome=selected}) / SampleCount(kiro_cli_automatic_retries_per_operation)` | `version_full`, `agent_engine`, `retry_reason`; applies only to operations that retried. |
 | Run outcome rate | `SUM(kiro_cli_run_outcome_total{run_outcome=selected}) / SUM(kiro_cli_run_started_total)` | `version_full`, `session_interface`, `agent_engine`, `os_type`. |
 | Crash incidence per run | `SUM(kiro_cli_crash_total) / SUM(kiro_cli_run_started_total)` | `version_full`, `agent_engine`, `os_type`; `process_role` may explain the numerator but is not a denominator dimension. |
 | Turn failure incidence | `SUM(kiro_cli_turn_failure_total) / SUM(kiro_cli_user_turns)` | `version_full`, `session_interface`, `agent_mode`, `agent_engine`; this includes cancellations only in the denominator and is distinct from availability. |
 | Client-turn availability | `1 - SUM(kiro_cli_turn_failure_total) / (SUM(kiro_cli_user_turns) - SUM(kiro_cli_turn_cancelled_total))` | Same turn breakdowns; all failures are terminal and unrecovered. |
-| Startup availability | `1 - SUM(kiro_cli_startup_failure_total) / SUM(kiro_cli_run_started_total)` | `version_full`, `session_interface`, `agent_engine`, `os_type`. |
+| Startup readiness rate | `SampleCount(kiro_cli_startup_duration_seconds) / SUM(kiro_cli_run_started_total)` | `version_full`, `session_interface`, `agent_engine`, `os_type`. |
 | Login availability | `SUM(kiro_cli_login_success_total) / (SUM(kiro_cli_login_success_total) + SUM(kiro_cli_auth_failure_total{auth_operation=login}))` | `version_full`, `auth_method`, `auth_flow`. |
 
 Do not create derived series for ordinary chat-session success, goal completion percentage, telemetry
@@ -1677,6 +1630,5 @@ cutover.
 
 Remove the standalone `kiro_cli_mcp_server_init` log event and its OTel log translation because KUTS
 does not accept OTLP logs. Preserve the approved raw server diagnosis by attaching
-`mcp_server_name`, `mcp_error_kind`, and `mcp_failure_stage` to
-`kiro_cli_mcp_server_init_total` as non-dimension EMF fields. Do not remove the separate legacy MCP
+`mcp_server_name` to `kiro_cli_mcp_server_init_total` as a non-dimension EMF field. Do not remove the separate legacy MCP
 initialization event until that channel's cutover is explicitly approved.

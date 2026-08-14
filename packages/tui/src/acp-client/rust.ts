@@ -4,6 +4,7 @@ import { maybeWrapStreamWithRecorder } from '../acp-recorder';
 import { spawn } from 'node:child_process';
 import type { ListSessionsResponse } from '../types/session-client';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
+import { TurnFailureReason as TurnFailureReasonValue } from '../types/generated/telemetry';
 import type {
   ModeChangedNotification,
   UiModeChangedNotification,
@@ -37,7 +38,8 @@ import {
  * KAS status strings, so V2 needs its own mapping off the ACP stop-reason
  * vocabulary (`end_turn | max_tokens | max_turn_requests | refusal |
  * cancelled`). A normal `end_turn` is a success; `cancelled` maps to cancelled;
- * `refusal` and execution limits are failures.
+ * `refusal` represents a user/tool rejection in the V2 agent loop and maps to
+ * cancellation; execution limits are failures.
  */
 function resultFromStopReason(
   stopReason: acp.StopReason | undefined
@@ -46,8 +48,8 @@ function resultFromStopReason(
     case 'end_turn':
       return 'success';
     case 'cancelled':
-      return 'cancelled';
     case 'refusal':
+      return 'cancelled';
     case 'max_tokens':
     case 'max_turn_requests':
     default:
@@ -64,15 +66,31 @@ function failureReasonFromStopReason(
   switch (stopReason) {
     case 'end_turn':
     case 'cancelled':
+    case 'refusal':
       return undefined;
     case 'max_tokens':
     case 'max_turn_requests':
       return 'execution_limit';
-    case 'refusal':
-      return 'model_error';
     default:
       return 'unknown';
   }
+}
+
+const TURN_FAILURE_REASONS = new Set<string>(
+  Object.values(TurnFailureReasonValue)
+);
+
+function failureReasonFromPromptResponse(
+  response: acp.PromptResponse
+): TurnFailureReason | undefined {
+  const reason = (
+    response as acp.PromptResponse & {
+      _meta?: { kiro?: { turnFailureReason?: unknown } };
+    }
+  )._meta?.kiro?.turnFailureReason;
+  return typeof reason === 'string' && TURN_FAILURE_REASONS.has(reason)
+    ? (reason as TurnFailureReason)
+    : undefined;
 }
 
 /** Extract the current model `{id, name}` from the V2 Rust `models` field. */
@@ -279,8 +297,9 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
         throw err;
       }
       this.observeV2TurnCompletion(
-        response?.stopReason,
-        (performance.now() - startMs) / 1000
+        response.stopReason,
+        (performance.now() - startMs) / 1000,
+        failureReasonFromPromptResponse(response)
       );
     } finally {
       this.cancelFirstVisibleResponse();
@@ -303,16 +322,23 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
    */
   private observeV2TurnCompletion(
     stopReason: acp.StopReason | undefined,
-    durationSeconds: number
+    durationSeconds: number,
+    responseFailureReason?: TurnFailureReason
   ): void {
     const mode = modeFromId(this.v2CurrentMode);
     const isSubagent = false;
+    const stopResult = resultFromStopReason(stopReason);
+    const responseDefinesFailure =
+      responseFailureReason !== undefined && stopResult !== 'cancelled';
+    const failureReason = responseDefinesFailure
+      ? responseFailureReason
+      : failureReasonFromStopReason(stopReason);
     recordTuiUserTurn({
-      result: resultFromStopReason(stopReason),
+      result: responseDefinesFailure ? 'failed' : stopResult,
       isSubagent,
       mode,
       version: this.version,
-      failureReason: failureReasonFromStopReason(stopReason),
+      ...(failureReason === undefined ? {} : { failureReason }),
       durationSeconds:
         Number.isFinite(durationSeconds) && durationSeconds >= 0
           ? durationSeconds

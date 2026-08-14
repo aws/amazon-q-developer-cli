@@ -24,12 +24,15 @@ use tracing::{
     warn,
 };
 
-use super::ExecuteToolResult;
 use super::service::{
     McpService,
     RunningMcpService,
 };
 use super::types::Prompt;
+use super::{
+    ExecuteToolResult,
+    estimate_tool_spec_tokens,
+};
 use crate::agent::agent_config::definitions::McpServerConfig;
 use crate::agent::agent_loop::types::ToolSpec;
 use crate::agent::tools::mcp::McpToolAnnotations;
@@ -232,12 +235,14 @@ pub enum McpServerActorEvent {
         serve_duration: Duration,
         /// Time taken to list all tools.
         ///
-        /// None if the server does not support tools, or there was an error fetching tools.
+        /// None if the server does not advertise tool support.
         list_tools_duration: Option<Duration>,
         /// Time taken to list all prompts
         ///
         /// None if the server does not support prompts, or there was an error fetching prompts.
         list_prompts_duration: Option<Duration>,
+        #[serde(default)]
+        tool_token_count_estimate: u64,
     },
     /// The MCP server failed to initialize successfully
     InitializeError { server_name: String, error: String },
@@ -309,6 +314,8 @@ impl McpServerActor {
             .await
         {
             Ok((service_handle, launch_md)) => {
+                let tool_token_count_estimate =
+                    estimate_tool_spec_tokens(launch_md.tools.as_deref().unwrap_or_default());
                 let s = Self {
                     server_name: server_name.clone(),
                     _config: config,
@@ -330,6 +337,7 @@ impl McpServerActor {
                         serve_duration: launch_md.serve_time_taken,
                         list_tools_duration: launch_md.list_tools_duration,
                         list_prompts_duration: launch_md.list_prompts_duration,
+                        tool_token_count_estimate,
                     })
                     .await;
                 s.main_loop().await;
@@ -673,6 +681,7 @@ mod tests {
             serve_duration: Duration::from_secs(1),
             list_tools_duration: Some(Duration::from_millis(500)),
             list_prompts_duration: None,
+            tool_token_count_estimate: 42,
         };
         let json = serde_json::to_string(&e).unwrap();
         let parsed: McpServerActorEvent = serde_json::from_str(&json).unwrap();
@@ -681,11 +690,13 @@ mod tests {
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
                 ..
             } => {
                 assert_eq!(serve_duration, Duration::from_secs(1));
                 assert_eq!(list_tools_duration, Some(Duration::from_millis(500)));
                 assert!(list_prompts_duration.is_none());
+                assert_eq!(tool_token_count_estimate, 42);
             },
             _ => panic!("expected Initialized"),
         }
@@ -1136,6 +1147,7 @@ mod tests {
                 serve_duration: Duration::from_secs(1),
                 list_tools_duration: None,
                 list_prompts_duration: Some(Duration::from_millis(50)),
+                tool_token_count_estimate: 0,
             },
             McpServerActorEvent::InitializeError {
                 server_name: "s".to_string(),
@@ -1185,6 +1197,7 @@ mod tests {
                 serve_duration: Duration::from_millis(100),
                 list_tools_duration: Some(Duration::from_millis(50)),
                 list_prompts_duration: Some(Duration::from_millis(25)),
+                tool_token_count_estimate: 0,
             },
             McpServerActorEvent::InitializeError {
                 server_name: "c".to_string(),
@@ -1210,6 +1223,7 @@ mod tests {
             serve_duration: Duration::from_secs(2),
             list_tools_duration: Some(Duration::from_millis(100)),
             list_prompts_duration: Some(Duration::from_millis(200)),
+            tool_token_count_estimate: 42,
         };
         let json = serde_json::to_string(&e).unwrap();
         let parsed: McpServerActorEvent = serde_json::from_str(&json).unwrap();
@@ -1217,10 +1231,12 @@ mod tests {
             McpServerActorEvent::Initialized {
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
                 ..
             } => {
                 assert_eq!(list_tools_duration, Some(Duration::from_millis(100)));
                 assert_eq!(list_prompts_duration, Some(Duration::from_millis(200)));
+                assert_eq!(tool_token_count_estimate, 42);
             },
             _ => panic!("expected Initialized"),
         }

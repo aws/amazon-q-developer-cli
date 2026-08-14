@@ -314,15 +314,15 @@ expect_present 'first visible response for agent_engine=v2' \
 expect_present 'first visible response for agent_engine=v3' \
   'kiro_cli_time_to_first_visible_response_ms_count{otel_scope_name="kiro.tui",agent_engine="v3"}'
 expect_exact 'V2 /settings invocations' \
-  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v2\",command=\"/settings\"})" 1
+  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v2\",slash_command=\"/settings\"})" 1
 expect_exact 'V3 /settings invocations' \
-  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",command=\"/settings\"})" 1
+  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",slash_command=\"/settings\"})" 1
 expect_exact 'V3 /upgrade-agent invocations' \
-  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",command=\"/upgrade-agent\"})" 1
+  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",slash_command=\"/upgrade-agent\"})" 1
 expect_exact 'V3 /workflow-run invocations' \
-  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",command=\"/workflow-run\"})" 1
+  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",slash_command=\"/workflow-run\"})" 1
 expect_exact 'V3 /goal invocations' \
-  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",command=\"/goal\"})" 1
+  "sum(kiro_cli_slash_command_invoked_total{otel_scope_name=\"kiro.tui\",version_full=\"${tui_version}\",agent_engine=\"v3\",slash_command=\"/goal\"})" 1
 
 log "Asserting KAS-authoritative economics are not duplicated by the v2 TUI"
 expect_present 'tokens for agent_engine=v3' \
@@ -349,7 +349,7 @@ expect_exact "V1 run starts" "sum(kiro_cli_run_started_total{${v1_run}})" 1
 expect_exact "V1 daily heartbeats" \
   "sum(kiro_cli_daily_heartbeat_total{${v1_scope},os_type=\"${v1_os_type}\"})" 1
 expect_exact "V1 top-level chat commands" \
-  "sum(kiro_cli_top_level_command_invoked_total{${v1_scope},command=\"chat\"})" 1
+  "sum(kiro_cli_top_level_command_invoked_total{${v1_scope},top_level_command=\"chat\"})" 1
 expect_exact "V1 chat sessions" \
   "sum(kiro_cli_chat_session_started_total{${v1_scope},agent_engine=\"v1\",session_interface=\"noninteractive_cli\",agent_mode=\"custom\"})" 1
 expect_exact "V1 model invocations" \
@@ -419,13 +419,13 @@ printf '%s' "${dashboard_response}" \
   | jq -e '.dashboard.uid == "kiro-telemetry-local"' >/dev/null
 printf '%s' "${dashboard_response}" | jq -e '
   .dashboard as $dashboard
-  | ([$dashboard.templating.list[].name] | contains(["version_full", "agent_engine", "command", "instance"]))
+  | ([$dashboard.templating.list[].name] | contains(["version_full", "agent_engine", "slash_command", "instance"]))
     and any($dashboard.panels[];
       .title == "Slash Command Invocations"
       and any(.targets[];
         (.expr | contains("$version_full"))
         and (.expr | contains("$agent_engine"))
-        and (.expr | contains("$command"))
+        and (.expr | contains("$slash_command"))
       )
     )
 ' >/dev/null
@@ -433,12 +433,12 @@ printf '%s' "${dashboard_response}" | jq -e '
 grafana_prometheus_proxy="http://localhost:3000/api/datasources/proxy/uid/prometheus"
 grafana_slash_response="$(
   curl -fsS --get "${grafana_prometheus_proxy}/api/v1/query" \
-    --data-urlencode "query=sum(kiro_cli_slash_command_invoked_total{version_full=\"${tui_version}\",agent_engine=\"v3\",command=\"/workflow-run\"})"
+    --data-urlencode "query=sum(kiro_cli_slash_command_invoked_total{version_full=\"${tui_version}\",agent_engine=\"v3\",slash_command=\"/workflow-run\"})"
 )"
 printf '%s' "${grafana_slash_response}" \
   | jq -e '.status == "success" and .data.result[0].value[1] == "1"' >/dev/null
 grafana_command_values="$(
-  curl -fsS --get "${grafana_prometheus_proxy}/api/v1/label/command/values" \
+  curl -fsS --get "${grafana_prometheus_proxy}/api/v1/label/slash_command/values" \
     --data-urlencode "match[]=kiro_cli_slash_command_invoked_total{version_full=\"${tui_version}\",agent_engine=\"v3\"}"
 )"
 printf '%s' "${grafana_command_values}" \

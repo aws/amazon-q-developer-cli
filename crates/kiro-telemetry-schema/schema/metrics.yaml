@@ -1,6 +1,7 @@
 metrics:
   - name: kiro_cli_run_started_total
     description: CLI process invocations that initialized enough to identify their interface and agent engine.
+    dashboard: true
     kind: counter
     unit: "1"
     priority: P0
@@ -17,6 +18,7 @@ metrics:
     cloudwatch_dimensions: [version_full, auth_method, auth_flow]
   - name: kiro_cli_chat_session_started_total
     description: Chat sessions created or loaded by a first-party client or external ACP caller.
+    dashboard: true
     kind: counter
     unit: "1"
     priority: P0
@@ -161,6 +163,7 @@ metrics:
     cloudwatch_dimensions: [version_full, ui_mode]
   - name: kiro_cli_daily_heartbeat
     description: At-most-daily active installation heartbeat for the emitted full version.
+    dashboard: true
     kind: counter
     unit: "1"
     priority: P0
@@ -169,20 +172,21 @@ metrics:
     cloudwatch_dimensions: [version_full, release_channel, os_type, install_method]
   - name: kiro_cli_slash_command_invoked_total
     description: Recognized slash-command invocation attempts.
+    dashboard: true
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, agent_engine, command]
-    cloudwatch_dimensions: [version_full, agent_engine, command]
+    attributes: [version_full, agent_engine, slash_command]
+    cloudwatch_dimensions: [version_full, agent_engine, slash_command]
   - name: kiro_cli_top_level_command_invoked_total
     description: Recognized top-level CLI command invocation attempts.
     kind: counter
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, command]
-    cloudwatch_dimensions: [version_full, command]
+    attributes: [version_full, top_level_command]
+    cloudwatch_dimensions: [version_full, top_level_command]
   - name: kiro_cli_tool_call_total
     description: Attempted tool executions and their terminal outcomes.
     kind: counter
@@ -201,6 +205,7 @@ metrics:
     cloudwatch_dimensions: [version_full, agent_engine, model]
   - name: kiro_cli_model_time_to_first_content_ms
     description: Time from a logical model request until its first meaningful content arrived.
+    dashboard: true
     kind: histogram
     unit: ms
     priority: P0
@@ -232,7 +237,8 @@ metrics:
     attributes: [version_full, session_interface, agent_mode, agent_engine]
     cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
   - name: kiro_cli_run_outcome_total
-    description: Terminal outcomes of completed CLI process invocations.
+    description: Launcher-observed terminal outcomes of top-level CLI process invocations, including nonzero child or command exits as failures.
+    dashboard: true
     kind: counter
     unit: "1"
     priority: P0
@@ -248,21 +254,13 @@ metrics:
     attributes: [version_full, agent_engine, os_type, process_role, crash_kind]
     cloudwatch_dimensions: [version_full, agent_engine, os_type, process_role, crash_kind]
   - name: kiro_cli_startup_duration_seconds
-    description: Time from process launch until the selected interface became ready.
+    description: Time from process launch until the selected interface could accept a user prompt.
     kind: histogram
     unit: s
     priority: P0
     temporality: delta
     attributes: [version_full, session_interface, agent_engine, os_type]
     cloudwatch_dimensions: [version_full, session_interface, agent_engine, os_type]
-  - name: kiro_cli_startup_failure_total
-    description: Startup attempts that failed before the selected interface became ready.
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [version_full, session_interface, agent_engine, os_type, startup_failure_stage]
-    cloudwatch_dimensions: [version_full, session_interface, agent_engine, os_type, startup_failure_stage]
   - name: kiro_cli_model_request_failure_total
     description: Logical model requests that terminated with a typed client-observed failure.
     kind: counter
@@ -271,16 +269,9 @@ metrics:
     temporality: delta
     attributes: [version_full, agent_engine, model, error_kind]
     cloudwatch_dimensions: [version_full, agent_engine, model, error_kind]
-  - name: kiro_cli_automatic_retries_per_operation
-    description: Additional automatic attempts made by operations that retried at least once.
-    kind: histogram
-    unit: "1"
-    priority: P1
-    temporality: delta
-    attributes: [version_full, agent_engine, retry_reason, retry_outcome]
-    cloudwatch_dimensions: [version_full, agent_engine, retry_reason, retry_outcome]
   - name: kiro_cli_process_memory_rss_bytes
     description: Periodic resident-set-size observations for CLI process roles.
+    dashboard: true
     kind: observable_gauge
     unit: By
     priority: P1
@@ -289,6 +280,7 @@ metrics:
     cloudwatch_dimensions: [version_full, os_type, agent_engine, process_role]
   - name: kiro_cli_process_cpu_utilization_ratio
     description: CPU time consumed divided by elapsed wall time for each sampling window.
+    dashboard: true
     kind: histogram
     unit: "1"
     priority: P1
@@ -344,15 +336,24 @@ metrics:
     attributes: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
     cloudwatch_dimensions: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
   - name: kiro_cli_mcp_server_init_total
-    description: MCP server initialization attempts and resulting availability.
+    description: Terminal MCP server initialization outcomes; OAuth-required is intermediate and is counted only when initialization later succeeds or fails.
     kind: counter
     unit: "1"
     priority: P1
     temporality: delta
-    attributes: [version_full, agent_engine, mcp_server_source, mcp_init_outcome, mcp_server_name, mcp_failure_stage, mcp_error_kind]
+    attributes: [version_full, agent_engine, mcp_server_source, mcp_init_outcome, mcp_server_name]
     cloudwatch_dimensions: [version_full, agent_engine, mcp_server_source, mcp_init_outcome]
+  - name: kiro_cli_mcp_tools_token_count_estimate
+    description: Estimated token footprint of raw tool specifications advertised by a successfully initialized MCP server.
+    kind: histogram
+    unit: tokens
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, mcp_server_source, mcp_server_name]
+    cloudwatch_dimensions: [version_full, agent_engine, mcp_server_source]
   - name: kiro_cli_user_turns
     description: User prompts that reached a terminal success, failure, or cancellation.
+    dashboard: true
     kind: counter
     unit: "1"
     priority: P0
@@ -367,14 +368,6 @@ metrics:
     temporality: delta
     attributes: [version_full, agent_engine, goal_outcome]
     cloudwatch_dimensions: [version_full, agent_engine, goal_outcome]
-  - name: kiro_cli_prohibited_telemetry_channel_enabled_total
-    description: Failure-only signal that a telemetry channel forbidden by policy was initialized.
-    kind: counter
-    unit: "1"
-    priority: P0
-    temporality: delta
-    attributes: [version_full, telemetry_channel]
-    cloudwatch_dimensions: [version_full, telemetry_channel]
   - name: kiro_cli_telemetry_export_dropped_total
     description: Telemetry records permanently lost before KUTS accepted them.
     kind: counter
@@ -401,6 +394,7 @@ metrics:
     cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
   - name: kiro_cli_process_peak_rss_bytes
     description: Peak resident-set size observed when a CLI process exits cleanly.
+    dashboard: true
     kind: histogram
     unit: By
     priority: P1

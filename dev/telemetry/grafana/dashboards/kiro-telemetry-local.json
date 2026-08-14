@@ -297,8 +297,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (command, agent_engine) (kiro_cli_slash_command_invoked_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", command=~\"$command\", instance=~\"$instance\"})",
-          "legendFormat": "{{command}} {{agent_engine}}",
+          "expr": "sum by (slash_command, agent_engine) (kiro_cli_slash_command_invoked_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", slash_command=~\"$slash_command\", instance=~\"$instance\"})",
+          "legendFormat": "{{slash_command}} {{agent_engine}}",
           "refId": "A",
           "instant": true
         }
@@ -399,55 +399,6 @@
       ],
       "title": "Model First Content p95",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Additional automatic attempts over the range, split by engine, reason, and terminal retry outcome.",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "min": 0
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
-      },
-      "id": 7,
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": true,
-        "legend": {
-          "showLegend": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (agent_engine, retry_reason, retry_outcome) (increase(kiro_cli_automatic_retries_per_operation_sum{job=\"otel-collector\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))",
-          "legendFormat": "{{agent_engine}} {{retry_reason}} {{retry_outcome}}",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "title": "Additional Automatic Attempts",
-      "type": "bargauge"
     },
     {
       "datasource": {
@@ -769,7 +720,7 @@
         "hide": 0
       },
       {
-        "name": "command",
+        "name": "slash_command",
         "label": "Slash Command",
         "description": "Filter by canonical first-party command or the bounded custom command buckets.",
         "type": "query",
@@ -777,10 +728,10 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(kiro_cli_slash_command_invoked_total{version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, command)",
+        "definition": "label_values(kiro_cli_slash_command_invoked_total{version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, slash_command)",
         "query": {
           "qryType": 1,
-          "query": "label_values(kiro_cli_slash_command_invoked_total{version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, command)",
+          "query": "label_values(kiro_cli_slash_command_invoked_total{version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, slash_command)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "includeAll": true,

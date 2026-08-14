@@ -35,7 +35,7 @@ pipeline produced a signal before comparing counts.
 The schema source of truth is
 [`metrics.yaml`](../../crates/kiro-telemetry-schema/schema/metrics.yaml). The
 [KUTS telemetry architecture and metric dimension review](../design/kuts-metric-dimension-review.md)
-records the 42 emitted metrics, their product questions, dimensions, derived CloudWatch expressions,
+records the 54 emitted metrics, their product questions, dimensions, derived CloudWatch expressions,
 and rollout order.
 
 ### Explore CloudWatch metrics
@@ -133,8 +133,6 @@ Find MCP servers with failed initialization:
 fields kiro_cli_mcp_server_init_total,
        mcp_server_name,
        mcp_server_source,
-       mcp_error_kind,
-       mcp_failure_stage,
        version_full,
        agent_engine,
        mcp_init_outcome
@@ -142,8 +140,6 @@ fields kiro_cli_mcp_server_init_total,
 | stats sum(kiro_cli_mcp_server_init_total) as failures
   by mcp_server_name,
      mcp_server_source,
-     mcp_error_kind,
-     mcp_failure_stage,
      version_full,
      agent_engine
 | sort failures desc
@@ -178,8 +174,10 @@ python3 .kiro/skills/telemetry/scripts/adoption-report.py 7
 
 CloudWatch can split a metric only by its declared `cloudwatch_dimensions`. Additional diagnostic
 attributes remain fields on the raw EMF record and do not create more metric series. For example,
-`kiro_cli_mcp_server_init_total` exposes aggregate source and outcome dimensions while retaining
-`mcp_server_name`, `mcp_error_kind`, and `mcp_failure_stage` for Logs Insights investigation.
+`kiro_cli_mcp_server_init_total` exposes aggregate source and terminal outcome dimensions while
+retaining `mcp_server_name` for Logs Insights investigation. `OauthRequest` is intermediate and does
+not create an initialization point. `kiro_cli_mcp_tools_token_count_estimate` records the raw advertised
+tool-schema footprint for successful servers.
 
 KUTS does not accept OTLP logs. Request IDs, free-form errors, exact custom tool names, and similar
 high-cardinality facts must not be added to metric dimensions.

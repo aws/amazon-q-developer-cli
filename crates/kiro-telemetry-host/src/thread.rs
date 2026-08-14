@@ -697,6 +697,7 @@ impl TelemetryThread {
         all_tool_names: Option<String>,
         loaded_tool_names: Option<String>,
         all_tools_count: usize,
+        mcp_tools_token_count_estimate: Option<u64>,
     ) -> Result<(), TelemetryError> {
         let mut event = Event::new(EventType::McpServerInit {
             conversation_id,
@@ -707,6 +708,7 @@ impl TelemetryThread {
             all_tool_names,
             loaded_tool_names,
             all_tools_count,
+            mcp_tools_token_count_estimate,
         });
         enrich(enricher, &mut event).await;
         self.send_event(event)

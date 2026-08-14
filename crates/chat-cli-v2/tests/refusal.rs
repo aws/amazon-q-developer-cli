@@ -50,8 +50,17 @@ async fn refusal_metadata_surfaced_via_notification() {
         .await
         .expect("prompt should succeed");
     assert_eq!(result.stop_reason, agent_client_protocol::StopReason::EndTurn);
+    assert_eq!(
+        result
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("kiro"))
+            .and_then(|kiro| kiro.get("turnFailureReason"))
+            .and_then(|reason| reason.as_str()),
+        Some("model_error")
+    );
 
-    // The refusal must be surfaced through the metadata ext notification.
+    // The refusal must also be surfaced through the metadata ext notification.
     let saw_refusal = client
         .wait_for_timeout(
             |n| {

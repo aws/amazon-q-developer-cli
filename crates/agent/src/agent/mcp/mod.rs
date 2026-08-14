@@ -160,6 +160,22 @@ use crate::agent::util::request_channel::{
     respond,
 };
 
+/// Estimate the model-context footprint of raw MCP tool specifications.
+///
+/// The four-bytes-per-token heuristic matches tool-search activation and is intentionally
+/// calculated before allowlist, alias, sanitization, or deferred-tool filtering.
+pub fn estimate_tool_spec_tokens(specs: &[ToolSpec]) -> u64 {
+    specs
+        .iter()
+        .map(|spec| {
+            (spec.name.len()
+                + spec.description.len()
+                + serde_json::to_string(&spec.input_schema).map_or(0, |schema| schema.len()))
+                / super::consts::BYTES_PER_TOKEN
+        })
+        .sum::<usize>() as u64
+}
+
 /// Handle for communicating with an [`McpManager`] actor.
 #[derive(Debug)]
 pub struct McpManagerHandle {
@@ -676,6 +692,7 @@ impl McpManager {
                 serve_duration: _,
                 list_tools_duration: _,
                 list_prompts_duration: _,
+                tool_token_count_estimate: _,
             } => {
                 let Some((handle, result_tx, server_source)) = self.initializing_servers.remove(server_name) else {
                     warn!(?server_name, ?evt, "event was not from an initializing MCP server");
@@ -725,12 +742,14 @@ impl McpManager {
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
             } => McpServerEvent::Initialized {
                 server_name,
                 source,
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
             },
             McpServerActorEvent::InitializeError { server_name, error } => McpServerEvent::InitializeError {
                 server_name,
@@ -874,12 +893,14 @@ pub enum McpServerEvent {
         serve_duration: Duration,
         /// Time taken to list all tools.
         ///
-        /// None if the server does not support tools, or there was an error fetching tools.
+        /// None if the server does not advertise tool support.
         list_tools_duration: Option<Duration>,
         /// Time taken to list all prompts
         ///
         /// None if the server does not support prompts, or there was an error fetching prompts.
         list_prompts_duration: Option<Duration>,
+        #[serde(default)]
+        tool_token_count_estimate: u64,
     },
     /// The MCP server failed to initialize successfully
     InitializeError {
@@ -890,6 +911,12 @@ pub enum McpServerEvent {
     },
     /// An OAuth authentication request from the MCP server
     OauthRequest { server_name: String, oauth_url: String },
+    /// UI-only refresh for a server whose runtime state did not change.
+    StatusRefresh {
+        server_name: String,
+        #[serde(default)]
+        source: McpServerConfigSource,
+    },
     /// The MCP server's tool list has changed
     ToolListChanged { server_name: String },
 }
@@ -902,6 +929,7 @@ impl McpServerEvent {
             | McpServerEvent::Initialized { server_name, .. }
             | McpServerEvent::InitializeError { server_name, .. }
             | McpServerEvent::OauthRequest { server_name, .. }
+            | McpServerEvent::StatusRefresh { server_name, .. }
             | McpServerEvent::ToolListChanged { server_name } => server_name,
         }
     }
@@ -916,12 +944,14 @@ impl From<McpServerActorEvent> for McpServerEvent {
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
             } => Self::Initialized {
                 server_name,
                 source: McpServerConfigSource::Unknown,
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
             },
             McpServerActorEvent::InitializeError { server_name, error } => Self::InitializeError {
                 server_name,
@@ -972,6 +1002,19 @@ mod tests {
         )]);
         resp.structured_content = Some(serde_json::json!({"id": "cust-4821", "plan": "enterprise"}));
         resp
+    }
+
+    #[test]
+    fn estimates_raw_mcp_tool_spec_tokens_before_filtering() {
+        let specs = vec![ToolSpec {
+            name: "read".to_string(),
+            description: "file".to_string(),
+            input_schema: serde_json::Map::new(),
+        }];
+
+        // "read" + "file" + serialized empty schema "{}" = 10 bytes / 4.
+        assert_eq!(estimate_tool_spec_tokens(&specs), 2);
+        assert_eq!(estimate_tool_spec_tokens(&[]), 0);
     }
 
     #[test]
@@ -1067,6 +1110,7 @@ mod tests {
             serve_duration: Duration::from_secs(1),
             list_tools_duration: Some(Duration::from_millis(100)),
             list_prompts_duration: None,
+            tool_token_count_estimate: 42,
         };
         let json = serde_json::to_string(&e).unwrap();
         let parsed: McpServerEvent = serde_json::from_str(&json).unwrap();
@@ -1075,11 +1119,13 @@ mod tests {
                 server_name,
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
                 ..
             } => {
                 assert_eq!(server_name, "test");
                 assert_eq!(list_tools_duration, Some(Duration::from_millis(100)));
                 assert!(list_prompts_duration.is_none());
+                assert_eq!(tool_token_count_estimate, 42);
             },
             _ => panic!("expected Initialized"),
         }
@@ -1160,6 +1206,7 @@ mod tests {
             serve_duration: Duration::from_millis(100),
             list_tools_duration: Some(Duration::from_millis(50)),
             list_prompts_duration: None,
+            tool_token_count_estimate: 42,
         };
         let converted: McpServerEvent = evt.into();
         match converted {
@@ -1168,12 +1215,14 @@ mod tests {
                 serve_duration,
                 list_tools_duration,
                 list_prompts_duration,
+                tool_token_count_estimate,
                 ..
             } => {
                 assert_eq!(server_name, "s2");
                 assert_eq!(serve_duration, Duration::from_millis(100));
                 assert_eq!(list_tools_duration, Some(Duration::from_millis(50)));
                 assert!(list_prompts_duration.is_none());
+                assert_eq!(tool_token_count_estimate, 42);
             },
             _ => panic!("expected Initialized"),
         }
@@ -1255,6 +1304,7 @@ mod tests {
             serve_duration: Duration::from_millis(100),
             list_tools_duration: None,
             list_prompts_duration: None,
+            tool_token_count_estimate: 0,
         });
 
         assert!(mgr.servers.contains_key("test-server"));
@@ -1335,6 +1385,7 @@ mod tests {
             serve_duration: Duration::from_millis(100),
             list_tools_duration: None,
             list_prompts_duration: None,
+            tool_token_count_estimate: 0,
         });
         // Event is NOT buffered because we returned early
         assert!(!mgr.servers.contains_key("unknown"));
@@ -1780,6 +1831,7 @@ mod tests {
             serve_duration: Duration::from_millis(50),
             list_tools_duration: Some(Duration::from_millis(10)),
             list_prompts_duration: Some(Duration::from_millis(5)),
+            tool_token_count_estimate: 42,
         });
 
         assert!(mgr.servers.contains_key("srv"));
@@ -1789,6 +1841,7 @@ mod tests {
             mgr.event_buf.first(),
             Some(McpServerEvent::Initialized {
                 source: McpServerConfigSource::Registry,
+                tool_token_count_estimate: 42,
                 ..
             })
         ));
@@ -1817,6 +1870,7 @@ mod tests {
             serve_duration: Duration::from_millis(50),
             list_tools_duration: None,
             list_prompts_duration: None,
+            tool_token_count_estimate: 0,
         });
 
         assert!(mgr.servers.contains_key("srv"));
@@ -1936,6 +1990,7 @@ mod tests {
             serve_duration: Duration::from_millis(1),
             list_tools_duration: None,
             list_prompts_duration: None,
+            tool_token_count_estimate: 0,
         });
 
         // Old server replaced, still in servers
@@ -1960,6 +2015,7 @@ mod tests {
             serve_duration: Duration::from_millis(1),
             list_tools_duration: None,
             list_prompts_duration: None,
+            tool_token_count_estimate: 0,
         });
 
         assert!(mgr.servers.contains_key("dropped"));
@@ -2171,6 +2227,7 @@ mod tests {
                 serve_duration: Duration::from_secs(2),
                 list_tools_duration: Some(Duration::from_millis(200)),
                 list_prompts_duration: None,
+                tool_token_count_estimate: 0,
             },
             McpServerActorEvent::InitializeError {
                 server_name: "s".to_string(),

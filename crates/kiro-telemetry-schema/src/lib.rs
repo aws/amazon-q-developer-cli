@@ -6,6 +6,17 @@ use serde::{
     Serialize,
 };
 
+mod command;
+mod turn;
+pub use command::{
+    SlashCommandMetricName,
+    TopLevelCommandMetricName,
+};
+pub use turn::TurnFailureReason;
+
+const MAX_DASHBOARD_SERIES_PER_METRIC: usize = 10_000;
+const MAX_DASHBOARD_SERIES_TOTAL: usize = 50_000;
+
 pub const CLOUDWATCH_LEGACY_NAMESPACE: &str = "Toolkit";
 pub const CLOUDWATCH_OTEL_NAMESPACE: &str = "ChatCLI";
 pub const CLOUDWATCH_PRODUCT_DIMENSION: &str = "product";
@@ -29,6 +40,16 @@ pub enum SchemaError {
     ForbiddenMetricAttribute { metric: String, attribute: String },
     #[error("metric `{metric}` is missing a temporality")]
     MissingTemporality { metric: String },
+    #[error("dashboard metric `{metric}` uses open CloudWatch dimension `{dimension}` without a cardinality hint")]
+    MissingCloudWatchCardinalityHint { metric: String, dimension: String },
+    #[error("dashboard metric `{metric}` can create an estimated {estimated} series; maximum is {maximum}")]
+    DashboardMetricSeriesBudgetExceeded {
+        metric: String,
+        estimated: usize,
+        maximum: usize,
+    },
+    #[error("dashboard metrics can create an estimated {estimated} series in total; maximum is {maximum}")]
+    DashboardSeriesBudgetExceeded { estimated: usize, maximum: usize },
     #[error("legacy mapping contains duplicate event type `{0}`")]
     DuplicateLegacyEvent(String),
     #[error("legacy mapping is missing event type `{0}`")]
@@ -67,6 +88,7 @@ impl Registry {
 
     pub fn validate(&self) -> Result<(), SchemaError> {
         let attributes: HashSet<&str> = self.attributes.iter().map(|attr| attr.name.as_str()).collect();
+        let mut estimated_dashboard_series = 0usize;
 
         for metric in &self.metrics {
             if metric.kind.is_metric() && metric.cloudwatch_dimensions.len() > 10 {
@@ -106,6 +128,25 @@ impl Registry {
                     });
                 }
             }
+
+            if metric.dashboard && metric.kind.is_metric() {
+                let estimated = self.estimated_cloudwatch_series(metric)?;
+                if estimated > MAX_DASHBOARD_SERIES_PER_METRIC {
+                    return Err(SchemaError::DashboardMetricSeriesBudgetExceeded {
+                        metric: metric.name.clone(),
+                        estimated,
+                        maximum: MAX_DASHBOARD_SERIES_PER_METRIC,
+                    });
+                }
+                estimated_dashboard_series = estimated_dashboard_series.saturating_add(estimated);
+            }
+        }
+
+        if estimated_dashboard_series > MAX_DASHBOARD_SERIES_TOTAL {
+            return Err(SchemaError::DashboardSeriesBudgetExceeded {
+                estimated: estimated_dashboard_series,
+                maximum: MAX_DASHBOARD_SERIES_TOTAL,
+            });
         }
 
         Ok(())
@@ -118,6 +159,29 @@ impl Registry {
     pub fn attribute(&self, name: &str) -> Option<&AttributeSpec> {
         self.attributes.iter().find(|attr| attr.name == name)
     }
+
+    pub fn estimated_cloudwatch_series(&self, metric: &MetricSpec) -> Result<usize, SchemaError> {
+        metric
+            .cloudwatch_dimensions
+            .iter()
+            .try_fold(1usize, |estimate, dimension| {
+                let attribute = self.attribute(dimension).ok_or_else(|| SchemaError::UnknownAttribute {
+                    metric: metric.name.clone(),
+                    attribute: dimension.clone(),
+                })?;
+                let cardinality = if attribute.allowed_values.is_empty() {
+                    attribute.cloudwatch_cardinality_hint.ok_or_else(|| {
+                        SchemaError::MissingCloudWatchCardinalityHint {
+                            metric: metric.name.clone(),
+                            dimension: dimension.clone(),
+                        }
+                    })?
+                } else {
+                    attribute.allowed_values.len()
+                };
+                Ok(estimate.saturating_mul(cardinality))
+            })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -127,6 +191,8 @@ pub struct MetricSpec {
     pub kind: MetricKind,
     pub unit: String,
     pub priority: Priority,
+    #[serde(default)]
+    pub dashboard: bool,
     #[serde(default)]
     pub attributes: Vec<String>,
     #[serde(default)]
@@ -177,6 +243,8 @@ pub struct AttributeSpec {
     pub metric_allowed: bool,
     #[serde(default)]
     pub allowed_values: Vec<String>,
+    #[serde(default)]
+    pub cloudwatch_cardinality_hint: Option<usize>,
 }
 
 impl AttributeSpec {
@@ -412,9 +480,103 @@ mod tests {
     fn registry_loads_and_validates() {
         let registry = Registry::parse().expect("schema should load");
 
-        assert_eq!(registry.metrics.len(), 56);
+        assert_eq!(registry.metrics.len(), 54);
         assert!(registry.metric("kiro_cli_run_started_total").is_some());
+        assert!(registry.metric("kiro_cli_mcp_tools_token_count_estimate").is_some());
         assert!(registry.metric("kiro_cli_telemetry_export_dropped_total").is_some());
+    }
+
+    #[test]
+    fn generated_enums_match_schema_vocabularies() {
+        let registry = Registry::parse().expect("schema should load");
+        let slash = registry.attribute("slash_command").expect("slash command attribute");
+        assert_eq!(slash.allowed_values.len(), SlashCommandMetricName::ALL.len());
+        for value in &slash.allowed_values {
+            assert_eq!(SlashCommandMetricName::from_name(value).as_str(), value);
+        }
+        for command in SlashCommandMetricName::ALL {
+            assert!(
+                slash.allowed_values.iter().any(|value| value == command.as_str()),
+                "{} is missing from slash_command allowed_values",
+                command.as_str()
+            );
+        }
+
+        let top_level = registry
+            .attribute("top_level_command")
+            .expect("top-level command attribute");
+        assert_eq!(top_level.allowed_values.len(), TopLevelCommandMetricName::ALL.len());
+        for value in &top_level.allowed_values {
+            assert_eq!(TopLevelCommandMetricName::from_name(value).as_str(), value);
+        }
+        for command in TopLevelCommandMetricName::ALL {
+            assert!(
+                top_level.allowed_values.iter().any(|value| value == command.as_str()),
+                "{} is missing from top_level_command allowed_values",
+                command.as_str()
+            );
+        }
+
+        let turn_failure = registry
+            .attribute("turn_failure_reason")
+            .expect("turn failure reason attribute");
+        assert_eq!(turn_failure.allowed_values.len(), TurnFailureReason::ALL.len());
+        for value in &turn_failure.allowed_values {
+            assert_eq!(TurnFailureReason::from_name(value).as_str(), value);
+        }
+        for reason in TurnFailureReason::ALL {
+            assert!(
+                turn_failure.allowed_values.iter().any(|value| value == reason.as_str()),
+                "{} is missing from turn_failure_reason allowed_values",
+                reason.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn dashboard_series_budget_catches_mixed_command_vocabularies() {
+        let registry = Registry::parse().expect("schema should load");
+        let slash = registry
+            .metric("kiro_cli_slash_command_invoked_total")
+            .expect("slash command metric");
+        assert_eq!(registry.estimated_cloudwatch_series(slash).unwrap(), 9_380);
+
+        let total: usize = registry
+            .metrics
+            .iter()
+            .filter(|metric| metric.dashboard && metric.kind.is_metric())
+            .map(|metric| registry.estimated_cloudwatch_series(metric).unwrap())
+            .sum();
+        assert!(total <= MAX_DASHBOARD_SERIES_TOTAL, "estimated {total} series");
+
+        let mut mixed = registry.clone();
+        mixed.attributes.push(AttributeSpec {
+            name: "command".to_string(),
+            description: "Synthetic mixed command vocabulary".to_string(),
+            metric_allowed: true,
+            allowed_values: (0..80).map(|value| format!("command_{value}")).collect(),
+            cloudwatch_cardinality_hint: None,
+        });
+        let slash = mixed
+            .metrics
+            .iter_mut()
+            .find(|metric| metric.name == "kiro_cli_slash_command_invoked_total")
+            .expect("slash command metric");
+        slash.attributes.retain(|attribute| attribute != "slash_command");
+        slash.attributes.push("command".to_string());
+        slash
+            .cloudwatch_dimensions
+            .retain(|dimension| dimension != "slash_command");
+        slash.cloudwatch_dimensions.push("command".to_string());
+
+        assert_eq!(
+            mixed.validate(),
+            Err(SchemaError::DashboardMetricSeriesBudgetExceeded {
+                metric: "kiro_cli_slash_command_invoked_total".to_string(),
+                estimated: 11_200,
+                maximum: MAX_DASHBOARD_SERIES_PER_METRIC,
+            })
+        );
     }
 
     #[test]

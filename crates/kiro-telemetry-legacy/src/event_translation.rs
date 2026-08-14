@@ -434,6 +434,7 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
             all_tool_names,
             loaded_tool_names,
             all_tools_count,
+            mcp_tools_token_count_estimate: _,
         } => Some(
             CodewhispererterminalMcpServerInit {
                 create_time: event.created_time,
@@ -853,12 +854,7 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
                 .into_iter()
                 .collect()
         },
-        EventType::StartupFailure { os_type, failure_stage } => vec![metric::record_startup_failure(
-            event_session_interface(event),
-            engine,
-            *os_type,
-            *failure_stage,
-        )],
+        EventType::StartupFailure { .. } => Vec::new(),
         EventType::DailyHeartbeat { install_method } => vec![metric::record_daily_heartbeat(
             metric::ReleaseChannel::from_version(env!("CARGO_PKG_VERSION")),
             current_os_type(),
@@ -979,35 +975,33 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
             server_name,
             mcp_server_source,
             init_failure_reason,
+            mcp_tools_token_count_estimate,
             ..
-        } => vec![metric::record_mcp_server_init(
-            engine,
-            *mcp_server_source,
-            if init_failure_reason.is_some() {
+        } => {
+            let outcome = if init_failure_reason.is_some() {
                 metric::McpInitOutcome::Failure
             } else {
                 metric::McpInitOutcome::Success
-            },
-            Some(server_name),
-            init_failure_reason.as_deref().map(mcp_error_kind),
-            init_failure_reason.as_deref().map(mcp_failure_stage),
-        )],
-        EventType::EmptyResponseRetry { outcome, .. } => {
-            metric::record_automatic_retries(1, engine, metric::RetryReason::EmptyResponse, match outcome {
-                kiro_telemetry_host::EmptyResponseRetryOutcome::Recovered => metric::RetryOutcome::Recovered,
-                kiro_telemetry_host::EmptyResponseRetryOutcome::StillEmpty => metric::RetryOutcome::Exhausted,
-            })
-            .into_iter()
-            .collect()
+            };
+            let mut records = vec![metric::record_mcp_server_init(
+                engine,
+                *mcp_server_source,
+                outcome,
+                Some(server_name),
+            )];
+            if outcome == metric::McpInitOutcome::Success
+                && let Some(estimate) = mcp_tools_token_count_estimate
+            {
+                records.push(metric::record_mcp_tools_token_count_estimate(
+                    *estimate,
+                    engine,
+                    *mcp_server_source,
+                    Some(server_name),
+                ));
+            }
+            records
         },
-        EventType::AutomaticRetryCompleted {
-            retry_reason,
-            additional_attempts,
-            outcome,
-            ..
-        } => metric::record_automatic_retries(*additional_attempts, engine, *retry_reason, *outcome)
-            .into_iter()
-            .collect(),
+        EventType::EmptyResponseRetry { .. } | EventType::AutomaticRetryCompleted { .. } => Vec::new(),
         EventType::MessageResponseError {
             model,
             reason,
@@ -1180,7 +1174,8 @@ fn turn_failure_reason(reason: Option<&str>, status_code: Option<u16>) -> metric
     match metric::ErrorKind::from_reason(reason, status_code) {
         metric::ErrorKind::ContextLimit => metric::TurnFailureReason::ContextLimit,
         metric::ErrorKind::Timeout => metric::TurnFailureReason::Timeout,
-        metric::ErrorKind::ModelError
+        metric::ErrorKind::EmptyResponse
+        | metric::ErrorKind::Refusal
         | metric::ErrorKind::Throttling
         | metric::ErrorKind::Validation
         | metric::ErrorKind::ServerError
@@ -1240,44 +1235,6 @@ fn canonical_token_metric_records(engine: metric::Engine, model: Option<&str>, u
     .into_iter()
     .filter_map(|(token_type, value)| metric::record_tokens_consumed(value, engine, model, token_type))
     .collect()
-}
-
-fn mcp_error_kind(reason: &str) -> metric::McpErrorKind {
-    let reason = reason.to_ascii_lowercase();
-    if reason.contains("capabil") || reason.contains("tool") {
-        metric::McpErrorKind::Protocol
-    } else if reason.contains("timeout") || reason.contains("timed out") {
-        metric::McpErrorKind::Timeout
-    } else if reason.contains("auth") || reason.contains("unauthorized") || reason.contains("forbidden") {
-        metric::McpErrorKind::Authentication
-    } else if reason.contains("config") || reason.contains("environment") {
-        metric::McpErrorKind::Configuration
-    } else if reason.contains("spawn") || reason.contains("launch") || reason.contains("process") {
-        metric::McpErrorKind::ProcessLaunch
-    } else if reason.contains("connect") || reason.contains("network") || reason.contains("dns") {
-        metric::McpErrorKind::Connection
-    } else if reason.contains("protocol") || reason.contains("jsonrpc") || reason.contains("handshake") {
-        metric::McpErrorKind::Protocol
-    } else {
-        metric::McpErrorKind::Unknown
-    }
-}
-
-fn mcp_failure_stage(reason: &str) -> metric::McpFailureStage {
-    let reason = reason.to_ascii_lowercase();
-    if reason.contains("config") || reason.contains("environment") {
-        metric::McpFailureStage::Configuration
-    } else if reason.contains("spawn") || reason.contains("launch") || reason.contains("process") {
-        metric::McpFailureStage::ProcessLaunch
-    } else if reason.contains("connect") || reason.contains("network") || reason.contains("dns") {
-        metric::McpFailureStage::Connection
-    } else if reason.contains("protocol") || reason.contains("jsonrpc") || reason.contains("handshake") {
-        metric::McpFailureStage::Handshake
-    } else if reason.contains("capabil") || reason.contains("tool") {
-        metric::McpFailureStage::CapabilityDiscovery
-    } else {
-        metric::McpFailureStage::Unknown
-    }
 }
 
 fn is_credit_unit(unit: &str, unit_plural: &str) -> bool {

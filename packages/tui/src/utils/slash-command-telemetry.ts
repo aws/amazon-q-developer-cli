@@ -1,73 +1,7 @@
 import type { AvailableCommand } from '../types/commands.js';
+import { SlashCommandMetricName } from '../types/generated/telemetry.js';
 
-export const SLASH_COMMAND_METRIC_NAMES = [
-  '/agent',
-  '/autonomous',
-  '/changelog',
-  '/chat',
-  '/checkpoint',
-  '/clear',
-  '/code',
-  '/compact',
-  '/config',
-  '/context',
-  '/context-gatherer',
-  '/copy',
-  '/disconnect',
-  '/editor',
-  '/effort',
-  '/exit',
-  '/experiment',
-  '/feedback',
-  '/general-task-execution',
-  '/goal',
-  '/guide',
-  '/help',
-  '/hooks',
-  '/issue',
-  '/knowledge',
-  '/lite',
-  '/load',
-  '/logdump',
-  '/mcp',
-  '/memories',
-  '/model',
-  '/paste',
-  '/plan',
-  '/prompt',
-  '/prompts',
-  '/quit',
-  '/reply',
-  '/repo',
-  '/rewind',
-  '/save',
-  '/session-id',
-  '/sessions',
-  '/settings',
-  '/skill',
-  '/spawn',
-  '/spec',
-  '/stats',
-  '/steering',
-  '/switch',
-  '/tangent',
-  '/theme',
-  '/title',
-  '/todos',
-  '/tools',
-  '/transcript',
-  '/tui',
-  '/upgrade-agent',
-  '/usage',
-  '/verbosity',
-  '/voice',
-  '/workflow',
-  '/workflow-cancel',
-  '/workflow-resume',
-  '/workflow-run',
-  '/workflow-status',
-  '/workflows',
-] as const;
+export const SLASH_COMMAND_METRIC_NAMES = Object.values(SlashCommandMetricName);
 
 const SLASH_COMMAND_METRIC_NAME_SET: ReadonlySet<string> = new Set(
   SLASH_COMMAND_METRIC_NAMES
@@ -76,7 +10,9 @@ const SLASH_COMMAND_METRIC_NAME_SET: ReadonlySet<string> = new Set(
 export function canonicalSlashCommandName(command: string): string {
   const normalized = command.trim().toLowerCase();
   const candidate = normalized.startsWith('/') ? normalized : `/${normalized}`;
-  return SLASH_COMMAND_METRIC_NAME_SET.has(candidate) ? candidate : '/custom';
+  return SLASH_COMMAND_METRIC_NAME_SET.has(candidate)
+    ? candidate
+    : SlashCommandMetricName.Custom;
 }
 
 export function commandMetricName(command: AvailableCommand): string {

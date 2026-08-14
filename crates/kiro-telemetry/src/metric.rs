@@ -531,7 +531,8 @@ pub enum ErrorKind {
     Throttling,
     ContextLimit,
     Validation,
-    ModelError,
+    EmptyResponse,
+    Refusal,
     ServerError,
     Timeout,
     Connection,
@@ -545,7 +546,8 @@ impl ErrorKind {
             "throttling" => Self::Throttling,
             "context_limit" => Self::ContextLimit,
             "validation" | "invalid_request" => Self::Validation,
-            "model_error" => Self::ModelError,
+            "empty_response" => Self::EmptyResponse,
+            "refusal" => Self::Refusal,
             "server_error" => Self::ServerError,
             "timeout" => Self::Timeout,
             "connection" => Self::Connection,
@@ -556,7 +558,14 @@ impl ErrorKind {
 
     pub fn from_reason(reason: Option<&str>, status_code: Option<u16>) -> Self {
         let reason = reason.unwrap_or_default().to_ascii_lowercase();
-        if reason.contains("throttl") || reason.contains("quota") {
+        if reason.contains("refusal") || reason.contains("content_filtered") || reason.contains("contentfiltered") {
+            Self::Refusal
+        } else if reason.contains("emptyresponse")
+            || reason.contains("empty_response")
+            || reason.contains("empty response")
+        {
+            Self::EmptyResponse
+        } else if reason.contains("throttl") || reason.contains("quota") {
             Self::Throttling
         } else if reason.contains("context") && (reason.contains("limit") || reason.contains("window")) {
             Self::ContextLimit
@@ -572,8 +581,6 @@ impl ErrorKind {
             Self::Connection
         } else if reason.contains("invalidmodel") || reason.contains("invalid_model") {
             Self::Validation
-        } else if reason.contains("model") && !reason.contains("invalid") {
-            Self::ModelError
         } else if matches!(status_code, Some(500..=599)) {
             Self::ServerError
         } else if matches!(status_code, Some(400..=499)) || reason.contains("validation") || reason.contains("invalid")
@@ -589,7 +596,8 @@ impl ErrorKind {
             Self::Throttling => "throttling",
             Self::ContextLimit => "context_limit",
             Self::Validation => "invalid_request",
-            Self::ModelError => "model_error",
+            Self::EmptyResponse => "empty_response",
+            Self::Refusal => "refusal",
             Self::ServerError => "server_error",
             Self::Timeout => "timeout",
             Self::Connection => "connection",
@@ -898,6 +906,19 @@ mod tests {
         assert_eq!(InstallSource::from_name("cargo").as_str(), "unknown");
         assert_eq!(RetryReason::from_name("invalid_response").as_str(), "unknown");
         assert_eq!(CrashKind::from_name("oom").as_str(), "unknown");
+    }
+
+    #[test]
+    fn model_request_errors_use_explicit_empty_and_refusal_buckets() {
+        for (reason, expected) in [
+            ("RecvErrorEmptyResponse", ErrorKind::EmptyResponse),
+            ("empty_response", ErrorKind::EmptyResponse),
+            ("ModelRefusal", ErrorKind::Refusal),
+            ("CONTENT_FILTERED", ErrorKind::Refusal),
+            ("SomeFutureModelError", ErrorKind::Other),
+        ] {
+            assert_eq!(ErrorKind::from_reason(Some(reason), None), expected, "{reason}");
+        }
     }
 
     #[test]

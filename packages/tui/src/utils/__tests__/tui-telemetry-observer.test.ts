@@ -281,7 +281,7 @@ describe('TUI-owned usage metrics', () => {
         attrs: {
           version_full: '2.4.0',
           agent_engine: 'v3',
-          command: '/help',
+          slash_command: '/help',
         },
         scope: TUI_SCOPE,
       },
@@ -298,7 +298,7 @@ describe('TUI-owned usage metrics', () => {
       deps
     );
 
-    expect(counterCalls[0]?.attrs?.['command']).toBe('/custom');
+    expect(counterCalls[0]?.attrs?.['slash_command']).toBe('/custom');
   });
 
   it('records only bounded UI modes', () => {

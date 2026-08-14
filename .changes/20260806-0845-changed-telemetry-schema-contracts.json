@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Telemetry now uses bounded command vocabularies, explicit model refusal and empty-response errors, and MCP tool-schema token estimates"
+}

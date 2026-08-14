@@ -117,10 +117,10 @@ Use the same UTC window to compare CloudWatch series with direct EMF:
 | V1, V2, V3, interactive, one-shot, or external ACP usage | `kiro_cli_user_turns` |
 | Chat sessions created | `kiro_cli_chat_session_started_total` |
 | Client-turn availability | `kiro_cli_user_turns`, `kiro_cli_turn_failure_total`, `kiro_cli_turn_cancelled_total` |
-| Startup availability | `kiro_cli_run_started_total`, `kiro_cli_startup_failure_total` |
+| Startup readiness rate | `kiro_cli_run_started_total`, sample count of `kiro_cli_startup_duration_seconds` |
 | Login availability | `kiro_cli_login_success_total`, `kiro_cli_auth_failure_total{auth_operation=login}` |
 | Model request failures | `kiro_cli_model_invocations_total`, `kiro_cli_model_request_failure_total` |
-| MCP availability and failed server names | `kiro_cli_mcp_server_init_total`; use Logs Insights for `mcp_server_name`, `mcp_error_kind`, and `mcp_failure_stage` |
+| MCP availability, failed server names, and tool footprint | `kiro_cli_mcp_server_init_total`, `kiro_cli_mcp_tools_token_count_estimate`; use Logs Insights for `mcp_server_name` |
 | Telemetry delivery failures | `kiro_cli_telemetry_export_dropped_total` |
 
 Use the formulas in the dimension review for derived rates. Never combine model, retry, tool, auth,
