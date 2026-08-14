@@ -198,6 +198,12 @@ const SHARED: readonly TipDef[] = [
     id: 'introspect',
     text: 'Not sure how a Kiro feature works? Just ask — Kiro looks up its own docs to answer questions about itself.',
   },
+  {
+    id: 'slash-substring',
+    // Example uses two commands that exist on both engines, so the promised
+    // pair of matches resolves for v2 users too.
+    text: 'The / menu matches any part of a command name, not just the start: /ode finds both /code and /model.',
+  },
 ];
 
 // TUI only (Ctrl+O here expands output; in Lite it opens the inspect panel).
@@ -216,6 +222,13 @@ const TUI_ONLY: readonly TipDef[] = [
   {
     id: 'tui-steer',
     text: 'Type while Kiro is working to steer it mid-turn (Ctrl+S switches to queue mode); Ctrl+X opens the tray to edit a queued message.',
+  },
+  {
+    id: 'spec-review',
+    engines: ['kas'], // /spec is v3-only
+    // The Ctrl+X affordance lives on SpecCheckpointChip, which only
+    // InlineLayout mounts; in Lite that chord is the activity tray.
+    text: 'At a /spec checkpoint, press Ctrl+X to review the document and comment on specific lines; /spec view opens one any time.',
   },
 ];
 

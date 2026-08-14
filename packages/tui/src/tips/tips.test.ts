@@ -130,6 +130,37 @@ describe('pickTip — gating', () => {
       allOutcomes(ctx({ surface: 'lite', engine: 'kas' })).has(killTip)
     ).toBe(false);
   });
+
+  test('spec-review tip needs both kas and the TUI surface', () => {
+    // Its Ctrl+X entry point is the checkpoint chip, which only the TUI
+    // surface mounts; in Lite that chord drives the activity tray instead.
+    // TUI_ONLY carries a second Ctrl+X tip, so match on the /spec wording.
+    const specTip = TUI_TEXT.find((t) => t.includes('/spec checkpoint'))!;
+    expect(specTip).toBeDefined();
+    expect(
+      allOutcomes(ctx({ surface: 'tui', engine: 'kas' })).has(specTip)
+    ).toBe(true);
+    expect(
+      allOutcomes(ctx({ surface: 'tui', engine: 'v2' })).has(specTip)
+    ).toBe(false);
+    expect(
+      allOutcomes(ctx({ surface: 'lite', engine: 'kas' })).has(specTip)
+    ).toBe(false);
+  });
+
+  test('slash-substring tip is ungated: both surfaces, both engines', () => {
+    // Its example cites only commands that exist on both engines, so it
+    // deliberately carries no engines key.
+    const substringTip = SHARED_TEXT.find((t) => t.includes('/ode'))!;
+    expect(substringTip).toBeDefined();
+    for (const surface of ['tui', 'lite'] as const) {
+      for (const engine of ['v2', 'kas'] as const) {
+        expect(allOutcomes(ctx({ surface, engine })).has(substringTip)).toBe(
+          true
+        );
+      }
+    }
+  });
 });
 
 describe('pickTip — chance math (deterministic rng)', () => {
