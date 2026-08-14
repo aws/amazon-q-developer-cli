@@ -182,8 +182,14 @@ function deleteRefusalText(reason: string): string {
       return 'cloud sessions must be deleted through the cloud store';
     case 'not-found':
       return 'session no longer exists';
+    case 'invalid-id':
+      return 'that session id is not valid';
+    case 'error':
+      return 'the store refused the delete';
     default:
-      return `could not delete (${reason})`;
+      // Free-form reasons (spawned binary stderr, cloud error strings)
+      // speak for themselves.
+      return reason;
   }
 }
 const COL_WS_W = 18;

@@ -441,6 +441,16 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // Ctrl+E — enter the full-screen session dashboard (KAS only).
   const setShowSessionDashboard = useAppStore((s) => s.setShowSessionDashboard);
   const liteAgentEngine = useAppStore((s) => s.agentEngine);
+  // Warm the cross-workspace scan cache at boot so the first toggle is
+  // instant, same as the tui surface.
+  useEffect(() => {
+    if (
+      liteAgentEngine === 'kas' &&
+      features.isEnabled(Feature.SessionDashboard)
+    ) {
+      void scanAllWorkspaceSessions();
+    }
+  }, [liteAgentEngine]);
   const liteSetMode = useAppStore((s) => s.setMode);
   const litePromptEmpty = useAppStore(
     (s) =>
