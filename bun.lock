@@ -6,6 +6,7 @@
       "name": "kiro-cli-chat",
       "devDependencies": {
         "eslint": "^10.0.1",
+        "js-yaml": "4.3.1",
         "prettier": "^3.4.2",
       },
     },

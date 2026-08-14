@@ -1,0 +1,3411 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Local Prometheus analogue of the KUTS KiroCLI-Health dashboard, aligned to the reviewed PR #3682 metric and dimension contract.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Open local detailed dashboard",
+      "type": "link",
+      "url": "/d/kiro-telemetry-local"
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "panels": [],
+      "title": "Volume (P1 - Product Health)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Counts active installation-version days represented by daily heartbeats, not unique people.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (version_full) (increase(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\", os_type=~\"$os_type\", install_method=~\"$install_method\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{version_full}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "timeFrom": "now/d",
+      "title": "Daily active installations for selected version",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * (((sum by (version_full) (increase(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\", os_type=~\"$os_type\", install_method=~\"$install_method\", instance=~\"$instance\"}[$__range]))) / scalar(sum (increase(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", release_channel=~\"$release_channel\", os_type=~\"$os_type\", install_method=~\"$install_method\", instance=~\"$instance\"}[$__range])))) and on () ((sum (increase(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", release_channel=~\"$release_channel\", os_type=~\"$os_type\", install_method=~\"$install_method\", instance=~\"$instance\"}[$__range]))) > 0))",
+          "legendFormat": "{{version_full}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "timeFrom": "now/d",
+      "title": "Selected version share of daily active installations (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "id": 4,
+      "options": {
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (os_type) (increase(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\", os_type=~\"$os_type\", install_method=~\"$install_method\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{os_type}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "timeFrom": "now/d",
+      "title": "Active installation share by OS",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "id": 5,
+      "options": {
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (install_method) (increase(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\", os_type=~\"$os_type\", install_method=~\"$install_method\", instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{install_method}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "timeFrom": "now/d",
+      "title": "Active installation share by install method",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (session_interface) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{session_interface}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Runs started by interface",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Runs started by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (session_interface) (increase(kiro_cli_chat_session_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{session_interface}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Chat sessions by interface",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_engine) (increase(kiro_cli_chat_session_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Chat sessions by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (session_interface) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{session_interface}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Completed user turns by interface",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Completed user turns by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_engine) (increase(kiro_cli_model_invocations_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Model invocations by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "id": 13,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_engine) (increase(kiro_cli_tool_call_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Tool calls by engine",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "id": 14,
+      "panels": [],
+      "title": "Availability (P0 - Operational Health)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-RdYlGr"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 50
+      },
+      "id": 15,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * (((((sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) - ((sum by (agent_engine) (increase(kiro_cli_turn_cancelled_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range])))))) - ((sum by (agent_engine) (increase(kiro_cli_turn_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * ((sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) - ((sum by (agent_engine) (increase(kiro_cli_turn_cancelled_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))))))))) / ((sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) - ((sum by (agent_engine) (increase(kiro_cli_turn_cancelled_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))))))) and on (agent_engine) (((sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) - ((sum by (agent_engine) (increase(kiro_cli_turn_cancelled_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range])))))) > 0))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Client-turn availability by engine (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 50
+      },
+      "id": 16,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * ((((sum by (agent_engine) (increase(kiro_cli_turn_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))))) / (sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range])))) and on (agent_engine) ((sum by (agent_engine) (increase(kiro_cli_user_turns_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__range]))) > 0))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Turn failure incidence by engine (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-RdYlGr"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "id": 17,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * ((((sum by (agent_engine) (increase(kiro_cli_startup_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__range]))))) / (sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__range])))) and on (agent_engine) ((sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__range]))) > 0))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Startup availability by engine (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-RdYlGr"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "id": 18,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * ((((sum (increase(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\"}[$__range]))) or on () (0 * (((sum (increase(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\"}[$__range]))) or on () (0 * (sum (increase(kiro_cli_auth_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\", auth_operation=\"login\"}[$__range]))))) + ((sum (increase(kiro_cli_auth_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\", auth_operation=\"login\"}[$__range]))) or on () (0 * (sum (increase(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\"}[$__range])))))))) / (((sum (increase(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\"}[$__range]))) or on () (0 * (sum (increase(kiro_cli_auth_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\", auth_operation=\"login\"}[$__range]))))) + ((sum (increase(kiro_cli_auth_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\", auth_operation=\"login\"}[$__range]))) or on () (0 * (sum (increase(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\"}[$__range]))))))) and on () ((((sum (increase(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\"}[$__range]))) or on () (0 * (sum (increase(kiro_cli_auth_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\", auth_operation=\"login\"}[$__range]))))) + ((sum (increase(kiro_cli_auth_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\", auth_operation=\"login\"}[$__range]))) or on () (0 * (sum (increase(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\", auth_method=~\"$auth_method\", instance=~\"$instance\"}[$__range])))))) > 0))",
+          "legendFormat": "login",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Login availability (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "id": 19,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * ((((sum by (agent_engine) (increase(kiro_cli_model_request_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_model_invocations_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__range]))))) / (sum by (agent_engine) (increase(kiro_cli_model_invocations_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__range])))) and on (agent_engine) ((sum by (agent_engine) (increase(kiro_cli_model_invocations_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__range]))) > 0))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Model-request failure incidence by engine (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 66
+      },
+      "id": 20,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * ((((sum by (agent_engine) (increase(kiro_cli_tool_call_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", instance=~\"$instance\", tool_outcome=\"error\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_tool_call_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))))) / (sum by (agent_engine) (increase(kiro_cli_tool_call_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range])))) and on (agent_engine) ((sum by (agent_engine) (increase(kiro_cli_tool_call_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", instance=~\"$instance\"}[$__range]))) > 0))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Tool error rate by engine (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-RdYlGr"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "id": 21,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * ((((sum by (agent_engine) (increase(kiro_cli_mcp_server_init_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", mcp_server_source=~\"$mcp_server_source\", instance=~\"$instance\", mcp_init_outcome=\"success\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_mcp_server_init_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", mcp_server_source=~\"$mcp_server_source\", instance=~\"$instance\"}[$__range]))))) / (sum by (agent_engine) (increase(kiro_cli_mcp_server_init_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", mcp_server_source=~\"$mcp_server_source\", instance=~\"$instance\"}[$__range])))) and on (agent_engine) ((sum by (agent_engine) (increase(kiro_cli_mcp_server_init_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", mcp_server_source=~\"$mcp_server_source\", instance=~\"$instance\"}[$__range]))) > 0))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "MCP availability (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "id": 22,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * ((((sum by (agent_engine) (increase(kiro_cli_crash_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", os_type=~\"$os_type\", process_role=~\"$process_role\", instance=~\"$instance\"}[$__range]))) or on (agent_engine) (0 * (sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__range]))))) / (sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__range])))) and on (agent_engine) ((sum by (agent_engine) (increase(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__range]))) > 0))",
+          "legendFormat": "{{agent_engine}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Crash incidence per run by engine (%)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 82
+      },
+      "id": 23,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_engine, turn_failure_reason) (increase(kiro_cli_turn_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_engine}} {{turn_failure_reason}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Turn failures by reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 82
+      },
+      "id": 24,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_engine, error_kind) (increase(kiro_cli_model_request_failure_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_engine}} {{error_kind}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Model request failures by error kind",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 90
+      },
+      "id": 25,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (drop_reason) (increase(kiro_cli_telemetry_export_dropped_total{job=\"otel-collector\", version_full=~\"$version_full\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{drop_reason}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Telemetry records dropped by reason",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 98
+      },
+      "id": 26,
+      "panels": [],
+      "title": "Latency (P0 - Operational Health)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 99
+      },
+      "id": 27,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "((sum by (agent_engine) (rate(kiro_cli_model_time_to_first_content_ms_sum{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))) / (sum by (agent_engine) (rate(kiro_cli_model_time_to_first_content_ms_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_model_time_to_first_content_ms_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} mean",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Model first content mean by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 99
+      },
+      "id": 28,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(histogram_quantile(0.95, sum by (agent_engine, le) (rate(kiro_cli_model_time_to_first_content_ms_bucket{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_model_time_to_first_content_ms_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} p95",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Model first content p95 by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 107
+      },
+      "id": 29,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "((sum by (agent_engine) (rate(kiro_cli_time_to_first_visible_response_ms_sum{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))) / (sum by (agent_engine) (rate(kiro_cli_time_to_first_visible_response_ms_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_time_to_first_visible_response_ms_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} mean",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "First visible response mean by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 107
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(histogram_quantile(0.95, sum by (agent_engine, le) (rate(kiro_cli_time_to_first_visible_response_ms_bucket{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_time_to_first_visible_response_ms_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} p95",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "First visible response p95 by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 115
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "((sum by (agent_engine) (rate(kiro_cli_model_request_duration_seconds_sum{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))) / (sum by (agent_engine) (rate(kiro_cli_model_request_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_model_request_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} mean",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Model request duration mean by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 115
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(histogram_quantile(0.95, sum by (agent_engine, le) (rate(kiro_cli_model_request_duration_seconds_bucket{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_model_request_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", model=~\"$model\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} p95",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Model request duration p95 by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 123
+      },
+      "id": 33,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "((sum by (agent_engine) (rate(kiro_cli_user_turn_duration_seconds_sum{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))) / (sum by (agent_engine) (rate(kiro_cli_user_turn_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_user_turn_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} mean",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Successful user turn duration mean by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 123
+      },
+      "id": 34,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(histogram_quantile(0.95, sum by (agent_engine, le) (rate(kiro_cli_user_turn_duration_seconds_bucket{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_user_turn_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", agent_mode=~\"$agent_mode\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} p95",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Successful user turn duration p95 by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 131
+      },
+      "id": 35,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "((sum by (agent_engine) (rate(kiro_cli_startup_duration_seconds_sum{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__rate_interval]))) / (sum by (agent_engine) (rate(kiro_cli_startup_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__rate_interval])))) and on (agent_engine) ((sum by (agent_engine) (rate(kiro_cli_startup_duration_seconds_count{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\", os_type=~\"$os_type\", instance=~\"$instance\"}[$__rate_interval]))) > 0)",
+          "legendFormat": "{{agent_engine}} mean",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Startup duration mean by engine",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 131
+      },
+      "id": 36,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "avg by (agent_engine, process_role) (kiro_cli_process_memory_rss_bytes{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", os_type=~\"$os_type\", process_role=~\"$process_role\", instance=~\"$instance\"})",
+          "legendFormat": "{{agent_engine}} {{process_role}}",
+          "refId": "A",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Process RSS by engine and role",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 40,
+  "tags": [
+    "kiro",
+    "telemetry",
+    "local",
+    "reviewed-catalog"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\"}, version_full)",
+        "description": "Exact stable, nightly, or beta CLI version.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Version",
+        "multi": true,
+        "name": "version_full",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\"}, version_full)",
+          "refId": "PrometheusVariableQueryEditor-version_full"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\"}, release_channel)",
+        "description": "Stable, nightly, beta, or unknown release family.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Release channel",
+        "multi": true,
+        "name": "release_channel",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\"}, release_channel)",
+          "refId": "PrometheusVariableQueryEditor-release_channel"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\"}, agent_engine)",
+        "description": "Agent implementation: v1, v2, v3, or unknown.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Engine",
+        "multi": true,
+        "name": "agent_engine",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\"}, agent_engine)",
+          "refId": "PrometheusVariableQueryEditor-agent_engine"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, session_interface)",
+        "description": "Interactive CLI, noninteractive CLI, or external ACP.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Interface",
+        "multi": true,
+        "name": "session_interface",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_run_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, session_interface)",
+          "refId": "PrometheusVariableQueryEditor-session_interface"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_chat_session_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\"}, agent_mode)",
+        "description": "Default, plan, spec, autonomous, or custom product mode.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Agent mode",
+        "multi": true,
+        "name": "agent_mode",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_chat_session_started_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", session_interface=~\"$session_interface\"}, agent_mode)",
+          "refId": "PrometheusVariableQueryEditor-agent_mode"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\"}, os_type)",
+        "description": "Operating system reported by the active installation.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "OS",
+        "multi": true,
+        "name": "os_type",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\"}, os_type)",
+          "refId": "PrometheusVariableQueryEditor-os_type"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\", os_type=~\"$os_type\"}, install_method)",
+        "description": "How the active CLI installation was installed.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Install method",
+        "multi": true,
+        "name": "install_method",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_daily_heartbeat_total{job=\"otel-collector\", version_full=~\"$version_full\", release_channel=~\"$release_channel\", os_type=~\"$os_type\"}, install_method)",
+          "refId": "PrometheusVariableQueryEditor-install_method"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_model_invocations_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, model)",
+        "description": "Canonical service-provided model identifier.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Model",
+        "multi": true,
+        "name": "model",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_model_invocations_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, model)",
+          "refId": "PrometheusVariableQueryEditor-model"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_mcp_server_init_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, mcp_server_source)",
+        "description": "Registry, user configuration, ACP injection, or unknown.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "MCP source",
+        "multi": true,
+        "name": "mcp_server_source",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_mcp_server_init_total{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\"}, mcp_server_source)",
+          "refId": "PrometheusVariableQueryEditor-mcp_server_source"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_process_memory_rss_bytes{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", os_type=~\"$os_type\"}, process_role)",
+        "description": "Host, TUI, or KAS subprocess.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Process role",
+        "multi": true,
+        "name": "process_role",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_process_memory_rss_bytes{job=\"otel-collector\", version_full=~\"$version_full\", agent_engine=~\"$agent_engine\", os_type=~\"$os_type\"}, process_role)",
+          "refId": "PrometheusVariableQueryEditor-process_role"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\"}, auth_method)",
+        "description": "Authentication method used by the client.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Auth method",
+        "multi": true,
+        "name": "auth_method",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kiro_cli_login_success_total{job=\"otel-collector\", version_full=~\"$version_full\"}, auth_method)",
+          "refId": "PrometheusVariableQueryEditor-auth_method"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(up{job=\"otel-collector\"}, instance)",
+        "description": "Prometheus scrape target for the local collector.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Instance / Collector",
+        "multi": true,
+        "name": "instance",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(up{job=\"otel-collector\"}, instance)",
+          "refId": "PrometheusVariableQueryEditor-instance"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Kiro CLI Local Health",
+  "uid": "kiro-telemetry-health-local",
+  "version": 1,
+  "weekStart": ""
+}

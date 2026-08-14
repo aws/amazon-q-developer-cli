@@ -171,7 +171,9 @@ stable and nightly on the same day, it contributes once to each version; the pre
 an active installation-version day.
 
 The heartbeat guard is version-aware, so stable and nightly versions used from the same installation
-can each contribute one heartbeat during the UTC day.
+can each contribute one heartbeat during the UTC day. The local health dashboard is fixed to UTC and
+sets each heartbeat panel range to `now/d`; its selected-range PromQL therefore models the current UTC
+calendar day rather than a rolling 24-hour interval.
 
 CloudWatch should derive:
 
@@ -237,7 +239,8 @@ tracks adding an `installation_script` receipt to the installer and consuming it
   normalized `agent_engine` values.
 - Session-start ownership is deduplicated and chat sessions count at creation.
 - Heartbeats carry exact version, release channel, OS, and install method, and the local guard is
-  version-aware.
+  version-aware. The local fixture emits one increment per scenario per UTC day, independently of its
+  repeatable activity waves.
 - Automatic retry lifecycle remains available to legacy and local diagnostics, but the ambiguous
   retry-depth KUTS metric is removed.
 - Retired client metrics and unproduced adoption gauges are removed.
@@ -368,7 +371,7 @@ instead of a separate metric.
 | 23 | `feature_unique_users_weekly` | Remove | Requires downstream identity-aware aggregation |
 | 24 | `kiro_cli_tool_call_total` | Keep | Canonical tool-attempt counter |
 | 25 | `tool_using_sessions_pct` | Remove | Tool counts cannot produce a session-deduplicated percentage |
-| 26 | `kiro_cli_mcp_server_connected_total` | Derive | `kiro_cli_mcp_server_init_total{mcp_init_outcome=success|degraded}` |
+| 26 | `kiro_cli_mcp_server_connected_total` | Derive | `kiro_cli_mcp_server_init_total{mcp_init_outcome=success}` |
 | 27 | `kiro_cli_model_invocations_total` | Keep | Same name at the logical model-request boundary |
 | 28 | `mode_active_users_weekly` | Remove | Requires downstream identity-aware aggregation |
 | 29 | `kiro_cli_feature_first_use` | Remove | Use Amplitude or a future analytics sink |
@@ -464,6 +467,19 @@ kinds. The client implementation applies these rules:
   reasons use their reviewed vocabularies.
 - Legacy Toolkit and CodeWhisperer events stay in place until their independent channel cutover is
   approved. This ledger governs the KUTS OTel catalog only.
+
+The local Grafana dashboards use these same contracts for filtering. Their generator reads
+`cloudwatch_dimensions`, but models Grafana variable identity, Prometheus label identity, and metric
+applicability separately. Most selectors apply to families carrying the mapped label; the
+`slash_command` selector maps directly to the `slash_command` label on
+`kiro_cli_slash_command_invoked_total`, avoiding collisions with the independent
+`top_level_command` vocabulary. Counter panels use reset-safe selected-window increases, histogram distributions use
+rates, daily heartbeats use an explicit one-day window, and gauges remain raw samples.
+`dev/telemetry/populate-dashboards.sh` emits a typed scenario matrix covering the reviewed selector
+vocabularies. The shared dashboard validator verifies representative cross-dimension cohorts, every
+query target, temporal operators, and slash-command isolation; CI also repeats representative queries
+across a collector restart. This validates supported slices without pretending that dimensions from
+unrelated metric families can be joined.
 
 KUTS must mechanically validate that every `awsemf/kirocli.metric_declarations` entry matches the
 schema. Once explicit declarations are enabled, an undeclared metric is dropped rather than gaining an
@@ -602,7 +618,7 @@ the bounded tool combinations.
 - Keep `kiro_cli_tool_execution_duration_ms` for measured execution latency.
 - Keep `kiro_cli_mcp_server_init_total` and remove `kiro_cli_mcp_server_connected_total`. A connected
   count is the subset of initialization attempts whose handshake completed and can be queried by
-  summing `kiro_cli_mcp_server_init_total` where `mcp_init_outcome` is `success` or `degraded`.
+  summing `kiro_cli_mcp_server_init_total` where `mcp_init_outcome` is `success`.
 
 ### MCP initialization dimensions
 

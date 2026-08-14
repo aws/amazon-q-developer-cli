@@ -12,6 +12,7 @@ compose_cmd="${COMPOSE_CMD:-finch compose}"
 compose_file="${script_dir}/compose.yaml"
 otlp_endpoint="${KIRO_TELEMETRY_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
 prometheus_endpoint="${PROMETHEUS_ENDPOINT:-http://localhost:9090}"
+grafana_endpoint="${GRAFANA_ENDPOINT:-http://localhost:3000}"
 fresh="${FRESH:-1}"
 keep_stack="${KEEP_STACK:-0}"
 
@@ -59,6 +60,12 @@ if ! ${compose_cmd} version >/dev/null 2>&1; then
   exit 3
 fi
 
+log "Checking Grafana query-generation invariants"
+bun test "${script_dir}/grafana/tests/generator.test.mjs"
+
+log "Checking generated Grafana dashboards"
+bun "${script_dir}/grafana/generate-dashboards.mjs" --check
+
 if [ "${fresh}" = "1" ]; then
   log "Bringing up the local telemetry stack with fresh storage"
   compose down -v >/dev/null 2>&1 || true
@@ -72,7 +79,7 @@ trap teardown EXIT
 log "Waiting for Prometheus, Grafana, and the collector"
 for attempt in {1..30}; do
   if curl -fsS -o /dev/null "${prometheus_endpoint}/api/v1/query?query=up" \
-     && curl -fsS -o /dev/null "http://localhost:3000/api/health" \
+     && curl -fsS -o /dev/null "${grafana_endpoint}/api/health" \
      && curl -fsS -o /dev/null "http://localhost:9464/metrics"; then
     echo "stack reachable"
     break
@@ -172,6 +179,13 @@ log "Emitting production TUI observer records through the JS OTLP SDK"
   bun run "${script_dir}/emit-tui-metrics.fixture.ts"
 )
 
+log "Emitting coherent synthetic installations for dashboard filter coverage"
+KIRO_DASHBOARD_DEMO_WAVES=3 \
+KIRO_DASHBOARD_DEMO_INTERVAL_MS=5500 \
+KIRO_DASHBOARD_DEMO_EMIT_HEARTBEATS=1 \
+cargo run -q -p kiro-telemetry --features test-support --example dashboard_demo \
+  --manifest-path "${repo_root}/Cargo.toml"
+
 catalog_metrics="$(
   awk '
     /^  - name:/ { name=$3 }
@@ -245,7 +259,7 @@ expect_present() {
       echo "OBSERVED  ${label}"
       return 0
     fi
-    sleep 3
+    [ "${attempt}" -lt 12 ] && sleep 3
   done
   echo "MISSING   ${label} -> ${selector}"
   missing=$((missing + 1))
@@ -275,6 +289,24 @@ sample_value() {
   printf '%s' "${response}" | jq -r '.data.result[0].value[1] // "<absent>"'
 }
 
+
+wait_for_exact() {
+  local label="$1"
+  local query="$2"
+  local expected="$3"
+  local actual
+  for attempt in {1..12}; do
+    actual="$(sample_value "${query}")"
+    if [ "${actual}" = "${expected}" ]; then
+      echo "OBSERVED  ${label}=${expected}"
+      return
+    fi
+    [ "${attempt}" -lt 12 ] && sleep 3
+  done
+  echo "READINESS TIMEOUT  ${label}: expected=${expected} actual=${actual}" >&2
+  exit 2
+}
+
 expect_exact() {
   local label="$1"
   local query="$2"
@@ -289,6 +321,10 @@ expect_exact() {
   missing=$((missing + 1))
   miss_list="${miss_list} ${label}"
 }
+
+demo_scope='otel_scope_name="kiro-telemetry-dashboard-demo"'
+demo_readiness_query="sum(kiro_cli_chat_session_started_total{${demo_scope},version_full=\"2.7.0\",agent_engine=\"v2\",session_interface=\"interactive_cli\",agent_mode=\"plan\"})"
+wait_for_exact "dashboard demo third wave" "${demo_readiness_query}" 18
 
 log "Asserting all catalog records came from the Rust catalog emitter"
 while IFS= read -r metric; do
@@ -377,60 +413,104 @@ expect_absent "V1 metrics with the wrong user identity" \
 expect_absent "retired V1 metric families" \
   "{otel_scope_name=\"kiro-telemetry\",version_full=\"${v1_version}\",__name__=~\"kiro_cli_session_started_total|kiro_cli_session_completed_total|kiro_cli_feature_used_total|kiro_cli_conversation_completed_total|kiro_cli_process_memory_rss|kiro_cli_process_memory_peak_rss|kiro_cli_process_cpu_utilization_(bucket|sum|count)\"}"
 
-log "Asserting Grafana provisioning"
-dashboard_file="${repo_root}/dev/telemetry/grafana/dashboards/kiro-telemetry-local.json"
-dashboard_metrics="$(
-  jq -r '.. | objects | .expr? // empty' "${dashboard_file}" \
-    | grep -oE 'kiro_cli_[[:alnum:]_]+' \
-    | sort -u
-)"
-catalog_prometheus_metrics="$(
-  awk '
-    /^  - name:/ { name=$3 }
-    /^    kind:/ {
-      kind=$2
-      if (kind=="counter") {
-        if (name ~ /_total$/) print name
-        else print name "_total"
-      } else if (kind=="histogram") {
-        print name "_bucket"
-        print name "_sum"
-        print name "_count"
-      } else if (kind=="observable_gauge") {
-        print name
-      }
-    }
-  ' "${repo_root}/crates/kiro-telemetry-schema/schema/metrics.yaml" | sort -u
-)"
-undeclared_dashboard_metrics="$(
-  comm -23 \
-    <(printf '%s\n' "${dashboard_metrics}") \
-    <(printf '%s\n' "${catalog_prometheus_metrics}")
-)"
-if [ -n "${undeclared_dashboard_metrics}" ]; then
-  log "FAIL: Grafana dashboard references undeclared metric series:"
-  printf '%s\n' "${undeclared_dashboard_metrics}" >&2
-  exit 1
-fi
-curl -fsS "http://localhost:3000/api/datasources/uid/prometheus/health" \
-  | jq -e '.status == "OK"' >/dev/null
-dashboard_response="$(curl -fsS "http://localhost:3000/api/dashboards/uid/kiro-telemetry-local")"
-printf '%s' "${dashboard_response}" \
-  | jq -e '.dashboard.uid == "kiro-telemetry-local"' >/dev/null
-printf '%s' "${dashboard_response}" | jq -e '
-  .dashboard as $dashboard
-  | ([$dashboard.templating.list[].name] | contains(["version_full", "agent_engine", "slash_command", "instance"]))
-    and any($dashboard.panels[];
-      .title == "Slash Command Invocations"
-      and any(.targets[];
-        (.expr | contains("$version_full"))
-        and (.expr | contains("$agent_engine"))
-        and (.expr | contains("$slash_command"))
-      )
-    )
-' >/dev/null
+log "Asserting representative dashboard filter combinations"
+expect_exact "dashboard demo daily active installations" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope}})" 7
+expect_exact "stable 2.7.0 daily active installations" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope},version_full=\"2.7.0\"})" 2
+expect_exact "nightly 2.8.0 daily active installations" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope},version_full=\"2.8.0-nightly.14\"})" 2
+expect_exact "beta 2.8.0 daily active installations" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope},version_full=\"2.8.0-beta.2\"})" 1
+expect_exact "stable 2.6.3 daily active installations" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope},version_full=\"2.6.3\"})" 1
+expect_exact "development daily active installations" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope},version_full=\"0.0.0-dev\"})" 1
+expect_exact "stable Windows heartbeats with unknown install source" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope},version_full=\"2.7.0\",release_channel=\"stable\",os_type=\"windows\",install_method=\"unknown\"})" 1
+expect_exact "V2 interactive plan sessions" \
+  "sum(kiro_cli_chat_session_started_total{${demo_scope},version_full=\"2.7.0\",agent_engine=\"v2\",session_interface=\"interactive_cli\",agent_mode=\"plan\"})" 18
+expect_exact "V3 nightly Opus requests" \
+  "sum(kiro_cli_model_invocations_total{${demo_scope},version_full=\"2.8.0-nightly.14\",agent_engine=\"v3\",model=\"claude-opus-4.1\"})" 15
+expect_exact "subagent-context tool calls" \
+  "sum(kiro_cli_tool_call_total{${demo_scope},agent_engine=\"v3\",tool_origin=\"builtin\",execution_context=\"subagent\"})" 27
+expect_exact "ACP-injected MCP failures" \
+  "sum(kiro_cli_mcp_server_init_total{${demo_scope},agent_engine=\"v3\",mcp_server_source=\"acp_injected\",mcp_init_outcome=\"failure\"})" 15
+expect_exact "KAS subprocess memory series" \
+  "count(kiro_cli_process_memory_rss_bytes{${demo_scope},agent_engine=\"v3\",process_role=\"kas_subprocess\"})" 1
 
-grafana_prometheus_proxy="http://localhost:3000/api/datasources/proxy/uid/prometheus"
+log "Asserting Grafana provisioning and reviewed dashboard queries"
+curl -fsS "${grafana_endpoint}/api/datasources/uid/prometheus/health" \
+  | jq -e '.status == "OK"' >/dev/null
+detailed_dashboard_response="$(curl -fsS "${grafana_endpoint}/api/dashboards/uid/kiro-telemetry-local")"
+health_dashboard_response="$(curl -fsS "${grafana_endpoint}/api/dashboards/uid/kiro-telemetry-health-local")"
+printf '%s' "${detailed_dashboard_response}" \
+  | jq -e '
+      .dashboard.uid == "kiro-telemetry-local"
+      and ([.dashboard.panels[] | select(.type != "row")] | length == 50)
+      and ([.dashboard.templating.list[].name] == [
+        "version_full",
+        "agent_engine",
+        "slash_command",
+        "session_interface",
+        "agent_mode",
+        "os_type",
+        "model",
+        "tool_origin",
+        "execution_context",
+        "mcp_server_source",
+        "process_role",
+        "instance"
+      ])
+      and any(.dashboard.panels[];
+        .title == "Slash commands invoked"
+        and any(.targets[];
+          (.expr | contains("$version_full"))
+          and (.expr | contains("$agent_engine"))
+          and (.expr | contains("$slash_command"))
+        )
+      )
+    ' >/dev/null
+printf '%s' "${health_dashboard_response}" \
+  | jq -e '
+      .dashboard.uid == "kiro-telemetry-health-local"
+      and ([.dashboard.panels[] | select(.type != "row")] | length == 33)
+      and ([.dashboard.templating.list[].name] == [
+        "version_full",
+        "release_channel",
+        "agent_engine",
+        "session_interface",
+        "agent_mode",
+        "os_type",
+        "install_method",
+        "model",
+        "mcp_server_source",
+        "process_role",
+        "auth_method",
+        "instance"
+      ])
+    ' >/dev/null
+
+source "${script_dir}/dashboard-validation.sh"
+
+assert_dashboard_queries_populated "detailed dashboard" "${detailed_dashboard_response}"
+assert_dashboard_queries_populated "health dashboard" "${health_dashboard_response}"
+assert_dashboard_semantics "${detailed_dashboard_response}" "${health_dashboard_response}"
+
+assert_grafana_panel_query "${detailed_dashboard_response}" "Runs started by engine"
+assert_grafana_panel_query "${detailed_dashboard_response}" "Chat sessions by engine"
+assert_grafana_panel_query "${detailed_dashboard_response}" "Process RSS by engine and role"
+assert_grafana_panel_query "${detailed_dashboard_response}" "CPU utilization mean by engine and role"
+assert_grafana_panel_query "${health_dashboard_response}" "Daily active installations for selected version"
+assert_grafana_panel_query "${health_dashboard_response}" "Client-turn availability by engine (%)"
+assert_grafana_panel_query "${health_dashboard_response}" "Startup availability by engine (%)"
+assert_grafana_panel_query "${health_dashboard_response}" "Startup duration mean by engine"
+
+log "Asserting slash-command panel filter"
+assert_grafana_panel_query \
+  "${detailed_dashboard_response}" "Slash commands invoked" "" slash "/workflow-run"
+
+grafana_prometheus_proxy="${grafana_endpoint}/api/datasources/proxy/uid/prometheus"
 grafana_slash_response="$(
   curl -fsS --get "${grafana_prometheus_proxy}/api/v1/query" \
     --data-urlencode "query=sum(kiro_cli_slash_command_invoked_total{version_full=\"${tui_version}\",agent_engine=\"v3\",slash_command=\"/workflow-run\"})"
@@ -445,10 +525,44 @@ printf '%s' "${grafana_command_values}" \
   | jq -e '.status == "success" and (.data | contains(["/settings", "/upgrade-agent", "/workflow-run", "/goal"]))' >/dev/null
 echo "OBSERVED  Grafana slash-command panel, filters, and V3 series through the datasource proxy"
 
+log "Asserting selected-window queries survive a collector reset"
+compose restart otel-collector >/dev/null
+for attempt in {1..30}; do
+  if curl -fsS -o /dev/null "http://localhost:9464/metrics"; then
+    break
+  fi
+  [ "${attempt}" -eq 30 ] && {
+    echo "collector did not recover after restart" >&2
+    exit 4
+  }
+  sleep 2
+done
+KIRO_DASHBOARD_DEMO_WAVES=4 \
+KIRO_DASHBOARD_DEMO_INTERVAL_MS=5500 \
+KIRO_DASHBOARD_DEMO_EMIT_HEARTBEATS=0 \
+cargo run -q -p kiro-telemetry --features test-support --example dashboard_demo \
+  --manifest-path "${repo_root}/Cargo.toml"
+wait_for_exact "post-reset dashboard demo fourth wave" "${demo_readiness_query}" 24
+wait_for_exact "post-reset heartbeat counter remains at baseline" \
+  "sum(kiro_cli_daily_heartbeat_total{${demo_scope}})" 0
+heartbeat_utc_day_response="$(grafana_query \
+  HEARTBEAT_DAY prometheus \
+  "sum(increase(kiro_cli_daily_heartbeat_total{${demo_scope}}[\$__range]))" \
+  true false now/d)"
+printf '%s' "${heartbeat_utc_day_response}" | jq -e '
+  [.results.HEARTBEAT_DAY.frames[].data.values[1][]? | select(type == "number")] as $values
+  | ($values | length == 1) and (($values[0] | round) == 7)
+' >/dev/null
+echo "OBSERVED  UTC-day heartbeat total remains 7 after collector reset"
+assert_grafana_panel_query "${detailed_dashboard_response}" "Runs started by engine"
+assert_grafana_panel_query "${detailed_dashboard_response}" "Startup duration mean by engine"
+assert_grafana_panel_query "${health_dashboard_response}" "Client-turn availability by engine (%)"
+echo "OBSERVED  selected-window counters, histograms, and ratios across collector reset"
+
 catalog_count="$(printf '%s\n' "${catalog_metrics}" | grep -c . || true)"
 tui_count="$(printf '%s\n' "${tui_metrics}" | grep -c . || true)"
 if [ "${missing}" -eq 0 ]; then
-  log "PASS: ${catalog_count} catalog metrics, ${tui_count} TUI metrics, real V1 dual-write, and Grafana provisioning validated"
+  log "PASS: ${catalog_count} catalog metrics, ${tui_count} TUI metrics, real V1 dual-write, dashboard scenarios, and populated Grafana queries validated"
   exit 0
 fi
 

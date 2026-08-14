@@ -182,9 +182,56 @@ finch compose up -d
 You can also start it from the repository root with
 `finch compose -f dev/telemetry/compose.yaml up -d`.
 
-Grafana is available at http://localhost:3000/d/kiro-telemetry-local/kiro-cli-local-telemetry.
-Prometheus is at http://localhost:9090 and the collector's Prometheus exporter
-is at http://localhost:9464/metrics.
+The provisioned Grafana views mirror the reviewed KUTS dashboards:
+
+- Detailed: http://localhost:3000/d/kiro-telemetry-local/kiro-cli-local-telemetry
+- Health: http://localhost:3000/d/kiro-telemetry-health-local/kiro-cli-local-health
+
+The detailed dashboard has selectors for version, engine, slash command, interface, agent mode, OS,
+model, tool origin, execution context, MCP source, process role, and collector instance. The health
+dashboard adds release channel, install method, and auth method while omitting tool-specific
+selectors.
+
+Dashboard variable identity is separate from the Prometheus label it filters. Most variables apply to
+metric families that declare the corresponding `cloudwatch_dimensions` label. The
+`slash_command` variable is deliberately narrower: it maps to the Prometheus `command` label only
+for `kiro_cli_slash_command_invoked_total`, because top-level commands use the same label name with
+a different vocabulary. Selecting `/help`, for example, filters the slash-command panel without
+emptying the top-level-command panel.
+
+PromQL construction is metric-kind aware. Counter timeseries use reset-safe
+`increase(...[$__rate_interval])`, while instant totals and shares use
+`increase(...[$__range])`. The health dashboard uses UTC and gives all heartbeat panels a
+`now/d` range override, so their selected-range totals represent the current UTC calendar day rather
+than a rolling 24-hour window. Histogram means and quantiles use `rate(...[$__rate_interval])`, and
+observable gauges remain raw samples. Ratios return no series when their denominator has no
+observations instead of manufacturing a healthy or zero-latency value.
+
+Prometheus is at http://localhost:9090 and the collector's Prometheus exporter is at
+http://localhost:9464/metrics.
+
+The committed dashboard JSON is generated from focused source modules under
+`dev/telemetry/grafana/definitions/` and `dev/telemetry/grafana/lib/`; `generate-dashboards.mjs` is
+only the orchestration entry point. Regenerate both outputs after changing local panels:
+
+```bash
+bun dev/telemetry/grafana/generate-dashboards.mjs
+```
+
+To reset the stack, populate every dashboard panel with a coherent synthetic installation matrix,
+validate every selector vocabulary and panel query, and leave Grafana running:
+
+```bash
+bash dev/telemetry/populate-dashboards.sh
+```
+
+The fixture covers stable, nightly, beta, and unknown release channels; V1, V2, V3, and unknown
+engines; every reviewed interface, mode, OS, install method, tool origin, MCP source, process role,
+and auth-method bucket; several canonical model IDs; and representative success, failure,
+cancellation, retry, crash, and latency distributions. It uses the typed Rust constructors and
+validates each record against the schema before export. Set `FRESH=0` to add another set of activity
+samples without clearing the existing Prometheus data; non-fresh runs suppress same-day heartbeat
+increments so adoption counts remain one per scenario.
 
 To smoke-test the collector → Prometheus path before launching Kiro:
 
@@ -213,11 +260,16 @@ This stack is also exercised end-to-end by CI: the `tui-telemetry-e2e` job in
 `.github/workflows/tui.yml` brings the stack up with `docker compose` and runs
 `validate-metrics-e2e.sh`, which runs the real V1 binary in dual-write mode,
 records both its OTLP and legacy Toolkit requests, then drives the Rust catalog
-emitter and production TUI observer fixture (`emit-tui-metrics.fixture.ts`)
-through their real code paths. It asserts the reviewed metric families and V1
-dimensions in Prometheus, then checks the provisioned Grafana queries. It runs
-whenever telemetry-relevant paths change, so these scripts are part of the test
-suite.
+emitter, dashboard scenario matrix, and production TUI observer fixture
+(`emit-tui-metrics.fixture.ts`) through their real code paths. It asserts the reviewed metric
+families, V1 dimensions, representative cross-dimension filters, and data in every provisioned
+Grafana panel query. The dashboard scenario emitter first exports zero heartbeat baselines, waits
+for a scrape, and emits exactly seven once-per-day heartbeat increments separately from its repeatable,
+scrape-visible activity waves. The checks execute real `increase` and `rate` expressions, verify that
+a slash-command selection does not filter top-level commands, restart the collector, re-emit the
+activity matrix without another same-day heartbeat increment, and recheck representative counter,
+histogram, and availability panels across the reset. It runs whenever telemetry-relevant
+paths change, so these scripts are part of the test suite.
 
 ## Run Kiro against the local collector
 

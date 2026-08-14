@@ -49,3 +49,8 @@ required-features = ["test-support"]
 [[example]]
 name = "catalog_smoke"
 required-features = ["test-support"]
+
+[[example]]
+name = "dashboard_demo"
+test = true
+required-features = ["test-support"]
