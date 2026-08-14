@@ -94,8 +94,22 @@ describe('buildKasSettings', () => {
     });
   });
 
-  test('enables workflow settings when the rollout is enabled', async () => {
+  test('leaves workflows off until the user opts in, even on the rollout', async () => {
     enableWorkflows();
+    const buildKasSettings = await getBuildKasSettings();
+    const settings = buildKasSettings();
+
+    expect(settings?.workflows).toEqual({ enabled: false });
+    expect(settings?.goal).toEqual({ enabled: false });
+    expect(settings?.workflowNotifications).toEqual({
+      enabled: false,
+      delivery: 'steer',
+    });
+  });
+
+  test('enables workflow settings when the user opts in on the rollout', async () => {
+    enableWorkflows();
+    writeSettings({ 'chat.enableWorkflows': true });
     const buildKasSettings = await getBuildKasSettings();
     const settings = buildKasSettings();
 
@@ -103,6 +117,19 @@ describe('buildKasSettings', () => {
     expect(settings?.goal).toEqual({ enabled: true });
     expect(settings?.workflowNotifications).toEqual({
       enabled: true,
+      delivery: 'steer',
+    });
+  });
+
+  test('ignores the opt-in when the rollout does not reach the user', async () => {
+    writeSettings({ 'chat.enableWorkflows': true });
+    const buildKasSettings = await getBuildKasSettings();
+    const settings = buildKasSettings();
+
+    expect(settings?.workflows).toBeUndefined();
+    expect(settings?.goal).toBeUndefined();
+    expect(settings?.workflowNotifications).toEqual({
+      enabled: false,
       delivery: 'steer',
     });
   });
@@ -139,7 +166,10 @@ describe('buildKasSettings', () => {
 
   test('maps queue interrupt behavior to workflow notification delivery', async () => {
     enableWorkflows();
-    writeSettings({ 'chat.defaultInterruptBehavior': 'queue' });
+    writeSettings({
+      'chat.enableWorkflows': true,
+      'chat.defaultInterruptBehavior': 'queue',
+    });
     const buildKasSettings = await getBuildKasSettings();
 
     expect(buildKasSettings()?.workflowNotifications).toEqual({
@@ -150,7 +180,10 @@ describe('buildKasSettings', () => {
 
   test('falls back to steer for invalid interrupt behavior', async () => {
     enableWorkflows();
-    writeSettings({ 'chat.defaultInterruptBehavior': 'later' });
+    writeSettings({
+      'chat.enableWorkflows': true,
+      'chat.defaultInterruptBehavior': 'later',
+    });
     const buildKasSettings = await getBuildKasSettings();
 
     expect(buildKasSettings()?.workflowNotifications).toEqual({

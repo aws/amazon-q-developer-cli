@@ -45,6 +45,20 @@ const skip = process.platform === 'win32' || kasServerMissing;
 
 const BOOT_TIMEOUT = 60_000;
 
+/**
+ * Workflows take two independent conditions: the rollout has to reach the
+ * user AND the user has to opt in. Both `/workflow` probes below need the
+ * commands to exist at all — an opted-out run filters them out of the
+ * command set, so the cloud absence assertion would hold for the wrong
+ * reason and the local control could never open the picker. The rollout
+ * half is stated rather than inherited from the launcher's own resolution,
+ * which the merge at launch treats as an extra rather than a replacement.
+ */
+const WORKFLOWS_OPT_IN = {
+  settings: { 'chat.enableWorkflows': true },
+  env: { KIRO_ENABLED_FEATURES: '["workflows"]' },
+} as const;
+
 /** Type a line one key at a time (autocomplete-safe) and submit. */
 async function typeLine(
   tc: NonNullable<CloudHarness['testCase']>,
@@ -128,6 +142,7 @@ describe('cloud sessions — pre-fed local config never leaks (mock BFF)', () =>
       harness = await CloudHarness.launch({
         testName: 'cloud-prefed-agent',
         cwd: ws,
+        ...WORKFLOWS_OPT_IN,
       });
       const tc = harness.testCase!;
       await tc.waitForText('Cloud session created', BOOT_TIMEOUT);
@@ -223,6 +238,7 @@ describe('cloud sessions — pre-fed local config never leaks (mock BFF)', () =>
         testName: 'cloud-prefed-workflow-local',
         cwd: ws,
         cliArgs: [],
+        ...WORKFLOWS_OPT_IN,
       });
       const tc = harness.testCase!;
       await tc.waitForText('ask a question', BOOT_TIMEOUT);

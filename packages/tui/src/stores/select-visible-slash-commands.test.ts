@@ -1,4 +1,15 @@
-import { describe, it, expect, mock, afterAll } from 'bun:test';
+import {
+  describe,
+  it,
+  expect,
+  mock,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { createAppStore } from './app-store';
 import { selectVisibleSlashCommands } from './selectors';
 import { Kiro } from '../kiro';
@@ -17,6 +28,37 @@ afterAll(() => {
   mock.restore();
 });
 
+/**
+ * Command visibility is resolved from the rollout AND, for workflows, a
+ * persisted opt-in — so an inherited `KIRO_ENABLED_FEATURES` or the
+ * developer's own `cli.json` would otherwise decide these assertions. Both
+ * are pinned here rather than assumed: the cases below state the features
+ * they need, and a scratch home keeps real preferences out of the result.
+ */
+let envHome: string | undefined;
+let envFeatures: string | undefined;
+let scratchHome: string;
+
+beforeEach(() => {
+  envHome = process.env.KIRO_HOME;
+  envFeatures = process.env.KIRO_ENABLED_FEATURES;
+  scratchHome = mkdtempSync(join(tmpdir(), 'slash-visibility-base-'));
+  mkdirSync(join(scratchHome, 'settings'), { recursive: true });
+  writeFileSync(join(scratchHome, 'settings', 'cli.json'), '{}');
+  process.env.KIRO_HOME = scratchHome;
+  process.env.KIRO_ENABLED_FEATURES = '[]';
+  features._resetForTests();
+});
+
+afterEach(() => {
+  if (envHome === undefined) delete process.env.KIRO_HOME;
+  else process.env.KIRO_HOME = envHome;
+  if (envFeatures === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+  else process.env.KIRO_ENABLED_FEATURES = envFeatures;
+  features._resetForTests();
+  rmSync(scratchHome, { recursive: true, force: true });
+});
+
 describe('selectVisibleSlashCommands', () => {
   it("returns KAS commands plus slashCommands when agentEngine === 'kas'", () => {
     const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
@@ -27,9 +69,10 @@ describe('selectVisibleSlashCommands', () => {
         expect(visible.find((c) => c.name === cmd.name)).toBeUndefined();
         continue;
       }
-      // feature-gated commands (e.g. /tangent) are hidden unless the
-      // launcher-provided KIRO_ENABLED_FEATURES lists them; tests run with
-      // no features enabled.
+      // Feature-gated commands (e.g. /tangent) are hidden unless the
+      // launcher-provided KIRO_ENABLED_FEATURES lists them; the harness
+      // pins that to none. Workflow commands take a persisted opt-in on top
+      // of the rollout, so being on the rollout alone does not reveal them.
       if (cmd.feature && !features.isEnabled(cmd.feature)) {
         expect(visible.find((c) => c.name === cmd.name)).toBeUndefined();
         continue;
@@ -373,17 +416,32 @@ describe('v2Only commands — hidden in KAS, visible in V2', () => {
 });
 
 describe('/workflow* local-only visibility gate (cloud stopgap, kiro-agent #178)', () => {
+  // Workflow commands need the rollout AND the persisted opt-in, so the
+  // preference is written to a scratch home alongside the feature list.
   const withFeatures = (value: string | undefined, fn: () => void) => {
     const prev = process.env.KIRO_ENABLED_FEATURES;
+    const prevHome = process.env.KIRO_HOME;
+    const home = mkdtempSync(join(tmpdir(), 'slash-visibility-'));
+    mkdirSync(join(home, 'settings'), { recursive: true });
+    writeFileSync(
+      join(home, 'settings', 'cli.json'),
+      JSON.stringify({
+        'chat.enableWorkflows': (value ?? '').includes('workflows'),
+      })
+    );
     if (value === undefined) delete process.env.KIRO_ENABLED_FEATURES;
     else process.env.KIRO_ENABLED_FEATURES = value;
+    process.env.KIRO_HOME = home;
     features._resetForTests();
     try {
       fn();
     } finally {
       if (prev === undefined) delete process.env.KIRO_ENABLED_FEATURES;
       else process.env.KIRO_ENABLED_FEATURES = prev;
+      if (prevHome === undefined) delete process.env.KIRO_HOME;
+      else process.env.KIRO_HOME = prevHome;
       features._resetForTests();
+      rmSync(home, { recursive: true, force: true });
     }
   };
 

@@ -8,6 +8,7 @@ import {
   readOptionalStringSetting,
   writeCliSettings,
   updateCliSetting,
+  toggleBoolSetting,
 } from '../cli-settings.js';
 
 let testDir: string;
@@ -178,6 +179,34 @@ describe('cli-settings', () => {
       writeCliJson({ existing: true });
       await updateCliSetting('b', 2);
       expect(readCliSettings()).toEqual({ existing: true, b: 2 });
+    });
+  });
+
+  describe('toggleBoolSetting', () => {
+    it('uses the fallback when the key is missing or malformed', async () => {
+      writeCliJson({});
+      await expect(toggleBoolSetting('chat.flag', false)).resolves.toBe(true);
+
+      writeCliJson({ 'chat.flag': 'not-a-bool' });
+      await expect(toggleBoolSetting('chat.flag', false)).resolves.toBe(true);
+    });
+
+    it('returns the committed value, not the value it read', async () => {
+      writeCliJson({ 'chat.flag': true });
+      await expect(toggleBoolSetting('chat.flag')).resolves.toBe(false);
+      expect(readCliSettings()['chat.flag']).toBe(false);
+    });
+
+    // Two rapid Space presses. Computing the inverse outside the queue makes
+    // both observe `false` and write `true`, so one press is silently lost.
+    it('two concurrent toggles restore the original value', async () => {
+      writeCliJson({ 'chat.flag': false });
+      const [first, second] = await Promise.all([
+        toggleBoolSetting('chat.flag', false),
+        toggleBoolSetting('chat.flag', false),
+      ]);
+      expect([first, second]).toEqual([true, false]);
+      expect(readCliSettings()['chat.flag']).toBe(false);
     });
   });
 

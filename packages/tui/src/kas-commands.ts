@@ -6,6 +6,7 @@
 // their own needs.
 import type { AvailableCommand, CommandMeta } from './types/commands';
 import { Feature, features } from './features';
+import { resolveWorkflowsPolicy } from './utils/workflows-policy';
 
 export enum KasCommandName {
   Help = '/help',
@@ -456,7 +457,15 @@ export function isKasWorkflowCommandName(name: string): boolean {
 export function filterByEnabledFeatures(
   commands: readonly KasCommand[]
 ): readonly KasCommand[] {
-  return commands.filter((c) => !c.feature || features.isEnabled(c.feature));
+  // Workflows is opt-in, so its commands need the persisted preference on
+  // top of the rollout — advertising /goal to an opted-out user would reach
+  // a KAS that was told the feature is off.
+  const workflows = resolveWorkflowsPolicy();
+  return commands.filter((c) => {
+    if (!c.feature) return true;
+    if (c.feature === Feature.Workflows) return workflows.enabled;
+    return features.isEnabled(c.feature);
+  });
 }
 
 /** The KAS command set for this launch, with rollout-gated commands resolved. */

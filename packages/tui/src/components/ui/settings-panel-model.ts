@@ -23,6 +23,7 @@ import {
 /** Screens (top-level + sub-screens) the panel can display. */
 export type Screen =
   | { type: 'top' }
+  | { type: 'features' }
   | { type: 'history' }
   | { type: 'terminal' }
   | { type: 'terminal:interrupt' };
@@ -35,11 +36,13 @@ export type TopChoice =
   | 'theme'
   | 'terminal'
   | 'keybindings'
-  | 'history';
+  | 'history'
+  | 'features';
 
 export type HistoryChoice = 'session' | 'global';
 export type TerminalChoice = 'newlines' | 'interrupt';
 export type InterruptChoice = 'steer' | 'queue';
+export type FeaturesChoice = 'workflows';
 
 /**
  * The current persisted setting values the row builders need to render the
@@ -51,6 +54,10 @@ export interface SettingsSnapshot {
   historyMode: string;
   /** `chat.defaultInterruptBehavior` — defaults to {@link DEFAULT_INTERRUPT_MODE}. */
   interruptMode: string;
+  /** Whether the workflows rollout reaches this user. Gates the Features row. */
+  workflowsAvailable: boolean;
+  /** `chat.enableWorkflows` — opt-in, so `false` until the user turns it on. */
+  workflowsEnabled: boolean;
 }
 
 /**
@@ -73,7 +80,9 @@ export type PanelAction =
   // Persist the history scope, then close.
   | { type: 'apply-history'; mode: HistoryChoice }
   // Persist the default interrupt behaviour, then close.
-  | { type: 'apply-interrupt'; mode: InterruptChoice };
+  | { type: 'apply-interrupt'; mode: InterruptChoice }
+  // Toggle a feature setting (persists to cli.json, stays on screen).
+  | { type: 'toggle-feature'; feature: FeaturesChoice };
 
 /**
  * Per-screen metadata, declared once so the screen names aren't repeated
@@ -104,6 +113,12 @@ export const SCREEN_CONFIG: Record<ScreenType, ScreenConfig> = {
     description: undefined,
     appliesOnSelect: false,
     back: 'close',
+  },
+  features: {
+    title: '/settings – features',
+    description: 'Toggle experimental and preview features',
+    appliesOnSelect: false,
+    back: 'top',
   },
   terminal: {
     title: '/settings – terminal',
@@ -170,6 +185,29 @@ export const VERBOSITY_ITEM: TopItem = {
     'Tool args, reasoning, output filters, density, subagent sections',
 };
 
+/** Features row — only shown to users the workflows rollout reaches. */
+export const FEATURES_ITEM: TopItem = {
+  id: 'features',
+  label: 'Features',
+  description: 'Experimental and preview feature toggles',
+};
+
+/** Features sub-screen rows. */
+export interface FeatureItem {
+  id: FeaturesChoice;
+  label: string;
+  description: string;
+}
+
+export const FEATURES_ITEMS: readonly FeatureItem[] = [
+  {
+    id: 'workflows',
+    label: 'Workflows',
+    description:
+      'Enables multi-step asynchronous workflows with reusable recipes',
+  },
+];
+
 /** Terminal sub-screen rows. */
 export const TERMINAL_ITEMS: readonly {
   id: TerminalChoice;
@@ -216,7 +254,11 @@ export function buildRows(
       const topItems = rolloutEnabled
         ? [TOP_ITEMS[0]!, VERBOSITY_ITEM, ...TOP_ITEMS.slice(1)]
         : TOP_ITEMS;
-      return topItems.map((item) => ({
+      // Features row is only shown when the workflows rollout reaches the user.
+      const withFeatures = settings.workflowsAvailable
+        ? [...topItems, FEATURES_ITEM]
+        : topItems;
+      return withFeatures.map((item) => ({
         id: item.id,
         values: {
           label: item.label,
@@ -229,6 +271,14 @@ export function buildRows(
         },
       }));
     }
+    case 'features':
+      return FEATURES_ITEMS.map((item) => ({
+        id: item.id,
+        values: {
+          label: `${item.label} ${settings.workflowsEnabled ? 'on' : 'off'}`,
+          description: item.description,
+        },
+      }));
     case 'terminal':
       return TERMINAL_ITEMS.map((item) => ({
         id: item.id,
@@ -313,9 +363,19 @@ export function resolveSelect(screen: Screen, id: string): SelectResult | null {
           return { kind: 'navigate', screen: { type: 'terminal' } };
         case 'history':
           return { kind: 'navigate', screen: { type: 'history' } };
+        case 'features':
+          return { kind: 'navigate', screen: { type: 'features' } };
         default:
           return null;
       }
+    case 'features':
+      if (id === 'workflows') {
+        return {
+          kind: 'action',
+          action: { type: 'toggle-feature', feature: 'workflows' },
+        };
+      }
+      return null;
     case 'terminal':
       switch (id as TerminalChoice) {
         case 'newlines':

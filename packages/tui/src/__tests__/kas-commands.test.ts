@@ -1,22 +1,43 @@
 import { describe, it, expect } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import type { Kiro } from '../kiro';
 import { KasCommandName, type KasCommand } from '../kas-commands';
 import { Feature } from '../features';
 
+/**
+ * Turn on `enabled` for the duration of `callback`. Workflows additionally
+ * needs the persisted opt-in, written to a scratch home so the developer's
+ * own preferences cannot decide the result.
+ */
 async function withEnabledFeatures<T>(
   enabled: readonly Feature[],
   callback: () => T | Promise<T>
 ): Promise<T> {
   const { features } = await import('../features');
   const originalEnv = process.env.KIRO_ENABLED_FEATURES;
+  const originalHome = process.env.KIRO_HOME;
+  const home = mkdtempSync(join(tmpdir(), 'kas-commands-'));
+  mkdirSync(join(home, 'settings'), { recursive: true });
+  writeFileSync(
+    join(home, 'settings', 'cli.json'),
+    JSON.stringify({
+      'chat.enableWorkflows': enabled.includes(Feature.Workflows),
+    })
+  );
   try {
     process.env.KIRO_ENABLED_FEATURES = JSON.stringify(enabled);
+    process.env.KIRO_HOME = home;
     features._resetForTests();
     return await callback();
   } finally {
     if (originalEnv === undefined) delete process.env.KIRO_ENABLED_FEATURES;
     else process.env.KIRO_ENABLED_FEATURES = originalEnv;
+    if (originalHome === undefined) delete process.env.KIRO_HOME;
+    else process.env.KIRO_HOME = originalHome;
     features._resetForTests();
+    rmSync(home, { recursive: true, force: true });
   }
 }
 

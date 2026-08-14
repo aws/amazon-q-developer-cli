@@ -81,6 +81,7 @@ import { getKasCommands, isKasWorkflowCommandName } from '../kas-commands';
 import { KAS_AUTONOMOUS_AGENT_ID } from '../constants/agents';
 import { Feature, features } from '../features';
 import { configResourceSource } from '../utils/config-resource.js';
+import { resolveWorkflowsPolicy } from '../utils/workflows-policy';
 import { readClipboardImage } from '../utils/clipboard-image';
 import {
   modeFromId,
@@ -153,6 +154,17 @@ import {
 const KAS_CLIENT_INFO_META = {
   userAgentTags: ['app/AmazonQ-For-CLI'],
 } as const;
+
+/**
+ * The policy and settings a session would run under, resolved but not yet
+ * adopted. Kept separate from the client's live state so a failed
+ * `session/new` or `session/load` cannot leave the previous session running
+ * under the new session's policy.
+ */
+interface SessionPolicyCandidate {
+  workflowsEnabled: boolean;
+  settings: KasSettings | undefined;
+}
 
 function buildKasClientMeta(kasSettings?: KasSettings) {
   const telemetryEnabled = isTelemetryEnabled();
@@ -359,7 +371,15 @@ export class KasAcpClient extends BaseAcpClient {
   private chatSessionStartedSessions = new Set<string>();
   /** Correlates V3 ToolCall → ToolCallFinished into tool telemetry (KAS-only). */
   private readonly v3ToolCalls: TuiToolCallObserver;
-  private readonly workflowsEnabled = features.isEnabled(Feature.Workflows);
+  /** Fixed for this client's life: the extension subscribes once at
+   *  initialize, so the gate cannot move without leaving the agent told a
+   *  capability nothing is listening for. */
+  private readonly workflowsEnabled = resolveWorkflowsPolicy().enabled;
+  /**
+   * Delivery established over the wire, which has no file backing and so
+   * outranks the persisted preference. Undefined until one is set.
+   */
+  private workflowNotificationDeliveryOverride?: InterruptMode;
   private extensionRuntimeInstance?: KasExtensionRuntime;
   private workflowExtensionInstance?: KasWorkflowExtension;
   private workflowEffectSinkInstance?: ReturnType<
@@ -1637,11 +1657,13 @@ export class KasAcpClient extends BaseAcpClient {
     this.assertActive('session creation');
     // Invalidate any in-flight self-heal from a previous load/create.
     this.configEpoch++;
+    const sessionCandidate = this.buildSessionCandidate();
+    const sessionSettings = sessionCandidate.settings;
     const initialMode = this.initialAgent ?? process.env.KIRO_MODE;
     // Build the `_meta.kiro` payload once, merging mode + execution target so
     // neither overwrites the other (two separate `_meta` spreads would drop one).
     const kiroMeta: Record<string, unknown> = {
-      ...(this.kasSettings && { settings: this.kasSettings }),
+      ...(sessionSettings && { settings: sessionSettings }),
     };
     if (initialMode) kiroMeta.modeId = toKasModeId(initialMode);
     // Effective placement; an unset target == local (the contract default).
@@ -1727,6 +1749,8 @@ export class KasAcpClient extends BaseAcpClient {
       });
     this.createInFlight = false;
     this.assertActive('session creation');
+    // The RPC succeeded, so the candidate policy is now the active one.
+    this.commitSessionPolicy(sessionCandidate);
     this.startedCloudSession = intendedCloudSandbox;
     // The invoke-subagent rendering port is cloud-only: local sessions
     // keep byte-identical rendering (see adapter docs). The test
@@ -1876,9 +1900,11 @@ export class KasAcpClient extends BaseAcpClient {
     // with a remote retry when the local store reports not-found.
     const remoteCapable =
       this.kiroCapabilities.sessionSources?.includes('remote') ?? false;
+    const sessionCandidate = this.buildSessionCandidate();
+    const sessionSettings = sessionCandidate.settings;
     const loadFrom = (source?: 'remote') => {
       const kiroMeta: Record<string, unknown> = {
-        ...(this.kasSettings && { settings: this.kasSettings }),
+        ...(sessionSettings && { settings: sessionSettings }),
         ...(source && { sessionSource: source }),
       };
       return this.kiroClient.loadSession({
@@ -1934,6 +1960,10 @@ export class KasAcpClient extends BaseAcpClient {
     replayPermissionSubscription.dispose();
     this.loadTargetSessionId = null;
     this.sessionId = sessionId;
+    // The load succeeded, so the candidate policy is now the active one. This
+    // precedes wiring listeners so the extension it may create and start is
+    // the one this session runs under.
+    this.commitSessionPolicy(sessionCandidate);
     this.wireSessionListeners(sessionId);
     for (const notification of replayedNotifications) {
       try {
@@ -3236,6 +3266,7 @@ export class KasAcpClient extends BaseAcpClient {
   }
 
   private rememberWorkflowNotificationDelivery(delivery: InterruptMode): void {
+    this.workflowNotificationDeliveryOverride = delivery;
     const current = this.kasSettings?.workflowNotifications;
     const workflowNotifications =
       current !== null && typeof current === 'object' && !Array.isArray(current)
@@ -3249,6 +3280,54 @@ export class KasAcpClient extends BaseAcpClient {
         delivery,
       },
     };
+  }
+
+  /**
+   * Resolve the policy and settings a session would run under, without
+   * adopting either. Nothing here mutates the client, so a session RPC that
+   * fails leaves the active policy untouched.
+   *
+   * A delivery set over the wire is runtime-only state with no file backing,
+   * so it outranks the rebuilt value — but only when one was actually
+   * established. Treating any cached delivery as an override would pin the
+   * first value read and silently discard a newly persisted preference.
+   */
+  private buildSessionCandidate(): SessionPolicyCandidate {
+    // Workflows bind for the life of the client. The extension installs its
+    // lifecycle subscriptions once, at initialize, so a preference picked up
+    // mid-process would announce `enabled: true` to the agent with nothing
+    // listening for the notifications it then sends. Pinning the gate to the
+    // value this client started with keeps the payload and the running
+    // surface in agreement; a new preference applies to the next process.
+    const workflowsEnabled = this.workflowsEnabled;
+    const settings = buildKasSettings();
+    if (settings) {
+      for (const key of ['workflows', 'goal'] as const) {
+        if (settings[key]) settings[key] = { enabled: workflowsEnabled };
+      }
+      const notifications = settings.workflowNotifications;
+      if (notifications && typeof notifications === 'object') {
+        settings.workflowNotifications = {
+          ...(notifications as Record<string, unknown>),
+          enabled: workflowsEnabled,
+          ...(this.workflowNotificationDeliveryOverride && {
+            delivery: this.workflowNotificationDeliveryOverride,
+          }),
+        };
+      }
+    }
+    return { workflowsEnabled, settings };
+  }
+
+  /**
+   * Adopt a candidate once its session RPC has succeeded, so a failed session
+   * cannot leave the previous one running under the new policy. Turning the
+   * feature off disposes the extension; turning it on does not construct one
+   * here, because the subscriptions a start would install outlive the call and
+   * have no owner at this point. Idempotent — only a change touches anything.
+   */
+  private commitSessionPolicy(candidate: SessionPolicyCandidate): void {
+    this.kasSettings = candidate.settings;
   }
 
   async terminateSession(_sessionId: string): Promise<void> {}

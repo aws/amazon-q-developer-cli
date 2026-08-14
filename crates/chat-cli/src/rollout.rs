@@ -376,7 +376,10 @@ mod tests {
             json.contains("\"remote_sandbox\""),
             "remote_sandbox should be enabled for all users: {json}"
         );
-        assert!(!json.contains("\"workflows\""), "workflows must stay dark: {json}");
+        assert!(
+            json.contains("\"workflows\""),
+            "workflows should be enabled for internal nightly: {json}"
+        );
         assert!(
             json.contains("\"memory\""),
             "memory should be enabled for internal nightly: {json}"
@@ -509,18 +512,25 @@ mod tests {
     }
 
     #[test]
-    fn test_workflows_is_present_but_dark_in_all_real_builds() {
+    fn test_workflows_enabled_for_internal_nightly() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(
             features.contains_key(<&str>::from(Feature::Workflows)),
             "workflows must be declared in rollout.json"
         );
 
-        for (is_internal, is_nightly) in [(false, false), (false, true), (true, false), (true, true)] {
+        // Enabled for internal nightly only (same shape as memory/cloud_config).
+        for (is_internal, is_nightly, expected) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, false),
+            (true, true, true),
+        ] {
             let rollout = Rollout::new_for_test(is_internal, is_nightly);
-            assert!(
-                !rollout.is_enabled(Feature::Workflows),
-                "workflows must be dark for internal={is_internal}, nightly={is_nightly}"
+            assert_eq!(
+                rollout.is_enabled(Feature::Workflows),
+                expected,
+                "workflows enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
     }

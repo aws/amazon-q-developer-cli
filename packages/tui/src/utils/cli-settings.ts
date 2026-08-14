@@ -135,6 +135,28 @@ export async function updateCliSettingWith(
   await next;
 }
 
+/**
+ * Flip a boolean setting inside the serialized write queue and return the value
+ * that was committed.
+ *
+ * Reading the current value first and enqueueing a precomputed inverse is what
+ * makes two rapid presses collapse into one: both observe the same value, both
+ * write the same result, and both report success. The caller wants the
+ * committed value anyway — for the row it repaints and the message it shows —
+ * so it is returned rather than re-read outside the queue.
+ */
+export async function toggleBoolSetting(
+  key: string,
+  fallback = false
+): Promise<boolean> {
+  let committed = fallback;
+  await updateCliSettingWith(key, (prev) => {
+    committed = !(typeof prev === 'boolean' ? prev : fallback);
+    return committed;
+  });
+  return committed;
+}
+
 /** Read a boolean setting with a fallback when the key is missing or malformed. */
 export function readBoolSetting(key: string, fallback = false): boolean {
   const val = readCliSettings()[key];

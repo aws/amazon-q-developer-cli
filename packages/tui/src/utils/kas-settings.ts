@@ -14,6 +14,7 @@ import { features, Feature } from '../features';
 import { logger } from './logger';
 import { Settings } from '../constants/settings';
 import { parseInterruptMode } from '../constants/interrupt-mode';
+import { resolveWorkflowsPolicy } from './workflows-policy';
 
 /**
  * The shape sent on initialize and each session/new or session/load request.
@@ -32,8 +33,6 @@ export type KasSettings = Record<string, unknown>;
  */
 const GATED_FEATURES: ReadonlyArray<[Feature, string]> = [
   [Feature.Memory, 'memoryEnable'],
-  [Feature.Workflows, 'workflows'],
-  [Feature.Workflows, 'goal'],
 ];
 
 /** Apply feature-gated settings to the settings object. */
@@ -52,7 +51,7 @@ function applyGatedFeatures(settings: KasSettings): void {
 export function buildKasSettings(): KasSettings | undefined {
   const raw = readCliSettings();
   const settings: KasSettings = {};
-  const workflowsEnabled = features.isEnabled(Feature.Workflows);
+  const workflows = resolveWorkflowsPolicy();
 
   // ─── CLI defaults: tools that were always-on for CLI before settings-driven gating ───
   // These default to enabled unless explicitly disabled by the user.
@@ -105,6 +104,15 @@ export function buildKasSettings(): KasSettings | undefined {
     boolMappings.push(['chat.enableC2s', 'c2s']);
   }
 
+  // Workflows is opt-in: being in the rollout cohort only makes the
+  // /settings toggle reachable, it does not turn the feature on. 'goal' and
+  // 'workflowNotifications' follow the same switch so opting out disables
+  // the whole surface rather than half of it.
+  if (workflows.available) {
+    settings['workflows'] = { enabled: workflows.enabled };
+    settings['goal'] = { enabled: workflows.enabled };
+  }
+
   for (const [cliKey, agentKey] of boolMappings) {
     const val = raw[cliKey];
     if (typeof val === 'boolean') {
@@ -121,7 +129,7 @@ export function buildKasSettings(): KasSettings | undefined {
 
   const rawInterruptMode = raw[Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR];
   settings.workflowNotifications = {
-    enabled: workflowsEnabled,
+    enabled: workflows.enabled,
     delivery: parseInterruptMode(
       typeof rawInterruptMode === 'string' ? rawInterruptMode : undefined
     ),

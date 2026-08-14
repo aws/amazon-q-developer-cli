@@ -288,6 +288,10 @@ mock.module('../utils/tui-telemetry-observer', () => ({
   recordTuiCloudConfigDiagnostics: mockRecordTuiCloudConfigDiagnostics,
   recordTuiCloudConfigSource: mockRecordTuiCloudConfigSource,
   recordTuiWorkflowRestoreSummary: mockRecordTuiWorkflowRestoreSummary,
+  // A module mock replaces the module for every file loaded after this one, so
+  // an export missing here is a load-time SyntaxError in any later file that
+  // imports it — the omission takes that file's whole suite out silently.
+  recordTuiWorkflowControl: mock(() => {}),
   modeFromId: (id?: string) => (id && id.length > 0 ? id : 'interactive'),
   resultFromStatus: (status?: string) => {
     switch (status) {
@@ -400,6 +404,15 @@ function createKasRoutingStore() {
 }
 
 let kasRoutingStore = createKasRoutingStore();
+/**
+ * Clients constructed by a case, closed after it. Committing a session policy
+ * can START the workflow extension, which subscribes to the runtime and holds
+ * those handles until `close()` disposes them. A case that leaves one open
+ * keeps the process alive, so the whole file appears to hang rather than
+ * failing — and the timeout lands on whichever suite happened to start last.
+ */
+const openClients: KasAcpClient[] = [];
+
 class KasAcpClient extends RawKasAcpClient {
   constructor(options: Partial<KasAcpClientOptions> = {}) {
     super({
@@ -408,8 +421,23 @@ class KasAcpClient extends RawKasAcpClient {
       kasSubagentRoutingStore: kasRoutingStore.getState().kasSubagentRouting,
       spawnProcess: mockSpawn,
     });
+    openClients.push(this);
   }
 }
+
+/** `close()` is idempotent, so closing an already-closed client is a no-op. */
+function closeOpenClients(): void {
+  for (const client of openClients.splice(0)) {
+    try {
+      client.close();
+    } catch {
+      // A case may have already torn this client down; nothing to salvage.
+    }
+  }
+}
+
+// File-level so it covers every describe block, including ones added later.
+afterEach(closeOpenClients);
 
 function freshMocks() {
   kasRoutingStore = createKasRoutingStore();
@@ -464,10 +492,23 @@ function freshMocks() {
   });
 }
 
+/**
+ * Workflows is live only when the rollout reaches the user AND they opted in,
+ * so a test that wants the feature on has to establish both.
+ */
 function setWorkflowsEnabled(enabled: boolean) {
   process.env.KIRO_ENABLED_FEATURES = JSON.stringify(
     enabled ? [Feature.Workflows] : []
   );
+  writeTestCliJson({ 'chat.enableWorkflows': enabled });
+  features._resetForTests();
+}
+
+/** Put the user on the rollout, then set only the opt-in — the two halves the
+ *  policy keeps apart, which `setWorkflowsEnabled` moves together. */
+function setWorkflowsOptIn(optedIn: boolean) {
+  process.env.KIRO_ENABLED_FEATURES = JSON.stringify([Feature.Workflows]);
+  writeTestCliJson({ 'chat.enableWorkflows': optedIn });
   features._resetForTests();
 }
 
@@ -551,8 +592,9 @@ describe('KasAcpClient', () => {
     origKasPath = process.env.KIRO_KAS_SERVER_PATH;
     origEnabledFeatures = process.env.KIRO_ENABLED_FEATURES;
     process.env.KIRO_KAS_SERVER_PATH = '/fake/acp-server.js';
-    setWorkflowsEnabled(false);
+    // freshMocks() establishes the scratch HOME that the opt-in is written to.
     freshMocks();
+    setWorkflowsEnabled(false);
   });
 
   afterEach(() => {
@@ -631,7 +673,10 @@ describe('KasAcpClient', () => {
 
   it('repeats the persisted notification delivery for new and loaded sessions', async () => {
     setWorkflowsEnabled(true);
-    writeTestCliJson({ 'chat.defaultInterruptBehavior': 'queue' });
+    writeTestCliJson({
+      'chat.enableWorkflows': true,
+      'chat.defaultInterruptBehavior': 'queue',
+    });
     const client = new KasAcpClient({
       stream: {
         readable: new ReadableStream(),
@@ -669,6 +714,161 @@ describe('KasAcpClient', () => {
       })
     );
   });
+
+  // The opt-in is written to disk by /settings, not handed to this client, so
+  // a snapshot taken once in the constructor would keep sending the old
+  // Workflows bind for the life of the client: the extension subscribes once
+  // at initialize, so a preference picked up mid-process would announce
+  // `enabled: true` with nothing listening. The new value applies to the next
+  // process, not the next session.
+  it('keeps the policy it started with when the opt-in changes mid-process', async () => {
+    setWorkflowsOptIn(false);
+    const client = new KasAcpClient();
+    await client.initialize();
+
+    await client.newSession();
+    expect(
+      mockKiroNewSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflows
+    ).toEqual({ enabled: false });
+
+    // Opting in now must NOT reach a session this client starts later.
+    setWorkflowsOptIn(true);
+
+    await client.newSession();
+    expect(
+      mockKiroNewSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+    ).toEqual(
+      expect.objectContaining({
+        workflows: { enabled: false },
+        goal: { enabled: false },
+      })
+    );
+
+    await client.loadSession('later-session');
+    expect(
+      mockKiroLoadSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflows
+    ).toEqual({ enabled: false });
+  });
+
+  // A client that started opted IN keeps serving workflows for its lifetime,
+  // so the payload and the running extension never disagree.
+  it('keeps workflows live for a client that started opted in', async () => {
+    setWorkflowsOptIn(true);
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    setWorkflowsOptIn(false);
+
+    await client.newSession();
+    expect(
+      mockKiroNewSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflows
+    ).toEqual({ enabled: true });
+  });
+
+  // The delivery carried across a session boundary is runtime-only state. If
+  // any cached delivery counted as an override, the first value read would be
+  // pinned and a newly persisted preference silently dropped.
+  it('sends a newly persisted interrupt mode rather than the previous snapshot', async () => {
+    setWorkflowsEnabled(true);
+    writeTestCliJson({
+      'chat.enableWorkflows': true,
+      'chat.defaultInterruptBehavior': 'steer',
+    });
+    const client = new KasAcpClient({
+      stream: {
+        readable: new ReadableStream(),
+        writable: new WritableStream(),
+      },
+    });
+    expect(
+      (capturedKiroClientConfig?.clientMeta?.settings as any)
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'steer' });
+
+    // User changes interrupt behaviour in /settings after construction.
+    writeTestCliJson({
+      'chat.enableWorkflows': true,
+      'chat.defaultInterruptBehavior': 'queue',
+    });
+
+    await client.newSession();
+    expect(
+      mockKiroNewSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'queue' });
+
+    await client.loadSession('later-session');
+    expect(
+      mockKiroLoadSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'queue' });
+  });
+
+  // A confirmed runtime override still wins over the persisted value — the
+  // fix above must not have traded one bug for its mirror image.
+  it('keeps a confirmed runtime delivery override across later sessions', async () => {
+    setWorkflowsOptIn(true);
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+
+    await client.setWorkflowNotificationDelivery('queue' as any);
+
+    await client.newSession();
+    expect(
+      mockKiroNewSession.mock.calls.at(-1)?.[0]?._meta?.kiro?.settings
+        ?.workflowNotifications
+    ).toEqual({ enabled: true, delivery: 'queue' });
+  });
+
+  // The candidate policy must not be adopted until its session actually
+  // starts; otherwise a rejected RPC leaves the previous session running
+  // under the failed session's policy.
+  it('keeps the active policy when session/new rejects', async () => {
+    setWorkflowsOptIn(true);
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    const startedExt = (client as any).workflowExtensionInstance;
+    expect(startedExt).toBeDefined();
+
+    // Opt out, then fail the session that would have adopted the opt-out.
+    setWorkflowsOptIn(false);
+    mockKiroNewSession.mockImplementationOnce(() => {
+      throw new Error('session/new rejected');
+    });
+    await expect(client.newSession()).rejects.toThrow('session/new rejected');
+
+    expect((client as any).workflowsEnabled).toBe(true);
+    expect((client as any).workflowExtensionInstance).toBe(startedExt);
+    expect((client as any).kasSettings?.workflows).toEqual({ enabled: true });
+  });
+
+  it('keeps the active policy when session/load rejects', async () => {
+    setWorkflowsOptIn(true);
+    const client = new KasAcpClient();
+    await client.initialize();
+    await client.newSession();
+    const startedExt = (client as any).workflowExtensionInstance;
+
+    setWorkflowsOptIn(false);
+    mockKiroLoadSession.mockImplementationOnce(() => {
+      throw new Error('session/load rejected');
+    });
+    await expect(client.loadSession('doomed')).rejects.toThrow(
+      'session/load rejected'
+    );
+
+    expect((client as any).workflowsEnabled).toBe(true);
+    expect((client as any).workflowExtensionInstance).toBe(startedExt);
+    expect((client as any).kasSettings?.workflows).toEqual({ enabled: true });
+  });
+
+  // Same boundary, the event side: a client that keeps handling workflow
 
   it('applies a pre-session delivery toggle to new and loaded sessions', async () => {
     setWorkflowsEnabled(true);

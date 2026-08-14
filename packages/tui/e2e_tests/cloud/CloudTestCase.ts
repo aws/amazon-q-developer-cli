@@ -59,6 +59,12 @@ export interface CloudHarnessOptions {
    * not overridable — tests state seams here, not transport.
    */
   env?: Record<string, string>;
+  /**
+   * User settings written to the sandbox `cli.json` before launch, for
+   * surfaces gated on a persisted opt-in. Merged over the harness defaults
+   * (`chat.ui.mode`), so a test only states the keys it depends on.
+   */
+  settings?: Record<string, unknown>;
   testName: string;
 }
 
@@ -93,6 +99,7 @@ export class CloudHarness {
         .withTestName(opts.testName)
         .withKasEngine();
       if (opts.cwd) builder.withCwd(opts.cwd);
+      if (opts.settings) builder.withGlobalSettings(opts.settings);
       builder
         .withCliArgs(...(opts.cliArgs ?? ['--cloud']))
         .withEnv({

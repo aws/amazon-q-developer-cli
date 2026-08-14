@@ -1,4 +1,7 @@
 import { describe, it, expect, mock, jest, afterAll } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import {
   createAppStore,
   MessageRole,
@@ -372,8 +375,17 @@ describe('Stream event handler workflow lifecycle', () => {
 describe('/workflow command lifecycle', () => {
   it('persists the started system row in the full TUI', async () => {
     const originalEnabledFeatures = process.env.KIRO_ENABLED_FEATURES;
+    const originalHome = process.env.KIRO_HOME;
+    // Workflows needs the rollout AND the persisted opt-in to be live.
+    const home = mkdtempSync(join(tmpdir(), 'workflow-lifecycle-'));
+    mkdirSync(join(home, 'settings'), { recursive: true });
+    writeFileSync(
+      join(home, 'settings', 'cli.json'),
+      JSON.stringify({ 'chat.enableWorkflows': true })
+    );
     try {
       process.env.KIRO_ENABLED_FEATURES = JSON.stringify([Feature.Workflows]);
+      process.env.KIRO_HOME = home;
       features._resetForTests();
       const mockKiro = new Kiro();
       mockKiro.listWorkflowRecipes = mock(async () => [
@@ -426,7 +438,10 @@ describe('/workflow command lifecycle', () => {
       } else {
         process.env.KIRO_ENABLED_FEATURES = originalEnabledFeatures;
       }
+      if (originalHome === undefined) delete process.env.KIRO_HOME;
+      else process.env.KIRO_HOME = originalHome;
       features._resetForTests();
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });

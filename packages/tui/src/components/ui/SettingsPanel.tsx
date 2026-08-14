@@ -28,11 +28,14 @@ import { useAppStore } from '../../stores/app-store.js';
 import { Settings } from '../../constants/settings.js';
 import {
   readCliSettings,
+  readBoolSetting,
   readStringSetting,
+  toggleBoolSetting,
   writeCliSettings,
 } from '../../utils/cli-settings.js';
 import { setupTerminal } from '../../utils/terminal-setup.js';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
+import { Feature, features } from '../../features.js';
 import {
   type Screen,
   type HistoryChoice,
@@ -69,6 +72,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   const showAlert = useAppStore((state) => state.showTransientAlert);
   const kiro = useAppStore((state) => state.kiro);
   const handleUserInput = useAppStore((state) => state.handleUserInput);
+  const agentEngine = useAppStore((state) => state.agentEngine);
   const glyphs = useGlyphs();
 
   const [screen, setScreen] = useState<Screen>({ type: 'top' });
@@ -184,6 +188,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
         case 'apply-interrupt':
           applyInterruptMode(action.mode);
           return;
+        case 'toggle-feature': {
+          void toggleBoolSetting(Settings.CHAT_ENABLE_WORKFLOWS, false).then(
+            (next) => {
+              // Only the row repaints. A running client keeps the workflow
+              // gate it started with, so re-deriving the command list here
+              // would offer controls its agent was never told about.
+              setWorkflowsEnabled(next);
+              showAlert({
+                message: `workflows ${next ? 'enabled' : 'disabled'} — restart kiro to apply`,
+                status: 'success',
+                autoHideMs: 3000,
+              });
+            },
+            () => {
+              showAlert({
+                message: `Failed to save ${action.feature} setting`,
+                status: 'error',
+                autoHideMs: 3000,
+              });
+            }
+          );
+          return;
+        }
       }
     },
     [
@@ -198,12 +225,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
       runTerminalSetup,
       applyHistoryMode,
       applyInterruptMode,
+      showAlert,
     ]
   );
 
   // ─── Rows ──────────────────────────────────────────────────────
-  // Side effect (reading persisted settings) lives here; `buildRows`
-  // itself is pure and takes the resolved snapshot.
+  // The rollout decides whether the Features row exists at all; the persisted
+  // opt-in decides what it reads. The engine is a condition too: every
+  // consumer of this preference is KAS-only, so on V2 the row would toggle,
+  // report success, and change nothing in this session or any later one.
+  const workflowsAvailable =
+    features.isEnabled(Feature.Workflows) && agentEngine === 'kas';
+  const [workflowsEnabled, setWorkflowsEnabled] = useState(() =>
+    readBoolSetting(Settings.CHAT_ENABLE_WORKFLOWS, false)
+  );
   const rows: ExplorerRow[] = useMemo(
     () =>
       buildRows(
@@ -214,11 +249,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
             Settings.CHAT_DEFAULT_INTERRUPT_BEHAVIOR,
             DEFAULT_INTERRUPT_MODE
           ),
+          workflowsAvailable,
+          workflowsEnabled,
         },
         process.env.KIRO_LITE_ROLLOUT_ENABLED === '1',
         glyphs.dotFilled
       ),
-    [screen, glyphs.dotFilled]
+    [screen, glyphs.dotFilled, workflowsAvailable, workflowsEnabled]
   );
 
   // ─── Selection ──────────────────────────────────────────────────
@@ -252,9 +289,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
   const title = screenTitle(screen);
   const description = screenDescription(screen);
 
-  // Both screens use the same [label, description] layout. The active
-  // marker is folded into the label column (with a `●` suffix) by
-  // `buildRows`.
+  // All screens use the same [label, description] two-column layout.
+  // Features fold "on"/"off" into the label; history/interrupt fold a `●`
+  // marker — both rendered by buildRows.
   const columns = [
     { key: 'label', label: '' },
     { key: 'description', label: '' },
@@ -280,7 +317,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
               },
               { key: glyphs.enter, label: 'to apply and close' },
             ]
-          : undefined // Use Explorer's defaults: navigate · select.
+          : screen.type === 'features'
+            ? [
+                {
+                  key: `${glyphs.arrowUp}${glyphs.arrowDown}`,
+                  label: 'to navigate',
+                },
+                { key: glyphs.enter, label: 'to toggle' },
+              ]
+            : undefined // Use Explorer's defaults: navigate · select.
       }
       onSelect={handleSelect}
       onClose={handleEsc}

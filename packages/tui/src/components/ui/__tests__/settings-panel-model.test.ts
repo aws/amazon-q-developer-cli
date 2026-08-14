@@ -26,6 +26,8 @@ import {
 const defaultSnapshot: SettingsSnapshot = {
   historyMode: 'session',
   interruptMode: 'steer',
+  workflowsAvailable: false,
+  workflowsEnabled: false,
 };
 
 /** Pull the id list off a screen's rows for terse reachability assertions. */
@@ -159,6 +161,51 @@ describe('settings-panel-model', () => {
     ])('%s marks active when %s=%s', (type, key, value, labels) => {
       const rows = buildRows({ type }, { ...defaultSnapshot, [key]: value });
       expect(rows.map((r) => r.values.label)).toEqual(labels);
+    });
+  });
+
+  describe('features screen', () => {
+    const snap = (over: Partial<SettingsSnapshot> = {}): SettingsSnapshot => ({
+      ...defaultSnapshot,
+      ...over,
+    });
+
+    // The row is the only way into the screen, so the rollout gate lives here.
+    it('hides the Features row unless the rollout reaches the user', () => {
+      expect(
+        buildRows({ type: 'top' }, snap({ workflowsAvailable: false })).map(
+          (r) => r.id
+        )
+      ).not.toContain('features');
+      expect(
+        buildRows({ type: 'top' }, snap({ workflowsAvailable: true })).map(
+          (r) => r.id
+        )
+      ).toContain('features');
+    });
+
+    // Opting in is what flips the label, not the rollout.
+    it.each<[boolean, string]>([
+      [false, 'Workflows off'],
+      [true, 'Workflows on'],
+    ])('renders %s as "%s"', (enabled, label) => {
+      const rows = buildRows(
+        { type: 'features' },
+        snap({ workflowsAvailable: true, workflowsEnabled: enabled })
+      );
+      expect(rows.map((r) => r.values.label)).toEqual([label]);
+    });
+
+    it('routes the workflows row to the toggle action', () => {
+      expect(resolveSelect({ type: 'features' }, 'workflows')).toEqual({
+        kind: 'action',
+        action: { type: 'toggle-feature', feature: 'workflows' },
+      });
+    });
+
+    it('returns to top on ESC and stays open on select', () => {
+      expect(resolveBack({ type: 'features' })).toEqual({ type: 'top' });
+      expect(appliesOnSelect({ type: 'features' })).toBe(false);
     });
   });
 

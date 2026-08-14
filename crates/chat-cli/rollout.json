@@ -56,8 +56,8 @@
     "channel": "nightly"
   },
   "workflows": {
-    "description": "KAS dynamic workflows and TUI workflow management. Dark-shipped at 0% until release certification is complete; enable locally through KIRO_ENABLED_FEATURES.",
-    "treatment_percent": 0,
+    "description": "KAS dynamic workflows and TUI workflow management. Internal nightly reaches the /settings features toggle; the feature stays off until the user opts in via chat.enableWorkflows.",
+    "treatment_percent": 100,
     "segment": "internal",
     "channel": "nightly"
   },
