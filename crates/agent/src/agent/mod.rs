@@ -1039,16 +1039,7 @@ impl Agent {
             let hooks = hooks
                 .into_iter()
                 .enumerate()
-                .map(|(index, hook)| {
-                    (
-                        HookExecutionId {
-                            hook,
-                            tool_context: None,
-                            index,
-                        },
-                        None,
-                    )
-                })
+                .map(|(index, hook)| (HookExecutionId::new(hook, None, index), None))
                 .collect();
             self.start_hooks_execution(hooks, HookStage::AgentSpawn, None, None)
                 .await;
@@ -2396,8 +2387,9 @@ impl Agent {
             | ActiveState::Compacting { .. }
             | ActiveState::WaitingForApproval(_) => {},
             ActiveState::ExecutingHooks(executing_hooks) => {
-                for hook in executing_hooks.hooks() {
-                    self.task_executor.cancel_hook_execution(&hook.id);
+                let hook_ids: Vec<_> = executing_hooks.hooks().iter().map(|hook| hook.id.clone()).collect();
+                for hook_id in hook_ids {
+                    self.task_executor.cancel_hook_execution(&hook_id);
                 }
             },
             ActiveState::ExecutingTools(executing_tools) => {
@@ -2605,16 +2597,7 @@ impl Agent {
                     let hooks = hooks
                         .into_iter()
                         .enumerate()
-                        .map(|(index, hook)| {
-                            (
-                                HookExecutionId {
-                                    hook,
-                                    tool_context: None,
-                                    index,
-                                },
-                                None,
-                            )
-                        })
+                        .map(|(index, hook)| (HookExecutionId::new(hook, None, index), None))
                         .collect();
                     self.start_hooks_execution(
                         hooks,
@@ -2955,16 +2938,7 @@ impl Agent {
             let hooks = hooks
                 .into_iter()
                 .enumerate()
-                .map(|(index, hook)| {
-                    (
-                        HookExecutionId {
-                            hook,
-                            tool_context: None,
-                            index,
-                        },
-                        None,
-                    )
-                })
+                .map(|(index, hook)| (HookExecutionId::new(hook, None, index), None))
                 .collect();
             let prompt = args.text();
             self.start_hooks_execution(hooks, HookStage::PrePrompt { args }, prompt, None)
@@ -3486,11 +3460,7 @@ impl Agent {
                     .enumerate()
                     .map(|(index, h)| {
                         (
-                            HookExecutionId {
-                                hook: h.clone(),
-                                tool_context: Some((block, tool).into()),
-                                index,
-                            },
+                            HookExecutionId::new(h.clone(), Some((block, tool).into()), index),
                             Some((block.clone(), tool.clone())),
                         )
                     }),
@@ -3686,13 +3656,11 @@ impl Agent {
                     .enumerate()
                     .map(|(index, h)| {
                         (
-                            HookExecutionId {
-                                hook: h.clone(),
-                                tool_context: Some(
-                                    (&executing_tool.tool_use_block, &executing_tool.tool, &output).into(),
-                                ),
+                            HookExecutionId::new(
+                                h.clone(),
+                                Some((&executing_tool.tool_use_block, &executing_tool.tool, &output).into()),
                                 index,
-                            },
+                            ),
                             Some((executing_tool.tool_use_block.clone(), executing_tool.tool.clone())),
                         )
                     }),
@@ -3735,9 +3703,9 @@ impl Agent {
             return Ok(());
         };
 
-        debug_assert!(executing_hooks.get_hook(&id).is_some());
-        if let Some(hook) = executing_hooks.get_hook_mut(&id) {
-            hook.result = Some(result.clone());
+        if !executing_hooks.record_result(&id, &result) {
+            debug!(?id, "ignoring stale hook completion from an older execution generation");
+            return Ok(());
         }
 
         // Cache the hook if it's a successful agent spawn hook.
@@ -5541,12 +5509,16 @@ impl ExecutingHooks {
         &self.hooks
     }
 
-    fn get_hook(&self, id: &HookExecutionId) -> Option<&ExecutingHook> {
-        self.hooks.iter().find(|hook| &hook.id == id)
-    }
-
     fn get_hook_mut(&mut self, id: &HookExecutionId) -> Option<&mut ExecutingHook> {
         self.hooks.iter_mut().find(|hook| &hook.id == id)
+    }
+
+    fn record_result(&mut self, id: &HookExecutionId, result: &HookResult) -> bool {
+        let Some(hook) = self.get_hook_mut(id) else {
+            return false;
+        };
+        hook.result = Some(result.clone());
+        true
     }
 
     fn all_hooks_finished(&self) -> bool {
@@ -5666,6 +5638,33 @@ fn recover_pending_summary(name: &str, input: &serde_json::Value) -> Option<Summ
 mod tests {
     use super::*;
     use crate::util::test::TestBase;
+
+    #[test]
+    fn stale_hook_completion_does_not_finish_new_generation() {
+        let hook = Hook {
+            trigger: HookTrigger::UserPromptSubmit,
+            config: serde_json::from_value(serde_json::json!({ "command": "echo hook" })).unwrap(),
+        };
+        let stale_id = HookExecutionId::new(hook.clone(), None, 0);
+        let current_id = HookExecutionId::new(hook, None, 0);
+        let mut executing = ExecutingHooks {
+            hooks: vec![ExecutingHook {
+                id: current_id.clone(),
+                tool_use_block: None,
+                tool: None,
+                result: None,
+            }],
+            stage: HookStage::AgentSpawn,
+        };
+        let stale_result = HookResult::Tool {
+            output: "stale".to_string(),
+        };
+
+        assert!(!executing.record_result(&stale_id, &stale_result));
+        assert!(executing.hooks[0].result.is_none());
+        assert_eq!(executing.hooks[0].id, current_id);
+        assert!(!executing.all_hooks_finished());
+    }
 
     /// A wait that lost its events must release a server the manager can still
     /// answer for, and must not hold for one it can never answer for.

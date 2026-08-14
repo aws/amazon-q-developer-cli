@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -59,6 +62,11 @@ pub struct TaskExecutor {
     execute_result_rx: mpsc::Receiver<ExecutorResult>,
     executing_tools: HashMap<ToolExecutionId, ExecutingTool>,
     executing_hooks: HashMap<HookExecutionId, ExecutingHook>,
+    /// Hook starts accepted into the executor channel but not yet consumed.
+    queued_hooks: HashSet<HookExecutionId>,
+    /// Queued starts cancelled before consumption. Entries are a subset of
+    /// `queued_hooks` and are removed with the corresponding queued request.
+    cancelled_hooks: HashSet<HookExecutionId>,
 
     hooks_cache: HashMap<Hook, CachedHook>,
 
@@ -79,6 +87,8 @@ impl TaskExecutor {
             execute_result_rx,
             executing_tools: HashMap::new(),
             executing_hooks: HashMap::new(),
+            queued_hooks: HashSet::new(),
+            cancelled_hooks: HashSet::new(),
             hooks_cache: HashMap::new(),
             write_mutex: Arc::new(Mutex::new(())),
             sys_provider,
@@ -115,7 +125,12 @@ impl TaskExecutor {
     ///
     /// Note that [HookExecutionId] actually contains the hook config itself.
     pub async fn start_hook_execution(&mut self, req: StartHookExecution) {
-        let _ = self.execute_request_tx.send(ExecuteRequest::Hook(req)).await;
+        let id = req.id.clone();
+        if self.execute_request_tx.send(ExecuteRequest::Hook(req)).await.is_ok() {
+            // This executor owns both channel ends. Recording after a successful
+            // send means only accepted starts can acquire cancellation state.
+            self.queued_hooks.insert(id);
+        }
     }
 
     /// Cancels an executing tool
@@ -126,11 +141,14 @@ impl TaskExecutor {
         }
     }
 
-    /// Cancels an executing tool
-    pub fn cancel_hook_execution(&self, id: &HookExecutionId) {
-        // Removing the executing hook will be done on the result handler.
+    /// Cancels a running hook or records cancellation for an accepted queued start.
+    pub fn cancel_hook_execution(&mut self, id: &HookExecutionId) {
+        // Removing a running hook is done by the result handler. Unknown and
+        // completed ids intentionally leave no cancellation tombstone.
         if let Some(v) = self.executing_hooks.get(id) {
             v.cancel_token.cancel();
+        } else if self.queued_hooks.contains(id) {
+            self.cancelled_hooks.insert(id.clone());
         }
     }
 
@@ -191,6 +209,12 @@ impl TaskExecutor {
     }
 
     fn handle_hook_execute_request(&mut self, req: StartHookExecution) {
+        self.queued_hooks.remove(&req.id);
+        if self.cancelled_hooks.remove(&req.id) {
+            debug!(id = ?req.id, "dropping hook start cancelled before executor dispatch");
+            return;
+        }
+
         // Handle cached hooks immediately.
         if let Some(cached) = self.get_cached_hook(&req.id.hook) {
             debug!(?cached, "found cached hook");
@@ -293,7 +317,6 @@ impl TaskExecutor {
                 }
             },
             ExecutorResult::Hook(result) => {
-                debug_assert!(self.executing_hooks.contains_key(result.id()));
                 if let Some(x) = self.executing_hooks.remove(result.id()) {
                     self.event_buf
                         .push(TaskExecutorEvent::HookExecutionEnd(HookExecutionEndEvent {
@@ -303,6 +326,8 @@ impl TaskExecutor {
                             end_time: Utc::now(),
                             duration: Instant::now().duration_since(x.start_instant),
                         }));
+                } else {
+                    debug!(id = ?result.id(), "ignoring stale hook executor result");
                 }
             },
         }
@@ -506,6 +531,25 @@ pub struct HookExecutionId {
     /// Index to disambiguate multiple instances of the same hook config.
     #[serde(default)]
     pub index: usize,
+    /// Private generation that distinguishes repeated invocations with the
+    /// same hook, tool context, and index.
+    #[serde(default = "new_hook_execution_id")]
+    execution_id: String,
+}
+
+impl HookExecutionId {
+    pub fn new(hook: Hook, tool_context: Option<ToolContext>, index: usize) -> Self {
+        Self {
+            hook,
+            tool_context,
+            index,
+            execution_id: new_hook_execution_id(),
+        }
+    }
+}
+
+fn new_hook_execution_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -724,6 +768,43 @@ mod tests {
         }
     }
 
+    fn test_hook() -> Hook {
+        Hook {
+            trigger: HookTrigger::UserPromptSubmit,
+            config: serde_json::from_str(TEST_COMMAND_HOOK).unwrap(),
+        }
+    }
+
+    #[test]
+    fn hook_execution_id_generations_are_unique() {
+        let hook = test_hook();
+        let first = HookExecutionId::new(hook.clone(), None, 0);
+        let second = HookExecutionId::new(hook, None, 0);
+
+        assert_ne!(first, second);
+        assert_ne!(first.execution_id, second.execution_id);
+        assert!(uuid::Uuid::parse_str(&first.execution_id).is_ok());
+        assert!(uuid::Uuid::parse_str(&second.execution_id).is_ok());
+    }
+
+    #[test]
+    fn legacy_hook_execution_id_deserializes_with_safe_generation() {
+        let legacy = serde_json::json!({
+            "hook": {
+                "trigger": "userPromptSubmit",
+                "config": { "command": "echo legacy" }
+            },
+            "toolContext": null,
+            "index": 0
+        });
+
+        let first: HookExecutionId = serde_json::from_value(legacy.clone()).unwrap();
+        let second: HookExecutionId = serde_json::from_value(legacy).unwrap();
+        assert_ne!(first.execution_id, second.execution_id);
+        assert!(uuid::Uuid::parse_str(&first.execution_id).is_ok());
+        assert!(uuid::Uuid::parse_str(&second.execution_id).is_ok());
+    }
+
     #[tokio::test]
     #[cfg_attr(windows, ignore)]
     async fn test_hook_execution_with_assistant_response() {
@@ -745,14 +826,14 @@ mod tests {
 
         executor
             .start_hook_execution(StartHookExecution {
-                id: HookExecutionId {
-                    hook: Hook {
+                id: HookExecutionId::new(
+                    Hook {
                         trigger: HookTrigger::Stop,
                         config,
                     },
-                    tool_context: None,
-                    index: 0,
-                },
+                    None,
+                    0,
+                ),
                 prompt: None,
                 assistant_response: Some("Here is the assistant response.".to_string()),
                 session_id: None,
@@ -789,14 +870,14 @@ mod tests {
 
         executor
             .start_hook_execution(StartHookExecution {
-                id: HookExecutionId {
-                    hook: Hook {
+                id: HookExecutionId::new(
+                    Hook {
                         trigger: HookTrigger::UserPromptSubmit,
                         config: serde_json::from_str(TEST_COMMAND_HOOK).unwrap(),
                     },
-                    tool_context: None,
-                    index: 0,
-                },
+                    None,
+                    0,
+                ),
                 prompt: None,
                 assistant_response: None,
                 session_id: None,
@@ -852,14 +933,14 @@ mod tests {
 
         executor
             .start_hook_execution(StartHookExecution {
-                id: HookExecutionId {
-                    hook: Hook {
+                id: HookExecutionId::new(
+                    Hook {
                         trigger: HookTrigger::AgentSpawn,
                         config,
                     },
-                    tool_context: None,
-                    index: 0,
-                },
+                    None,
+                    0,
+                ),
                 prompt: None,
                 assistant_response: None,
                 session_id: Some("test-session-abc-123".to_string()),
@@ -885,6 +966,81 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(json["hook_event_name"], "agentSpawn");
         assert_eq!(json["session_id"], "test-session-abc-123");
+    }
+
+    #[tokio::test]
+    #[cfg_attr(windows, ignore)]
+    async fn queued_hook_cancellation_has_no_side_effect() {
+        let cwd = std::env::current_dir().expect("current dir exists");
+        let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let side_effect = temp_dir.path().join("queued-hook-ran");
+        let config: HookConfig = serde_json::from_value(serde_json::json!({
+            "command": format!("touch {}", side_effect.display())
+        }))
+        .unwrap();
+        let id = HookExecutionId::new(
+            Hook {
+                trigger: HookTrigger::UserPromptSubmit,
+                config,
+            },
+            None,
+            0,
+        );
+
+        executor
+            .start_hook_execution(StartHookExecution {
+                id: id.clone(),
+                prompt: None,
+                assistant_response: None,
+                session_id: None,
+            })
+            .await;
+        executor.cancel_hook_execution(&id);
+
+        let mut events = Vec::new();
+        executor.recv_next(&mut events).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert!(!side_effect.exists());
+        assert!(events.is_empty());
+        assert!(executor.queued_hooks.is_empty());
+        assert!(executor.cancelled_hooks.is_empty());
+        assert!(executor.executing_hooks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn unknown_and_completed_hook_cancellation_leave_bounded_state() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let mut executor = TaskExecutor::new(Arc::new(TestProvider::new_with_base(cwd)));
+
+        for index in 0..1024 {
+            let unknown = HookExecutionId::new(test_hook(), None, index);
+            executor.cancel_hook_execution(&unknown);
+        }
+        assert!(executor.queued_hooks.is_empty());
+        assert!(executor.cancelled_hooks.is_empty());
+
+        let completed = HookExecutionId::new(test_hook(), None, 0);
+        executor.executing_hooks.insert(completed.clone(), ExecutingHook {
+            cancel_token: CancellationToken::new(),
+            start_instant: Instant::now(),
+            start_time: Utc::now(),
+        });
+        executor
+            .handle_execute_result(ExecutorResult::Hook(HookExecutorResult::Completed {
+                id: completed.clone(),
+                result: HookResult::Tool {
+                    output: "complete".to_string(),
+                },
+                duration: Duration::ZERO,
+            }))
+            .await;
+        executor.cancel_hook_execution(&completed);
+
+        assert!(executor.queued_hooks.is_empty());
+        assert!(executor.cancelled_hooks.is_empty());
+        assert!(executor.executing_hooks.is_empty());
     }
 
     #[tokio::test]

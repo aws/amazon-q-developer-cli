@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Cancelled hooks no longer affect a later invocation of the same hook or leave queued cancellation state behind"
+}
