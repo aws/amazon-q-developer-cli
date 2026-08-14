@@ -215,6 +215,10 @@ use crate::agent::util::request_channel::{
     RequestSender,
     respond,
 };
+use crate::agent::util::steering::{
+    is_steering_file,
+    should_include_steering_file,
+};
 
 /// Handle for communicating with an [`Agent`] actor.
 #[derive(Debug)]
@@ -5181,7 +5185,7 @@ where
                         // macOS `/tmp` -> `/private/tmp`).
                         let entry_path_str = canonicalize_path_sys(entry.to_string_lossy(), provider)
                             .unwrap_or_else(|_| entry.to_string_lossy().to_string());
-                        if !seen_files.insert(entry_path_str.clone()) {
+                        if seen_files.contains(&entry_path_str) {
                             continue;
                         }
                         let Ok((content, _)) =
@@ -5189,6 +5193,15 @@ where
                         else {
                             continue;
                         };
+                        if is_steering_file(&entry_path_str) && !should_include_steering_file(&content) {
+                            tracing::debug!(
+                                path = %entry_path_str,
+                                config_value = %original,
+                                "excluding steering file from context (non-always inclusion mode)"
+                            );
+                            continue;
+                        }
+                        seen_files.insert(entry_path_str.clone());
                         files.push(Resource {
                             config_value: original.to_string(),
                             file_path: entry_path_str,

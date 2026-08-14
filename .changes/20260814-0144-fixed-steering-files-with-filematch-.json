@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Steering files with `fileMatch` or `manual` inclusion mode are no longer auto-injected when matched by glob patterns"
+}

@@ -344,12 +344,17 @@ async fn test_build_default_agent_with_steering() {
 
     const GLOBAL_STEERING: &str = "---\ninclusion: always\n---\n# Global Rule\nAlways use snake_case.";
     const WORKSPACE_STEERING: &str = "---\ninclusion: always\n---\n# Workspace Rule\nPrefer async functions.";
+    const FILE_MATCH_STEERING: &str =
+        "---\ninclusion: fileMatch\nfileMatchPattern: '*.rs'\n---\nDo not inject the file-match sentinel.";
+    const MANUAL_STEERING: &str = "---\ninclusion: manual\n---\nDo not inject the manual sentinel.";
 
     let mut test = TestCase::builder()
-        .test_name("steering files included in context")
+        .test_name("steering inclusion modes filter automatic context")
         .with_default_agent_config()
         .with_file(("~/.kiro/steering/global.md", GLOBAL_STEERING))
+        .with_file(("~/.kiro/steering/file-match.md", FILE_MATCH_STEERING))
         .with_file((".kiro/steering/workspace.md", WORKSPACE_STEERING))
+        .with_file((".kiro/steering/manual.md", MANUAL_STEERING))
         .with_responses(
             parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
                 .await
@@ -378,6 +383,117 @@ async fn test_build_default_agent_with_steering() {
     assert!(
         first_msg.contains("Prefer async functions"),
         "expected workspace steering content in context"
+    );
+    assert!(
+        !first_msg.contains("file-match sentinel"),
+        "fileMatch steering must not be injected automatically"
+    );
+    assert!(
+        !first_msg.contains("manual sentinel"),
+        "manual steering must not be injected automatically"
+    );
+}
+
+#[tokio::test]
+async fn test_literal_steering_declaration_bypasses_glob_filter() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    const EXPLICIT_MANUAL_STEERING: &str = "---\ninclusion: manual\n---\nExplicitly declared manual steering sentinel.";
+    const GLOB_ONLY_MANUAL: &str = "---\ninclusion: manual\n---\nGlob-only manual steering sentinel.";
+
+    let agent_config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+        resources: vec![
+            // Literal declaration — should bypass the inclusion filter
+            ResourcePath::FilePath("file://.kiro/steering/explicit-manual.md".to_string()),
+            // Glob that matches the same file plus another manual file
+            ResourcePath::FilePath("file://.kiro/steering/**/*.md".to_string()),
+        ],
+        ..Default::default()
+    });
+
+    let mut test = TestCase::builder()
+        .test_name("literal steering declaration bypasses glob filter")
+        .with_agent_config(agent_config)
+        .with_file((".kiro/steering/explicit-manual.md", EXPLICIT_MANUAL_STEERING))
+        .with_file((".kiro/steering/glob-only-manual.md", GLOB_ONLY_MANUAL))
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "expected at least one request");
+
+    let first_msg = requests[0]
+        .messages()
+        .first()
+        .expect("first message should exist")
+        .text();
+
+    // The literal declaration wins dedup (listed first), so the file passes
+    // through the File arm without filtering.
+    assert!(
+        first_msg.contains("Explicitly declared manual steering sentinel"),
+        "literally-declared steering file must be injected regardless of inclusion mode"
+    );
+    // The glob-only file has no literal declaration and is filtered by the FileGlob arm.
+    assert!(
+        !first_msg.contains("Glob-only manual steering sentinel"),
+        "glob-matched manual steering must be excluded"
+    );
+}
+
+#[tokio::test]
+async fn test_literal_steering_bypasses_filter_when_glob_listed_first() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    const EXPLICIT_MANUAL_STEERING: &str = "---\ninclusion: manual\n---\nGlob-first literal bypass sentinel.";
+
+    let agent_config = AgentConfig::V2025_08_22(AgentConfigV2025_08_22 {
+        resources: vec![
+            // Glob listed FIRST — excluded steering must not claim the dedup slot
+            ResourcePath::FilePath("file://.kiro/steering/**/*.md".to_string()),
+            // Literal listed SECOND — must still be injected
+            ResourcePath::FilePath("file://.kiro/steering/explicit-manual.md".to_string()),
+        ],
+        ..Default::default()
+    });
+
+    let mut test = TestCase::builder()
+        .test_name("literal steering bypasses filter when glob listed first")
+        .with_agent_config(agent_config)
+        .with_file((".kiro/steering/explicit-manual.md", EXPLICIT_MANUAL_STEERING))
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/single_turn.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let requests = test.requests();
+    assert!(!requests.is_empty(), "expected at least one request");
+
+    let first_msg = requests[0]
+        .messages()
+        .first()
+        .expect("first message should exist")
+        .text();
+
+    assert!(
+        first_msg.contains("Glob-first literal bypass sentinel"),
+        "literal declaration must be injected even when a glob for the same path is listed earlier"
     );
 }
 
