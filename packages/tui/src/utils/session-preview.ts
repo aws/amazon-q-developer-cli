@@ -358,7 +358,8 @@ export class SessionPreviewProvider {
       }
 
       const isComplete = wholeFileRead && parsedAll;
-      const recentMessages = messages.slice(-MAX_RECENT_MESSAGES);
+      const recentMessages =
+        collapseAssistantRuns(messages).slice(-MAX_RECENT_MESSAGES);
 
       return {
         summary: {
@@ -480,7 +481,8 @@ export class SessionPreviewProvider {
 
       const isComplete = wholeFileRead && parsedAll;
       // Keep only the last N messages.
-      const recentMessages = messages.slice(-MAX_RECENT_MESSAGES);
+      const recentMessages =
+        collapseAssistantRuns(messages).slice(-MAX_RECENT_MESSAGES);
 
       return {
         summary: {
@@ -529,6 +531,25 @@ function extractTextContent(content: unknown[]): string {
     }
   }
   return texts.join('\n');
+}
+
+/**
+ * Collapse each run of consecutive assistant messages to its final entry.
+ * A long agent working stretch logs dozens of narration segments ("Now let
+ * me..."); the conclusion is the one worth previewing, and collapsing keeps
+ * earlier user turns inside the recent-messages window.
+ */
+function collapseAssistantRuns(messages: PreviewMessage[]): PreviewMessage[] {
+  const collapsed: PreviewMessage[] = [];
+  for (const message of messages) {
+    const prev = collapsed[collapsed.length - 1];
+    if (message.role === 'assistant' && prev?.role === 'assistant') {
+      collapsed[collapsed.length - 1] = message;
+    } else {
+      collapsed.push(message);
+    }
+  }
+  return collapsed;
 }
 
 /**

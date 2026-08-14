@@ -185,6 +185,43 @@ describe('SessionPreviewProvider', () => {
     );
   });
 
+  it('collapses a run of assistant narration to its final message', () => {
+    writeMeta(testDir, 'runs', { title: 'Working session' });
+    writeLog(testDir, 'runs', [
+      {
+        kind: 'Prompt',
+        data: {
+          message_id: 'm1',
+          content: [{ kind: 'text', data: 'fix the bug' }],
+        },
+      },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        kind: 'AssistantMessage',
+        data: {
+          message_id: `a${i}`,
+          content: [{ kind: 'text', data: `Now let me check step ${i}` }],
+        },
+      })),
+      {
+        kind: 'AssistantMessage',
+        data: {
+          message_id: 'final',
+          content: [{ kind: 'text', data: 'Fixed and verified.' }],
+        },
+      },
+    ]);
+
+    const provider = new SessionPreviewProvider(testDir);
+    const preview = provider.getPreview('runs');
+
+    // The user turn must survive; the 13 narration segments collapse to one.
+    expect(preview!.recentMessages).toHaveLength(2);
+    expect(preview!.recentMessages[0]!.role).toBe('user');
+    expect(preview!.recentMessages[0]!.content).toBe('fix the bug');
+    expect(preview!.recentMessages[1]!.role).toBe('assistant');
+    expect(preview!.recentMessages[1]!.content).toBe('Fixed and verified.');
+  });
+
   it('limits recent messages to last 10', () => {
     writeMeta(testDir, 's1', { title: 'Long session' });
     const entries: Array<{ kind: string; data: unknown }> = [];

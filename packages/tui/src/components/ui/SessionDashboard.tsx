@@ -1932,11 +1932,13 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
       if (previewTags.length > 0) {
         lines.push(`Tags: ${previewTags.map((t) => `#${t}`).join(' ')}`);
       }
-      lines.push(
-        preview.summary.isComplete
-          ? `${preview.summary.turnCount} turns`
-          : `${preview.summary.turnCount} recent turns`
-      );
+      // Tail-scoped counting can see zero user turns while assistant
+      // narration fills the window — "0 recent turns" would be a lie.
+      if (preview.summary.isComplete) {
+        lines.push(`${preview.summary.turnCount} turns`);
+      } else if (preview.summary.turnCount > 0) {
+        lines.push(`${preview.summary.turnCount} recent turns`);
+      }
       const budget = matchNode ? PREVIEW_MAX_LINES - 1 : PREVIEW_MAX_LINES;
       return [
         matchNode,
