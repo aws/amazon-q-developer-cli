@@ -379,6 +379,87 @@ export class E2ETestCase {
   }
 
   /**
+   * Types a chat prompt and submits it only once the store will dispatch it as
+   * a new turn, then proves the dispatch happened. Chat prompts only: the proof
+   * is an appended un-steered user row, and a slash command appends none.
+   *
+   * A submitted line is diverted onto the queue whenever the store is
+   * uninitialized, processing, compacting, or showing a loading message, and
+   * that queue drains only at turn-end or on the next interaction — so a
+   * submit landing in the window starts no turn at all. The previous turn's
+   * rendered text is not a safe signal to submit on: it paints from the
+   * response event, ahead of the state that reopens the gate. Sleeping is not
+   * one either, since the gap is unbounded on a loaded machine.
+   */
+  async submitWhenAccepted(prompt: string, timeout = 10000): Promise<void> {
+    await this.sendKeys(prompt);
+    // Enter before every keystroke has landed would submit a partial line; the
+    // input value is exact where a screen match cannot tell a freshly typed
+    // prompt from the same text already on screen, and misses one that wrapped.
+    try {
+      await this.waitForStoreCondition(
+        (s) => s.commandInputValue === prompt,
+        timeout
+      );
+    } catch {
+      // Name the two strings, since a bare condition timeout here reads as a
+      // hang rather than as keystrokes that arrived wrong.
+      const { commandInputValue } = await this.getStore();
+      throw new Error(
+        `Keystrokes did not land: input holds ${JSON.stringify(
+          commandInputValue
+        )}, expected ${JSON.stringify(prompt)}`
+      );
+    }
+    // Read the gate here rather than before typing: typing takes an unbounded
+    // amount of wall clock, so an earlier read can be stale by the submit.
+    const before = await this.waitForStoreCondition(
+      (s) =>
+        s.isInitialized &&
+        !s.isProcessing &&
+        !s.isCompacting &&
+        !s.loadingMessage,
+      timeout
+    );
+    // A steer that the backend consumes also appends a user row and clears the
+    // staged content, so only un-steered rows evidence a dispatch.
+    const userRows = (s: SerializedAppState, steered: boolean) =>
+      s.messages.filter((m) => m.role === 'user' && !!m.steered === steered)
+        .length;
+    const dispatchedBefore = userRows(before, false);
+    const steeredBefore = userRows(before, true);
+    const queuedBefore = before.queuedMessages.length;
+    const stagedBefore = before.pendingSteerContent ?? '';
+    await this.pressEnter();
+    // Counts, never contents, so history already holding this prompt cannot
+    // pass and an entry queued earlier cannot fail.
+    const dispatched = (s: SerializedAppState) =>
+      userRows(s, false) > dispatchedBefore;
+    // Report at the submit: every alternative to a dispatch otherwise surfaces
+    // as a timeout on downstream text that says nothing about what happened.
+    const explain = (s: SerializedAppState) =>
+      `Submit started no turn — no user row was appended. Queued ${JSON.stringify(
+        s.queuedMessages.slice(queuedBefore)
+      )}, staged steer ${JSON.stringify(s.pendingSteerContent)}, steered rows +${
+        userRows(s, true) - steeredBefore
+      }. A slash command reaches none of these and is out of scope here.`;
+    let state: SerializedAppState;
+    try {
+      state = await this.waitForStoreCondition(
+        (s) =>
+          dispatched(s) ||
+          userRows(s, true) > steeredBefore ||
+          s.queuedMessages.length > queuedBefore ||
+          (s.pendingSteerContent ?? '') !== stagedBefore,
+        timeout
+      );
+    } catch {
+      throw new Error(explain(await this.getStore()));
+    }
+    if (!dispatched(state)) throw new Error(explain(state));
+  }
+
+  /**
    * Takes a heap snapshot from the TUI process.
    */
   async takeHeapSnapshot(filename: string): Promise<string> {

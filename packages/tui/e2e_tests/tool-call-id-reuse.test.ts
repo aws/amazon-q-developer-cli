@@ -69,9 +69,7 @@ describe('tool-call id reuse across turns', () => {
 
     // Turn 1: shell tool with wire id call_0.
     await pushShellTurn(tc, 'call_0', 'echo hello', 'First done.');
-    await tc.sendKeys('run echo hello');
-    await tc.sleepMs(100);
-    await tc.pressEnter();
+    await tc.submitWhenAccepted('run echo hello');
     await tc.waitForText('requires approval', 15000);
 
     const store1 = await tc.getStore();
@@ -81,9 +79,7 @@ describe('tool-call id reuse across turns', () => {
 
     // Turn 2: the serving path reuses wire id call_0 for a NEW tool call.
     await pushShellTurn(tc, 'call_0', 'rm /tmp/foo.txt', 'Second done.');
-    await tc.sendKeys('now delete the file');
-    await tc.sleepMs(100);
-    await tc.pressEnter();
+    await tc.submitWhenAccepted('now delete the file');
     await tc.waitForText('requires approval', 15000);
 
     // The approval must target the NEW row, not the finished turn-1 row.
