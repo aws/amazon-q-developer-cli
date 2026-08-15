@@ -24,16 +24,42 @@ export interface PendingSwap {
   baseAgent: string | null;
 }
 
-export function usePendingSwap(): PendingSwap | null {
+export const SAFETY_TIMEOUT_MS = 30_000;
+
+export interface UsePendingSwapOptions {
+  safetyTimeoutMs?: number;
+}
+
+/**
+ * Swap target named by `loadingMessage`, or null if it names none — a target of
+ * only whitespace names none, and command args reach this message verbatim
+ * (`/agent swap  x`), so the capture is trimmed before it becomes a chip label.
+ *
+ * Kept as a pure function rather than inlined in the effect below because it is
+ * the only part of the latch that can be pinned down exactly: observed through
+ * a mounted hook, "this message names no swap" is indistinguishable from "the
+ * effect has not run yet", and the two exits that could prove the effect ran
+ * also erase the very latch a too-broad pattern would have created.
+ */
+export function parseSwapTarget(loadingMessage: string | null): string | null {
+  if (!loadingMessage) return null;
+  const match = /^Agent changing to (.+)$/.exec(loadingMessage);
+  if (!match) return null;
+  const target = match[1]!.trim();
+  return target === '' ? null : target;
+}
+
+export function usePendingSwap(
+  options?: UsePendingSwapOptions
+): PendingSwap | null {
+  const safetyTimeoutMs = options?.safetyTimeoutMs ?? SAFETY_TIMEOUT_MS;
   const loadingMessage = useAppStore((s) => s.loadingMessage);
   const currentAgent = useAppStore((s) => s.currentAgent);
   const [pendingSwap, setPendingSwap] = useState<PendingSwap | null>(null);
 
   useEffect(() => {
-    if (!loadingMessage) return;
-    const match = /^Agent changing to (.+)$/.exec(loadingMessage);
-    if (!match) return;
-    const target = match[1]!.trim();
+    const target = parseSwapTarget(loadingMessage);
+    if (target === null) return;
     setPendingSwap((prev) => ({
       name: target,
       // Preserve the *original* base across re-issued swaps so we still know
@@ -64,9 +90,9 @@ export function usePendingSwap(): PendingSwap | null {
 
   useEffect(() => {
     if (!pendingSwap) return;
-    const t = setTimeout(() => setPendingSwap(null), 30_000);
+    const t = setTimeout(() => setPendingSwap(null), safetyTimeoutMs);
     return () => clearTimeout(t);
-  }, [pendingSwap]);
+  }, [pendingSwap, safetyTimeoutMs]);
 
   return pendingSwap;
 }
