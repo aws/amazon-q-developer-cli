@@ -218,15 +218,66 @@ jobs:
           path: /tmp/telemetry-stack.log
           retention-days: 7
 
+  # Fork PRs have no CodeArtifact credentials, so their TUI checks run in a
+  # maintainer-labelled workflow; collect its per-check results for this commit.
+  fork-ci-status:
+    name: Fork CI status
+    needs: check-paths
+    if: needs.check-paths.outputs.is-fork == 'true' && needs.check-paths.outputs.tui-changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      typecheck: ${{ steps.query.outputs.typecheck }}
+      lint: ${{ steps.query.outputs.lint }}
+      test: ${{ steps.query.outputs.test }}
+    steps:
+      - name: Query fork CI results for this commit
+        id: query
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          RUN_IDS=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/fork-ci.yml/runs?head_sha=$HEAD_SHA&per_page=20" --jq '.workflow_runs[].id')
+          # Every label starts a run, so only an approved one carries a verdict.
+          APPROVED_JOBS=()
+          for run_id in $RUN_IDS; do
+            jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100")
+            [[ "$(jq -r '.jobs[] | select(.name == "Check trigger") | .conclusion' <<<"$jobs")" == success ]] || continue
+            APPROVED_JOBS+=("$jobs")
+          done
+          for spec in "typecheck:TUI (typecheck)" "lint:TUI (lint)" "test:TUI (test)"; do
+            key="${spec%%:*}"
+            prefix="${spec#*:}"
+            result=missing
+            for jobs in "${APPROVED_JOBS[@]}"; do
+              conclusions=$(jq -r ".jobs[] | select(.name | startswith(\"$prefix\")) | .conclusion // \"pending\"" <<<"$jobs")
+              [[ -n "$conclusions" ]] || continue
+              if grep -qv '^success$' <<<"$conclusions"; then
+                # Anything that is not success or in flight is a real failure for this commit.
+                if grep -qvE '^(success|pending)$' <<<"$conclusions"; then
+                  # An older run's failure cannot retract a newer one still in flight.
+                  [[ "$result" == pending ]] || result=failing
+                  break
+                fi
+                # In flight is not a verdict, so an older run may still answer for this commit.
+                result=pending
+                continue
+              fi
+              result=success
+              break
+            done
+            echo "$key=$result" >> "$GITHUB_OUTPUT"
+            echo "$key: $result"
+          done
+
   # Gate jobs: always run so they can be set as required status checks.
-  # When TUI files aren't changed OR the PR is from a fork, the upstream
-  # jobs are skipped, but these still report success — unblocking the PR.
-  # Fork TUI checks are handled by fork-ci.yml (safe-to-test label).
+  # They pass only when the work they stand for actually ran and succeeded.
 
   tui-unit-tests-required:
     name: "TUI: Unit Tests (required)"
     if: always()
-    needs: [check-paths, tui-test]
+    needs: [check-paths, tui-test, fork-ci-status]
     runs-on: ubuntu-latest
     steps:
       - name: Check result
@@ -236,8 +287,25 @@ jobs:
             exit 0
           fi
           if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
-            echo "Fork PR — TUI checks deferred to fork-ci.yml"
-            exit 0
+            # Only one of "still running" and "failed" is a reason to go read a test.
+            case "${{ needs.fork-ci-status.outputs.test }}" in
+              success)
+                echo "Fork CI unit tests passed for this commit"
+                exit 0
+                ;;
+              pending)
+                echo "::error::Fork CI unit tests for this commit are still running — this check is refreshed when they finish"
+                exit 1
+                ;;
+              failing)
+                echo "::error::Fork CI unit tests failed for this commit"
+                exit 1
+                ;;
+              *)
+                echo "::error::No approved fork CI unit test result for this commit — maintainers start fork CI with the safe-to-test label"
+                exit 1
+                ;;
+            esac
           fi
           if [[ "${{ needs.tui-test.result }}" != "success" ]]; then
             echo "::error::TUI unit tests failed"
@@ -268,7 +336,7 @@ jobs:
   tui-typecheck-required:
     name: "TUI: Typecheck (required)"
     if: always()
-    needs: [check-paths, tui-typecheck]
+    needs: [check-paths, tui-typecheck, fork-ci-status]
     runs-on: ubuntu-latest
     steps:
       - name: Check result
@@ -278,8 +346,24 @@ jobs:
             exit 0
           fi
           if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
-            echo "Fork PR — TUI checks deferred to fork-ci.yml"
-            exit 0
+            case "${{ needs.fork-ci-status.outputs.typecheck }}" in
+              success)
+                echo "Fork CI typecheck passed for this commit"
+                exit 0
+                ;;
+              pending)
+                echo "::error::Fork CI typecheck for this commit is still running — this check is refreshed when it finishes"
+                exit 1
+                ;;
+              failing)
+                echo "::error::Fork CI typecheck failed for this commit"
+                exit 1
+                ;;
+              *)
+                echo "::error::No approved fork CI typecheck result for this commit — maintainers start fork CI with the safe-to-test label"
+                exit 1
+                ;;
+            esac
           fi
           if [[ "${{ needs.tui-typecheck.result }}" != "success" ]]; then
             echo "::error::TUI typecheck failed"
@@ -289,7 +373,7 @@ jobs:
   tui-lint-required:
     name: "TUI: Lint (required)"
     if: always()
-    needs: [check-paths, tui-lint]
+    needs: [check-paths, tui-lint, fork-ci-status]
     runs-on: ubuntu-latest
     steps:
       - name: Check result
@@ -299,8 +383,24 @@ jobs:
             exit 0
           fi
           if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
-            echo "Fork PR — TUI checks deferred to fork-ci.yml"
-            exit 0
+            case "${{ needs.fork-ci-status.outputs.lint }}" in
+              success)
+                echo "Fork CI lint passed for this commit"
+                exit 0
+                ;;
+              pending)
+                echo "::error::Fork CI lint for this commit is still running — this check is refreshed when it finishes"
+                exit 1
+                ;;
+              failing)
+                echo "::error::Fork CI lint failed for this commit"
+                exit 1
+                ;;
+              *)
+                echo "::error::No approved fork CI lint result for this commit — maintainers start fork CI with the safe-to-test label"
+                exit 1
+                ;;
+            esac
           fi
           if [[ "${{ needs.tui-lint.result }}" != "success" ]]; then
             echo "::error::TUI lint failed"

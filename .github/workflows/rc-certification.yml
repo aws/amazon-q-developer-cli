@@ -104,6 +104,10 @@ jobs:
       run_visual: ${{ steps.resolve.outputs.run_visual }}
       run_integration: ${{ steps.resolve.outputs.run_integration }}
       run_e2e: ${{ steps.resolve.outputs.run_e2e }}
+      # A fork PR resolves every lane to false, so the lane flags cannot say
+      # whether the change was irrelevant or merely unprivileged. The required
+      # checks need that distinction to exempt a docs-only fork PR.
+      verification: ${{ steps.paths.outputs.verification }}
       live_engines: ${{ steps.resolve.outputs.live_engines }}
       smoke_priority: ${{ steps.resolve.outputs.smoke_priority }}
       visual_suite: ${{ steps.resolve.outputs.visual_suite }}
@@ -1033,15 +1037,90 @@ jobs:
           needs.live-parity.result == 'failure'
         run: exit 1
 
+  # A fork PR resolves every lane to false because the lanes need secrets, so
+  # the required checks below would pass without running anything. Read the
+  # fork-CI results for this exact commit instead.
+  fork-ci-status:
+    name: Fork CI status
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      integ: ${{ steps.query.outputs.integ }}
+      e2e: ${{ steps.query.outputs.e2e }}
+    steps:
+      - name: Query fork CI results for this commit
+        id: query
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          RUN_IDS=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/fork-ci.yml/runs?head_sha=$HEAD_SHA&per_page=20" --jq '.workflow_runs[].id')
+          # Every label starts a run, so only an approved one carries a verdict.
+          APPROVED_JOBS=()
+          for run_id in $RUN_IDS; do
+            jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100")
+            [[ "$(jq -r '.jobs[] | select(.name == "Check trigger") | .conclusion' <<<"$jobs")" == success ]] || continue
+            APPROVED_JOBS+=("$jobs")
+          done
+          for spec in "integ:TUI Integration (" "e2e:TUI E2E ("; do
+            key="${spec%%:*}"
+            prefix="${spec#*:}"
+            result=missing
+            for jobs in "${APPROVED_JOBS[@]}"; do
+              conclusions=$(jq -r ".jobs[] | select(.name | startswith(\"$prefix\")) | .conclusion // \"pending\"" <<<"$jobs")
+              [[ -n "$conclusions" ]] || continue
+              if grep -qv '^success$' <<<"$conclusions"; then
+                # Anything that is not success or in flight is a real failure for this commit.
+                if grep -qvE '^(success|pending)$' <<<"$conclusions"; then
+                  # An older run's failure cannot retract a newer one still in flight.
+                  [[ "$result" == pending ]] || result=failing
+                  break
+                fi
+                # In flight is not a verdict, so an older run may still answer for this commit.
+                result=pending
+                continue
+              fi
+              result=success
+              break
+            done
+            echo "$key=$result" >> "$GITHUB_OUTPUT"
+            echo "$key: $result"
+          done
+
   tui-integ-tests-required:
     name: 'TUI: Integration Tests (required)'
     if: always()
-    needs: [resolve, ui-integration, acp-integration]
+    needs: [resolve, ui-integration, acp-integration, fork-ci-status]
     runs-on: ubuntu-latest
     steps:
       - name: Check result
         shell: bash
         run: |
+          # Ask the path question before the provenance question: a change these
+          # lanes cannot be affected by is exempt whoever wrote it. An empty
+          # value means resolve did not answer, so the fork branch still applies.
+          if [[ "${{ github.event.pull_request.head.repo.fork || false }}" == "true" && "${{ needs.resolve.outputs.verification }}" != "false" ]]; then
+            case "${{ needs.fork-ci-status.outputs.integ }}" in
+              success)
+                echo "Fork CI integration tests passed for this commit"
+                exit 0
+                ;;
+              pending)
+                echo "::error::Fork CI integration tests for this commit are still running — this check is refreshed when they finish"
+                exit 1
+                ;;
+              failing)
+                echo "::error::Fork CI integration tests failed for this commit"
+                exit 1
+                ;;
+              *)
+                echo "::error::No approved fork CI integration test result for this commit — maintainers start fork CI with the safe-to-test label"
+                exit 1
+                ;;
+            esac
+          fi
           if [[ "${{ needs.resolve.result }}" != "success" ]]; then
             echo "::error::RC verification matrix resolution failed"
             exit 1
@@ -1058,12 +1137,32 @@ jobs:
   tui-e2e-required:
     name: 'TUI: E2E Tests (required)'
     if: always()
-    needs: [resolve, e2e]
+    needs: [resolve, e2e, fork-ci-status]
     runs-on: ubuntu-latest
     steps:
       - name: Check result
         shell: bash
         run: |
+          if [[ "${{ github.event.pull_request.head.repo.fork || false }}" == "true" && "${{ needs.resolve.outputs.verification }}" != "false" ]]; then
+            case "${{ needs.fork-ci-status.outputs.e2e }}" in
+              success)
+                echo "Fork CI E2E tests passed for this commit"
+                exit 0
+                ;;
+              pending)
+                echo "::error::Fork CI E2E tests for this commit are still running — this check is refreshed when they finish"
+                exit 1
+                ;;
+              failing)
+                echo "::error::Fork CI E2E tests failed for this commit"
+                exit 1
+                ;;
+              *)
+                echo "::error::No approved fork CI E2E test result for this commit — maintainers start fork CI with the safe-to-test label"
+                exit 1
+                ;;
+            esac
+          fi
           if [[ "${{ needs.resolve.result }}" != "success" ]]; then
             echo "::error::RC verification matrix resolution failed"
             exit 1
