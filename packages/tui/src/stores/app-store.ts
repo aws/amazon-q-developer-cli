@@ -4254,21 +4254,28 @@ export const createAppStore = (props: AppStoreProps) => {
                     (m.id === id || m.kasMessageId === id)
                 );
               if (isRenderedDuplicate) break;
-              // Consume text fallback matches so intentional repeats still render.
-              const now = Date.now();
-              const recent = get()._recentLocalUserMessages;
-              const matchIdx = recent.findIndex(
-                (m) =>
-                  (m.content === text || m.sentContent === text) &&
-                  now - m.at < LOCAL_USER_ECHO_TTL_MS
-              );
-              if (matchIdx !== -1) {
-                set({
-                  _recentLocalUserMessages: recent.filter(
-                    (_, i) => i !== matchIdx
-                  ),
-                });
-                break;
+              // Consume text fallback matches so intentional repeats still
+              // render. Live echoes only: a history replay legitimately
+              // carries the same text as a recently typed prompt (rewind
+              // fork, quick /chat reload) and consuming it here drops the
+              // replayed prompt row — the turn then renders as an orphaned
+              // response and the next typed input paints in its place.
+              if (!fromHistory) {
+                const now = Date.now();
+                const recent = get()._recentLocalUserMessages;
+                const matchIdx = recent.findIndex(
+                  (m) =>
+                    (m.content === text || m.sentContent === text) &&
+                    now - m.at < LOCAL_USER_ECHO_TTL_MS
+                );
+                if (matchIdx !== -1) {
+                  set({
+                    _recentLocalUserMessages: recent.filter(
+                      (_, i) => i !== matchIdx
+                    ),
+                  });
+                  break;
+                }
               }
               const rowId = isCloudReplay ? generateMessageId() : id;
               if (!turnOpen) workflowLifecycle.recordOriginTurn(rowId);
@@ -6707,6 +6714,10 @@ export const createAppStore = (props: AppStoreProps) => {
       //   into the new chat.
       set((s) => ({
         messages: [],
+        // Echo entries describe optimistic rows in `messages`; with those
+        // rows gone, a surviving entry could still suppress a later echo
+        // whose row no longer exists.
+        _recentLocalUserMessages: [],
         activeCompactionAttemptKey: null,
         compactionReportAnchor: null,
         lite: {

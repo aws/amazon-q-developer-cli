@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "A `/rewind` fork no longer renders the forked turn without its prompt row when the fork happens within seconds of typing that prompt"
+}

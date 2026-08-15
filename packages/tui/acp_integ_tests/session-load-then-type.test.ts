@@ -165,12 +165,6 @@ describe('session load then new input (preserveScrollback)', () => {
     }
     const inputCount = all.filter((l) => l.includes('BRANDNEWINPUT')).length;
 
-    console.log('input visible before response:', inputVisibleBeforeResponse);
-    console.log(
-      'history para counts:',
-      [...counts.entries()].map(([k, v]) => `${k}=${v}`).join(' ')
-    );
-    console.log('input row count:', inputCount);
     // SYMPTOM 1: input must paint before the response.
     expect(inputVisibleBeforeResponse).toBe(true);
     // SYMPTOM 2: no history paragraph duplicated in the buffer.
@@ -178,6 +172,163 @@ describe('session load then new input (preserveScrollback)', () => {
       expect(`${key}:${n}`).toBe(`${key}:1`);
     }
     expect(inputCount).toBe(1);
+  }, 60_000);
+
+  it('input after load lands below history and never replaces the old user row', async () => {
+    cwd = realpathSync(mkdtempSync(join(tmpdir(), 'kiro-load-type-pos-')));
+    tc = new AcpTestCase({
+      testName: 'load-then-type-position',
+      args: ['--resume'],
+      cwd,
+      terminalSize: { width: 80, height: 14 },
+      settings: {
+        'chat.preserveScrollback': true,
+        'chat.verbosity.lite': { showThinkingContent: true },
+      },
+      extraEnv: {
+        KIRO_UI_MODE: 'lite',
+        KIRO_LITE_ROLLOUT_ENABLED: '1',
+      },
+      mockKasSessionListResult: [
+        {
+          sessionId: SESSION_ID,
+          cwd,
+          title: 'Long session',
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    tc.mock.on<InitializeRequest, InitializeResponse>('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {
+        sessionCapabilities: {},
+        _meta: { kiro: { extensionMethods: [] } },
+      },
+    }));
+    tc.mock.on<LoadSessionRequest, LoadSessionResponse>('session/load', () => {
+      const notify = (update: Record<string, unknown>) =>
+        tc!.mock.notify('session/update', { sessionId: SESSION_ID, update });
+      // 40 early closed turns (80+ messages) so the lite history render cap
+      // (staticSkipBefore = messages.length - 70) is ACTIVE, as in the field
+      // session with hundreds of messages.
+      for (let t = 0; t < 40; t++) {
+        notify({
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: `EARLYQ-${t} question` },
+          _meta: { kiro: { messageId: `user-e${t}` } },
+        });
+        notify({
+          sessionUpdate: 'session_info_update',
+          _meta: { kiro: { kind: 'turn_start' } },
+        });
+        notify({
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text:
+              `EARLY-${t} reply body ` +
+              `long wrapped early reply line for row accounting `.repeat(3),
+          },
+          _meta: { kiro: { messageId: `model-e${t}` } },
+        });
+        notify({
+          sessionUpdate: 'session_info_update',
+          _meta: { kiro: { kind: 'turn_end', stopReason: 'end_turn' } },
+        });
+      }
+      // Turn 2 (LAST): user question + THINKING + long reply — mirrors the
+      // field repro where the replayed tail has a thinking block.
+      notify({
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: 'OLDQUESTION why ninety seconds' },
+        _meta: { kiro: { messageId: 'user-2' } },
+      });
+      notify({
+        sessionUpdate: 'session_info_update',
+        _meta: { kiro: { kind: 'turn_start' } },
+      });
+      notify({
+        sessionUpdate: 'agent_thought_chunk',
+        content: {
+          type: 'text',
+          text: 'THINKING about the timeout configuration in depth',
+        },
+        _meta: { kiro: { messageId: 'model-2' } },
+      });
+      notify({
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: Array.from(
+            { length: HISTORY_PARAS },
+            (_, i) =>
+              `${historyPara(i)} ` +
+              `wrapped filler content that greatly exceeds the terminal width `.repeat(
+                3
+              )
+          ).join('\n\n'),
+        },
+        _meta: { kiro: { messageId: 'model-2' } },
+      });
+      notify({
+        sessionUpdate: 'session_info_update',
+        _meta: { kiro: { kind: 'turn_end', stopReason: 'end_turn' } },
+      });
+      return { modes: defaultKasModes() };
+    });
+    tc.mock.on('session/set_config_option', () => ({}));
+    tc.mock.on('session/prompt', () => {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          tc!.mock.notify('session/update', {
+            sessionId: SESSION_ID,
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'NEWRESPONSE ack' },
+            },
+          });
+          resolve({ stopReason: 'end_turn' });
+        }, 1500);
+      });
+    });
+
+    await tc.launch();
+    await tc.mock.awaitConnection();
+    await tc.waitForStore(
+      (s) => s.sessionId === SESSION_ID && s.isInitialized,
+      15_000
+    );
+    await tc.waitForVisibleText(`HISTPARA-${HISTORY_PARAS - 1}`, 10_000);
+    await tc.sleepMs(600);
+
+    await tc.sendKeys('BRANDNEWINPUT sup');
+    await tc.sleepMs(150);
+    await tc.pressEnter();
+    // Inspect the window BEFORE the response arrives — the field report's
+    // corruption happens here and self-corrects on response.
+    await tc.sleepMs(700);
+
+    const during = tc.getSnapshot();
+    const oldQDuring = during.filter((l) => l.includes('OLDQUESTION')).length;
+    const supDuring = during.filter((l) => l.includes('BRANDNEWINPUT')).length;
+
+    await tc.waitForVisibleText('NEWRESPONSE', 10_000);
+    await tc.sleepMs(500);
+
+    const all = tc.getSnapshot();
+    const idxOf = (needle: string) => all.findIndex((l) => l.includes(needle));
+
+    // The old user row must survive the submit window (the field bug
+    // overwrote it in place with the new input).
+    expect(oldQDuring).toBeGreaterThanOrEqual(1);
+    // New input must exist exactly once during the window...
+    expect(supDuring).toBe(1);
+    // ...and settle strictly BELOW the replayed history.
+    expect(idxOf('OLDQUESTION')).toBeGreaterThan(-1);
+    expect(idxOf('BRANDNEWINPUT')).toBeGreaterThan(
+      idxOf(`HISTPARA-${HISTORY_PARAS - 1}`)
+    );
+    expect(all.filter((l) => l.includes('BRANDNEWINPUT')).length).toBe(1);
   }, 60_000);
 
   it('in-session /chat load then typed input: prompt paints, history not duplicated', async () => {
@@ -319,15 +470,6 @@ describe('session load then new input (preserveScrollback)', () => {
       counts.set(key, all.filter((l) => l.includes(key)).length);
     }
     const inputCount = all.filter((l) => l.includes('BRANDNEWINPUT')).length;
-    console.log(
-      'in-session: input visible before response:',
-      inputVisibleBeforeResponse
-    );
-    console.log(
-      'in-session: history para counts:',
-      [...counts.entries()].map(([k, v]) => `${k.trim()}=${v}`).join(' ')
-    );
-    console.log('in-session: input row count:', inputCount);
 
     expect(inputVisibleBeforeResponse).toBe(true);
     for (const [key, n] of counts) {
