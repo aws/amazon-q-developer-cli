@@ -5,6 +5,7 @@
 import pkg from '@xterm/headless';
 const { Terminal: XtermTerminal } = pkg;
 import { TUI } from '../src/renderer/tui.js';
+import type { Instance } from '../src/reconciler/render.js';
 import type { Component } from '../src/renderer/component.js';
 import type { Terminal } from '../src/terminal/terminal.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -247,7 +248,11 @@ export class TestTerminal implements Terminal {
 		}
 	}
 
-	sendInput(data: string) { this.inputHandler?.(data); }
+	// Sending before start() is a caller mistake, not something a test should absorb quietly.
+	sendInput(data: string) {
+		if (!this.inputHandler) throw new Error('sendInput before start() attached an input handler');
+		this.inputHandler(data);
+	}
 	resize(cols: number, rows: number) {
 		this._cols = cols;
 		this._rows = rows;
@@ -384,6 +389,61 @@ export function serializeFrame(frame: Frame, width = 40): string {
 
 export async function wait(ms = 15) {
 	await new Promise(r => setTimeout(r, ms));
+}
+
+// --- Paint synchronization ---
+
+/** Lets tests observe paints from a reconciler instance or a bare TUI through one shape. */
+export interface PaintSignal {
+	onRenderComplete(cb: () => void): () => void;
+	paints(): number;
+}
+
+export function instancePaints(instance: Instance): PaintSignal {
+	return {
+		onRenderComplete: cb => instance.onRenderComplete(cb),
+		paints: () => instance.getMetrics().renderCount,
+	};
+}
+
+export function tuiPaints(tui: TUI): PaintSignal {
+	return {
+		onRenderComplete: cb => tui.onRenderComplete(cb),
+		paints: () => tui.perfRenderCount,
+	};
+}
+
+/** A paced paint lands on a frame-budget timer, so only its own event marks the arrival. */
+export async function waitForPaints(signal: PaintSignal, target: number): Promise<void> {
+	if (signal.paints() >= target) return;
+	await new Promise<void>(resolve => {
+		const unsubscribe = signal.onRenderComplete(() => {
+			if (signal.paints() < target) return;
+			unsubscribe();
+			resolve();
+		});
+	});
+}
+
+/**
+ * Resolves once the paint count stops moving, so the counter itself decides when
+ * the work is over instead of a wall-clock guess that dilates under load. With no
+ * paint to follow it only yields `quietTurns` times, which is not quiescence but is
+ * what carries a mount past React's passive-effect flush — the turn an input
+ * listener registers on. No paint marks that turn, so the counter cannot wait for
+ * it; drop the mount-side call and the assertion runs before registration happens.
+ */
+export async function settlePaints(signal: PaintSignal, quietTurns = 2): Promise<number> {
+	let quiet = 0;
+	let last = signal.paints();
+	while (quiet < quietTurns) {
+		await new Promise(resolve => setImmediate(resolve));
+		const current = signal.paints();
+		// A single idle turn can sit between two paints of one input chain.
+		quiet = current === last ? quiet + 1 : 0;
+		last = current;
+	}
+	return last;
 }
 
 export async function renderAndCapture(

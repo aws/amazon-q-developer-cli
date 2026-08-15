@@ -6,7 +6,13 @@ import { render } from '../src/reconciler/render.js';
 import { Text } from '../src/components/Text.js';
 import type { Terminal } from '../src/terminal/terminal.js';
 import { TUI } from '../src/renderer/tui.js';
-import { MutableComponent, wait } from './helpers.js';
+import {
+	MutableComponent,
+	instancePaints,
+	settlePaints,
+	tuiPaints,
+	waitForPaints,
+} from './helpers.js';
 
 class TestTerminal implements Terminal {
 	xterm: InstanceType<typeof XtermTerminal>;
@@ -71,14 +77,16 @@ describe('usePaste', () => {
 			React.createElement(PasteApp),
 			{ terminal: term, exitOnCtrlC: false },
 		);
-		await wait();
+		const paints = instancePaints(instance);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 		await term.flush();
 
 		// Simulate 30 lines of pasted text
 		const lines = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
 		const pasteContent = lines.join('\n');
+		// The callback runs inline from the input dispatch, so the result is already here.
 		term.sendInput(`\x1b[200~${pasteContent}\x1b[201~`);
-		await wait();
 
 		expect(pasted).toHaveLength(1);
 		expect(pasted[0]).toBe(pasteContent);
@@ -101,10 +109,11 @@ describe('usePaste', () => {
 			React.createElement(PasteApp),
 			{ terminal: term, exitOnCtrlC: false },
 		);
-		await wait();
+		const paints = instancePaints(instance);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 
 		term.sendInput('\x1b[200~hello\x1b[201~');
-		await wait();
 
 		expect(pasted).toHaveLength(0);
 		instance.unmount();
@@ -127,7 +136,9 @@ describe('useFullscreen', () => {
 			React.createElement(FullscreenApp),
 			{ terminal: term, exitOnCtrlC: false },
 		);
-		await wait();
+		const paints = instancePaints(instance);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 		await term.flush();
 
 		// Should have written alt screen enter
@@ -137,8 +148,8 @@ describe('useFullscreen', () => {
 		// xterm should be in alternate buffer
 		expect(term.xterm.buffer.active.type).toBe('alternate');
 
+		// Teardown writes the alt-screen exit inline, so unmount returning is the signal.
 		instance.unmount();
-		await wait();
 		await term.flush();
 
 		// Should have written alt screen exit
@@ -166,11 +177,12 @@ describe('useKeyRelease', () => {
 			React.createElement(ReleaseApp),
 			{ terminal: term, exitOnCtrlC: false },
 		);
-		await wait();
+		const paints = instancePaints(instance);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 
 		// Kitty key release for 'a': CSI 97;1:3u
 		term.sendInput('\x1b[97;1:3u');
-		await wait();
 
 		expect(released).toHaveLength(1);
 		instance.unmount();
@@ -194,11 +206,12 @@ describe('useKeyRepeat', () => {
 			React.createElement(RepeatApp),
 			{ terminal: term, exitOnCtrlC: false },
 		);
-		await wait();
+		const paints = instancePaints(instance);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 
 		// Kitty key repeat for 'a': CSI 97;1:2u
 		term.sendInput('\x1b[97;1:2u');
-		await wait();
 
 		expect(repeated).toHaveLength(1);
 		instance.unmount();
@@ -215,7 +228,9 @@ describe('frame pacing', () => {
 		comp.lines = ['frame 0'];
 		tui.addChild(comp);
 		tui.start();
-		await wait();
+		const paints = tuiPaints(tui);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 		await term.flush();
 
 		// Fire 20 rapid requestRender calls within one frame budget
@@ -226,13 +241,16 @@ describe('frame pacing', () => {
 			origDoRender();
 		};
 
+		const paintsBeforeBurst = paints.paints();
 		for (let i = 1; i <= 20; i++) {
 			comp.lines = [`frame ${i}`];
 			tui.requestRender();
 		}
 
-		// Wait for the pacing timer to fire (budget is 100ms)
-		await new Promise(r => setTimeout(r, 150));
+		// The paced paint arrives when the frame budget elapses, not on a clock we pick
+		await waitForPaints(paints, paintsBeforeBurst + 1);
+		// A burst that skipped pacing would queue its extra paints on the task queue
+		await settlePaints(paints);
 		await term.flush();
 
 		// Should have rendered far fewer than 20 times
@@ -250,12 +268,15 @@ describe('frame pacing', () => {
 		comp.lines = ['initial'];
 		tui.addChild(comp);
 		tui.start();
-		await wait();
+		const paints = tuiPaints(tui);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 		await term.flush();
 
+		const paintsBeforeUpdate = paints.paints();
 		comp.lines = ['updated'];
 		tui.requestRender();
-		await wait();
+		await waitForPaints(paints, paintsBeforeUpdate + 1);
 		await term.flush();
 
 		expect(term.getViewport()[0]).toContain('updated');
@@ -269,13 +290,16 @@ describe('frame pacing', () => {
 		comp.lines = ['initial'];
 		tui.addChild(comp);
 		tui.start();
-		await wait();
+		const paints = tuiPaints(tui);
+		await waitForPaints(paints, 1);
+		await settlePaints(paints);
 		await term.flush();
 
 		// Force render should clear state and schedule immediately
+		const paintsBeforeForce = paints.paints();
 		comp.lines = ['forced'];
 		tui.requestRender(true);
-		await wait();
+		await waitForPaints(paints, paintsBeforeForce + 1);
 		await term.flush();
 
 		expect(term.getViewport()[0]).toContain('forced');

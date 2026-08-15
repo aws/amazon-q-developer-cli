@@ -3,21 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { Text } from '../src/components/Text.js';
 import { useInput } from '../src/hooks/useInput.js';
 import { render } from '../src/reconciler/render.js';
-import { TestTerminal, wait } from './helpers.js';
-
-async function waitForText(
-  terminal: TestTerminal,
-  text: string,
-  timeoutMs = 2000
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await terminal.flush();
-    if (terminal.getViewport().join('\n').includes(text)) return;
-    await wait(5);
-  }
-  throw new Error(`Timed out waiting for ${JSON.stringify(text)}`);
-}
+import {
+  TestTerminal,
+  instancePaints,
+  settlePaints,
+  waitForPaints,
+} from './helpers.js';
 
 describe('input update batching', () => {
   it.each([
@@ -74,16 +65,20 @@ describe('input update batching', () => {
         terminal,
         exitOnCtrlC: false,
       });
-      await wait();
+      const paints = instancePaints(instance);
+      await waitForPaints(paints, 1);
+      await settlePaints(paints);
       await terminal.flush();
-      const rendersBeforeInput = instance.getMetrics().renderCount;
+      const rendersBeforeInput = paints.paints();
 
       terminal.sendInput(input);
-      await waitForText(terminal, '1:1');
+      // Settling on the counter rather than the expected total keeps an
+      // under-painting regression reportable instead of hanging the wait.
+      const rendersAfterInput = await settlePaints(paints);
+      await terminal.flush();
 
-      expect(instance.getMetrics().renderCount - rendersBeforeInput).toBe(
-        expectedRenders
-      );
+      expect(terminal.getViewport().join('\n')).toContain('1:1');
+      expect(rendersAfterInput - rendersBeforeInput).toBe(expectedRenders);
       instance.unmount();
     }
   );
