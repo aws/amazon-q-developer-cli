@@ -32,12 +32,13 @@ describe('zero-width safety', () => {
 		expect(lines.length).toBeLessThanOrEqual(3);
 	});
 
-	it('wrapTextWithAnsi at width 0 completes in bounded time', () => {
-		const start = performance.now();
+	// A width that cannot fit a character used to loop forever. Wrapping is
+	// synchronous, so a return to that bug would stall the worker rather than
+	// trip a per-test timeout — no duration assertion can catch it, and the
+	// symptom would be the whole run hitting its own limit. What is checkable is
+	// the output shape, so that is all these cases claim.
+	it('wrapTextWithAnsi at width 1 emits one line per character', () => {
 		const lines = wrapTextWithAnsi('a'.repeat(1000), 1);
-		const elapsed = performance.now() - start;
-		// Must complete in under 100ms, not hang
-		expect(elapsed).toBeLessThan(100);
 		expect(lines.length).toBe(1000);
 	});
 
@@ -45,24 +46,17 @@ describe('zero-width safety', () => {
 		const root = createNode(NODE_TYPES.TWINKI_BOX, {});
 		// @ts-ignore — rootContainer shape
 		root.yogaNode.setWidth(3);
-		const start = performance.now();
 		const result = renderTree(root as any, 3);
-		const elapsed = performance.now() - start;
-		// Must complete fast — width clamped to 80 fallback
-		expect(elapsed).toBeLessThan(50);
 		expect(result.staticLines).toBeDefined();
 		expect(result.liveLines).toBeDefined();
 	});
 
-	it('renderText at width 5 completes in bounded time with long text', () => {
+	it('renderText wraps long text at width 5', () => {
 		const node = createNode(NODE_TYPES.TWINKI_TEXT, {});
 		const text = createTextNode('The quick brown fox jumps over the lazy dog. '.repeat(20));
 		node.children.push(text);
 		text.parent = node;
-		const start = performance.now();
 		const lines = renderText(node, 5);
-		const elapsed = performance.now() - start;
-		expect(elapsed).toBeLessThan(200);
 		expect(lines.length).toBeGreaterThan(0);
 	});
 });

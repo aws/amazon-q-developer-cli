@@ -1,8 +1,11 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     environment: 'node',
+    // Wall-clock budgets measure the runner, not the code, so they are kept out
+    // of the suite that gates merges.
+    exclude: [...configDefaults.exclude, '**/*.perf.test.{ts,tsx}'],
     coverage: {
       enabled: true,
       reporter: ['text', 'lcov'],

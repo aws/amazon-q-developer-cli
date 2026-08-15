@@ -12,6 +12,7 @@
     "example:kiro-composer": "bun --filter='twinki' run build && bun ./examples/34-kiro-composer/index.tsx",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:perf": "vitest run --config vitest.perf.config.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

@@ -244,6 +244,20 @@ describe('Performance Benchmarks - TOP BOTTLENECKS IDENTIFIED', () => {
 		expect(elapsed).toBeLessThan(50);
 	});
 
+	// Width 1 forces one output line per input character, the shape that
+	// previously made this path loop without bound. A finite super-linear
+	// regression here shows up as seconds instead of milliseconds, which no
+	// output-shape assertion can distinguish, so the duration is the signal.
+	it('text wrapping at a width that fits one character', () => {
+		const start = performance.now();
+		const lines = wrapTextWithAnsi('a'.repeat(1000), 1);
+		const elapsed = performance.now() - start;
+
+		console.log(`Width-1 wrapping of 1000 chars: ${elapsed.toFixed(2)}ms`);
+		expect(lines.length).toBe(1000);
+		expect(elapsed).toBeLessThan(100);
+	});
+
 	it('differential rendering: time to compute diff for large content', () => {
 		const doc1 = createTestDocument(100);
 		const doc2 = createTestDocument(100);
