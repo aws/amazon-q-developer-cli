@@ -1,10 +1,11 @@
-import { execSync } from 'child_process';
-import { getOSAppearance } from './os-appearance';
+import { execSync as realExecSync } from 'child_process';
+import { getOSAppearance, type OSAppearanceDeps } from './os-appearance';
 import { queryTerminalBackground } from './osc-query';
 import { isGhostty } from './terminal-detection.js';
 import {
   detectWindowsConsoleBackground,
   detectWindowsTerminalTheme,
+  type WindowsConsoleDeps,
 } from './windows-theme';
 
 export type TerminalTheme = 'dark' | 'light';
@@ -16,6 +17,15 @@ export interface DetectionResult {
 }
 
 /**
+ * Injectable so tests can fake the exec-based probes — the Linux
+ * desktop-environment queries here plus the macOS and Windows probes this module
+ * delegates to — without process-global module mocking, which leaks across bun
+ * test files. The OSC 11 query is not behind this seam: it spawns its own shell,
+ * and skips on Windows or when stdin is not a TTY.
+ */
+export type TerminalThemeDeps = OSAppearanceDeps & WindowsConsoleDeps;
+
+/**
  * Detects terminal theme using multiple methods in order of reliability:
  * 1. OSC 11 query - directly asks the terminal for its background color (high confidence)
  * 2. COLORFGBG environment variable (high confidence)
@@ -23,8 +33,10 @@ export interface DetectionResult {
  * 4. OS appearance preference (low confidence - may not match terminal)
  * 5. Default to dark (fallback)
  */
-export function detectTerminalTheme(): TerminalTheme {
-  const result = detectTerminalThemeWithDetails();
+export function detectTerminalTheme(
+  deps: TerminalThemeDeps = {}
+): TerminalTheme {
+  const result = detectTerminalThemeWithDetails(deps);
   return result.theme;
 }
 
@@ -32,7 +44,9 @@ export function detectTerminalTheme(): TerminalTheme {
  * Detects terminal theme and returns details about the detection method.
  * Useful for debugging or logging.
  */
-export function detectTerminalThemeWithDetails(): DetectionResult {
+export function detectTerminalThemeWithDetails(
+  deps: TerminalThemeDeps = {}
+): DetectionResult {
   // Method 1: OSC 11 query - directly query the terminal for its background color.
   // This is the most reliable method as it reads the actual terminal background,
   // regardless of OS theme, terminal profile name, or env var configuration.
@@ -81,14 +95,14 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
   // which reflects the Windows app theme, not the actual terminal background.
   // PowerShell and cmd.exe often have dark backgrounds even when Windows is in light mode.
   if (process.platform === 'win32') {
-    const consoleTheme = detectWindowsConsoleBackground();
+    const consoleTheme = detectWindowsConsoleBackground(deps);
     if (consoleTheme) {
       return consoleTheme;
     }
   }
 
   // Method 4: OS appearance using existing detection (macOS/Windows)
-  const osTheme = getOSAppearance();
+  const osTheme = getOSAppearance(deps);
   // On macOS/Windows the OS appearance reliably reflects the user's preference.
   // While the terminal *could* differ from the OS theme, in practice it rarely
   // does, and returning 'low' here causes an unnecessary kiroSafe fallback
@@ -105,7 +119,7 @@ export function detectTerminalThemeWithDetails(): DetectionResult {
   }
 
   // Method 5: Linux-specific detection
-  const linuxTheme = detectLinuxTheme();
+  const linuxTheme = detectLinuxTheme(deps);
   if (linuxTheme) {
     return linuxTheme;
   }
@@ -196,7 +210,9 @@ function detectFromTerminalEnv(): DetectionResult | null {
 /**
  * Detect theme on Linux using various desktop environment methods
  */
-function detectLinuxTheme(): DetectionResult | null {
+function detectLinuxTheme(deps: TerminalThemeDeps): DetectionResult | null {
+  const execSync = deps.execSync ?? realExecSync;
+
   // GNOME/GTK
   try {
     const gtkTheme = execSync(

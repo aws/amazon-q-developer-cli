@@ -14,9 +14,6 @@ import {
   TUI_DEFAULT_DISPLAY,
 } from '../../../lite/verbose.js';
 import { useTempKiroHome } from '../../../lite/__tests__/temp-kiro-home.js';
-import { chalk } from '../../../utils/color.js';
-
-chalk.level = 3;
 useTempKiroHome();
 beforeEach(resetVerboseCache);
 afterEach(() => vi.restoreAllMocks());

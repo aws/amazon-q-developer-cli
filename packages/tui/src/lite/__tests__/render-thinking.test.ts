@@ -1,9 +1,6 @@
 import { test, expect } from 'vitest';
-import { chalk } from '../../utils/color.js';
 import { renderThinkingBlock } from '../render.js';
 import stripAnsi from 'strip-ansi';
-
-chalk.level = 3;
 
 function rules(cols?: number): [number, number] {
   const lines = stripAnsi(

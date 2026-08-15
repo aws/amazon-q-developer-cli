@@ -1,5 +1,3 @@
-import './setup-chalk-level.js';
-
 import { describe, test, it, expect, beforeEach, afterAll } from 'vitest';
 import {
   renderToolCall,

@@ -1,5 +1,4 @@
 import { describe, test, it, expect, beforeEach } from 'vitest';
-import { chalk } from '../../utils/color.js';
 import {
   renderSystemError,
   renderSystemInfo,
@@ -22,9 +21,6 @@ import { useTempKiroHome } from './temp-kiro-home.js';
 import { expectRender } from './expect-render.js';
 
 useTempKiroHome();
-
-// Force chalk colors for consistent test output
-chalk.level = 3;
 
 describe('renderMessageToText with shellOutput', () => {
   // shellOutput=true Model rows bypass the `Kiro:` tag AND the markdown

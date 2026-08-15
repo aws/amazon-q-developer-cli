@@ -19,8 +19,6 @@ import {
   wrapAnsiLine,
 } from '../../../../lite/render.js';
 
-// Force color so the ANSI-clip path is exercised.
-chalk.level = 3;
 prepareTempKiroHome();
 // Pin the rollout cohort per-test: the in-cohort ToolOutput body path only
 // renders when the flag is set, and a sibling suite in the same `bun test`
@@ -28,10 +26,6 @@ prepareTempKiroHome();
 // your peril — set it here (restored after) to keep this suite hermetic.
 let priorRollout: string | undefined;
 beforeEach(() => {
-  // Re-pin per-test: a sibling suite (RepoPickerPanel) save/restores chalk.level
-  // around its own block and can leave it below 3, which would suppress the SGR
-  // codes this ANSI suite asserts on. Module-load assignment isn't enough.
-  chalk.level = 3;
   priorRollout = process.env.KIRO_LITE_ROLLOUT_ENABLED;
   process.env.KIRO_LITE_ROLLOUT_ENABLED = '1';
   resetVerboseCache();

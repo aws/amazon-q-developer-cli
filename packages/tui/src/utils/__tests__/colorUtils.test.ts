@@ -1,13 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { chalk } from '../color.js';
 import {
   getTerminalChalkColor,
   getStatusColor,
   getColorHex,
 } from '../colorUtils';
-
-// Force truecolor so tests exercise real coloring even in CI (no TTY)
-chalk.level = 3;
 
 describe('getTerminalChalkColor', () => {
   // --- Basic return type contract ---

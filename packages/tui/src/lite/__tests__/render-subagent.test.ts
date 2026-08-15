@@ -16,9 +16,6 @@ import { expectRender, section } from './expect-render.js';
 
 useTempKiroHome();
 
-// Force chalk colors for consistent test output
-chalk.level = 3;
-
 const FULL_SUBAGENT_DISPLAY = DENSITY_DISPLAY.full;
 const CAPPED_SUBAGENT_DISPLAY = {
   ...DENSITY_DISPLAY.full,

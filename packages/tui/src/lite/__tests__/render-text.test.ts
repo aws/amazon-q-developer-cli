@@ -1,10 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { chalk } from '../../utils/color.js';
 import { renderAgentMessage } from '../render.js';
 import stripAnsi from 'strip-ansi';
-
-// Force chalk colors for consistent test output
-chalk.level = 3;
 
 // Asserts the regression we fixed: no lone (unpaired) UTF-16 surrogate leaks
 // through a wrap boundary, which would render as a garbled replacement char.
