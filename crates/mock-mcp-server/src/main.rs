@@ -309,9 +309,23 @@ struct OAuthRuntime {
     /// access_token -> expiry instant
     tokens: std::sync::Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>>,
     counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Number of OAuth metadata discovery requests served, so tests can assert
+    /// that a client reused cached metadata instead of rediscovering.
+    discoveries: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// When set, every metadata discovery endpoint answers 404, standing in for a
+    /// gateway, WAF or deploy window that hides the well-known documents.
+    discovery_broken: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl OAuthRuntime {
+    fn record_discovery(&self) {
+        self.discoveries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn discovery_is_broken(&self) -> bool {
+        self.discovery_broken.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     fn next_id(&self) -> u64 {
         self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
@@ -385,6 +399,8 @@ async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) 
         cfg,
         tokens: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
         counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        discoveries: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        discovery_broken: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     let mcp_service = StreamableHttpService::new(
@@ -425,15 +441,31 @@ async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) 
     };
 
     let auth_meta_handler = {
+        let runtime = runtime.clone();
         move || {
             let body = authorization_metadata(port);
-            async move { Json(body) }
+            let runtime = runtime.clone();
+            async move {
+                runtime.record_discovery();
+                if runtime.discovery_is_broken() {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+                Json(body).into_response()
+            }
         }
     };
     let resource_meta_handler = {
+        let runtime = runtime.clone();
         move || {
             let body = protected_resource_metadata(port);
-            async move { Json(body) }
+            let runtime = runtime.clone();
+            async move {
+                runtime.record_discovery();
+                if runtime.discovery_is_broken() {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+                Json(body).into_response()
+            }
         }
     };
 
@@ -500,6 +532,29 @@ async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) 
         }
     };
 
+    // --- Test control: how many discovery requests have been served. ---
+    let discovery_count_runtime = runtime.clone();
+    let discovery_count_handler = move || {
+        let runtime = discovery_count_runtime.clone();
+        async move {
+            Json(serde_json::json!({
+                "discoveries": runtime.discoveries.load(std::sync::atomic::Ordering::SeqCst)
+            }))
+        }
+    };
+
+    // --- Test control: make every discovery endpoint answer 404 from now on. ---
+    let break_discovery_runtime = runtime.clone();
+    let break_discovery_handler = move || {
+        let runtime = break_discovery_runtime.clone();
+        async move {
+            runtime
+                .discovery_broken
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            StatusCode::NO_CONTENT
+        }
+    };
+
     // --- Bearer-token validation for /mcp ---
     let mcp_runtime = runtime.clone();
     let mcp_auth_layer =
@@ -528,14 +583,22 @@ async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) 
     let mcp_router = axum::Router::new().fallback_service(mcp_service).layer(mcp_auth_layer);
 
     let router = axum::Router::new()
-        .route("/.well-known/oauth-authorization-server", get(auth_meta_handler))
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(auth_meta_handler.clone()),
+        )
         .route("/mcp/.well-known/oauth-authorization-server", get(auth_meta_handler))
-        .route("/.well-known/oauth-protected-resource", get(resource_meta_handler))
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(resource_meta_handler.clone()),
+        )
         .route("/mcp/.well-known/oauth-protected-resource", get(resource_meta_handler))
         .route("/oauth/register", post(register_handler))
         .route("/oauth/authorize", get(authorize_handler))
         .route("/oauth/token", post(token_handler))
         .route("/control/expire-tokens", post(expire_handler))
+        .route("/control/discovery-count", get(discovery_count_handler))
+        .route("/control/break-discovery", post(break_discovery_handler))
         .nest("/mcp", mcp_router);
 
     let addr = format!("0.0.0.0:{port}");

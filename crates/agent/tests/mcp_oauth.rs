@@ -750,3 +750,366 @@ async fn authorize_omits_scope_param_when_no_scopes_configured() {
 
     handle.shutdown().await;
 }
+
+/// How many OAuth metadata discovery requests the mock has served so far.
+async fn discovery_count(port: u16) -> u64 {
+    let url = format!("http://127.0.0.1:{port}/control/discovery-count");
+    let body: serde_json::Value = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
+        .expect("discovery-count request failed")
+        .json()
+        .await
+        .expect("discovery-count response was not JSON");
+    body["discoveries"]
+        .as_u64()
+        .expect("discovery count should be a number")
+}
+
+/// Take the mock's metadata discovery endpoints offline: every well-known
+/// document answers 404 from now on, the way a gateway or WAF hides them from a
+/// client that is otherwise perfectly able to connect. A 5xx would not do — the
+/// SDK treats server errors as retryable and fails discovery outright instead of
+/// synthesizing the legacy endpoints this test is about.
+async fn break_discovery(port: u16) {
+    let url = format!("http://127.0.0.1:{port}/control/break-discovery");
+    let resp = reqwest::Client::new()
+        .post(&url)
+        .send()
+        .await
+        .expect("break-discovery request failed");
+    assert!(resp.status().is_success(), "break-discovery returned {}", resp.status());
+}
+
+/// The cached authorization server metadata file in `cred_dir`, if one was written.
+fn cached_metadata_file(cred_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut found: Vec<std::path::PathBuf> = std::fs::read_dir(cred_dir)
+        .expect("credential cache dir should be readable")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.to_string_lossy().ends_with(".metadata.json"))
+        .collect();
+    assert!(
+        found.len() <= 1,
+        "expected at most one cached metadata file; got {found:?}"
+    );
+    found.pop()
+}
+
+/// Complete the initial OAuth sign-in for `server_name`, then stop the browser
+/// driver. Every later launch in the test must therefore succeed from the on-disk
+/// cache alone — a fresh flow would block on the loopback redirect with nothing to
+/// complete it.
+async fn sign_in_then_stop_browser(handle: &mut McpManagerHandle, server_name: &str, config: McpServerConfig) {
+    let oauth_requests = Arc::new(AtomicUsize::new(0));
+    let browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None, None);
+
+    launch_and_wait(handle, server_name, config, Duration::from_secs(30))
+        .await
+        .expect("initial launch should complete OAuth and initialize");
+    call_tool_once(handle, server_name)
+        .await
+        .expect("tool call should succeed after initial sign-in");
+    assert_eq!(
+        oauth_requests.load(Ordering::SeqCst),
+        1,
+        "exactly one authorization request during the initial sign-in"
+    );
+
+    browser.abort();
+    let _ = browser.await;
+}
+
+/// Relaunch a server against the same credential cache and require a working tool
+/// call, proving the connection was rebuilt from cached state.
+async fn relaunch_from_cache(handle: &mut McpManagerHandle, server_name: &str, config: McpServerConfig) {
+    handle
+        .shutdown_server(server_name.to_string())
+        .await
+        .expect("shutdown_server should succeed");
+    launch_and_wait(handle, server_name, config, Duration::from_secs(30))
+        .await
+        .expect("relaunch should initialize from the on-disk OAuth cache");
+    call_tool_once(handle, server_name)
+        .await
+        .expect("tool call should succeed after relaunch");
+}
+
+/// Test G — Authorization server metadata is cached on a cached-token connect.
+///
+/// The interactive sign-in persists only the token and the client registration.
+/// The first connect that *reuses* that token is the one which discovers the
+/// authorization server outside the interactive flow, so that is where the
+/// metadata cache is written — beside the registration, under the same key.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authorization_server_metadata_is_cached_on_cached_token_connect() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+    let config = registry_resolved_remote("meta-mcp", server.url(), vec![], false);
+
+    sign_in_then_stop_browser(&mut handle, "meta-mcp", config.clone()).await;
+    assert!(
+        cached_metadata_file(cred_dir.path()).is_none(),
+        "the interactive sign-in should not write a metadata cache"
+    );
+
+    relaunch_from_cache(&mut handle, "meta-mcp", config).await;
+
+    let path = cached_metadata_file(cred_dir.path()).expect("cached-token connect should cache metadata");
+    let name = path.file_name().unwrap().to_string_lossy().to_string();
+    let key = name
+        .strip_suffix(".metadata.json")
+        .expect("cache file should use the .metadata.json suffix");
+    assert!(
+        cred_dir.path().join(format!("{key}.registration.json")).is_file(),
+        "metadata should be cached beside the registration under the same key"
+    );
+
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).expect("cached metadata should be valid JSON");
+    let port = server.port();
+    assert_eq!(
+        metadata["token_endpoint"].as_str(),
+        Some(format!("http://127.0.0.1:{port}/oauth/token").as_str()),
+        "cached metadata should carry the discovered token endpoint; got {metadata}"
+    );
+    assert_eq!(
+        metadata["authorization_endpoint"].as_str(),
+        Some(format!("http://127.0.0.1:{port}/oauth/authorize").as_str()),
+        "cached metadata should carry the discovered authorization endpoint; got {metadata}"
+    );
+    assert_eq!(
+        metadata["issuer"].as_str(),
+        Some(format!("http://127.0.0.1:{port}").as_str()),
+        "cached metadata should preserve the issuer; got {metadata}"
+    );
+
+    handle.shutdown().await;
+}
+
+/// Test H — A cached token plus cached metadata reaches no discovery endpoint.
+///
+/// This is the point of the cache: once metadata is on disk, reconnecting must not
+/// re-run RFC 9728 / RFC 8414 discovery. The mock counts every metadata request it
+/// serves, so the count must not move across the last launch.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cached_metadata_skips_discovery_on_later_connect() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+    let config = registry_resolved_remote("skip-mcp", server.url(), vec![], false);
+
+    sign_in_then_stop_browser(&mut handle, "skip-mcp", config.clone()).await;
+
+    // The first cached-token connect still discovers, and caches what it found.
+    relaunch_from_cache(&mut handle, "skip-mcp", config.clone()).await;
+    assert!(
+        cached_metadata_file(cred_dir.path()).is_some(),
+        "metadata should be cached before asserting discovery is skipped"
+    );
+    let discoveries_before = discovery_count(server.port()).await;
+    assert!(
+        discoveries_before > 0,
+        "discovery must have happened at least once before the cache existed"
+    );
+
+    // With metadata on disk, this connect must not touch a discovery endpoint.
+    relaunch_from_cache(&mut handle, "skip-mcp", config).await;
+    assert_eq!(
+        discovery_count(server.port()).await,
+        discoveries_before,
+        "a connect with cached token and metadata must not re-run discovery"
+    );
+
+    handle.shutdown().await;
+}
+
+/// Test I — Corrupt cached metadata falls back to discovery and self-heals.
+///
+/// The cache is an optimization, never a dependency: an unreadable file must not
+/// fail the connection, and the fresh discovery it triggers must overwrite the bad
+/// file so it cannot poison later connects.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corrupt_cached_metadata_falls_back_to_discovery() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+    let config = registry_resolved_remote("corrupt-mcp", server.url(), vec![], false);
+
+    sign_in_then_stop_browser(&mut handle, "corrupt-mcp", config.clone()).await;
+    relaunch_from_cache(&mut handle, "corrupt-mcp", config.clone()).await;
+
+    let path = cached_metadata_file(cred_dir.path()).expect("metadata should be cached by now");
+    std::fs::write(&path, b"{ this is not metadata").unwrap();
+    let discoveries_before = discovery_count(server.port()).await;
+
+    // The relaunch must succeed despite the unreadable cache.
+    relaunch_from_cache(&mut handle, "corrupt-mcp", config).await;
+
+    assert!(
+        discovery_count(server.port()).await > discoveries_before,
+        "an unusable metadata cache must fall back to discovery"
+    );
+    let metadata: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap())
+        .expect("fresh discovery should have overwritten the corrupt cache");
+    assert!(
+        metadata["token_endpoint"]
+            .as_str()
+            .is_some_and(|e| e.contains("/oauth/token")),
+        "rewritten cache should carry rediscovered endpoints; got {metadata}"
+    );
+
+    handle.shutdown().await;
+}
+
+/// Test J — A discovery outage is used for the connect but never cached.
+///
+/// When no well-known document answers, the SDK synthesizes `/authorize`, `/token`
+/// and `/register` from the base URL. Those endpoints are a guess about a server
+/// that gave no evidence of supporting OAuth, so caching them would make a
+/// momentary outage permanent: every later connect would read a valid-looking file
+/// and skip discovery forever.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn discovery_outage_is_used_for_the_connect_but_not_cached() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+    let config = registry_resolved_remote("outage-mcp", server.url(), vec![], false);
+
+    sign_in_then_stop_browser(&mut handle, "outage-mcp", config.clone()).await;
+
+    break_discovery(server.port()).await;
+    let discoveries_before = discovery_count(server.port()).await;
+
+    // Only discovery is down; the cached token still authorizes the connection.
+    relaunch_from_cache(&mut handle, "outage-mcp", config).await;
+
+    assert!(
+        discovery_count(server.port()).await > discoveries_before,
+        "the connect should have attempted discovery before falling back"
+    );
+    assert_eq!(
+        cached_metadata_file(cred_dir.path()),
+        None,
+        "client-synthesized fallback endpoints must never be persisted"
+    );
+
+    handle.shutdown().await;
+}
+
+/// Test K — Wiping malformed credentials also drops the cached metadata.
+///
+/// The token, the registration and the metadata describe one authorization. The
+/// fresh sign-in that follows a wipe rewrites the first two but not the third, so
+/// leaving the metadata behind would carry the old authorization server's
+/// endpoints into credentials minted after it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wiping_malformed_credentials_also_drops_cached_metadata() {
+    prebuild_bin().expect("failed to prebuild mock-mcp-server");
+
+    let server = MockMcpServerBuilder::new()
+        .add_tool(echo_tool())
+        .add_response(echo_response())
+        .oauth()
+        .spawn_http()
+        .expect("failed to spawn oauth mock server");
+    server
+        .wait_ready(Duration::from_secs(10))
+        .expect("mock server not ready");
+
+    let cred_dir = tempfile::tempdir().unwrap();
+    let mut handle = McpManager::new(cred_dir.path().to_path_buf()).spawn();
+    let config = registry_resolved_remote("wipe-mcp", server.url(), vec![], false);
+
+    // The browser stays up for the whole test: the wipe is followed by a fresh
+    // sign-in, which needs the authorization redirect completed.
+    let oauth_requests = Arc::new(AtomicUsize::new(0));
+    let browser = spawn_oauth_browser(handle.clone(), oauth_requests.clone(), None, None);
+
+    launch_and_wait(&mut handle, "wipe-mcp", config.clone(), Duration::from_secs(30))
+        .await
+        .expect("initial launch should complete OAuth and initialize");
+
+    // The cached-token connect is what discovers and caches the metadata.
+    relaunch_from_cache(&mut handle, "wipe-mcp", config.clone()).await;
+    let metadata_path = cached_metadata_file(cred_dir.path()).expect("metadata should be cached by now");
+    let key = metadata_path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .strip_suffix(".metadata.json")
+        .expect("cache file should use the .metadata.json suffix")
+        .to_string();
+    std::fs::write(cred_dir.path().join(format!("{key}.token.json")), b"{ not a token").unwrap();
+
+    handle
+        .shutdown_server("wipe-mcp".to_string())
+        .await
+        .expect("shutdown_server should succeed");
+    launch_and_wait(&mut handle, "wipe-mcp", config, Duration::from_secs(30))
+        .await
+        .expect("a malformed token should re-authorize rather than fail the launch");
+    call_tool_once(&handle, "wipe-mcp")
+        .await
+        .expect("tool call should succeed after re-authorization");
+    assert_eq!(
+        oauth_requests.load(Ordering::SeqCst),
+        2,
+        "the wipe should have forced a second authorization request"
+    );
+
+    assert_eq!(
+        cached_metadata_file(cred_dir.path()),
+        None,
+        "wiping malformed credentials must drop the metadata cache with them"
+    );
+
+    browser.abort();
+    let _ = browser.await;
+    handle.shutdown().await;
+}

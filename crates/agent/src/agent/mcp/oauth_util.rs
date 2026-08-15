@@ -18,9 +18,13 @@ use reqwest::Client;
 use rmcp::service::ServiceExt;
 use rmcp::transport::auth::{
     AuthClient,
+    AuthorizationMetadata,
+    CredentialStore,
+    InMemoryCredentialStore,
     OAuthClientConfig,
     OAuthState,
     OAuthTokenResponse,
+    StoredCredentials,
 };
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{
@@ -182,6 +186,45 @@ impl From<OAuthClientConfig> for Registration {
     }
 }
 
+/// The granted `scope` of a cached token response. Read straight from the JSON
+/// because the SDK's own accessor sits behind an `oauth2` trait this crate does
+/// not depend on.
+#[derive(Deserialize)]
+struct GrantedScopes {
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+impl GrantedScopes {
+    /// RFC 6749 §3.3: `scope` is a space-delimited list. An absent or malformed
+    /// field yields no scopes, matching a token response that omits it.
+    fn parse(token_bytes: &[u8]) -> Vec<String> {
+        serde_json::from_slice::<Self>(token_bytes)
+            .ok()
+            .and_then(|granted| granted.scope)
+            .map(|scope| scope.split_whitespace().map(str::to_string).collect())
+            .unwrap_or_default()
+    }
+}
+
+/// Filesystem locations of the OAuth state cached for one remote MCP server.
+struct OAuthCachePaths {
+    token: PathBuf,
+    registration: PathBuf,
+    /// Authorization server metadata, so a later connect can skip discovery.
+    metadata: PathBuf,
+}
+
+impl OAuthCachePaths {
+    fn new(cred_dir: &Path, key: &str) -> Self {
+        Self {
+            token: cred_dir.join(format!("{key}.token.json")),
+            registration: cred_dir.join(format!("{key}.registration.json")),
+            metadata: cred_dir.join(format!("{key}.metadata.json")),
+        }
+    }
+}
+
 /// Context needed to perform a full browser-based re-authentication flow mid-session.
 #[derive(Clone, Debug)]
 pub struct ReauthContext {
@@ -212,6 +255,51 @@ async fn write_credentials_securely(path: impl AsRef<Path>, contents: impl AsRef
     // user (e.g. via `icacls` or the Win32 security APIs). Scoped out for a
     // follow-up: https://taskei.amazon.dev/tasks/55e07d56-8b05-410f-a093-0beef0ca1162
     Ok(())
+}
+
+/// Reads cached authorization server metadata, or `None` when it is absent or
+/// unusable. Metadata is a cache, so a bad file must never fail a connection:
+/// the caller runs discovery again and overwrites it.
+async fn read_cached_metadata(path: &Path) -> Option<AuthorizationMetadata> {
+    let bytes = tokio::fs::read(path).await.ok()?;
+    match serde_json::from_slice::<AuthorizationMetadata>(&bytes) {
+        Ok(metadata) => Some(metadata),
+        Err(e) => {
+            tracing::warn!(
+                path = %path.display(),
+                "## mcp: cached authorization server metadata failed to parse, re-running discovery: {e}"
+            );
+            None
+        },
+    }
+}
+
+/// Persists discovered authorization server metadata. Best effort: a failed
+/// write only costs another discovery pass on the next connect.
+async fn write_cached_metadata(path: &Path, metadata: &AuthorizationMetadata) {
+    let write = async {
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(path, serde_json::to_vec_pretty(metadata)?).await?;
+        Ok::<(), OauthUtilError>(())
+    };
+
+    if let Err(e) = write.await {
+        tracing::warn!(
+            path = %path.display(),
+            "## mcp: failed to cache authorization server metadata: {e}"
+        );
+    }
+}
+
+/// Discards every cached OAuth artifact for one server. The three files describe
+/// one authorization: keeping any of them after rejecting the others would let a
+/// stale authorization server survive into the next connect.
+async fn remove_cached_oauth_state(paths: &OAuthCachePaths) {
+    for path in [&paths.token, &paths.registration, &paths.metadata] {
+        let _ = tokio::fs::remove_file(path).await;
+    }
 }
 
 /// Refreshes an OAuth token and persists the new credentials to disk.
@@ -436,8 +524,9 @@ impl<'a> HttpServiceBuilder<'a> {
 
         let url = Url::from_str(url)?;
         let key = compute_key(&url);
-        let cred_full_path = cred_dir.join(format!("{key}.token.json"));
-        let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
+        let paths = OAuthCachePaths::new(cred_dir, &key);
+        let cred_full_path = paths.token.clone();
+        let reg_full_path = paths.registration.clone();
         let mut auth_client = None::<AuthClient<Client>>;
 
         // Decide where to begin the connection state machine. Normally we try an
@@ -488,8 +577,7 @@ impl<'a> HttpServiceBuilder<'a> {
                             let am = get_auth_manager(
                                 server_name,
                                 url.clone(),
-                                cred_full_path.clone(),
-                                reg_full_path.clone(),
+                                &paths,
                                 scopes,
                                 oauth_config,
                                 server_actor_event_tx,
@@ -540,6 +628,9 @@ impl<'a> HttpServiceBuilder<'a> {
                         if cred_full_path.is_file() {
                             tokio::fs::remove_file(&cred_full_path).await?;
                         }
+                        // Cached endpoints just failed to serve a refresh, so drop them and let
+                        // the retry rediscover rather than reusing a server that may have moved.
+                        let _ = tokio::fs::remove_file(&paths.metadata).await;
                         auth_client.take();
                     }
 
@@ -558,15 +649,13 @@ impl<'a> HttpServiceBuilder<'a> {
 async fn get_auth_manager(
     server_name: &str,
     url: Url,
-    cred_full_path: PathBuf,
-    reg_full_path: PathBuf,
+    paths: &OAuthCachePaths,
     scopes: &[String],
     oauth_config: &Option<OAuthConfig>,
     server_actor_event_tx: &mpsc::Sender<McpServerActorEvent>,
 ) -> Result<AuthorizationManager, OauthUtilError> {
-    let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
-    let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
-    let mut oauth_state = OAuthState::new(url, Some(oauth_discovery_client()?)).await?;
+    let cred_as_bytes = tokio::fs::read(&paths.token).await;
+    let reg_as_bytes = tokio::fs::read(&paths.registration).await;
 
     // If cached credentials exist and parse, use them. Otherwise fall through
     // to a fresh OAuth flow (and remove the bad files so we don't loop on them).
@@ -575,7 +664,7 @@ async fn get_auth_manager(
             serde_json::from_slice::<OAuthTokenResponse>(&cred_bytes),
             serde_json::from_slice::<Registration>(&reg_bytes),
         ) {
-            (Ok(token), Ok(reg)) => Some((token, reg)),
+            (Ok(token), Ok(reg)) => Some((token, reg, GrantedScopes::parse(&cred_bytes))),
             (cred_res, reg_res) => {
                 tracing::warn!(
                     server_name = %server_name,
@@ -584,8 +673,7 @@ async fn get_auth_manager(
                     "## mcp: cached OAuth credentials failed to parse, removing and re-running OAuth flow"
                 );
                 // Remove malformed caches so we don't loop on them.
-                let _ = tokio::fs::remove_file(&cred_full_path).await;
-                let _ = tokio::fs::remove_file(&reg_full_path).await;
+                remove_cached_oauth_state(paths).await;
                 None
             },
         }
@@ -594,16 +682,72 @@ async fn get_auth_manager(
     };
 
     match cached_path {
-        Some((token, reg)) => {
-            oauth_state.set_credentials(&reg.client_id, token).await?;
+        Some((token, reg, granted_scopes)) => {
+            let OAuthState::Unauthorized(mut am) =
+                OAuthState::new(url.clone(), Some(oauth_discovery_client()?)).await?
+            else {
+                return Err(OauthUtilError::MissingAuthorizationManager);
+            };
+
+            // Resolve the authorization server first: the SDK only adopts stored
+            // credentials without rediscovery once its metadata is set.
+            let (metadata, minted_under) = match read_cached_metadata(&paths.metadata).await {
+                Some(metadata) => {
+                    debug!("## mcp: reusing cached authorization server metadata for {server_name}");
+                    let issuer = metadata.issuer.clone();
+                    (metadata, issuer)
+                },
+                None => {
+                    let resolution = am.resolve_metadata().await?;
+                    // A legacy fallback is `/authorize`, `/token` and `/register` guessed from
+                    // the base URL because discovery answered nothing usable. Persisting a
+                    // guess would turn a momentary discovery outage into a permanent one, so
+                    // it is used for this connect only.
+                    if resolution.source.is_discovered() {
+                        write_cached_metadata(&paths.metadata, &resolution.metadata).await;
+                    } else {
+                        tracing::warn!(
+                            "## mcp: {server_name} published no authorization server metadata; using fallback endpoints without caching them"
+                        );
+                    }
+                    (resolution.metadata, None)
+                },
+            };
+
+            // Hand the cached token to the SDK through its credential store instead of
+            // `OAuthState::set_credentials`, which always rediscovers the authorization
+            // server. Everything the store needs is already on disk.
+            let received_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let store = InMemoryCredentialStore::new();
+            store
+                .save(
+                    StoredCredentials::new(reg.client_id.clone(), Some(token), granted_scopes, Some(received_at))
+                        .with_issuer(minted_under),
+                )
+                .await?;
+            am.set_credential_store(store);
+            am.set_metadata(metadata);
+
+            // Metadata is already set, so this adopts the stored token and client id
+            // without discovery. `false` means the SDK refused the credentials rather
+            // than adopting them, which leaves an unauthorized manager: treat it as a
+            // cache miss and re-authorize instead of connecting without a token.
+            if !am.initialize_from_store().await? {
+                tracing::warn!(
+                    server_name = %server_name,
+                    "## mcp: cached OAuth credentials were rejected, re-running OAuth flow"
+                );
+                remove_cached_oauth_state(paths).await;
+                return authorize_from_scratch(server_name, url, paths, scopes, oauth_config, server_actor_event_tx)
+                    .await;
+            }
 
             debug!("## mcp: credentials set with cache");
 
-            let mut am = oauth_state
-                .into_authorization_manager()
-                .ok_or(OauthUtilError::MissingAuthorizationManager)?;
-
-            // `set_credentials` configures a public client (no secret). For confidential
+            // The stored credentials describe a public client (no secret). For confidential
             // clients (e.g. Figma) re-apply the configured secret so an eventual token
             // refresh can authenticate at the token endpoint.
             if let Some(secret) = oauth_config.as_ref().and_then(|cfg| cfg.client_secret.as_deref()) {
@@ -618,35 +762,49 @@ async fn get_auth_manager(
         },
         None => {
             info!("Error reading cached credentials");
-            debug!("## mcp: cache read failed. constructing auth manager from scratch");
-            let (am, redirect_uri) =
-                get_auth_manager_impl(server_name, oauth_state, scopes, oauth_config, server_actor_event_tx).await?;
-
-            // Client registration is done in [start_authorization]
-            // If we have gotten past that point that means we have the info to persist the
-            // registration on disk.
-            let (client_id, credentials) = am.get_credentials().await?;
-            let reg = Registration {
-                client_id,
-                client_secret: None,
-                scopes: scopes.to_vec(),
-                redirect_uri,
-            };
-            let reg_as_str = serde_json::to_string_pretty(&reg)?;
-            let reg_parent_path = reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
-            tokio::fs::create_dir_all(reg_parent_path).await?;
-            tokio::fs::write(reg_full_path, &reg_as_str).await?;
-
-            let credentials = credentials.ok_or(OauthUtilError::MissingCredentials)?;
-
-            let cred_parent_path = cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
-            tokio::fs::create_dir_all(cred_parent_path).await?;
-            let reg_as_str = serde_json::to_string_pretty(&credentials)?;
-            write_credentials_securely(cred_full_path, &reg_as_str).await?;
-
-            Ok(am)
+            authorize_from_scratch(server_name, url, paths, scopes, oauth_config, server_actor_event_tx).await
         },
     }
+}
+
+/// Runs the full interactive OAuth flow and persists the resulting client
+/// registration and token.
+async fn authorize_from_scratch(
+    server_name: &str,
+    url: Url,
+    paths: &OAuthCachePaths,
+    scopes: &[String],
+    oauth_config: &Option<OAuthConfig>,
+    server_actor_event_tx: &mpsc::Sender<McpServerActorEvent>,
+) -> Result<AuthorizationManager, OauthUtilError> {
+    debug!("## mcp: constructing auth manager from scratch");
+    let oauth_state = OAuthState::new(url, Some(oauth_discovery_client()?)).await?;
+    let (am, redirect_uri) =
+        get_auth_manager_impl(server_name, oauth_state, scopes, oauth_config, server_actor_event_tx).await?;
+
+    // Client registration is done in [start_authorization]
+    // If we have gotten past that point that means we have the info to persist the
+    // registration on disk.
+    let (client_id, credentials) = am.get_credentials().await?;
+    let reg = Registration {
+        client_id,
+        client_secret: None,
+        scopes: scopes.to_vec(),
+        redirect_uri,
+    };
+    let reg_as_str = serde_json::to_string_pretty(&reg)?;
+    let reg_parent_path = paths.registration.parent().ok_or(OauthUtilError::MalformDirectory)?;
+    tokio::fs::create_dir_all(reg_parent_path).await?;
+    tokio::fs::write(&paths.registration, &reg_as_str).await?;
+
+    let credentials = credentials.ok_or(OauthUtilError::MissingCredentials)?;
+
+    let cred_parent_path = paths.token.parent().ok_or(OauthUtilError::MalformDirectory)?;
+    tokio::fs::create_dir_all(cred_parent_path).await?;
+    let reg_as_str = serde_json::to_string_pretty(&credentials)?;
+    write_credentials_securely(&paths.token, &reg_as_str).await?;
+
+    Ok(am)
 }
 
 /// The only hosts a loopback OAuth callback can be delivered to.
@@ -799,19 +957,18 @@ pub fn compute_key(rs: &Url) -> String {
 
 /// Remove the persisted OAuth credentials for a remote MCP server.
 ///
-/// Deletes both the cached token (`{key}.token.json`) and the dynamic client
-/// registration (`{key}.registration.json`) stored under `cred_dir`, where `key`
+/// Deletes the cached token (`{key}.token.json`), the dynamic client
+/// registration (`{key}.registration.json`) and the discovered authorization
+/// server metadata (`{key}.metadata.json`) stored under `cred_dir`, where `key`
 /// is derived from `url` via [`compute_key`]. Missing files are not an error.
 ///
 /// Returns `Ok(true)` if at least one credential file was present and removed.
 pub async fn remove_persisted_credentials(cred_dir: &Path, url: &str) -> Result<bool, OauthUtilError> {
     let url = Url::from_str(url)?;
-    let key = compute_key(&url);
-    let token_path = cred_dir.join(format!("{key}.token.json"));
-    let reg_path = cred_dir.join(format!("{key}.registration.json"));
+    let paths = OAuthCachePaths::new(cred_dir, &compute_key(&url));
 
     let mut removed = false;
-    for path in [token_path, reg_path] {
+    for path in [paths.token, paths.registration, paths.metadata] {
         match tokio::fs::remove_file(&path).await {
             Ok(()) => removed = true,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
@@ -1346,21 +1503,10 @@ mod tests {
     ) -> String {
         let (tx, mut rx) = mpsc::channel::<McpServerActorEvent>(8);
         let url = Url::parse(&server.base_url).unwrap();
-        let key = compute_key(&url);
-        let cred_path = cred_dir.join(format!("{key}.token.json"));
-        let reg_path = cred_dir.join(format!("{key}.registration.json"));
+        let paths = OAuthCachePaths::new(cred_dir, &compute_key(&url));
 
         let flow = tokio::spawn(async move {
-            get_auth_manager(
-                "mock",
-                url,
-                cred_path,
-                reg_path,
-                &["openid".to_string()],
-                &oauth_config,
-                &tx,
-            )
-            .await
+            get_auth_manager("mock", url, &paths, &["openid".to_string()], &oauth_config, &tx).await
         });
 
         let authorized_client_id = match tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await {
@@ -1932,6 +2078,27 @@ mod tests {
         // Removing again is a no-op and reports nothing removed.
         let removed_again = remove_persisted_credentials(cred_dir, url).await.unwrap();
         assert!(!removed_again);
+    }
+
+    #[tokio::test]
+    async fn test_remove_cached_oauth_state_deletes_all_three_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = OAuthCachePaths::new(dir.path(), "abc123");
+        for path in [&paths.token, &paths.registration, &paths.metadata] {
+            tokio::fs::write(path, "{}").await.unwrap();
+        }
+
+        remove_cached_oauth_state(&paths).await;
+
+        assert!(!paths.token.exists());
+        assert!(!paths.registration.exists());
+        assert!(
+            !paths.metadata.exists(),
+            "metadata must not survive the credentials it describes"
+        );
+
+        // A second pass over the now-missing files must not panic or error.
+        remove_cached_oauth_state(&paths).await;
     }
 
     #[tokio::test]
