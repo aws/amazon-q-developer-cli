@@ -647,6 +647,7 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
     mouseModeEnabled,
     stopConfirmationArmed,
     inputOpen: inputMode !== 'none',
+    glyphs,
   });
 
   return (
@@ -809,9 +810,19 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       {footerRows > 0 && (
         <Box paddingX={1} height={footerRows}>
           <Text wrap="wrap">
-            {getColor('secondary')(
-              navigationHints ? `${navigationHints} | ${footer}` : footer
+            {navigationHints && (
+              <>
+                {getColor('secondary')(navigationHints)}
+                {getColor('secondary')(` ${glyphs.smallDot} `)}
+              </>
             )}
+            {footer.map((hint, index) => (
+              <React.Fragment key={`${hint.key}-${hint.label}`}>
+                {index > 0 && getColor('secondary')(` ${glyphs.smallDot} `)}
+                {getColor('primary')(hint.key)}{' '}
+                {getColor('secondary')(hint.label)}
+              </React.Fragment>
+            ))}
           </Text>
         </Box>
       )}

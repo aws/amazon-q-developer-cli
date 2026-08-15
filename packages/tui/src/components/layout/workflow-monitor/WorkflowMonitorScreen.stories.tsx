@@ -587,7 +587,7 @@ const navigateToNextWorkflow: StorybookPlay = async ({ press, waitFor }) => {
 
 const armStopConfirmation: StorybookPlay = async ({ press, waitFor }) => {
   await press('ctrl+x');
-  await waitFor('Ctrl+X stop workflow');
+  await waitFor('ctrl+x stop workflow');
 };
 
 const enableMouseMode: StorybookPlay = async ({ type, waitFor }) => {
@@ -775,7 +775,7 @@ export const Narrow = {
 export const StopConfirmation = {
   args: { scenario: 'stop-confirmation' satisfies WorkflowMonitorScenario },
   parameters: certification({
-    visible: ['Ctrl+X stop workflow', 'Esc keep running'],
+    visible: ['ctrl+x stop workflow', 'esc keep running'],
   }),
   play: armStopConfirmation,
 };

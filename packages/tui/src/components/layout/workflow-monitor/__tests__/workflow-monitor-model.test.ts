@@ -3,7 +3,10 @@ import type { Key } from '../../../../hooks/useKeypress.js';
 import type { WorkflowRunView } from '../../../../types/workflow-monitor.js';
 import { UNICODE_GLYPHS } from '../../../../utils/glyphs.js';
 import { classifyInputKey } from '../classify-input-key.js';
-import { buildMonitorFooterHints } from '../monitor-footer-hints.js';
+import {
+  buildMonitorFooterHints,
+  type MonitorFooterHint,
+} from '../monitor-footer-hints.js';
 import {
   monitorPaneDimensions,
   resizeMonitorRatio,
@@ -18,6 +21,14 @@ import {
   workflowDigitToIndex,
 } from '../workflow-tabs.js';
 import { classifyWorkflowStopKey } from '../workflow-stop-confirmation.js';
+
+function hasHint(
+  hints: MonitorFooterHint[],
+  key: string,
+  label: string
+): boolean {
+  return hints.some((hint) => hint.key === key && hint.label === label);
+}
 
 const key = (overrides: Partial<Key> = {}): Key => ({
   upArrow: false,
@@ -165,10 +176,11 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     });
 
-    expect(hints).toContain('s message');
-    expect(hints).not.toContain('Ctrl+X stop');
+    expect(hasHint(hints, 's', 'message')).toBe(true);
+    expect(hasHint(hints, 'ctrl+x', 'stop')).toBe(false);
   });
 
   it('names the two motions a failed step needs', () => {
@@ -188,10 +200,11 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     });
 
-    expect(hints).toContain('s message');
-    expect(hints).toContain('r retry step');
+    expect(hasHint(hints, 's', 'message')).toBe(true);
+    expect(hasHint(hints, 'r', 'retry step')).toBe(true);
   });
 
   it('does not promise a step-scoped retry inside a loop', () => {
@@ -213,10 +226,11 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     });
 
-    expect(hints).toContain('r retry');
-    expect(hints).not.toContain('r retry step');
+    expect(hasHint(hints, 'r', 'retry')).toBe(true);
+    expect(hasHint(hints, 'r', 'retry step')).toBe(false);
   });
 
   it('offers a reply at a paused step regardless of completion signal', () => {
@@ -235,10 +249,11 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     });
 
-    expect(hints).toContain('s respond');
-    expect(hints).toContain('r resume');
+    expect(hasHint(hints, 's', 'respond')).toBe(true);
+    expect(hasHint(hints, 'r', 'resume')).toBe(true);
   });
 
   it('does not offer a reply at a parked container', () => {
@@ -258,10 +273,11 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     });
 
-    expect(hints).not.toContain('s respond');
-    expect(hints).toContain('r resume');
+    expect(hasHint(hints, 's', 'respond')).toBe(false);
+    expect(hasHint(hints, 'r', 'resume')).toBe(true);
   });
 
   it('does not offer a fix message at a failed container', () => {
@@ -279,12 +295,13 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     });
 
-    expect(hints).not.toContain('s message');
+    expect(hasHint(hints, 's', 'message')).toBe(false);
     // The whole run, since a container is not a step KAS can rerun on its own.
-    expect(hints).toContain('r retry');
-    expect(hints).not.toContain('r retry step');
+    expect(hasHint(hints, 'r', 'retry')).toBe(true);
+    expect(hasHint(hints, 'r', 'retry step')).toBe(false);
   });
 
   it('does not offer a message at a step with no session yet', () => {
@@ -302,9 +319,10 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     });
 
-    expect(hints).not.toContain('s respond');
+    expect(hasHint(hints, 's', 'respond')).toBe(false);
   });
 
   it('shows optimistic graceful pause state', () => {
@@ -319,17 +337,30 @@ describe('workflow monitor view model', () => {
       mouseModeEnabled: false,
       stopConfirmationArmed: false,
       inputOpen: false,
+      glyphs: UNICODE_GLYPHS,
     };
 
-    expect(buildMonitorFooterHints({ ...base, status: 'running' })).toContain(
-      'p pause'
-    );
-    expect(buildMonitorFooterHints({ ...base, status: 'paused' })).toContain(
-      'r resume'
-    );
-    expect(buildMonitorFooterHints({ ...base, status: 'failed' })).toContain(
-      'r retry'
-    );
+    expect(
+      hasHint(
+        buildMonitorFooterHints({ ...base, status: 'running' }),
+        'p',
+        'pause'
+      )
+    ).toBe(true);
+    expect(
+      hasHint(
+        buildMonitorFooterHints({ ...base, status: 'paused' }),
+        'r',
+        'resume'
+      )
+    ).toBe(true);
+    expect(
+      hasHint(
+        buildMonitorFooterHints({ ...base, status: 'failed' }),
+        'r',
+        'retry'
+      )
+    ).toBe(true);
     expect(workflowControlShortcut('p', key(), 'running')).toBe('pause');
     expect(workflowControlShortcut('r', key(), 'paused')).toBe('resume');
     expect(workflowControlShortcut('r', key(), 'failed')).toBe('retry');
