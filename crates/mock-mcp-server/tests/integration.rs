@@ -317,8 +317,7 @@ fn test_http_server_handle() {
         .spawn_http()
         .unwrap();
 
-    // Give server time to start
-    std::thread::sleep(Duration::from_millis(500));
+    handle.wait_ready(Duration::from_secs(10)).unwrap();
 
     assert!(handle.is_running());
     assert!(handle.url().starts_with("http://127.0.0.1:"));

@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::io::Write;
-use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{
     Child,
@@ -12,6 +11,7 @@ use std::process::{
 use std::sync::{
     Arc,
     Mutex,
+    OnceLock,
 };
 
 use serde::{
@@ -201,8 +201,11 @@ impl MockMcpServerBuilder {
         }
         drop(file);
 
-        let port = find_available_port()?;
-        let port_as_str = port.to_string();
+        // The child binds an ephemeral port itself and reports it here; pre-assigning one
+        // would leave it unowned between the probe and the child's bind.
+        let port_file = temp_dir.path().join("port");
+        let port_file_arg = port_file.to_str().unwrap().to_string();
+
         let binary_path: String;
         let manifest_dir: PathBuf;
 
@@ -215,7 +218,9 @@ impl MockMcpServerBuilder {
                 "--transport",
                 "http",
                 "--port",
-                &port_as_str,
+                "0",
+                "--port-file",
+                &port_file_arg,
             ])
         } else {
             manifest_dir = find_cargo_manifest_dir()
@@ -237,7 +242,9 @@ impl MockMcpServerBuilder {
                 "--transport",
                 "http",
                 "--port",
-                &port_as_str,
+                "0",
+                "--port-file",
+                &port_file_arg,
             ])
         };
 
@@ -278,13 +285,32 @@ impl MockMcpServerBuilder {
             inner: Arc::new(HandleInner {
                 _temp_dir: temp_dir,
                 child: Mutex::new(Some(child)),
-                port,
+                port_file,
+                port: OnceLock::new(),
             }),
         })
     }
 }
 
+/// Build the mock server binary if it is missing or stale, at most once per process.
+/// Every test calls this, and concurrent callers would each start their own `cargo
+/// build` and then queue on cargo's lock instead of sharing a single build.
 pub fn prebuild_bin() -> std::io::Result<PathBuf> {
+    static BUILT: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+    // Recover from poisoning so a panicking build surfaces its own error to later
+    // callers rather than a poison error.
+    let mut built = BUILT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(path) = built.as_ref() {
+        return Ok(path.clone());
+    }
+
+    let path = build_bin()?;
+    *built = Some(path.clone());
+    Ok(path)
+}
+
+fn build_bin() -> std::io::Result<PathBuf> {
     const NOT_FOUND_MSG: &str = "Could not find mock-mcp-server crate directory or binary";
 
     let manifest_parent_dir =
@@ -375,7 +401,8 @@ pub struct MockMcpServerHandle {
 struct HandleInner {
     _temp_dir: tempfile::TempDir,
     child: Mutex<Option<Child>>,
-    port: u16,
+    port_file: PathBuf,
+    port: OnceLock<u16>,
 }
 
 impl Drop for HandleInner {
@@ -389,11 +416,19 @@ impl Drop for HandleInner {
 
 impl MockMcpServerHandle {
     pub fn url(&self) -> String {
-        format!("http://127.0.0.1:{}/mcp", self.inner.port)
+        format!("http://127.0.0.1:{}/mcp", self.port())
     }
 
+    /// # Panics
+    ///
+    /// Panics unless `wait_ready` has returned `Ok`, since only the server itself
+    /// knows which ephemeral port it bound.
     pub fn port(&self) -> u16 {
-        self.inner.port
+        *self
+            .inner
+            .port
+            .get()
+            .expect("mock server port is unknown until wait_ready succeeds")
     }
 
     pub fn is_running(&self) -> bool {
@@ -409,32 +444,76 @@ impl MockMcpServerHandle {
         Arc::strong_count(&self.inner)
     }
 
-    /// Wait for the server to be ready to accept connections.
-    /// Polls the server until it responds or timeout is reached.
+    /// Wait for the server to report the port it bound and to accept a connection on it.
+    /// This must succeed before `port` or `url` may be called.
     pub fn wait_ready(&self, timeout: std::time::Duration) -> std::io::Result<()> {
         let start = std::time::Instant::now();
-        let url = self.url();
 
         while start.elapsed() < timeout {
-            if let Ok(stream) = std::net::TcpStream::connect(format!("127.0.0.1:{}", self.inner.port)) {
-                drop(stream);
-                return Ok(());
+            if let Some(status) = self.exit_status() {
+                // stderr is piped and nothing else ever reads it, so the line saying
+                // why the child died would be discarded when the pipe closes.
+                let stderr = self.drain_stderr();
+                let detail = if stderr.is_empty() {
+                    "no stderr output".to_string()
+                } else {
+                    stderr
+                };
+                return Err(std::io::Error::other(format!(
+                    "Server exited before it was ready: {status}: {detail}"
+                )));
+            }
+
+            // Publish the port only once a connection has succeeded, so `port` and `url`
+            // stay unreachable when this call goes on to time out.
+            if let Some(port) = self.reported_port() {
+                if let Ok(stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+                    drop(stream);
+                    let _ = self.inner.port.set(port);
+                    return Ok(());
+                }
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
 
+        // Never reporting a port (still building, or dead before binding) and binding
+        // one that then refuses connections have different causes, so the timeout
+        // message has to tell them apart.
+        let progress = match self.reported_port() {
+            Some(port) => format!("bound port {port} but refused connections"),
+            None => "child never reported a port".to_string(),
+        };
         Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut,
-            format!("Server at {} not ready after {:?}", url, timeout),
+            format!("Server not ready after {timeout:?}: {progress}"),
         ))
     }
-}
 
-fn find_available_port() -> std::io::Result<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let port = listener.local_addr()?.port();
-    drop(listener);
-    Ok(port)
+    /// Reads whatever the child wrote to `stderr`. Only call this once the child
+    /// has exited: the pipe stays open while it runs, so the read would block.
+    fn drain_stderr(&self) -> String {
+        use std::io::Read;
+
+        let mut child_guard = self.inner.child.lock().unwrap();
+        let Some(child) = child_guard.as_mut() else {
+            return String::new();
+        };
+        let Some(mut stderr) = child.stderr.take() else {
+            return String::new();
+        };
+        let mut buf = String::new();
+        let _ = stderr.read_to_string(&mut buf);
+        buf.trim().to_string()
+    }
+
+    fn exit_status(&self) -> Option<std::process::ExitStatus> {
+        let mut child_guard = self.inner.child.lock().unwrap();
+        child_guard.as_mut().and_then(|child| child.try_wait().ok().flatten())
+    }
+
+    fn reported_port(&self) -> Option<u16> {
+        std::fs::read_to_string(&self.inner.port_file).ok()?.trim().parse().ok()
+    }
 }
 
 fn find_cargo_manifest_dir() -> Option<PathBuf> {
@@ -462,6 +541,8 @@ fn find_cargo_manifest_dir() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
     #[test]
     fn test_builder_pattern() {
         let handle = MockMcpServerBuilder::new()
@@ -477,6 +558,7 @@ mod tests {
             })
             .spawn_http()
             .unwrap();
+        handle.wait_ready(READY_TIMEOUT).unwrap();
 
         assert!(handle.port() > 0);
         assert!(handle.url().contains(&handle.port().to_string()));
@@ -499,7 +581,35 @@ mod tests {
     fn test_automatic_port_assignment() {
         let handle1 = MockMcpServerBuilder::new().spawn_http().unwrap();
         let handle2 = MockMcpServerBuilder::new().spawn_http().unwrap();
+        handle1.wait_ready(READY_TIMEOUT).unwrap();
+        handle2.wait_ready(READY_TIMEOUT).unwrap();
 
         assert_ne!(handle1.port(), handle2.port());
+    }
+
+    #[test]
+    fn test_timed_out_wait_ready_leaves_port_unpublished() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let port_file = temp_dir.path().join("port");
+        // Nothing listens on port 1, so the reported port is never connectable.
+        std::fs::write(&port_file, "1").unwrap();
+
+        let handle = MockMcpServerHandle {
+            inner: Arc::new(HandleInner {
+                _temp_dir: temp_dir,
+                child: Mutex::new(None),
+                port_file,
+                port: OnceLock::new(),
+            }),
+        };
+
+        let err = handle
+            .wait_ready(std::time::Duration::from_millis(100))
+            .expect_err("wait_ready must fail when the reported port refuses connections");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            handle.inner.port.get().is_none(),
+            "port must stay unpublished so port() upholds its documented panic"
+        );
     }
 }

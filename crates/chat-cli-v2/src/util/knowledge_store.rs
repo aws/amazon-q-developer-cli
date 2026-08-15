@@ -1058,19 +1058,38 @@ mod tests {
     use super::*;
     use crate::os::Os;
 
-    async fn create_test_os(temp_dir: &TempDir) -> Os {
+    /// Returns an `Os` plus an agent name unique to this call. The knowledge-base root
+    /// resolves against the data dir, which no per-test environment reaches, so two
+    /// tests naming the same agent would share one real directory.
+    async fn create_test_os(temp_dir: &TempDir) -> (Os, String) {
+        static NEXT_AGENT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let agent = format!(
+            "kb-test-agent-{}",
+            NEXT_AGENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+
         let os = Os::new().await.unwrap();
-        // Override home directory to use temp directory
         unsafe {
             os.env.set_var("HOME", temp_dir.path().to_str().unwrap());
         }
-        os
+        // The `Best` index type downloads a ~90 MB model into a fixed path under the real
+        // home that no per-test environment reaches, so tests must never inherit it.
+        os.database
+            .settings
+            .set(
+                crate::database::settings::Setting::KnowledgeIndexType,
+                serde_json::json!("fast"),
+                None,
+            )
+            .await
+            .unwrap();
+        (os, agent)
     }
 
     #[tokio::test]
     async fn test_create_config_from_db_settings() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, _agent) = create_test_os(&temp_dir).await;
         let base_dir = temp_dir.path().join("test_kb");
 
         // Test config creation with default settings
@@ -1086,7 +1105,7 @@ mod tests {
     #[tokio::test]
     async fn test_knowledge_bases_dir_structure() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, _agent) = create_test_os(&temp_dir).await;
 
         let base_dir = crate::util::paths::PathResolver::new(&os)
             .global()
@@ -1100,7 +1119,7 @@ mod tests {
     #[tokio::test]
     async fn test_add_options_with_db_defaults_picks_up_global_patterns() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, _agent) = create_test_os(&temp_dir).await;
 
         os.database
             .settings
@@ -1130,7 +1149,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_sync_options_agent_config_overrides_global_defaults() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, _agent) = create_test_os(&temp_dir).await;
 
         os.database
             .settings
@@ -1158,7 +1177,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_sync_options_uses_global_defaults_when_agent_has_none() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, _agent) = create_test_os(&temp_dir).await;
 
         os.database
             .settings
@@ -1179,7 +1198,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_sync_options_also_applies_global_embedding_type() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, _agent) = create_test_os(&temp_dir).await;
 
         os.database
             .settings
@@ -1243,7 +1262,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_agent_resources_indexes_knowledge_base() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, agent) = create_test_os(&temp_dir).await;
 
         // Create KB data inside the test HOME
         let kb_dir = temp_dir.path().join("kb-data");
@@ -1251,7 +1270,7 @@ mod tests {
         std::fs::write(kb_dir.join("doc.txt"), "test knowledge base content").unwrap();
 
         // Directly add via the store — add() validates the path and enqueues indexing
-        let store_arc = KnowledgeStore::get_async_instance(&os, Some("test-agent"), None)
+        let store_arc = KnowledgeStore::get_async_instance(&os, Some(agent.as_str()), None)
             .await
             .unwrap();
         let mut store = store_arc.lock().await;
@@ -1266,7 +1285,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_agent_resources_removes_stale_kb() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, agent) = create_test_os(&temp_dir).await;
 
         let kb_dir = temp_dir.path().join("kb-data");
         std::fs::create_dir_all(&kb_dir).unwrap();
@@ -1284,16 +1303,16 @@ mod tests {
                 auto_update: Some(false),
             },
         )];
-        KnowledgeStore::sync_agent_resources("test-agent", None, &resources, &os)
+        KnowledgeStore::sync_agent_resources(&agent, None, &resources, &os)
             .await
             .unwrap();
 
         // Second sync: empty resources — should remove the auto-synced KB
-        KnowledgeStore::sync_agent_resources("test-agent", None, &[], &os)
+        KnowledgeStore::sync_agent_resources(&agent, None, &[], &os)
             .await
             .unwrap();
 
-        let store_arc = KnowledgeStore::get_async_instance(&os, Some("test-agent"), None)
+        let store_arc = KnowledgeStore::get_async_instance(&os, Some(agent.as_str()), None)
             .await
             .unwrap();
         let store = store_arc.lock().await;
@@ -1304,17 +1323,17 @@ mod tests {
     #[tokio::test]
     async fn test_sync_agent_resources_skips_non_kb_resources() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, agent) = create_test_os(&temp_dir).await;
 
         let resources = vec![
             agent::agent_config::types::ResourcePath::FilePath("file://readme.md".to_string()),
             agent::agent_config::types::ResourcePath::Skill("skill://my-skill".to_string()),
         ];
 
-        let result = KnowledgeStore::sync_agent_resources("test-agent", None, &resources, &os).await;
+        let result = KnowledgeStore::sync_agent_resources(&agent, None, &resources, &os).await;
         assert!(result.is_ok());
 
-        let store_arc = KnowledgeStore::get_async_instance(&os, Some("test-agent"), None)
+        let store_arc = KnowledgeStore::get_async_instance(&os, Some(agent.as_str()), None)
             .await
             .unwrap();
         let store = store_arc.lock().await;
@@ -1325,7 +1344,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_agent_swap_replaces_old_kbs_with_new() {
         let temp_dir = TempDir::new().unwrap();
-        let os = create_test_os(&temp_dir).await;
+        let (os, agent) = create_test_os(&temp_dir).await;
 
         let kb_a = temp_dir.path().join("kb-a");
         let kb_b = temp_dir.path().join("kb-b");
@@ -1346,7 +1365,7 @@ mod tests {
                 auto_update: Some(false),
             },
         )];
-        let result = KnowledgeStore::sync_agent_resources("shared-agent", None, &agent_a_resources, &os).await;
+        let result = KnowledgeStore::sync_agent_resources(&agent, None, &agent_a_resources, &os).await;
         assert!(result.is_ok(), "Agent A sync should succeed");
 
         // Swap to agent B — should succeed and not error even though agent A's KB
@@ -1362,11 +1381,11 @@ mod tests {
                 auto_update: Some(false),
             },
         )];
-        let result = KnowledgeStore::sync_agent_resources("shared-agent", None, &agent_b_resources, &os).await;
+        let result = KnowledgeStore::sync_agent_resources(&agent, None, &agent_b_resources, &os).await;
         assert!(result.is_ok(), "Agent B sync (swap) should succeed");
 
         // Sync with empty resources — should succeed (cleanup path)
-        let result = KnowledgeStore::sync_agent_resources("shared-agent", None, &[], &os).await;
+        let result = KnowledgeStore::sync_agent_resources(&agent, None, &[], &os).await;
         assert!(result.is_ok(), "Empty sync (cleanup) should succeed");
     }
 }

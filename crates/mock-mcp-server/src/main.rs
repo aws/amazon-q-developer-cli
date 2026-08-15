@@ -45,9 +45,13 @@ struct Args {
     #[arg(long, short, default_value = "stdio")]
     transport: Transport,
 
-    /// Port for HTTP transport
+    /// Port for HTTP transport. Use 0 to let the OS assign a free one.
     #[arg(long, short, default_value = "8080")]
     port: u16,
+
+    /// File to write the actually bound port to, once the listener is up.
+    #[arg(long)]
+    port_file: Option<PathBuf>,
 
     /// HTTP status code to return for probe requests (e.g., 401 or 403 to trigger OAuth)
     #[arg(long)]
@@ -172,7 +176,28 @@ async fn run_stdio(server: MockMcpServer, linger: bool) -> Result<()> {
     Ok(())
 }
 
-async fn run_http(server: MockMcpServer, port: u16, probe_status: Option<u16>) -> Result<()> {
+/// Binding before the routers are built lets `--port 0` be resolved into the real
+/// port the metadata URLs must advertise, and the port is only reported once owned.
+async fn bind_and_report(port: u16, port_file: Option<&PathBuf>) -> Result<(tokio::net::TcpListener, u16)> {
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
+    let bound_port = listener.local_addr()?.port();
+
+    if let Some(path) = port_file {
+        // Rename so a reader never observes a half-written port.
+        let staging = path.with_extension("pending");
+        std::fs::write(&staging, bound_port.to_string())?;
+        std::fs::rename(&staging, path)?;
+    }
+
+    Ok((listener, bound_port))
+}
+
+async fn run_http(
+    server: MockMcpServer,
+    tcp_listener: tokio::net::TcpListener,
+    port: u16,
+    probe_status: Option<u16>,
+) -> Result<()> {
     use std::sync::atomic::{
         AtomicBool,
         Ordering,
@@ -273,10 +298,8 @@ async fn run_http(server: MockMcpServer, port: u16, probe_status: Option<u16>) -
             .with_state(port)
     };
 
-    let addr = format!("0.0.0.0:{}", port);
-    eprintln!("Starting HTTP MCP server on {}", addr);
+    eprintln!("Starting HTTP MCP server on 0.0.0.0:{port}");
 
-    let tcp_listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(tcp_listener, router)
         .with_graceful_shutdown(async {
             tokio::signal::ctrl_c().await.ok();
@@ -376,7 +399,12 @@ impl OAuthRuntime {
 /// Requests to `/mcp` must carry a valid, unexpired bearer token; otherwise the
 /// server responds 401 with a `WWW-Authenticate` header so the client kicks off
 /// (or retries) the OAuth flow.
-async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) -> Result<()> {
+async fn run_http_oauth(
+    server: MockMcpServer,
+    tcp_listener: tokio::net::TcpListener,
+    port: u16,
+    cfg: OAuthMockConfig,
+) -> Result<()> {
     use axum::extract::{
         Form,
         Query,
@@ -601,10 +629,8 @@ async fn run_http_oauth(server: MockMcpServer, port: u16, cfg: OAuthMockConfig) 
         .route("/control/break-discovery", post(break_discovery_handler))
         .nest("/mcp", mcp_router);
 
-    let addr = format!("0.0.0.0:{port}");
-    eprintln!("Starting OAuth-enabled HTTP MCP server on {addr}");
+    eprintln!("Starting OAuth-enabled HTTP MCP server on 0.0.0.0:{port}");
 
-    let tcp_listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(tcp_listener, router)
         .with_graceful_shutdown(async {
             tokio::signal::ctrl_c().await.ok();
@@ -624,18 +650,22 @@ async fn main() -> Result<()> {
 
     let server = MockMcpServer::from_config(&args.config)?;
 
-    match args.transport {
-        Transport::Stdio => run_stdio(server, args.linger).await,
-        Transport::Http if args.oauth => {
-            run_http_oauth(server, args.port, OAuthMockConfig {
-                token_ttl_secs: args.oauth_token_ttl_secs,
-                issue_refresh_token: !args.oauth_no_refresh_token,
-                refresh_fails: args.oauth_refresh_fails,
-                resource_origin_only: args.oauth_resource_origin_only,
-            })
-            .await
-        },
-        Transport::Http => run_http(server, args.port, args.probe_status).await,
+    if matches!(args.transport, Transport::Stdio) {
+        return run_stdio(server, args.linger).await;
+    }
+
+    let (listener, port) = bind_and_report(args.port, args.port_file.as_ref()).await?;
+
+    if args.oauth {
+        run_http_oauth(server, listener, port, OAuthMockConfig {
+            token_ttl_secs: args.oauth_token_ttl_secs,
+            issue_refresh_token: !args.oauth_no_refresh_token,
+            refresh_fails: args.oauth_refresh_fails,
+            resource_origin_only: args.oauth_resource_origin_only,
+        })
+        .await
+    } else {
+        run_http(server, listener, port, args.probe_status).await
     }
 }
 
