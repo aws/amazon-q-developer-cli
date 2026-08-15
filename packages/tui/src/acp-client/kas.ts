@@ -2860,11 +2860,12 @@ export class KasAcpClient extends BaseAcpClient {
         toolCount: server.tools?.length ?? 0,
         ...(readDescriptor
           ? {
-              source:
-                descriptorSource ??
-                (this.startedCloudSession
-                  ? ('cloud' as const)
-                  : ('local' as const)),
+              // Per UX: a cloud session's entire config surface reads
+              // "cloud" (it all lives in the sandbox); the per-server
+              // descriptor origin only differentiates in local sessions.
+              source: this.startedCloudSession
+                ? ('cloud' as const)
+                : (descriptorSource ?? ('local' as const)),
             }
           : {}),
       };

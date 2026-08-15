@@ -11,6 +11,7 @@ const meta = {
       'Mentions',
       'WithSelectedIndicator',
       'Searchable',
+      'WithColumnHeaders',
     ],
   },
   tags: ['autodocs'],
@@ -182,5 +183,45 @@ export const Searchable = {
     searchLabel: 'Select model',
     searchPlaceholder: 'type to search',
     onSelect: (item: any) => console.log('Selected model:', item),
+  },
+};
+
+export const WithColumnHeaders = {
+  parameters: {
+    docs: {
+      storyDescription:
+        'Opt-in column mode: dim header row over all four columns (label, annotation, group, description)',
+    },
+  },
+  args: {
+    items: [
+      {
+        label: 'Default',
+        description: '[active] General coding assistance',
+        group: 'Bundled',
+        annotation: 'local',
+      },
+      {
+        label: 'cloud-helper',
+        description: 'Cloud-synced demo agent',
+        group: 'Global',
+        annotation: 'cloud',
+      },
+      {
+        label: 'mine',
+        description: 'Workspace agent',
+        group: 'Workspace',
+        annotation: 'local',
+      },
+    ],
+    prefix: '',
+    showSelectedIndicator: true,
+    columnHeaders: {
+      label: 'Name',
+      annotation: 'Source',
+      group: 'Scope',
+      description: 'Description',
+    },
+    onSelect: (item: any) => console.log('Selected item:', item),
   },
 };

@@ -4,8 +4,7 @@
  * Darkship local-control proof: with cloud_config OFF, the /mcp panel output
  * must be identical to main — no Source column, no cloud empty state — even
  * when servers carry a `source` field or the session is cloud. With the flag
- * ON, the Source column renders (Figma frames 24/27) and the cloud
- * empty-state copy appears (frame 28).
+ * ON, the Source column renders and the cloud empty-state copy appears.
  */
 
 import { afterEach, describe, expect, test, vi } from 'vitest';

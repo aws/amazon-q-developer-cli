@@ -977,7 +977,19 @@ export interface SlashCommand extends AvailableCommand {
 
 export interface ActiveCommand {
   command: AvailableCommand;
-  options: CommandOption[];
+  options: Array<CommandOption & { annotation?: string }>;
+  /**
+   * When set, the picker menu renders an aligned header row and a dim
+   * annotation column fed by each option's `annotation`. Group/description
+   * headers cover those columns when the options carry them. Decided once by
+   * the handler that opens the picker; absent → the plain columnless menu.
+   */
+  columnHeaders?: {
+    label: string;
+    annotation: string;
+    group?: string;
+    description?: string;
+  };
   panel?: WorkflowRecipeInputPanelModel;
   /**
    * Cursor row to highlight when the menu opens. Defaults to 0.
@@ -8256,19 +8268,6 @@ export const createAppStore = (props: AppStoreProps) => {
       set({ toolsList: tools });
     },
     updateMcpServerStatuses: (servers) => {
-      // V2 feeds the /config table's MCP cache from here — this event is the
-      // engine's only full-listing push (fires at init and on tool refreshes),
-      // and without it the category row reads "—" while /mcp lists servers.
-      // KAS owns the cache via session-tagged McpServerSnapshot pushes.
-      if (agentEngine !== 'kas') {
-        set({
-          mcpServerCache: servers.map((s) => ({
-            name: s.name,
-            status: s.status as McpServerInfo['status'],
-            toolCount: s.toolCount,
-          })),
-        });
-      }
       const { mcpServers, showMcpPanel } = get();
       if (!showMcpPanel || mcpServers.length === 0) return;
       const updated = mcpServers.map((existing) => {
@@ -8535,55 +8534,13 @@ export const createAppStore = (props: AppStoreProps) => {
         ...(show && { configHandoffToken: 0 }),
       });
       if (show) {
+        // /config is KAS-only (registry kasOnly gate) — every cache the
+        // panel reads is KAS-fed, so no hydration is needed here.
+        // engine omitted: /config is KAS-only, the recorder defaults to v3.
         recordTuiConfigPanel({
           category: category ?? 'menu',
           version: telemetryVersion,
-          engine: agentEngine === 'kas' ? 'v3' : 'v2',
         });
-        // V2 hydration: KAS pushes agents/hooks unprompted, but on V2 those
-        // caches stay cold until their command runs — the category table
-        // would say "—" while /agent and /hooks list plenty. Fill them
-        // best-effort as the panel opens; rows update as data lands.
-        // Skills/steering/MCP arrive via V2's own update events, and powers
-        // and diagnostics have no V2 source (their "—" is honest).
-        if (agentEngine !== 'kas') {
-          const { kiro } = get();
-          if (
-            get().kas.availableAgents.length === 0 &&
-            typeof kiro.getCommandOptions === 'function'
-          ) {
-            void kiro
-              .getCommandOptions('/agent', '')
-              .then(({ options }) => {
-                if (options.length === 0) return;
-                set((s) => ({
-                  kas: {
-                    ...s.kas,
-                    availableAgents: options.map((o) => ({
-                      id: o.value,
-                      name: o.label,
-                      ...(o.description ? { description: o.description } : {}),
-                    })),
-                  },
-                }));
-              })
-              .catch(() => {});
-          }
-          if (
-            get().hooksList.length === 0 &&
-            typeof kiro.executeCommand === 'function'
-          ) {
-            void kiro
-              .executeCommand({ command: 'hooks', args: {} } as never)
-              .then((result) => {
-                const data = result?.data as { hooks?: HookInfo[] } | undefined;
-                if (result?.success && data?.hooks && data.hooks.length > 0) {
-                  get().setHooksList(data.hooks);
-                }
-              })
-              .catch(() => {});
-          }
-        }
       } else {
         // The panel owns queue interaction (hasOpenBackendPanel) — closing
         // it must resume a paused message queue, like every other panel.

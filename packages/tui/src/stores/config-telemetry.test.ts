@@ -66,20 +66,15 @@ describe('/config panel telemetry', () => {
     store.getState().setShowConfigPanel(true, 'steering');
     store.getState().setShowConfigPanel(false);
 
+    // engine is omitted at the call site: /config is KAS-only, so the
+    // recorder's v3 default is always correct.
     expect(mockRecordTuiConfigPanel.mock.calls.map((c) => c[0])).toMatchObject([
-      { category: 'menu', engine: 'v3' },
-      { category: 'steering', engine: 'v3' },
+      { category: 'menu' },
+      { category: 'steering' },
     ]);
-  });
-
-  it('labels the engine v2 for the rust backend', () => {
-    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
-
-    store.getState().setShowConfigPanel(true);
-
-    expect(mockRecordTuiConfigPanel.mock.calls[0]?.[0]).toMatchObject({
-      engine: 'v2',
-    });
+    expect(mockRecordTuiConfigPanel.mock.calls[0]?.[0]).not.toHaveProperty(
+      'engine'
+    );
   });
 
   it('opening the panel resets a stale handoff token (never opens inert)', () => {

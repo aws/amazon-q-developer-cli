@@ -65,4 +65,14 @@ describe('/config darkship gating', () => {
       store.getState().slashCommands.find((c) => c.name === '/config')
     ).toBeDefined();
   });
+
+  it('is not registered on V2 even inside the cohort (KAS-only)', () => {
+    // Every cache the panel reads (descriptors, powers/steering/hooks
+    // pushes) is KAS-fed — V2 has no KAS, so /config never registers there.
+    setFeatures('["cloud_config"]');
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
+    expect(
+      store.getState().slashCommands.find((c) => c.name === '/config')
+    ).toBeUndefined();
+  });
 });

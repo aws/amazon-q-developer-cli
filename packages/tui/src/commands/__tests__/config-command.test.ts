@@ -26,7 +26,7 @@ mock.module('../../utils/tui-telemetry-observer', () => ({
 const configCmd: SlashCommand = {
   name: '/config',
   description:
-    'View configured agents, MCP servers, steering, skills, hooks, and env variables',
+    'View configured agents, MCP servers, powers, steering, skills, and hooks',
   source: 'local',
   meta: { local: true },
 };
@@ -285,6 +285,79 @@ describe('/config command', () => {
     );
   });
 
+  // The /config effect fire-and-forgets its async subcommand handler, so
+  // dispatch resolves before openAgents' dynamic-import await settles;
+  // give the voided chain a few macrotask turns before asserting.
+  async function settleRoutedHandler(): Promise<void> {
+    for (let i = 0; i < 5; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  function agentsCtx(agents: Array<{ id: string; name: string }>) {
+    return createMockCommandContext({
+      slashCommands: [configCmd],
+      agentEngine: 'kas',
+      kasCommands: [
+        { name: '/agent', description: '', meta: { inputType: 'selection' } },
+      ],
+      kasAvailableAgents: agents,
+    } as any) as any;
+  }
+
+  it('/config agents opens the picker with ESC-back primed', async () => {
+    const ctx = agentsCtx([{ id: 'default', name: 'Default' }]);
+    await dispatch(configCmd, 'agents', ctx);
+    await settleRoutedHandler();
+    expect(ctx._spies.setActiveCommand).toHaveBeenCalled();
+    expect(ctx._spies.setConfigReturnOnEscape).toHaveBeenCalledWith(true);
+    // /config closes only after the picker opened.
+    expect(ctx._spies.setShowConfigPanel).toHaveBeenCalledWith(false);
+  });
+
+  it('/config agents with an empty agent list alerts and keeps /config open', async () => {
+    const ctx = agentsCtx([]);
+    await dispatch(configCmd, 'agents', ctx);
+    await settleRoutedHandler();
+    expect(ctx._spies.setActiveCommand).not.toHaveBeenCalled();
+    expect(ctx._spies.showAlert).toHaveBeenCalled();
+    // /config stays open under the alert — same rule as mcp/hooks, which
+    // only close after their panel actually opened.
+    expect(ctx._spies.setShowConfigPanel).not.toHaveBeenCalledWith(false);
+    // No panel opened → no category view counted.
+    expect(mockRecordTuiConfigPanel).not.toHaveBeenCalled();
+    expect(ctx._spies.setConfigReturnOnEscape).not.toHaveBeenCalledWith(true);
+  });
+
+  it('an ESC-cancel during the agents handoff opens nothing and keeps /config', async () => {
+    // Row-select captured token 7 on entry; ESC zeroes it during the
+    // dynamic-import suspension (modeled by the token reading 7 first, 0 on
+    // the re-check). The stale handler must neither open the picker nor
+    // close /config over the abandoned nav.
+    const ctx = agentsCtx([{ id: 'default', name: 'Default' }]);
+    let reads = 0;
+    ctx.getConfigHandoffToken = () => (reads++ === 0 ? 7 : 0);
+    await dispatch(configCmd, 'agents', ctx);
+    await settleRoutedHandler();
+    expect(ctx._spies.setActiveCommand).not.toHaveBeenCalled();
+    expect(ctx._spies.setShowConfigPanel).not.toHaveBeenCalled();
+    expect(ctx._spies.setConfigReturnOnEscape).not.toHaveBeenCalledWith(true);
+    // The stale handler must not end the (already-zeroed) token.
+    expect(ctx._spies.endConfigHandoff).not.toHaveBeenCalled();
+  });
+
+  it('a superseding second handoff during the agents import does not let the stale one open', async () => {
+    const ctx = agentsCtx([{ id: 'default', name: 'Default' }]);
+    let reads = 0;
+    ctx.getConfigHandoffToken = () => (reads++ === 0 ? 7 : 8);
+    await dispatch(configCmd, 'agents', ctx);
+    await settleRoutedHandler();
+    expect(ctx._spies.setActiveCommand).not.toHaveBeenCalled();
+    expect(ctx._spies.setShowConfigPanel).not.toHaveBeenCalled();
+    // The live handoff (8) owns the token; the stale handler must not end it.
+    expect(ctx._spies.endConfigHandoff).not.toHaveBeenCalled();
+  });
+
   it('page categories do not prime ESC-back (ConfigPanel handles its own back)', async () => {
     const ctx = createMockCommandContext({ slashCommands: [configCmd] });
     await dispatch(configCmd, 'skills', ctx);
@@ -335,9 +408,10 @@ describe('/config command', () => {
     await dispatch(configCmd, 'mcp', ctx);
     expect((ctx as any)._spies.setShowMcpPanel).toHaveBeenCalled();
     expect(mockRecordTuiConfigPanel).toHaveBeenCalledTimes(1);
+    // engine omitted at the call site: /config is KAS-only, the recorder's
+    // v3 default is always correct.
     expect(mockRecordTuiConfigPanel.mock.calls[0]?.[0]).toMatchObject({
       category: 'mcp',
-      engine: 'v2',
     });
   });
 });

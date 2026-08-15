@@ -13,6 +13,7 @@ import {
   cloudPanelNotice,
   cloudNoticeLineCount,
 } from './cloud-panel-notice.js';
+import { Feature, features } from '../../features.js';
 
 interface HooksPanelProps {
   hooks: HookInfo[];
@@ -72,16 +73,35 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({
   const canScrollDown = scrollOffset + maxVisible < filtered.length;
   const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible);
 
+  // Source column, decided ONCE at mount: rendered only inside the
+  // cloud_config rollout AND when there is a source fact to show — a cloud
+  // session (everything reads "cloud" per UX) or a descriptor-carrying hook
+  // (off-cohort and origin-free local sessions are unchanged). Latching
+  // means a descriptor push landing while the panel is open cannot insert
+  // the column and reflow the rows under the user; reopening re-decides.
+  const [showSource] = useState(
+    () =>
+      features.isEnabled(Feature.CloudConfig) &&
+      (cloudSessionActive || hooks.some((h) => h.configSource))
+  );
+
   const nameCol = 20 + GAP;
+  const sourceCol = 8 + GAP;
   const triggerCol = 18 + GAP;
   const matcherCol = 16 + GAP;
   const commandCol = Math.max(
-    termWidth - nameCol - triggerCol - matcherCol - 2,
+    termWidth -
+      nameCol -
+      (showSource ? sourceCol : 0) -
+      triggerCol -
+      matcherCol -
+      2,
     20
   );
 
   const columns = [
     { label: 'Name', width: nameCol },
+    ...(showSource ? [{ label: 'Source', width: sourceCol }] : []),
     { label: 'Trigger', width: triggerCol },
     { label: 'Command', width: commandCol },
     { label: 'Matcher' },
@@ -94,6 +114,16 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({
           text: truncateToWidth(hook.name ?? '—', nameCol, '...'),
           color: primary,
         },
+        ...(showSource
+          ? [
+              {
+                // Cloud session: the whole surface reads "cloud" (per UX);
+                // locally the descriptor origin decides.
+                text: cloudSessionActive ? 'cloud' : (hook.configSource ?? ''),
+                color: dim,
+              },
+            ]
+          : []),
         { text: hook.trigger, color: brand },
         {
           text: truncateToWidth(hook.command, commandCol, '...'),
@@ -101,7 +131,17 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({
         },
         { text: hook.matcher ?? '—', color: hook.matcher ? info : dim },
       ]),
-    [visible, nameCol, commandCol, primary, dim, brand, info]
+    [
+      visible,
+      nameCol,
+      commandCol,
+      showSource,
+      cloudSessionActive,
+      primary,
+      dim,
+      brand,
+      info,
+    ]
   );
 
   const handleSearchChange = useCallback((s: string) => {
@@ -111,8 +151,7 @@ export const HooksPanel: React.FC<HooksPanelProps> = ({
 
   // Read once per render: set by /config before this panel opens. Drives the
   // footer hint only ('to go back' vs 'to close'); back-navigation itself
-  // happens in the close handler (same pattern as KeybindingsPanel's
-  // fromSettings).
+  // happens in the close handler.
   const fromConfig = useAppStore((state) => state.configReturnOnEscape);
 
   return (

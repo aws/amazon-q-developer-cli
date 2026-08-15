@@ -161,6 +161,10 @@ async function driveParityCommands(tc: TC): Promise<CommandObservations> {
     .replace(/\s+/g, ' ')
     .replace(/^[│❯> ]+/, '')
     .split('[')[0]!
+    // The picker's Source cell is session-dependent BY DESIGN (a cloud
+    // session reads 'cloud', a local one 'local' or no cell at all), so it
+    // is not part of the parity shape — only name + Bundled tag are.
+    .replace(/\b(?:local|cloud)\b /, '')
     .trim();
   await settle(tc);
 
@@ -214,7 +218,12 @@ async function driveParityCommands(tc: TC): Promise<CommandObservations> {
       tc
         .getSnapshotFormatted()
         .split('\n')
-        .map((r) => r.trim().replace(/\s+/g, ' ').replace(/^[│❯> ]+/, ''))
+        .map((r) =>
+          r
+            .trim()
+            .replace(/\s+/g, ' ')
+            .replace(/^[│❯> ]+/, '')
+        )
         .find((r) => r.startsWith('/usage')) ?? '';
     if (!obs.usagePanelTitleRow) await tc.sleepMs(500);
   }
@@ -236,9 +245,7 @@ async function driveParityCommands(tc: TC): Promise<CommandObservations> {
   obs.clearRanCleanly =
     !postClear.includes('Failed to') && !postClear.includes('Internal error');
 
-  obs.internalErrorSeen = tc
-    .getSnapshotFormatted()
-    .includes('Internal error');
+  obs.internalErrorSeen = tc.getSnapshotFormatted().includes('Internal error');
   return obs;
 }
 
@@ -321,7 +328,10 @@ describe('cloud sessions — slash-command A/B parity with local (mock BFF)', ()
       await waitAlertGone(ctc);
 
       await typeLine(ctc, '/chat save parity-session');
-      await ctc.waitForText('save is not available for a cloud session', 15_000);
+      await ctc.waitForText(
+        'save is not available for a cloud session',
+        15_000
+      );
       await waitAlertGone(ctc);
 
       // ! shell escape: blocked in cloud. The positive contract is the
@@ -337,8 +347,7 @@ describe('cloud sessions — slash-command A/B parity with local (mock BFF)', ()
         .getSnapshotFormatted()
         .split('\n')
         .filter(
-          (row) =>
-            row.includes('PARITY_SHELL_MARKER') && !row.includes('!echo')
+          (row) => row.includes('PARITY_SHELL_MARKER') && !row.includes('!echo')
         );
       expect(shellLeaks).toEqual([]);
       await waitAlertGone(ctc);

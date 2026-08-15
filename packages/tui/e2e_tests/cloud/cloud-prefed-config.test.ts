@@ -157,7 +157,9 @@ describe('cloud sessions — pre-fed local config never leaks (mock BFF)', () =>
       await typeLine(tc, '/agent');
       await tc.waitForText('Select agent', 15_000);
       let snapshot = tc.getSnapshotFormatted();
-      expect(snapshot).toMatch(/Default\s+Bundled/);
+      // An optional Source cell ('cloud' here) may sit between the name
+      // and the Bundled tag when the picker reports config origins.
+      expect(snapshot).toMatch(/Default\s+(?:cloud\s+)?Bundled/);
       expect(snapshot).not.toContain('LOCALHERO_AGENT_PROBE');
       await tc.pressEscape();
       await tc.sleepMs(1_000);
@@ -165,11 +167,17 @@ describe('cloud sessions — pre-fed local config never leaks (mock BFF)', () =>
       // /agent create + edit: locally written/edited profiles would never
       // be discovered by the remote agent — both refuse.
       await typeLine(tc, '/agent create cloudpoke');
-      await tc.waitForText('/agent create is not available in cloud sessions', 15_000);
+      await tc.waitForText(
+        '/agent create is not available in cloud sessions',
+        15_000
+      );
       await tc.sleepMs(5_500);
 
       await typeLine(tc, '/agent edit localhero');
-      await tc.waitForText('/agent edit is not available in cloud sessions', 15_000);
+      await tc.waitForText(
+        '/agent edit is not available in cloud sessions',
+        15_000
+      );
       await tc.sleepMs(5_500);
 
       // /workflow*: localOnly commands are dispatcher-refused in cloud

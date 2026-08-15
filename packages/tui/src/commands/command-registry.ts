@@ -51,6 +51,9 @@ interface LocalCommandDefinition {
   inputType?: CommandMeta['inputType'];
   rollout?: 'hide-unless-lite-enabled' | 'lite-only-unless-enabled';
   hiddenInKas?: boolean;
+  /** Only registered on the KAS (V3) engine — for surfaces whose data is
+   *  KAS-fed (config-origin descriptors, powers/steering pushes). */
+  kasOnly?: boolean;
   liteOnly?: boolean;
   tuiOnly?: boolean;
   /**
@@ -219,12 +222,15 @@ export const COMMAND_REGISTRY = {
     // the registration entirely off-cohort, so it neither autocompletes nor
     // dispatches for regular users. Subcommands power the Tab dropdown,
     // mirroring /settings-style typed-subcommand routing
-    // (config-subcommands.ts via showConfigMenu).
+    // (config-subcommands.ts via showConfigMenu). KAS-only: the panel's
+    // data (config-origin descriptors, powers/steering/hooks pushes) is all
+    // KAS-fed — V2 has no KAS, so /config doesn't register there.
     effect: 'showConfigMenu',
     local: {
       description:
-        'View configured agents, MCP servers, steering, skills, hooks, and env variables',
+        'View configured agents, MCP servers, powers, steering, skills, and hooks',
       feature: Feature.CloudConfig,
+      kasOnly: true,
       subcommands: CONFIG_SUBCOMMANDS,
     },
   },
@@ -324,6 +330,10 @@ export function getLocalSlashCommands(
       }
       // Feature-gated commands are dark outside their rollout cohort.
       if (local.feature && !features.isEnabled(local.feature)) {
+        return [];
+      }
+      // KAS-only commands don't register on V2 at all.
+      if (local.kasOnly && agentEngine !== 'kas') {
         return [];
       }
 

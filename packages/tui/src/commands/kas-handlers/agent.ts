@@ -5,6 +5,8 @@ import {
   type ParsedAgentCommand,
 } from '../../acp-client';
 import { getAgentDisplayName } from '../../utils/agentColors';
+import { effectiveSource } from '../../components/ui/config-panel-model.js';
+import { features, Feature } from '../../features';
 import { extractRpcErrorMessage } from '../../utils/error-handling';
 import { openFileInEditor } from '../../utils/editor.js';
 import { defaultAgentDirs } from '../../utils/agent-migration/io.js';
@@ -62,6 +64,14 @@ function showAgentPicker(ctx: CommandContext, cmd: KasCommand): void {
     return;
   }
   const currentName = ctx.getCurrentAgent?.()?.name;
+  // Source column only inside the cloud_config rollout AND when it states a
+  // fact: a cloud session, or at least one agent carrying a descriptor-
+  // derived origin. A descriptor-free local session would read 'local' on
+  // every row — a guess, so no column.
+  const showSource =
+    features.isEnabled(Feature.CloudConfig) &&
+    (ctx.cloudSessionActive ||
+      ctx.kasAvailableAgents.some((a) => a.configSource));
   const options = ctx.kasAvailableAgents.map((a) => {
     const isActive = a.id === currentName;
     const descBase = a.description ?? '';
@@ -75,9 +85,29 @@ function showAgentPicker(ctx: CommandContext, cmd: KasCommand): void {
       // where each agent came from. Agents without source metadata fall into
       // the default (ungrouped) bucket.
       ...(a.source ? { group: capitalize(a.source) } : {}),
+      ...(showSource
+        ? {
+            annotation: effectiveSource(ctx.cloudSessionActive, a.configSource),
+          }
+        : {}),
     };
   });
-  ctx.setActiveCommand({ command: cmd, options });
+  ctx.setActiveCommand({
+    command: cmd,
+    options,
+    ...(showSource
+      ? {
+          // 'Scope' heads the group column: where the agent profile lives
+          // (Bundled/Global/Workspace).
+          columnHeaders: {
+            label: 'Name',
+            annotation: 'Source',
+            group: 'Scope',
+            description: 'Description',
+          },
+        }
+      : {}),
+  });
 }
 
 async function switchAgent(

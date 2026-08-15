@@ -1,13 +1,13 @@
 /**
- * /config overlay — consolidated config category view (Figma "Kiro Next"
- * frames 23-41). Top screen is a `Category | Source | Status` table; Enter
- * drills into a category page, or hands off to the shared /mcp and /hooks
- * panels so those categories have exactly one view each.
+ * /config overlay — consolidated config category view. Top screen is a
+ * `Category | Source | Status` table; Enter drills into a category page, or
+ * hands off to the shared /mcp and /hooks panels so those categories have
+ * exactly one view each.
  *
- * Row/page/footer content and enter-routing are pure functions in
- * `config-panel-model.ts`; this component owns cursor state, key handling,
- * and the store handoffs. Dark-shipped behind `Feature.CloudConfig` — the
- * `/config` command is only registered when the flag is on.
+ * This component owns cursor state, key handling, and the store handoffs;
+ * row/page/footer content and enter-routing are imported pure functions.
+ * Dark-shipped behind `Feature.CloudConfig` — the `/config` command is only
+ * registered when the flag is on.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -42,6 +42,8 @@ interface ConfigPanelProps {
   onOpenMcp: () => void;
   /** Open the existing /hooks panel. */
   onOpenHooks: () => void;
+  /** Open the selectable /agent picker (same view as /agent). */
+  onOpenAgent: () => void;
 }
 
 const GAP = 2;
@@ -52,13 +54,15 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   onClose,
   onOpenMcp,
   onOpenHooks,
+  onOpenAgent,
 }) => {
   const { getColor } = useTheme();
   const glyphs = useGlyphs();
   const { height: termHeight } = useTerminalSize();
-  const agentEngine = useAppStore((s) => s.agentEngine);
   const primary = getColor('primary');
   const dim = getColor('secondary');
+  const accent = getColor('accent');
+  const brand = getColor('brand');
 
   const [category, setCategory] = useState<ConfigCategoryId | null>(
     initialCategory ?? null
@@ -66,6 +70,16 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   const [cursorIndex, setCursorIndex] = useState(0);
   const [search, setSearch] = useState('');
   const [scrollOffset, setScrollOffset] = useState(0);
+  // Latched at mount: the Source-column decision is stable for the panel's
+  // lifetime. A descriptor push landing mid-panel must not insert the
+  // column under the user (rows shifting right, footers gaining lines) —
+  // the same stability rule that makes the gate snapshot-wide rather than
+  // per-category. Reopening the panel picks up the new facts.
+  const [sourcesReported] = useState(snapshot.sourcesReported);
+  const stableSnapshot = useMemo(
+    () => ({ ...snapshot, sourcesReported }),
+    [snapshot, sourcesReported]
+  );
   // True while a routed handoff (mcp/hooks) is awaiting its V2 RPC. The
   // panel stays mounted through that window (so the queue stays paused),
   // and a nonzero token makes it inert: a key-repeat Enter must not fire a
@@ -82,16 +96,19 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   const setLoadingMessage = useAppStore((s) => s.setLoadingMessage);
   // Rows visible at once on a category page: terminal height minus the
   // panel chrome (title, divider, search, column header, footer lines,
-  // hints) — same windowing approach as McpPanel/HooksPanel.
+  // hints).
   const maxVisible = Math.max(termHeight - 12, 5);
 
-  const categoryRows = useMemo(() => buildCategoryRows(snapshot), [snapshot]);
+  const categoryRows = useMemo(
+    () => buildCategoryRows(stableSnapshot),
+    [stableSnapshot]
+  );
   const page = useMemo(
-    () => (category ? buildCategoryPage(category, snapshot) : null),
-    [category, snapshot]
+    () => (category ? buildCategoryPage(category, stableSnapshot) : null),
+    [category, stableSnapshot]
   );
 
-  // Category page rows, search-filtered (frames 24-41 all have a search box).
+  // Category page rows, search-filtered.
   const filteredPageRows = useMemo(() => {
     if (!page) return [];
     if (!search) return page.rows;
@@ -114,6 +131,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     switch (result.kind) {
       case 'open-mcp':
       case 'open-hooks':
+      case 'open-agent':
         // Hand off WITHOUT closing first: the subcommand handler closes
         // /config only after the routed panel is open, so there is never a
         // no-panel window where the paused message queue could drain (or
@@ -121,15 +139,16 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         // flight.
         beginHandoff();
         if (result.kind === 'open-mcp') onOpenMcp();
-        else onOpenHooks();
+        else if (result.kind === 'open-hooks') onOpenHooks();
+        else onOpenAgent();
         return;
       case 'page':
         // In-panel navigation bypasses the store's setShowConfigPanel, so
         // the category-view counter is emitted here instead.
+        // engine omitted: /config is KAS-only, the recorder defaults to v3.
         recordTuiConfigPanel({
           category: result.category,
           version: getCliVersion(),
-          engine: agentEngine === 'kas' ? 'v3' : 'v2',
         });
         setSearch('');
         setCursorIndex(0);
@@ -191,7 +210,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       recordTuiConfigPanel({
         category: 'menu',
         version: getCliVersion(),
-        engine: agentEngine === 'kas' ? 'v3' : 'v2',
       });
       setCategory(null);
       setSearch('');
@@ -265,49 +283,80 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     );
   }
 
+  // Source column only when the data carries an origin fact or the session
+  // is cloud. A descriptor-free local session hides it rather than showing
+  // a placement guess.
+  const showSource = sourcesReported;
   const columns = [
     {
-      label: 'Category',
+      // Chevron marker column + Category. Width covers "❯ " on any row.
+      label: '  Category',
       width: colWidth(
-        categoryRows.map((r) => r.label),
-        12
+        categoryRows.map((r) => `  ${r.label}`),
+        14
       ),
     },
-    {
-      label: 'Source',
-      width: colWidth(
-        categoryRows.map((r) => r.source),
-        12
-      ),
-    },
+    ...(showSource
+      ? [
+          {
+            label: 'Source',
+            width: colWidth(
+              categoryRows.map((r) => r.source),
+              12
+            ),
+          },
+        ]
+      : []),
     { label: 'Status' },
   ];
-  const rows: Row[] = categoryRows.map((r) => [
-    { text: r.label, color: primary },
-    { text: r.source, color: dim },
-    { text: r.status, color: dim },
-  ]);
+  // The cursor row leads with an accent chevron and accent-colored category
+  // instead of inverse-video.
+  const rows: Row[] = categoryRows.map((r, i) => {
+    const isSel = i === cursorIndex;
+    return [
+      {
+        text: `${isSel ? glyphs.chevron : ' '} ${r.label}`,
+        color: isSel ? accent : primary,
+      },
+      ...(showSource ? [{ text: r.source, color: dim }] : []),
+      { text: r.status, color: dim },
+    ];
+  });
+
+  // Color only the settings URL; keep the surrounding prose dim.
+  const renderFooterLine = (line: string, i: number) => {
+    const url = 'https://app.kiro.dev/settings';
+    const at = line.indexOf(url);
+    if (at === -1) return <Text key={i}>{dim(line)}</Text>;
+    return (
+      <Text key={i}>
+        {dim(line.slice(0, at))}
+        {brand(url)}
+        {dim(line.slice(at + url.length))}
+      </Text>
+    );
+  };
 
   return (
     <Panel
       title="/config"
       onClose={handleClose}
       searchable={false}
-      footerExtra={
+      // One left-aligned hint strip: `esc to close · ↑↓ to navigate · ↵ to
+      // select`.
+      footerLeft={
         <Text>
-          {primary(`${glyphs.arrowUp}${glyphs.arrowDown}`)} {dim('navigate')}{' '}
-          {dim(glyphs.smallDot)} {primary('enter')} {dim('to view details')}
+          {primary(`${glyphs.arrowUp}${glyphs.arrowDown}`)} {dim('to navigate')}{' '}
+          {dim(glyphs.smallDot)} {primary(glyphs.enter)} {dim('to select')}
         </Text>
       }
     >
-      <Table columns={columns} rows={rows} highlightedRow={cursorIndex} />
+      <Table columns={columns} rows={rows} />
       <Box flexDirection="column" marginTop={1}>
         {buildTopFooterLines(snapshot.cloudSession, snapshot.diagnostics, {
           cross: glyphs.cross,
           warning: glyphs.warning,
-        }).map((line, i) => (
-          <Text key={i}>{dim(line)}</Text>
-        ))}
+        }).map(renderFooterLine)}
       </Box>
     </Panel>
   );

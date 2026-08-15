@@ -91,6 +91,13 @@ export const CommandMenu: React.FC = () => {
     (state) => state.setSettingsReturnOnEscape
   );
   const reopenSettingsMenu = useAppStore((state) => state.reopenSettingsMenu);
+  const configReturnOnEscape = useAppStore(
+    (state) => state.configReturnOnEscape
+  );
+  const setConfigReturnOnEscape = useAppStore(
+    (state) => state.setConfigReturnOnEscape
+  );
+  const reopenConfigMenu = useAppStore((state) => state.reopenConfigMenu);
   const verboseReturnOnEscape = useAppStore(
     (state) => state.verboseReturnOnEscape
   );
@@ -449,6 +456,7 @@ export const CommandMenu: React.FC = () => {
   // settings takes back over. Each stash is cleared on consume.
   const handleActiveCommandClose = useCallback(() => {
     const returnToSettings = settingsReturnOnEscape;
+    const returnToConfig = configReturnOnEscape;
     const verboseReturn = verboseReturnOnEscape;
 
     // Only clear input if the command menu system owns it (slash trigger
@@ -476,21 +484,32 @@ export const CommandMenu: React.FC = () => {
       reopenSettingsMenu();
       return;
     }
+    // /config twin of the settings branch: a picker the /config table
+    // routed to (agents) walks back to the table on ESC.
+    if (returnToConfig) {
+      setConfigReturnOnEscape(false);
+      reopenConfigMenu();
+      return;
+    }
   }, [
     activeTrigger,
     settingsReturnOnEscape,
+    configReturnOnEscape,
     verboseReturnOnEscape,
     setActiveCommand,
     clearCommandInput,
     setPromptHint,
     setSettingsReturnOnEscape,
+    setConfigReturnOnEscape,
     setVerboseReturnOnEscape,
     reopenSettingsMenu,
+    reopenConfigMenu,
     handleUserInput,
   ]);
 
   // Stashed = drilled in from a parent menu, so Esc steps back, not closes.
-  const hasReturnStash = settingsReturnOnEscape || verboseReturnOnEscape;
+  const hasReturnStash =
+    settingsReturnOnEscape || configReturnOnEscape || verboseReturnOnEscape;
 
   useKeypress((input, key) => {
     // Ctrl+C inside any menu surface = Esc (one level). Without this it falls
@@ -712,7 +731,9 @@ export const CommandMenu: React.FC = () => {
             label: opt.label,
             description: opt.description ?? '',
             group: opt.group,
+            annotation: opt.annotation,
           }))}
+          columnHeaders={activeCommand.columnHeaders}
           prefix=""
           onSelect={(item) => {
             const opt = activeCommand.options.find(
@@ -732,6 +753,11 @@ export const CommandMenu: React.FC = () => {
                 setActiveCommand(null);
               } else {
                 clearCommandInput();
+                // A selection commits the navigation: consume the /config
+                // ESC-back stash so completing the action does not bounce
+                // back to the table (and the stash never leaks to a later
+                // menu).
+                if (configReturnOnEscape) setConfigReturnOnEscape(false);
                 executeCommandWithArg(opt.value);
               }
             }

@@ -1,19 +1,10 @@
 /**
- * Registry of /config subcommands — the /config twin of
- * `settings-subcommands.ts`.
+ * Registry of /config subcommands.
  *
  * Each category the /config panel lists is also reachable as a typed
  * subcommand (`/config mcp`, `/config steering`, …), and selecting a row in
  * the panel dispatches through the SAME handler as the typed form, so the
- * two entry points cannot drift. Handlers either:
- *
- *   - hand off to a shared panel (/mcp, /hooks) with `configReturnOnEscape`
- *     primed so ESC walks back to the /config table (mirroring how
- *     /settings theme primes `settingsReturnOnEscape`), or
- *   - open the ConfigPanel on an in-panel category page.
- *
- * To add a new category, add an entry here and to the model's
- * `CONFIG_SUBCOMMANDS` — no dispatcher or effect changes needed.
+ * two entry points cannot drift.
  *
  * The whole surface is dark-shipped behind `Feature.CloudConfig`; /config is
  * only registered when the flag is on.
@@ -46,20 +37,21 @@ export interface ConfigSubcommand {
  * categories are counted by the store's setShowConfigPanel instead, so every
  * category view is counted exactly once regardless of entry point.
  */
-function recordRoutedCategory(ctx: CommandContext, category: 'mcp' | 'hooks') {
+function recordRoutedCategory(category: 'mcp' | 'hooks') {
+  // engine omitted: /config is KAS-only, the recorder defaults to v3.
   recordTuiConfigPanel({
     category,
     version: getCliVersion(),
-    engine: ctx.agentEngine === 'kas' ? 'v3' : 'v2',
   });
 }
 
 /**
- * Open the shared /mcp view (KAS cache panel or V2 RPC — same as /mcp).
- * The ESC-back flag is primed unconditionally, exactly as every /settings
- * subcommand handler primes settingsReturnOnEscape: whether reached by
- * typing `/config mcp` or selecting the panel row, ESC returns to /config.
- * Bare /mcp never routes through here, so its ESC still closes outright.
+ * Open the shared /mcp view. /config is KAS-only, so the KAS cache branch is
+ * the live path; the RPC branch below is defensive (kept unit-tested) should
+ * the command ever dispatch on another engine. The ESC-back flag is primed
+ * unconditionally: whether reached by typing `/config mcp` or selecting the
+ * panel row, ESC returns to /config. Bare /mcp never routes through here, so
+ * its ESC still closes outright.
  */
 async function openMcp({ ctx }: ConfigHandleContext) {
   // Row-select path: the panel bumped the handoff token before dispatching.
@@ -78,7 +70,7 @@ async function openMcp({ ctx }: ConfigHandleContext) {
       // for the typed form) so a paused message queue never sees a no-panel
       // window to drain into mid-navigation.
       ctx.setShowConfigPanel(false);
-      recordRoutedCategory(ctx, 'mcp');
+      recordRoutedCategory('mcp');
       return;
     }
     let result;
@@ -105,8 +97,8 @@ async function openMcp({ ctx }: ConfigHandleContext) {
       ctx.setConfigReturnOnEscape(false);
       return;
     }
-    // Same payload contract as the /mcp effect — registryServers included,
-    // so the "same view" promise holds for registry rows too.
+    // registryServers is forwarded so registry rows render here exactly as
+    // they do under bare /mcp.
     const data = result?.data as
       | { servers?: unknown[]; registryServers?: unknown[]; mode?: string }
       | undefined;
@@ -119,7 +111,7 @@ async function openMcp({ ctx }: ConfigHandleContext) {
     ctx.setShowConfigPanel(false);
     // Counted only once a panel actually opened — a rejected RPC above must
     // not record a view the user never saw.
-    recordRoutedCategory(ctx, 'mcp');
+    recordRoutedCategory('mcp');
   } finally {
     // End the handoff only if it's still ours — a superseding selection owns
     // the token now and its own finally will clear it.
@@ -130,28 +122,30 @@ async function openMcp({ ctx }: ConfigHandleContext) {
 }
 
 /**
- * Open the existing /hooks panel (ESC-back primed — see openMcp). Mirrors
- * the /hooks handler's fetch rule: the warm cache is local-fed, so cloud
- * sessions re-fetch the sandbox's authoritative hooks; an empty cache
- * re-fetches too.
+ * Open the shared /hooks view with ESC-back to /config primed. The warm
+ * cache is local-fed, so cloud sessions re-fetch the sandbox's authoritative
+ * hooks; an empty cache re-fetches too.
  */
 async function openHooks({ ctx }: ConfigHandleContext) {
-  const myToken = ctx.getConfigHandoffToken(); // see openMcp
+  // Nonzero token = row-select handoff; compared by identity after awaits.
+  const myToken = ctx.getConfigHandoffToken();
   const ownsHandoff = myToken !== 0;
   try {
     ctx.setConfigReturnOnEscape(true);
-    // Warm-cache shortcut is KAS-only: _kiro/hooks/didChange keeps that
-    // cache fresh. V2 has no such push (plain V2 /hooks always re-fetches),
-    // and a cloud session's warm cache may be local-fed — both must
-    // re-fetch.
+    // Warm-cache shortcut: _kiro/hooks/didChange keeps this cache fresh on
+    // KAS (the only engine /config registers on; the engine check is
+    // defensive). A cloud session's warm cache may be local-fed, so cloud
+    // and cold caches re-fetch the authoritative listing.
     if (
       ctx.agentEngine === 'kas' &&
       !ctx.cloudSessionActive &&
       ctx.hooksList.length > 0
     ) {
       ctx.setShowHooksPanel(true, [...ctx.hooksList]);
-      ctx.setShowConfigPanel(false); // after the routed panel opens — see openMcp
-      recordRoutedCategory(ctx, 'hooks');
+      // Close /config only after the routed panel is open, so a paused
+      // message queue never sees a no-panel window to drain into.
+      ctx.setShowConfigPanel(false);
+      recordRoutedCategory('hooks');
       return;
     }
     let result;
@@ -173,7 +167,8 @@ async function openHooks({ ctx }: ConfigHandleContext) {
       return;
     }
     if (!result.success) {
-      // No panel opened — same flag hygiene as the rejection path.
+      // No panel opened: unset the flag so the next plain /hooks is
+      // unaffected.
       ctx.setConfigReturnOnEscape(false);
       ctx.showAlert(result.message || 'Unable to fetch hooks', 'error', 5000);
       return;
@@ -181,7 +176,7 @@ async function openHooks({ ctx }: ConfigHandleContext) {
     const data = result.data as { hooks?: HookInfo[] } | undefined;
     ctx.setShowHooksPanel(true, data?.hooks ?? []);
     ctx.setShowConfigPanel(false);
-    recordRoutedCategory(ctx, 'hooks');
+    recordRoutedCategory('hooks');
   } finally {
     if (ownsHandoff && ctx.getConfigHandoffToken() === myToken) {
       ctx.endConfigHandoff();
@@ -196,21 +191,64 @@ function openPage(category: ConfigCategoryId) {
   };
 }
 
+/**
+ * Open the selectable /agent picker — the agents row is not a read-only
+ * page; it routes to the same picker as /agent so the user can switch right
+ * there.
+ */
+async function openAgents({ ctx }: ConfigHandleContext) {
+  // Nonzero token = row-select handoff; compared by identity after awaits.
+  const myToken = ctx.getConfigHandoffToken();
+  const ownsHandoff = myToken !== 0;
+  try {
+    const agentCmd = ctx.kasCommands.find((c) => c.name === '/agent');
+    if (!agentCmd) {
+      ctx.showAlert('Agent picker unavailable', 'error', 3000);
+      return;
+    }
+    const { handleAgent } = await import('./kas-handlers/agent.js');
+    if (ownsHandoff && ctx.getConfigHandoffToken() !== myToken) {
+      // ESC-cancelled or superseded during the import: the abandoned nav
+      // must not open the picker or close /config.
+      return;
+    }
+    // The picker opens only for a non-empty agent list; an empty one alerts
+    // instead, and /config must stay open under that alert — no close, no
+    // view count, no ESC-back stash to leak into the next menu.
+    const pickerWillOpen = ctx.kasAvailableAgents.length > 0;
+    // ESC-back to /config. Bare /agent never routes through here, so its
+    // ESC still closes outright.
+    if (pickerWillOpen) {
+      ctx.setConfigReturnOnEscape(true);
+    }
+    await handleAgent(agentCmd, '', ctx);
+    if (!pickerWillOpen) return;
+    // Close /config only after the picker is open, so a paused message
+    // queue never sees a no-panel window to drain into.
+    ctx.setShowConfigPanel(false);
+    recordTuiConfigPanel({ category: 'agents', version: getCliVersion() });
+  } finally {
+    if (ownsHandoff && ctx.getConfigHandoffToken() === myToken) {
+      ctx.endConfigHandoff();
+    }
+  }
+}
+
 export const configSubcommands: readonly ConfigSubcommand[] = [
-  { value: 'agents', handle: openPage('agents') },
+  { value: 'agents', handle: openAgents },
   { value: 'mcp', handle: openMcp },
   { value: 'powers', handle: openPage('powers') },
   { value: 'steering', handle: openPage('steering') },
   { value: 'skills', handle: openPage('skills') },
   { value: 'hooks', handle: openHooks },
-  { value: 'env', handle: openPage('env') },
-  // 'secrets' is deferred entirely (not p0): no row, no page, and the typed
-  // token gets the "Unknown config category" alert via the model's resolver.
+  // 'env' and 'secrets' are deferred entirely (KAS propagates no source for
+  // either): no row, no page, and the typed token gets the "Unknown config
+  // category" alert.
 ];
 
 /**
- * Look up a subcommand handler from a raw `/config <token>` argument
- * (aliases and case handled by the model's resolver).
+ * Look up a subcommand handler from a raw `/config <token>` argument;
+ * aliases and casing are normalized first.
  */
 export function findConfigSubcommand(
   token: string

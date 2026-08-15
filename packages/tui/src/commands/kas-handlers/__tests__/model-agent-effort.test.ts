@@ -6,6 +6,7 @@ import { handleModel } from '../model';
 import { handleAgent, createAgent, editAgent } from '../agent';
 import { handleEffort } from '../effort';
 import { createMockCommandContext } from '../../__tests__/test-helpers';
+import { features } from '../../../features';
 import type { KasCommand } from '../../../kas-commands';
 import { KasCommandName } from '../../../kas-commands';
 
@@ -247,6 +248,97 @@ describe('handleAgent', () => {
       value: 'mine',
       description: 'd',
       group: 'Workspace',
+    });
+  });
+
+  describe('Source column gating', () => {
+    const ORIGINAL_FEATURES = process.env.KIRO_ENABLED_FEATURES;
+    function setFeatures(json: string | undefined) {
+      if (json === undefined) delete process.env.KIRO_ENABLED_FEATURES;
+      else process.env.KIRO_ENABLED_FEATURES = json;
+      features._resetForTests();
+    }
+    afterEach(() => {
+      setFeatures(ORIGINAL_FEATURES);
+    });
+
+    const AGENTS = [
+      { id: 'default', name: 'Default', source: 'bundled' },
+      {
+        id: 'mine',
+        name: 'Mine',
+        source: 'workspace',
+        configSource: 'cloud' as const,
+      },
+    ];
+
+    it('flag off: no header and no annotations even with configSource data', async () => {
+      setFeatures(undefined);
+      const ctx = createMockCommandContext({ kasAvailableAgents: AGENTS });
+      await handleAgent(AGENT_CMD, '', ctx);
+      const call = (ctx._spies.setActiveCommand as any).mock.calls[0][0];
+      expect(call.columnHeaders).toBeUndefined();
+      expect(call.options.every((o: any) => o.annotation === undefined)).toBe(
+        true
+      );
+    });
+
+    it('flag on, local session, no configSource anywhere: options byte-identical to the plain picker', async () => {
+      const agents = [
+        { id: 'default', name: 'Default', source: 'bundled' },
+        { id: 'mine', name: 'Mine', description: 'd', source: 'workspace' },
+      ];
+      setFeatures(undefined);
+      const plainCtx = createMockCommandContext({ kasAvailableAgents: agents });
+      await handleAgent(AGENT_CMD, '', plainCtx);
+      const plain = (plainCtx._spies.setActiveCommand as any).mock.calls[0][0];
+
+      setFeatures('["cloud_config"]');
+      const ctx = createMockCommandContext({ kasAvailableAgents: agents });
+      await handleAgent(AGENT_CMD, '', ctx);
+      const call = (ctx._spies.setActiveCommand as any).mock.calls[0][0];
+      expect(call.columnHeaders).toBeUndefined();
+      expect(JSON.stringify(call)).toBe(JSON.stringify(plain));
+    });
+
+    it('flag on, local session, one cloud agent: header + cloud/local annotations', async () => {
+      setFeatures('["cloud_config"]');
+      const ctx = createMockCommandContext({ kasAvailableAgents: AGENTS });
+      await handleAgent(AGENT_CMD, '', ctx);
+      const call = (ctx._spies.setActiveCommand as any).mock.calls[0][0];
+      expect(call.columnHeaders).toEqual({
+        label: 'Name',
+        annotation: 'Source',
+        group: 'Scope',
+        description: 'Description',
+      });
+      expect(call.options.map((o: any) => o.annotation)).toEqual([
+        'local',
+        'cloud',
+      ]);
+    });
+
+    it('flag on, cloud session: every row reads cloud', async () => {
+      setFeatures('["cloud_config"]');
+      const ctx = createMockCommandContext({
+        kasAvailableAgents: [
+          { id: 'default', name: 'Default', source: 'bundled' },
+          { id: 'mine', name: 'Mine', source: 'workspace' },
+        ],
+      });
+      ctx.cloudSessionActive = true;
+      await handleAgent(AGENT_CMD, '', ctx);
+      const call = (ctx._spies.setActiveCommand as any).mock.calls[0][0];
+      expect(call.columnHeaders).toEqual({
+        label: 'Name',
+        annotation: 'Source',
+        group: 'Scope',
+        description: 'Description',
+      });
+      expect(call.options.map((o: any) => o.annotation)).toEqual([
+        'cloud',
+        'cloud',
+      ]);
     });
   });
 

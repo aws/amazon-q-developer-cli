@@ -27,7 +27,7 @@ import { ThemePanel } from '../../ui/ThemePanel.js';
 import { StatusLineSettingsPanel } from '../../ui/StatusLineSettingsPanel.js';
 import { SettingsPanel } from '../../ui/SettingsPanel.js';
 import { ConfigPanel } from '../../ui/ConfigPanel.js';
-import { collectKiroEnv } from '../../ui/config-panel-model.js';
+import { snapshotReportsSources } from '../../ui/config-panel-model.js';
 import { ArtifactView } from '../../ui/ArtifactView/index.js';
 import { SurveyPanel } from '../../ui/SurveyPanel.js';
 import { CloudQuitPrompt } from '../../ui/CloudQuitPrompt.js';
@@ -539,18 +539,24 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
     ),
     showConfigPanel: () => (
       <ConfigPanel
-        snapshot={{
-          cloudSession: cloudSessionActive,
-          agents: configAgents,
-          mcpServers: mcpServerCache,
-          steering: configSteering,
-          steeringDocs: configSteeringDocs,
-          skills: configSkills,
-          hooks: hooksList,
-          powers: configPowers,
-          kiroEnv: collectKiroEnv(process.env),
-          diagnostics: configDiagnostics,
-        }}
+        snapshot={(() => {
+          const base = {
+            cloudSession: cloudSessionActive,
+            agents: configAgents,
+            mcpServers: mcpServerCache,
+            steering: configSteering,
+            steeringDocs: configSteeringDocs,
+            skills: configSkills,
+            hooks: hooksList,
+            powers: configPowers,
+            diagnostics: configDiagnostics,
+          };
+          // Fact-based, not engine-based: Source columns render only when
+          // some item carries a descriptor origin or the session is cloud —
+          // the same rule McpPanel/HooksPanel use. A descriptor-free local
+          // session (V2, or KAS without #2141) shows no Source columns.
+          return { ...base, sourcesReported: snapshotReportsSources(base) };
+        })()}
         initialCategory={configPanelCategory ?? undefined}
         onClose={handleCloseConfigPanel}
         // Row-select handoff: dispatch the typed subcommand so row select
@@ -576,6 +582,11 @@ export const BackendPanels: React.FC<BackendPanelsProps> = ({
         }}
         onOpenHooks={() => {
           dispatchSlashCommand('/config hooks', null).catch(() =>
+            endConfigHandoff()
+          );
+        }}
+        onOpenAgent={() => {
+          dispatchSlashCommand('/config agents', null).catch(() =>
             endConfigHandoff()
           );
         }}

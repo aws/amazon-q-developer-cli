@@ -26,6 +26,9 @@ export interface MenuItem {
   label: string;
   description: string;
   group?: string;
+  /** Cell for the opt-in annotation column; ignored unless the menu sets
+   *  `columnHeaders`. Rendered dim, aligned, between label and group. */
+  annotation?: string;
 }
 
 export interface MenuProps {
@@ -63,6 +66,20 @@ export interface MenuProps {
   title?: string;
   /** Lite-only: symmetric arrow shortcuts (right→Enter, left→Esc). */
   liteOnly?: boolean;
+  /**
+   * Opt-in column mode: renders a dim header row above the items and a dim,
+   * aligned annotation cell per item between the label and group columns.
+   * `group`/`description` headers render only when provided AND the
+   * corresponding column exists (some item has a group / a description).
+   * Without this prop, per-item `annotation` values are ignored and the menu
+   * renders exactly as before.
+   */
+  columnHeaders?: {
+    label: string;
+    annotation: string;
+    group?: string;
+    description?: string;
+  };
 }
 
 import { rankMenuItems } from './menu-search.js';
@@ -87,6 +104,7 @@ export const Menu = React.memo(function Menu({
   title,
   liteOnly = false,
   footerHint,
+  columnHeaders,
 }: MenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(() => {
     if (initialIndex == null) return 0;
@@ -126,20 +144,40 @@ export const Menu = React.memo(function Menu({
     setSelectedIndex(0);
   }, [searchText]);
 
-  // Calculate max group column width (0 if no items have groups)
+  // Calculate max group column width (0 if no items have groups). A provided
+  // group header participates so it never overflows its column.
   const hasGroups = displayItems.some((item) => item.group);
   const maxGroupLength = hasGroups
-    ? Math.max(...displayItems.map((item) => visibleWidth(item.group ?? '')), 0)
+    ? Math.max(
+        ...displayItems.map((item) => visibleWidth(item.group ?? '')),
+        visibleWidth(columnHeaders?.group ?? ''),
+        0
+      )
     : 0;
 
   const indicatorWidth = showSelectedIndicator ? 3 : 0; // chevron + 2 spaces
   const spacerWidth = 4; // Box width={4}
   const groupWidth = hasGroups ? maxGroupLength + spacerWidth : 0;
 
+  // Annotation column exists only when headers are provided; the headers
+  // participate in the width so a header never overflows its column.
+  const hasAnnotations = columnHeaders != null;
+  const maxAnnotationLength = hasAnnotations
+    ? Math.max(
+        ...displayItems.map((item) => visibleWidth(item.annotation ?? '')),
+        visibleWidth(columnHeaders.annotation)
+      )
+    : 0;
+  const annotationWidth = hasAnnotations
+    ? maxAnnotationLength + spacerWidth
+    : 0;
+
   // Width of the longest label and description, used to size the columns.
-  const rawMaxLabelLength =
+  const rawMaxLabelLength = Math.max(
     Math.max(...displayItems.map((item) => visibleWidth(item.label)), 0) +
-    visibleWidth(prefix);
+      visibleWidth(prefix),
+    hasAnnotations ? visibleWidth(columnHeaders.label) : 0
+  );
   const maxDescLength = Math.max(
     ...displayItems.map((item) => visibleWidth(item.description)),
     0
@@ -167,6 +205,7 @@ export const Menu = React.memo(function Menu({
     terminalWidth -
       indicatorWidth -
       spacerWidth -
+      annotationWidth -
       groupWidth -
       descReserve -
       columnMargin
@@ -180,6 +219,7 @@ export const Menu = React.memo(function Menu({
       indicatorWidth -
       maxLabelLength -
       spacerWidth -
+      annotationWidth -
       groupWidth -
       columnMargin
   );
@@ -289,6 +329,52 @@ export const Menu = React.memo(function Menu({
         </Box>
       )}
       {searchable && <Box height={1} />}
+      {hasAnnotations && (
+        // Mirrors the item-row structure cell for cell (indicator indent,
+        // label box, spacers, annotation, group, description) so every
+        // header sits exactly over its column.
+        <Box flexDirection="row">
+          {showSelectedIndicator && (
+            <Box flexDirection="row" flexShrink={0}>
+              <Text> </Text>
+              <Text> </Text>
+            </Box>
+          )}
+          <Box width={maxLabelLength} flexShrink={0}>
+            <Text>
+              {dimText(padToWidth(columnHeaders.label, maxLabelLength))}
+            </Text>
+          </Box>
+          <Box width={4} />
+          <Text>
+            {dimText(padToWidth(columnHeaders.annotation, maxAnnotationLength))}
+          </Text>
+          <Box width={4} />
+          {hasGroups && (
+            <>
+              <Text>
+                {dimText(padToWidth(columnHeaders.group ?? '', maxGroupLength))}
+              </Text>
+              <Box width={4} />
+            </>
+          )}
+          {columnHeaders.description != null && maxDescLength > 0 && (
+            // Bounded like item descriptions: on narrow terminals the
+            // description column can shrink below the header text.
+            <Text>
+              {dimText(
+                visibleWidth(columnHeaders.description) > availableDescWidth
+                  ? truncateToWidth(
+                      columnHeaders.description,
+                      availableDescWidth,
+                      '...'
+                    )
+                  : columnHeaders.description
+              )}
+            </Text>
+          )}
+        </Box>
+      )}
       {visibleItemsSlice.map((item, visibleIndex) => {
         const actualIndex = startIndex + visibleIndex;
         const itemText = `${prefix}${item.label}`;
@@ -329,6 +415,16 @@ export const Menu = React.memo(function Menu({
               </Text>
             </Box>
             <Box width={4} />
+            {hasAnnotations && (
+              <>
+                <Text>
+                  {dimText(
+                    padToWidth(item.annotation ?? '', maxAnnotationLength)
+                  )}
+                </Text>
+                <Box width={4} />
+              </>
+            )}
             {hasGroups && (
               <>
                 <Text>

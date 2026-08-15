@@ -13,13 +13,14 @@ import {
   resolveCategorySelect,
   resolveConfigSubcommand,
   effectiveSource,
-  collectKiroEnv,
+  snapshotReportsSources,
   CONFIG_SUBCOMMANDS,
   type ConfigSnapshot,
 } from '../config-panel-model.js';
 
 const emptySnapshot: ConfigSnapshot = {
   cloudSession: false,
+  sourcesReported: true,
   agents: [],
   mcpServers: [],
   steering: [],
@@ -27,12 +28,12 @@ const emptySnapshot: ConfigSnapshot = {
   skills: [],
   hooks: [],
   powers: [],
-  kiroEnv: [],
   diagnostics: [],
 };
 
 const populatedSnapshot: ConfigSnapshot = {
   cloudSession: false,
+  sourcesReported: true,
   agents: [
     { id: 'default', name: 'Default', description: 'Bundled default agent' },
     { id: 'spec', name: 'Spec' },
@@ -50,15 +51,11 @@ const populatedSnapshot: ConfigSnapshot = {
   skills: [{ name: 'figma-to-code', source: { kind: 'workspace' } }],
   hooks: [{ trigger: 'preToolUse', command: 'lint.sh' }],
   powers: [],
-  kiroEnv: [
-    ['KIRO_INTERNAL', '1'],
-    ['KIRO_VERSION', '2.13.1'],
-  ],
   diagnostics: [],
 };
 
 describe('buildCategoryRows', () => {
-  it('lists the seven live categories in mock order (secrets deferred)', () => {
+  it('lists the six live categories in mock order (env + secrets deferred)', () => {
     const rows = buildCategoryRows(emptySnapshot);
     expect(rows.map((r) => r.id)).toEqual([
       'agents',
@@ -67,7 +64,6 @@ describe('buildCategoryRows', () => {
       'steering',
       'skills',
       'hooks',
-      'env',
     ]);
   });
 
@@ -131,7 +127,11 @@ describe('buildCategoryRows', () => {
     expect(rows.find((r) => r.id === 'steering')!.status).toBe('2 files');
     expect(rows.find((r) => r.id === 'skills')!.status).toBe('1 skill');
     expect(rows.find((r) => r.id === 'hooks')!.status).toBe('1 configured');
-    expect(rows.find((r) => r.id === 'env')!.status).toBe('2 configured');
+  });
+
+  it('does not surface a deferred env row', () => {
+    const rows = buildCategoryRows(populatedSnapshot);
+    expect(rows.find((r) => r.id === 'env')).toBeUndefined();
   });
 });
 
@@ -144,19 +144,22 @@ describe('resolveCategorySelect', () => {
     expect(resolveCategorySelect('hooks')).toEqual({ kind: 'open-hooks' });
   });
 
-  it('secrets is deferred: no alias (typed form alerts), select is inert', () => {
-    expect(resolveConfigSubcommand('secrets')).toBeUndefined();
+  it('routes agents to the selectable /agent picker (fnf board), not a page', () => {
+    expect(resolveCategorySelect('agents')).toEqual({ kind: 'open-agent' });
+  });
+
+  it('env and secrets are deferred: no alias (typed form alerts), select inert', () => {
+    for (const token of ['env', 'environment', 'secrets']) {
+      expect(resolveConfigSubcommand(token)).toBeUndefined();
+    }
+    // Both deferred ids are inert on select — a reintroduced row must not
+    // open a blank page.
+    expect(resolveCategorySelect('env')).toEqual({ kind: 'none' });
     expect(resolveCategorySelect('secrets')).toEqual({ kind: 'none' });
   });
 
   it('other categories open in-panel pages', () => {
-    for (const id of [
-      'agents',
-      'powers',
-      'steering',
-      'skills',
-      'env',
-    ] as const) {
+    for (const id of ['powers', 'steering', 'skills'] as const) {
       expect(resolveCategorySelect(id)).toEqual({ kind: 'page', category: id });
     }
   });
@@ -172,7 +175,7 @@ describe('resolveConfigSubcommand', () => {
   it('accepts aliases and mixed case', () => {
     expect(resolveConfigSubcommand('MCP')).toBe('mcp');
     expect(resolveConfigSubcommand('agent')).toBe('agents');
-    expect(resolveConfigSubcommand('environment')).toBe('env');
+    expect(resolveConfigSubcommand('POWER')).toBe('powers');
   });
 
   it('rejects unknown tokens', () => {
@@ -186,8 +189,11 @@ describe('effectiveSource', () => {
     expect(effectiveSource(false)).toBe('local');
   });
 
-  it('an explicit source wins over placement', () => {
-    expect(effectiveSource(true, 'local')).toBe('local');
+  it('cloud sessions read cloud for everything (per UX); descriptors decide locally', () => {
+    // A cloud session's whole config surface lives in the sandbox — even a
+    // user/workspace-origin item reads "cloud" there.
+    expect(effectiveSource(true, 'local')).toBe('cloud');
+    // Locally the descriptor origin decides: a cloud-synced item is cloud.
     expect(effectiveSource(false, 'cloud')).toBe('cloud');
   });
 });
@@ -234,40 +240,74 @@ describe('buildTopFooterLines', () => {
   });
 });
 
-describe('buildCategoryPage', () => {
-  it('agents page has Agent|Source|Install|Details columns and one row per agent', () => {
-    const page = buildCategoryPage('agents', {
-      ...populatedSnapshot,
-      agents: [
-        {
-          id: 'default',
-          name: 'Default',
-          description: 'Bundled default agent',
-          source: 'bundled',
-        },
-        { id: 'spec', name: 'Spec', source: 'workspace' },
-        { id: 'plan', name: 'Plan' },
-      ],
-    });
-    expect(page.columns).toEqual(['Agent', 'Source', 'Install', 'Details']);
-    expect(page.rows).toHaveLength(3);
-    expect(page.rows[0]).toEqual([
-      'Default',
-      'local',
-      'Bundled',
-      'Bundled default agent',
-    ]);
-    expect(page.rows[1]).toEqual(['Spec', 'local', 'Workspace', '']);
-    // No source metadata → blank Install, never a guess.
-    expect(page.rows[2]).toEqual(['Plan', 'local', '', '']);
+describe('source column gating (V2 reports no origins)', () => {
+  const v2Snapshot: ConfigSnapshot = {
+    ...populatedSnapshot,
+    sourcesReported: false,
+  };
+
+  it('pages drop the Source column when sources are not reported', () => {
+    const steering = buildCategoryPage('steering', v2Snapshot);
+    expect(steering.columns).toEqual(['Name', 'Inclusion']);
+    // No 'local' placement guess anywhere in the rows.
+    expect(steering.rows.flat()).not.toContain('local');
+    const skills = buildCategoryPage('skills', v2Snapshot);
+    expect(skills.columns).toEqual(['Name', 'Description']);
   });
 
-  it('unknown Install source values render blank, not raw passthrough', () => {
-    const page = buildCategoryPage('agents', {
+  it('pages keep the Source column when sources are reported', () => {
+    const page = buildCategoryPage('steering', populatedSnapshot);
+    expect(page.columns).toContain('Source');
+  });
+
+  it('footers drop the conflict/cloud-edit lines with the column', () => {
+    // A page that reports no origins must not explain how origins conflict.
+    const page = buildCategoryPage('skills', v2Snapshot);
+    const joined = page.footerLines.join(' ');
+    expect(joined).not.toContain('conflict');
+    expect(joined).not.toContain('app.kiro.dev');
+    // The local-edit path is engine-independent and stays.
+    expect(joined).toContain('To edit local configs');
+    // Reported sources keep the full footer set.
+    const kasPage = buildCategoryPage('skills', populatedSnapshot);
+    expect(kasPage.footerLines.join(' ')).toContain('conflict');
+  });
+
+  it('snapshotReportsSources: fact-based, not engine-based', () => {
+    const bare = { ...populatedSnapshot };
+    // populatedSnapshot's MCP servers carry source fields → reported.
+    expect(snapshotReportsSources(bare)).toBe(true);
+    // Strip every origin: a descriptor-free local session reports nothing,
+    // regardless of engine.
+    const stripped = {
       ...populatedSnapshot,
-      agents: [{ id: 'x', name: 'X', source: 'some-future-source' }],
-    });
-    expect(page.rows[0]).toEqual(['X', 'local', '', '']);
+      mcpServers: populatedSnapshot.mcpServers.map((s) => ({
+        ...s,
+        source: undefined,
+      })),
+    };
+    expect(snapshotReportsSources(stripped)).toBe(false);
+    // A cloud session always reports (placement 'cloud' is a fact there).
+    expect(snapshotReportsSources({ ...stripped, cloudSession: true })).toBe(
+      true
+    );
+    // A single descriptor-tagged hook flips it back on.
+    expect(
+      snapshotReportsSources({
+        ...stripped,
+        hooks: [
+          { trigger: 'preToolUse', command: 'x.sh', configSource: 'cloud' },
+        ],
+      })
+    ).toBe(true);
+  });
+});
+
+describe('buildCategoryPage', () => {
+  it('agents never renders an in-panel page (routes to the /agent picker)', () => {
+    const page = buildCategoryPage('agents', populatedSnapshot);
+    expect(page.columns).toEqual([]);
+    expect(page.rows).toEqual([]);
   });
 
   it('steering page shows Inclusion column with scope kind', () => {
@@ -376,46 +416,5 @@ describe('buildCategoryPage', () => {
     const powers = rows.find((r) => r.id === 'powers')!;
     expect(powers.status).toBe('1 installed');
     expect(powers.source).toBe('cloud');
-  });
-
-  it('env page lists KIRO_* pairs', () => {
-    const page = buildCategoryPage('env', populatedSnapshot);
-    expect(page.columns).toEqual(['Name', 'Value']);
-    expect(page.rows).toEqual([
-      ['KIRO_INTERNAL', '1'],
-      ['KIRO_VERSION', '2.13.1'],
-    ]);
-  });
-});
-
-describe('collectKiroEnv', () => {
-  it('filters to KIRO_* keys, sorts, and truncates long values', () => {
-    const pairs = collectKiroEnv({
-      PATH: '/usr/bin',
-      KIRO_ZETA: 'z',
-      KIRO_ALPHA: 'a'.repeat(80),
-      KIRO_UNDEF: undefined,
-    });
-    expect(pairs.map(([k]) => k)).toEqual(['KIRO_ALPHA', 'KIRO_ZETA']);
-    expect(pairs[0]![1].endsWith('...')).toBe(true);
-    expect(pairs[0]![1].length).toBe(60);
-  });
-
-  it('redacts credential-bearing values (never prints live secrets)', () => {
-    const pairs = collectKiroEnv({
-      KIRO_API_KEY: 'sk-live-abc123',
-      KIRO_ACCESS_TOKEN: 'tok',
-      KIRO_CLIENT_SECRET: 's3cret',
-      KIRO_DB_PASSWORD: 'pw',
-      KIRO_AWS_CREDENTIALS: 'creds',
-      KIRO_AGENT_ENGINE: 'kas',
-    });
-    const byName = Object.fromEntries(pairs);
-    expect(byName.KIRO_API_KEY).toBe('<redacted>');
-    expect(byName.KIRO_ACCESS_TOKEN).toBe('<redacted>');
-    expect(byName.KIRO_CLIENT_SECRET).toBe('<redacted>');
-    expect(byName.KIRO_DB_PASSWORD).toBe('<redacted>');
-    expect(byName.KIRO_AWS_CREDENTIALS).toBe('<redacted>');
-    expect(byName.KIRO_AGENT_ENGINE).toBe('kas');
   });
 });

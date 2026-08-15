@@ -69,9 +69,8 @@
         "screen.contains:steering",
         "screen.notContains:Unknown command"
       ],
-      "observe": "Category | Source | Status table renders with agents/MCP servers/powers/steering/skills/hooks/env rows; footer shows navigation hints",
+      "observe": "Category table renders with agents/MCP servers/powers/steering/skills/hooks rows; Source column renders when the data carries a config origin or the session is cloud (hidden otherwise); footer shows esc to close · up/down to navigate · enter to select. /config registers on KAS only.",
       "engine": [
-        "v2",
         "kas"
       ]
     },
