@@ -93,6 +93,47 @@ function readsUiMode(source: ts.SourceFile): boolean {
   return found;
 }
 
+// Every branch that rebases onto an out-of-sync allowlist inherits this
+// failure, so the report has to say who owns it and list all offenders at once.
+// The allowlist is a parameter so its wording can be pinned against a fixture:
+// deriving expectations from live membership makes the format assertion fail
+// whenever someone performs the very allowlist edit this message asks for.
+function surfaceViolationReport(
+  readers: ReadonlySet<string>,
+  allowed: ReadonlySet<string> = allowedModeDataReaders
+): string {
+  const staleAllowlistEntries = [...allowed]
+    .filter((file) => !readers.has(file))
+    .sort();
+  const unlistedReaders = [...readers]
+    .filter((file) => file !== appContainerPath && !allowed.has(file))
+    .sort();
+  const lines: string[] = [];
+
+  if (!readers.has(appContainerPath)) {
+    lines.push(
+      `central reader no longer reads uiMode, keep the read here: ${appContainerPath}`
+    );
+  }
+  for (const file of staleAllowlistEntries) {
+    lines.push(
+      `allowlisted but no longer reads uiMode, drop the allowlist entry: ${file}`
+    );
+  }
+  for (const file of unlistedReaders) {
+    lines.push(
+      `reads uiMode without an allowlist entry, route through the central reader or allowlist it: ${file}`
+    );
+  }
+  if (lines.length === 0) return '';
+
+  return [
+    'uiMode surface guard: allowlist and components disagree.',
+    ...lines,
+    'If you did not touch the files above, main is red and this is not your change.',
+  ].join('\n');
+}
+
 describe('UI mode surface boundary', () => {
   it('keeps direct production uiMode reads centralized or explicit', () => {
     const files = sourceFiles(componentsRoot).filter((filePath) =>
@@ -104,15 +145,33 @@ describe('UI mode surface boundary', () => {
         .map(relativePath)
     );
 
-    expect(readers.has(appContainerPath)).toBe(true);
-    expect(
-      [...allowedModeDataReaders].filter((file) => !readers.has(file))
-    ).toEqual([]);
-    expect(
-      [...readers].filter(
-        (file) => file !== appContainerPath && !allowedModeDataReaders.has(file)
-      )
-    ).toEqual([]);
+    expect(surfaceViolationReport(readers)).toBe('');
+  });
+
+  it('reports every offender and both violation directions at once', () => {
+    const allowed = new Set(['components/chat/Stale.tsx']);
+    const readers = new Set([
+      'components/chat/Beta.tsx',
+      'components/chat/Alpha.tsx',
+    ]);
+
+    expect(surfaceViolationReport(readers, allowed)).toBe(
+      [
+        'uiMode surface guard: allowlist and components disagree.',
+        `central reader no longer reads uiMode, keep the read here: ${appContainerPath}`,
+        'allowlisted but no longer reads uiMode, drop the allowlist entry: components/chat/Stale.tsx',
+        'reads uiMode without an allowlist entry, route through the central reader or allowlist it: components/chat/Alpha.tsx',
+        'reads uiMode without an allowlist entry, route through the central reader or allowlist it: components/chat/Beta.tsx',
+        'If you did not touch the files above, main is red and this is not your change.',
+      ].join('\n')
+    );
+  });
+
+  it('stays silent when the allowlist and the readers agree', () => {
+    const allowed = new Set(['components/chat/Listed.tsx']);
+    const readers = new Set([appContainerPath, 'components/chat/Listed.tsx']);
+
+    expect(surfaceViolationReport(readers, allowed)).toBe('');
   });
 
   it('recognizes each supported direct read form without matching names alone', () => {
