@@ -314,33 +314,3 @@ jobs:
           path: packages/tui/e2e_tests/test-outputs/
           retention-days: 7
 
-  # The PR's required TUI gate checks report before these results exist, so
-  # re-run them once the results are in.
-  refresh-required-checks:
-    name: Refresh required checks
-    needs: [guard, tui, tui-integ, tui-e2e]
-    if: always() && needs.guard.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - name: Re-run the PR TUI checks for this commit
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # Every workflow hosting a fork-gated required check needs the re-run:
-          # a gate left in another workflow keeps the verdict it recorded before
-          # this run existed, and no event re-evaluates it on its own.
-          for wf in tui.yml rc-certification.yml; do
-            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/runs?head_sha=$HEAD_SHA&per_page=1" --jq '.workflow_runs[0].id // empty')
-            if [[ -z "$RUN_ID" ]]; then
-              echo "::warning::No $wf run for $HEAD_SHA — required checks need a manual re-run"
-              continue
-            fi
-            # Whole run, not just its failed jobs: a partial re-run would reuse the
-            # earlier job outputs, which is exactly the stale answer being replaced.
-            if ! gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/rerun"; then
-              echo "::warning::Could not re-run $wf run $RUN_ID — required checks need a manual re-run"
-            fi
-          done
