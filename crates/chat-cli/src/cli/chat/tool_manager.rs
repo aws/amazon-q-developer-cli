@@ -593,7 +593,6 @@ impl ToolManagerBuilder {
                 telemetry,
                 loading_status_sender,
                 new_tool_specs,
-                total,
                 conv_id,
                 mcp_server_sources,
             );
@@ -1096,45 +1095,39 @@ impl ToolManager {
         } else {
             Box::pin(future::ready(()))
         };
-        tokio::select! {
-            _ = timeout_fut => {
-
-                if let Some(tx) = tx {
-                    let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
-                    let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
-                    if let Some(task) = self.clients.take_loading_display_task() {
-                        let _ = tokio::time::timeout(
-                            std::time::Duration::from_millis(80),
-                            task
-                        ).await;
-                    }
-                }
-                if !self.clients.is_empty() && !self.is_interactive {
-                    let _ = queue!(
-                        stderr,
-                        style::Print(
-                            "Not all mcp servers loaded. Configure non-interactive timeout with q settings mcp.noInteractiveTimeout"
-                        ),
-                        style::Print("\n------\n")
-                    );
-                }
-            },
-            _ = server_loading_fut => {
-                if let Some(tx) = tx {
-                    let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
-                    let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
-                }
-            }
+        let deadline_expired = tokio::select! {
+            _ = timeout_fut => true,
+            _ = server_loading_fut => false,
             _ = ctrl_c() => {
-                if self.is_interactive {
-                    if let Some(tx) = tx {
-                        let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
-                        let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
-                    }
-                } else {
+                if !self.is_interactive {
                     return Err(eyre::eyre!("User interrupted mcp server loading in non-interactive mode. Ending."));
                 }
+                false
             }
+        };
+        if let Some(tx) = tx {
+            let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
+            let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
+            // The display task shares stderr with the caller and moves the cursor while exiting.
+            if let Some(task) = self.clients.take_loading_display_task() {
+                let _ = tokio::time::timeout(std::time::Duration::from_millis(80), task).await;
+            }
+        }
+        // Non-interactive callers have no display task, so this warning is their only signal that a
+        // server's tools are missing from the schema. Gate it on what is still outstanding rather
+        // than on the deadline expiring, otherwise a server that parked on sign in goes unreported
+        // as soon as the init barrier releases the wait early.
+        if !self.clients.is_empty()
+            && !self.is_interactive
+            && (deadline_expired || !self.pending_clients.read().await.is_empty())
+        {
+            let _ = queue!(
+                stderr,
+                style::Print(
+                    "Not all mcp servers loaded. Configure non-interactive timeout with q settings mcp.noInteractiveTimeout"
+                ),
+                style::Print("\n------\n")
+            );
         }
         if !self.is_interactive
             && self
@@ -1764,6 +1757,54 @@ fn spawn_display_task(
     }
 }
 
+/// Tracks the configured mcp servers that can still make initialization progress.
+struct InitBarrier {
+    remaining: HashSet<String>,
+    notify: std::sync::Weak<Notify>,
+}
+
+impl InitBarrier {
+    fn new(expected: HashSet<String>, notify: std::sync::Weak<Notify>) -> Self {
+        Self {
+            remaining: expected,
+            notify,
+        }
+    }
+
+    fn settle(&mut self, server_name: &str) {
+        if !self.remaining.remove(server_name) {
+            return;
+        }
+        if self.remaining.is_empty()
+            && let Some(notify) = self.notify.upgrade()
+        {
+            notify.notify_one();
+        }
+    }
+}
+
+/// Persists a fatal load failure before a terminal path returns early.
+async fn record_load_failure(
+    server_name: &str,
+    reason: &str,
+    time_taken: &str,
+    record_temp_buf: &mut Vec<u8>,
+    load_record: &Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
+) {
+    let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
+    let fail_load_msg = eyre::eyre!("{reason}");
+    let _ = queue_failure_message(server_name, &fail_load_msg, time_taken, &mut buf_writer);
+    let _ = buf_writer.flush();
+    drop(buf_writer);
+    let record = LoadingRecord::err(String::from_utf8_lossy(record_temp_buf).to_string());
+    load_record
+        .lock()
+        .await
+        .entry(server_name.to_string())
+        .and_modify(|records| records.push(record.clone()))
+        .or_insert(vec![record]);
+}
+
 /// This function spawns the orchestrator task that has the following responsibilities:
 /// - Listens for server driven events (see [UpdateEventMessage] for a list of current applicable
 ///   events). These are things such as tool list (because we fetch tools in the background), prompt
@@ -1794,16 +1835,18 @@ fn spawn_orchestrator_task(
     telemetry: TelemetryThread,
     loading_status_sender: Option<LoadingStatusSender>,
     new_tool_specs: NewToolSpecs,
-    total: usize,
     conv_id: String,
     mcp_server_sources: HashMap<String, McpServerSource>,
 ) {
+    let expected_servers = loading_servers.keys().cloned().collect();
     tokio::spawn(async move {
         use tokio::sync::broadcast::Sender as BroadcastSender;
         use tokio::sync::mpsc::Sender as MpscSender;
 
         let mut record_temp_buf = Vec::<u8>::new();
+        // A server that reports again is refreshing its tools, not initializing.
         let mut initialized = HashSet::<String>::new();
+        let mut init_barrier = InitBarrier::new(expected_servers, notify_weak);
         let mut prompts = HashMap::<String, Vec<PromptBundle>>::new();
 
         enum ToolFilter {
@@ -1916,10 +1959,9 @@ fn spawn_orchestrator_task(
             new_tool_specs: &NewToolSpecs,
             has_new_stuff: &Arc<AtomicBool>,
             load_record: &Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
-            notify_weak: &std::sync::Weak<Notify>,
             initialized: &mut HashSet<String>,
+            barrier: &mut InitBarrier,
             prompts: &mut HashMap<String, Vec<PromptBundle>>,
-            total: usize,
         ) {
             record_temp_buf.clear();
             // For now we will treat every list result as if they contain the
@@ -2011,10 +2053,28 @@ fn spawn_orchestrator_task(
                                     error!(
                                         "Received tool list result from {server_name} but transport has been closed. Ignoring."
                                     );
+                                    record_load_failure(
+                                        server_name.as_str(),
+                                        "the transport closed before its tools could be loaded",
+                                        time_taken.as_str(),
+                                        record_temp_buf,
+                                        load_record,
+                                    )
+                                    .await;
+                                    barrier.settle(&server_name);
                                     return;
                                 }
                             } else {
                                 error!("Received tool list result from {server_name} without a peer. Ignoring.");
+                                record_load_failure(
+                                    server_name.as_str(),
+                                    "no transport was handed back for this server",
+                                    time_taken.as_str(),
+                                    record_temp_buf,
+                                    load_record,
+                                )
+                                .await;
+                                barrier.settle(&server_name);
                                 return;
                             }
 
@@ -2141,7 +2201,6 @@ fn spawn_orchestrator_task(
                                 .or_insert(vec![record]);
                         },
                         Err(e) => {
-                            // Log error to chat Log
                             error!("Error loading server {server_name}: {:?}", e);
                             if is_initial_result {
                                 let _ = telemetry_clone
@@ -2159,27 +2218,15 @@ fn spawn_orchestrator_task(
                                     )
                                     .await;
                             }
-                            // Maintain a record of the server load:
-                            let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                            let fail_load_msg = eyre::eyre!("{}", e);
-                            let _ = queue_failure_message(
+                            let reason = e.to_string();
+                            record_load_failure(
                                 server_name.as_str(),
-                                &fail_load_msg,
-                                &time_taken,
-                                &mut buf_writer,
-                            );
-                            let _ = buf_writer.flush();
-                            drop(buf_writer);
-                            let record = String::from_utf8_lossy(record_temp_buf).to_string();
-                            let record = LoadingRecord::err(record);
-                            load_record
-                                .lock()
-                                .await
-                                .entry(server_name.clone())
-                                .and_modify(|load_record| {
-                                    load_record.push(record.clone());
-                                })
-                                .or_insert(vec![record]);
+                                reason.as_str(),
+                                time_taken.as_str(),
+                                record_temp_buf,
+                                load_record,
+                            )
+                            .await;
                             // Errors surfaced at this point (i.e. before [process_tool_specs]
                             // is called) are fatals and should be considered errors
                             if let Some(sender) = &loading_status_sender {
@@ -2198,13 +2245,8 @@ fn spawn_orchestrator_task(
                             }
                         },
                     }
-                    let was_initial_result = initialized.insert(server_name);
-                    if was_initial_result
-                        && initialized.len() >= total
-                        && let Some(notify) = notify_weak.upgrade()
-                    {
-                        notify.notify_one();
-                    }
+                    initialized.insert(server_name.clone());
+                    barrier.settle(&server_name);
                 },
                 UpdateEventMessage::ListPromptsResult {
                     server_name,
@@ -2297,6 +2339,9 @@ fn spawn_orchestrator_task(
                             loading_status_sender.take();
                         }
                     }
+                    // The sign in happens in a browser, well outside the init deadline, so this
+                    // server cannot finish loading during startup.
+                    barrier.settle(&server_name);
                 },
                 UpdateEventMessage::InitStart { server_name, .. } => {
                     pending.write().await.insert(server_name.clone());
@@ -2336,10 +2381,9 @@ fn spawn_orchestrator_task(
                             &new_tool_specs,
                             &has_new_stuff,
                             &load_record,
-                            &notify_weak,
                             &mut initialized,
+                            &mut init_barrier,
                             &mut prompts,
-                            total
                         ).await;
                 },
                 // Nothing else to poll
@@ -3184,5 +3228,203 @@ mod tests {
 
         // Should only include string values
         assert!(error_msg.contains("Required fields: [valid_field, another_field]"));
+    }
+
+    #[tokio::test]
+    async fn init_barrier_ignores_unknown_and_duplicate_servers() {
+        let notify = Arc::new(Notify::new());
+        let expected = HashSet::from(["one".to_string(), "two".to_string()]);
+        let mut barrier = InitBarrier::new(expected, Arc::downgrade(&notify));
+
+        barrier.settle("unknown");
+        barrier.settle("one");
+        barrier.settle("one");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), notify.notified())
+                .await
+                .is_err(),
+            "unknown and duplicate names must not release another server's slot"
+        );
+
+        barrier.settle("two");
+        tokio::time::timeout(Duration::from_secs(1), notify.notified())
+            .await
+            .expect("the barrier should release after every expected name settles");
+    }
+
+    /// Spawns the orchestrator for the named servers and returns the state startup reads.
+    async fn spawn_orchestrator_for_barrier(
+        expected: &[&str],
+    ) -> (
+        ServerMessengerBuilder,
+        Arc<Notify>,
+        Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
+        Arc<RwLock<HashSet<String>>>,
+        tokio::sync::broadcast::Sender<PromptQuery>,
+    ) {
+        let os = Os::new().await.unwrap();
+        let database = os.database.clone();
+        let telemetry = os.telemetry.clone();
+        let (msg_rx, messenger_builder) = ServerMessengerBuilder::new(20);
+        let (prompt_query_tx, prompt_query_rx) = tokio::sync::broadcast::channel(1);
+        let (prompt_result_tx, _prompt_result_rx) = tokio::sync::broadcast::channel(1);
+        let notify = Arc::new(Notify::new());
+        let load_record = Arc::new(Mutex::new(HashMap::new()));
+        let pending = Arc::new(RwLock::new(expected.iter().map(|name| (*name).to_string()).collect()));
+        let loading_servers = expected
+            .iter()
+            .map(|name| ((*name).to_string(), Instant::now()))
+            .collect();
+
+        spawn_orchestrator_task(
+            os,
+            Arc::new(AtomicBool::new(false)),
+            loading_servers,
+            msg_rx,
+            prompt_query_rx,
+            prompt_result_tx,
+            Arc::clone(&pending),
+            Arc::new(Mutex::new(Agent::default())),
+            database,
+            Regex::new(VALID_TOOL_NAME).unwrap(),
+            Arc::downgrade(&notify),
+            Arc::clone(&load_record),
+            telemetry,
+            None,
+            Arc::new(Mutex::new(HashMap::new())),
+            "conversation".to_string(),
+            HashMap::new(),
+        );
+
+        (messenger_builder, notify, load_record, pending, prompt_query_tx)
+    }
+
+    /// Builds a `Peer<RoleClient>` whose transport is already closed. This is the shape the tool
+    /// list handler sees when a server dies between sending its tools and the orchestrator reading
+    /// the event, and it is the only abandon shape the client actually emits: `paginated_fetch!`
+    /// always sends a successful page set with `Some(peer)`.
+    async fn closed_client_peer() -> rmcp::Peer<rmcp::RoleClient> {
+        use rmcp::RoleClient;
+        use rmcp::service::{
+            RxJsonRpcMessage,
+            TxJsonRpcMessage,
+            serve_directly,
+        };
+
+        let (sink, _sink_rx) = futures::channel::mpsc::channel::<TxJsonRpcMessage<RoleClient>>(1);
+        let (_stream_tx, stream) = futures::channel::mpsc::channel::<RxJsonRpcMessage<RoleClient>>(1);
+        let running = serve_directly::<RoleClient, _, _, _, _>((), (sink, stream), None);
+        let peer = running.peer().clone();
+        // Ending the service drops the receiver behind the peer's sender, which is exactly what
+        // `is_transport_closed` reads.
+        let _ = running.cancel().await;
+        assert!(peer.is_transport_closed(), "peer transport should be closed");
+        peer
+    }
+
+    #[tokio::test]
+    async fn init_wait_ends_when_the_only_server_lost_its_transport() {
+        let (messenger_builder, notify, load_record, _pending, _prompt_query_tx) =
+            spawn_orchestrator_for_barrier(&["gone"]).await;
+
+        messenger_builder
+            .build_with_name("gone".to_string())
+            .send_tools_list_result(
+                Ok(rmcp::model::ListToolsResult::default()),
+                Some(closed_client_peer().await),
+            )
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), notify.notified())
+            .await
+            .expect("init wait should end without burning the init deadline");
+
+        // Releasing the wait early must not cost the non-interactive summary its diagnostic: it
+        // reads this record, not the init deadline.
+        let records = load_record.lock().await;
+        let records = records
+            .get("gone")
+            .expect("abandoned server should leave a load record");
+        assert!(
+            records.iter().any(|record| matches!(record, LoadingRecord::Err(..))),
+            "a server that lost its transport should record a load error, got {records:?}"
+        );
+    }
+
+    /// Covers the defensive `None` peer branch. No client emits this shape -- every successful page
+    /// set carries `Some(peer)` and the failed-`init()` fallback sends `Err(..)` -- but the branch
+    /// exists, so it has to settle the barrier like every other terminal outcome.
+    #[tokio::test]
+    async fn init_wait_ends_when_a_list_result_arrives_without_a_peer() {
+        let (messenger_builder, notify, load_record, _pending, _prompt_query_tx) =
+            spawn_orchestrator_for_barrier(&["dead"]).await;
+
+        messenger_builder
+            .build_with_name("dead".to_string())
+            .send_tools_list_result(Ok(rmcp::model::ListToolsResult::default()), None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), notify.notified())
+            .await
+            .expect("init wait should end without burning the init deadline");
+
+        let records = load_record.lock().await;
+        let records = records
+            .get("dead")
+            .expect("abandoned server should leave a load record");
+        assert!(
+            records.iter().any(|record| matches!(record, LoadingRecord::Err(..))),
+            "a server with no transport should record a load error, got {records:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn init_wait_ends_when_the_only_server_is_parked_on_sign_in() {
+        let (messenger_builder, notify, _load_record, pending, _prompt_query_tx) =
+            spawn_orchestrator_for_barrier(&["needs_auth"]).await;
+
+        messenger_builder
+            .build_with_name("needs_auth".to_string())
+            .send_oauth_link("https://example.com/authorize".to_string())
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), notify.notified())
+            .await
+            .expect("init wait should end without burning the init deadline");
+        assert!(
+            pending.read().await.contains("needs_auth"),
+            "sign-in must remain pending so headless callers report the missing tools"
+        );
+    }
+
+    #[tokio::test]
+    async fn init_wait_holds_until_all_expected_servers_settle() {
+        let (messenger_builder, notify, _load_record, _pending, _prompt_query_tx) =
+            spawn_orchestrator_for_barrier(&["fast", "slow"]).await;
+        let slow = messenger_builder.build_with_name("slow".to_string());
+
+        messenger_builder
+            .build_with_name("fast".to_string())
+            .send_tools_list_result(Err(ServiceError::UnexpectedResponse), None)
+            .await
+            .unwrap();
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), notify.notified())
+                .await
+                .is_err(),
+            "init wait should hold while a server is still initializing"
+        );
+
+        slow.send_tools_list_result(Err(ServiceError::UnexpectedResponse), None)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), notify.notified())
+            .await
+            .expect("init wait should end once every expected server settles");
     }
 }
