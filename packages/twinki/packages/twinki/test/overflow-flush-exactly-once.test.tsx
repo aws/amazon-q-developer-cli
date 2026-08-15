@@ -17,16 +17,13 @@ describe('exactly-once on overflow flush (identical streamed/finalized rows)', (
   const COLS = 40;
   const ROWS = 10;
 
-  function buildApp(streamRows: number, flushRows: number) {
+  function buildApp(streamLines: string[], flushLines: string[]) {
     let finalize!: () => void;
     const App = () => {
       const [history, setHistory] = useState<string[]>(['HIST-0']);
       const [streaming, setStreaming] = useState(true);
       finalize = () => {
-        setHistory((h) => [
-          ...h,
-          Array.from({ length: flushRows }, (_, i) => `MSG-${i}`).join('\n'),
-        ]);
+        setHistory((h) => [...h, flushLines.join('\n')]);
         setStreaming(false);
       };
       return (
@@ -35,8 +32,8 @@ describe('exactly-once on overflow flush (identical streamed/finalized rows)', (
           <Box flexDirection="column">
             {streaming ? (
               <>
-                {Array.from({ length: streamRows }, (_, i) => (
-                  <Text key={i}>{`MSG-${i}`}</Text>
+                {streamLines.map((line, i) => (
+                  <Text key={i}>{line}</Text>
                 ))}
                 <Text>OLDCHROME</Text>
               </>
@@ -50,9 +47,12 @@ describe('exactly-once on overflow flush (identical streamed/finalized rows)', (
     return { App, getFinalize: () => finalize };
   }
 
-  async function collectAfterFlush(streamRows: number, flushRows: number) {
+  async function collectTransition(
+    streamLines: string[],
+    flushLines: string[]
+  ) {
     const terminal = new TestTerminal(COLS, ROWS);
-    const { App, getFinalize } = buildApp(streamRows, flushRows);
+    const { App, getFinalize } = buildApp(streamLines, flushLines);
     const inst = render(<App />, {
       terminal,
       exitOnCtrlC: false,
@@ -75,6 +75,13 @@ describe('exactly-once on overflow flush (identical streamed/finalized rows)', (
     } finally {
       inst.unmount();
     }
+  }
+
+  function collectAfterFlush(streamRows: number, flushRows: number) {
+    return collectTransition(
+      Array.from({ length: streamRows }, (_, i) => `MSG-${i}`),
+      Array.from({ length: flushRows }, (_, i) => `MSG-${i}`)
+    );
   }
 
   it('a fully streamed message survives exactly once, with stale chrome dropped', async () => {
@@ -114,5 +121,18 @@ describe('exactly-once on overflow flush (identical streamed/finalized rows)', (
     expect(all.slice(first, first + 30)).toEqual(
       Array.from({ length: 30 }, (_, i) => `MSG-${i}`)
     );
+  });
+
+  it('does not replay an earlier matched block when a longer later run wins', async () => {
+    const thinking = Array.from({ length: 5 }, (_, i) => `THINK-${i}`);
+    const answer = Array.from({ length: 20 }, (_, i) => `ANSWER-${i}`);
+    const { all } = await collectTransition(
+      [...thinking, 'LIVE-BOUNDARY', ...answer],
+      [...thinking, 'FINAL-BOUNDARY', ...answer]
+    );
+
+    for (const line of [...thinking, ...answer]) {
+      expect(all.filter((row) => row === line).length).toBe(1);
+    }
   });
 });

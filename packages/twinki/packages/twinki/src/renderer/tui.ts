@@ -297,14 +297,7 @@ export class TUI extends Container {
    * scrollback content is never duplicated or destroyed.
    */
   private hadFirstFrame = false;
-  /**
-   * State captured at flush-overflow time, awaiting the tail repaint. The
-   * repaint must emit each piece of content exactly once, choosing among
-   * three physical sources: rows already committed to scrollback in streamed
-   * form, rows captured off the erased screen, and finalized lines in the
-   * static buffer. The presented run ties flushed lines to the streamed rows
-   * they re-render, so the repaint can decide disposition positionally.
-   */
+  /** Tracks physical ownership while finalized rows replace an overflowing live region. */
   private pendingFlush: {
     /** Rows on screen at flush time (logical lines, marker-free). */
     visible: string[];
@@ -312,12 +305,12 @@ export class TUI extends Container {
     visibleStartLive: number;
     /** Flushed static lines since capture; trailing run of the static buffer. */
     flushedCount: number;
-    /** Longest contiguous run of flushed lines found inside the old live
-     *  region — evidence those lines were already presented in streamed
-     *  form. len === 0 means no such evidence (replay, divergence). */
-    runFlushStart: number;
-    runLiveStart: number;
-    runLen: number;
+    /** Ordered byte-identical runs tying finalized rows to prior live rows. */
+    runs: Array<{
+      flushStart: number;
+      liveStart: number;
+      len: number;
+    }>;
   } | null = null;
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
@@ -375,13 +368,18 @@ export class TUI extends Container {
       this.preserveScrollbackOnRedraw = true;
     }
     this.minWidth = Math.max(opts.minWidth ?? 10, 1);
-    if (process.env.KIRO_RENDER_DEBUG === '1' || process.env.KIRO_RENDER_DEBUG_FILE || process.env.TWINKI_DEBUG_REDRAW === '1') {
+    if (
+      process.env.KIRO_RENDER_DEBUG === '1' ||
+      process.env.KIRO_RENDER_DEBUG_FILE ||
+      process.env.TWINKI_DEBUG_REDRAW === '1'
+    ) {
       try {
         const fs = require('fs');
         const os = require('os');
         const path = require('path');
-        const logPath = process.env.KIRO_RENDER_DEBUG_FILE
-          ?? path.join(os.tmpdir(), 'kiro-log', 'kiro-render-debug.log');
+        const logPath =
+          process.env.KIRO_RENDER_DEBUG_FILE ??
+          path.join(os.tmpdir(), 'kiro-log', 'kiro-render-debug.log');
         const dir = path.dirname(logPath);
         fs.mkdirSync(dir, { recursive: true });
         this.debugLogFd = fs.openSync(logPath, 'a');
@@ -679,10 +677,7 @@ export class TUI extends Container {
     if (this.mouseListeners.size === 1) this.enableMouse();
     return () => {
       this.mouseListeners.delete(listener);
-      if (
-        this.mouseListeners.size === 0 &&
-        !this.textSelectionEnabled
-      ) {
+      if (this.mouseListeners.size === 0 && !this.textSelectionEnabled) {
         this.disableMouse();
       }
     };
@@ -816,10 +811,7 @@ export class TUI extends Container {
       const physicalRows = Math.max(1, Math.ceil(lineWidth / renderWidth));
 
       if (physicalRow < physicalRows) {
-        const screenColumn = Math.max(
-          0,
-          Math.min(event.x, renderWidth - 1)
-        );
+        const screenColumn = Math.max(0, Math.min(event.x, renderWidth - 1));
         const column = physicalRow * renderWidth + screenColumn;
         return { row, column: Math.min(column, lineWidth) };
       }
@@ -845,19 +837,13 @@ export class TUI extends Container {
     if (event.type === 'mousedown') {
       const hadVisibleSelection = this.textSelectionVisible;
       const rawPoint = this.getTextSelectionPoint(event);
-      const scope = rawPoint
-        ? this.resolveTextSelectionScope(rawPoint)
-        : null;
+      const scope = rawPoint ? this.resolveTextSelectionScope(rawPoint) : null;
       const point =
-        rawPoint && scope
-          ? clampTextSelectionPoint(rawPoint, scope)
-          : rawPoint;
+        rawPoint && scope ? clampTextSelectionPoint(rawPoint, scope) : rawPoint;
       this.textSelectionAnchor = point;
       this.textSelectionFocus = point;
       this.textSelectionScope = scope;
-      this.textSelectionRawAnchor = point
-        ? { x: event.x, y: event.y }
-        : null;
+      this.textSelectionRawAnchor = point ? { x: event.x, y: event.y } : null;
       this.textSelectionActive = point !== null;
       this.textSelectionDragged = false;
       this.textSelectionVisible = false;
@@ -873,10 +859,7 @@ export class TUI extends Container {
     }
 
     const rawAnchor = this.textSelectionRawAnchor;
-    if (
-      rawAnchor &&
-      (event.x !== rawAnchor.x || event.y !== rawAnchor.y)
-    ) {
+    if (rawAnchor && (event.x !== rawAnchor.x || event.y !== rawAnchor.y)) {
       this.textSelectionDragged = true;
     }
 
@@ -956,9 +939,7 @@ export class TUI extends Container {
     }
 
     // Mouse events may arrive batched by the terminal adapter.
-    const mouseEvents = this.mouseEnabled
-      ? parseSGRMouseEvents(data)
-      : null;
+    const mouseEvents = this.mouseEnabled ? parseSGRMouseEvents(data) : null;
     if (mouseEvents) {
       for (const event of mouseEvents) {
         if (this.textSelectionEnabled) {
@@ -1115,10 +1096,7 @@ export class TUI extends Container {
       trailing: true,
     });
 
-    this.terminal.start(
-      (data) => this.handleInput(data),
-      throttledResize
-    );
+    this.terminal.start((data) => this.handleInput(data), throttledResize);
     if (this.textSelectionEnabled) {
       this.enableMouse();
     }
@@ -1704,7 +1682,8 @@ export class TUI extends Container {
       out[i] =
         (idx === -1
           ? line
-          : line.slice(0, idx) + line.slice(idx + CURSOR_MARKER.length)) + reset;
+          : line.slice(0, idx) + line.slice(idx + CURSOR_MARKER.length)) +
+        reset;
     }
     return out;
   }
@@ -1766,6 +1745,68 @@ export class TUI extends Container {
       }
     }
     return best;
+  }
+
+  /** Finds ordered matching runs on both sides of each divergent boundary. */
+  private findPresentedRuns(
+    flushed: string[],
+    live: string[]
+  ): Array<{ flushStart: number; liveStart: number; len: number }> {
+    const runs: Array<{
+      flushStart: number;
+      liveStart: number;
+      len: number;
+    }> = [];
+    const ranges = [
+      {
+        flushStart: 0,
+        flushEnd: flushed.length,
+        liveStart: 0,
+        liveEnd: live.length,
+      },
+    ];
+
+    // Bound fragmented divergence work; unmatched fragments use lossless fallback emission.
+    while (ranges.length > 0 && runs.length < 32) {
+      const range = ranges.pop()!;
+      const match = this.findPresentedRun(
+        flushed.slice(range.flushStart, range.flushEnd),
+        live.slice(range.liveStart, range.liveEnd)
+      );
+      if (match.len === 0) continue;
+
+      const run = {
+        flushStart: range.flushStart + match.flushStart,
+        liveStart: range.liveStart + match.liveStart,
+        len: match.len,
+      };
+      runs.push(run);
+
+      const flushAfter = run.flushStart + run.len;
+      const liveAfter = run.liveStart + run.len;
+      if (flushAfter < range.flushEnd && liveAfter < range.liveEnd) {
+        ranges.push({
+          flushStart: flushAfter,
+          flushEnd: range.flushEnd,
+          liveStart: liveAfter,
+          liveEnd: range.liveEnd,
+        });
+      }
+      if (
+        range.flushStart < run.flushStart &&
+        range.liveStart < run.liveStart
+      ) {
+        ranges.push({
+          flushStart: range.flushStart,
+          flushEnd: run.flushStart,
+          liveStart: range.liveStart,
+          liveEnd: run.liveStart,
+        });
+      }
+    }
+
+    runs.sort((a, b) => a.flushStart - b.flushStart);
+    return runs;
   }
 
   /**
@@ -1846,8 +1887,7 @@ export class TUI extends Container {
       // "Live rows" = physical rows of the active tail (all lines in
       // `previousLines` after the accumulated static prefix). When wide
       // lines aren't enabled, physical === logical (one row per line).
-      const staticLogicalCount =
-        this.staticBuffer.length - lines.length;
+      const staticLogicalCount = this.staticBuffer.length - lines.length;
       let liveRows: number;
       if (this.wideLinesEnabled) {
         const width = Math.max(this.terminal.columns || 80, this.minWidth);
@@ -1895,14 +1935,12 @@ export class TUI extends Container {
           // Both sides carry the reset suffix and are marker-free, so the
           // run matcher compares committed strings directly.
           const liveOld = this.previousLines.slice(staticLogicalCount);
-          const run = this.findPresentedRun(finalized, liveOld);
+          const runs = this.findPresentedRuns(finalized, liveOld);
           this.pendingFlush = {
             visible,
             visibleStartLive: Math.max(0, firstVisibleIdx - staticLogicalCount),
             flushedCount: finalized.length,
-            runFlushStart: run.flushStart,
-            runLiveStart: run.liveStart,
-            runLen: run.len,
+            runs,
           };
         }
         const rowsToErase = Math.min(screenRow + 1, this.terminal.rows);
@@ -2139,7 +2177,10 @@ export class TUI extends Container {
    */
   private _doRenderInner(): void {
     this.perfLastFrame.prefixCopied = 0;
-    const width = Math.max(this.terminal.columns - this.scrollbarWidth, this.minWidth);
+    const width = Math.max(
+      this.terminal.columns - this.scrollbarWidth,
+      this.minWidth
+    );
     const height = this.terminal.rows;
 
     /**
@@ -2246,8 +2287,7 @@ export class TUI extends Container {
     // cursor physicalization so the cursor fast-path can use them.
     if (
       this.wideLinesEnabled &&
-      (this.staticHasWideWidth !== width ||
-        this.staticPhysRowsCache < 0)
+      (this.staticHasWideWidth !== width || this.staticPhysRowsCache < 0)
     ) {
       let total = 0;
       let anyWide = false;
@@ -2335,10 +2375,8 @@ export class TUI extends Container {
       this.textSelectionVisible &&
       this.textSelectionAnchor !== null &&
       this.textSelectionFocus !== null &&
-      Math.min(
-        this.textSelectionAnchor.row,
-        this.textSelectionFocus.row
-      ) < staticPrefixLen;
+      Math.min(this.textSelectionAnchor.row, this.textSelectionFocus.row) <
+        staticPrefixLen;
     const prefixIsPristine =
       staticPrefixLen > 0 &&
       !hasVisibleOverlay &&
@@ -2415,7 +2453,9 @@ export class TUI extends Container {
      */
     const fullRender = (clearSeq: string, reason?: string): void => {
       this.fullRedrawCount++;
-      this.debugLog(`fullRedraw #${this.fullRedrawCount}: reason=${reason ?? 'unknown'} lines=${newLines.length}`);
+      this.debugLog(
+        `fullRedraw #${this.fullRedrawCount}: reason=${reason ?? 'unknown'} lines=${newLines.length}`
+      );
       const sync = !process.env['TWINKI_NO_SYNC'];
       let buffer = (sync ? '\x1b[?2026h' : '') + clearSeq;
       // Write each logical line, separated by \r\n. Lines wider than `width`
@@ -2493,27 +2533,8 @@ export class TUI extends Container {
       this.debugLog(
         `fullRedraw #${this.fullRedrawCount}: reason=${reason} lines=${newLines.length} (viewport-tail)`
       );
-      // Content captured at flush time must survive exactly once. Physical
-      // sources: the streamed overflow already committed to scrollback, the
-      // captured screen rows, and the finalized static lines. The presented
-      // run (matched at flush time) ties flushed lines to the streamed rows
-      // they re-render, so disposition is positional:
-      //   - flushed line whose streamed form is committed overflow → skip
-      //     (the streamed record stands);
-      //   - flushed line inside the tail window → skip (the tail paints it);
-      //   - anything else flushed → emit once;
-      //   - captured rows before the run → emit (only copy anywhere);
-      //   - captured rows inside the run → skip (byte-equal flushed copy is
-      //     dispositioned above);
-      //   - captured rows past the run → superseded by the re-rendered live
-      //     region when the tail covers it; otherwise deduped against the
-      //     tail and emitted to stand in for the unpaintable live head.
-      // Without run evidence (session replay, paint lag on the head,
-      // renderer divergence) fall back to preserving captured rows minus the
-      // tail overlap plus the full above-tail flushed range: duplication is
-      // then possible but bounded, whereas dropping either source is loss.
-      // The trailing full-screen scroll leaves a blank screen with the
-      // cursor at the top, so the tail paint below needs no adjustment.
+      // Matched finalized rows replace erased screen rows, but never rows already
+      // committed above the viewport; unmatched rows retain the lossless fallback.
       const preserved: string[] = [];
       // Suffix-dedup `rows` against the painted tail at every candidate
       // shift (streaming across the flush advances the live region, so the
@@ -2545,46 +2566,57 @@ export class TUI extends Container {
       if (pending) {
         const flushBase = Math.max(0, staticPrefixLen - pending.flushedCount);
         const flushEndAboveTail = Math.min(staticPrefixLen, startIdx);
-        if (pending.runLen > 0 && staticPrefixLen >= pending.flushedCount) {
-          const runFlushEnd = pending.runFlushStart + pending.runLen;
-          const runLiveEnd = pending.runLiveStart + pending.runLen;
-          // Flushed index below which the streamed form already scrolled
-          // into scrollback as committed overflow (mapped live index below
-          // the captured region).
-          const committedFlushEnd =
-            pending.runFlushStart +
-            Math.min(
-              pending.runLen,
-              Math.max(0, pending.visibleStartLive - pending.runLiveStart)
-            );
+        if (
+          pending.runs.length > 0 &&
+          staticPrefixLen >= pending.flushedCount
+        ) {
+          const firstRun = pending.runs[0]!;
+          const lastRun = pending.runs[pending.runs.length - 1]!;
+          const liveIndexForFlush = (flushIndex: number): number | null => {
+            for (const run of pending.runs) {
+              if (
+                flushIndex >= run.flushStart &&
+                flushIndex < run.flushStart + run.len
+              ) {
+                return run.liveStart + flushIndex - run.flushStart;
+              }
+            }
+            return null;
+          };
+
           for (let v = 0; v < pending.visible.length; v++) {
-            if (pending.visibleStartLive + v >= pending.runLiveStart) break;
+            if (pending.visibleStartLive + v >= firstRun.liveStart) break;
             preserved.push(pending.visible[v] ?? '');
           }
           for (let f = 0; f < pending.flushedCount; f++) {
             const frameIdx = flushBase + f;
             if (frameIdx >= flushEndAboveTail) break;
+            const matchedLiveIndex = liveIndexForFlush(f);
             if (
-              f >= pending.runFlushStart &&
-              f < runFlushEnd &&
-              f < committedFlushEnd
+              matchedLiveIndex !== null &&
+              matchedLiveIndex < pending.visibleStartLive
             ) {
               continue;
             }
             preserved.push(newLines[frameIdx] ?? '');
           }
           if (startIdx > staticPrefixLen) {
-            const afterRun: string[] = [];
+            const afterRuns: string[] = [];
+            const lastRunLiveEnd = lastRun.liveStart + lastRun.len;
             for (let v = 0; v < pending.visible.length; v++) {
-              if (pending.visibleStartLive + v >= runLiveEnd) {
-                afterRun.push(pending.visible[v] ?? '');
+              if (pending.visibleStartLive + v >= lastRunLiveEnd) {
+                afterRuns.push(pending.visible[v] ?? '');
               }
             }
-            pushTailDeduped(afterRun);
+            pushTailDeduped(afterRuns);
           }
         } else {
           pushTailDeduped(pending.visible);
-          for (let frameIdx = flushBase; frameIdx < flushEndAboveTail; frameIdx++) {
+          for (
+            let frameIdx = flushBase;
+            frameIdx < flushEndAboveTail;
+            frameIdx++
+          ) {
             preserved.push(newLines[frameIdx] ?? '');
           }
         }
@@ -2762,10 +2794,7 @@ export class TUI extends Container {
           ) {
             return;
           }
-          fullRender(
-            this.altScreen ? CLEAR_SCREEN : CLEAR_ALL,
-            'extra>height'
-          );
+          fullRender(this.altScreen ? CLEAR_SCREEN : CLEAR_ALL, 'extra>height');
           return;
         }
         if (extraPhys > 0) buffer += '\x1b[1B';
@@ -2931,9 +2960,7 @@ export class TUI extends Container {
       const lastIdx = renderEnd;
       finalCursorRow =
         lastIdx >= 0
-          ? physRowOfNew(lastIdx) +
-            rowOf(newLines[lastIdx] ?? '') -
-            1
+          ? physRowOfNew(lastIdx) + rowOf(newLines[lastIdx] ?? '') - 1
           : 0;
     } else {
       // Narrow-only path: per-row clear + write. Equivalent to pre-existing
