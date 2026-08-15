@@ -10,16 +10,13 @@ use std::{
 };
 
 use async_trait::async_trait;
+use opentelemetry::KeyValue;
 use opentelemetry::metrics::{
     Counter,
     Gauge,
     Histogram,
     Meter,
     MeterProvider,
-};
-use opentelemetry::{
-    KeyValue,
-    global,
 };
 use opentelemetry_http::{
     Bytes,
@@ -362,6 +359,8 @@ impl OtelProviders {
         &self.meter_provider
     }
 
+    /// Bound to this provider rather than an ambient one, so records land on the
+    /// reader that `force_flush` and `shutdown` here drain.
     pub fn meter(&self) -> Meter {
         self.meter_provider.meter("kiro-telemetry")
     }
@@ -413,7 +412,6 @@ pub fn init_otel(config: &TelemetryConfig) -> OtelProviders {
 
 pub fn init_noop_otel(_config: &TelemetryConfig) -> OtelProviders {
     let meter_provider = SdkMeterProvider::builder().with_view(histogram_bucket_view).build();
-    global::set_meter_provider(meter_provider.clone());
     OtelProviders {
         meter_provider,
         pipeline_kind: OtelPipelineKind::Noop,
@@ -440,11 +438,6 @@ fn build_otlp_http_providers(
         .with_view(histogram_bucket_view)
         .build();
 
-    global::set_meter_provider(meter_provider.clone());
-    // Record replayed drops through the provider we just built rather than
-    // `global::meter(...)`: the global provider is a process-wide singleton that
-    // concurrent initializations can swap, which would misroute these metrics to a
-    // different provider and leave this provider's reader empty at force_flush.
     let emitted_replayed_drops = emit_replayed_drops(&meter_provider.meter("kiro-telemetry"), &replayed_drops);
     Ok(OtelProviders {
         meter_provider,
@@ -798,7 +791,8 @@ mod tests {
         let config = test_config(true, OtelMode::Off, None);
 
         let providers = init_noop_otel(&config);
-        let counter = global::meter("kiro-telemetry-test")
+        let counter = providers
+            .meter()
             .u64_counter("kiro_cli_model_invocations_total")
             .build();
 
@@ -844,7 +838,7 @@ mod tests {
         let config = test_config(true, OtelMode::DualWrite, None);
 
         let providers = init_noop_otel(&config);
-        let sink = std::sync::Arc::new(OtelMetricsSink::new(global::meter("kiro-telemetry-test-sink")));
+        let sink = std::sync::Arc::new(OtelMetricsSink::new(providers.meter()));
         let client = crate::TelemetryClient::new(config).with_sink(sink);
 
         client
@@ -936,6 +930,43 @@ mod tests {
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_DIMENSION,
             kiro_telemetry_schema::CLOUDWATCH_PRODUCT_VALUE,
         );
+        expect_otlp_metric(&requests, &expected_metric);
+    }
+
+    #[test]
+    fn sink_meter_exports_on_its_own_provider_not_a_later_one() {
+        let collector = OtlpTestCollector::start(1);
+        let foreign_collector = OtlpTestCollector::start(0);
+        let config = test_config(true, OtelMode::DualWrite, Some(collector.endpoint()));
+        let providers = init_otel(&config);
+        assert_eq!(providers.pipeline_kind(), OtelPipelineKind::OtlpHttp);
+
+        // A provider built later is what any ambient last-one-wins meter lookup would
+        // resolve to, so it stays here to break the assertion below if one returns.
+        let foreign_providers = init_otel(&test_config(
+            true,
+            OtelMode::DualWrite,
+            Some(foreign_collector.endpoint()),
+        ));
+
+        let client = crate::TelemetryClient::new(config).with_sink(Arc::new(OtelMetricsSink::new(providers.meter())));
+        let expected_metric = metric::record_run_outcome(
+            metric::SessionInterface::InteractiveCli,
+            metric::Engine::V2,
+            metric::OsType::Macos,
+            metric::RunOutcome::Success,
+        );
+        client
+            .emit(expected_metric.clone())
+            .expect("metric emit should succeed");
+
+        providers.force_flush().expect("otlp provider flush should succeed");
+        let requests = collector.collect();
+        providers.shutdown().expect("otlp provider shutdown should succeed");
+        foreign_providers
+            .shutdown()
+            .expect("foreign provider shutdown should succeed");
+
         expect_otlp_metric(&requests, &expected_metric);
     }
 
@@ -1094,8 +1125,8 @@ mod tests {
         store.record("metrics", "future_reason", 3);
         let snapshot = store.snapshot();
 
-        // A standalone provider keeps this test independent of the process-global
-        // meter provider; it asserts only on the returned emitted set, not on export.
+        // A standalone provider keeps this test off the export path; it asserts only
+        // on the returned emitted set.
         let provider = SdkMeterProvider::builder().build();
         let emitted = emit_replayed_drops(&provider.meter("kiro-telemetry-test-replay"), &snapshot);
         store.subtract(&emitted);
