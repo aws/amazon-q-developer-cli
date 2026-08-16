@@ -17,7 +17,10 @@ pub use harness::{
     AcpTestHarness,
     AcpTestHarnessBuilder,
 };
-pub use paths::TestPaths;
+pub use paths::{
+    TestPaths,
+    checkout_hash,
+};
 
 /// Minimal HTTP endpoint that returns a fixed JSON body for any GET. Stands in
 /// for the MCP registry the agent fetches via `KIRO_MCP_REGISTRY_URL_OVERRIDE`.

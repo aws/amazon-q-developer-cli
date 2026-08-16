@@ -15,6 +15,14 @@ pub struct TestPaths {
     pub log_file: PathBuf,
 }
 
+/// Deterministic FNV-1a hash of the crate location. Stable across runs (unlike
+/// `DefaultHasher`) so stale-socket cleanup keeps working between test runs.
+pub fn checkout_hash() -> u32 {
+    env!("CARGO_MANIFEST_DIR")
+        .bytes()
+        .fold(2166136261u32, |h, b| (h ^ u32::from(b)).wrapping_mul(16777619))
+}
+
 /// Create isolated test directories under test_output/{test_name}/.
 pub fn create_test_dir(test_name: &str) -> TestPaths {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -39,7 +47,14 @@ pub fn create_test_dir(test_name: &str) -> TestPaths {
     fs::write(&settings_path, "{}").expect("failed to create settings file");
 
     // Unix sockets have a max path length of 104 bytes on macOS. Use /tmp to avoid hitting this limit.
-    let ipc_socket = PathBuf::from(format!("/tmp/{}.sock", test_name));
+    // Scope the name by checkout location so parallel git worktrees running the
+    // same-named test never collide on the socket.
+    let ipc_socket = PathBuf::from(format!("/tmp/kiro-{:08x}-{}.sock", checkout_hash(), test_name));
+    assert!(
+        ipc_socket.as_os_str().len() <= 100,
+        "socket path exceeds the 104-byte macOS sun_path limit; shorten the test name: {}",
+        ipc_socket.display()
+    );
     // Clean up stale socket from previous runs
     let _ = fs::remove_file(&ipc_socket);
 

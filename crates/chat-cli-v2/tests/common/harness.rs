@@ -259,8 +259,14 @@ impl AcpTestHarness {
     pub async fn push_mock_responses_from_file(&mut self, session_id: &str, path: impl AsRef<Path>) {
         let content = std::fs::read_to_string(path.as_ref())
             .unwrap_or_else(|e| panic!("failed to read mock file {:?}: {}", path.as_ref(), e));
+        self.push_mock_responses_from_str(session_id, &content).await;
+    }
 
-        for stream in parse_mock_response_streams(&content) {
+    /// Push mock responses from already-loaded JSONL content. Lets tests
+    /// substitute runtime values (e.g. per-checkout file paths) into recorded
+    /// responses before pushing.
+    pub async fn push_mock_responses_from_str(&mut self, session_id: &str, content: &str) {
+        for stream in parse_mock_response_streams(content) {
             self.push_mock_response(session_id, Some(stream)).await;
             // Each stream needs its own None terminator
             self.push_mock_response(session_id, None).await;

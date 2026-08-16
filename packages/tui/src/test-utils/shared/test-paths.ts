@@ -14,14 +14,32 @@ import * as crypto from 'crypto';
 const MAX_SOCKET_PATH_LEN = 103;
 
 /**
+ * Short scope key for a checkout location. Sockets live in the shared OS temp
+ * dir, so paths embed this key: parallel git worktrees running the same-named
+ * test must not clobber each other's socket directories.
+ */
+export function checkoutScope(checkoutPath: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(checkoutPath)
+    .digest('hex')
+    .slice(0, 8);
+}
+
+const CHECKOUT_HASH = checkoutScope(__dirname);
+
+/**
  * Build a socket directory path that keeps the full socket path under the
- * platform's sun_path limit. If the natural path `{tmp}/kiro-cli-tests/{name}/`
+ * platform's sun_path limit. If the natural path `{tmp}/{tmpRoot}/{name}/`
  * plus the longest socket filename would exceed the limit, the test name is
  * replaced with a short hash-suffixed variant. The original test name is still
  * used for human-readable artifacts under `baseDir`.
  */
-function buildSocketDir(testName: string): string {
-  const tmpRoot = path.join(os.tmpdir(), 'kiro-cli-tests');
+export function buildSocketDir(
+  testName: string,
+  scope: string = CHECKOUT_HASH
+): string {
+  const tmpRoot = path.join(os.tmpdir(), `kiro-cli-tests-${scope}`);
   // Longest socket filename we will place in this dir.
   const longestSockFile = 'agent.sock';
   const naturalPath = path.join(tmpRoot, testName, longestSockFile);
@@ -41,8 +59,16 @@ function buildSocketDir(testName: string): string {
     tmpRoot.length + path.sep.length + 1 /* '/' */ + longestSockFile.length + 1;
   const available =
     MAX_SOCKET_PATH_LEN - overhead - (hash.length + 1); /* '-' */
-  const prefix = testName.slice(0, Math.max(0, available));
-  const shortName = prefix ? `${prefix}-${hash}` : hash;
+  if (available <= 0) {
+    // Fail closed: an over-limit temp root would otherwise return a path that
+    // fails at bind time with a misleading error.
+    throw new Error(
+      `Temp dir too long for Unix socket paths (${tmpRoot.length} bytes): ${tmpRoot}. ` +
+        `Set TMPDIR to a shorter path.`
+    );
+  }
+  const prefix = testName.slice(0, available);
+  const shortName = `${prefix}-${hash}`;
   return path.join(tmpRoot, shortName);
 }
 
@@ -99,7 +125,7 @@ export function createTestDir(
 
   if (isWindows) {
     // Windows named pipes: Node.js net.createServer supports \\?\pipe\ paths
-    const pipePrefix = `\\\\.\\pipe\\kiro-test-${testName.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+    const pipePrefix = `\\\\.\\pipe\\kiro-test-${CHECKOUT_HASH}-${testName.replace(/[^a-zA-Z0-9-]/g, '-')}`;
     tuiIpcSocket = `${pipePrefix}-tui`;
     agentIpcSocket = `${pipePrefix}-agent`;
   } else {

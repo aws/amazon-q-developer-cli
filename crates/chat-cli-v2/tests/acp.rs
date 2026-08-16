@@ -2151,20 +2151,23 @@ async fn str_replace_tool_call_includes_location_with_line_number() {
         .await;
 
     // Create a test file with content where "old_value" is on line 3 (1-indexed)
-    // Use /tmp/ since the agent's cwd validation happens before tool execution
-    let test_file = std::path::Path::new("/tmp/str_replace_test.txt");
+    // Use /tmp/ since the agent's cwd validation happens before tool execution;
+    // scope the name by checkout so parallel worktrees don't race on one file.
+    let test_file_path = format!("/tmp/kiro-{:08x}-str_replace_test.txt", common::checkout_hash());
+    let test_file = std::path::Path::new(&test_file_path);
     tokio::fs::write(&test_file, "line one\nline two\nold_value here\nline four\n")
         .await
         .expect("failed to create test file");
 
-    harness
-        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/str_replace_single.jsonl")
-        .await;
+    let mock = std::fs::read_to_string("tests/mock_responses/str_replace_single.jsonl")
+        .expect("failed to read mock file")
+        .replace("/tmp/str_replace_test.txt", &test_file_path);
+    harness.push_mock_responses_from_str(&session_id.0, &mock).await;
 
     client
         .prompt_text(
             session_id.clone(),
-            "replace old_value with new_value in /tmp/str_replace_test.txt",
+            &format!("replace old_value with new_value in {test_file_path}"),
         )
         .await
         .expect("prompt failed");
