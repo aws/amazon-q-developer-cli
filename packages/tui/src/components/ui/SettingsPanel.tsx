@@ -174,7 +174,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
           // /verbosity through the normal command pipeline.
           setSettingsReturnOnEscape(true);
           setShowSettingsPanel(false);
-          void handleUserInput('/verbosity');
+          void handleUserInput('/verbosity', 'internal');
           return;
         case 'run-terminal-setup':
           // Terminal setup is a self-contained async flow — close the

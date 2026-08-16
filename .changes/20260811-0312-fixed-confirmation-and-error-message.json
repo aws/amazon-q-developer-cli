@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Confirmation and error messages now stay visible until your next submitted input"
+}

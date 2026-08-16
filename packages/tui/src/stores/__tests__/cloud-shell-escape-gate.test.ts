@@ -38,7 +38,7 @@ describe('handleUserInput `!` shell escape — cloud-session gate', () => {
     expect(store.getState().transientAlert).toEqual({
       message: 'Shell commands are not available for a cloud session yet.',
       status: 'error',
-      autoHideMs: 5000,
+      autoHideMs: undefined,
     });
     expect(terminalWrites).toEqual([]);
     expect(store.getState().messages).toHaveLength(0);

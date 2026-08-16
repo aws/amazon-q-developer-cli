@@ -251,6 +251,8 @@ export const PromptInput = React.memo(function PromptInput({
   const setPendingVoiceText = useAppStore((s) => s.setPendingVoiceText);
   const incrementVoiceHint = useAppStore((s) => s.incrementVoiceHint);
   const showTransientAlert = useAppStore((s) => s.showTransientAlert);
+  const dismissTransientAlert = useAppStore((s) => s.dismissTransientAlert);
+  const agentEngine = useAppStore((s) => s.agentEngine);
   const sendMessage = useAppStore((s) => s.sendMessage);
   const { pendingFileAttachment } = useFileAttachmentState();
   const { consumePendingFileAttachment } = useFileAttachmentActions();
@@ -1655,6 +1657,7 @@ export const PromptInput = React.memo(function PromptInput({
                       'Voice needs a one-time model download. Type /voice to set it up.',
                     status: 'info',
                     autoHideMs: 8000,
+                    persistent: false,
                   });
                 },
                 onStatus: (status) => {
@@ -1666,6 +1669,7 @@ export const PromptInput = React.memo(function PromptInput({
                         'Downloading voice model — this runs once, then voice is ready.',
                       status: 'info',
                       autoHideMs: 120000,
+                      persistent: false,
                     });
                   } else if (status === 'download_complete') {
                     pttActiveRef.current = false;
@@ -1728,6 +1732,7 @@ export const PromptInput = React.memo(function PromptInput({
                 incrementVoiceHint();
                 if (text) {
                   if (voiceAutoSubmit) {
+                    if (agentEngine === 'kas') dismissTransientAlert();
                     sendMessage(text);
                   } else {
                     insertVoiceText(text);
@@ -1737,6 +1742,7 @@ export const PromptInput = React.memo(function PromptInput({
                     message: 'No speech detected',
                     status: 'error',
                     autoHideMs: 2000,
+                    persistent: false,
                   });
                 }
               })

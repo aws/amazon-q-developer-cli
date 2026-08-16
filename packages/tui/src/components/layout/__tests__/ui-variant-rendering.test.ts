@@ -110,8 +110,8 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
-function createVariantStore(variant: UiMode) {
-  const store = createAppStore({ kiro: new Kiro(), agentEngine: 'v2' });
+function createVariantStore(variant: UiMode, agentEngine: 'v2' | 'kas' = 'v2') {
+  const store = createAppStore({ kiro: new Kiro(), agentEngine });
   store.setState({
     uiMode: variant,
     mode: 'inline',
@@ -192,6 +192,81 @@ describe('UI variant layout rendering', () => {
         Object.assign(surfaces, originalSurfaces);
       }
     }
+  });
+
+  it('ignores auto-hide timers for V3 Lite alerts', async () => {
+    const store = createVariantStore('lite', 'kas');
+    store.setState({
+      transientAlert: {
+        message: 'Persistent confirmation',
+        status: 'success',
+        autoHideMs: 50,
+      },
+    });
+
+    activeInstance = render(
+      React.createElement(
+        AppStoreContext.Provider,
+        { value: store },
+        React.createElement(AppContainer)
+      ),
+      { terminal: new MockTerminal(), exitOnCtrlC: false }
+    );
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(store.getState().transientAlert?.message).toBe(
+      'Persistent confirmation'
+    );
+  });
+
+  it('keeps auto-dismissing explicitly timed V3 Lite alerts', async () => {
+    const store = createVariantStore('lite', 'kas');
+    store.setState({
+      transientAlert: {
+        message: 'Voice progress',
+        status: 'info',
+        autoHideMs: 50,
+        persistent: false,
+      },
+    });
+
+    activeInstance = render(
+      React.createElement(
+        AppStoreContext.Provider,
+        { value: store },
+        React.createElement(AppContainer)
+      ),
+      { terminal: new MockTerminal(), exitOnCtrlC: false }
+    );
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
+  it('keeps auto-dismissing timed V2 Lite alerts', async () => {
+    const store = createVariantStore('lite', 'v2');
+    store.setState({
+      transientAlert: {
+        message: 'Legacy confirmation',
+        status: 'success',
+        autoHideMs: 50,
+      },
+    });
+
+    activeInstance = render(
+      React.createElement(
+        AppStoreContext.Provider,
+        { value: store },
+        React.createElement(AppContainer)
+      ),
+      { terminal: new MockTerminal(), exitOnCtrlC: false }
+    );
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(store.getState().transientAlert).toBeNull();
   });
 
   it('renders every injected surface from each registered layout', async () => {

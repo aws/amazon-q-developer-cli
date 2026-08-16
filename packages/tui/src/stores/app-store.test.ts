@@ -1309,8 +1309,8 @@ describe('Enum and constant exports', () => {
 });
 
 describe('Simple state setters', () => {
-  function makeStore() {
-    return createAppStore({ kiro: new Kiro() });
+  function makeStore(agentEngine: 'v2' | 'kas' = 'v2') {
+    return createAppStore({ kiro: new Kiro(), agentEngine });
   }
 
   it('setProcessing(true) sets isProcessing', () => {
@@ -1567,6 +1567,86 @@ describe('Simple state setters', () => {
     const alert = { message: 'Done!', status: 'success' as const };
     store.getState().showTransientAlert(alert);
     expect(store.getState().transientAlert).toEqual(alert);
+  });
+
+  it('preserves auto-hide timeouts for V2 alerts', () => {
+    const store = makeStore('v2');
+    store.getState().showTransientAlert({
+      message: 'Done!',
+      status: 'success',
+      autoHideMs: 3000,
+    });
+    expect(store.getState().transientAlert?.autoHideMs).toBe(3000);
+  });
+
+  it('removes auto-hide timeouts from V3 alerts', () => {
+    const store = makeStore('kas');
+    store.getState().showTransientAlert({
+      message: 'Done!',
+      status: 'success',
+      autoHideMs: 3000,
+    });
+    expect(store.getState().transientAlert?.autoHideMs).toBeUndefined();
+  });
+
+  it('preserves auto-hide timeouts for explicitly non-persistent V3 alerts', () => {
+    const store = makeStore('kas');
+    store.getState().showTransientAlert({
+      message: 'Downloading voice model',
+      status: 'info',
+      autoHideMs: 120000,
+      persistent: false,
+    });
+    expect(store.getState().transientAlert?.autoHideMs).toBe(120000);
+  });
+
+  it('dismisses a V3 alert when the next non-empty input is submitted', async () => {
+    const store = makeStore('kas');
+    store.setState({
+      isInitialized: true,
+      isProcessing: true,
+      activeInterruptMode: 'queue',
+    });
+    store.getState().showTransientAlert({
+      message: 'Done!',
+      status: 'success',
+      autoHideMs: 3000,
+    });
+
+    await store.getState().handleUserInput('next prompt');
+
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
+  it('keeps a V3 alert when input dispatch is internal navigation', async () => {
+    const store = makeStore('kas');
+    store.setState({
+      isInitialized: true,
+      isProcessing: true,
+      activeInterruptMode: 'queue',
+    });
+    store.getState().showTransientAlert({
+      message: 'Done!',
+      status: 'success',
+      autoHideMs: 3000,
+    });
+
+    await store.getState().handleUserInput('next prompt', 'internal');
+
+    expect(store.getState().transientAlert?.message).toBe('Done!');
+  });
+
+  it('keeps a V3 alert while the next input is only being edited', () => {
+    const store = makeStore('kas');
+    store.getState().showTransientAlert({
+      message: 'Done!',
+      status: 'success',
+      autoHideMs: 3000,
+    });
+
+    store.getState().insert('x');
+
+    expect(store.getState().transientAlert?.message).toBe('Done!');
   });
 
   it('dismissTransientAlert clears the alert', () => {

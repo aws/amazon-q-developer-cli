@@ -1020,6 +1020,8 @@ export interface TransientAlert {
   message: string;
   status: StatusType;
   autoHideMs?: number;
+  /** Set false for progress and ephemeral hints that should still time out in V3. */
+  persistent?: boolean;
   /** Optional keyboard shortcut action shown in the alert */
   action?: { label: string; key: string; onAction: () => void };
 }
@@ -1867,7 +1869,10 @@ interface BaseAppActions {
   ) => Promise<void>;
 
   // Main orchestrator
-  handleUserInput: (input: string) => Promise<void>;
+  handleUserInput: (
+    input: string,
+    source?: 'user' | 'queue' | 'internal'
+  ) => Promise<void>;
 
   // Trust all tools acceptance
   confirmTrustAllTools: () => void;
@@ -6172,7 +6177,8 @@ export const createAppStore = (props: AppStoreProps) => {
                     index: state.messages.length,
                   },
             loadingMessage: null,
-            transientAlert: null,
+            transientAlert:
+              state.agentEngine === 'kas' ? state.transientAlert : null,
             messages: summary
               ? insertCompactionReport(state.messages, summary)
               : state.messages,
@@ -7296,7 +7302,7 @@ export const createAppStore = (props: AppStoreProps) => {
         const commandSnapshot = get().commandInputValue;
         const inputSnapshot = get().input;
         const userTypedExtra = commandSnapshot.trim() !== nextMessage.trim();
-        await get().handleUserInput(nextMessage);
+        await get().handleUserInput(nextMessage, 'queue');
         if (userTypedExtra) {
           const userTypedDuringDispatch = !!get().commandInputValue.trim();
           if (!userTypedDuringDispatch) {
@@ -8066,7 +8072,12 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     showTransientAlert: (alert) => {
-      set({ transientAlert: alert });
+      set({
+        transientAlert:
+          get().agentEngine === 'kas' && alert.persistent !== false
+            ? { ...alert, autoHideMs: undefined }
+            : alert,
+      });
     },
 
     dismissTransientAlert: () => {
@@ -9162,7 +9173,7 @@ export const createAppStore = (props: AppStoreProps) => {
         showSurveyPanel: true,
         activeSurvey: target,
         surveyPrompt: null,
-        transientAlert: null,
+        transientAlert: s.agentEngine === 'kas' ? s.transientAlert : null,
         surveyState: { ...s.surveyState, lastShownAt: Date.now() },
       }));
     },
@@ -9193,12 +9204,12 @@ export const createAppStore = (props: AppStoreProps) => {
           lastShownAt: Date.now(),
           lastCompletedAt: Date.now(),
         },
-        transientAlert: {
-          message: 'Thanks for your feedback',
-          status: 'success' as const,
-          autoHideMs: 3000,
-        },
       }));
+      get().showTransientAlert({
+        message: 'Thanks for your feedback',
+        status: 'success',
+        autoHideMs: 3000,
+      });
       resumeQueueAfterInteraction(get);
 
       // Fire-and-forget ingestion.
@@ -9236,7 +9247,7 @@ export const createAppStore = (props: AppStoreProps) => {
 
       set((s) => ({
         surveyPrompt: null,
-        transientAlert: null,
+        transientAlert: s.agentEngine === 'kas' ? s.transientAlert : null,
         activeSurvey: null,
         surveyState: {
           ...s.surveyState,
@@ -9257,13 +9268,16 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     // Main orchestrator
-    handleUserInput: async (input: string) => {
+    handleUserInput: async (input: string, source = 'user') => {
       const trimmed = input.trim();
       const hasPendingImages = get().pendingImages.length > 0;
       if (!trimmed && !hasPendingImages) return;
 
       const state = get();
       state.resetExitSequence();
+      if (state.agentEngine === 'kas' && source === 'user') {
+        state.dismissTransientAlert();
+      }
 
       const commandToken = trimmed.split(/\s+/, 1)[0]?.toLowerCase();
       if (commandToken === '/voice' && !isVoiceInputAvailable()) {

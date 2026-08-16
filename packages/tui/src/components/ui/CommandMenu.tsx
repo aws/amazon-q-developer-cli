@@ -474,7 +474,7 @@ export const CommandMenu: React.FC = () => {
     // is null does returnToSettings re-open /settings.
     if (verboseReturn) {
       setVerboseReturnOnEscape(null);
-      handleUserInput(`/verbosity ${verboseReturn}`);
+      handleUserInput(`/verbosity ${verboseReturn}`, 'internal');
       return;
     }
     if (returnToSettings) {

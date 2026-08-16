@@ -42,7 +42,11 @@ describe('/session-id announceSystem routing', () => {
   });
 
   it('tui: shows a transient toast with the resume line and a 10s read time', async () => {
-    const store = createAppStore({ kiro: new Kiro(), uiMode: 'tui' });
+    const store = createAppStore({
+      kiro: new Kiro(),
+      uiMode: 'tui',
+      agentEngine: 'v2',
+    });
     store.setState({ isInitialized: true });
 
     await store.getState().handleUserInput('/session-id');

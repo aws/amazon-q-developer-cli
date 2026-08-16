@@ -644,6 +644,49 @@ describe('Queueing mode behaviors', () => {
   });
 
   describe('processQueue', () => {
+    it('does not dismiss a V3 alert when a queued message drains automatically', async () => {
+      const store = createKasTestStore();
+      store.getState().kiro.streamMessage = mock(async () => {});
+      store.setState({
+        activeInterruptMode: 'queue',
+        sessionId: 'session-abc',
+        queuedMessages: ['queued msg'],
+      });
+      store.getState().showTransientAlert({
+        message: 'Compaction failed',
+        status: 'error',
+        autoHideMs: 5000,
+      });
+
+      await store.getState().processQueue();
+
+      expect(store.getState().transientAlert?.message).toBe(
+        'Compaction failed'
+      );
+    });
+
+    it('does not dismiss a V3 alert when a queued slash command drains automatically', async () => {
+      const store = createKasTestStore();
+      store.setState({
+        queuedMessages: ['/help'],
+        slashCommands: [
+          ...store.getState().slashCommands,
+          { name: '/help', description: 'Show help', source: 'local' },
+        ],
+      });
+      store.getState().showTransientAlert({
+        message: 'Compaction failed',
+        status: 'error',
+        autoHideMs: 5000,
+      });
+
+      await store.getState().processQueue();
+
+      expect(store.getState().transientAlert?.message).toBe(
+        'Compaction failed'
+      );
+    });
+
     it('does not clear input buffer when processing queue', async () => {
       const store = createTestStore();
       store.setState({
@@ -1414,7 +1457,7 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       // The drain branch recognizes the KAS command and routes it through the
       // slash-command dispatch path (handleUserInput), NOT sendMessage (which
       // would deliver it to the model as chat text).
-      expect(mockHandleUserInput).toHaveBeenCalledWith(KAS_ONLY_CMD);
+      expect(mockHandleUserInput).toHaveBeenCalledWith(KAS_ONLY_CMD, 'queue');
       expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
@@ -1435,7 +1478,7 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       const drainRow = store.getState().messages[messagesBefore];
       expect(drainRow?.role).toBe(MessageRole.System);
       expect(drainRow?.content).toContain(`[queue] ${KAS_ONLY_CMD}`);
-      expect(mockHandleUserInput).toHaveBeenCalledWith(KAS_ONLY_CMD);
+      expect(mockHandleUserInput).toHaveBeenCalledWith(KAS_ONLY_CMD, 'queue');
     });
 
     it('pauses on a queued model picker and resumes with the next command after selection', async () => {

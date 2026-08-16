@@ -18,6 +18,7 @@ export const SessionViewScreen: React.FC = () => {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const kiro = useAppStore((s) => s.kiro);
+  const agentEngine = useAppStore((s) => s.agentEngine);
   const showTransientAlert = useAppStore((s) => s.showTransientAlert);
   const { clearInput } = useInputActions();
   const { transientAlert, loadingMessage } = useNotificationState();
@@ -32,6 +33,7 @@ export const SessionViewScreen: React.FC = () => {
 
   const handleSubmit = async (content: string) => {
     if (!activeSessionId || !content.trim()) return;
+    if (agentEngine === 'kas') dismissTransientAlert();
     try {
       await kiro.sendMessage(activeSessionId, content.trim());
       sessionConversationsStore

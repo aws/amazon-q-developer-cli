@@ -215,6 +215,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const resetExitSequence = useAppStore((s) => s.resetExitSequence);
   const wasCancelled = useAppStore((s) => s.wasCancelled);
   const exitSequence = useAppStore((s) => s.exitSequence);
+  const agentEngine = useAppStore((s) => s.agentEngine);
   const transientAlert = useAppStore((s) => s.transientAlert);
   const dismissTransientAlert = useAppStore((s) => s.dismissTransientAlert);
   const loadingMessage = useAppStore((s) => s.loadingMessage);
@@ -319,9 +320,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   );
   const cancelApproval = useAppStore((s) => s.cancelApproval);
   // Kill is V2-only; KAS (V3) session/terminate is a no-op, so don't offer it.
-  const killSupported = engineSupportsSubagentKill(
-    useAppStore((s) => s.agentEngine)
-  );
+  const killSupported = engineSupportsSubagentKill(agentEngine);
   const [armedKillSessionId, setArmedKillSessionId] = useState<string | null>(
     null
   );
@@ -519,14 +518,17 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     }));
   }, [isProcessing, wasCancelled, store]);
 
-  // Auto-dismiss the transient alert (autoHideMs from caller, 4s fallback so a
-  // no-timer alert isn't stranded forever).
+  // V3 alerts persist by default; explicit opt-outs and all V2 alerts keep their timers.
   useEffect(() => {
-    if (!transientAlert) return;
+    if (
+      !transientAlert ||
+      (agentEngine === 'kas' && transientAlert.persistent !== false)
+    )
+      return;
     const ms = transientAlert.autoHideMs ?? 4000;
     const t = setTimeout(() => dismissTransientAlert(), ms);
     return () => clearTimeout(t);
-  }, [transientAlert, dismissTransientAlert]);
+  }, [agentEngine, transientAlert, dismissTransientAlert]);
 
   // Panel safety-net. Panel-type slash commands freeze the input (activeCommand
   // set + empty options → PromptInput bails). Lite renders only a curated subset

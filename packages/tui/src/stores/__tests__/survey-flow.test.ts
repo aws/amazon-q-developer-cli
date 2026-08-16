@@ -85,8 +85,8 @@ describe('Survey flow integration', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function makeStore() {
-    const store = createAppStore({ kiro: new Kiro() });
+  function makeStore(agentEngine: 'v2' | 'kas' = 'v2') {
+    const store = createAppStore({ kiro: new Kiro(), agentEngine });
     store.setState({ isInitialized: true });
     return store;
   }
@@ -158,18 +158,38 @@ describe('Survey flow integration', () => {
     expect(store.getState().transientAlert!.message).toBe('existing');
   });
 
-  it('openSurveyPanel sets showSurveyPanel and clears the prompt bar', () => {
+  it('openSurveyPanel sets showSurveyPanel and clears V2 alerts', () => {
     const store = makeStore();
     // Trigger the notification first
     store.getState().recordCompletedTurn();
     store.getState().recordCompletedTurn();
     store.getState().recordCompletedTurn();
     expect(store.getState().surveyPrompt).not.toBeNull();
+    store.getState().showTransientAlert({
+      message: 'Legacy alert',
+      status: 'error',
+    });
 
     // Open the panel (simulates Shift+R action)
     store.getState().openSurveyPanel(store.getState().surveyPrompt!.survey);
     expect(store.getState().showSurveyPanel).toBe(true);
     expect(store.getState().surveyPrompt).toBeNull();
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
+  it('openSurveyPanel preserves V3 alerts', () => {
+    const store = makeStore('kas');
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().showTransientAlert({
+      message: 'Persistent alert',
+      status: 'error',
+    });
+
+    store.getState().openSurveyPanel(store.getState().surveyPrompt!.survey);
+
+    expect(store.getState().transientAlert?.message).toBe('Persistent alert');
   });
 
   it('closeSurveyPanel hides the panel without submitting', () => {
@@ -207,6 +227,19 @@ describe('Survey flow integration', () => {
     ).toBe('sess-123');
   });
 
+  it('keeps the survey confirmation persistent in V3', () => {
+    const store = makeStore('kas');
+    store.setState({ showSurveyPanel: true });
+
+    store.getState().submitSurvey({ experience: 'Good' });
+
+    expect(store.getState().transientAlert).toEqual({
+      message: 'Thanks for your feedback',
+      status: 'success',
+      autoHideMs: undefined,
+    });
+  });
+
   it('submitSurvey resumes a queue blocked by the panel', async () => {
     const store = makeStore();
     const processQueue = mock(async () => {});
@@ -222,17 +255,37 @@ describe('Survey flow integration', () => {
     expect(processQueue).toHaveBeenCalledTimes(1);
   });
 
-  it('dismissSurveyPrompt clears prompt bar and bumps dismiss count', () => {
+  it('dismissSurveyPrompt clears the prompt bar and V2 alerts', () => {
     const store = makeStore();
     // Trigger notification
     store.getState().recordCompletedTurn();
     store.getState().recordCompletedTurn();
     store.getState().recordCompletedTurn();
     expect(store.getState().surveyPrompt).not.toBeNull();
+    store.getState().showTransientAlert({
+      message: 'Legacy alert',
+      status: 'error',
+    });
 
     store.getState().dismissSurveyPrompt();
     expect(store.getState().surveyPrompt).toBeNull();
+    expect(store.getState().transientAlert).toBeNull();
     expect(store.getState().surveyState.dismissCount).toBe(1);
+  });
+
+  it('dismissSurveyPrompt preserves V3 alerts', () => {
+    const store = makeStore('kas');
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().recordCompletedTurn();
+    store.getState().showTransientAlert({
+      message: 'Persistent alert',
+      status: 'error',
+    });
+
+    store.getState().dismissSurveyPrompt();
+
+    expect(store.getState().transientAlert?.message).toBe('Persistent alert');
   });
 
   it('does not show survey again within cooldown period', () => {

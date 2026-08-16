@@ -28,8 +28,8 @@ const { createAppStore, MessageRole, ToolUseStatus } =
   await import('../app-store');
 const { Kiro } = await import('../../kiro');
 
-function makeStore() {
-  const store = createAppStore({ kiro: new Kiro() });
+function makeStore(agentEngine: 'v2' | 'kas' = 'v2') {
+  const store = createAppStore({ kiro: new Kiro(), agentEngine });
   store.setState({ isInitialized: true });
   return store;
 }
@@ -1685,6 +1685,40 @@ describe('handleCompactionEvent', () => {
           m.standalone === true
       )
     ).toBe(true);
+  });
+
+  it('keeps a V3 alert when compaction completes automatically', async () => {
+    const store = makeStore('kas');
+    store.setState({ isCompacting: true, isProcessing: false });
+    store.getState().showTransientAlert({
+      message: 'Persistent error',
+      status: 'error',
+      autoHideMs: 3000,
+    });
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+    });
+
+    expect(store.getState().transientAlert?.message).toBe('Persistent error');
+  });
+
+  it('keeps clearing V2 alerts when compaction completes', async () => {
+    const store = makeStore('v2');
+    store.setState({ isCompacting: true, isProcessing: false });
+    store.getState().showTransientAlert({
+      message: 'Legacy alert',
+      status: 'error',
+      autoHideMs: 3000,
+    });
+
+    await store.getState().handleCompactionEvent({
+      type: AgentEventType.CompactionStatus,
+      status: 'completed',
+    });
+
+    expect(store.getState().transientAlert).toBeNull();
   });
 
   it('treats duplicate started events as idempotent for one compact', async () => {
