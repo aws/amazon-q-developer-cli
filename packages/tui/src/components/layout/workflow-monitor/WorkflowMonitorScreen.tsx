@@ -578,7 +578,7 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   if (!workflow) {
     return (
       <Box flexDirection="column" width={width} height={height}>
-        <Text>{getColor('brand').bold('WORKFLOWS')}</Text>
+        <Text>{getColor('brand').bold('WORKFLOW(S)')}</Text>
         <Text>
           {getColor('secondary')('No active workflows. Esc to return.')}
         </Text>
@@ -655,7 +655,7 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       <Box width={width} paddingX={1}>
         <Box flexGrow={1}>
           <Text>
-            {getColor('brand').bold('WORKFLOWS')}
+            {getColor('brand').bold('WORKFLOW(S)')}
             {workflowList.length > 1
               ? getColor('secondary')(
                   `  ${glyphs.lineVertical}  ${glyphs.arrowLeft}${glyphs.arrow} workflows ${glyphs.smallDot} 1-9 jump`

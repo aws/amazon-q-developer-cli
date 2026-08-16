@@ -558,7 +558,7 @@ function certification(
     capturesKeyboard: true,
     certification: {
       suite: 'workflow-monitor',
-      readyText: 'WORKFLOWS',
+      readyText: 'WORKFLOW(S)',
       assertions: {
         visible: ['Steps', 'Output', ...(assertions.visible ?? [])],
         hidden: [

@@ -233,7 +233,7 @@ describe('WorkflowMonitorScreen', () => {
 
     const output = stripAnsi(terminal.output);
     expect(terminal.output).toContain('\x1b[?1049h');
-    expect(output).toContain('WORKFLOWS');
+    expect(output).toContain('WORKFLOW(S)');
     expect(output).toContain('Reconnect validation');
     expect(output).toContain('coder');
   });
