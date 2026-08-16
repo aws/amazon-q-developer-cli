@@ -147,6 +147,15 @@ describe('lite mode swap commands [bug-mine 2.9]', () => {
         text: 'ROUNDTRIP_MODEL_AFTER_SYSTEM',
       },
     });
+    // The goal row is only a scrollback-order marker; clear it so the goal
+    // does not stay armed and claim the exit sequence's Ctrl+C presses.
+    await testCase.mockSessionUpdate({
+      type: AgentEventType.GoalStatus,
+      state: 'cleared',
+      iteration: 0,
+      maxIterations: 3,
+    });
+    await testCase.waitForStore((s) => s.goalStatus === null, 10000);
     await testCase.completeTurn();
     await testCase.waitForStore((s) => !s.isProcessing, 10000);
     await testCase.waitForVisibleText('ROUNDTRIP_MODEL_AFTER_SYSTEM');

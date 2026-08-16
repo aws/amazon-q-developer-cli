@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Ctrl+C during an active goal cancels the goal and returns to the prompt instead of exiting the CLI"
+}

@@ -97,6 +97,66 @@ describe('cancelMessage clears isProcessing (P409238957)', () => {
     expect(store.getState().cancelInProgress).toBeNull();
   });
 
+  it('marks an active goal as paused (backend keeps the controller armed)', async () => {
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      goalStatus: {
+        state: 'active',
+        iteration: 2,
+        maxIterations: 5,
+        message: 'refactor the parser',
+        startedAt: 12345,
+      },
+    });
+
+    await store.getState().cancelMessage();
+
+    const goal = store.getState().goalStatus;
+    expect(goal?.state).toBe('paused');
+    expect(goal?.iteration).toBe(2);
+    expect(goal?.startedAt).toBe(12345);
+  });
+
+  it('leaves a terminal goal status untouched on cancel', async () => {
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      goalStatus: { state: 'completed', iteration: 3, maxIterations: 5 },
+    });
+
+    await store.getState().cancelMessage();
+
+    expect(store.getState().goalStatus?.state).toBe('completed');
+  });
+
+  it('a new prompt resumes a paused goal (paused → active)', async () => {
+    const store = createAppStore({ kiro: mockKiro });
+    store.setState({
+      isProcessing: true,
+      isInitialized: true,
+      goalCancelFailed: true,
+      goalStatus: {
+        state: 'active',
+        iteration: 1,
+        maxIterations: 5,
+        message: 'refactor the parser',
+      },
+    });
+
+    await store.getState().cancelMessage();
+    expect(store.getState().goalStatus?.state).toBe('paused');
+
+    await store.getState().sendMessage('keep going');
+
+    expect(store.getState().goalStatus?.state).toBe('active');
+    expect(store.getState().goalStatus?.iteration).toBe(1);
+    // Resuming grants the quit key fresh cancel attempts.
+    expect(store.getState().goalCancelFailed).toBe(false);
+  });
+
   it('disposes the active stream handler so partial content lands in scrollback', async () => {
     const store = createAppStore({ kiro: mockKiro });
     const dispose = mock();

@@ -37,10 +37,18 @@ export interface AppKeypressState {
   subagentPanelOpen: boolean;
   surveyPromptVisible: boolean;
   suspendArmed: boolean;
+  /**
+   * A goal loop is set on the session (active or paused). While true, the
+   * quit key on an idle, empty prompt cancels the goal instead of arming the
+   * exit sequence — otherwise mashing Ctrl+C to escape a goal walks straight
+   * into process exit.
+   */
+  goalActive: boolean;
 }
 
 export interface AppKeypressActions {
   cancelMessage: () => void;
+  cancelGoal: () => void;
   clearCommandInput: () => void;
   resetExitSequence: () => void;
   incrementExitSequence: () => void;
@@ -174,6 +182,11 @@ export function dispatchAppKeypress(
       actions.cancelMessage();
     } else if (state.hasCommandInput) {
       actions.clearCommandInput();
+      actions.resetExitSequence();
+    } else if (state.goalActive) {
+      // A paused goal would resume on the next turn — a second Ctrl+C must
+      // cancel it and hand back a clean prompt, not tick toward exit.
+      actions.cancelGoal();
       actions.resetExitSequence();
     } else {
       actions.incrementExitSequence();

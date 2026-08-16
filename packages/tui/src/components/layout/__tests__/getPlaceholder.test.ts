@@ -56,4 +56,61 @@ describe('getPlaceholder', () => {
     expect(out).not.toContain('/tangent to go back');
     expect(out).toContain('ask a question or describe a task');
   });
+
+  const goalStatus = () => ({
+    state: 'active',
+    iteration: 1,
+    maxIterations: 5,
+    message: 'fix all the tests',
+  });
+
+  it('active goal while processing offers pause', () => {
+    const out = getPlaceholder({
+      ...baseOpts(),
+      isProcessing: true,
+      goalStatus: goalStatus(),
+    });
+    expect(out).toContain('Goal Active: fix all the tests');
+    expect(out).toContain('Iteration 2/5');
+    expect(out).toContain('Ctrl+C to pause');
+  });
+
+  it('goal set but idle (paused) offers resume and cancel', () => {
+    const out = getPlaceholder({
+      ...baseOpts(),
+      goalStatus: goalStatus(),
+    });
+    expect(out).toContain('Goal Paused: fix all the tests');
+    expect(out).toContain('type to resume');
+    expect(out).toContain('Ctrl+C to cancel');
+  });
+
+  it('explicitly paused goal offers resume and cancel even mid-processing', () => {
+    const out = getPlaceholder({
+      ...baseOpts(),
+      isProcessing: true,
+      goalStatus: { ...goalStatus(), state: 'paused' },
+    });
+    expect(out).toContain('Goal Paused: fix all the tests');
+    expect(out).toContain('Ctrl+C to cancel');
+  });
+
+  it('after a failed cancel the paused hint points at /goal clear, not the quit key', () => {
+    const out = getPlaceholder({
+      ...baseOpts(),
+      goalStatus: { ...goalStatus(), state: 'paused' },
+      goalCancelFailed: true,
+    });
+    expect(out).toContain('/goal clear to cancel');
+    expect(out).not.toContain('Ctrl+C to cancel');
+  });
+
+  it('paused cancel hint uses the quit binding label', () => {
+    const out = getPlaceholder({
+      ...baseOpts(),
+      goalStatus: { ...goalStatus(), state: 'paused' },
+      quitLabel: 'ctrl+q',
+    });
+    expect(out).toContain('ctrl+q to cancel');
+  });
 });

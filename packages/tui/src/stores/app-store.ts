@@ -1402,6 +1402,13 @@ interface BaseAppActions {
       startedAt?: number;
     } | null
   ) => void;
+  /**
+   * Cancel the active goal loop: clears it on the backend (same as
+   * `/goal clear`) and optimistically drops the TUI goal status so the
+   * prompt returns to its clean idle state. Bound to Ctrl+C on an idle,
+   * empty prompt while a goal is set.
+   */
+  cancelGoal: () => Promise<void>;
   setCurrentAgent: (
     agent: { name: string; welcomeMessage?: string } | null,
     options?: { suppressWelcome?: boolean }
@@ -2167,6 +2174,13 @@ export interface AppState {
     elapsedSecs?: number;
     startedAt?: number;
   } | null;
+  /**
+   * The last Ctrl+C goal cancel failed on the backend. While true, the quit
+   * key stops claiming the goal and falls through to the exit sequence, so a
+   * persistently failing clear can't trap Ctrl+C in a cancel-retry loop.
+   * Reset whenever the goal status changes or a new prompt resumes the loop.
+   */
+  goalCancelFailed: boolean;
 
   // Command UI state
   activeCommand: ActiveCommand | null;
@@ -3136,6 +3150,7 @@ export function buildCommandContext(
         contextUsagePercent: null,
         lastTurnTokens: null,
         goalStatus: null,
+        goalCancelFailed: false,
         ...extraClearState,
       }),
     getMessages: () => get().messages,
@@ -3264,6 +3279,7 @@ export const createAppStore = (props: AppStoreProps) => {
     previousAgentName: null,
     settings: null,
     goalStatus: null,
+    goalCancelFailed: false,
 
     activeCommand: null,
     commandInputValue: '',
@@ -3579,6 +3595,16 @@ export const createAppStore = (props: AppStoreProps) => {
           _observerQueueBlocked: false,
           wasCancelled: false,
           lastTurnErrored: false,
+          // A prompt while the goal is paused resumes the loop (the backend
+          // controller re-arms at this turn's end) — reflect that now instead
+          // of waiting a full iteration for the next goal notification. The
+          // resumed loop also deserves fresh Ctrl+C cancel attempts.
+          ...(state.goalStatus?.state === 'paused'
+            ? {
+                goalStatus: { ...state.goalStatus, state: 'active' },
+                goalCancelFailed: false,
+              }
+            : {}),
           // A run belongs to the turn that asked for it. One left over — the
           // turn was cancelled, or failed before reaching its end — must not
           // start files changing in a turn the user began for something else.
@@ -5673,6 +5699,15 @@ export const createAppStore = (props: AppStoreProps) => {
         // `finally` below still clears it as the belt-and-suspenders safety net.
         set({ isProcessing: false });
 
+        // Cancelling a turn while a goal is set pauses the loop backend-side
+        // (the controller survives and re-arms on the next prompt). Mirror
+        // that as 'paused' so the goal panel/status line stop reading
+        // "Active" and the placeholder can offer resume/cancel.
+        const goalStatusAtCancel = get().goalStatus;
+        if (goalStatusAtCancel && goalStatusAtCancel.state === 'active') {
+          set({ goalStatus: { ...goalStatusAtCancel, state: 'paused' } });
+        }
+
         // Resolve pending UI callbacks before cancelling the agent turn.
         get().cancelApproval();
         get().cancelQuestion();
@@ -5886,6 +5921,7 @@ export const createAppStore = (props: AppStoreProps) => {
         const maxIter = goalStatus.maxIterations ?? 5;
         set((s) => ({
           goalStatus,
+          goalCancelFailed: false,
           messages: [
             ...s.messages,
             {
@@ -5898,7 +5934,50 @@ export const createAppStore = (props: AppStoreProps) => {
           ],
         }));
       } else {
-        set({ goalStatus });
+        set({ goalStatus, goalCancelFailed: false });
+      }
+    },
+    cancelGoal: async () => {
+      const state = get();
+      const priorGoal = state.goalStatus;
+      if (!priorGoal) return;
+      // Optimistic: drop the goal locally first so the prompt frees up even
+      // if the backend round-trip is slow; restored below if the backend
+      // clear fails so the UI never claims a still-armed goal is gone.
+      state.setGoalStatus(null);
+      state.showTransientAlert({
+        message: 'Goal cancelled',
+        status: 'info',
+        autoHideMs: 2000,
+      });
+      let failReason: string | null = null;
+      try {
+        // executeCommand resolves { success: false } on RPC errors rather
+        // than throwing, so both surfaces must be checked.
+        const result = await state.kiro.executeCommand({
+          command: 'goal',
+          args: { subcommand: 'clear' },
+        });
+        if (!result.success) failReason = result.message || 'Command failed';
+      } catch (err) {
+        failReason = err instanceof Error ? err.message : String(err);
+      }
+      if (failReason != null) {
+        // Only roll back if nothing newer replaced the status in the
+        // meantime (e.g. a fresh /goal set during the round-trip wins).
+        // Direct set: setGoalStatus would append a duplicate "⟳ Goal"
+        // system row when restoring an 'active' status over null.
+        // The failure latch releases the quit key to the exit sequence —
+        // without it a persistently failing clear would trap Ctrl+C in a
+        // cancel-retry loop with the exit counter reset on every press.
+        if (get().goalStatus == null) {
+          set({ goalStatus: priorGoal, goalCancelFailed: true });
+        }
+        get().showTransientAlert({
+          message: `Failed to cancel goal: ${failReason}`,
+          status: 'warning',
+          autoHideMs: 4000,
+        });
       }
     },
     setCurrentAgent: (agent, options) => {

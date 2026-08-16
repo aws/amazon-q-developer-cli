@@ -263,6 +263,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   } = useContextState();
   const statusSurface = useStatusSurfaceProps();
   const activeCommand = useAppStore((state) => state.activeCommand);
+  const goalCancelFailed = useAppStore((state) => state.goalCancelFailed);
   const cloudSessionActive = useAppStore((state) => state.cloudSessionActive);
   // MCP OAuth prompts come from LOCAL MCP servers; a cloud session runs its
   // tools in the sandbox, so the local auth nag doesn't apply there and would
@@ -982,7 +983,9 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               tangentName,
               specDescriptionFeature,
               goalStatus,
+              goalCancelFailed,
               cancelLabel: keybindings.label('cancelStream'),
+              quitLabel: keybindings.label('quit'),
             })}
             hint={
               promptHint ||

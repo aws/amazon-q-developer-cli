@@ -21,7 +21,11 @@ export function getPlaceholder(opts: {
     maxIterations: number;
     message?: string;
   } | null;
+  /** The last Ctrl+C goal cancel failed — the quit key exits instead. */
+  goalCancelFailed?: boolean;
   cancelLabel?: string;
+  /** Label of the quit binding, which cancels a paused goal. */
+  quitLabel?: string;
 }): string {
   const dot = opts.glyphs.smallDot;
   if (opts.editingQueueIndex != null) {
@@ -32,13 +36,30 @@ export function getPlaceholder(opts: {
       ? `Initializing ${dot} type to queue another message`
       : `Initializing ${dot} type to queue a message`;
   }
-  if (opts.goalStatus && opts.goalStatus.state === 'active') {
+  if (
+    opts.goalStatus &&
+    (opts.goalStatus.state === 'active' || opts.goalStatus.state === 'paused')
+  ) {
     const desc =
       opts.goalStatus.message && opts.goalStatus.message.length > 50
         ? opts.goalStatus.message.slice(0, 47) + '...'
         : (opts.goalStatus.message ?? 'Running');
     const cancel = opts.cancelLabel ?? 'Ctrl+C';
-    return `Goal Active: ${desc} ${dot} Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations} ${dot} ${cancel} to pause`;
+    const iter = `Iteration ${opts.goalStatus.iteration + 1}/${opts.goalStatus.maxIterations}`;
+    if (
+      opts.goalStatus.state === 'active' &&
+      (opts.isProcessing || opts.pendingApproval)
+    ) {
+      return `Goal Active: ${desc} ${dot} ${iter} ${dot} ${cancel} to pause`;
+    }
+    // Turn interrupted but the goal is still set — it resumes on the next
+    // prompt. The quit key cancels it outright, unless a previous cancel
+    // already failed (the key falls through to process exit then, so point
+    // at the slash command instead).
+    const cancelHint = opts.goalCancelFailed
+      ? '/goal clear to cancel'
+      : `${opts.quitLabel ?? 'Ctrl+C'} to cancel`;
+    return `Goal Paused: ${desc} ${dot} ${iter} ${dot} type to resume ${dot} ${cancelHint}`;
   }
   if (opts.pendingApproval || opts.isProcessing) {
     if (opts.activeInterruptMode === InterruptMode.STEER) {

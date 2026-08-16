@@ -1364,6 +1364,135 @@ describe('Simple state setters', () => {
     expect(statusRow?.turnOwned).toBe(true);
   });
 
+  it('cancelGoal clears the goal optimistically and on the backend', async () => {
+    const store = makeStore();
+    const kiro = store.getState().kiro as unknown as {
+      executeCommand: ReturnType<typeof mock>;
+    };
+    kiro.executeCommand = mock(() =>
+      Promise.resolve({ success: true, message: 'Goal cleared' })
+    );
+    store.setState({
+      goalStatus: {
+        state: 'active',
+        iteration: 1,
+        maxIterations: 5,
+        message: 'ship it',
+      },
+    });
+
+    await store.getState().cancelGoal();
+
+    expect(store.getState().goalStatus).toBeNull();
+    expect(kiro.executeCommand).toHaveBeenCalledWith({
+      command: 'goal',
+      args: { subcommand: 'clear' },
+    });
+    expect(store.getState().transientAlert?.message).toBe('Goal cancelled');
+  });
+
+  it('cancelGoal without an active goal is a no-op', async () => {
+    const store = makeStore();
+    const kiro = store.getState().kiro as unknown as {
+      executeCommand: ReturnType<typeof mock>;
+    };
+    kiro.executeCommand = mock(() =>
+      Promise.resolve({ success: true, message: '' })
+    );
+
+    await store.getState().cancelGoal();
+
+    expect(kiro.executeCommand).not.toHaveBeenCalled();
+  });
+
+  it('cancelGoal surfaces a warning when the backend clear fails', async () => {
+    const store = makeStore();
+    const kiro = store.getState().kiro as unknown as {
+      executeCommand: ReturnType<typeof mock>;
+    };
+    kiro.executeCommand = mock(() => Promise.reject(new Error('boom')));
+    store.setState({
+      goalStatus: { state: 'paused', iteration: 0, maxIterations: 5 },
+    });
+
+    await store.getState().cancelGoal();
+
+    // Backend still holds the goal — the optimistic clear must roll back,
+    // and the failure latch must release the quit key to the exit sequence.
+    expect(store.getState().goalStatus?.state).toBe('paused');
+    expect(store.getState().goalCancelFailed).toBe(true);
+    expect(store.getState().transientAlert?.status).toBe('warning');
+    expect(store.getState().transientAlert?.message).toContain('boom');
+  });
+
+  it('cancelGoal rolls back when the backend resolves success:false', async () => {
+    const store = makeStore();
+    const kiro = store.getState().kiro as unknown as {
+      executeCommand: ReturnType<typeof mock>;
+    };
+    kiro.executeCommand = mock(() =>
+      Promise.resolve({ success: false, message: 'no session' })
+    );
+    store.setState({
+      goalStatus: { state: 'paused', iteration: 1, maxIterations: 5 },
+    });
+
+    await store.getState().cancelGoal();
+
+    expect(store.getState().goalStatus?.state).toBe('paused');
+    expect(store.getState().goalCancelFailed).toBe(true);
+    expect(store.getState().transientAlert?.status).toBe('warning');
+    expect(store.getState().transientAlert?.message).toContain('no session');
+  });
+
+  it('a goal status update clears the cancel-failure latch', async () => {
+    const store = makeStore();
+    store.setState({
+      goalStatus: { state: 'paused', iteration: 0, maxIterations: 5 },
+      goalCancelFailed: true,
+    });
+
+    store.getState().setGoalStatus({
+      state: 'active',
+      iteration: 1,
+      maxIterations: 5,
+    });
+
+    expect(store.getState().goalCancelFailed).toBe(false);
+  });
+
+  it('cancelGoal failure does not clobber a goal set during the round-trip', async () => {
+    const store = makeStore();
+    const kiro = store.getState().kiro as unknown as {
+      executeCommand: ReturnType<typeof mock>;
+    };
+    let rejectCall!: (e: Error) => void;
+    kiro.executeCommand = mock(
+      () =>
+        new Promise((_, reject) => {
+          rejectCall = reject;
+        })
+    );
+    store.setState({
+      goalStatus: { state: 'paused', iteration: 0, maxIterations: 5 },
+    });
+
+    const cancelPromise = store.getState().cancelGoal();
+    // A fresh goal lands while the clear RPC is still in flight.
+    store.setState({
+      goalStatus: {
+        state: 'active',
+        iteration: 0,
+        maxIterations: 3,
+        message: 'newer goal',
+      },
+    });
+    rejectCall(new Error('boom'));
+    await cancelPromise;
+
+    expect(store.getState().goalStatus?.message).toBe('newer goal');
+  });
+
   it('setAgentError sets error and guidance', () => {
     const store = makeStore();
     store.getState().setAgentError('something broke', 'try again');

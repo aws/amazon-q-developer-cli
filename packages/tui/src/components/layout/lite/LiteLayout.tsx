@@ -234,6 +234,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // Goal-loop state (set by `/goal`). Lite surfaces it as a status-line segment
   // and a one-time scrollback confirmation; the panel is shared via BackendPanels.
   const goalStatus = useAppStore((s) => s.goalStatus);
+  const goalCancelFailed = useAppStore((s) => s.goalCancelFailed);
 
   const handlers = useBackendPanelHandlers();
 
@@ -1868,8 +1869,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
                     agentName: currentAgent?.name,
                     specDescriptionFeature,
                     goalStatus,
+                    goalCancelFailed,
                     tangentName,
                     cancelLabel: keybindings.label('cancelStream'),
+                    quitLabel: keybindings.label('quit'),
                   })}
                   suppressArrows={subagentOpenIndex != null}
                 />

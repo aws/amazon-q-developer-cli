@@ -121,6 +121,15 @@ export const AppContainer: React.FC = () => {
   const isProcessing = useAppStore((state) => state.isProcessing);
   const isShellEscape = useAppStore((state) => state.isShellEscape);
   const cancelMessage = useAppStore((state) => state.cancelMessage);
+  const cancelGoal = useAppStore((state) => state.cancelGoal);
+  const goalActive = useAppStore(
+    (state) =>
+      (state.goalStatus?.state === 'active' ||
+        state.goalStatus?.state === 'paused') &&
+      // After a failed backend clear, stop claiming the quit key so Ctrl+C
+      // can still walk to the exit sequence instead of retrying forever.
+      !state.goalCancelFailed
+  );
   const reverseSearchActive = useAppStore((state) => state.reverseSearchActive);
   const pendingApproval = useAppStore((state) => state.pendingApproval);
   const pendingQuestion = useAppStore((state) => state.pendingQuestion);
@@ -213,10 +222,12 @@ export const AppContainer: React.FC = () => {
       subagentPanelOpen,
       surveyPromptVisible: !!surveyPrompt,
       suspendArmed,
+      goalActive,
     };
 
     const actions: AppKeypressActions = {
       cancelMessage,
+      cancelGoal,
       clearCommandInput,
       resetExitSequence,
       incrementExitSequence,

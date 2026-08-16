@@ -51,6 +51,7 @@ const baseState = (
   subagentPanelOpen: false,
   surveyPromptVisible: false,
   suspendArmed: false,
+  goalActive: false,
   ...overrides,
 });
 
@@ -68,6 +69,7 @@ function makeActions(): AppKeypressActions & {
     };
   return {
     cancelMessage: track('cancelMessage'),
+    cancelGoal: track('cancelGoal'),
     clearCommandInput: track('clearCommandInput'),
     resetExitSequence: track('resetExitSequence'),
     incrementExitSequence: track('incrementExitSequence'),
@@ -398,6 +400,72 @@ describe('dispatchAppKeypress: quit binding', () => {
       DEFAULT_BINDINGS
     );
     expect(actions._calls.incrementExitSequence).toBe(2);
+  });
+
+  it('quit while a goal runs cancels the stream, not the goal', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ isProcessing: true, goalActive: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.cancelMessage).toBe(1);
+    expect(actions._calls.cancelGoal).toBeUndefined();
+    expect(actions._calls.incrementExitSequence).toBeUndefined();
+  });
+
+  it('quit on an idle prompt with an active goal cancels the goal, not the process', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ goalActive: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.cancelGoal).toBe(1);
+    expect(actions._calls.resetExitSequence).toBe(1);
+    expect(actions._calls.incrementExitSequence).toBeUndefined();
+  });
+
+  it('quit with typed input during an active goal clears the input first', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ goalActive: true, hasCommandInput: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.clearCommandInput).toBe(1);
+    expect(actions._calls.cancelGoal).toBeUndefined();
+    expect(actions._calls.incrementExitSequence).toBeUndefined();
+  });
+
+  it('double-press during a goal run cancels turn then goal — never exits', () => {
+    const actions = makeActions();
+    // Press 1: goal iterating (isProcessing) → cancel the turn. cancelMessage
+    // flips isProcessing off synchronously, so press 2 sees an idle prompt
+    // with the goal still set → cancel the goal.
+    dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ isProcessing: true, goalActive: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    dispatchAppKeypress(
+      'c',
+      blankKey({ ctrl: true }),
+      baseState({ goalActive: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.cancelMessage).toBe(1);
+    expect(actions._calls.cancelGoal).toBe(1);
+    expect(actions._calls.incrementExitSequence).toBeUndefined();
   });
 });
 
