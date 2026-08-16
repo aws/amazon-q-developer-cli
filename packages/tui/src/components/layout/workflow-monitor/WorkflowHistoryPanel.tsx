@@ -65,6 +65,22 @@ function fitFooterHint(
   );
 }
 
+// Splits a hint string built from `key label` chunks (joined by `separator`)
+// back into {key, label} pairs so each half can be colored independently,
+// matching Panel's own footer (primary key, secondary label).
+function splitFooterHint(
+  hint: string,
+  separator: string
+): { key: string; label: string }[] {
+  if (!hint) return [];
+  return hint.split(separator).map((chunk) => {
+    const spaceIndex = chunk.indexOf(' ');
+    return spaceIndex === -1
+      ? { key: chunk, label: '' }
+      : { key: chunk.slice(0, spaceIndex), label: chunk.slice(spaceIndex + 1) };
+  });
+}
+
 function runDuration(run: WorkflowRunSummary): string {
   if (!run.startedAt || !run.endedAt) return '';
   const durationSeconds = Math.floor(
@@ -204,7 +220,7 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
     selectedRun !== undefined &&
     cancelConfirmationWorkflowId === selectedRun.workflowId;
   const controlHint = cancelConfirmationArmed
-    ? `x confirm cancel ${glyphs.smallDot} Esc keep running`
+    ? 'x confirm cancel'
     : !pendingAction && selectedRun?.status === 'running'
       ? `p pause ${glyphs.smallDot} x cancel`
       : !pendingAction && selectedRun?.status === 'paused'
@@ -218,10 +234,11 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
   const footerHint = fitFooterHint(
     footerWidth,
     controlHint,
-    `${glyphs.arrowUp}${glyphs.arrowDown} move ${glyphs.smallDot} Enter view`,
-    `${glyphs.arrowUp}${glyphs.arrowDown} ${glyphs.smallDot} Enter`,
+    `${glyphs.arrowUp}${glyphs.arrowDown} navigate ${glyphs.smallDot} enter view`,
+    `${glyphs.arrowUp}${glyphs.arrowDown} ${glyphs.smallDot} enter`,
     ` ${glyphs.smallDot} `
   );
+  const footerHints = splitFooterHint(footerHint, ` ${glyphs.smallDot} `);
 
   useKeypress((input, key) => {
     if (pendingActionRef.current) return;
@@ -265,10 +282,20 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
     <Panel
       title="WORKFLOWS"
       onClose={onClose}
-      footerExtra={
-        <Box width={footerWidth} flexShrink={1} overflow="hidden">
-          <Text wrap="truncate">{getColor('secondary')(footerHint)}</Text>
-        </Box>
+      closeHintLabel={cancelConfirmationArmed ? 'keep running' : 'close'}
+      footerLeft={
+        footerHints.length > 0 ? (
+          <Text>
+            {footerHints.map((hint, index) => (
+              <React.Fragment key={`${hint.key}-${hint.label}`}>
+                {index > 0 && getColor('secondary')(` ${glyphs.smallDot} `)}
+                {getColor('primary')(hint.key)}
+                {hint.label ? ' ' : ''}
+                {getColor('secondary')(hint.label)}
+              </React.Fragment>
+            ))}
+          </Text>
+        ) : undefined
       }
     >
       <Box marginBottom={1}>

@@ -47,6 +47,7 @@ import * as SpinnerStories from '../components/ui/spinner/Spinner.stories.js';
 import * as ToolStories from '../components/chat/tools/Tool.stories.js';
 import * as ImageReadStories from '../components/chat/tools/ImageRead.stories.js';
 import * as WorkflowMonitorStories from '../components/layout/workflow-monitor/WorkflowMonitorScreen.stories.js';
+import * as WorkflowHistoryPanelStories from '../components/layout/workflow-monitor/WorkflowHistoryPanel.stories.js';
 import * as ActivityTrayStories from '../components/ui/activity-tray/ActivityTray.stories.js';
 import * as WorkflowToolStories from '../components/chat/tools/WorkflowTool.stories.js';
 import * as WorkflowLifecycleRowStories from '../components/ui/WorkflowLifecycleRow.stories.js';
@@ -330,6 +331,10 @@ export const stories = [
   convertStoryModule(
     WorkflowMonitorStories,
     '../components/layout/workflow-monitor/WorkflowMonitorScreen.stories.js'
+  ),
+  convertStoryModule(
+    WorkflowHistoryPanelStories,
+    '../components/layout/workflow-monitor/WorkflowHistoryPanel.stories.js'
   ),
   convertStoryModule(
     ActivityTrayStories,
