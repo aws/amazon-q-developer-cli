@@ -4752,3 +4752,430 @@ async fn goal_complete_suppresses_followup_rate_limit_notification() {
         "suppressed follow-up errors must not emit rate-limit notifications"
     );
 }
+
+/// Extract the `state` field of every goal-status notification captured so far.
+async fn captured_goal_states(client: &AcpTestClient) -> Vec<String> {
+    let method = methods::GOAL_STATUS
+        .strip_prefix('_')
+        .expect("extension method should have an underscore prefix");
+    client
+        .captured()
+        .await
+        .ext_notifications
+        .iter()
+        .filter(|notification| notification.method.as_ref() == method)
+        .filter_map(|notification| serde_json::from_str::<serde_json::Value>(notification.params.get()).ok())
+        .filter_map(|params| params.get("state").and_then(|s| s.as_str()).map(str::to_owned))
+        .collect()
+}
+
+/// A transient dispatch failure (throttle, 5xx, dropped connection) during an active goal
+/// must not end the goal: the dispatch-failure retry path re-sends the goal prompt after a
+/// backoff, and the goal completes on the retry.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_retries_dispatch_failure_and_completes() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("goal_retries_dispatch_failure_and_completes")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // Turn 1: dispatch failure before any content.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                request_id: None,
+                status_code: Some(429),
+                kind: ConverseStreamErrorKind::Throttling,
+                source: None,
+            })]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    // Turn 2 (the goal's retry after backoff): completes the goal.
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/goal_complete_with_thinking.jsonl")
+        .await;
+
+    // Follow-up after the goal(complete) tool result: clean end of turn.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::Event(
+                amzn_codewhisperer_streaming_client::types::ChatResponseStream::AssistantResponseEvent(
+                    AssistantResponseEventBuilder::default()
+                        .content("Wrapped up.")
+                        .build()
+                        .expect("failed to build mock response"),
+                )
+                .into(),
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    client
+        .prompt_text(session_id.clone(), "/goal sup")
+        .await
+        .expect("goal should survive a transient dispatch failure and complete");
+
+    let goal_states = captured_goal_states(&client).await;
+    assert!(
+        goal_states.iter().any(|s| s == "completed"),
+        "goal should complete after the retry, got states: {goal_states:?}"
+    );
+    assert!(
+        !goal_states.iter().any(|s| s == "exhausted"),
+        "a transient failure must not exhaust the goal, got states: {goal_states:?}"
+    );
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(
+        requests.len() >= 3,
+        "expected the failed turn, the retried goal turn, and the tool-result follow-up, got {}",
+        requests.len()
+    );
+}
+
+/// Repeated dispatch failures during a goal pause it after the bounded retry budget
+/// (3 consecutive failures) instead of retrying forever, and the held /goal prompt
+/// resolves cleanly rather than erroring.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_pauses_after_consecutive_dispatch_failures() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("goal_pauses_after_consecutive_dispatch_failures")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // All three attempts (original + 2 backoff retries) fail on dispatch.
+    for _ in 0..3 {
+        harness
+            .push_mock_response(
+                &session_id.0,
+                Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                    request_id: None,
+                    status_code: Some(500),
+                    kind: ConverseStreamErrorKind::Unknown {
+                        reason_code: "InternalServerException".to_string(),
+                        message: Some("connection reset by peer".to_string()),
+                    },
+                    source: None,
+                })]),
+            )
+            .await;
+        harness.push_mock_response(&session_id.0, None).await;
+    }
+
+    client
+        .prompt_text(session_id.clone(), "/goal sup")
+        .await
+        .expect("a paused goal should resolve the held prompt cleanly, not with an error");
+
+    let goal_states = captured_goal_states(&client).await;
+    assert!(
+        goal_states.iter().any(|s| s == "exhausted"),
+        "goal should pause after exhausting dispatch retries, got states: {goal_states:?}"
+    );
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected exactly 3 attempts (original + 2 retries), got {}",
+        requests.len()
+    );
+}
+
+/// Errors that would fail identically on every attempt (e.g. monthly usage limit) end the
+/// goal immediately — no retry budget is spent on them.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_stops_immediately_on_fatal_error() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("goal_stops_immediately_on_fatal_error")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                request_id: None,
+                status_code: Some(429),
+                kind: ConverseStreamErrorKind::MonthlyLimitReached,
+                source: None,
+            })]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    let result = client.prompt_text(session_id.clone(), "/goal sup").await;
+    assert!(result.is_err(), "a fatal error should surface to the caller");
+
+    let goal_states = captured_goal_states(&client).await;
+    assert!(
+        goal_states.iter().any(|s| s == "exhausted"),
+        "goal should end immediately on a fatal error, got states: {goal_states:?}"
+    );
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(requests.len(), 1, "fatal errors must not be retried");
+}
+
+/// Cancelling while the goal's dispatch-failure backoff is pending must abort the
+/// scheduled re-injection: the goal must not revive a loop the user stopped.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_cancel_during_retry_backoff_stops_reinjection() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("goal_cancel_during_retry_backoff_stops_reinjection")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // The goal's first turn fails on dispatch, scheduling a retry after a 2s backoff.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                request_id: None,
+                status_code: Some(429),
+                kind: ConverseStreamErrorKind::Throttling,
+                source: None,
+            })]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    let prompt_recv = client.prompt_text_async(session_id.clone(), "/goal sup").await;
+
+    // Let the failed turn register and the backoff task start, then cancel inside
+    // the 2s window.
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    client.cancel(session_id.clone()).await.expect("cancel failed");
+    let response = prompt_recv.await.expect("prompt should resolve after cancel");
+    assert!(response.is_ok(), "cancelled goal prompt should resolve cleanly");
+
+    // Sleep past the backoff: a retry that survived the cancel would fire now.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(
+        requests.len(),
+        1,
+        "cancel during the backoff must abort the goal's scheduled re-injection"
+    );
+}
+
+/// An error on a user prompt sent while a goal is armed but not driving must surface to
+/// the user, not be swallowed by the goal's dispatch-failure retry.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_armed_user_prompt_error_still_surfaces() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("goal_armed_user_prompt_error_still_surfaces")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // The goal's first turn fails, then the user cancels during the backoff, leaving
+    // the goal armed (WaitingForTurn) but not driving.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                request_id: None,
+                status_code: Some(429),
+                kind: ConverseStreamErrorKind::Throttling,
+                source: None,
+            })]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    let prompt_recv = client.prompt_text_async(session_id.clone(), "/goal sup").await;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    client.cancel(session_id.clone()).await.expect("cancel failed");
+    prompt_recv.await.expect("prompt should resolve after cancel").ok();
+
+    // A fresh user prompt now fails on dispatch. Its error must reach the caller
+    // instead of being deferred into the goal retry machinery.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                request_id: None,
+                status_code: Some(500),
+                kind: ConverseStreamErrorKind::Unknown {
+                    reason_code: "InternalServerException".to_string(),
+                    message: Some("upstream unavailable".to_string()),
+                },
+                source: None,
+            })]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    let result = client.prompt_text(session_id.clone(), "hello").await;
+    assert!(
+        result.is_err(),
+        "a user prompt's error must surface even while a goal is armed"
+    );
+}
+
+/// A wake landing while the goal's response is held (agent idle inside the dispatch
+/// backoff) runs a turn the goal still owns: a retryable error on that turn is absorbed
+/// by the goal's bounded retry — burning one attempt — instead of surfacing on the held
+/// /goal prompt or exhausting the goal.
+#[tokio::test]
+#[timeout(60000)]
+#[serial]
+async fn goal_owns_wake_turn_error_in_backoff_window() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("goal_owns_wake_turn_error_in_backoff_window")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    // Turn 1 (goal): dispatch failure — schedules the first retry backoff (2s).
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                request_id: None,
+                status_code: Some(429),
+                kind: ConverseStreamErrorKind::Throttling,
+                source: None,
+            })]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    // Turn 2 (the wake's turn, inside the backoff window): also fails retryably.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                request_id: None,
+                status_code: Some(429),
+                kind: ConverseStreamErrorKind::Throttling,
+                source: None,
+            })]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    // Turn 3 (the goal's re-injection after the first backoff): completes the goal.
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/goal_complete_with_thinking.jsonl")
+        .await;
+
+    // Follow-up after the goal(complete) tool result: clean end of turn.
+    harness
+        .push_mock_response(
+            &session_id.0,
+            Some(vec![MockStreamItem::Event(
+                amzn_codewhisperer_streaming_client::types::ChatResponseStream::AssistantResponseEvent(
+                    AssistantResponseEventBuilder::default()
+                        .content("Wrapped up.")
+                        .build()
+                        .expect("failed to build mock response"),
+                )
+                .into(),
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.0, None).await;
+
+    let prompt_recv = client.prompt_text_async(session_id.clone(), "/goal sup").await;
+
+    // Wake inside the first backoff window: the agent is idle, so the wake's
+    // send_prompt succeeds and its turn consumes the second mock failure.
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    client
+        .wake(session_id.clone(), "also check the weather")
+        .await
+        .expect("wake ext method failed");
+
+    // The wake turn's error must not surface on the held /goal response — the goal
+    // absorbs it as dispatch failure #2 and the first backoff still re-injects.
+    let response = prompt_recv.await.expect("prompt channel dropped");
+    assert!(
+        response.is_ok(),
+        "the wake turn's retryable error must not error the held /goal prompt, got: {:?}",
+        response.err()
+    );
+
+    let goal_states = captured_goal_states(&client).await;
+    assert!(
+        goal_states.iter().any(|s| s == "completed"),
+        "goal should complete after absorbing the wake turn's failure, got states: {goal_states:?}"
+    );
+    assert!(
+        !goal_states.iter().any(|s| s == "exhausted"),
+        "the wake turn's retryable error must not exhaust the goal, got states: {goal_states:?}"
+    );
+
+    // Pin turn ownership end to end: turn 2 carried the wake text, and the turn that
+    // followed was the goal's re-injected prompt, not a wake retry.
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert!(
+        requests.len() >= 4,
+        "expected goal turn, wake turn, re-injected goal turn, and follow-up, got {}",
+        requests.len()
+    );
+    let request_text = |idx: usize| serde_json::to_string(&requests[idx]).unwrap_or_default();
+    assert!(
+        request_text(1).contains("also check the weather"),
+        "turn 2 should be the wake's turn"
+    );
+    assert!(
+        !request_text(2).contains("also check the weather"),
+        "turn 3 should be the goal's re-injection, not a wake retry"
+    );
+}

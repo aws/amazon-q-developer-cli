@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "`/goal` now retries transient errors (throttling, 5xx, dropped connections) with backoff instead of stopping"
+}

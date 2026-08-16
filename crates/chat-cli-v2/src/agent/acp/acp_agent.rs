@@ -302,6 +302,8 @@ pub enum AcpSessionRequest {
         tool_call_id: String,
         error: String,
     },
+    /// A goal dispatch-failure backoff elapsed; re-check state and re-inject.
+    GoalRetryBackoffElapsed,
 }
 
 #[derive(Debug)]
@@ -1088,6 +1090,10 @@ struct AcpSession {
     request_stats: super::request_stats::RequestStats,
     /// Active goal loop controller. None if no goal is set.
     goal_controller: Option<super::goal::GoalController>,
+    /// Whether the turn currently in flight was injected by the goal loop (initial /goal
+    /// prompt or a re-injection), as opposed to a user prompt sent while a goal is armed
+    /// but not driving. Error-recovery must only hijack goal-owned turns.
+    current_turn_is_goal: bool,
     /// Sender back to self — used by background tasks (goal re-injection)
     /// to notify the actor of async outcomes without blocking the event loop.
     self_tx: mpsc::Sender<AcpSessionRequest>,
@@ -1269,6 +1275,7 @@ impl AcpSession {
         ));
 
         tracing::info!("Goal: re-injecting iteration {}/{}", iteration, max_iterations);
+        self.current_turn_is_goal = true;
 
         // The agent sets ActiveState::Idle before broadcasting EndTurn, but the
         // broadcast is buffered. By the time we process EndTurn here, the agent's
@@ -1340,18 +1347,45 @@ impl AcpSession {
         }
 
         let backoff = goal_ctrl.backoff_delay();
-        let iteration = goal_ctrl.iteration;
-        let prompt = goal_ctrl.build_prompt(iteration + 1);
 
         tracing::info!(
             "Goal: dispatch failure #{failures}, retrying after {}s",
             backoff.as_secs()
         );
 
-        let agent = self.agent.clone();
+        // Only sleep off-actor; the injection itself goes back through the actor so
+        // goal state is re-checked after the backoff — a cancel or /goal clear landing
+        // inside this window must abort the retry.
         let self_tx = self.self_tx.clone();
         tokio::spawn(async move {
             tokio::time::sleep(backoff).await;
+            let _ = self_tx.send(AcpSessionRequest::GoalRetryBackoffElapsed).await;
+        });
+    }
+
+    /// Fire the goal's dispatch-failure retry after its backoff elapsed, unless the goal
+    /// stopped driving the held turn in the meantime.
+    async fn handle_goal_retry_backoff_elapsed(&mut self) {
+        let still_driving = self.goal_controller.as_ref().is_some_and(|c| c.should_continue())
+            && self.pending_prompt_response.is_some()
+            && self.current_turn_is_goal;
+        if !still_driving {
+            tracing::info!("Goal retry backoff elapsed but the goal no longer drives a turn - skipping re-injection");
+            // Whatever disarmed the retry usually also resolved the held prompt (cancel
+            // takes it, re-injection failure releases it). If it is somehow still held,
+            // release it now so the client is not stuck processing a turn nothing drives.
+            self.release_goal_response().await;
+            return;
+        }
+        let Some(ref goal_ctrl) = self.goal_controller else {
+            return;
+        };
+        let iteration = goal_ctrl.iteration;
+        let prompt = goal_ctrl.build_prompt(iteration + 1);
+
+        let agent = self.agent.clone();
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
             for attempt in 0..5u64 {
                 tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
                 match agent
@@ -1427,6 +1461,7 @@ impl AcpSession {
             self.goal_controller = Some(ctrl);
             self.send_goal_status_notification();
             self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
+            self.current_turn_is_goal = true;
             let agent = self.agent.clone();
             tokio::spawn(async move {
                 if let Err(e) = agent
@@ -1897,6 +1932,7 @@ impl AcpSession {
             mcp_enabled: builder.mcp_enabled,
             request_stats: Default::default(),
             goal_controller: restored_goal,
+            current_turn_is_goal: false,
             self_tx,
             chat_session_started_emitted: false,
         };
@@ -2161,6 +2197,10 @@ impl AcpSession {
                 }
                 self.pending_turn_failure_reason = None;
 
+                // Any externally-driven prompt starts a user turn; goal injections
+                // re-set this after routing below.
+                self.current_turn_is_goal = false;
+
                 // Check for slash command
                 if let Some(route) = slash_router::parse(&request.prompt) {
                     match route {
@@ -2309,6 +2349,9 @@ impl AcpSession {
                 self.pending_prompt_response = Some(tokio::sync::Mutex::new(request_cx));
             },
             AcpSessionRequest::InternalPrompt { query, respond_to } => {
+                if self.pending_prompt_response.is_none() {
+                    self.current_turn_is_goal = false;
+                }
                 let agent = self.agent.clone();
 
                 tokio::spawn(async move {
@@ -2317,6 +2360,12 @@ impl AcpSession {
                 });
             },
             AcpSessionRequest::Wake { message, respond_to } => {
+                // A turn already in flight (held response) keeps its ownership: a wake
+                // arriving mid-turn fails NotIdle on the agent and must not disarm the
+                // goal's error recovery for the running turn.
+                if self.pending_prompt_response.is_none() {
+                    self.current_turn_is_goal = false;
+                }
                 let agent = self.agent.clone();
                 tokio::spawn(async move {
                     let result = agent
@@ -2709,6 +2758,9 @@ impl AcpSession {
                 // (BUG-1).
                 self.reconcile_pending = true;
             },
+            AcpSessionRequest::GoalRetryBackoffElapsed => {
+                self.handle_goal_retry_backoff_elapsed().await;
+            },
             AcpSessionRequest::GoalReinjectionFailed { tool_call_id, error } => {
                 tracing::error!("Goal re-injection failed: {error}");
                 let _ = self.send_session_notification(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
@@ -2955,6 +3007,26 @@ impl AcpSession {
                     }) {
                         error!("Failed to send rate limit notification: {}", e);
                     }
+                }
+
+                // A retryable error during an active goal is handled by the EndTurn that
+                // always follows this event: `handle_end_turn_goal_or_respond` routes
+                // `end_reason == Error` into the bounded dispatch-failure retry. Exhausting
+                // here (or surfacing the error) would kill the goal before that retry can
+                // run, so keep the goal active and the prompt response held. Only turns the
+                // goal itself injected qualify — a user prompt sent while a goal is armed
+                // but not driving must surface its own errors. A queued agent swap skips
+                // `handle_end_turn_goal_or_respond`, so it must not defer either.
+                let goal_defers_to_retry = self.goal_controller.as_ref().is_some_and(|ctrl| ctrl.should_continue())
+                    && self.current_turn_is_goal
+                    && self.pending_swap.is_none()
+                    && is_goal_retryable_error(&agent_error);
+                if goal_defers_to_retry {
+                    info!(
+                        "Goal active - deferring retryable error to the dispatch-failure retry path: {}",
+                        agent_error
+                    );
+                    return;
                 }
 
                 if let Some(ref mut ctrl) = self.goal_controller
@@ -4188,6 +4260,37 @@ fn rate_limit_message(kind: &StreamErrorKind) -> Option<&str> {
             Some(message)
         },
         _ => None,
+    }
+}
+
+/// Whether a turn error should be retried by the goal loop rather than ending the goal.
+///
+/// The match is deliberately exhaustive: a new [`StreamErrorKind`] must make this decision
+/// explicitly instead of inheriting a default.
+fn is_goal_retryable_error(err: &agent::protocol::AgentError) -> bool {
+    match err {
+        agent::protocol::AgentError::AgentLoopError(LoopError::Stream(stream_error)) => match stream_error.kind {
+            // Transient: a fresh attempt after backoff can genuinely succeed.
+            StreamErrorKind::Throttling
+            | StreamErrorKind::ServiceFailure
+            | StreamErrorKind::ModelOverloaded { .. }
+            | StreamErrorKind::StreamTimeout { .. } => true,
+            // The catch-all includes unmodelled transient failures such as dropped
+            // connections. Wrongly retrying a fatal unmodelled error costs two bounded
+            // attempts; wrongly not retrying kills the goal on a network blip.
+            StreamErrorKind::Other { .. } => true,
+            // Deterministic: the same request fails identically on every attempt.
+            // Overflow only reaches the error state after compaction and prompt
+            // truncation have already been attempted.
+            StreamErrorKind::Validation { .. }
+            | StreamErrorKind::InvalidModelId { .. }
+            | StreamErrorKind::MonthlyLimitReached { .. }
+            | StreamErrorKind::ContextWindowOverflow => false,
+            // Interrupts never enter the error state today; listed for exhaustiveness.
+            StreamErrorKind::Interrupted => false,
+        },
+        // Non-stream errors indicate internal failures rather than a flaky backend.
+        _ => false,
     }
 }
 
@@ -5723,6 +5826,65 @@ mod mcp_init_timeout_tests {
             resolve_mcp_init_timeout(false, Some(&ClientName::Kiro), Some(0), None),
             Some(Duration::ZERO)
         );
+    }
+}
+
+#[cfg(test)]
+mod goal_retryable_error_tests {
+    use agent::agent_loop::protocol::LoopError;
+    use agent::agent_loop::types::{
+        StreamError,
+        StreamErrorKind,
+    };
+    use agent::protocol::AgentError;
+
+    use super::is_goal_retryable_error;
+
+    fn stream_err(kind: StreamErrorKind) -> AgentError {
+        AgentError::AgentLoopError(LoopError::Stream(StreamError::new(kind)))
+    }
+
+    #[test]
+    fn transient_kinds_are_retryable() {
+        for kind in [
+            StreamErrorKind::Throttling,
+            StreamErrorKind::ServiceFailure,
+            StreamErrorKind::ModelOverloaded {
+                message: "overloaded".into(),
+            },
+            StreamErrorKind::StreamTimeout {
+                duration: std::time::Duration::from_secs(60),
+            },
+            StreamErrorKind::Other {
+                reason_code: None,
+                message: "connection reset by peer".into(),
+            },
+        ] {
+            assert!(is_goal_retryable_error(&stream_err(kind.clone())), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn deterministic_kinds_are_not_retryable() {
+        for kind in [
+            StreamErrorKind::Validation { message: None },
+            StreamErrorKind::InvalidModelId { model_id: None },
+            StreamErrorKind::MonthlyLimitReached {
+                message: "limit".into(),
+            },
+            StreamErrorKind::ContextWindowOverflow,
+            StreamErrorKind::Interrupted,
+        ] {
+            assert!(!is_goal_retryable_error(&stream_err(kind.clone())), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn non_stream_errors_are_not_retryable() {
+        assert!(!is_goal_retryable_error(&AgentError::AgentLoopError(
+            LoopError::EmptyResponse
+        )));
+        assert!(!is_goal_retryable_error(&AgentError::NotIdle));
     }
 }
 

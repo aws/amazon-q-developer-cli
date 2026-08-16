@@ -126,6 +126,11 @@ enum Command {
         message: String,
         reply: oneshot::Sender<acp::Result<serde_json::Value>>,
     },
+    Wake {
+        session_id: acp::SessionId,
+        content: String,
+        reply: oneshot::Sender<acp::Result<serde_json::Value>>,
+    },
     ClearSteer {
         session_id: acp::SessionId,
         reply: oneshot::Sender<acp::Result<serde_json::Value>>,
@@ -507,6 +512,21 @@ impl AcpTestClient {
             .map_err(|_e| acp::Error::new(-1, "steer actor channel closed".to_string()))?
     }
 
+    /// Send a `_message/send` ext method to wake the session with a message.
+    pub async fn wake(&self, session_id: acp::SessionId, content: &str) -> acp::Result<serde_json::Value> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::Wake {
+                session_id,
+                content: content.to_string(),
+                reply,
+            })
+            .await
+            .ok();
+        rx.await
+            .map_err(|_e| acp::Error::new(-1, "wake actor channel closed".to_string()))?
+    }
+
     /// Send a `_session/steer/clear` ext method to clear the queued steering message.
     pub async fn steer_clear(&self, session_id: acp::SessionId) -> acp::Result<serde_json::Value> {
         let (reply, rx) = oneshot::channel();
@@ -722,6 +742,30 @@ async fn run_actor(stdin: ChildStdin, stdout: ChildStdout, mut rx: mpsc::Receive
                         let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
                         let result = conn
                             .ext_method(acp::ExtRequest::new("session/steer", raw_params.into()))
+                            .await
+                            .and_then(|resp| {
+                                serde_json::from_str::<serde_json::Value>(resp.0.get())
+                                    .map_err(|e| acp::Error::new(-1, e.to_string()))
+                            });
+                        let _ = reply.send(result);
+                    }
+                });
+            },
+            Command::Wake {
+                session_id,
+                content,
+                reply,
+            } => {
+                tokio::task::spawn_local({
+                    let conn = conn.clone();
+                    async move {
+                        let params = serde_json::json!({
+                            "sessionId": session_id.0.as_ref(),
+                            "content": content,
+                        });
+                        let raw_params = acp::RawValue::from_string(serde_json::to_string(&params).unwrap()).unwrap();
+                        let result = conn
+                            .ext_method(acp::ExtRequest::new("message/send", raw_params.into()))
                             .await
                             .and_then(|resp| {
                                 serde_json::from_str::<serde_json::Value>(resp.0.get())
