@@ -2588,6 +2588,11 @@ export class TUI extends Container {
             if (pending.visibleStartLive + v >= firstRun.liveStart) break;
             preserved.push(pending.visible[v] ?? '');
           }
+          // Emit in order, suppressing only a trailing block whose captured owners remain at the same tail coordinates.
+          const flushEmit: Array<{
+            row: string;
+            matchedLiveIndex: number | null;
+          }> = [];
           for (let f = 0; f < pending.flushedCount; f++) {
             const frameIdx = flushBase + f;
             if (frameIdx >= flushEndAboveTail) break;
@@ -2598,7 +2603,35 @@ export class TUI extends Container {
             ) {
               continue;
             }
-            preserved.push(newLines[frameIdx] ?? '');
+            flushEmit.push({
+              row: newLines[frameIdx] ?? '',
+              matchedLiveIndex,
+            });
+          }
+          let trailingStart = flushEmit.length;
+          while (
+            trailingStart > 0 &&
+            flushEmit[trailingStart - 1]!.matchedLiveIndex !== null
+          ) {
+            trailingStart--;
+          }
+          for (let i = 0; i < trailingStart; i++) {
+            preserved.push(flushEmit[i]!.row);
+          }
+          const trailingMatched = flushEmit.slice(trailingStart);
+          const tailOwnsTrailing =
+            trailingMatched.length > 0 &&
+            trailingMatched.every(({ row, matchedLiveIndex }) => {
+              if (matchedLiveIndex === null) return false;
+              const frameIdx = staticPrefixLen + matchedLiveIndex;
+              return (
+                frameIdx >= startIdx &&
+                frameIdx < newLines.length &&
+                (newLines[frameIdx] ?? '') === row
+              );
+            });
+          if (trailingMatched.length > 0 && !tailOwnsTrailing) {
+            preserved.push(...trailingMatched.map(({ row }) => row));
           }
           if (startIdx > staticPrefixLen) {
             const afterRuns: string[] = [];

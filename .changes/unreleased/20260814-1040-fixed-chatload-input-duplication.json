@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "New input after `/chat` loading a session no longer paints at the old prompt's position with the replayed turn duplicated around it"
+}

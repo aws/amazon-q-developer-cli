@@ -3590,6 +3590,14 @@ export const createAppStore = (props: AppStoreProps) => {
         ];
         return {
           isProcessing: true,
+          // Streaming display slots are gated on isProcessing, not cleared
+          // at turn end — flipping isProcessing back on would resurrect the
+          // PREVIOUS turn's content in the live region (and, after a session
+          // replay, paint the replayed turn a second time alongside its
+          // static copy). A new turn starts with empty slots.
+          streamingContent: '',
+          streamingMessageId: null,
+          thinkingContent: '',
           agentError: null,
           agentErrorGuidance: null,
           _observerQueueBlocked: false,
@@ -5268,7 +5276,16 @@ export const createAppStore = (props: AppStoreProps) => {
             observerTurnBlocked = false;
             armObserverTurnWatchdog();
             if (!get().isProcessing) {
-              set({ isProcessing: true });
+              // Same slot reset as the sendMessage submit path: this branch
+              // starts turns sendMessage did not (observer and
+              // agent-initiated), and a stale slot surviving the previous
+              // turn would resurrect its content in the live region.
+              set({
+                isProcessing: true,
+                streamingContent: '',
+                streamingMessageId: null,
+                thinkingContent: '',
+              });
             }
             break;
           case AgentEventType.TurnEnd: {
