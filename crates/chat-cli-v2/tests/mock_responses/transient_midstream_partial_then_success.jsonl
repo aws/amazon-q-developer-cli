@@ -1,0 +1,10 @@
+// A partial response streams (and clears the RTS code-reference lookahead via the
+// context-usage event, so it reaches the display), then the connection drops
+// mid-stream with a statusless transport error carrying a network signature; the
+// agent-layer retry regenerates the full response from scratch. Exercises the
+// stream_discarded notice for the rendered partial.
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Truncated partial"}}}
+{"kind":"event","data":{"kind":"ContextUsageEvent","data":{"context_usage_percentage":1.0}}}
+{"kind":"streamError","data":{"kind":{"Unknown":{"reason_code":"RecvError","message":"connection reset by peer"}},"request_id":null,"status_code":null}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Complete recovered response."}}}

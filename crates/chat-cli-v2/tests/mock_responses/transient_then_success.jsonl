@@ -1,0 +1,5 @@
+// One throttling send error (within the retry budget), then a successful text
+// response on the retry. Exercises the agent-layer transient retry recovering the turn.
+{"kind":"sendError","data":{"kind":"Throttling","request_id":null,"status_code":429}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Recovered after a transient failure."}}}

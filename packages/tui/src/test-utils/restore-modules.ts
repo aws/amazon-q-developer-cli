@@ -27,7 +27,9 @@ export function restoreRealModulesAfterAll(
   callerDir: string,
   modules: readonly ModuleEntry[]
 ): void {
-  const snapshots: Array<[string, Record<string, unknown>]> = [];
+  const snapshots: Array<
+    [string, Promise<Record<string, unknown> | null> | Record<string, unknown>]
+  > = [];
   for (const entry of modules) {
     const [specifier, namespace] =
       typeof entry === 'string' ? [entry, undefined] : entry;
@@ -37,14 +39,61 @@ export function restoreRealModulesAfterAll(
     // path captures the instance already in use, so module-level singletons
     // survive; the namespace path re-registers a freshly evaluated instance,
     // which suits only modules that hold no state of their own.
-    snapshots.push([
-      resolved,
-      { ...(namespace ?? (require(resolved) as Record<string, unknown>)) },
-    ]);
+    if (namespace) {
+      snapshots.push([resolved, { ...namespace }]);
+      continue;
+    }
+    try {
+      snapshots.push([
+        resolved,
+        { ...(require(resolved) as Record<string, unknown>) },
+      ]);
+    } catch (requireError) {
+      // require() rejects modules whose graph contains top-level await (and
+      // anything else that fails evaluation). Fall back to a query-suffixed
+      // dynamic import (bypasses the mock registry for THIS specifier only),
+      // kicked off now and awaited in afterAll. Two limitations, both logged
+      // so the caller is prompted toward the pre-awaited namespace form:
+      // - the import settles after the caller's own mock.module calls run on
+      //   this same synchronous tick, so the freshly evaluated module resolves
+      //   its transitive deps against the caller's mocks — "real" only when
+      //   none of its dependencies are mocked by this file;
+      // - it re-registers a fresh instance, so module-level singletons do not
+      //   survive. Still strictly better than throwing here, which would skip
+      //   the restore entirely and leak this file's mocks into every later
+      //   file. The rejection handler is attached NOW so a failure before
+      //   afterAll is captured instead of surfacing as an unhandled rejection.
+      console.warn(
+        `restoreRealModulesAfterAll: require(${resolved}) failed (${String(
+          requireError
+        )}); falling back to a deferred ?real import — pass a pre-awaited ` +
+          'namespace ([specifier, namespace]) if this module or its deps are mocked'
+      );
+      snapshots.push([
+        resolved,
+        import(`${resolved}?real`).then(
+          (ns) => ({ ...ns }) as Record<string, unknown>,
+          (importError) => {
+            console.error(
+              `restoreRealModulesAfterAll: ?real import of ${resolved} failed; ` +
+                `the module stays mocked for the rest of the run. require error: ` +
+                `${String(requireError)}; import error: ${String(importError)}`
+            );
+            return null;
+          }
+        ),
+      ]);
+    }
   }
-  afterAll(() => {
+  afterAll(async () => {
+    // Each entry restores independently: one failed snapshot must not cancel
+    // the restore of the entries behind it (mock.module is process-global, so
+    // a skipped restore leaks into every later test file).
     for (const [resolved, exports] of snapshots) {
-      mock.module(resolved, () => exports);
+      const resolvedExports = await exports;
+      if (resolvedExports) {
+        mock.module(resolved, () => resolvedExports);
+      }
     }
   });
 }

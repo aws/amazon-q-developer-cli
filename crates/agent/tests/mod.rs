@@ -958,6 +958,203 @@ async fn test_cancel_during_executing_request() {
     );
 }
 
+/// A throttled stream: the agent schedules a transient retry with a backoff.
+fn throttle_response() -> Vec<agent::agent_loop::protocol::StreamResult> {
+    use agent::agent_loop::protocol::StreamResult;
+    use agent::agent_loop::types as lt;
+    vec![StreamResult::Err(lt::StreamError::new(lt::StreamErrorKind::Throttling))]
+}
+
+/// A cancel issued while a transient-retry backoff is pending must fully disarm the
+/// turn: the scheduled re-send never fires, so the model sees exactly one request and
+/// the agent stays quiescent after the cancel stop.
+#[tokio::test(start_paused = true)]
+async fn test_cancel_during_transient_backoff_disarms_retry() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("cancel during transient backoff disarms retry")
+        .with_default_agent_config()
+        .with_responses(vec![throttle_response(), single_text_response("never sent")])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+
+    // The TransientRetry event is emitted at scheduling time, before the backoff wait
+    // (base 2s + jitter), so observing it guarantees the retry timer is armed.
+    test.wait_until_agent_event(Duration::from_secs(3), |e| {
+        matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetry { .. })
+        )
+    })
+    .await
+    .expect("a throttled stream must schedule a transient retry");
+
+    test.cancel().await.unwrap();
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Outlast the worst-case attempt-1 backoff (2s base + jitter) to prove the timer
+    // was disarmed rather than left to fire into the cancelled turn.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    assert_eq!(
+        test.requests().len(),
+        1,
+        "the cancelled turn must never re-send after the backoff elapses"
+    );
+    let retry_events = test
+        .agent_events()
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetry { .. })
+            )
+        })
+        .count();
+    assert_eq!(retry_events, 1, "no second retry may be scheduled after cancel");
+    // The executed-retry event is what retry-volume telemetry counts; a retry
+    // suppressed by the cancel must therefore never emit it.
+    assert!(
+        !test.agent_events().iter().any(|e| matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetryExecuted { .. })
+        )),
+        "a retry suppressed by cancel must not emit TransientRetryExecuted"
+    );
+}
+
+/// A transient retry that actually fires emits `TransientRetryExecuted` (the event
+/// retry-volume telemetry counts) and completes the turn on the re-sent request.
+#[tokio::test(start_paused = true)]
+async fn test_transient_retry_fires_and_emits_executed() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("transient retry fires and emits executed")
+        .with_default_agent_config()
+        .with_responses(vec![throttle_response(), single_text_response("recovered")])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+    // Outlasts the attempt-1 backoff (2s base + jitter).
+    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+
+    assert_eq!(test.requests().len(), 2, "the retry must re-send the request");
+    let executed: Vec<_> = test
+        .agent_events()
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetryExecuted {
+                class,
+                attempt_number,
+                ..
+            }) => Some((*class, *attempt_number)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        executed,
+        vec![(agent::error_recovery::TransientErrorClass::Throttle, 1)],
+        "exactly one executed-retry event for the fired retry"
+    );
+}
+
+/// A capacity-shaped 429 (`ModelOverloaded`) must reach the retry dispatch like a
+/// quota throttle, not fall through to the terminal arm: the classifier and the
+/// dispatch arm's kind list must stay in agreement.
+#[tokio::test(start_paused = true)]
+async fn test_model_overloaded_is_retried_at_dispatch() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let overload_response = vec![agent::agent_loop::protocol::StreamResult::Err(
+        agent::agent_loop::types::StreamError::new(agent::agent_loop::types::StreamErrorKind::ModelOverloaded {
+            message: "The model is temporarily overloaded".to_string(),
+        }),
+    )];
+    let mut test = TestCase::builder()
+        .test_name("model overloaded is retried at dispatch")
+        .with_default_agent_config()
+        .with_responses(vec![overload_response, single_text_response("recovered")])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+    // Outlasts the attempt-1 backoff (2s base + jitter).
+    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+
+    assert_eq!(test.requests().len(), 2, "the overload must be retried, not surfaced");
+    assert!(
+        test.agent_events().iter().any(|e| matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetryExecuted {
+                class: agent::error_recovery::TransientErrorClass::Throttle,
+                ..
+            })
+        )),
+        "the overload retry must execute in the throttle class"
+    );
+}
+
+/// A transient failure on the compaction loop gets the same bounded retry budget as
+/// a main-turn stream: a throttle during auto-compaction must re-run compaction
+/// after the backoff instead of failing the turn back to an over-full context.
+#[tokio::test(start_paused = true)]
+async fn test_compaction_transient_failure_is_retried() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // Base sequence: hello_ack -> tool use -> tool use -> overflow -> compaction
+    // summary -> retry success. Inject a throttle where the compaction summary
+    // would stream, so the compaction request itself fails transiently once.
+    let mut responses = parse_response_streams(include_str!("./mock_responses/context_window_overflow.jsonl"))
+        .await
+        .unwrap();
+    let summary_index = responses.len() - 2;
+    responses.insert(summary_index, throttle_response());
+
+    let mut test = TestCase::builder()
+        .test_name("compaction transient failure is retried")
+        .with_default_agent_config()
+        .with_responses(responses)
+        .with_trust_all_tools(true)
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+    test.send_prompt("test prompt".to_string()).await;
+    // Outlasts the attempt-1 backoff (2s base + jitter).
+    test.wait_until_agent_stop(Duration::from_secs(15)).await.unwrap();
+
+    assert!(
+        test.agent_events().iter().any(|e| matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetryExecuted { .. })
+        )),
+        "the throttled compaction request must be retried after the backoff"
+    );
+    let compaction_events = test.compaction_events();
+    assert!(
+        compaction_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+        "compaction must complete on the retried request"
+    );
+    assert!(
+        !compaction_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Failed { .. }))),
+        "a transient compaction failure within budget must not surface as Failed"
+    );
+}
+
 /// Tests that canceling after tool uses are generated adds cancelled tool result messages
 #[tokio::test]
 async fn test_cancel_with_pending_tool_uses() {
@@ -2439,8 +2636,8 @@ async fn test_empty_response_retry_failure() {
 
 /// Tests that a transient network failure mid-stream (e.g. connection reset) triggers a
 /// retry of the same request. When the retry succeeds, the agent completes normally and
-/// a retry warning is surfaced.
-#[tokio::test]
+/// the scheduled retry is surfaced with the partial output flagged for discard.
+#[tokio::test(start_paused = true)]
 async fn test_transient_network_failure_retry_success() {
     let _ = tracing_subscriber::fmt::try_init();
 
@@ -2458,6 +2655,7 @@ async fn test_transient_network_failure_retry_success() {
         .unwrap();
 
     test.send_prompt("hello".to_string()).await;
+    // Outlasts the attempt-1 backoff (2s base + jitter).
     test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
 
     let requests = test.requests();
@@ -2482,10 +2680,9 @@ async fn test_transient_network_failure_retry_success() {
         assert_eq!(a.text(), b.text(), "message {} text mismatch", i);
     }
 
-    // Clients discard the partial response when the RetryWarning arrives, so it must be
-    // emitted after the stale fragment and before any retried content. Its attempt fields
-    // must use total-attempt semantics (original request = attempt 1), matching the
-    // HTTP-level retry warnings that feed the same banner.
+    // Clients discard the rendered partial when the TransientRetry notification arrives,
+    // so it must be emitted after the stale fragment and before any retried content, and
+    // it must flag that output had streamed (partial_output drives the discard).
     let events = test.agent_events();
     let content_idx = |needle: &str| {
         events.iter().position(|e| {
@@ -2499,27 +2696,24 @@ async fn test_transient_network_failure_retry_success() {
     };
     let partial_idx = content_idx("Partial resp").expect("partial fragment should be emitted");
     let fresh_idx = content_idx("Hello! I can help with that.").expect("retried content should be emitted");
-    let warning_idx = events
+    let retry_idx = events
         .iter()
         .position(|e| {
             matches!(
                 e,
-                AgentEvent::Internal(agent::protocol::InternalEvent::AgentLoop(loop_event))
-                if matches!(
-                    &loop_event.kind,
-                    agent::agent_loop::protocol::AgentLoopEventKind::Stream(
-                        agent::agent_loop::protocol::StreamResult::Ok(
-                            agent::agent_loop::types::StreamEvent::RetryWarning(w)
-                        )
-                    ) if w.attempt == 2 && w.max_attempts == 3
-                )
+                AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetry {
+                    class: agent::error_recovery::TransientErrorClass::Network,
+                    attempt_number: 1,
+                    partial_output: true,
+                    ..
+                })
             )
         })
-        .expect("expected a RetryWarning event with total-attempt semantics (2/3)");
+        .expect("expected a Network-class TransientRetry flagged with partial output");
     assert!(
-        partial_idx < warning_idx && warning_idx < fresh_idx,
-        "RetryWarning must separate the stale fragment from the retried content \
-         (partial={partial_idx}, warning={warning_idx}, fresh={fresh_idx})"
+        partial_idx < retry_idx && retry_idx < fresh_idx,
+        "TransientRetry must separate the stale fragment from the retried content \
+         (partial={partial_idx}, retry={retry_idx}, fresh={fresh_idx})"
     );
 
     // Final stop reason should be EndTurn (not Error)
@@ -2541,7 +2735,7 @@ async fn test_transient_network_failure_retry_success() {
 
 /// Tests that transient network failure retries are bounded: after the initial request and
 /// two retries all fail, the agent enters the error state instead of retrying again.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn test_transient_network_failure_retry_exhausted() {
     let _ = tracing_subscriber::fmt::try_init();
 
@@ -2559,7 +2753,8 @@ async fn test_transient_network_failure_retry_exhausted() {
         .unwrap();
 
     test.send_prompt("hello".to_string()).await;
-    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+    // Outlasts both backoffs (2s and 4s bases, each with up to 25% jitter).
+    test.wait_until_agent_stop(Duration::from_secs(20)).await.unwrap();
 
     let requests = test.requests();
     assert_eq!(
@@ -2601,7 +2796,7 @@ async fn test_transient_network_failure_retry_exhausted() {
 
 /// Tests that cancelling during the retry backoff aborts the scheduled re-send: the turn
 /// ends with Cancelled and the retry request never fires.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn test_transient_network_failure_cancel_during_backoff() {
     let _ = tracing_subscriber::fmt::try_init();
 
@@ -2620,29 +2815,25 @@ async fn test_transient_network_failure_cancel_during_backoff() {
 
     test.send_prompt("hello".to_string()).await;
 
-    // Wait for the retry to be scheduled (announced via RetryWarning), then cancel
-    // while the 1s backoff is still pending.
+    // Wait for the retry to be scheduled (announced via TransientRetry, emitted before
+    // the backoff wait begins), then cancel while the backoff is still pending.
     test.wait_until_agent_event(Duration::from_secs(5), |e| {
         matches!(
             e,
-            AgentEvent::Internal(agent::protocol::InternalEvent::AgentLoop(loop_event))
-            if matches!(
-                &loop_event.kind,
-                agent::agent_loop::protocol::AgentLoopEventKind::Stream(
-                    agent::agent_loop::protocol::StreamResult::Ok(
-                        agent::agent_loop::types::StreamEvent::RetryWarning(_)
-                    )
-                )
-            )
+            AgentEvent::Internal(agent::protocol::InternalEvent::TransientRetry {
+                class: agent::error_recovery::TransientErrorClass::Network,
+                ..
+            })
         )
     })
     .await
-    .expect("expected a RetryWarning before the backoff");
+    .expect("expected a Network-class TransientRetry before the backoff");
     test.cancel().await.unwrap();
     test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
 
-    // Sleep past the backoff: a scheduled retry that survived the cancel would fire now.
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // Outlast the worst-case attempt-1 backoff (2s base + jitter): a scheduled retry
+    // that survived the cancel would fire within this window.
+    tokio::time::sleep(Duration::from_secs(5)).await;
     assert_eq!(
         test.requests().len(),
         1,
@@ -3523,6 +3714,41 @@ async fn test_dummy_tool_call_returns_benign_result() {
         !text.contains("does not exist") && !text.contains("Failed to parse the tool use"),
         "dummy must not be reported as a nonexistent / unparseable tool; got: {text}"
     );
+
+    // The client-facing lifecycle must close too: the dummy call emits a
+    // ToolCallFailed(ToolUnavailable) update so the chip resolves at the
+    // request boundary instead of sitting unresolved until turn end.
+    assert!(
+        test.agent_events().iter().any(|evt| matches!(
+            evt,
+            agent::protocol::AgentEvent::Update(agent::protocol::UpdateEvent::ToolCallFailed {
+                tool_use_id,
+                reason: agent::protocol::ToolCallFailureReason::ToolUnavailable,
+                ..
+            }) if tool_use_id == "tooluse_dummy_1"
+        )),
+        "dummy tool call should emit ToolCallFailed(ToolUnavailable) to close the client lifecycle"
+    );
+
+    // Replay must render the same failed chip as the live session: the
+    // log-side result is recorded as an Error (the model-facing Success
+    // tool_result asserted above is a separate channel). The error payload
+    // must carry the full guidance because the KAS session converter renders
+    // the model-visible text from the result map, not the content blocks.
+    assert!(
+        test.agent_events().iter().any(|evt| matches!(
+            evt,
+            agent::protocol::AgentEvent::LogEntryAppended {
+                entry: agent::event_log::LogEntry::V1(agent::event_log::LogEntryV1::ToolResults { results, .. }),
+                ..
+            } if results.get("tooluse_dummy_1").is_some_and(|r| matches!(
+                &r.result,
+                agent::protocol::ToolCallResult::Error(agent::tools::ToolExecutionError::Custom(msg))
+                    if msg == agent::consts::DUMMY_TOOL_RESULT_MESSAGE
+            ))
+        )),
+        "dummy tool call should log an Error carrying the guidance so replay matches the live failed chip and KAS conversion keeps the text"
+    );
 }
 
 /// Part B: when the model repeatedly calls the unavailable `dummy` tool and
@@ -3620,6 +3846,380 @@ async fn test_unexecutable_tool_breaker_resets_after_success() {
     assert!(
         test.agent_events().iter().any(|e| matches!(e, AgentEvent::EndTurn(_))),
         "expected EndTurn after the breaker eventually trips"
+    );
+}
+
+/// Builds a mock response stream that fails with a StreamTimeout after `text` deltas.
+fn stream_timeout_response(text: &str) -> Vec<agent::agent_loop::protocol::StreamResult> {
+    stream_timeout_response_with_source(text, agent::agent_loop::types::StreamTimeoutSource::IdleWatchdog)
+}
+
+fn stream_timeout_response_with_source(
+    text: &str,
+    source: agent::agent_loop::types::StreamTimeoutSource,
+) -> Vec<agent::agent_loop::protocol::StreamResult> {
+    use agent::agent_loop::protocol::StreamResult;
+    use agent::agent_loop::types as lt;
+    vec![
+        StreamResult::Ok(lt::StreamEvent::MessageStart(lt::MessageStartEvent {
+            role: Role::Assistant,
+        })),
+        StreamResult::Ok(lt::StreamEvent::ContentBlockDelta(lt::ContentBlockDeltaEvent {
+            delta: lt::ContentBlockDelta::Text(text.to_string()),
+            content_block_index: None,
+        })),
+        StreamResult::Err(lt::StreamError::new(lt::StreamErrorKind::StreamTimeout {
+            duration: Duration::from_secs(120),
+            source,
+        })),
+    ]
+}
+
+fn single_text_response(text: &str) -> Vec<agent::agent_loop::protocol::StreamResult> {
+    use agent::agent_loop::protocol::StreamResult;
+    use agent::agent_loop::types as lt;
+    vec![
+        StreamResult::Ok(lt::StreamEvent::MessageStart(lt::MessageStartEvent {
+            role: Role::Assistant,
+        })),
+        StreamResult::Ok(lt::StreamEvent::ContentBlockDelta(lt::ContentBlockDeltaEvent {
+            delta: lt::ContentBlockDelta::Text(text.to_string()),
+            content_block_index: None,
+        })),
+        StreamResult::Ok(lt::StreamEvent::MessageStop(lt::MessageStopEvent {
+            stop_reason: lt::StopReason::EndTurn,
+        })),
+    ]
+}
+
+/// Consecutive stream timeouts must exhaust the continuation-retry budget and surface a
+/// terminal error instead of re-prompting forever. With MAX_STREAM_TIMEOUT_RETRIES = 2,
+/// the flow is: initial request times out, 2 continuation retries time out, then the
+/// turn errors — exactly 3 requests, no fourth.
+#[tokio::test]
+async fn test_stream_timeout_retries_exhaust_to_error() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("stream timeout retries exhaust to error")
+        .with_default_agent_config()
+        .with_responses(vec![
+            stream_timeout_response("part 1"),
+            stream_timeout_response("part 2"),
+            stream_timeout_response("part 3"),
+        ])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("do something big".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    assert_eq!(
+        test.requests().len(),
+        3,
+        "expected exactly 1 initial + 2 continuation requests before erroring, got {}",
+        test.requests().len()
+    );
+    assert!(
+        test.agent_events()
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Stop(agent::protocol::AgentStopReason::Error(_)))),
+        "expected the turn to stop with a terminal error after exhausting stall retries"
+    );
+}
+
+/// A successful stream between timeouts resets the continuation-retry budget, so
+/// non-consecutive stalls never exhaust it.
+#[tokio::test]
+async fn test_stream_timeout_retry_counter_resets_on_success() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("stream timeout retry counter resets on success")
+        .with_default_agent_config()
+        .with_responses(vec![
+            stream_timeout_response("a"),
+            stream_timeout_response("b"),
+            single_text_response("recovered"),
+        ])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("first".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    assert_eq!(test.requests().len(), 3, "expected 3 requests for the first turn");
+    assert!(
+        !test
+            .agent_events()
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Stop(agent::protocol::AgentStopReason::Error(_)))),
+        "recovered turn must not surface a terminal error"
+    );
+}
+
+/// Exhausted stall-retry sequences must emit a StreamStallRetry internal event so the
+/// telemetry observer can count them.
+#[tokio::test]
+async fn test_stream_timeout_exhaustion_emits_stall_retry_event() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("stream timeout exhaustion emits stall retry event")
+        .with_default_agent_config()
+        .with_responses(vec![
+            stream_timeout_response("a"),
+            stream_timeout_response("b"),
+            stream_timeout_response("c"),
+        ])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let stall_retry = test
+        .agent_events()
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::Internal(agent::protocol::InternalEvent::StreamStallRetry {
+                outcome,
+                attempt_number,
+                partial_output,
+                source,
+            }) => Some((*outcome, *attempt_number, *partial_output, *source)),
+            _ => None,
+        })
+        .expect("expected a StreamStallRetry internal event");
+    assert_eq!(stall_retry.0, agent::protocol::StallRetryOutcome::Exhausted);
+    // The terminal outcome carries the producer of the stall that OPENED the
+    // sequence, keeping it on the same side of the telemetry gate as the stall
+    // events themselves.
+    assert_eq!(
+        stall_retry.3,
+        agent::agent_loop::types::StreamTimeoutSource::IdleWatchdog
+    );
+    assert_eq!(stall_retry.1, 2, "budget is 2 retries");
+    assert!(
+        stall_retry.2,
+        "every mock stream streamed text before stalling, so partial_output must be true"
+    );
+}
+
+/// A mixed-producer sequence: opened by an SDK recv timeout, continued into
+/// watchdog stalls. The terminal outcome must carry the OPENING producer
+/// (SdkRecv here) — stamping the latest stall instead would put the outcome on
+/// the opposite side of the telemetry gate from the stall that started the
+/// episode.
+#[tokio::test]
+async fn test_stall_sequence_outcome_carries_opening_source() {
+    use agent::agent_loop::types::StreamTimeoutSource;
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("stall sequence outcome carries opening source")
+        .with_default_agent_config()
+        .with_responses(vec![
+            stream_timeout_response_with_source("a", StreamTimeoutSource::SdkRecv),
+            stream_timeout_response_with_source("b", StreamTimeoutSource::IdleWatchdog),
+            stream_timeout_response_with_source("c", StreamTimeoutSource::IdleWatchdog),
+        ])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let source = test
+        .agent_events()
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::Internal(agent::protocol::InternalEvent::StreamStallRetry {
+                outcome: agent::protocol::StallRetryOutcome::Exhausted,
+                source,
+                ..
+            }) => Some(*source),
+            _ => None,
+        })
+        .expect("expected an exhausted StreamStallRetry event");
+    assert_eq!(
+        source,
+        StreamTimeoutSource::SdkRecv,
+        "the terminal outcome must carry the opening stall's producer"
+    );
+    // The recovery windows of the same sequence carry the opening producer too.
+    let recovery_sources: Vec<_> = test
+        .agent_events()
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::Internal(agent::protocol::InternalEvent::StreamStallRecovery { source, .. }) => Some(*source),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        recovery_sources.iter().all(|s| *s == StreamTimeoutSource::SdkRecv),
+        "recovery windows must gate with the opening producer, got {recovery_sources:?}"
+    );
+}
+
+/// Recovered stall-retry sequences must emit StreamStallRetry (recovered) and a
+/// StreamStallRecovery timing event.
+#[tokio::test]
+async fn test_stream_timeout_recovery_emits_stall_events() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("stream timeout recovery emits stall events")
+        .with_default_agent_config()
+        .with_responses(vec![stream_timeout_response("a"), single_text_response("recovered")])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let recovered = test.agent_events().iter().any(|e| {
+        matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::StreamStallRetry {
+                outcome: agent::protocol::StallRetryOutcome::Recovered,
+                attempt_number: 1,
+                ..
+            })
+        )
+    });
+    assert!(recovered, "expected a recovered StreamStallRetry event");
+
+    let recovery_timing = test.agent_events().iter().any(|e| {
+        matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::StreamStallRecovery { .. })
+        )
+    });
+    assert!(recovery_timing, "expected a StreamStallRecovery timing event");
+}
+
+/// A cancel mid stall-retry sequence must close the sequence with a terminal
+/// Cancelled outcome — otherwise the stall series cannot distinguish a
+/// cancelled recovery from one still in progress.
+#[tokio::test]
+async fn test_cancel_mid_stall_sequence_emits_cancelled_outcome() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // First stream stalls (opens the sequence); the continuation stream is
+    // delayed so the cancel lands while the retry is still in flight.
+    let mut test = TestCase::builder()
+        .test_name("cancel mid stall sequence emits cancelled outcome")
+        .with_default_agent_config()
+        .with_mock_response(stream_timeout_response("partial").into())
+        // 5s: must outlast the worst-case wait for the continuation event (3s
+        // cap) plus the cancel itself, and the teardown drain sleeps it out.
+        .with_mock_response(agent::agent_loop::model::MockResponse::with_delay(
+            single_text_response("never seen"),
+            Duration::from_secs(5),
+        ))
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+    // The continuation event proves the sequence is open and the retry armed.
+    test.wait_until_agent_event(Duration::from_secs(3), |e| {
+        matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::StreamStallContinuation { .. })
+        )
+    })
+    .await
+    .expect("a stalled stream must emit a continuation event");
+
+    test.cancel().await.unwrap();
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    let cancelled = test
+        .agent_events()
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::Internal(agent::protocol::InternalEvent::StreamStallRetry {
+                outcome: agent::protocol::StallRetryOutcome::Cancelled,
+                attempt_number,
+                source,
+                ..
+            }) => Some((*attempt_number, *source)),
+            _ => None,
+        })
+        .expect("a cancel mid-sequence must emit a Cancelled StreamStallRetry outcome");
+    assert_eq!(cancelled.0, 1, "one continuation attempt was in flight");
+    assert_eq!(
+        cancelled.1,
+        agent::agent_loop::types::StreamTimeoutSource::IdleWatchdog,
+        "the terminal outcome carries the opening stall's producer"
+    );
+}
+
+/// A compaction stream cancelled by the idle watchdog must surface as a
+/// dedicated CompactionStreamStalled event: that event is what drives the
+/// hard-tier stall metrics, which otherwise read as though the watchdog never
+/// fires on compaction. The raw stream end must NOT be forwarded — it would
+/// enter the message-level request series reserved for actual chat messages.
+#[tokio::test]
+async fn test_compaction_stream_stall_is_forwarded() {
+    use agent::agent_loop::types as lt;
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // The prompt stream overflows the context window, which starts auto
+    // compaction; the compaction stream then dies to the watchdog.
+    let overflow_response = vec![agent::agent_loop::protocol::StreamResult::Err(lt::StreamError::new(
+        lt::StreamErrorKind::ContextWindowOverflow,
+    ))];
+
+    let mut test = TestCase::builder()
+        .test_name("compaction stream stall is forwarded")
+        .with_default_agent_config()
+        .with_responses(vec![overflow_response, stream_timeout_response("summary partial")])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("go".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    assert!(
+        test.compaction_events()
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Failed { .. }))),
+        "a watchdog-cancelled compaction stream is terminal"
+    );
+    assert!(
+        test.agent_events().iter().any(|e| matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::CompactionStreamStalled { .. })
+        )),
+        "a watchdog-cancelled compaction stream must emit CompactionStreamStalled for telemetry"
+    );
+    // The raw stream end stays unforwarded: it would land in the message-level
+    // request series, which is reserved for requests carrying chat messages.
+    assert!(
+        !test.agent_events().iter().any(|e| matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::AgentLoop(loop_event))
+            if matches!(
+                &loop_event.kind,
+                agent::agent_loop::protocol::AgentLoopEventKind::ResponseStreamEnd {
+                    result: Err(agent::agent_loop::protocol::LoopError::Stream(stream_err)),
+                    ..
+                } if matches!(stream_err.kind, lt::StreamErrorKind::StreamTimeout {
+                    source: lt::StreamTimeoutSource::IdleWatchdog,
+                    ..
+                })
+            )
+        )),
+        "the compaction loop's raw stream end must not be forwarded"
     );
 }
 

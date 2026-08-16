@@ -1,2 +1,6 @@
-// Mock response that returns a send error (fails on initial request)
+// Three consecutive throttling send errors: the initial attempt plus the two
+// agent-layer transient retries (MAX_TRANSIENT_RETRIES). This exhausts the retry
+// budget so the terminal rate-limit path fires, matching the test's expectations.
+{"kind":"sendError","data":{"kind":"Throttling","request_id":null,"status_code":429}}
+{"kind":"sendError","data":{"kind":"Throttling","request_id":null,"status_code":429}}
 {"kind":"sendError","data":{"kind":"Throttling","request_id":null,"status_code":429}}

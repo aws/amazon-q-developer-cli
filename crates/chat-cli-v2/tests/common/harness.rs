@@ -370,7 +370,7 @@ impl AcpTestHarness {
 
 /// Parse mock response streams from JSONL content.
 /// Blank lines separate response streams. Lines starting with `//` are comments.
-fn parse_mock_response_streams(content: &str) -> Vec<Vec<MockStreamItem>> {
+pub fn parse_mock_response_streams(content: &str) -> Vec<Vec<MockStreamItem>> {
     let mut streams = Vec::new();
     let mut current = Vec::new();
 

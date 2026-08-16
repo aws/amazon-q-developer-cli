@@ -1329,6 +1329,13 @@ impl AcpSession {
     /// Handle a dispatch failure during an active goal. Does NOT increment the
     /// iteration counter. Retries with exponential backoff up to 3 times, then
     /// pauses the goal (same as Ctrl+C from the user's perspective).
+    ///
+    /// This budget deliberately COMPOSES with the agent-layer transient budget:
+    /// a persistently throttling/5xx-ing backend costs up to
+    /// `3 * (1 + MAX_TRANSIENT_RETRIES)` requests before the goal pauses. A goal
+    /// is a long autonomous run, so trading extra backed-off attempts for
+    /// surviving a backend brownout is the point — the escalation ladder is
+    /// request-level retries first, then turn-level re-injection.
     async fn handle_goal_dispatch_failure(&mut self) {
         let Some(ref mut goal_ctrl) = self.goal_controller else {
             return;
@@ -1806,6 +1813,29 @@ impl AcpSession {
             ) {
                 s.settings.mcp_init_timeout = timeout;
             }
+            let soft_explicit = agent::types::stream_idle_setting_secs(
+                os.database
+                    .settings
+                    .get_value(Setting::ApiStreamIdleSoftTimeout)
+                    .as_ref(),
+                "api.streamIdleSoftTimeout",
+            );
+            if let Some(secs) = soft_explicit {
+                s.settings.stream_idle_soft_timeout = std::time::Duration::from_secs(secs);
+            }
+            if let Some(secs) = agent::types::stream_idle_setting_secs(
+                os.database
+                    .settings
+                    .get_value(Setting::ApiStreamIdleHardTimeout)
+                    .as_ref(),
+                "api.streamIdleHardTimeout",
+            ) {
+                s.settings.stream_idle_hard_timeout = std::time::Duration::from_secs(secs);
+            }
+            // Once per session, not in the per-turn loop builder: an explicitly
+            // misconfigured soft tier warns and is disabled; an inherited default
+            // colliding with a tightened hard cap is clamped instead.
+            s.settings.reconcile_stream_idle_tiers(soft_explicit.is_some());
             s
         };
 
@@ -3197,7 +3227,86 @@ impl AcpSession {
                             message: warning.message.clone(),
                         },
                     });
+                } else if let AgentLoopEventKind::StreamStallWarning { .. } = loop_event.kind {
+                    // Message-only notice so the user sees progress instead of a
+                    // frozen screen; the TUI renders it on the retry banner and
+                    // clears it on the next stream event.
+                    let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                        session_id: self.session_id.clone(),
+                        update: ExtSessionUpdate::StreamStallNotice {
+                            message: "Still working, model is thinking...".to_string(),
+                        },
+                    });
                 }
+            },
+            AgentEvent::Internal(InternalEvent::StreamStallContinuation { partial_output }) => {
+                // The stall continuation replaces the abandoned stream in history
+                // with a timeout notice; the same discard the transient tier uses
+                // drops the rendered partial (and closes any tool row the stream
+                // opened) so the screen matches what the model actually produced.
+                if partial_output {
+                    let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                        session_id: self.session_id.clone(),
+                        update: ExtSessionUpdate::StreamDiscarded,
+                    });
+                }
+                // The discard deletes rendered output and (store-side) clears any
+                // soft-tier banner, so the hard tier must state its own reason —
+                // sent after the discard so it is what remains on the banner. Only
+                // claim a discard when one actually happened: the dominant stall
+                // shape dies before its first token, leaving nothing to discard.
+                let message = if partial_output {
+                    "Response timed out - discarding the stalled response and retrying"
+                } else {
+                    "Response timed out - retrying"
+                };
+                let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                    session_id: self.session_id.clone(),
+                    update: ExtSessionUpdate::StreamStallNotice {
+                        message: message.to_string(),
+                    },
+                });
+            },
+            AgentEvent::Internal(InternalEvent::TransientRetry {
+                class,
+                attempt_number,
+                backoff,
+                partial_output,
+            }) => {
+                // The retry re-sends clean and history drops the partial, so the
+                // display must drop it too — otherwise the regenerated response is
+                // concatenated onto the truncated one the user already saw.
+                if partial_output {
+                    let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                        session_id: self.session_id.clone(),
+                        update: ExtSessionUpdate::StreamDiscarded,
+                    });
+                }
+                // The agent-layer retry tier must stay as visible as the SDK's own
+                // inter-attempt waits (which surface via StreamEvent::RetryWarning):
+                // a backoff of up to two minutes with no banner reads as a freeze.
+                let class_label = match class.as_str() {
+                    "throttle" => "rate limiting",
+                    "server_error" => "a server error",
+                    "network" => "a network error",
+                    other => other,
+                };
+                let delay_secs = backoff.as_secs_f64().ceil().max(1.0);
+                let _ = self.send_ext_notification(methods::SESSION_UPDATE, ExtSessionUpdateNotification {
+                    session_id: self.session_id.clone(),
+                    update: ExtSessionUpdate::RetryWarning {
+                        attempt: attempt_number,
+                        max_attempts: agent::error_recovery::MAX_TRANSIENT_RETRIES as u32,
+                        delay_secs,
+                        message: format!(
+                            "Retrying in {}s after {} (attempt {}/{})",
+                            delay_secs as u64,
+                            class_label,
+                            attempt_number,
+                            agent::error_recovery::MAX_TRANSIENT_RETRIES
+                        ),
+                    },
+                });
             },
             AgentEvent::Stop(AgentStopReason::EndTurn) => {
                 // Don't release if goal loop is active — EndTurn handler manages it
@@ -4270,10 +4379,14 @@ fn rate_limit_message(kind: &StreamErrorKind) -> Option<&str> {
 fn is_goal_retryable_error(err: &agent::protocol::AgentError) -> bool {
     match err {
         agent::protocol::AgentError::AgentLoopError(LoopError::Stream(stream_error)) => match stream_error.kind {
-            // Transient: a fresh attempt after backoff can genuinely succeed.
+            // Transient: a fresh attempt after backoff can genuinely succeed. A
+            // TransientNetworkFailure surfacing here means the agent-layer retry
+            // budget was spent, but the goal loop's own bounded backoff still gives
+            // a recovered network a chance before the goal dies.
             StreamErrorKind::Throttling
             | StreamErrorKind::ServiceFailure
             | StreamErrorKind::ModelOverloaded { .. }
+            | StreamErrorKind::TransientNetworkFailure { .. }
             | StreamErrorKind::StreamTimeout { .. } => true,
             // The catch-all includes unmodelled transient failures such as dropped
             // connections. Wrongly retrying a fatal unmodelled error costs two bounded
@@ -4281,10 +4394,12 @@ fn is_goal_retryable_error(err: &agent::protocol::AgentError) -> bool {
             StreamErrorKind::Other { .. } => true,
             // Deterministic: the same request fails identically on every attempt.
             // Overflow only reaches the error state after compaction and prompt
-            // truncation have already been attempted.
+            // truncation have already been attempted, and AccessDenied only after
+            // the agent's own refresh-and-retry found no usable token.
             StreamErrorKind::Validation { .. }
             | StreamErrorKind::InvalidModelId { .. }
             | StreamErrorKind::MonthlyLimitReached { .. }
+            | StreamErrorKind::AccessDenied
             | StreamErrorKind::ContextWindowOverflow => false,
             // Interrupts never enter the error state today; listed for exhaustiveness.
             StreamErrorKind::Interrupted => false,
@@ -5835,6 +5950,7 @@ mod goal_retryable_error_tests {
     use agent::agent_loop::types::{
         StreamError,
         StreamErrorKind,
+        StreamTimeoutSource,
     };
     use agent::protocol::AgentError;
 
@@ -5854,6 +5970,10 @@ mod goal_retryable_error_tests {
             },
             StreamErrorKind::StreamTimeout {
                 duration: std::time::Duration::from_secs(60),
+                source: StreamTimeoutSource::SdkRecv,
+            },
+            StreamErrorKind::TransientNetworkFailure {
+                message: "connection reset by peer".into(),
             },
             StreamErrorKind::Other {
                 reason_code: None,
@@ -5872,6 +5992,7 @@ mod goal_retryable_error_tests {
             StreamErrorKind::MonthlyLimitReached {
                 message: "limit".into(),
             },
+            StreamErrorKind::AccessDenied,
             StreamErrorKind::ContextWindowOverflow,
             StreamErrorKind::Interrupted,
         ] {

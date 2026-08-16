@@ -73,6 +73,10 @@ pub enum Setting {
     ChatGreetingEnabled,
     #[strum(message = "API request timeout in seconds (number)")]
     ApiTimeout,
+    #[strum(message = "Stream idle soft timeout in seconds; warn after this much stream silence (number)")]
+    ApiStreamIdleSoftTimeout,
+    #[strum(message = "Stream idle hard timeout in seconds; abandon the stream after this much silence (number)")]
+    ApiStreamIdleHardTimeout,
     #[strum(message = "Enable edit mode for chat interface (boolean)")]
     ChatEditMode,
     #[strum(message = "Enable desktop notifications (boolean)")]
@@ -333,6 +337,8 @@ impl AsRef<str> for Setting {
             Self::IntrospectProgressiveMode => "introspect.progressiveMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
+            Self::ApiStreamIdleSoftTimeout => "api.streamIdleSoftTimeout",
+            Self::ApiStreamIdleHardTimeout => "api.streamIdleHardTimeout",
             Self::ChatEditMode => "chat.editMode",
             Self::ChatEnableNotifications => "chat.enableNotifications",
             Self::ChatNotificationMethod => "chat.notificationMethod",
@@ -440,6 +446,8 @@ impl TryFrom<&str> for Setting {
             "introspect.progressiveMode" => Ok(Self::IntrospectProgressiveMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),
+            "api.streamIdleSoftTimeout" => Ok(Self::ApiStreamIdleSoftTimeout),
+            "api.streamIdleHardTimeout" => Ok(Self::ApiStreamIdleHardTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
             "chat.notificationMethod" => Ok(Self::ChatNotificationMethod),

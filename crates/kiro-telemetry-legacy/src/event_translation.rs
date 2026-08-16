@@ -262,6 +262,8 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
                     request_attempts,
                     emit_turn_numeric_metrics: _,
                     model: _,
+                    stream_stall_count,
+                    stream_stall_retries,
                 },
         } => Some(
             CodewhispererterminalRecordUserTurnCompletion {
@@ -312,6 +314,8 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
                 kirocli_acp_client_name: event.acp_client_name.map(Into::into),
                 kirocli_acp_client_version: event.acp_client_version.map(Into::into),
                 codewhispererterminal_request_attempts: request_attempts.map(|v| v as i64).map(Into::into),
+                codewhispererterminal_stream_stall_count: stream_stall_count.map(|v| v as i64).map(Into::into),
+                codewhispererterminal_stream_stall_retries: stream_stall_retries.map(|v| v as i64).map(Into::into),
             }
             .into_metric_datum(),
         ),
@@ -786,6 +790,12 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
         | EventType::MeteringEvent { .. }
         | EventType::EmptyResponseRetry { .. }
         | EventType::AutomaticRetryCompleted { .. }
+        | EventType::StreamStall { .. }
+        | EventType::StreamStallEpisodeEnd { .. }
+        | EventType::StreamStallRetry { .. }
+        | EventType::StreamStallRecovery { .. }
+        | EventType::SubagentDeadlineExpired { .. }
+        | EventType::TransientRetry { .. }
         | EventType::ModelInvocation { .. }
         | EventType::CliSessionStarted { .. }
         | EventType::CliSessionCompleted { .. }
@@ -1002,6 +1012,66 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
             records
         },
         EventType::EmptyResponseRetry { .. } | EventType::AutomaticRetryCompleted { .. } => Vec::new(),
+        EventType::StreamStall { model, tier } => vec![metric::record_stream_stall(
+            event_session_interface(event),
+            event_acp_client(event),
+            engine,
+            model.as_deref(),
+            *tier,
+        )],
+        EventType::StreamStallEpisodeEnd {
+            model,
+            idle_seconds,
+            episode_end,
+        } => vec![metric::record_stream_stall_idle_seconds(
+            *idle_seconds,
+            event_session_interface(event),
+            event_acp_client(event),
+            engine,
+            model.as_deref(),
+            *episode_end,
+        )],
+        EventType::StreamStallRetry {
+            model,
+            outcome,
+            attempt_number,
+            partial_output,
+        } => vec![metric::record_stream_stall_retry(
+            event_session_interface(event),
+            event_acp_client(event),
+            engine,
+            model.as_deref(),
+            *outcome,
+            metric::AttemptNumberBucket::from_attempt(*attempt_number),
+            metric::PartialOutput::from_flag(*partial_output),
+        )],
+        EventType::StreamStallRecovery {
+            model,
+            recovery_seconds,
+        } => vec![metric::record_stream_stall_recovery_seconds(
+            *recovery_seconds,
+            event_session_interface(event),
+            event_acp_client(event),
+            engine,
+            model.as_deref(),
+        )],
+        EventType::SubagentDeadlineExpired { deadline_seconds } => {
+            vec![metric::record_subagent_deadline_expired(*deadline_seconds, engine)]
+        },
+        EventType::TransientRetry {
+            model,
+            class,
+            attempt_number,
+            partial_output,
+        } => vec![metric::record_transient_retry(
+            event_session_interface(event),
+            event_acp_client(event),
+            engine,
+            model.as_deref(),
+            *class,
+            metric::AttemptNumberBucket::from_attempt(*attempt_number),
+            metric::PartialOutput::from_flag(*partial_output),
+        )],
         EventType::MessageResponseError {
             model,
             reason,
@@ -1090,6 +1160,14 @@ fn event_session_interface(event: &Event) -> metric::SessionInterface {
     } else {
         metric::SessionInterface::InteractiveCli
     }
+}
+
+/// Bounded ACP-client label for an event, from the parsed `clientInfo.name`.
+/// V2 stamps the name for every session (built-in TUI => `kiro-tui`, one-shot =>
+/// `kiro-cli-non-interactive`, both mapped to `cli`); absent name is V1's direct
+/// emitters, also `cli`.
+fn event_acp_client(event: &Event) -> metric::AcpClient {
+    metric::AcpClient::from_client_name(event.acp_client_name.as_deref())
 }
 
 fn host_owns_turn_metrics(event: &Event) -> bool {
@@ -1643,5 +1721,131 @@ mod tests {
             assert!(event_to_otel_metric_records(&event).is_empty());
             assert_eq!(event_to_metric_datum(event).unwrap().metric_name(), metric_name);
         }
+    }
+}
+
+#[cfg(test)]
+mod stall_metric_tests {
+    use super::*;
+
+    fn attribute<'a>(record: &'a MetricRecord, key: &str) -> Option<&'a str> {
+        record
+            .attributes
+            .iter()
+            .find(|attribute| attribute.key == key)
+            .map(|attribute| attribute.value.as_str())
+    }
+
+    #[test]
+    fn stream_stall_maps_to_stall_counter_with_dimensions() {
+        let mut event = Event::new(EventType::StreamStall {
+            model: Some("claude-4-sonnet".to_string()),
+            tier: metric::StallTier::Soft,
+        });
+        event.set_engine(metric::Engine::V2);
+        event.set_session_interface(metric::SessionInterface::InteractiveCli);
+
+        let records = event_to_otel_metric_records(&event);
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.name, "kiro_cli_stream_stall_total");
+        assert_eq!(attribute(record, "stall_tier"), Some("soft"));
+        assert_eq!(attribute(record, "model"), Some("claude-4-sonnet"));
+        assert_eq!(attribute(record, "agent_engine"), Some("v2"));
+        assert_eq!(attribute(record, "session_interface"), Some("interactive_cli"));
+    }
+
+    #[test]
+    fn stream_stall_episode_end_maps_to_idle_histogram() {
+        let mut event = Event::new(EventType::StreamStallEpisodeEnd {
+            model: None,
+            idle_seconds: 120.0,
+            episode_end: metric::StallEpisodeEnd::HardCancelled,
+        });
+        event.set_engine(metric::Engine::V1);
+
+        let records = event_to_otel_metric_records(&event);
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.name, "kiro_cli_stream_stall_idle_seconds");
+        assert_eq!(attribute(record, "stall_episode_end"), Some("hard_cancelled"));
+        assert_eq!(attribute(record, "agent_engine"), Some("v1"));
+    }
+
+    #[test]
+    fn stream_stall_retry_maps_to_retry_counter_with_buckets() {
+        let mut event = Event::new(EventType::StreamStallRetry {
+            model: Some("claude-4-sonnet".to_string()),
+            outcome: metric::RetryOutcome::Exhausted,
+            attempt_number: 2,
+            partial_output: Some(true),
+        });
+        event.set_engine(metric::Engine::V2);
+
+        let records = event_to_otel_metric_records(&event);
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.name, "kiro_cli_stream_stall_retry_total");
+        assert_eq!(attribute(record, "retry_outcome"), Some("exhausted"));
+        assert_eq!(attribute(record, "attempt_number_bucket"), Some("2"));
+        assert_eq!(attribute(record, "partial_output"), Some("yes"));
+    }
+
+    #[test]
+    fn stream_stall_retry_out_of_range_attempt_buckets_to_unknown() {
+        let mut event = Event::new(EventType::StreamStallRetry {
+            model: None,
+            outcome: metric::RetryOutcome::Recovered,
+            attempt_number: 7,
+            partial_output: None,
+        });
+        event.set_engine(metric::Engine::V2);
+
+        let records = event_to_otel_metric_records(&event);
+        let record = &records[0];
+        assert_eq!(attribute(record, "attempt_number_bucket"), Some("unknown"));
+        assert_eq!(attribute(record, "partial_output"), Some("unknown"));
+    }
+
+    #[test]
+    fn stream_stall_recovery_maps_to_recovery_histogram() {
+        let mut event = Event::new(EventType::StreamStallRecovery {
+            model: Some("claude-4-sonnet".to_string()),
+            recovery_seconds: 4.2,
+        });
+        event.set_engine(metric::Engine::V2);
+
+        let records = event_to_otel_metric_records(&event);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "kiro_cli_stream_stall_recovery_seconds");
+    }
+
+    #[test]
+    fn stream_stall_events_have_no_legacy_datum() {
+        let event = Event::new(EventType::StreamStall {
+            model: None,
+            tier: metric::StallTier::Hard,
+        });
+        assert!(event_to_metric_datum(event).is_none());
+    }
+
+    #[test]
+    fn subagent_deadline_expired_maps_to_counter_with_bucket() {
+        let mut event = Event::new(EventType::SubagentDeadlineExpired {
+            deadline_seconds: 3600.0,
+        });
+        event.set_engine(metric::Engine::V1);
+
+        let records = event_to_otel_metric_records(&event);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "kiro_cli_subagent_deadline_expired_total");
+        assert_eq!(attribute(&records[0], "deadline_seconds_bucket"), Some("default"));
+
+        assert!(
+            event_to_metric_datum(Event::new(EventType::SubagentDeadlineExpired {
+                deadline_seconds: 3600.0
+            }))
+            .is_none()
+        );
     }
 }

@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Calls to unavailable tools now resolve their tool chip immediately as failed (ToolUnavailable) instead of lingering until turn end; these calls now appear in tool-use telemetry as suggested-but-failed, where they previously emitted no record"
+}

@@ -69,6 +69,18 @@ pub trait Model: std::fmt::Debug + Send + Sync + 'static {
         let _ = (tool_name, arguments);
         Box::pin(async { Err("invoke_mcp not implemented".to_string()) })
     }
+
+    /// Forces a fresh authentication token, bypassing any cache.
+    ///
+    /// Called by the agent loop after a mid-turn authentication rejection (401 /
+    /// AccessDenied) before retrying the request once: on a long turn the token
+    /// resolved at request-build time may have expired even though the clock said
+    /// it was still valid. Returns `true` if a refresh was attempted (so the retry
+    /// is worthwhile), `false` for backends without a refreshable token. Default
+    /// is a no-op returning `false`.
+    fn refresh_auth(&self) -> Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        Box::pin(async { false })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +98,18 @@ impl MockModel {
     pub fn with_response(self, response: impl Into<MockResponse>) -> Self {
         self.inner.lock().unwrap().mock_responses.push(response.into());
         self
+    }
+
+    /// Make [`Self::refresh_auth`] report a refreshable token, so a test can
+    /// exercise the mid-turn 401 refresh-and-retry path.
+    pub fn with_refreshable_auth(self) -> Self {
+        self.inner.lock().unwrap().refresh_auth_result = true;
+        self
+    }
+
+    /// Number of times [`Self::refresh_auth`] was called.
+    pub fn refresh_auth_calls(&self) -> usize {
+        self.inner.lock().unwrap().refresh_auth_calls
     }
 }
 
@@ -159,6 +183,13 @@ impl Model for MockModel {
         });
         Box::pin(ReceiverStream::new(rx))
     }
+
+    fn refresh_auth(&self) -> Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.refresh_auth_calls += 1;
+        let result = inner.refresh_auth_result;
+        Box::pin(async move { result })
+    }
 }
 
 mod mock {
@@ -170,6 +201,10 @@ mod mock {
         pub response_index: usize,
         pub mock_responses: Vec<MockResponse>,
         pub received_requests: Vec<SendRequestArgs>,
+        /// What [`super::MockModel::refresh_auth`] returns, and how many times it
+        /// was called — lets a test assert the mid-turn 401 refresh path ran.
+        pub refresh_auth_result: bool,
+        pub refresh_auth_calls: usize,
     }
 
     impl Inner {
@@ -178,6 +213,8 @@ mod mock {
                 response_index: 0,
                 mock_responses: Vec::new(),
                 received_requests: Vec::new(),
+                refresh_auth_result: false,
+                refresh_auth_calls: 0,
             }
         }
     }

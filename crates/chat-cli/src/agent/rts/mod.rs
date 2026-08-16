@@ -71,6 +71,7 @@ use crate::api_client::error::{
     ApiClientError,
     ConverseStreamError,
     ConverseStreamErrorKind,
+    ConverseStreamSdkError,
 };
 use crate::api_client::model::{
     ChatResponseStream,
@@ -313,6 +314,19 @@ impl RtsModel {
 impl StreamErrorSource for ConverseStreamError {
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    /// Surfaces the server's `Retry-After` (delay-seconds) from the raw HTTP response,
+    /// so a throttle's requested wait drives the agent-layer backoff schedule.
+    fn retry_after(&self) -> Option<std::time::Duration> {
+        let raw = match self.source.as_ref()? {
+            ConverseStreamSdkError::CodewhispererGenerateAssistantResponse(e) => e.raw_response()?,
+            ConverseStreamSdkError::QDeveloperSendMessage(e) => e.raw_response()?,
+            ConverseStreamSdkError::SmithyBuild(_) => return None,
+        };
+        raw.headers()
+            .get("retry-after")
+            .and_then(agent::error_recovery::parse_retry_after)
     }
 }
 
@@ -852,9 +866,12 @@ impl ResponseParser {
     fn recv_error_to_stream_error(&self, err: RecvError) -> StreamError {
         let reason_code = err.reason_code();
         match err {
-            RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout { duration })
-                .set_original_request_id(self.request_id.clone())
-                .with_source(Arc::new(source)),
+            RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout {
+                duration,
+                source: agent::agent_loop::types::StreamTimeoutSource::SdkRecv,
+            })
+            .set_original_request_id(self.request_id.clone())
+            .with_source(Arc::new(source)),
             RecvError::Other { source } if source.is_transient_stream_failure() => {
                 StreamError::new(StreamErrorKind::TransientNetworkFailure {
                     message: format!("A network failure occurred during the response stream: {source}"),

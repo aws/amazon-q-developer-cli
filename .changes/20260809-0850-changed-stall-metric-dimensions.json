@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Stream-stall telemetry (stall, idle, retry, and recovery metrics) now carries session_interface and a bounded acp_client dimension, so stall and recovery rates are queryable per surface — CLI vs KiroCrew (external_acp, kirocrew) — not just in aggregate"
+}

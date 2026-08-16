@@ -40,6 +40,54 @@ impl SessionInterface {
     }
 }
 
+/// Bounded label for the ACP client driving the session, so Crew (`kirocrew`) is
+/// isolatable within `external_acp` on cross-surface dashboards without unbounded
+/// cardinality from the raw client name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpClient {
+    /// Kiro CLI's own TUI/host.
+    Cli,
+    /// KiroCrew supervisor (client name `kirocrew`).
+    Kirocrew,
+    /// Any other identified ACP client.
+    Other,
+    /// No client name was reported.
+    #[default]
+    Unknown,
+}
+
+impl AcpClient {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Kirocrew => "kirocrew",
+            Self::Other => "other",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Maps a raw ACP `clientInfo.name` to the bounded label. `None` (no client
+    /// info, e.g. V1's direct emitters) maps to `Cli`.
+    ///
+    /// The first-party ACP client names — the built-in TUI (`kiro-tui`) and the
+    /// one-shot client (`kiro-cli-non-interactive`) — map to `Cli`. These literals
+    /// mirror `kiro-telemetry-observer`'s `ClientName` constants; they are duplicated
+    /// (not imported) because that crate depends on this one, so importing would
+    /// cycle. KiroCrew maps to `Kirocrew`; anything else identified is `Other`.
+    pub fn from_client_name(name: Option<&str>) -> Self {
+        match name {
+            None => Self::Cli,
+            Some(n) => match n.trim().to_ascii_lowercase().as_str() {
+                "kirocrew" | "kiro-crew" | "kiro_crew" => Self::Kirocrew,
+                "kiro-tui" | "kiro-cli-non-interactive" | "kiro-cli" | "kiro_cli" | "cli" => Self::Cli,
+                "" => Self::Unknown,
+                _ => Self::Other,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentMode {
@@ -305,6 +353,127 @@ impl RetryOutcome {
             Self::Recovered => "recovered",
             Self::Exhausted => "exhausted",
             Self::Cancelled => "cancelled",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Closed transient-failure class for the `transient_class` dimension. `Unknown`
+/// is the deserialization fallback, so an out-of-set label degrades to a valid
+/// schema value instead of failing validation at emit time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransientErrorClass {
+    Throttle,
+    ServerError,
+    Network,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+impl TransientErrorClass {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Throttle => "throttle",
+            Self::ServerError => "server_error",
+            Self::Network => "network",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StallTier {
+    Soft,
+    Hard,
+}
+
+impl StallTier {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Soft => "soft",
+            Self::Hard => "hard",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StallEpisodeEnd {
+    Resumed,
+    HardCancelled,
+    /// The warned stream ended in an error or EOF: the episode is over, but not
+    /// because the stream recovered. Exists so every soft stall gets a matching
+    /// episode end and the two series stay reconcilable.
+    Failed,
+    /// A cancel abandoned the warned stream before it recovered or died on its
+    /// own — typically the user answering the stall notice with Ctrl+C, which is
+    /// distinct threshold-tuning signal from a backend failure.
+    Cancelled,
+}
+
+impl StallEpisodeEnd {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Resumed => "resumed",
+            Self::HardCancelled => "hard_cancelled",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// Bounded ordinal of a stall-continuation attempt; the retry budget is 2, so any
+/// out-of-range value maps to `unknown` rather than widening the enum.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum AttemptNumberBucket {
+    First,
+    Second,
+    #[default]
+    Unknown,
+}
+
+impl AttemptNumberBucket {
+    pub const fn from_attempt(attempt: u32) -> Self {
+        match attempt {
+            1 => Self::First,
+            2 => Self::Second,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::First => "1",
+            Self::Second => "2",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum PartialOutput {
+    Yes,
+    No,
+    #[default]
+    Unknown,
+}
+
+impl PartialOutput {
+    pub const fn from_flag(had_output: Option<bool>) -> Self {
+        match had_output {
+            Some(true) => Self::Yes,
+            Some(false) => Self::No,
+            None => Self::Unknown,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
             Self::Unknown => "unknown",
         }
     }
@@ -865,6 +1034,126 @@ pub fn record_model_request_failure(engine: Engine, model: Option<&str>, error_k
         .expect_valid()
 }
 
+pub fn record_stream_stall(
+    session_interface: SessionInterface,
+    acp_client: AcpClient,
+    engine: Engine,
+    model: Option<&str>,
+    tier: StallTier,
+) -> MetricRecord {
+    with_common_product_dimensions(
+        counter("kiro_cli_stream_stall_total", 1),
+        session_interface,
+        engine,
+        None,
+    )
+    .attribute("model", model_attr(model))
+    .attribute("stall_tier", tier.as_str())
+    .attribute("acp_client", acp_client.as_str())
+    .expect_valid()
+}
+
+pub fn record_stream_stall_idle_seconds(
+    idle_seconds: f64,
+    session_interface: SessionInterface,
+    acp_client: AcpClient,
+    engine: Engine,
+    model: Option<&str>,
+    episode_end: StallEpisodeEnd,
+) -> MetricRecord {
+    histogram("kiro_cli_stream_stall_idle_seconds", idle_seconds)
+        .attribute("version_full", version_attr())
+        .attribute("agent_engine", engine.as_str())
+        .attribute("model", model_attr(model))
+        .attribute("stall_episode_end", episode_end.as_str())
+        .attribute("session_interface", session_interface.as_str())
+        .attribute("acp_client", acp_client.as_str())
+        .expect_valid()
+}
+
+pub fn record_stream_stall_retry(
+    session_interface: SessionInterface,
+    acp_client: AcpClient,
+    engine: Engine,
+    model: Option<&str>,
+    outcome: RetryOutcome,
+    attempt_bucket: AttemptNumberBucket,
+    partial_output: PartialOutput,
+) -> MetricRecord {
+    counter("kiro_cli_stream_stall_retry_total", 1)
+        .attribute("version_full", version_attr())
+        .attribute("agent_engine", engine.as_str())
+        .attribute("model", model_attr(model))
+        .attribute("retry_outcome", outcome.as_str())
+        .attribute("attempt_number_bucket", attempt_bucket.as_str())
+        .attribute("partial_output", partial_output.as_str())
+        .attribute("session_interface", session_interface.as_str())
+        .attribute("acp_client", acp_client.as_str())
+        .expect_valid()
+}
+
+pub fn record_stream_stall_recovery_seconds(
+    recovery_seconds: f64,
+    session_interface: SessionInterface,
+    acp_client: AcpClient,
+    engine: Engine,
+    model: Option<&str>,
+) -> MetricRecord {
+    histogram("kiro_cli_stream_stall_recovery_seconds", recovery_seconds)
+        .attribute("version_full", version_attr())
+        .attribute("agent_engine", engine.as_str())
+        .attribute("model", model_attr(model))
+        .attribute("session_interface", session_interface.as_str())
+        .attribute("acp_client", acp_client.as_str())
+        .expect_valid()
+}
+
+pub fn record_subagent_deadline_expired(deadline_seconds: f64, engine: Engine) -> MetricRecord {
+    counter("kiro_cli_subagent_deadline_expired_total", 1)
+        .attribute("version_full", version_attr())
+        .attribute("agent_engine", engine.as_str())
+        .attribute("deadline_seconds_bucket", deadline_bucket(deadline_seconds))
+        .expect_valid()
+}
+
+/// An agent-layer transient-failure retry (throttle/5xx/network) was issued after a
+/// backoff wait. Carries the same surface dimensions as the stall family so retry
+/// rate can be split by surface and joined against those series.
+pub fn record_transient_retry(
+    session_interface: SessionInterface,
+    acp_client: AcpClient,
+    engine: Engine,
+    model: Option<&str>,
+    class: TransientErrorClass,
+    attempt_bucket: AttemptNumberBucket,
+    partial_output: PartialOutput,
+) -> MetricRecord {
+    counter("kiro_cli_transient_retry_total", 1)
+        .attribute("version_full", version_attr())
+        .attribute("agent_engine", engine.as_str())
+        .attribute("model", model_attr(model))
+        .attribute("transient_class", class.as_str())
+        .attribute("attempt_number_bucket", attempt_bucket.as_str())
+        .attribute("partial_output", partial_output.as_str())
+        .attribute("session_interface", session_interface.as_str())
+        .attribute("acp_client", acp_client.as_str())
+        .expect_valid()
+}
+
+/// Coarse dimension-safe bucket for the configured deadline, so the counter can
+/// distinguish default from user-tuned deadlines without unbounded cardinality.
+fn deadline_bucket(deadline_seconds: f64) -> &'static str {
+    if deadline_seconds <= 0.0 {
+        "unknown"
+    } else if deadline_seconds < 3600.0 {
+        "under_default"
+    } else if deadline_seconds == 3600.0 {
+        "default"
+    } else {
+        "over_default"
+    }
+}
+
 fn process_dimensions(
     builder: super::MetricBuilder,
     os_type: Option<OsType>,
@@ -1195,7 +1484,29 @@ fn bounded_or<'a>(value: &'a str, allowed: &[&str], fallback: &'a str) -> &'a st
 
 #[cfg(test)]
 mod tests {
-    use super::AgentMode;
+    use super::{
+        AcpClient,
+        AgentMode,
+    };
+
+    #[test]
+    fn acp_client_maps_first_party_names_to_cli() {
+        // The built-in TUI and the one-shot client are first-party => Cli, not Other.
+        // Regression guard: mismapping these leaves the `cli` bucket dead in V2.
+        assert_eq!(AcpClient::from_client_name(Some("kiro-tui")), AcpClient::Cli);
+        assert_eq!(
+            AcpClient::from_client_name(Some("kiro-cli-non-interactive")),
+            AcpClient::Cli
+        );
+        assert_eq!(AcpClient::from_client_name(None), AcpClient::Cli);
+    }
+
+    #[test]
+    fn acp_client_maps_crew_and_other() {
+        assert_eq!(AcpClient::from_client_name(Some("kirocrew")), AcpClient::Kirocrew);
+        assert_eq!(AcpClient::from_client_name(Some("some-external-ide")), AcpClient::Other);
+        assert_eq!(AcpClient::from_client_name(Some("")), AcpClient::Unknown);
+    }
 
     #[test]
     fn built_in_default_agent_uses_default_bucket() {

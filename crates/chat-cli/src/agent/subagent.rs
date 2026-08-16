@@ -381,19 +381,38 @@ impl<'a> Subagent<'a> {
         parent_conversation_id: &str,
     ) -> Result<Summary> {
         let cwd = RealProvider.cwd().unwrap_or_default();
+        let mut settings = AgentSettings {
+            // one day
+            mcp_init_timeout: std::time::Duration::from_secs(86400),
+            // Nobody can answer an authorization prompt on a delegated turn's
+            // behalf once it has started, so wait for the grant here too.
+            mcp_wait_for_authorization: true,
+            disable_auto_compact: Default::default(),
+            trust_all_tools: false,
+            web_tools_enabled: self.web_tools_enabled,
+            tool_search_enabled: false,
+            ..Default::default()
+        };
+        let soft_explicit = agent::types::stream_idle_setting_secs(
+            os.database
+                .settings
+                .get(crate::database::settings::Setting::ApiStreamIdleSoftTimeout),
+            "api.streamIdleSoftTimeout",
+        );
+        if let Some(secs) = soft_explicit {
+            settings.stream_idle_soft_timeout = std::time::Duration::from_secs(secs);
+        }
+        if let Some(secs) = agent::types::stream_idle_setting_secs(
+            os.database
+                .settings
+                .get(crate::database::settings::Setting::ApiStreamIdleHardTimeout),
+            "api.streamIdleHardTimeout",
+        ) {
+            settings.stream_idle_hard_timeout = std::time::Duration::from_secs(secs);
+        }
+        settings.reconcile_stream_idle_tiers(soft_explicit.is_some());
         let mut snapshot = AgentSnapshot {
-            settings: AgentSettings {
-                // one day
-                mcp_init_timeout: std::time::Duration::from_secs(86400),
-                // Nobody can answer an authorization prompt on a delegated turn's
-                // behalf once it has started, so wait for the grant here too.
-                mcp_wait_for_authorization: true,
-                disable_auto_compact: Default::default(),
-                trust_all_tools: false,
-                web_tools_enabled: self.web_tools_enabled,
-                tool_search_enabled: false,
-                ..Default::default()
-            },
+            settings,
             permissions: agent::permissions::RuntimePermissions::default().with_cwd(&cwd.to_string_lossy()),
             ..Default::default()
         };
@@ -765,7 +784,10 @@ impl<'a> Subagent<'a> {
                                             (identity.tool_name, identity.mcp_server_name)
                                         });
                                     let (outcome, is_valid) = match reason {
-                                        ToolCallFailureReason::ParseError => {
+                                        // Unavailable-tool (dummy placeholder) calls are model
+                                        // errors like parse failures: well-formed but unusable.
+                                        ToolCallFailureReason::ParseError
+                                        | ToolCallFailureReason::ToolUnavailable => {
                                             (metric::ToolMetricOutcome::Error, Some(false))
                                         },
                                         ToolCallFailureReason::PermissionDenied
@@ -930,6 +952,21 @@ impl<'a> Subagent<'a> {
                         },
                         AgentEvent::SubagentSummary(summary) => {
                             query_status = QueryStatus::Resolved(summary);
+                        },
+                        // A retry/continuation abandons the in-flight stream and its
+                        // partial is dropped from history, so the fallback-summary
+                        // accumulator must drop it too — otherwise the parent's
+                        // summary carries the truncated partial concatenated with the
+                        // regenerated response. (Already-printed deltas stay in the
+                        // terminal scrollback; V1's rendering model cannot recall
+                        // them, matching the main V1 chat loop.)
+                        AgentEvent::Internal(
+                            agent::protocol::InternalEvent::TransientRetry {
+                                partial_output: true, ..
+                            }
+                            | agent::protocol::InternalEvent::StreamStallContinuation { partial_output: true },
+                        ) => {
+                            current_turn_text.clear();
                         },
                         _ => {},
                     }

@@ -16,6 +16,7 @@ pub use acp_client::{
 pub use harness::{
     AcpTestHarness,
     AcpTestHarnessBuilder,
+    parse_mock_response_streams,
 };
 pub use paths::{
     TestPaths,

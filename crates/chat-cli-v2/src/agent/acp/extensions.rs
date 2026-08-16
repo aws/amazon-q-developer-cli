@@ -253,6 +253,17 @@ pub enum ExtSessionUpdate {
         delay_secs: f64,
         message: String,
     },
+    /// The open response stream has gone quiet past the soft idle threshold but is
+    /// not being retried — a message-only progress notice, distinct from
+    /// `RetryWarning` so no retry-shaped fields have to be fabricated for it.
+    #[serde(rename_all = "camelCase")]
+    StreamStallNotice { message: String },
+    /// An in-flight stream was abandoned after partial assistant output had
+    /// already been sent — by an agent-layer transient retry or by the hard-stall
+    /// tier cancelling the stream. The response is regenerated from scratch (the
+    /// partial is not kept in history), so the client should discard the rendered
+    /// partial instead of concatenating the replacement response onto it.
+    StreamDiscarded,
     /// A steering message was queued for mid-turn injection.
     ///
     /// `content` is the **full current queue snapshot** (multiple steers are

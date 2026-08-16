@@ -4,105 +4,105 @@
 
 /** Arguments forwarded from the TUI to the ACP backend process. */
 export interface AcpSpawnArgs {
-	/** Name of the agent to use when starting the first session. */
-	agent?: string;
-	/** Model ID to use when starting the first session. */
-	model?: string;
-	/** Auto-approve all tool permission requests. */
-	trustAllTools?: boolean;
-	/** Trust only this set of tools (comma-separated names from CLI). */
-	trustTools?: string[];
-	/** Agent engine to use ("rust" or "kas"). */
-	agentEngine?: string;
-	/**
-	 * Initial effort level to set (e.g. "low", "medium", "high").
-	 * Silently ignored if the resolved model does not support effort.
-	 */
-	effort?: string;
+  /** Name of the agent to use when starting the first session. */
+  agent?: string;
+  /** Model ID to use when starting the first session. */
+  model?: string;
+  /** Auto-approve all tool permission requests. */
+  trustAllTools?: boolean;
+  /** Trust only this set of tools (comma-separated names from CLI). */
+  trustTools?: string[];
+  /** Agent engine to use ("rust" or "kas"). */
+  agentEngine?: string;
+  /**
+   * Initial effort level to set (e.g. "low", "medium", "high").
+   * Silently ignored if the resolved model does not support effort.
+   */
+  effort?: string;
 }
 
 /** Arguments for /agent command */
 export interface AgentArgs {
-	/**
-	 * Agent name to switch to. If None, lists available agents.
-	 * Accepts either `agentName` or `value` (for generic selection UI)
-	 */
-	agentName?: string;
+  /**
+   * Agent name to switch to. If None, lists available agents.
+   * Accepts either `agentName` or `value` (for generic selection UI)
+   */
+  agentName?: string;
 }
 
 /**
  * Unique identifier of an agent instance within a session.
- * 
+ *
  * Formatted as: `parent_id/name#rand`
  */
 export interface AgentId {
-	/**
-	 * Name of the agent
-	 * 
-	 * This is the same as the agent name in the agent's config
-	 */
-	name: string;
-	/**
-	 * String-formatted id of the agent's parent, if available.
-	 * 
-	 * If available, this would be the result of [AgentId::to_string].
-	 */
-	parent_id?: string;
-	/** Random suffix */
-	rand?: string;
+  /**
+   * Name of the agent
+   *
+   * This is the same as the agent name in the agent's config
+   */
+  name: string;
+  /**
+   * String-formatted id of the agent's parent, if available.
+   *
+   * If available, this would be the result of [AgentId::to_string].
+   */
+  parent_id?: string;
+  /** Random suffix */
+  rand?: string;
 }
 
 /** Settings to modify the runtime behavior of the agent. */
 export interface AgentSettings {
-	/** Timeout waiting for MCP servers to initialize during agent initialization. */
-	mcp_init_timeout: { secs: number, nanos: number };
-	/** Disable automatic compaction when context window overflows. */
-	disable_auto_compact?: boolean;
-	/** When true, all tool permission checks are bypassed (auto-approve everything). */
-	trust_all_tools?: boolean;
-	/** When false, web_search and web_fetch tools are excluded (governance disabled them). */
-	web_tools_enabled: boolean;
-	/**
-	 * When false, MCP servers (user-configured and registry-based) are excluded from the
-	 * agent — mirrors the Kiro console `MCP` toggle (governance) for enterprise / API-key users.
-	 */
-	mcp_enabled: boolean;
-	/** When true, MCP tools are hidden until activated via search_tools. */
-	tool_search_enabled?: boolean;
-	/**
-	 * MCP server names that must always have their tools immediately available
-	 * (bypass tool_search deferral). Set via ASBX_KIRO_MANDATORY_MCPS env var.
-	 */
-	mandatory_mcp_names?: string[];
+  /** Timeout waiting for MCP servers to initialize during agent initialization. */
+  mcp_init_timeout: { secs: number; nanos: number };
+  /** Disable automatic compaction when context window overflows. */
+  disable_auto_compact?: boolean;
+  /** When true, all tool permission checks are bypassed (auto-approve everything). */
+  trust_all_tools?: boolean;
+  /** When false, web_search and web_fetch tools are excluded (governance disabled them). */
+  web_tools_enabled: boolean;
+  /**
+   * When false, MCP servers (user-configured and registry-based) are excluded from the
+   * agent — mirrors the Kiro console `MCP` toggle (governance) for enterprise / API-key users.
+   */
+  mcp_enabled: boolean;
+  /** When true, MCP tools are hidden until activated via search_tools. */
+  tool_search_enabled?: boolean;
+  /**
+   * MCP server names that must always have their tools immediately available
+   * (bypass tool_search deferral). Set via ASBX_KIRO_MANDATORY_MCPS env var.
+   */
+  mandatory_mcp_names?: string[];
 }
 
 /** State associated with a history of messages. */
 export interface ConversationState {
-	id: string;
+  id: string;
 }
 
 /**
  * A point-in-time snapshot of an agent's state.
- * 
+ *
  * This includes all serializable state associated with an executing agent, for example:
- * 
+ *
  * * The agent config
  * * Conversation history
  * * State of execution (ie, is the agent idle, executing hooks, receiving a response from the
  * model, etc.)
  * * Agent settings
- * 
+ *
  * and so on.
  */
 export interface AgentSnapshot {
-	/** Agent id */
-	id: AgentId;
-	/** Agent conversation state */
-	conversation_state: ConversationState;
-	/** State associated with the model implementation used by the agent */
-	model_state?: unknown;
-	/** Agent settings */
-	settings: AgentSettings;
+  /** Agent id */
+  id: AgentId;
+  /** Agent conversation state */
+  conversation_state: ConversationState;
+  /** State associated with the model implementation used by the agent */
+  model_state?: unknown;
+  /** Agent settings */
+  settings: AgentSettings;
 }
 
 /**
@@ -110,20 +110,20 @@ export interface AgentSnapshot {
  * `universal-out-of-sync` are the actionable states.
  */
 export enum AgentClassification {
-	V2Only = "v2-only",
-	UniversalOutOfSync = "universal-out-of-sync",
-	UniversalInSync = "universal-in-sync",
-	V3Only = "v3-only",
+  V2Only = 'v2-only',
+  UniversalOutOfSync = 'universal-out-of-sync',
+  UniversalInSync = 'universal-in-sync',
+  V3Only = 'v3-only',
 }
 
 /** Terminal status of a single-file upgrade attempt. */
 export enum UpgradeStatus {
-	Upgraded = "upgraded",
-	SkippedInSync = "skipped-in-sync",
-	SkippedV3Only = "skipped-v3-only",
-	SkippedNotAgent = "skipped-not-agent",
-	SkippedManaged = "skipped-managed",
-	Error = "error",
+  Upgraded = 'upgraded',
+  SkippedInSync = 'skipped-in-sync',
+  SkippedV3Only = 'skipped-v3-only',
+  SkippedNotAgent = 'skipped-not-agent',
+  SkippedManaged = 'skipped-managed',
+  Error = 'error',
 }
 
 /**
@@ -131,396 +131,392 @@ export enum UpgradeStatus {
  * keys on the exact kind string.
  */
 export enum MigrationWarningKind {
-	RegexShellPattern = "regex-shell-pattern",
-	RegexWebPattern = "regex-web-pattern",
-	UnconvertiblePattern = "unconvertible-pattern",
-	UnmappedAllowedTool = "unmapped-allowed-tool",
-	DeprecatedAwsTool = "deprecated-aws-tool",
-	/** `denyByDefault` + `autoAllowReadonly` can't coexist in V3 — read-only auto-approval dropped. */
-	DenyByDefaultReadonly = "deny-by-default-readonly",
-	FilePrompt = "file-prompt",
-	/** A hook KAS can't represent (a CLI tool hook, or an unknown trigger) was dropped. */
-	UnconvertibleHook = "unconvertible-hook",
+  RegexShellPattern = 'regex-shell-pattern',
+  RegexWebPattern = 'regex-web-pattern',
+  UnconvertiblePattern = 'unconvertible-pattern',
+  UnmappedAllowedTool = 'unmapped-allowed-tool',
+  DeprecatedAwsTool = 'deprecated-aws-tool',
+  /** `denyByDefault` + `autoAllowReadonly` can't coexist in V3 — read-only auto-approval dropped. */
+  DenyByDefaultReadonly = 'deny-by-default-readonly',
+  FilePrompt = 'file-prompt',
+  /** A hook KAS can't represent (a CLI tool hook, or an unknown trigger) was dropped. */
+  UnconvertibleHook = 'unconvertible-hook',
 }
 
 /** A rule effect — drives the allow/deny label and deny-all status in diagnostics. */
 export enum Effect {
-	Allow = "allow",
-	Deny = "deny",
-	/** Never emitted by the migration, but a live V3 rule effect the wire schema must round-trip. */
-	Ask = "ask",
+  Allow = 'allow',
+  Deny = 'deny',
+  /** Never emitted by the migration, but a live V3 rule effect the wire schema must round-trip. */
+  Ask = 'ask',
 }
 
 /** A warning about a lossy or ambiguous conversion. */
 export interface MigrationWarning {
-	kind: MigrationWarningKind;
-	detail?: string;
-	/** Source config field, e.g. `toolsSettings.shell.allowedCommands`. */
-	attribute?: string;
-	/** Emitted glob(s) for regex conversions (empty if unconvertible). */
-	converted?: string[];
-	/** Rule effect — drives the allow/deny label and deny-all status in diagnostics. */
-	effect?: Effect;
+  kind: MigrationWarningKind;
+  detail?: string;
+  /** Source config field, e.g. `toolsSettings.shell.allowedCommands`. */
+  attribute?: string;
+  /** Emitted glob(s) for regex conversions (empty if unconvertible). */
+  converted?: string[];
+  /** Rule effect — drives the allow/deny label and deny-all status in diagnostics. */
+  effect?: Effect;
 }
 
 /** Per-agent upgrade outcome. */
 export interface AgentUpgradeOutcome {
-	/** Agent name (filename without extension). */
-	name: string;
-	sourcePath: string;
-	/** Backup written before the in-place rewrite, if any. */
-	backupPath?: string;
-	/** `None` when the file isn't an agent config (unreadable, invalid JSON, or non-agent). */
-	classification?: AgentClassification;
-	status: UpgradeStatus;
-	warnings: MigrationWarning[];
-	error?: string;
+  /** Agent name (filename without extension). */
+  name: string;
+  sourcePath: string;
+  /** Backup written before the in-place rewrite, if any. */
+  backupPath?: string;
+  /** `None` when the file isn't an agent config (unreadable, invalid JSON, or non-agent). */
+  classification?: AgentClassification;
+  status: UpgradeStatus;
+  warnings: MigrationWarning[];
+  error?: string;
 }
 
 /** Per-scope counts for one classification bucket. */
 export interface BucketCount {
-	local: number;
-	global: number;
-	total: number;
+  local: number;
+  global: number;
+  total: number;
 }
 
 /** Arguments for /chat command */
 export interface ChatArgs {
-	/** Subcommand: save <path>, load <path>, new [prompt], list, delete <id> */
-	subcommand?: string;
+  /** Subcommand: save <path>, load <path>, new [prompt], list, delete <id> */
+  subcommand?: string;
 }
 
 /** Arguments for /clear command */
-export interface ClearArgs {
-}
+export interface ClearArgs {}
 
 /** Arguments for /code command */
 export interface CodeArgs {
-	/** Subcommand: status, init, logs, overview, summary */
-	subcommand?: string;
+  /** Subcommand: status, init, logs, overview, summary */
+  subcommand?: string;
 }
 
 /** Option displayed in autocomplete/dropdown UI */
 export interface CommandOption {
-	value: string;
-	label: string;
-	description?: string;
-	group?: string;
-	/**
-	 * Hint text shown when this option requires additional input (e.g. "<repositoryName>").
-	 * When set, selecting this option prefills the command input instead of executing immediately.
-	 */
-	hint?: string;
+  value: string;
+  label: string;
+  description?: string;
+  group?: string;
+  /**
+   * Hint text shown when this option requires additional input (e.g. "<repositoryName>").
+   * When set, selecting this option prefills the command input instead of executing immediately.
+   */
+  hint?: string;
 }
 
 /** Response from options request */
 export interface CommandOptionsResponse {
-	options: CommandOption[];
-	hasMore?: boolean;
+  options: CommandOption[];
+  hasMore?: boolean;
 }
 
 /** Result of command execution */
 export interface CommandResult {
-	success: boolean;
-	message: string;
-	data?: unknown;
+  success: boolean;
+  message: string;
+  data?: unknown;
 }
 
 /** Arguments for /compact command */
 export interface CompactArgs {
-	/** Target token count after compaction */
-	targetTokens?: number;
+  /** Target token count after compaction */
+  targetTokens?: number;
 }
 
-export type ContentBlockDelta = 
-	| { kind: "text", data: string }
-	| { kind: "toolUse", data: ToolUseBlockDelta }
-	| { kind: "reasoning", data: string }
-	| { kind: "reasoningSignature", data: {
-	signature?: string;
-	redacted_content?: number[];
-}}
-	| { kind: "document", data?: undefined };
+export type ContentBlockDelta =
+  | { kind: 'text'; data: string }
+  | { kind: 'toolUse'; data: ToolUseBlockDelta }
+  | { kind: 'reasoning'; data: string }
+  | {
+      kind: 'reasoningSignature';
+      data: {
+        signature?: string;
+        redacted_content?: number[];
+      };
+    }
+  | { kind: 'document'; data?: undefined };
 
 export interface ContentBlockDeltaEvent {
-	delta: ContentBlockDelta;
-	/**
-	 * Index of the content block within the message. This is optional to accommodate different
-	 * model providers.
-	 */
-	contentBlockIndex?: number;
+  delta: ContentBlockDelta;
+  /**
+   * Index of the content block within the message. This is optional to accommodate different
+   * model providers.
+   */
+  contentBlockIndex?: number;
 }
 
-export type ContentBlockStart = 
-	| { kind: "toolUse", data: ToolUseBlockStart }
-	| { kind: "thinking", data?: undefined };
+export type ContentBlockStart =
+  | { kind: 'toolUse'; data: ToolUseBlockStart }
+  | { kind: 'thinking'; data?: undefined };
 
 export interface ContentBlockStartEvent {
-	contentBlockStart?: ContentBlockStart;
-	/**
-	 * Index of the content block within the message. This is optional to accommodate different
-	 * model providers.
-	 */
-	contentBlockIndex?: number;
+  contentBlockStart?: ContentBlockStart;
+  /**
+   * Index of the content block within the message. This is optional to accommodate different
+   * model providers.
+   */
+  contentBlockIndex?: number;
 }
 
 export interface ContentBlockStopEvent {
-	/**
-	 * Index of the content block within the message. This is optional to accommodate different
-	 * model providers.
-	 */
-	contentBlockIndex?: number;
+  /**
+   * Index of the content block within the message. This is optional to accommodate different
+   * model providers.
+   */
+  contentBlockIndex?: number;
 }
 
 /** Arguments for /context command */
 export interface ContextArgs {
-	/** Show a detailed breakdown */
-	verbose?: boolean;
-	/** Subcommand: add, remove, show, clear */
-	subcommand?: string;
+  /** Show a detailed breakdown */
+  verbose?: boolean;
+  /** Subcommand: add, remove, show, clear */
+  subcommand?: string;
 }
 
 /** Arguments for /effort command */
 export interface EffortArgs {
-	/**
-	 * Effort level to set. If None, shows available levels.
-	 * Accepts either `level` or `value` (for generic selection UI)
-	 */
-	level?: string;
+  /**
+   * Effort level to set. If None, shows available levels.
+   * Accepts either `level` or `value` (for generic selection UI)
+   */
+  level?: string;
 }
 
 /** Arguments for /feedback command */
 export interface FeedbackArgs {
-	/** Feedback type: general, feature, issue. If None, shows the selection panel. */
-	feedbackType?: string;
+  /** Feedback type: general, feature, issue. If None, shows the selection panel. */
+  feedbackType?: string;
 }
 
 /** Arguments for /goal command */
 export interface GoalArgs {
-	subcommand?: string;
+  subcommand?: string;
 }
 
 /** Arguments for /guide command */
 export interface GuideArgs {
-	/** Optional question to ask the guide agent */
-	question?: string;
+  /** Optional question to ask the guide agent */
+  question?: string;
 }
 
 /** Arguments for /help command */
-export interface HelpArgs {
-}
+export interface HelpArgs {}
 
 export enum HookTrigger {
-	/** Triggered during agent spawn */
-	AgentSpawn = "agentSpawn",
-	/** Triggered per user message submission */
-	UserPromptSubmit = "userPromptSubmit",
-	/** Triggered before tool execution */
-	PreToolUse = "preToolUse",
-	/** Triggered after tool execution */
-	PostToolUse = "postToolUse",
-	/** Triggered when the assistant finishes responding */
-	Stop = "stop",
+  /** Triggered during agent spawn */
+  AgentSpawn = 'agentSpawn',
+  /** Triggered per user message submission */
+  UserPromptSubmit = 'userPromptSubmit',
+  /** Triggered before tool execution */
+  PreToolUse = 'preToolUse',
+  /** Triggered after tool execution */
+  PostToolUse = 'postToolUse',
+  /** Triggered when the assistant finishes responding */
+  Stop = 'stop',
 }
 
 /** Information about a configured hook */
 export interface HookInfo {
-	/** The trigger type (e.g. agentSpawn, preToolUse) */
-	trigger: HookTrigger;
-	/** The shell command to run */
-	command: string;
-	/** Optional glob matcher for tool-scoped hooks */
-	matcher?: string;
+  /** The trigger type (e.g. agentSpawn, preToolUse) */
+  trigger: HookTrigger;
+  /** The shell command to run */
+  command: string;
+  /** Optional glob matcher for tool-scoped hooks */
+  matcher?: string;
 }
 
 /** Arguments for /hooks command */
-export interface HooksArgs {
-}
+export interface HooksArgs {}
 
 export enum ImageFormat {
-	Gif = "gif",
-	Jpeg = "jpeg",
-	Png = "png",
-	Webp = "webp",
+  Gif = 'gif',
+  Jpeg = 'jpeg',
+  Png = 'png',
+  Webp = 'webp',
 }
 
-export type ImageSource = 
-	| { kind: "bytes", data: number[] };
+export type ImageSource = { kind: 'bytes'; data: number[] };
 
 export interface ImageBlock {
-	format: ImageFormat;
-	source: ImageSource;
+  format: ImageFormat;
+  source: ImageSource;
 }
 
 /** Arguments for /knowledge command */
 export interface KnowledgeArgs {
-	/** Subcommand: show, add, remove, update, clear, cancel */
-	subcommand?: string;
+  /** Subcommand: show, add, remove, update, clear, cancel */
+  subcommand?: string;
 }
 
 /** Arguments for /mcp command */
 export interface McpArgs {
-	subcommand?: string;
+  subcommand?: string;
 }
 
 export enum Role {
-	User = "user",
-	Assistant = "assistant",
+  User = 'user',
+  Assistant = 'assistant',
 }
 
-export type ContentBlock = 
-	| { kind: "text", data: string }
-	| { kind: "toolUse", data: ToolUseBlock }
-	| { kind: "toolResult", data: ToolResultBlock }
-	| { kind: "image", data: ImageBlock }
-	/** Reasoning/thinking content from extended thinking models. */
-	| { kind: "thinking", data: ThinkingBlock };
+export type ContentBlock =
+  | { kind: 'text'; data: string }
+  | { kind: 'toolUse'; data: ToolUseBlock }
+  | { kind: 'toolResult'; data: ToolResultBlock }
+  | { kind: 'image'; data: ImageBlock }
+  /** Reasoning/thinking content from extended thinking models. */
+  | { kind: 'thinking'; data: ThinkingBlock };
 
 /** Structured metadata optionally attached to messages. */
 export interface MessageMetadata {
-	/** Message timestamp. */
-	timestamp?: string;
-	/**
-	 * Additional context to be included as part of the message.
-	 * 
-	 * May contain per-prompt hook output, task context, etc.
-	 */
-	additionalContext?: string;
+  /** Message timestamp. */
+  timestamp?: string;
+  /**
+   * Additional context to be included as part of the message.
+   *
+   * May contain per-prompt hook output, task context, etc.
+   */
+  additionalContext?: string;
 }
 
 export interface Message {
-	id?: string;
-	role: Role;
-	content: ContentBlock[];
-	meta?: MessageMetadata;
+  id?: string;
+  role: Role;
+  content: ContentBlock[];
+  meta?: MessageMetadata;
 }
 
 export interface MessageStartEvent {
-	role: Role;
+  role: Role;
 }
 
 export enum StopReason {
-	ToolUse = "toolUse",
-	EndTurn = "endTurn",
-	MaxTokens = "maxTokens",
+  ToolUse = 'toolUse',
+  EndTurn = 'endTurn',
+  MaxTokens = 'maxTokens',
 }
 
 export interface MessageStopEvent {
-	stopReason: StopReason;
+  stopReason: StopReason;
 }
 
 export interface MetadataMetrics {
-	requestStartTime: string;
-	requestEndTime: string;
-	timeToFirstChunk?: { secs: number, nanos: number };
-	timeBetweenChunks?: { secs: number, nanos: number }[];
-	responseStreamLen: number;
+  requestStartTime: string;
+  requestEndTime: string;
+  timeToFirstChunk?: { secs: number; nanos: number };
+  timeBetweenChunks?: { secs: number; nanos: number }[];
+  responseStreamLen: number;
 }
 
 export interface MetadataUsage {
-	inputTokens?: number;
-	outputTokens?: number;
-	cacheReadInputTokens?: number;
-	cacheWriteInputTokens?: number;
-	contextUsagePercentage?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  contextUsagePercentage?: number;
 }
 
 export interface MetadataService {
-	requestId?: string;
-	statusCode?: number;
+  requestId?: string;
+  statusCode?: number;
 }
 
 export interface MeteringUsageInfo {
-	value: number;
-	unit: string;
-	unitPlural: string;
+  value: number;
+  unit: string;
+  unitPlural: string;
 }
 
 export interface RefusalInfo {
-	category?: string;
-	explanation?: string;
-	recommendedModel?: string;
+  category?: string;
+  explanation?: string;
+  recommendedModel?: string;
 }
 
 export interface MetadataEvent {
-	metrics?: MetadataMetrics;
-	usage?: MetadataUsage;
-	service?: MetadataService;
-	meteringUsage?: MeteringUsageInfo[];
-	stopReason?: string;
-	refusal?: RefusalInfo;
+  metrics?: MetadataMetrics;
+  usage?: MetadataUsage;
+  service?: MetadataService;
+  meteringUsage?: MeteringUsageInfo[];
+  stopReason?: string;
+  refusal?: RefusalInfo;
 }
 
 /** Arguments for /model command */
 export interface ModelArgs {
-	/**
-	 * Model ID to switch to. If None, lists available models.
-	 * Accepts either `modelName` or `value` (for generic selection UI)
-	 */
-	modelName?: string;
+  /**
+   * Model ID to switch to. If None, lists available models.
+   * Accepts either `modelName` or `value` (for generic selection UI)
+   */
+  modelName?: string;
 }
 
 /** Model information for /model command */
 export interface ModelInfo {
-	id: string;
-	displayName: string;
-	provider?: string;
-	contextWindow?: number;
-	description?: string;
-	rateMultiplier?: number;
+  id: string;
+  displayName: string;
+  provider?: string;
+  contextWindow?: number;
+  description?: string;
+  rateMultiplier?: number;
 }
 
 /** Arguments for /paste command */
-export interface PasteImageArgs {
-}
+export interface PasteImageArgs {}
 
 /** Arguments for /plan command */
 export interface PlanArgs {
-	prompt?: string;
+  prompt?: string;
 }
 
 /** Arguments for /prompts command */
 export interface PromptsArgs {
-	/**
-	 * Prompt name to execute. If None, lists available prompts.
-	 * Accepts either `promptName` or `value` (for generic selection UI)
-	 */
-	promptName?: string;
+  /**
+   * Prompt name to execute. If None, lists available prompts.
+   * Accepts either `promptName` or `value` (for generic selection UI)
+   */
+  promptName?: string;
 }
 
 /** Arguments for /quit command */
-export interface QuitArgs {
-}
+export interface QuitArgs {}
 
 /** Arguments for /reply command */
-export interface ReplyArgs {
-}
+export interface ReplyArgs {}
 
 /**
  * Event reporting the total number of HTTP-level attempts for a request.
- * 
+ *
  * Emitted once per `send_message` call. `count = 1` means the request succeeded or
  * failed on its first attempt (no retries). `count > 1` means the SDK retried.
  */
 export interface RequestAttemptsEvent {
-	count: number;
+  count: number;
 }
 
 /** Event emitted when the HTTP client retries a request after a delay. */
 export interface RetryWarningEvent {
-	attempt: number;
-	maxAttempts: number;
-	delaySecs: number;
-	message: string;
+  attempt: number;
+  maxAttempts: number;
+  delaySecs: number;
+  message: string;
 }
 
 /** Arguments for /rewind command */
 export interface RewindArgs {
-	/**
-	 * Log entry index of the selected `Prompt` entry. If None, shows the picker.
-	 * Accepts either `turnIndex` or `value` (for generic selection UI).
-	 */
-	turnIndex?: string;
+  /**
+   * Log entry index of the selected `Prompt` entry. If None, shows the picker.
+   * Accepts either `turnIndex` or `value` (for generic selection UI).
+   */
+  turnIndex?: string;
 }
 
 /**
@@ -528,290 +524,339 @@ export interface RewindArgs {
  * fixed object the TUI indexes.
  */
 export interface ScanCounts {
-	"v2-only": BucketCount;
-	"universal-out-of-sync": BucketCount;
-	"universal-in-sync": BucketCount;
-	"v3-only": BucketCount;
+  'v2-only': BucketCount;
+  'universal-out-of-sync': BucketCount;
+  'universal-in-sync': BucketCount;
+  'v3-only': BucketCount;
 }
 
 /** Where a scanned agent lives. */
 export enum AgentScope {
-	Local = "local",
-	Global = "global",
+  Local = 'local',
+  Global = 'global',
 }
 
 /** One classified agent found during a scan. */
 export interface ScannedAgent {
-	name: string;
-	scope: AgentScope;
-	classification: AgentClassification;
-	/** Absolute path of the source `.json` file. */
-	sourcePath: string;
-	/** Conversion warnings from the V3 derivation (empty for v3-only / no-trust agents). */
-	warnings: MigrationWarning[];
+  name: string;
+  scope: AgentScope;
+  classification: AgentClassification;
+  /** Absolute path of the source `.json` file. */
+  sourcePath: string;
+  /** Conversion warnings from the V3 derivation (empty for v3-only / no-trust agents). */
+  warnings: MigrationWarning[];
 }
 
 /** Result of scanning one or more agent dirs. */
 export interface ScanResult {
-	agents: ScannedAgent[];
-	counts: ScanCounts;
-	/** Total number of distinct agents found. */
-	total: number;
+  agents: ScannedAgent[];
+  counts: ScanCounts;
+  /** Total number of distinct agents found. */
+  total: number;
 }
 
 /** Arguments for /stats command */
 export interface StatsArgs {
-	/** Subcommand: "save <filename>" to export to file */
-	subcommand?: string;
-	/** Show only the last N requests (default: all) */
-	last?: number;
+  /** Subcommand: "save <filename>" to export to file */
+  subcommand?: string;
+  /** Show only the last N requests (default: all) */
+  last?: number;
 }
 
-export type StreamErrorKind = 
-	/**
-	 * The request failed due to the context window overflowing.
-	 * 
-	 * Q CLI by default will attempt to auto-summarize the conversation, and then retry the
-	 * request.
-	 */
-	| { kind: "contextWindowOverflow", data?: undefined }
-	/**
-	 * The service failed for some reason.
-	 * 
-	 * Should be returned for 5xx errors.
-	 */
-	| { kind: "serviceFailure", data?: undefined }
-	/** The request failed due to the client being throttled. */
-	| { kind: "throttling", data?: undefined }
-	| { kind: "modelOverloaded", data: {
-	message: string;
-}}
-	| { kind: "monthlyLimitReached", data: {
-	message: string;
-}}
-	/**
-	 * The request was invalid.
-	 * 
-	 * Not retryable - indicative of a bug with the client.
-	 */
-	| { kind: "validation", data: {
-	/** Custom error message, if available */
-	message?: string;
-}}
-	/**
-	 * The stream timed out after some relatively long period of time.
-	 * 
-	 * Q CLI currently retries these errors using some conversation fakery:
-	 * 1. Add a new assistant message: `"Response timed out - message took too long to generate"`
-	 * 2. Retry with a follow-up user message: `"You took too long to respond - try to split up the
-	 * work into smaller steps."`
-	 */
-	| { kind: "streamTimeout", data: {
-	duration: { secs: number, nanos: number };
-}}
-	/** The stream was closed to due being interrupted (for example, on ctrl+c). */
-	| { kind: "interrupted", data?: undefined }
-	/**
-	 * A transient network failure occurred while receiving the response stream (for example,
-	 * the connection was reset mid-stream).
-	 * 
-	 * Retryable: the request is re-sent as-is, discarding any partial response.
-	 */
-	| { kind: "transientNetworkFailure", data: {
-	/** Human-readable error description. */
-	message: string;
-}}
-	/**
-	 * The backend rejected the request because the specified model id is not allowed in the
-	 * current inference path (e.g. removed or gated).
-	 * 
-	 * Corresponds to `ValidationException` with `reason == INVALID_MODEL_ID`. Not retryable —
-	 * the user must select a different model via `/model`.
-	 */
-	| { kind: "invalidModelId", data: {
-	/** The rejected model id, when known (from the outbound request). */
-	model_id?: string;
-}}
-	/** Catch-all for errors not modeled in [StreamErrorKind]. */
-	| { kind: "other", data: {
-	/** Service reason code, if available (e.g. from `ConverseStreamError::reason_code()`). */
-	reason_code?: string;
-	/** Human-readable error description. */
-	message: string;
-}};
+export type StreamErrorKind =
+  /**
+   * The request failed due to the context window overflowing.
+   *
+   * Q CLI by default will attempt to auto-summarize the conversation, and then retry the
+   * request.
+   */
+  | { kind: 'contextWindowOverflow'; data?: undefined }
+  /**
+   * The service failed for some reason.
+   *
+   * Should be returned for 5xx errors.
+   */
+  | { kind: 'serviceFailure'; data?: undefined }
+  /** The request failed due to the client being throttled. */
+  | { kind: 'throttling'; data?: undefined }
+  | {
+      kind: 'modelOverloaded';
+      data: {
+        message: string;
+      };
+    }
+  | {
+      kind: 'monthlyLimitReached';
+      data: {
+        message: string;
+      };
+    }
+  /**
+   * Authentication was rejected (HTTP 401/403 or `AccessDeniedException`).
+   *
+   * On a long turn this usually means the access token expired mid-request.
+   * Terminal today; distinguished from `Other` so callers can message it clearly
+   * and (later) drive a token refresh.
+   */
+  | { kind: 'accessDenied'; data?: undefined }
+  /**
+   * The request was invalid.
+   *
+   * Not retryable - indicative of a bug with the client.
+   */
+  | {
+      kind: 'validation';
+      data: {
+        /** Custom error message, if available */
+        message?: string;
+      };
+    }
+  /**
+   * The stream timed out after some relatively long period of time.
+   *
+   * Q CLI currently retries these errors using some conversation fakery:
+   * 1. Add a new assistant message: `"Response timed out - message took too long to generate"`
+   * 2. Retry with a follow-up user message: `"You took too long to respond - try to split up the
+   * work into smaller steps."`
+   */
+  | {
+      kind: 'streamTimeout';
+      data: {
+        duration: { secs: number; nanos: number };
+        /**
+         * Which mechanism abandoned the stream. Retry behavior treats both
+         * identically; telemetry must not: the stall series answers "how often
+         * do streams idle past the watchdog threshold", and the SDK's ~59s
+         * receive timeout is a different, far more common producer.
+         */
+        source?: StreamTimeoutSource;
+      };
+    }
+  /** The stream was closed to due being interrupted (for example, on ctrl+c). */
+  | { kind: 'interrupted'; data?: undefined }
+  /**
+   * A transient network failure occurred while receiving the response stream (for example,
+   * the connection was reset mid-stream).
+   *
+   * Retryable: the request is re-sent as-is, discarding any partial response.
+   */
+  | {
+      kind: 'transientNetworkFailure';
+      data: {
+        /** Human-readable error description. */
+        message: string;
+      };
+    }
+  /**
+   * The backend rejected the request because the specified model id is not allowed in the
+   * current inference path (e.g. removed or gated).
+   *
+   * Corresponds to `ValidationException` with `reason == INVALID_MODEL_ID`. Not retryable —
+   * the user must select a different model via `/model`.
+   */
+  | {
+      kind: 'invalidModelId';
+      data: {
+        /** The rejected model id, when known (from the outbound request). */
+        model_id?: string;
+      };
+    }
+  /** Catch-all for errors not modeled in [StreamErrorKind]. */
+  | {
+      kind: 'other';
+      data: {
+        /** Service reason code, if available (e.g. from `ConverseStreamError::reason_code()`). */
+        reason_code?: string;
+        /** Human-readable error description. */
+        message: string;
+      };
+    };
 
 export interface StreamError {
-	/** The request id returned by the model provider, if available */
-	original_request_id?: string;
-	/** The HTTP status code returned by model provider, if available */
-	original_status_code?: number;
-	/** Exact error message returned by the model provider, if available */
-	original_message?: string;
-	kind: StreamErrorKind;
+  /** The request id returned by the model provider, if available */
+  original_request_id?: string;
+  /** The HTTP status code returned by model provider, if available */
+  original_status_code?: number;
+  /** Exact error message returned by the model provider, if available */
+  original_message?: string;
+  kind: StreamErrorKind;
 }
 
 /** Reasoning/thinking content from extended thinking models. */
 export interface ThinkingBlock {
-	/** The reasoning text (may be summarized or empty if display is omitted). */
-	text: string;
-	/** Encrypted signature for verifying and passing back thinking blocks. */
-	signature?: string;
-	/** Encrypted full thinking content (opaque, pass back unmodified). */
-	redactedContent?: number[];
-	/**
-	 * Model ID that generated this thinking block. Used to strip reasoning
-	 * when the active model changes (reasoning blocks are model-specific and
-	 * will be rejected if sent to a different model).
-	 */
-	modelId?: string;
+  /** The reasoning text (may be summarized or empty if display is omitted). */
+  text: string;
+  /** Encrypted signature for verifying and passing back thinking blocks. */
+  signature?: string;
+  /** Encrypted full thinking content (opaque, pass back unmodified). */
+  redactedContent?: number[];
+  /**
+   * Model ID that generated this thinking block. Used to strip reasoning
+   * when the active model changes (reasoning blocks are model-specific and
+   * will be rejected if sent to a different model).
+   */
+  modelId?: string;
 }
 
-export type ToolResultContentBlock = 
-	| { kind: "text", data: string }
-	| { kind: "json", data: unknown }
-	| { kind: "image", data: ImageBlock };
+export type ToolResultContentBlock =
+  | { kind: 'text'; data: string }
+  | { kind: 'json'; data: unknown }
+  | { kind: 'image'; data: ImageBlock };
 
 export enum ToolResultStatus {
-	Error = "error",
-	Success = "success",
+  Error = 'error',
+  Success = 'success',
 }
 
 export interface ToolResultBlock {
-	toolUseId: string;
-	content: ToolResultContentBlock[];
-	status: ToolResultStatus;
+  toolUseId: string;
+  content: ToolResultContentBlock[];
+  status: ToolResultStatus;
 }
 
 export interface ToolUseBlock {
-	/** Identifier for the tool use */
-	toolUseId: string;
-	/** Name of the tool */
-	name: string;
-	/** The input to pass to the tool */
-	input: unknown;
+  /** Identifier for the tool use */
+  toolUseId: string;
+  /** Name of the tool */
+  name: string;
+  /** The input to pass to the tool */
+  input: unknown;
 }
 
 export interface ToolUseBlockDelta {
-	input: string;
+  input: string;
 }
 
 export interface ToolUseBlockStart {
-	/** Identifier for the tool use */
-	toolUseId: string;
-	/** Name of the tool */
-	name: string;
+  /** Identifier for the tool use */
+  toolUseId: string;
+  /** Name of the tool */
+  name: string;
 }
 
 /** Arguments for /tools command */
 export interface ToolsArgs {
-	/** Subcommand: trust-all, trust, untrust, reset */
-	subcommand?: string;
+  /** Subcommand: trust-all, trust, untrust, reset */
+  subcommand?: string;
 }
 
 /** Arguments for /usage command */
-export interface UsageArgs {
-}
+export interface UsageArgs {}
 
 /** Arguments for /voice command */
 export interface VoiceArgs {
-	/** Enable continuous voice mode (auto-record after each response) */
-	continuous?: boolean;
+  /** Enable continuous voice mode (auto-record after each response) */
+  continuous?: boolean;
 }
 
-export type StreamEvent = 
-	| { kind: "messageStart", data: MessageStartEvent }
-	| { kind: "messageStop", data: MessageStopEvent }
-	| { kind: "contentBlockStart", data: ContentBlockStartEvent }
-	| { kind: "contentBlockDelta", data: ContentBlockDeltaEvent }
-	| { kind: "contentBlockStop", data: ContentBlockStopEvent }
-	| { kind: "metadata", data: MetadataEvent }
-	/** A retry warning from the HTTP client layer (e.g. throttling backoff). */
-	| { kind: "retryWarning", data: RetryWarningEvent }
-	/**
-	 * Reports the total number of HTTP-level attempts made for the request.
-	 * 
-	 * Emitted once per `send_message` call after the request completes (whether it
-	 * succeeded or failed). Used by telemetry to distinguish "error after 1 attempt"
-	 * from "error after 3 retries".
-	 */
-	| { kind: "requestAttempts", data: RequestAttemptsEvent };
+export type StreamEvent =
+  | { kind: 'messageStart'; data: MessageStartEvent }
+  | { kind: 'messageStop'; data: MessageStopEvent }
+  | { kind: 'contentBlockStart'; data: ContentBlockStartEvent }
+  | { kind: 'contentBlockDelta'; data: ContentBlockDeltaEvent }
+  | { kind: 'contentBlockStop'; data: ContentBlockStopEvent }
+  | { kind: 'metadata'; data: MetadataEvent }
+  /** A retry warning from the HTTP client layer (e.g. throttling backoff). */
+  | { kind: 'retryWarning'; data: RetryWarningEvent }
+  /**
+   * Reports the total number of HTTP-level attempts made for the request.
+   *
+   * Emitted once per `send_message` call after the request completes (whether it
+   * succeeded or failed). Used by telemetry to distinguish "error after 1 attempt"
+   * from "error after 3 retries".
+   */
+  | { kind: 'requestAttempts'; data: RequestAttemptsEvent };
 
-export type StreamResult = 
-	| { result: "ok", data: StreamEvent }
-	| { result: "error", data: StreamError };
+export type StreamResult =
+  | { result: 'ok'; data: StreamEvent }
+  | { result: 'error'; data: StreamError };
+
+/** Producer of a [`StreamErrorKind::StreamTimeout`]. */
+export enum StreamTimeoutSource {
+  /**
+   * The agent's stream-idle watchdog cancelled the stream after the
+   * configured hard threshold of silence.
+   */
+  IdleWatchdog = 'idleWatchdog',
+  /**
+   * The SDK transport's own receive timeout elapsed. The serde default:
+   * this was the only producer before the watchdog existed, so persisted
+   * errors without a source are SDK timeouts.
+   */
+  SdkRecv = 'sdkRecv',
+}
 
 /** Tool name aliases as they appear on the wire (snake_case format). */
 export enum ToolNameAlias {
-	FsWrite = "fs_write",
-	Write = "write",
-	FsRead = "fs_read",
-	Read = "read",
-	ImageRead = "image_read",
-	Ls = "ls",
-	ExecuteBash = "execute_bash",
-	ExecuteCmd = "execute_cmd",
-	Shell = "shell",
-	Summary = "summary",
-	AgentCrew = "agent_crew",
-	Subagent = "subagent",
-	UseSubagent = "use_subagent",
+  FsWrite = 'fs_write',
+  Write = 'write',
+  FsRead = 'fs_read',
+  Read = 'read',
+  ImageRead = 'image_read',
+  Ls = 'ls',
+  ExecuteBash = 'execute_bash',
+  ExecuteCmd = 'execute_cmd',
+  Shell = 'shell',
+  Summary = 'summary',
+  AgentCrew = 'agent_crew',
+  Subagent = 'subagent',
+  UseSubagent = 'use_subagent',
 }
 
 /**
  * Slash command enum - each variant represents a command with its arguments.
- * 
+ *
  * Executed via `_kiro.dev/commands/execute` extension method, NOT as prompts.
  * This is distinct from ACP "slash commands" which are prompt-based workflows.
  */
-export type TuiCommand = 
-	/** Show help with all available commands */
-	| { command: "help", args: HelpArgs }
-	/** List available models or switch to a specific model */
-	| { command: "model", args: ModelArgs }
-	/** List available agents or switch to a specific agent */
-	| { command: "agent", args: AgentArgs }
-	/** Show context/token usage for the current conversation */
-	| { command: "context", args: ContextArgs }
-	/** Compact the conversation history */
-	| { command: "compact", args: CompactArgs }
-	/** Clear the conversation history */
-	| { command: "clear", args: ClearArgs }
-	/** Quit the application */
-	| { command: "quit", args: QuitArgs }
-	/** Show billing and usage information */
-	| { command: "usage", args: UsageArgs }
-	/** Paste image from system clipboard (returns base64 PNG data) */
-	| { command: "paste", args: PasteImageArgs }
-	/** Show configured MCP servers */
-	| { command: "mcp", args: McpArgs }
-	/** Show available tools */
-	| { command: "tools", args: ToolsArgs }
-	/** Switch to Plan agent for breaking down ideas into implementation plans. */
-	| { command: "plan", args: PlanArgs }
-	/** Submit feedback, request features, or report issues */
-	| { command: "feedback", args: FeedbackArgs }
-	/** Load a previous chat session */
-	| { command: "chat", args: ChatArgs }
-	/** Manage knowledge base */
-	| { command: "knowledge", args: KnowledgeArgs }
-	/** List and execute available prompts */
-	| { command: "prompts", args: PromptsArgs }
-	/** Open editor pre-filled with the last assistant message to compose a reply */
-	| { command: "reply", args: ReplyArgs }
-	/** Code intelligence workspace management */
-	| { command: "code", args: CodeArgs }
-	/** Voice input mode */
-	| { command: "voice", args: VoiceArgs }
-	/** View configured hooks */
-	| { command: "hooks", args: HooksArgs }
-	/** Switch to the guide agent for help with Kiro CLI */
-	| { command: "guide", args: GuideArgs }
-	/** Rewind to a previous turn (clones history into a new session) */
-	| { command: "rewind", args: RewindArgs }
-	/** Show request stats for debugging slow turns */
-	| { command: "stats", args: StatsArgs }
-	/** Set thinking effort for this session */
-	| { command: "effort", args: EffortArgs }
-	/** Set a goal with validation criteria for iterative completion */
-	| { command: "goal", args: GoalArgs };
-
+export type TuiCommand =
+  /** Show help with all available commands */
+  | { command: 'help'; args: HelpArgs }
+  /** List available models or switch to a specific model */
+  | { command: 'model'; args: ModelArgs }
+  /** List available agents or switch to a specific agent */
+  | { command: 'agent'; args: AgentArgs }
+  /** Show context/token usage for the current conversation */
+  | { command: 'context'; args: ContextArgs }
+  /** Compact the conversation history */
+  | { command: 'compact'; args: CompactArgs }
+  /** Clear the conversation history */
+  | { command: 'clear'; args: ClearArgs }
+  /** Quit the application */
+  | { command: 'quit'; args: QuitArgs }
+  /** Show billing and usage information */
+  | { command: 'usage'; args: UsageArgs }
+  /** Paste image from system clipboard (returns base64 PNG data) */
+  | { command: 'paste'; args: PasteImageArgs }
+  /** Show configured MCP servers */
+  | { command: 'mcp'; args: McpArgs }
+  /** Show available tools */
+  | { command: 'tools'; args: ToolsArgs }
+  /** Switch to Plan agent for breaking down ideas into implementation plans. */
+  | { command: 'plan'; args: PlanArgs }
+  /** Submit feedback, request features, or report issues */
+  | { command: 'feedback'; args: FeedbackArgs }
+  /** Load a previous chat session */
+  | { command: 'chat'; args: ChatArgs }
+  /** Manage knowledge base */
+  | { command: 'knowledge'; args: KnowledgeArgs }
+  /** List and execute available prompts */
+  | { command: 'prompts'; args: PromptsArgs }
+  /** Open editor pre-filled with the last assistant message to compose a reply */
+  | { command: 'reply'; args: ReplyArgs }
+  /** Code intelligence workspace management */
+  | { command: 'code'; args: CodeArgs }
+  /** Voice input mode */
+  | { command: 'voice'; args: VoiceArgs }
+  /** View configured hooks */
+  | { command: 'hooks'; args: HooksArgs }
+  /** Switch to the guide agent for help with Kiro CLI */
+  | { command: 'guide'; args: GuideArgs }
+  /** Rewind to a previous turn (clones history into a new session) */
+  | { command: 'rewind'; args: RewindArgs }
+  /** Show request stats for debugging slow turns */
+  | { command: 'stats'; args: StatsArgs }
+  /** Set thinking effort for this session */
+  | { command: 'effort'; args: EffortArgs }
+  /** Set a goal with validation criteria for iterative completion */
+  | { command: 'goal'; args: GoalArgs };

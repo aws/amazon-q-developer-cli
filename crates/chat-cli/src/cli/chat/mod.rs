@@ -5997,6 +5997,10 @@ impl ChatSession {
                         cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
                         model_invocation_count: 0,
                         request_attempts: None,
+                        // The V1 chat loop does not track stream stalls yet; the streaming-timeout
+                        // change wires real counters in.
+                        stream_stall_count: None,
+                        stream_stall_retries: None,
                         emit_user_turn_counter: true,
                         emit_turn_numeric_metrics: None,
                         message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),

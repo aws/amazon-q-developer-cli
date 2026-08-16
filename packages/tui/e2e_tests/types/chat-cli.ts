@@ -9,12 +9,12 @@
  * known values.
  */
 export enum ModeChangeSource {
-	/** User pressed Shift+Tab to toggle in/out of `kiro_planner`. */
-	ShiftTab = "shiftTab",
-	/** User invoked a slash command (`/agent`, `/plan`). */
-	SlashCommand = "slashCommand",
-	/** User changed the active UI from the display settings panel. */
-	SettingsPanel = "settingsPanel",
+  /** User pressed Shift+Tab to toggle in/out of `kiro_planner`. */
+  ShiftTab = 'shiftTab',
+  /** User invoked a slash command (`/agent`, `/plan`). */
+  SlashCommand = 'slashCommand',
+  /** User changed the active UI from the display settings panel. */
+  SettingsPanel = 'settingsPanel',
 }
 
 /**
@@ -22,14 +22,14 @@ export enum ModeChangeSource {
  * Caller is responsible for skipping no-op changes (`from_mode == to_mode`).
  */
 export interface ModeChangedNotification {
-	/** Agent name the user was on before the change. */
-	fromMode: string;
-	/** Agent name the user is on after the change. */
-	toMode: string;
-	/** How the change was initiated. */
-	source: ModeChangeSource;
-	/** ACP session id, used as `amazonqConversationId` on the metric. */
-	sessionId?: string;
+  /** Agent name the user was on before the change. */
+  fromMode: string;
+  /** Agent name the user is on after the change. */
+  toMode: string;
+  /** How the change was initiated. */
+  source: ModeChangeSource;
+  /** ACP session id, used as `amazonqConversationId` on the metric. */
+  sessionId?: string;
 }
 
 /**
@@ -39,32 +39,32 @@ export interface ModeChangedNotification {
  * when present they were always subagent flows.
  */
 export enum SessionCreatedReason {
-	/**
-	 * Session is part of a subagent (use_subagent / agent_crew) flow.
-	 * Default for backward compatibility with sessions saved before this field existed.
-	 */
-	Subagent = "subagent",
-	/** Session was forked from an earlier turn of another session via `/rewind`. */
-	Rewind = "rewind",
+  /**
+   * Session is part of a subagent (use_subagent / agent_crew) flow.
+   * Default for backward compatibility with sessions saved before this field existed.
+   */
+  Subagent = 'subagent',
+  /** Session was forked from an earlier turn of another session via `/rewind`. */
+  Rewind = 'rewind',
 }
 
 /**
  * Lightweight view of session metadata for listing.
- * 
+ *
  * Skips [`SessionData::session_state`]. Somewhat of a micro-optimization, but saves time scanning
  * large session directories with large [`SessionState`] included.
  */
 export interface SessionDataView {
-	session_id: string;
-	cwd: string;
-	created_at: string;
-	updated_at: string;
-	title?: string;
-	/** `Some` only for subagent sessions; holds the parent session's ID. */
-	parent_session_id?: string;
-	/** Why this session was created. See [`SessionCreatedReason`]. */
-	session_created_reason?: SessionCreatedReason;
-	message_count?: number;
+  session_id: string;
+  cwd: string;
+  created_at: string;
+  updated_at: string;
+  title?: string;
+  /** `Some` only for subagent sessions; holds the parent session's ID. */
+  parent_session_id?: string;
+  /** Why this session was created. See [`SessionCreatedReason`]. */
+  session_created_reason?: SessionCreatedReason;
+  message_count?: number;
 }
 
 /**
@@ -72,14 +72,14 @@ export interface SessionDataView {
  * Caller is responsible for skipping no-op changes (`from == to`).
  */
 export interface UiModeChangedNotification {
-	/** Mode before the toggle (`"lite"` or `"tui"`). */
-	from: string;
-	/** Mode after the toggle (`"lite"` or `"tui"`). */
-	to: string;
-	/** How the toggle was initiated. */
-	source: ModeChangeSource;
-	/** ACP session id, used as `amazonqConversationId` on the metric. */
-	sessionId?: string;
+  /** Mode before the toggle (`"lite"` or `"tui"`). */
+  from: string;
+  /** Mode after the toggle (`"lite"` or `"tui"`). */
+  to: string;
+  /** How the toggle was initiated. */
+  source: ModeChangeSource;
+  /** ACP session id, used as `amazonqConversationId` on the metric. */
+  sessionId?: string;
 }
 
 /**
@@ -87,12 +87,12 @@ export interface UiModeChangedNotification {
  * persisted `chat.ui.mode` setting. Caller is responsible for skipping no-ops.
  */
 export interface UiModeDefaultChangedNotification {
-	/** Prior persisted default (`"lite"`, `"tui"`, or `"unset"`). */
-	from: string;
-	/** New persisted default (`"lite"` or `"tui"`). */
-	to: string;
-	/** ACP session id, used as `amazonqConversationId` on the metric. */
-	sessionId?: string;
+  /** Prior persisted default (`"lite"`, `"tui"`, or `"unset"`). */
+  from: string;
+  /** New persisted default (`"lite"` or `"tui"`). */
+  to: string;
+  /** ACP session id, used as `amazonqConversationId` on the metric. */
+  sessionId?: string;
 }
 
 /**
@@ -100,12 +100,12 @@ export interface UiModeDefaultChangedNotification {
  * camelCase variant name.
  */
 export enum UiModeSource {
-	/** Resolved from the `KIRO_UI_MODE` env var. */
-	EnvVar = "envVar",
-	/** Resolved from the persisted `chat.ui.mode` setting. */
-	Setting = "setting",
-	/** No env / setting — fell through to the built-in default. */
-	Default = "default",
+  /** Resolved from the `KIRO_UI_MODE` env var. */
+  EnvVar = 'envVar',
+  /** Resolved from the persisted `chat.ui.mode` setting. */
+  Setting = 'setting',
+  /** No env / setting — fell through to the built-in default. */
+  Default = 'default',
 }
 
 /**
@@ -115,80 +115,102 @@ export enum UiModeSource {
  * of which source won at startup.
  */
 export interface UiModeSessionStartNotification {
-	/** The UI mode the session actually started in (`"lite"` or `"tui"`). */
-	uiMode: string;
-	/** Which input source resolved the mode. */
-	uiModeSource: UiModeSource;
-	/**
-	 * The persisted default — `"lite"`, `"tui"`, or `"unset"` if no value is stored.
-	 * Distinct from `ui_mode` so a dashboard can count "users whose default is lite"
-	 * without having to ignore env-var-driven sessions.
-	 */
-	uiModeDefault: string;
-	/**
-	 * ACP session id, used as `amazonqConversationId` on the metric. Optional —
-	 * startup-time emission may run before a session id is available.
-	 */
-	sessionId?: string;
+  /** The UI mode the session actually started in (`"lite"` or `"tui"`). */
+  uiMode: string;
+  /** Which input source resolved the mode. */
+  uiModeSource: UiModeSource;
+  /**
+   * The persisted default — `"lite"`, `"tui"`, or `"unset"` if no value is stored.
+   * Distinct from `ui_mode` so a dashboard can count "users whose default is lite"
+   * without having to ignore env-var-driven sessions.
+   */
+  uiModeDefault: string;
+  /**
+   * ACP session id, used as `amazonqConversationId` on the metric. Optional —
+   * startup-time emission may run before a session id is available.
+   */
+  sessionId?: string;
 }
 
-export type ChatResponseStream = 
-	| { kind: "AssistantResponseEvent", data: {
-	content: string;
-}}
-	/** Streaming response event for generated code text. */
-	| { kind: "CodeEvent", data: {
-	content: string;
-}}
-	| { kind: "CodeReferenceEvent", data: {
-}}
-	| { kind: "FollowupPromptEvent", data: {
-}}
-	| { kind: "IntentsEvent", data: {
-}}
-	| { kind: "InvalidStateEvent", data: {
-	reason: string;
-	message: string;
-}}
-	| { kind: "MessageMetadataEvent", data: {
-	conversation_id?: string;
-	utterance_id?: string;
-}}
-	| { kind: "ContextUsageEvent", data: {
-	context_usage_percentage: number;
-}}
-	| { kind: "MetadataEvent", data: {
-	total_tokens?: number;
-	uncached_input_tokens?: number;
-	output_tokens?: number;
-	cache_read_input_tokens?: number;
-	cache_write_input_tokens?: number;
-	stop_reason?: string;
-	refusal_category?: string;
-	refusal_explanation?: string;
-	refusal_recommended_model?: string;
-}}
-	| { kind: "MeteringEvent", data: {
-	usage?: number;
-	unit?: string;
-	unit_plural?: string;
-}}
-	| { kind: "SupplementaryWebLinksEvent", data: {
-}}
-	| { kind: "ToolUseEvent", data: {
-	tool_use_id: string;
-	name: string;
-	input?: string;
-	stop?: boolean;
-}}
-	/** Reasoning/thinking content from extended thinking models. */
-	| { kind: "ReasoningEvent", data: {
-	text?: string;
-	signature?: string;
-	redacted_content?: number[];
-}}
-	| { kind: "Unknown", data: {
-}};
+export type ChatResponseStream =
+  | {
+      kind: 'AssistantResponseEvent';
+      data: {
+        content: string;
+      };
+    }
+  /** Streaming response event for generated code text. */
+  | {
+      kind: 'CodeEvent';
+      data: {
+        content: string;
+      };
+    }
+  | { kind: 'CodeReferenceEvent'; data: {} }
+  | { kind: 'FollowupPromptEvent'; data: {} }
+  | { kind: 'IntentsEvent'; data: {} }
+  | {
+      kind: 'InvalidStateEvent';
+      data: {
+        reason: string;
+        message: string;
+      };
+    }
+  | {
+      kind: 'MessageMetadataEvent';
+      data: {
+        conversation_id?: string;
+        utterance_id?: string;
+      };
+    }
+  | {
+      kind: 'ContextUsageEvent';
+      data: {
+        context_usage_percentage: number;
+      };
+    }
+  | {
+      kind: 'MetadataEvent';
+      data: {
+        total_tokens?: number;
+        uncached_input_tokens?: number;
+        output_tokens?: number;
+        cache_read_input_tokens?: number;
+        cache_write_input_tokens?: number;
+        stop_reason?: string;
+        refusal_category?: string;
+        refusal_explanation?: string;
+        refusal_recommended_model?: string;
+      };
+    }
+  | {
+      kind: 'MeteringEvent';
+      data: {
+        usage?: number;
+        unit?: string;
+        unit_plural?: string;
+      };
+    }
+  | { kind: 'SupplementaryWebLinksEvent'; data: {} }
+  | {
+      kind: 'ToolUseEvent';
+      data: {
+        tool_use_id: string;
+        name: string;
+        input?: string;
+        stop?: boolean;
+      };
+    }
+  /** Reasoning/thinking content from extended thinking models. */
+  | {
+      kind: 'ReasoningEvent';
+      data: {
+        text?: string;
+        signature?: string;
+        redacted_content?: number[];
+      };
+    }
+  | { kind: 'Unknown'; data: {} };
 
 /**
  * A mock stream item for testing. Supports 3 scenarios:
@@ -196,6 +218,4 @@ export type ChatResponseStream =
  * - `StreamError`: Mid-stream error, yielded from `recv()` as `Err(error)`
  * - `SendError`: Initial error, causes `send_message()` to return `Err` immediately
  */
-export type MockStreamItem = 
-	| { kind: "event", data: ChatResponseStream };
-
+export type MockStreamItem = { kind: 'event'; data: ChatResponseStream };

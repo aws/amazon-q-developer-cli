@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Turns can no longer hang indefinitely on a silently dead response stream: a client-side inter-event idle watchdog (soft warning at 60s, hard timeout at 300s, tunable via api.streamIdleSoftTimeout / api.streamIdleHardTimeout) now covers V2 stream reads and V1 delegated-subagent stream reads, and stream-timeout continuation retries are bounded (V3/KAS is covered by a sibling kiro-agent change)"
+}

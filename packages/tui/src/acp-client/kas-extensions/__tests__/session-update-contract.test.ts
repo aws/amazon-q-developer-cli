@@ -97,6 +97,33 @@ describe('extension session update contract', () => {
     });
   });
 
+  it('decodes the message-only stream stall notice', () => {
+    expect(
+      decodeExtSessionUpdate({
+        update: {
+          sessionUpdate: 'stream_stall_notice',
+          message: 'Still working, model is thinking...',
+        },
+      })?.update
+    ).toEqual({
+      sessionUpdate: 'stream_stall_notice',
+      message: 'Still working, model is thinking...',
+    });
+    expect(
+      decodeExtSessionUpdate({
+        update: { sessionUpdate: 'stream_stall_notice', message: 7 },
+      })
+    ).toBeNull();
+  });
+
+  it('decodes the field-less stream discard notice', () => {
+    expect(
+      decodeExtSessionUpdate({
+        update: { sessionUpdate: 'stream_discarded' },
+      })?.update
+    ).toEqual({ sessionUpdate: 'stream_discarded' });
+  });
+
   it('drops malformed Kiro metadata at the protocol boundary', () => {
     expect(
       extractKiroMeta({

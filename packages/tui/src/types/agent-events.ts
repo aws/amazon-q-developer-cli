@@ -75,6 +75,8 @@ export enum AgentEventType {
   McpServerInitFailure = 'mcp_server_init_failure',
   RateLimitError = 'rate_limit_error',
   RetryWarning = 'retry_warning',
+  StallNotice = 'stall_notice',
+  StreamDiscarded = 'stream_discarded',
   AuthError = 'auth_error',
   SessionError = 'session_error',
   AgentSwitched = 'agent_switched',
@@ -725,6 +727,22 @@ export interface RetryWarningEvent {
   message: string;
 }
 
+/** Message-only notice that an open response stream has gone quiet but is not
+ * being retried — rendered on the same banner as RetryWarning without any
+ * retry-shaped fields. */
+export interface StallNoticeEvent {
+  type: AgentEventType.StallNotice;
+  message: string;
+}
+
+/** The in-flight stream was abandoned after partial output was rendered — by
+ * an agent-layer transient retry or a hard-stall cancel. The response is
+ * regenerated from scratch, so the rendered partial must be discarded, not
+ * concatenated with the new stream. */
+export interface StreamDiscardedEvent {
+  type: AgentEventType.StreamDiscarded;
+}
+
 export interface AuthErrorEvent {
   type: AgentEventType.AuthError;
   errorType: string;
@@ -895,6 +913,8 @@ export type AgentStreamEvent =
   | McpServerInitFailureEvent
   | RateLimitErrorEvent
   | RetryWarningEvent
+  | StallNoticeEvent
+  | StreamDiscardedEvent
   | AuthErrorEvent
   | SessionErrorEvent
   | AgentSwitchedEvent

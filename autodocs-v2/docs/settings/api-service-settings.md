@@ -59,6 +59,58 @@ kiro-cli settings api.timeout
 | 5 minutes | 300000 | Default, handles complex requests |
 | 10 minutes | 600000 | Very slow networks or large operations |
 
+## api.streamIdleSoftTimeout
+
+Stream idle soft timeout in seconds.
+
+### Overview
+
+Inter-event silence threshold after which Kiro CLI shows a "stream stalled" warning while continuing to wait for the response stream. Measures the gap between consecutive stream events (never total response time), so long responses with steady output never trigger it.
+
+### Usage
+
+```bash
+kiro-cli settings api.streamIdleSoftTimeout 60
+```
+
+**Type**: Number  
+**Default**: `60`  
+**Unit**: Seconds  
+**Scope**: Workspace-overridable
+
+Set to `0` to disable the warning.
+
+Note the unit: seconds, unlike `api.timeout` which is milliseconds. Values above 3600 (one hour) are clamped to 3600 with a logged warning, so a milliseconds-shaped value cannot silently disable the watchdog.
+
+Must resolve below `api.streamIdleHardTimeout` to ever fire: an explicitly configured value at or past the hard timeout disables the warning tier (with a logged warning), while the inherited default is clamped to half the hard timeout if only the hard cap is lowered.
+
+Only consulted by the built-in Rust agent engine. With `--agent-engine=kas` the KAS engine manages its own stream resilience and ignores this setting.
+
+## api.streamIdleHardTimeout
+
+Stream idle hard timeout in seconds.
+
+### Overview
+
+Inter-event silence threshold after which Kiro CLI abandons the response stream and retries as a stream timeout. Protects against silently dead connections that would otherwise hang a turn forever. Like the soft threshold, it measures inter-event gaps, not total response time.
+
+### Usage
+
+```bash
+kiro-cli settings api.streamIdleHardTimeout 300
+```
+
+**Type**: Number  
+**Default**: `300`  
+**Unit**: Seconds  
+**Scope**: Workspace-overridable
+
+Set to `0` to disable the client-side stream deadline.
+
+Note the unit: seconds, unlike `api.timeout` which is milliseconds. Values above 3600 (one hour) are clamped to 3600 with a logged warning, so a milliseconds-shaped value cannot silently disable the watchdog.
+
+Only consulted by the built-in Rust agent engine. With `--agent-engine=kas` the KAS engine manages its own stream resilience and ignores this setting.
+
 ## api.codewhisperer.service
 
 CodeWhisperer service endpoint URL.

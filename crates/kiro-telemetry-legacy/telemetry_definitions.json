@@ -265,6 +265,16 @@
       "description": "Number of HTTP-level attempts (1 = no retry, N>1 = N-1 SDK retries) for the last request in the user turn. Pairs with reason/reasonDesc when the turn ends with a failed request, so you can distinguish 'failed on first attempt' from 'failed after retries'."
     },
     {
+      "name": "codewhispererterminal_streamStallCount",
+      "type": "int",
+      "description": "Number of stream-stall observations (soft warnings and hard cancels) during the user turn."
+    },
+    {
+      "name": "codewhispererterminal_streamStallRetries",
+      "type": "int",
+      "description": "Number of stall-continuation retries issued during the user turn."
+    },
+    {
       "name": "codewhispererterminal_userTurnDurationSeconds",
       "type": "int",
       "description": "Total time spent in the user turn, starting from when the first request is sent."
@@ -650,7 +660,9 @@
         { "type": "kirocli_appType", "required": false },
         { "type": "kirocli_acpClientName", "required": false },
         { "type": "kirocli_acpClientVersion", "required": false },
-        { "type": "codewhispererterminal_requestAttempts", "required": false }
+        { "type": "codewhispererterminal_requestAttempts", "required": false },
+        { "type": "codewhispererterminal_streamStallCount", "required": false },
+        { "type": "codewhispererterminal_streamStallRetries", "required": false }
       ]
     },
     {

@@ -1040,9 +1040,10 @@ export interface VoiceModelDownloadInfo {
  * user sees the retry context right next to the "Thinking..." indicator.
  */
 export interface RetryStatus {
-  attempt: number;
-  maxAttempts: number;
-  delaySecs: number;
+  /** Absent for a message-only stall notice, where nothing is being retried. */
+  attempt?: number;
+  maxAttempts?: number;
+  delaySecs?: number;
   /** Human-readable message from the backend (e.g. "Retrying in 5s (attempt 2/6)"). */
   message: string;
 }
@@ -3799,9 +3800,10 @@ export const createAppStore = (props: AppStoreProps) => {
         const category = detectErrorCategory(errorMessage);
         let displayMessage = simplifyErrorMessage(errorMessage);
 
-        // If retries happened, enrich the message so the user knows we tried
+        // If retries happened, enrich the message so the user knows we tried.
+        // A message-only stall notice has no attempt count to report.
         const retryInfo = get().retryStatus;
-        if (retryInfo && category === 'network') {
+        if (retryInfo?.maxAttempts != null && category === 'network') {
           displayMessage = `${displayMessage} (failed after ${retryInfo.maxAttempts} attempts)`;
         }
 
@@ -3865,6 +3867,13 @@ export const createAppStore = (props: AppStoreProps) => {
       const cloudReplay = options?.cloudReplay === true;
       let isBuffering = false;
       let bufferedContent = '';
+      // Rows appended by the current in-flight request stream (the streaming
+      // Model placeholder and not-yet-executed ToolUse rows). A transient-retry
+      // discard must remove all of them — not just the live streaming row,
+      // which a tool-use start already committed and detached. Cleared when a
+      // tool finishes (the stream that requested it completed, so its rows are
+      // permanent) and at turn boundaries.
+      let currentStreamRowIds: string[] = [];
       // Only the first model refusal in a turn is surfaced; the model can emit
       // several (e.g. across retries), but repeating the same notice is noise.
       let refusalShownThisTurn = false;
@@ -4120,6 +4129,7 @@ export const createAppStore = (props: AppStoreProps) => {
           // integ tests) that don't consult streamingContent stay in sync.
           const newId = lastContentEventId ?? crypto.randomUUID();
           streamingMsgId = newId;
+          currentStreamRowIds.push(newId);
           set((state) => ({
             messages: [
               ...state.messages,
@@ -4197,11 +4207,16 @@ export const createAppStore = (props: AppStoreProps) => {
         // must not mutate the store with events that belong to an
         // abandoned turn.
         if (disposed) return;
-        // The retry banner reflects the wait between the SDK's HTTP attempts. Once any
-        // other stream event arrives (a new message, content chunk, error, etc.) the
-        // retry window is over — clear it so the "Thinking..." line reverts. We leave
-        // the banner untouched for RetryWarning itself (that's what's being rendered).
-        if (event.type !== AgentEventType.RetryWarning && get().retryStatus) {
+        // The retry banner reflects the wait between the SDK's HTTP attempts (or a
+        // stall notice while the stream is quiet). Once any other stream event
+        // arrives (a new message, content chunk, error, etc.) the window is over —
+        // clear it so the "Thinking..." line reverts. We leave the banner untouched
+        // for the two event types that are what's being rendered on it.
+        if (
+          event.type !== AgentEventType.RetryWarning &&
+          event.type !== AgentEventType.StallNotice &&
+          get().retryStatus
+        ) {
           get().setRetryStatus(null);
         }
 
@@ -4420,6 +4435,18 @@ export const createAppStore = (props: AppStoreProps) => {
             thinkingStart = null;
             thinkingMs = null;
 
+            // A fresh tool row belongs to the in-flight stream until its call
+            // executes, so it joins the discard window; replayed history rows
+            // never do.
+            if (
+              !fromHistory &&
+              !get().messages.some(
+                (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
+              )
+            ) {
+              currentStreamRowIds.push(event.id);
+            }
+
             set((state) => {
               const existingIndex = state.messages.findIndex(
                 (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
@@ -4616,6 +4643,9 @@ export const createAppStore = (props: AppStoreProps) => {
             }
             break;
           case AgentEventType.ToolCallFinished:
+            // A finished tool means the stream that requested it completed —
+            // its rows are permanent history, not discardable in-flight output.
+            currentStreamRowIds = [];
             // Flush any buffered live output before we mark the tool finished
             if (pendingToolOutputFlush) {
               clearTimeout(pendingToolOutputFlush);
@@ -5172,6 +5202,47 @@ export const createAppStore = (props: AppStoreProps) => {
               });
             }
             break;
+          case AgentEventType.StallNotice:
+            // Shares the retry banner but carries no retry fields — nothing is
+            // being retried, the stream is just quiet.
+            get().setRetryStatus({ message: event.message });
+            break;
+          case AgentEventType.StreamDiscarded: {
+            // The backend abandoned the in-flight stream (agent-layer transient
+            // retry or hard-stall cancel) and will regenerate the response. Drop
+            // everything the stream rendered — buffers, timers, the streaming
+            // row, AND rows it already committed (a tool-use start commits the
+            // model row and appends a never-executed tool row) — so the retried
+            // stream replaces the partial instead of concatenating after it.
+            if (pendingContentFlush) {
+              clearTimeout(pendingContentFlush);
+              pendingContentFlush = null;
+            }
+            bufferedContent = '';
+            bufferedThinking = '';
+            lastContentEventId = null;
+            thinkingStart = null;
+            thinkingMs = null;
+            streamingMsgId = null;
+            if (currentStreamRowIds.length > 0) {
+              const idsToDrop = new Set(currentStreamRowIds);
+              currentStreamRowIds = [];
+              set((state) => ({
+                messages: state.messages.filter(
+                  (m) =>
+                    !(
+                      (m.role === MessageRole.Model ||
+                        m.role === MessageRole.ToolUse) &&
+                      idsToDrop.has(m.id)
+                    )
+                ),
+                streamingContent: '',
+                streamingMessageId: null,
+                thinkingContent: '',
+              }));
+            }
+            break;
+          }
           case AgentEventType.AgentSwitched:
             get().setCurrentAgent({
               name: event.agentName,
@@ -5324,6 +5395,8 @@ export const createAppStore = (props: AppStoreProps) => {
             const drainQueuedInput = !observerTurnBlocked;
             turnOpen = false;
             observerTurnBlocked = false;
+            // The turn's rows are final; nothing from it is discardable anymore.
+            currentStreamRowIds = [];
             clearObserverTurnWatchdog();
             if (pendingContentFlush) {
               clearTimeout(pendingContentFlush);

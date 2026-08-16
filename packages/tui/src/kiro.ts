@@ -913,6 +913,8 @@ export class Kiro {
           event.type === AgentEventType.TurnEnd ||
           event.type === AgentEventType.ModelRefusal ||
           event.type === AgentEventType.RetryWarning ||
+          event.type === AgentEventType.StallNotice ||
+          event.type === AgentEventType.StreamDiscarded ||
           event.type === AgentEventType.AuthError ||
           event.type === AgentEventType.SessionError ||
           event.type === AgentEventType.SteeringQueued ||

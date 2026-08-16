@@ -24,6 +24,7 @@ use agent::agent_loop::types::{
     StreamError,
     StreamErrorKind,
     StreamEvent,
+    StreamTimeoutSource,
 };
 use agent::protocol::{
     AgentEvent,
@@ -1090,7 +1091,7 @@ fn test_turn_completion_attempts_is_none_when_transport_does_not_report() {
 #[test]
 fn test_acp_client_app_type() {
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let client_info = Some(AcpClientInfo::new("Sugarmaker".into(), "2.0".into()));
+    let client_info = Some(AcpClientInfo::new("external-client".into(), "2.0".into()));
     let ctx = TelemetryContext::new(model_provider("claude-4-sonnet"), client_info, false);
     let mut obs = TelemetryObserver::new_for_test(tx, ctx);
     obs.handle_event("test-session", &make_loop_event(success_stream_end()));
@@ -1098,7 +1099,7 @@ fn test_acp_client_app_type() {
     let event = rx.try_recv().unwrap();
     assert_eq!(event.app_type.as_deref(), Some("ACP"));
     assert_eq!(event.engine, Some(metric::Engine::V2));
-    assert_eq!(event.acp_client_name.as_deref(), Some("Sugarmaker"));
+    assert_eq!(event.acp_client_name.as_deref(), Some("external-client"));
     assert_eq!(event.client_application.as_deref(), Some("acp_external"));
     assert_eq!(event.session_interface, Some(metric::SessionInterface::ExternalAcp));
 }
@@ -1121,6 +1122,93 @@ fn test_first_party_one_shot_context() {
     assert_eq!(
         event.session_interface,
         Some(metric::SessionInterface::NoninteractiveCli)
+    );
+}
+
+/// Pins the V2 per-tool duration pipeline end to end: the executed-tool flow
+/// (ToolCall -> ToolExecutionStart -> ToolCallFinished) must emit a
+/// ToolUseSuggested with a measured execution_duration, and the shared legacy
+/// translation must turn that event into `kiro_cli_tool_execution_duration_ms`
+/// with the tool dimension — the same series V1 records, so V2 traffic shows up
+/// in the existing production distribution queries.
+#[test]
+fn executed_tool_emits_execution_duration_metric() {
+    let (mut obs, mut rx) = make_observer();
+    let tool_call = agent::protocol::ToolCall {
+        id: "tool-dur".to_string(),
+        tool: agent::tools::Tool {
+            tool_use_purpose: None,
+            kind: ToolKind::BuiltIn(BuiltInTool::ExecuteCmd(agent::tools::execute_cmd::ExecuteCmd {
+                command: "echo hi".to_string(),
+                working_dir: None,
+            })),
+        },
+        tool_use_block: agent::agent_loop::types::ToolUseBlock {
+            tool_use_id: "tool-dur".to_string(),
+            name: "execute_cmd".to_string(),
+            input: serde_json::json!({}),
+        },
+    };
+
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Update(UpdateEvent::ToolCall(tool_call.clone())),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::TaskExecutor(Box::new(
+            agent::task_executor::TaskExecutorEvent::ToolExecutionStart(
+                agent::task_executor::ToolExecutionStartEvent {
+                    id: agent::task_executor::ToolExecutionId::new("tool-dur".to_string()),
+                    tool: tool_call.tool.clone(),
+                    start_time: chrono::Utc::now(),
+                },
+            ),
+        ))),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Update(UpdateEvent::ToolCallFinished {
+            tool_call,
+            result: ToolCallResult::Success(agent::tools::ToolExecutionOutput::new(vec![])),
+        }),
+    );
+
+    let event = rx.try_recv().unwrap();
+    match &event.ty {
+        EventType::ToolUseSuggested {
+            execution_duration,
+            tool_name,
+            ..
+        } => {
+            assert_eq!(tool_name.as_deref(), Some("shell"));
+            assert!(
+                execution_duration.is_some(),
+                "an executed tool must carry a measured execution duration"
+            );
+        },
+        other => panic!("expected ToolUseSuggested, got {other:?}"),
+    }
+
+    let records = event_to_otel_metric_records(&event);
+    let duration_record = records
+        .iter()
+        .find(|r| r.name == "kiro_cli_tool_execution_duration_ms")
+        .expect("executed tool must produce the duration histogram");
+    // "shell" canonicalizes to "execute_bash" so V1 and V2 land in one series.
+    assert!(
+        duration_record
+            .attributes
+            .iter()
+            .any(|a| a.key == "builtin_tool_name" && a.value == "execute_bash"),
+        "duration histogram must carry the tool dimension; got {duration_record:?}"
+    );
+    assert!(
+        duration_record
+            .attributes
+            .iter()
+            .any(|a| a.key == "agent_engine" && a.value == "v2"),
+        "duration histogram must carry the engine dimension; got {duration_record:?}"
     );
 }
 
@@ -1298,6 +1386,465 @@ fn test_external_client_is_acp() {
     assert_eq!(info.session_interface(), metric::SessionInterface::ExternalAcp);
 }
 
+fn test_turn_metadata() -> UserTurnMetadata {
+    UserTurnMetadata {
+        loop_id: test_loop_id(),
+        result: None,
+        message_ids: vec![],
+        total_request_count: 1,
+        number_of_cycles: 0,
+        builtin_tool_uses: 0,
+        turn_duration: Some(Duration::from_secs(2)),
+        end_reason: LoopEndReason::UserTurnEnd,
+        end_timestamp: chrono::Utc::now(),
+        input_token_count: 0,
+        output_token_count: 0,
+        cache_read_input_token_count: 0,
+        cache_write_input_token_count: 0,
+        model: None,
+        assistant_response_length: 0,
+        request_attempts: None,
+        context_usage_percentage: None,
+        final_context_usage_percentage: None,
+        metering_usage: Vec::new(),
+        user_prompt_length: 0,
+    }
+}
+
+#[test]
+fn stream_stall_warning_emits_soft_stall_event() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(AgentLoopEventKind::StreamStallWarning {
+            idle: Duration::from_secs(31),
+        }),
+    );
+
+    let event = rx.try_recv().unwrap();
+    match &event.ty {
+        EventType::StreamStall { model, tier } => {
+            assert_eq!(model.as_deref(), Some("claude-4-sonnet"));
+            assert_eq!(*tier, metric::StallTier::Soft);
+        },
+        other => panic!("expected StreamStall, got {other:?}"),
+    }
+    assert!(rx.try_recv().is_err(), "soft warning must emit exactly one event");
+}
+
+/// Every episode-end value the loop can produce must survive to the metric
+/// attribute: an `as_str()`/schema mismatch panics on the emission path
+/// (`record_stream_stall_idle_seconds` ends in `.expect_valid()`).
+#[test]
+fn stream_stall_failed_and_cancelled_emit_episode_end() {
+    for (event, expected) in [
+        (
+            AgentLoopEventKind::StreamStallFailed {
+                idle: Duration::from_secs(45),
+            },
+            metric::StallEpisodeEnd::Failed,
+        ),
+        (
+            AgentLoopEventKind::StreamStallCancelled {
+                idle: Duration::from_secs(45),
+            },
+            metric::StallEpisodeEnd::Cancelled,
+        ),
+    ] {
+        let (mut obs, mut rx) = make_observer();
+        obs.handle_event("test-session", &make_loop_event(event));
+        let event = rx.try_recv().unwrap();
+        match &event.ty {
+            EventType::StreamStallEpisodeEnd {
+                idle_seconds,
+                episode_end,
+                ..
+            } => {
+                assert_eq!(*idle_seconds, 45.0);
+                assert_eq!(*episode_end, expected);
+            },
+            other => panic!("expected StreamStallEpisodeEnd, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn stream_stall_resumed_emits_episode_end() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(AgentLoopEventKind::StreamStallResumed {
+            idle: Duration::from_secs(45),
+        }),
+    );
+
+    let event = rx.try_recv().unwrap();
+    match &event.ty {
+        EventType::StreamStallEpisodeEnd {
+            idle_seconds,
+            episode_end,
+            ..
+        } => {
+            assert_eq!(*idle_seconds, 45.0);
+            assert_eq!(*episode_end, metric::StallEpisodeEnd::Resumed);
+        },
+        other => panic!("expected StreamStallEpisodeEnd, got {other:?}"),
+    }
+}
+
+/// A soft warning escalating to the hard cancel is ONE silent gap: it must
+/// count one stall (at the warning) and close with one episode end (the hard
+/// cancel), not count a second hard-tier stall for the same gap.
+#[test]
+fn escalated_stall_counts_once_and_closes_once() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(AgentLoopEventKind::StreamStallWarning {
+            idle: Duration::from_secs(60),
+        }),
+    );
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(error_stream_end(StreamErrorKind::StreamTimeout {
+            duration: Duration::from_secs(300),
+            source: StreamTimeoutSource::IdleWatchdog,
+        })),
+    );
+
+    let mut stalls = Vec::new();
+    let mut episode_ends = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        match &event.ty {
+            EventType::StreamStall { tier, .. } => stalls.push(*tier),
+            EventType::StreamStallEpisodeEnd { episode_end, .. } => episode_ends.push(*episode_end),
+            _ => {},
+        }
+    }
+    assert_eq!(
+        stalls,
+        vec![metric::StallTier::Soft],
+        "the escalated gap must count exactly one stall, at the warning"
+    );
+    assert_eq!(
+        episode_ends,
+        vec![metric::StallEpisodeEnd::HardCancelled],
+        "the escalated gap must close exactly once, as hard_cancelled"
+    );
+}
+
+/// The compaction escalation mirrors the main-loop one: a forwarded compaction
+/// warning followed by the dedicated CompactionStreamStalled event is one gap —
+/// one stall (soft) and one episode end (hard_cancelled).
+#[test]
+fn escalated_compaction_stall_counts_once_and_closes_once() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(AgentLoopEventKind::StreamStallWarning {
+            idle: Duration::from_secs(60),
+        }),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::CompactionStreamStalled {
+            idle: Duration::from_secs(300),
+        }),
+    );
+
+    let mut stalls = Vec::new();
+    let mut episode_ends = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        match &event.ty {
+            EventType::StreamStall { tier, .. } => stalls.push(*tier),
+            EventType::StreamStallEpisodeEnd { episode_end, .. } => episode_ends.push(*episode_end),
+            _ => {},
+        }
+    }
+    assert_eq!(
+        stalls,
+        vec![metric::StallTier::Soft],
+        "the escalated compaction gap must count exactly one stall"
+    );
+    assert_eq!(
+        episode_ends,
+        vec![metric::StallEpisodeEnd::HardCancelled],
+        "the escalated compaction gap must close exactly once"
+    );
+}
+
+#[test]
+fn hard_stall_stream_end_emits_hard_stall_and_episode_end() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(error_stream_end(StreamErrorKind::StreamTimeout {
+            duration: Duration::from_secs(120),
+            source: StreamTimeoutSource::IdleWatchdog,
+        })),
+    );
+
+    let mut saw_hard_stall = false;
+    let mut saw_episode_end = false;
+    while let Ok(event) = rx.try_recv() {
+        match &event.ty {
+            EventType::StreamStall { tier, .. } => {
+                assert_eq!(*tier, metric::StallTier::Hard);
+                saw_hard_stall = true;
+            },
+            EventType::StreamStallEpisodeEnd {
+                idle_seconds,
+                episode_end,
+                ..
+            } => {
+                assert_eq!(*idle_seconds, 120.0);
+                assert_eq!(*episode_end, metric::StallEpisodeEnd::HardCancelled);
+                saw_episode_end = true;
+            },
+            _ => {},
+        }
+    }
+    assert!(saw_hard_stall, "expected a hard-tier StreamStall event");
+    assert!(saw_episode_end, "expected a hard_cancelled StreamStallEpisodeEnd event");
+}
+
+/// The whole stall family must be gated on the same producer: a series member
+/// existing without its family (e.g. a recovery sample with no matching stall)
+/// skews any cross-series dashboard join.
+#[test]
+fn sdk_recv_timeout_emits_no_member_of_the_stall_family() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(error_stream_end(StreamErrorKind::StreamTimeout {
+            duration: Duration::from_secs(59),
+            source: StreamTimeoutSource::SdkRecv,
+        })),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::StreamStallRetry {
+            outcome: agent::protocol::StallRetryOutcome::Recovered,
+            attempt_number: 1,
+            partial_output: false,
+            source: StreamTimeoutSource::SdkRecv,
+        }),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::StreamStallRecovery {
+            recovery: Duration::from_secs(3),
+            source: StreamTimeoutSource::SdkRecv,
+        }),
+    );
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(
+                &event.ty,
+                EventType::StreamStall { .. }
+                    | EventType::StreamStallEpisodeEnd { .. }
+                    | EventType::StreamStallRetry { .. }
+                    | EventType::StreamStallRecovery { .. }
+            ),
+            "SDK recv timeouts must not land in ANY watchdog stall series, got {:?}",
+            event.ty
+        );
+    }
+}
+
+/// Positive counterpart: a watchdog-sourced stall episode emits every member of
+/// the family coherently.
+#[test]
+fn watchdog_stall_emits_the_full_stall_family() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(error_stream_end(StreamErrorKind::StreamTimeout {
+            duration: Duration::from_secs(300),
+            source: StreamTimeoutSource::IdleWatchdog,
+        })),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::StreamStallRecovery {
+            recovery: Duration::from_secs(4),
+            source: StreamTimeoutSource::IdleWatchdog,
+        }),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::StreamStallRetry {
+            outcome: agent::protocol::StallRetryOutcome::Recovered,
+            attempt_number: 1,
+            partial_output: false,
+            source: StreamTimeoutSource::IdleWatchdog,
+        }),
+    );
+
+    let mut saw = (false, false, false, false);
+    while let Ok(event) = rx.try_recv() {
+        match &event.ty {
+            EventType::StreamStall { .. } => saw.0 = true,
+            EventType::StreamStallEpisodeEnd { .. } => saw.1 = true,
+            EventType::StreamStallRetry { .. } => saw.2 = true,
+            EventType::StreamStallRecovery { .. } => saw.3 = true,
+            _ => {},
+        }
+    }
+    assert_eq!(
+        saw,
+        (true, true, true, true),
+        "watchdog stall episode must emit all four family members (stall, episode_end, retry, recovery)"
+    );
+}
+
+#[test]
+fn transient_retry_counted_at_execution_not_schedule() {
+    let (mut obs, mut rx) = make_observer();
+    // Schedule-time event drives the banner only; a cancel during backoff means
+    // no request is ever sent, so it must not count.
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::TransientRetry {
+            class: agent::error_recovery::TransientErrorClass::Throttle,
+            attempt_number: 1,
+            backoff: Duration::from_secs(2),
+            partial_output: false,
+        }),
+    );
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(&event.ty, EventType::TransientRetry { .. }),
+            "scheduled (not yet executed) retry must not be counted, got {:?}",
+            event.ty
+        );
+    }
+
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::TransientRetryExecuted {
+            class: agent::error_recovery::TransientErrorClass::Throttle,
+            attempt_number: 1,
+            partial_output: false,
+        }),
+    );
+    let event = rx.try_recv().expect("executed retry should emit the counter event");
+    match &event.ty {
+        EventType::TransientRetry {
+            class, attempt_number, ..
+        } => {
+            assert_eq!(*class, metric::TransientErrorClass::Throttle);
+            assert_eq!(*attempt_number, 1);
+        },
+        other => panic!("expected TransientRetry, got {other:?}"),
+    }
+}
+
+#[test]
+fn stall_retry_events_translate_to_event_types() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::StreamStallRetry {
+            outcome: agent::protocol::StallRetryOutcome::Recovered,
+            attempt_number: 2,
+            partial_output: true,
+            source: StreamTimeoutSource::IdleWatchdog,
+        }),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::StreamStallRecovery {
+            source: StreamTimeoutSource::IdleWatchdog,
+            recovery: Duration::from_secs(3),
+        }),
+    );
+
+    let event = rx.try_recv().unwrap();
+    match &event.ty {
+        EventType::StreamStallRetry {
+            outcome,
+            attempt_number,
+            partial_output,
+            ..
+        } => {
+            assert_eq!(*outcome, metric::RetryOutcome::Recovered);
+            assert_eq!(*attempt_number, 2);
+            assert_eq!(*partial_output, Some(true));
+        },
+        other => panic!("expected StreamStallRetry, got {other:?}"),
+    }
+    let event = rx.try_recv().unwrap();
+    match &event.ty {
+        EventType::StreamStallRecovery { recovery_seconds, .. } => {
+            assert_eq!(*recovery_seconds, 3.0);
+        },
+        other => panic!("expected StreamStallRecovery, got {other:?}"),
+    }
+}
+
+#[test]
+fn turn_completion_carries_stall_counters() {
+    let (mut obs, mut rx) = make_observer();
+    // One soft warning escalating to a hard cancel (a single episode, counted
+    // once) + one exhausted retry sequence of 2 attempts.
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(AgentLoopEventKind::StreamStallWarning {
+            idle: Duration::from_secs(31),
+        }),
+    );
+    obs.handle_event(
+        "test-session",
+        &make_loop_event(error_stream_end(StreamErrorKind::StreamTimeout {
+            duration: Duration::from_secs(120),
+            source: StreamTimeoutSource::IdleWatchdog,
+        })),
+    );
+    obs.handle_event(
+        "test-session",
+        &AgentEvent::Internal(InternalEvent::StreamStallRetry {
+            outcome: agent::protocol::StallRetryOutcome::Exhausted,
+            attempt_number: 2,
+            partial_output: false,
+            source: StreamTimeoutSource::IdleWatchdog,
+        }),
+    );
+    obs.handle_event("test-session", &AgentEvent::EndTurn(test_turn_metadata()));
+
+    let mut saw_completion = false;
+    while let Ok(event) = rx.try_recv() {
+        if let EventType::RecordUserTurnCompletion { args, .. } = &event.ty {
+            assert_eq!(
+                args.stream_stall_count,
+                Some(1),
+                "a warning escalating to a hard cancel is one episode"
+            );
+            assert_eq!(args.stream_stall_retries, Some(2), "2 continuation retries");
+            saw_completion = true;
+        }
+    }
+    assert!(saw_completion, "expected RecordUserTurnCompletion");
+}
+
+#[test]
+fn turn_completion_without_stalls_carries_no_stall_counters() {
+    let (mut obs, mut rx) = make_observer();
+    obs.handle_event("test-session", &make_loop_event(success_stream_end()));
+    obs.handle_event("test-session", &AgentEvent::EndTurn(test_turn_metadata()));
+
+    let mut saw_completion = false;
+    while let Ok(event) = rx.try_recv() {
+        if let EventType::RecordUserTurnCompletion { args, .. } = &event.ty {
+            assert_eq!(args.stream_stall_count, None);
+            assert_eq!(args.stream_stall_retries, None);
+            saw_completion = true;
+        }
+    }
+    assert!(saw_completion, "expected RecordUserTurnCompletion");
+}
+
 #[test]
 fn test_external_client_name_is_sanitized_for_telemetry() {
     let info = AcpClientInfo::new("  Sugar\u{2028}maker\u{200b}  ".into(), "2.0".into());
@@ -1309,4 +1856,24 @@ fn test_external_client_name_is_sanitized_for_telemetry() {
 
     let info = AcpClientInfo::new("\u{0}\u{2028}".into(), "2.0".into());
     assert_eq!(info.name, ClientName::Unknown);
+}
+
+/// The attempt-number telemetry bucket must cover every attempt either retry
+/// budget can produce: raising a budget without widening the bucket range would
+/// silently fold the new top attempts into `unknown`, degrading the very series
+/// the budgets were instrumented for.
+#[test]
+fn attempt_buckets_cover_the_full_retry_budgets() {
+    for budget in [
+        agent::error_recovery::MAX_TRANSIENT_RETRIES,
+        agent::consts::MAX_STREAM_TIMEOUT_RETRIES,
+    ] {
+        for attempt in 1..=budget as u32 {
+            assert_ne!(
+                metric::AttemptNumberBucket::from_attempt(attempt).as_str(),
+                "unknown",
+                "attempt {attempt} of a {budget}-retry budget must map to a real bucket"
+            );
+        }
+    }
 }

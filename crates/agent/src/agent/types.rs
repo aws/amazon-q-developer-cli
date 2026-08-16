@@ -209,10 +209,97 @@ pub struct AgentSettings {
     #[typeshare(skip)]
     #[serde(default = "default_tool_search_min_tokens")]
     pub tool_search_min_tokens: Option<u64>,
+    /// Inter-event stream silence after which a stall warning is emitted while the
+    /// response stream stays open. Zero disables the warning.
+    #[typeshare(skip)]
+    #[serde(default = "default_stream_idle_soft_timeout")]
+    pub stream_idle_soft_timeout: Duration,
+    /// Inter-event stream silence after which the response stream is cancelled and
+    /// surfaced as a stream timeout. Zero disables the watchdog.
+    #[typeshare(skip)]
+    #[serde(default = "default_stream_idle_hard_timeout")]
+    pub stream_idle_hard_timeout: Duration,
+    /// Idle window on child progress for a blocking subagent/crew stage. Resets on
+    /// genuine child activity; on a full window of inactivity the parent stops
+    /// waiting, cancels unfinished children, and continues with partial results.
+    /// Zero disables the timer.
+    #[typeshare(skip)]
+    #[serde(default = "default_subagent_timeout")]
+    pub subagent_timeout: Duration,
 }
 
 impl AgentSettings {
     const DEFAULT_MCP_INIT_TIMEOUT: Duration = Duration::from_secs(5);
+    /// Ceiling for the stream-idle tiers. The settings are read as seconds while
+    /// their `api.timeout` sibling is milliseconds, so a value carried across in
+    /// the wrong unit (e.g. `300000`) would otherwise silently disable the
+    /// watchdog for days; no legitimate idle threshold exceeds an hour.
+    pub const STREAM_IDLE_TIMEOUT_CEILING: Duration = Duration::from_secs(3600);
+
+    /// Reconciles the stream-idle watchdog tiers once, after user settings are applied.
+    ///
+    /// Values above [`Self::STREAM_IDLE_TIMEOUT_CEILING`] are clamped to it (with a
+    /// logged warning) before the tier-ordering check runs.
+    ///
+    /// A soft (warning) threshold at or past the hard (cancel) threshold can never fire.
+    /// When the soft value was explicitly configured (`soft_explicit`), that is a user
+    /// misconfiguration: warn once and disable the warning tier, preserving the
+    /// documented "0 disables a tier" semantics. When only the hard cap was tightened
+    /// and the colliding soft value is the inherited default, the user never chose it —
+    /// keep the warning tier by clamping it to half the hard bound instead.
+    pub fn reconcile_stream_idle_tiers(&mut self, soft_explicit: bool) {
+        for (name, tier) in [
+            ("soft", &mut self.stream_idle_soft_timeout),
+            ("hard", &mut self.stream_idle_hard_timeout),
+        ] {
+            if *tier > Self::STREAM_IDLE_TIMEOUT_CEILING {
+                tracing::warn!(
+                    tier = name,
+                    configured = ?*tier,
+                    ceiling = ?Self::STREAM_IDLE_TIMEOUT_CEILING,
+                    "configured stream-idle timeout exceeds the ceiling (values are seconds, not milliseconds); clamping"
+                );
+                *tier = Self::STREAM_IDLE_TIMEOUT_CEILING;
+            }
+        }
+        let soft = self.stream_idle_soft_timeout;
+        let hard = self.stream_idle_hard_timeout;
+        if soft.is_zero() || hard.is_zero() || soft < hard {
+            return;
+        }
+        if soft_explicit {
+            tracing::warn!(
+                ?soft,
+                ?hard,
+                "configured stream-idle soft timeout is >= the hard timeout; disabling the soft warning tier"
+            );
+            self.stream_idle_soft_timeout = Duration::ZERO;
+        } else {
+            self.stream_idle_soft_timeout = hard / 2;
+        }
+    }
+}
+
+/// Reads a stream-idle timeout setting (whole seconds) from its raw settings value.
+///
+/// A value that is present but unusable — negative, fractional, or not a number —
+/// warns and is treated as absent, so the tier keeps its inherited default. The
+/// out-of-range and tier-collision cases already warn in
+/// [`AgentSettings::reconcile_stream_idle_tiers`]; this closes the one
+/// invalid-input path that previously failed silently.
+pub fn stream_idle_setting_secs(raw: Option<&serde_json::Value>, setting_name: &str) -> Option<u64> {
+    let value = raw?;
+    match value.as_i64().and_then(|i| u64::try_from(i).ok()) {
+        Some(secs) => Some(secs),
+        None => {
+            tracing::warn!(
+                setting = setting_name,
+                value = %value,
+                "invalid stream-idle timeout (expected a non-negative whole number of seconds); using the default"
+            );
+            None
+        },
+    }
 }
 
 fn default_true() -> bool {
@@ -225,6 +312,20 @@ fn default_tool_search_min_pct() -> Option<f64> {
 
 fn default_tool_search_min_tokens() -> Option<u64> {
     Some(50_000)
+}
+
+fn default_stream_idle_soft_timeout() -> Duration {
+    super::consts::DEFAULT_STREAM_IDLE_SOFT_TIMEOUT
+}
+
+fn default_stream_idle_hard_timeout() -> Duration {
+    super::consts::DEFAULT_STREAM_IDLE_HARD_TIMEOUT
+}
+
+fn default_subagent_timeout() -> Duration {
+    // Env-overridable (0 disables): an idle window on child progress for a blocking
+    // subagent stage, reset whenever a child reports fresh activity.
+    super::consts::subagent_stall_timeout()
 }
 
 impl Default for AgentSettings {
@@ -240,6 +341,9 @@ impl Default for AgentSettings {
             mandatory_mcp_names: Vec::new(),
             tool_search_min_pct: default_tool_search_min_pct(),
             tool_search_min_tokens: default_tool_search_min_tokens(),
+            stream_idle_soft_timeout: default_stream_idle_soft_timeout(),
+            stream_idle_hard_timeout: default_stream_idle_hard_timeout(),
+            subagent_timeout: default_subagent_timeout(),
         }
     }
 }
@@ -435,6 +539,76 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn settings_with_tiers(soft: u64, hard: u64) -> AgentSettings {
+        AgentSettings {
+            stream_idle_soft_timeout: Duration::from_secs(soft),
+            stream_idle_hard_timeout: Duration::from_secs(hard),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn reconcile_keeps_valid_and_disabled_tiers_untouched() {
+        for (soft, hard) in [(60, 300), (0, 300), (60, 0), (0, 0)] {
+            for explicit in [false, true] {
+                let mut s = settings_with_tiers(soft, hard);
+                s.reconcile_stream_idle_tiers(explicit);
+                assert_eq!(s.stream_idle_soft_timeout, Duration::from_secs(soft));
+                assert_eq!(s.stream_idle_hard_timeout, Duration::from_secs(hard));
+            }
+        }
+    }
+
+    #[test]
+    fn reconcile_disables_explicitly_misconfigured_soft_tier() {
+        let mut s = settings_with_tiers(300, 60);
+        s.reconcile_stream_idle_tiers(true);
+        assert_eq!(s.stream_idle_soft_timeout, Duration::ZERO);
+        assert_eq!(s.stream_idle_hard_timeout, Duration::from_secs(60));
+    }
+
+    /// A tightened hard cap colliding with the *inherited default* soft keeps the
+    /// warning tier (clamped below the hard bound) instead of silently losing it.
+    #[test]
+    fn reconcile_clamps_inherited_default_soft_below_hard() {
+        let mut s = settings_with_tiers(60, 30);
+        s.reconcile_stream_idle_tiers(false);
+        assert_eq!(s.stream_idle_soft_timeout, Duration::from_secs(15));
+        assert_eq!(s.stream_idle_hard_timeout, Duration::from_secs(30));
+    }
+
+    /// A milliseconds-shaped value (the `api.timeout` unit carried onto the
+    /// seconds-based idle keys) is clamped to the ceiling instead of silently
+    /// disabling the watchdog for days.
+    #[test]
+    fn reconcile_clamps_values_above_the_ceiling() {
+        let mut s = settings_with_tiers(60, 300_000);
+        s.reconcile_stream_idle_tiers(false);
+        assert_eq!(s.stream_idle_soft_timeout, Duration::from_secs(60));
+        assert_eq!(s.stream_idle_hard_timeout, AgentSettings::STREAM_IDLE_TIMEOUT_CEILING);
+
+        // Both tiers oversized: after clamping they collide at the ceiling, and
+        // the ordering rules then apply to the clamped values.
+        let mut s = settings_with_tiers(600_000, 300_000);
+        s.reconcile_stream_idle_tiers(true);
+        assert_eq!(s.stream_idle_soft_timeout, Duration::ZERO);
+        assert_eq!(s.stream_idle_hard_timeout, AgentSettings::STREAM_IDLE_TIMEOUT_CEILING);
+    }
+
+    /// Present-but-unusable settings values (negative, fractional, non-numeric)
+    /// fall back to the inherited default instead of parsing; usable whole
+    /// seconds — including an explicit 0 (tier disabled) — pass through.
+    #[test]
+    fn stream_idle_setting_secs_accepts_only_whole_non_negative_seconds() {
+        use serde_json::json;
+        assert_eq!(stream_idle_setting_secs(None, "t"), None);
+        assert_eq!(stream_idle_setting_secs(Some(&json!(60)), "t"), Some(60));
+        assert_eq!(stream_idle_setting_secs(Some(&json!(0)), "t"), Some(0));
+        assert_eq!(stream_idle_setting_secs(Some(&json!(-5)), "t"), None);
+        assert_eq!(stream_idle_setting_secs(Some(&json!(1.5)), "t"), None);
+        assert_eq!(stream_idle_setting_secs(Some(&json!("60")), "t"), None);
+    }
 
     #[test]
     fn test_agent_id_parse() {

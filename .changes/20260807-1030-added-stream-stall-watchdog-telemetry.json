@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Telemetry for the stream-idle watchdog: stall counts, idle-gap and recovery-time histograms, bounded-retry outcomes, per-turn stall fields on turn completion. The watchdog is on by default; api.streamIdleHardTimeout=0 disables the hard cancel tier, api.streamIdleSoftTimeout=0 disables the soft warning tier, and setting both to 0 disables the watchdog entirely."
+}

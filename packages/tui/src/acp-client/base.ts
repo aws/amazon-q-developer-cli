@@ -1329,6 +1329,23 @@ export abstract class BaseAcpClient implements SessionClient {
       return;
     }
 
+    if (update.sessionUpdate === 'stream_stall_notice') {
+      logger.warn('Stream stall notice received:', update);
+      this.broadcastStreamEvent({
+        type: AgentEventType.StallNotice,
+        message: update.message,
+      });
+      return;
+    }
+
+    if (update.sessionUpdate === 'stream_discarded') {
+      logger.warn(
+        'Stream discarded notice received; dropping rendered partial'
+      );
+      this.broadcastStreamEvent({ type: AgentEventType.StreamDiscarded });
+      return;
+    }
+
     // Steering events (Rust engine only). The Rust engine emits the
     // `AgentExecution*` PascalCase discriminators on the
     // `_kiro.dev/session/update` ext channel, with `{ messageId, content }` on

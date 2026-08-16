@@ -159,6 +159,43 @@ pub enum AgentLoopEventKind {
     /// This is the last event that the agent loop will emit, unless another request is sent that
     /// continues the turn.
     UserTurnEnd(UserTurnMetadata),
+    /// The response stream has been silent for longer than the soft idle threshold.
+    ///
+    /// Informational only — the stream remains open and may still recover. Consumers can
+    /// surface a "still waiting" indicator, or ignore the event entirely.
+    StreamStallWarning {
+        /// How long the stream has been silent.
+        idle: Duration,
+    },
+    /// The response stream produced an event again after a [`Self::StreamStallWarning`]
+    /// had fired, ending the stall episode without a hard cancel.
+    ///
+    /// Informational only; carries the silent gap that just ended so consumers can
+    /// record observed stall durations.
+    StreamStallResumed {
+        /// Length of the silent gap that just ended.
+        idle: Duration,
+    },
+    /// The stream ended in an error or EOF after a [`Self::StreamStallWarning`] had
+    /// fired: the stall episode is over, but not because the stream recovered.
+    ///
+    /// Informational only; exists so every warned episode gets an episode-end record
+    /// and the stall series stays reconcilable (soft stalls == episode ends).
+    StreamStallFailed {
+        /// Length of the silent gap the failure ended.
+        idle: Duration,
+    },
+    /// A cancel landed while a [`Self::StreamStallWarning`] was outstanding: the
+    /// user (or a teardown) abandoned the stalled stream before it recovered or
+    /// died on its own — the natural response to the "model has gone quiet"
+    /// notice, and distinct signal for tuning the soft threshold.
+    ///
+    /// Informational only; the third episode-end producer alongside
+    /// [`Self::StreamStallResumed`] and [`Self::StreamStallFailed`].
+    StreamStallCancelled {
+        /// Length of the silent gap the cancel ended.
+        idle: Duration,
+    },
     /// The agent loop has changed states
     LoopStateChange { from: LoopState, to: LoopState },
     /// Low level event. Generally only useful for [AgentLoop].

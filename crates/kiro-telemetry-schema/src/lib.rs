@@ -480,7 +480,7 @@ mod tests {
     fn registry_loads_and_validates() {
         let registry = Registry::parse().expect("schema should load");
 
-        assert_eq!(registry.metrics.len(), 55);
+        assert_eq!(registry.metrics.len(), 61);
         assert!(registry.metric("kiro_cli_run_started_total").is_some());
         assert!(registry.metric("kiro_cli_mcp_tools_token_count_estimate").is_some());
         assert!(registry.metric("kiro_cli_session_dashboard_total").is_some());

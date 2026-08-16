@@ -72,6 +72,7 @@ use crate::agent::session::legacy_compat::{
 use crate::api_client::error::{
     ApiClientError,
     ConverseStreamError,
+    ConverseStreamSdkError,
 };
 use crate::api_client::model::{
     ChatResponseStream,
@@ -400,6 +401,19 @@ impl RtsModel {
 impl StreamErrorSource for ConverseStreamError {
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    /// Surfaces the server's `Retry-After` (delay-seconds) from the raw HTTP response,
+    /// so a throttle's requested wait drives the agent-layer backoff schedule.
+    fn retry_after(&self) -> Option<std::time::Duration> {
+        let raw = match self.source.as_deref()? {
+            ConverseStreamSdkError::CodewhispererGenerateAssistantResponse(e) => e.raw_response()?,
+            ConverseStreamSdkError::QDeveloperSendMessage(e) => e.raw_response()?,
+            ConverseStreamSdkError::SmithyBuild(_) => return None,
+        };
+        raw.headers()
+            .get("retry-after")
+            .and_then(agent::error_recovery::parse_retry_after)
     }
 }
 
@@ -1180,9 +1194,12 @@ impl ResponseParser {
     fn recv_error_to_stream_error(&self, err: RecvError) -> StreamError {
         let reason_code = err.reason_code();
         match err {
-            RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout { duration })
-                .set_original_request_id(self.request_id.clone())
-                .with_source(Arc::new(source)),
+            RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout {
+                duration,
+                source: agent::agent_loop::types::StreamTimeoutSource::SdkRecv,
+            })
+            .set_original_request_id(self.request_id.clone())
+            .with_source(Arc::new(source)),
             RecvError::Other { source } if source.is_transient_stream_failure() => {
                 StreamError::new(StreamErrorKind::TransientNetworkFailure {
                     message: format!("A network failure occurred during the response stream: {source}"),
@@ -1263,6 +1280,46 @@ mod tests {
         Fs,
     };
     use crate::util::env_var::is_integ_test;
+
+    /// The server's `Retry-After` (delay-seconds) must survive the SdkError wrapping and
+    /// be readable through [`StreamErrorSource`], so the agent-layer backoff honors it.
+    #[test]
+    fn retry_after_surfaces_from_raw_response() {
+        use aws_smithy_runtime_api::http::Response;
+        use aws_smithy_types::body::SdkBody;
+
+        use crate::api_client::error::{
+            ConverseStreamErrorKind,
+            GenerateAssistantResponseError,
+            SdkError,
+        };
+
+        let mut response = Response::new(429.try_into().unwrap(), SdkBody::empty());
+        response.headers_mut().insert("retry-after", "30");
+        let err = ConverseStreamError {
+            request_id: None,
+            status_code: Some(429),
+            kind: ConverseStreamErrorKind::Throttling,
+            source: Some(Arc::new(
+                ConverseStreamSdkError::CodewhispererGenerateAssistantResponse(SdkError::service_error(
+                    GenerateAssistantResponseError::unhandled("<throttled>"),
+                    response,
+                )),
+            )),
+        };
+        let stream_error: StreamError = err.into();
+        assert_eq!(stream_error.retry_after(), Some(Duration::from_secs(30)));
+
+        // No source (or no header on it) means no server-provided delay.
+        let bare = ConverseStreamError {
+            request_id: None,
+            status_code: Some(429),
+            kind: ConverseStreamErrorKind::Throttling,
+            source: None,
+        };
+        let stream_error: StreamError = bare.into();
+        assert_eq!(stream_error.retry_after(), None);
+    }
 
     /// Manual test to verify cancellation succeeds in a timely manner.
     #[tokio::test]

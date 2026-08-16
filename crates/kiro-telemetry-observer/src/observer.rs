@@ -24,6 +24,7 @@ use agent::agent_loop::types::{
     MetadataUsage,
     StreamError,
     StreamErrorKind,
+    StreamTimeoutSource,
 };
 use agent::protocol::{
     AgentEvent,
@@ -97,6 +98,8 @@ pub const REASON_VALIDATION_ERROR: &str = "ValidationError";
 /// Reason: backend rejected the request because the model id is not allowed in the current
 /// inference path (maps from `StreamErrorKind::InvalidModelId`).
 pub const REASON_INVALID_MODEL_ID: &str = "InvalidModelId";
+/// Reason: authentication was rejected (maps from `StreamErrorKind::AccessDenied`).
+pub const REASON_ACCESS_DENIED: &str = "AccessDenied";
 /// Reason: model produced invalid JSON for tool use.
 pub const REASON_INVALID_JSON: &str = "InvalidJson";
 /// Reason: model returned a clean stream with no content.
@@ -148,6 +151,17 @@ struct TurnState {
     /// `last_error` semantics so a turn that ends with a failed request has both
     /// the error reason and the attempt count for that request.
     last_request_attempts: Option<u32>,
+    /// Stream-stall observations during the turn: episodes opened by a soft
+    /// warning plus hard cancels that fired with no prior warning. An episode
+    /// that warns and then escalates to the hard cancel counts once.
+    stream_stall_count: u32,
+    /// A soft stall warning was emitted for the in-flight stream and no episode
+    /// end has closed it yet. Lets the hard-cancel path recognize an escalation
+    /// (one silent gap, already counted at the warning) instead of counting a
+    /// second stall for the same gap.
+    soft_stall_open: bool,
+    /// Stall-continuation retries issued during the turn.
+    stream_stall_retries: u32,
 }
 
 impl TurnState {
@@ -331,10 +345,126 @@ impl TelemetryObserver {
         let session = self.sessions.entry(session_id.to_string()).or_default();
 
         match event {
-            AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => {
-                if let AgentLoopEventKind::ResponseStreamEnd { result, metadata } = &loop_event.kind {
+            AgentEvent::Internal(InternalEvent::AgentLoop(loop_event)) => match &loop_event.kind {
+                AgentLoopEventKind::ResponseStreamEnd { result, metadata } => {
                     self.handle_response_stream_end(session_id, result, metadata);
+                },
+                AgentLoopEventKind::StreamStallWarning { .. } => {
+                    session.turn_state.stream_stall_count = session.turn_state.stream_stall_count.saturating_add(1);
+                    session.turn_state.soft_stall_open = true;
+                    self.emit(EventType::StreamStall {
+                        model: self.context.model(),
+                        tier: metric::StallTier::Soft,
+                    });
+                },
+                AgentLoopEventKind::StreamStallResumed { idle } => {
+                    session.turn_state.soft_stall_open = false;
+                    self.emit(EventType::StreamStallEpisodeEnd {
+                        model: self.context.model(),
+                        idle_seconds: idle.as_secs_f64(),
+                        episode_end: metric::StallEpisodeEnd::Resumed,
+                    });
+                },
+                AgentLoopEventKind::StreamStallFailed { idle } => {
+                    session.turn_state.soft_stall_open = false;
+                    self.emit(EventType::StreamStallEpisodeEnd {
+                        model: self.context.model(),
+                        idle_seconds: idle.as_secs_f64(),
+                        episode_end: metric::StallEpisodeEnd::Failed,
+                    });
+                },
+                AgentLoopEventKind::StreamStallCancelled { idle } => {
+                    session.turn_state.soft_stall_open = false;
+                    self.emit(EventType::StreamStallEpisodeEnd {
+                        model: self.context.model(),
+                        idle_seconds: idle.as_secs_f64(),
+                        episode_end: metric::StallEpisodeEnd::Cancelled,
+                    });
+                },
+                _ => {},
+            },
+            // The whole stall metric family (stall/episode-end/retry/recovery) is
+            // gated on the watchdog producer: SDK recv timeouts ride the same
+            // continuation machinery, and letting them into some series but not
+            // others would skew any cross-series join (e.g. recovered / stalls).
+            AgentEvent::Internal(InternalEvent::StreamStallRetry {
+                outcome,
+                attempt_number,
+                partial_output,
+                source,
+            }) => {
+                if *source != StreamTimeoutSource::IdleWatchdog {
+                    return;
                 }
+                session.turn_state.stream_stall_retries =
+                    session.turn_state.stream_stall_retries.saturating_add(*attempt_number);
+                self.emit(EventType::StreamStallRetry {
+                    model: self.context.model(),
+                    outcome: match outcome {
+                        agent::protocol::StallRetryOutcome::Recovered => metric::RetryOutcome::Recovered,
+                        agent::protocol::StallRetryOutcome::Exhausted => metric::RetryOutcome::Exhausted,
+                        agent::protocol::StallRetryOutcome::Cancelled => metric::RetryOutcome::Cancelled,
+                    },
+                    attempt_number: *attempt_number,
+                    partial_output: Some(*partial_output),
+                });
+            },
+            AgentEvent::Internal(InternalEvent::StreamStallRecovery { recovery, source }) => {
+                if *source != StreamTimeoutSource::IdleWatchdog {
+                    return;
+                }
+                self.emit(EventType::StreamStallRecovery {
+                    model: self.context.model(),
+                    recovery_seconds: recovery.as_secs_f64(),
+                });
+            },
+            // Always watchdog-produced (compaction streams have no SDK recv-timeout
+            // continuation path), so no producer gate is needed here.
+            AgentEvent::Internal(InternalEvent::CompactionStreamStalled { idle }) => {
+                // Same escalation rule as the main-loop hard cancel: the compaction
+                // stream's forwarded soft warning already counted this gap.
+                let escalated = std::mem::replace(&mut session.turn_state.soft_stall_open, false);
+                if !escalated {
+                    session.turn_state.stream_stall_count = session.turn_state.stream_stall_count.saturating_add(1);
+                    self.emit(EventType::StreamStall {
+                        model: self.context.model(),
+                        tier: metric::StallTier::Hard,
+                    });
+                }
+                self.emit(EventType::StreamStallEpisodeEnd {
+                    model: self.context.model(),
+                    idle_seconds: idle.as_secs_f64(),
+                    episode_end: metric::StallEpisodeEnd::HardCancelled,
+                });
+            },
+            AgentEvent::Internal(InternalEvent::SubagentDeadlineExpired { deadline }) => {
+                self.emit(EventType::SubagentDeadlineExpired {
+                    deadline_seconds: deadline.as_secs_f64(),
+                });
+            },
+            // Retry volume counts EXECUTED retries: the schedule-time
+            // `TransientRetry` event drives the client banner, and a cancel during
+            // the backoff suppresses the re-send, so counting at schedule time
+            // would overstate requests to the model service.
+            AgentEvent::Internal(InternalEvent::TransientRetryExecuted {
+                class,
+                attempt_number,
+                partial_output,
+            }) => {
+                // Exhaustive map from the agent's typed class into the schema's
+                // closed dimension, so a new agent variant is a compile error here
+                // rather than an invalid label at emit time.
+                let class = match class {
+                    agent::error_recovery::TransientErrorClass::Throttle => metric::TransientErrorClass::Throttle,
+                    agent::error_recovery::TransientErrorClass::ServerError => metric::TransientErrorClass::ServerError,
+                    agent::error_recovery::TransientErrorClass::Network => metric::TransientErrorClass::Network,
+                };
+                self.emit(EventType::TransientRetry {
+                    model: self.context.model(),
+                    class,
+                    attempt_number: *attempt_number,
+                    partial_output: Some(*partial_output),
+                });
             },
             AgentEvent::Update(UpdateEvent::ToolCall(tool_call)) => {
                 let (mcp_server_name, aws_service_name, aws_operation_name) = match &tool_call.tool.kind {
@@ -602,6 +732,39 @@ impl TelemetryObserver {
             data,
         });
 
+        // Hard stall: the watchdog abandoned the stream after the timeout's worth of
+        // silence, so the timeout duration IS the observed idle gap. Gated on the
+        // producer: the SDK transport's own ~59s receive timeout arrives as the same
+        // error kind and would otherwise drown the watchdog series it shares.
+        if let Err(LoopError::Stream(stream_err)) = result
+            && let StreamErrorKind::StreamTimeout {
+                duration,
+                source: StreamTimeoutSource::IdleWatchdog,
+            } = &stream_err.kind
+        {
+            // With both tiers armed, every hard cancel is an ESCALATION of the
+            // soft warning that preceded it — the same silent gap, already
+            // counted when it warned. Counting it again would leave the stall
+            // series permanently ahead of the episode ends (one gap, two
+            // stalls, one end). Only a hard cancel with no open soft episode
+            // (soft tier disabled or misconfigured) opens — and counts — the
+            // episode itself.
+            let session = self.sessions.entry(session_id.to_string()).or_default();
+            let escalated = std::mem::replace(&mut session.turn_state.soft_stall_open, false);
+            if !escalated {
+                session.turn_state.stream_stall_count = session.turn_state.stream_stall_count.saturating_add(1);
+                self.emit(EventType::StreamStall {
+                    model: self.context.model(),
+                    tier: metric::StallTier::Hard,
+                });
+            }
+            self.emit(EventType::StreamStallEpisodeEnd {
+                model: self.context.model(),
+                idle_seconds: duration.as_secs_f64(),
+                episode_end: metric::StallEpisodeEnd::HardCancelled,
+            });
+        }
+
         // Emit messageResponseError on failure
         if telemetry_result == TelemetryResult::Failed {
             self.emit(EventType::MessageResponseError {
@@ -733,6 +896,8 @@ impl TelemetryObserver {
                 emit_turn_numeric_metrics: None,
                 parent_tool_use_id: None,
                 request_attempts: turn.last_request_attempts,
+                stream_stall_count: (turn.stream_stall_count > 0).then_some(turn.stream_stall_count),
+                stream_stall_retries: (turn.stream_stall_retries > 0).then_some(turn.stream_stall_retries),
             },
         });
 
@@ -805,7 +970,13 @@ impl TelemetryObserver {
         tool_identity: Option<&ToolCallIdentity>,
         reason: &ToolCallFailureReason,
     ) {
-        let is_parse_error = matches!(reason, ToolCallFailureReason::ParseError);
+        // Exhaustive so a new variant cannot silently classify as a denial.
+        // An unavailable-tool (dummy placeholder) call is a model error like a
+        // parse failure: the model emitted a call nothing could execute.
+        let is_model_error = match reason {
+            ToolCallFailureReason::ParseError | ToolCallFailureReason::ToolUnavailable => true,
+            ToolCallFailureReason::PermissionDenied | ToolCallFailureReason::HookRejected => false,
+        };
         let (metric_tool_name, mcp_server_name, is_custom_tool) = match tool_identity {
             Some(identity) => (
                 identity.tool_name.clone(),
@@ -825,11 +996,11 @@ impl TelemetryObserver {
             tool_use_id: Some(tool_use_id.to_string()),
             tool_name: Some(metric_tool_name),
             mcp_server_name,
-            is_accepted: is_parse_error,
+            is_accepted: is_model_error,
             is_trusted: false,
-            is_success: is_parse_error.then_some(false),
+            is_success: is_model_error.then_some(false),
             reason_desc: None,
-            is_valid: Some(!is_parse_error),
+            is_valid: Some(!is_model_error),
             is_custom_tool,
             input_token_size: None,
             output_token_size: None,
@@ -957,6 +1128,7 @@ pub fn extract_reason_from_kind(stream_err: &StreamError) -> (String, String) {
         StreamErrorKind::StreamTimeout { .. } => REASON_STREAM_TIMEOUT,
         StreamErrorKind::TransientNetworkFailure { .. } => REASON_TRANSIENT_NETWORK_FAILURE,
         StreamErrorKind::Validation { .. } => REASON_VALIDATION_ERROR,
+        StreamErrorKind::AccessDenied => REASON_ACCESS_DENIED,
         StreamErrorKind::InvalidModelId { .. } => REASON_INVALID_MODEL_ID,
         StreamErrorKind::Other { reason_code, message } => reason_code.as_deref().unwrap_or_else(|| {
             if message.len() > 256 {

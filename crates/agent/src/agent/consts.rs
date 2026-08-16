@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 pub const PLANNER_AGENT_NAME: &str = "kiro_planner";
 
@@ -32,13 +34,73 @@ pub const DUMMY_TOOL_RESULT_MESSAGE: &str = "The 'dummy' tool is a placeholder f
 /// request/response loop when the model repeatedly calls an unavailable tool.
 pub const MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS: usize = 3;
 
-/// Maximum number of times a request is re-sent after a transient network failure
-/// mid-stream (e.g. connection reset) before the turn enters the error state.
-pub const MAX_TRANSIENT_NETWORK_RETRIES: u32 = 2;
-
 /// Assistant message surfaced when [`MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS`]
 /// is reached and the turn is force-ended.
 pub const REPEATED_UNEXECUTABLE_TOOL_MESSAGE: &str = "Stopped after repeated attempts to call tools that aren't available. The required tools may belong to a different agent -- consider switching agents, or rephrase your request.";
+
+/// Maximum number of stream-timeout continuation retries within a user turn before the
+/// agent stops re-prompting and surfaces the timeout as a terminal error. The counter
+/// resets whenever a response stream completes successfully, so only consecutive stalls
+/// count toward the limit.
+pub const MAX_STREAM_TIMEOUT_RETRIES: usize = 2;
+
+/// Idle window on child progress for a blocking subagent/crew stage before the
+/// parent stops waiting, cancels the unfinished children, and continues with
+/// whatever partial results completed. The parent polls the freshest child
+/// activity and resets this window on genuine progress (assistant tokens, tool
+/// calls, tool results), so an actively-working child is never cut off; only a
+/// full window of true inactivity trips it. Guards against a child that wedges
+/// tool-side past its own stream watchdog stranding the parent turn indefinitely.
+/// The default is deliberately generous. Overridable via
+/// [`SUBAGENT_STALL_TIMEOUT_ENV`]; zero disables it.
+pub const DEFAULT_SUBAGENT_TIMEOUT: Duration = Duration::from_secs(3600);
+
+/// Env override (milliseconds) for [`DEFAULT_SUBAGENT_TIMEOUT`]. `0` disables the
+/// deadline entirely (a hung child then relies only on its own stream watchdog).
+/// A malformed or absent value falls back to the default.
+pub const SUBAGENT_STALL_TIMEOUT_ENV: &str = "KIRO_SUBAGENT_STALL_TIMEOUT_MS";
+
+/// The subagent deadline override from the environment (milliseconds), or `None`
+/// when the env var is absent or malformed. Malformed is warned so a mistyped
+/// override is not silently ignored; callers then fall back to a stored setting
+/// or the default. Lets an explicit env value take precedence over a stored
+/// setting (env-over-settings).
+pub fn env_subagent_stall_timeout() -> Option<Duration> {
+    let raw = std::env::var(SUBAGENT_STALL_TIMEOUT_ENV).ok()?;
+    match raw.trim().parse::<u64>() {
+        Ok(ms) => Some(Duration::from_millis(ms)),
+        Err(_) => {
+            tracing::warn!(
+                env = SUBAGENT_STALL_TIMEOUT_ENV,
+                value = %raw,
+                "malformed subagent timeout override (expected milliseconds); ignoring"
+            );
+            None
+        },
+    }
+}
+
+/// Resolves the subagent deadline from the environment, falling back to
+/// [`DEFAULT_SUBAGENT_TIMEOUT`] on an absent or malformed value.
+pub fn subagent_stall_timeout() -> Duration {
+    env_subagent_stall_timeout().unwrap_or(DEFAULT_SUBAGENT_TIMEOUT)
+}
+
+/// Inter-event stream silence after which a stall warning is emitted while the response
+/// stream stays open, so clients can show progress instead of a frozen screen.
+pub const DEFAULT_STREAM_IDLE_SOFT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Inter-event stream silence after which the response stream is abandoned and surfaced
+/// as a stream timeout.
+///
+/// Measures the gap between consecutive stream events, never total turn duration, so
+/// long healthy generations with steady deltas can not trip it.
+///
+/// Must tolerate models whose thinking is redacted: they emit no reasoning
+/// deltas, so a healthy stream can legitimately go silent for several minutes
+/// mid-turn and then resume. 300s absorbs that silence while still catching a
+/// genuinely dead connection; anything much shorter cancels healthy turns.
+pub const DEFAULT_STREAM_IDLE_HARD_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Synthetic assistant placeholders appended on cancellation to preserve the
 /// alternating user/assistant invariant the API requires. History-only — the

@@ -1995,6 +1995,17 @@ describe('Kiro — handler registration and forwarding', () => {
         delaySecs: 1,
         message: 'retrying',
       } as AgentStreamEvent);
+      // A discard on an observed turn must reach the store too, or the
+      // abandoned partial stays on screen above the regenerated answer.
+      mockOnUpdateHandler({
+        type: AgentEventType.StreamDiscarded,
+      } as AgentStreamEvent);
+      // A stall notice on an observed turn must reach the banner too, or the
+      // observed stream reads as frozen while the backend waits out a stall.
+      mockOnUpdateHandler({
+        type: AgentEventType.StallNotice,
+        message: 'Still working, model is thinking...',
+      } as AgentStreamEvent);
       mockOnUpdateHandler({
         type: AgentEventType.AuthError,
         message: 'auth failed',
@@ -2004,7 +2015,7 @@ describe('Kiro — handler registration and forwarding', () => {
         message: 'session lost',
       } as AgentStreamEvent);
     }
-    expect(handler).toHaveBeenCalledTimes(4);
+    expect(handler).toHaveBeenCalledTimes(6);
   });
 
   it('onTurnSummary receives TurnSummary events', async () => {

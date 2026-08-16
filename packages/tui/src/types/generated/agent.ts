@@ -590,6 +590,14 @@ export type StreamErrorKind =
 	message: string;
 }}
 	/**
+	 * Authentication was rejected (HTTP 401/403 or `AccessDeniedException`).
+	 * 
+	 * On a long turn this usually means the access token expired mid-request.
+	 * Terminal today; distinguished from `Other` so callers can message it clearly
+	 * and (later) drive a token refresh.
+	 */
+	| { kind: "accessDenied", data?: undefined }
+	/**
 	 * The request was invalid.
 	 * 
 	 * Not retryable - indicative of a bug with the client.
@@ -608,6 +616,13 @@ export type StreamErrorKind =
 	 */
 	| { kind: "streamTimeout", data: {
 	duration: { secs: number, nanos: number };
+	/**
+	 * Which mechanism abandoned the stream. Retry behavior treats both
+	 * identically; telemetry must not: the stall series answers "how often
+	 * do streams idle past the watchdog threshold", and the SDK's ~59s
+	 * receive timeout is a different, far more common producer.
+	 */
+	source?: StreamTimeoutSource;
 }}
 	/** The stream was closed to due being interrupted (for example, on ctrl+c). */
 	| { kind: "interrupted", data?: undefined }
@@ -739,6 +754,21 @@ export type StreamEvent =
 export type StreamResult = 
 	| { result: "ok", data: StreamEvent }
 	| { result: "error", data: StreamError };
+
+/** Producer of a [`StreamErrorKind::StreamTimeout`]. */
+export enum StreamTimeoutSource {
+	/**
+	 * The agent's stream-idle watchdog cancelled the stream after the
+	 * configured hard threshold of silence.
+	 */
+	IdleWatchdog = "idleWatchdog",
+	/**
+	 * The SDK transport's own receive timeout elapsed. The serde default:
+	 * this was the only producer before the watchdog existed, so persisted
+	 * errors without a source are SDK timeouts.
+	 */
+	SdkRecv = "sdkRecv",
+}
 
 /** Tool name aliases as they appear on the wire (snake_case format). */
 export enum ToolNameAlias {

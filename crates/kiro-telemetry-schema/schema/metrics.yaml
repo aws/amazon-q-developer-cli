@@ -277,6 +277,54 @@ metrics:
     temporality: delta
     attributes: [version_full, agent_engine, model, error_kind]
     cloudwatch_dimensions: [version_full, agent_engine, model, error_kind]
+  - name: kiro_cli_stream_stall_total
+    description: Stream-idle watchdog observations of a stalled response stream, by tier.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, model, stall_tier, session_interface, acp_client]
+    cloudwatch_dimensions: [version_full, agent_engine, model, stall_tier, session_interface, acp_client]
+  - name: kiro_cli_stream_stall_idle_seconds
+    description: Observed inter-event silent gap when a stream-stall episode ended.
+    kind: histogram
+    unit: s
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, model, stall_episode_end, session_interface, acp_client]
+    cloudwatch_dimensions: [version_full, agent_engine, model, stall_episode_end, session_interface, acp_client]
+  - name: kiro_cli_stream_stall_retry_total
+    description: Terminal outcomes of bounded stall-continuation retry sequences.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, model, retry_outcome, attempt_number_bucket, partial_output, session_interface, acp_client]
+    cloudwatch_dimensions: [version_full, agent_engine, model, retry_outcome, attempt_number_bucket, partial_output, session_interface, acp_client]
+  - name: kiro_cli_stream_stall_recovery_seconds
+    description: Time from a hard stall cancel until the retried stream produced its first event.
+    kind: histogram
+    unit: s
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, model, session_interface, acp_client]
+    cloudwatch_dimensions: [version_full, agent_engine, model, session_interface, acp_client]
+  - name: kiro_cli_subagent_deadline_expired_total
+    description: Subagent stages cancelled because the overall subagent deadline expired.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, deadline_seconds_bucket]
+    cloudwatch_dimensions: [version_full, agent_engine, deadline_seconds_bucket]
+  - name: kiro_cli_transient_retry_total
+    description: Agent-layer retries of transient backend failures (throttle/5xx/network) after a backoff.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, agent_engine, model, transient_class, attempt_number_bucket, partial_output, session_interface, acp_client]
+    cloudwatch_dimensions: [version_full, agent_engine, model, transient_class, attempt_number_bucket, partial_output, session_interface, acp_client]
   - name: kiro_cli_process_memory_rss_bytes
     description: Periodic resident-set-size observations for CLI process roles.
     dashboard: true

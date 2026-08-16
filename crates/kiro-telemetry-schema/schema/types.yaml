@@ -257,6 +257,30 @@ attributes:
   - name: turn_failure_reason
     description: Typed terminal cause of a failed user turn.
     allowed_values: [context_limit, timeout, model_error, tool_error, execution_limit, internal_error, unknown]
+  - name: retry_outcome
+    description: Terminal result of a bounded stall-continuation retry sequence.
+    allowed_values: [recovered, exhausted, cancelled, unknown]
+  - name: stall_tier
+    description: Stream-idle watchdog threshold that fired for a stall observation.
+    allowed_values: [soft, hard]
+  - name: stall_episode_end
+    description: How a stream-stall episode ended.
+    allowed_values: [resumed, hard_cancelled, failed, cancelled]
+  - name: attempt_number_bucket
+    description: Bounded stall-continuation attempt ordinal.
+    allowed_values: ["1", "2", unknown]
+  - name: partial_output
+    description: Whether any assistant output had streamed before a stall was cancelled.
+    allowed_values: ["yes", "no", unknown]
+  - name: deadline_seconds_bucket
+    description: Configured subagent deadline relative to the default.
+    allowed_values: [under_default, default, over_default, unknown]
+  - name: transient_class
+    description: Class of transient backend failure retried at the agent layer.
+    allowed_values: [throttle, server_error, network, unknown]
+  - name: acp_client
+    description: ACP client driving the session, so Crew (kirocrew) is isolatable within external_acp.
+    allowed_values: [cli, kirocrew, other, unknown]
   - name: render_kind
     description: Whether Twinki performed a differential or full-screen render.
     allowed_values: [partial, full]

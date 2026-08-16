@@ -232,6 +232,10 @@ pub enum ToolCallFailureReason {
     PermissionDenied,
     /// A pre-execution hook rejected the tool call.
     HookRejected,
+    /// The model called the `dummy` placeholder for a tool that is not
+    /// available to the current agent; the call is answered with guidance
+    /// instead of executing.
+    ToolUnavailable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -670,6 +674,86 @@ pub enum InternalEvent {
     },
     /// Events specific to tool and hook execution
     TaskExecutor(Box<TaskExecutorEvent>),
+    /// Terminal outcome of a bounded stall-continuation retry sequence.
+    StreamStallRetry {
+        outcome: StallRetryOutcome,
+        /// How many continuation retries had been issued when the sequence ended.
+        attempt_number: u32,
+        /// Whether any assistant output had streamed before a stall in this sequence
+        /// (output the user saw and the retry threw away).
+        partial_output: bool,
+        /// Producer of the stall that (most recently) drove this sequence, so the
+        /// whole stall metric family can be gated on the same source.
+        source: crate::agent::agent_loop::types::StreamTimeoutSource,
+    },
+    /// A retried stream produced its first event after a hard stall cancel.
+    StreamStallRecovery {
+        recovery: std::time::Duration,
+        /// Producer of the stall this recovery closes out.
+        source: crate::agent::agent_loop::types::StreamTimeoutSource,
+    },
+    /// The idle watchdog cancelled a compaction stream. A dedicated event rather
+    /// than a forwarded compaction `ResponseStreamEnd`: the raw stream end drives
+    /// the message-level request series, which is reserved for requests that
+    /// carry actual chat messages.
+    CompactionStreamStalled {
+        /// The hard idle threshold that elapsed — the observed idle gap.
+        idle: std::time::Duration,
+    },
+    /// A hard-stall cancel abandoned the in-flight stream and a continuation
+    /// request is being issued. Clients that rendered the abandoned stream's
+    /// partial output must discard it: history replaces it with a timeout
+    /// notice, so leaving it on screen shows text the model has no record of.
+    StreamStallContinuation {
+        /// Whether the abandoned stream had streamed visible output (text,
+        /// thinking, or a tool-use start) before the stall.
+        partial_output: bool,
+    },
+    /// An agent-layer retry of a transient backend failure (throttle/5xx/network)
+    /// is being issued after a backoff wait.
+    TransientRetry {
+        /// Typed failure class; closed set so telemetry dimensions can never
+        /// receive an out-of-schema label.
+        class: crate::agent::error_recovery::TransientErrorClass,
+        /// 1-based attempt number within the current turn.
+        attempt_number: u32,
+        /// How long the agent waited before this retry.
+        backoff: std::time::Duration,
+        /// Whether assistant output had already streamed (and been rendered) before
+        /// the failure — the clean re-send regenerates the response from scratch.
+        partial_output: bool,
+    },
+    /// A scheduled transient retry actually fired and its request is being
+    /// re-sent. This — not [`Self::TransientRetry`], which fires at schedule
+    /// time and drives the banner — is what retry-volume telemetry counts, so
+    /// retries suppressed by a cancel during the backoff are not counted.
+    TransientRetryExecuted {
+        /// Typed failure class of the failure being retried.
+        class: crate::agent::error_recovery::TransientErrorClass,
+        /// 1-based attempt number within the current turn.
+        attempt_number: u32,
+        /// Whether assistant output had streamed before the failure.
+        partial_output: bool,
+    },
+    /// A blocking subagent/crew stage was cancelled because its wall-clock deadline
+    /// expired; the parent continues with whatever partial results completed.
+    SubagentDeadlineExpired {
+        /// The configured deadline that elapsed.
+        deadline: std::time::Duration,
+    },
+}
+
+/// Terminal outcome of a bounded stall-continuation retry sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StallRetryOutcome {
+    /// A stream completed after one or more stall retries.
+    Recovered,
+    /// The retry budget was exhausted and the turn errored.
+    Exhausted,
+    /// The turn was torn down (cancel or unrelated terminal error) mid-sequence,
+    /// before the retried stream proved recovery or the budget ran out.
+    Cancelled,
 }
 
 #[cfg(test)]

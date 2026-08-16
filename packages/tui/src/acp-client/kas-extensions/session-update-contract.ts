@@ -32,6 +32,21 @@ interface RetryWarningUpdate {
   message: string;
 }
 
+/** Message-only stall progress notice — nothing is being retried, so it carries
+ * none of the retry-shaped fields. */
+interface StreamStallNoticeUpdate {
+  sessionUpdate: 'stream_stall_notice';
+  message: string;
+}
+
+/** The in-flight stream was abandoned after partial output was rendered — by
+ * an agent-layer transient retry or a hard-stall cancel; the response is
+ * regenerated from scratch, so the rendered partial must be discarded rather
+ * than concatenated with the replacement response. */
+interface StreamDiscardedUpdate {
+  sessionUpdate: 'stream_discarded';
+}
+
 interface SteeringContentUpdate {
   sessionUpdate:
     | 'AgentExecutionUserMessageQueued'
@@ -46,6 +61,8 @@ interface SteeringClearedUpdate {
 export type ExtSessionUpdate =
   | ToolCallChunkUpdate
   | RetryWarningUpdate
+  | StreamStallNoticeUpdate
+  | StreamDiscardedUpdate
   | SteeringContentUpdate
   | SteeringClearedUpdate;
 
@@ -304,6 +321,26 @@ export function decodeExtSessionUpdate(
           delaySecs: update.delaySecs,
           message: update.message,
         },
+      };
+    case 'stream_stall_notice':
+      if (typeof update.message !== 'string') {
+        return null;
+      }
+      return {
+        ...(value.sessionId === undefined
+          ? {}
+          : { sessionId: value.sessionId }),
+        update: {
+          sessionUpdate: update.sessionUpdate,
+          message: update.message,
+        },
+      };
+    case 'stream_discarded':
+      return {
+        ...(value.sessionId === undefined
+          ? {}
+          : { sessionId: value.sessionId }),
+        update: { sessionUpdate: update.sessionUpdate },
       };
     case 'AgentExecutionUserMessageQueued':
     case 'AgentExecutionSteeringInjected':

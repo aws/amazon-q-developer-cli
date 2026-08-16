@@ -2,6 +2,7 @@ pub mod agent_config;
 pub mod agent_loop;
 pub mod compact;
 pub mod consts;
+pub mod error_recovery;
 pub mod event_log;
 pub mod goal;
 pub mod mcp;
@@ -27,7 +28,6 @@ use std::collections::{
 };
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use agent_config::definitions::{
     HookConfig,
@@ -56,10 +56,9 @@ use agent_loop::types::{
     ContentBlock,
     Message,
     MessageMetadata,
-    RetryWarningEvent,
     Role,
     StreamErrorKind,
-    StreamEvent,
+    StreamTimeoutSource,
     ToolResultBlock,
     ToolResultContentBlock,
     ToolResultStatus,
@@ -109,6 +108,7 @@ use protocol::{
     PermissionOptionId,
     SendApprovalResultArgs,
     SendPromptArgs,
+    StallRetryOutcome,
     SwapAgentArgs,
     ToolCall,
     ToolCallFailureReason,
@@ -196,6 +196,7 @@ use crate::agent::consts::{
     DUMMY_TOOL_NAME,
     DUMMY_TOOL_RESULT_MESSAGE,
     MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS,
+    MAX_STREAM_TIMEOUT_RETRIES,
     REPEATED_UNEXECUTABLE_TOOL_MESSAGE,
 };
 use crate::agent::mcp::{
@@ -702,6 +703,18 @@ impl AgentHandle {
     }
 }
 
+/// A transient re-send scheduled for after a backoff wait.
+#[derive(Debug, Clone, Copy)]
+struct ScheduledTransientRetry {
+    /// When the re-send should fire.
+    at: Instant,
+    class: error_recovery::TransientErrorClass,
+    /// 1-based attempt number within the current turn.
+    attempt_number: u32,
+    /// Whether assistant output had streamed before the failure.
+    partial_output: bool,
+}
+
 /// Core LLM agent that implements an [`AgentConfig`].
 ///
 /// Use [`Agent::spawn`] to start the actor and obtain an [`AgentHandle`].
@@ -727,11 +740,6 @@ pub struct Agent {
     summary_rx: Option<mpsc::UnboundedReceiver<Summary>>,
 
     agent_event_buf: Vec<AgentEvent>,
-
-    /// A request re-send scheduled after a transient network failure mid-stream, fired
-    /// from the main loop once the backoff elapses. Deferring keeps the actor responsive
-    /// (e.g. to Cancel) during the wait. Cleared whenever the turn ends.
-    pending_transient_retry: Option<PendingTransientRetry>,
 
     /// Contains an [AgentLoop] if the agent is in the middle of executing a user turn, otherwise
     /// is [None].
@@ -832,6 +840,51 @@ pub struct Agent {
     /// [`MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS`] the turn is force-ended to
     /// prevent an unbounded unavailable-tool retry loop.
     consecutive_unexecutable_tool_turns: usize,
+
+    /// Number of consecutive stream-timeout continuation retries in the current turn.
+    /// Reset whenever a response stream completes successfully or a new user prompt
+    /// arrives. Once it exceeds [`MAX_STREAM_TIMEOUT_RETRIES`] the timeout is surfaced
+    /// as a terminal error instead of re-prompting, preventing an unbounded retry loop
+    /// against a persistently stalling backend.
+    stream_timeout_retries: usize,
+
+    /// Whether the in-flight response stream has produced any visible output (text,
+    /// thinking, or a tool-use start). Cleared when a stall retry is issued.
+    current_stream_had_output: bool,
+
+    /// Whether any stream in the current stall-retry sequence had produced visible
+    /// output before it stalled — output the user saw and the retry threw away.
+    /// Latched from [`Self::current_stream_had_output`] on each stall; cleared when
+    /// the sequence reaches a terminal outcome.
+    stall_partial_output: bool,
+
+    /// When the most recent stall retry was dispatched, and which producer
+    /// (watchdog vs SDK recv timeout) triggered that stall. Closed (and an event
+    /// emitted) on the first event of the retried stream; measures
+    /// stall-to-recovery time. The source rides along so every member of the
+    /// stall metric family can be gated on the same producer.
+    stall_recovery_started: Option<(Instant, StreamTimeoutSource)>,
+    /// Producer of the stall that OPENED the current continuation sequence
+    /// (stamped only on the 0->1 retry transition); stamps the terminal
+    /// StreamStallRetry outcomes and the recovery window so the whole episode
+    /// gates consistently.
+    last_stall_source: StreamTimeoutSource,
+
+    /// Consecutive agent-layer transient-failure retries (throttle/5xx/network drop)
+    /// in the current turn. Reset when a response stream completes or a new prompt
+    /// arrives. Bounded so a persistently failing backend can't be retried forever.
+    transient_retries: usize,
+
+    /// A scheduled transient re-send: when it should fire, plus the metric payload
+    /// emitted only if it actually fires (a cancel during the backoff must not count
+    /// as a retry). The main loop selects on the deadline so the backoff wait never
+    /// blocks interrupt/cancel handling. Cleared once fired.
+    scheduled_transient_retry: Option<ScheduledTransientRetry>,
+
+    /// Whether a mid-turn auth-expiry (401/AccessDenied) refresh-and-retry has
+    /// already been attempted in the current turn. Bounds the reauth retry to once
+    /// so a persistently rejecting backend can't loop. Reset on a new prompt.
+    auth_refresh_attempted: bool,
 
     /// In-flight forced (re-)auth flows: **shadow** server name → **target** name.
     /// A loaded server's shadow runs OAuth alongside the original and is promoted on
@@ -971,7 +1024,6 @@ impl Agent {
             summary_tx,
             summary_rx: Some(summary_rx),
             agent_event_buf: Vec::new(),
-            pending_transient_retry: None,
             agent_loop: None,
             compaction_loop: None,
             task_executor,
@@ -998,6 +1050,14 @@ impl Agent {
             tool_search_active: false,
             queued_steers: Vec::new(),
             consecutive_unexecutable_tool_turns: 0,
+            stream_timeout_retries: 0,
+            current_stream_had_output: false,
+            stall_partial_output: false,
+            stall_recovery_started: None,
+            last_stall_source: StreamTimeoutSource::default(),
+            transient_retries: 0,
+            scheduled_transient_retry: None,
+            auth_refresh_attempted: false,
             reauth_shadows: HashMap::new(),
         })
     }
@@ -1226,8 +1286,6 @@ impl Agent {
                 let _ = self.agent_event_tx.send(event);
             }
 
-            let transient_retry_at = self.pending_transient_retry.as_ref().map(|r| r.fire_at);
-
             tokio::select! {
                 req = request_rx.recv() => {
                     let Some(req) = req else {
@@ -1302,20 +1360,69 @@ impl Agent {
                     }
                 },
 
-                // Branch that fires a scheduled transient-network retry once its backoff
-                // elapses. Kept in the select so Cancel and other requests stay responsive
-                // during the wait.
-                _ = tokio::time::sleep_until(transient_retry_at.unwrap_or_else(tokio::time::Instant::now)),
-                        if transient_retry_at.is_some() => {
-                    if let Some(retry) = self.pending_transient_retry.take()
-                        && let Err(e) = self.send_request(retry.args).await
+                // Fires a scheduled transient-failure re-send once its backoff elapses.
+                // Kept as its own branch so the wait never blocks request handling.
+                _ = async {
+                    match &self.scheduled_transient_retry {
+                        Some(scheduled) => tokio::time::sleep_until(scheduled.at).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(scheduled) = self.scheduled_transient_retry.take()
+                        && let Err(e) = self.fire_transient_retry(scheduled).await
                     {
-                        error!(?e, "failed to re-send request after transient network failure");
+                        error!(?e, "failed to re-send after transient backoff");
                         self.enter_error_state(e).await;
                     }
                 },
             }
         }
+    }
+
+    /// Re-sends the failed request after a transient-failure backoff: the pending
+    /// user request when one is executing, or the compaction request when the
+    /// failure hit the compaction loop.
+    ///
+    /// Preserves the compaction-retry/empty-response guard flags of the request being
+    /// retried so a transient failure inside a post-compaction retry can't reopen the
+    /// overflow loop. The executed-retry telemetry event is emitted here — not at
+    /// schedule time — so retries suppressed by a cancel during backoff aren't
+    /// counted as requests to the model service.
+    async fn fire_transient_retry(&mut self, scheduled: ScheduledTransientRetry) -> Result<(), AgentError> {
+        if let ActiveState::Compacting { strategy, .. } = self.execution_state.active_state.clone() {
+            self.agent_event_buf
+                .push(AgentEvent::Internal(InternalEvent::TransientRetryExecuted {
+                    class: scheduled.class,
+                    attempt_number: scheduled.attempt_number,
+                    partial_output: scheduled.partial_output,
+                }));
+            return self.start_compaction(strategy).await;
+        }
+        let (pending, compaction_retry, empty_response_retried) = match &self.execution_state.active_state {
+            ActiveState::ExecutingRequest {
+                pending_user_message: Some(p),
+                compaction_retry,
+                empty_response_retried,
+            } => (p.clone(), *compaction_retry, *empty_response_retried),
+            _ => {
+                warn!("transient retry fired with no pending request - ignoring");
+                return Ok(());
+            },
+        };
+        self.agent_event_buf
+            .push(AgentEvent::Internal(InternalEvent::TransientRetryExecuted {
+                class: scheduled.class,
+                attempt_number: scheduled.attempt_number,
+                partial_output: scheduled.partial_output,
+            }));
+        let args = self.format_request(&pending).await;
+        self.execution_state.active_state = ActiveState::ExecutingRequest {
+            compaction_retry,
+            empty_response_retried,
+            pending_user_message: Some(pending),
+        };
+        self.send_request(args).await?;
+        Ok(())
     }
 
     fn active_state(&self) -> &ActiveState {
@@ -1414,12 +1521,38 @@ impl Agent {
     /// (e.g. an empty/cancelled trailing model response erroring the turn after
     /// the subagent already produced its result); explicit user cancellation
     /// passes `false` so a killed subagent reports no result, as intended.
+    /// Disarms all per-turn recovery state on turn teardown (cancel, error, dropped
+    /// loop channel): the scheduled transient re-send and stall-recovery marker are
+    /// cleared — letting the timer fire after the turn is over only burns a wakeup
+    /// and logs a misleading "no pending request" warning — and a stall-retry
+    /// sequence still open is closed as Cancelled. Recovered/Exhausted are emitted
+    /// on their own paths (which reset the counter first), so a nonzero counter
+    /// here means the sequence was cut off, and closing it keeps the stall-outcome
+    /// series free of sequences that never conclude.
+    fn disarm_turn_recovery_state(&mut self) {
+        self.scheduled_transient_retry = None;
+        self.stall_recovery_started = None;
+        if self.stream_timeout_retries > 0 {
+            self.agent_event_buf
+                .push(AgentEvent::Internal(InternalEvent::StreamStallRetry {
+                    outcome: StallRetryOutcome::Cancelled,
+                    attempt_number: self.stream_timeout_retries as u32,
+                    partial_output: self.stall_partial_output,
+                    source: self.last_stall_source,
+                }));
+            self.stream_timeout_retries = 0;
+            self.stall_partial_output = false;
+        }
+    }
+
     async fn end_current_turn(
         &mut self,
         salvage_pending_summary: bool,
     ) -> Result<Option<UserTurnMetadata>, AgentError> {
-        // A scheduled retry belongs to the turn being torn down.
-        self.pending_transient_retry = None;
+        // Runs before the no-handle early return so a teardown after the loop
+        // handle is already gone still disarms.
+        self.disarm_turn_recovery_state();
+
         let Some(mut handle) = self.agent_loop.take() else {
             return Ok(None);
         };
@@ -2601,7 +2734,6 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
-                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -2625,7 +2757,9 @@ impl Agent {
         let Some(evt) = evt else {
             warn!("agent loop channel dropped without EndTurn, emitting Stop event");
             self.agent_loop = None;
-            self.pending_transient_retry = None;
+            // This teardown path never reaches end_current_turn (the handle is
+            // dropped right here), so it disarms the per-turn recovery state itself.
+            self.disarm_turn_recovery_state();
             self.set_active_state(ActiveState::Idle).await;
             self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
             return Ok(());
@@ -2634,9 +2768,46 @@ impl Agent {
         self.agent_event_buf
             .push(AgentLoopEvent::new(loop_id.clone(), evt.clone()).into());
 
+        // Track visible output on the in-flight stream and close the recovery window on
+        // its first event, for stall telemetry.
+        match &evt {
+            AgentLoopEventKind::AssistantText(_)
+            | AgentLoopEventKind::ThinkingText(_)
+            | AgentLoopEventKind::ReasoningContent(_)
+            | AgentLoopEventKind::ToolUseStart { .. } => {
+                self.current_stream_had_output = true;
+            },
+            _ => {},
+        }
+        // Only a real stream event proves recovery; a failed retry surfaces as
+        // Stream(Err) and must not be measured as a recovery.
+        if matches!(&evt, AgentLoopEventKind::Stream(StreamResult::Ok(_)))
+            && let Some((started, source)) = self.stall_recovery_started.take()
+        {
+            self.agent_event_buf
+                .push(AgentEvent::Internal(InternalEvent::StreamStallRecovery {
+                    recovery: started.elapsed(),
+                    source,
+                }));
+        }
+
         match evt {
             AgentLoopEventKind::ResponseStreamEnd { result, metadata } => match result {
                 Ok(msg) => {
+                    // A completed stream proves the backend can respond again. A completed
+                    // stream after stall retries ends the sequence as recovered.
+                    if self.stream_timeout_retries > 0 {
+                        self.agent_event_buf
+                            .push(AgentEvent::Internal(InternalEvent::StreamStallRetry {
+                                outcome: StallRetryOutcome::Recovered,
+                                attempt_number: self.stream_timeout_retries as u32,
+                                partial_output: self.stall_partial_output,
+                                source: self.last_stall_source,
+                            }));
+                        self.stall_partial_output = false;
+                    }
+                    self.stream_timeout_retries = 0;
+                    self.transient_retries = 0;
                     // Append pending user message now that we have a successful response
                     if let ActiveState::ExecutingRequest {
                         pending_user_message: Some(pending),
@@ -2790,7 +2961,6 @@ impl Agent {
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
-                        transient_network_retries: 0,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
@@ -2823,7 +2993,6 @@ impl Agent {
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
-                        transient_network_retries: 0,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
@@ -2842,35 +3011,73 @@ impl Agent {
                     warn!("empty response on retry - entering error state");
                     self.enter_error_state(err.clone().into()).await;
                 } else {
-                    let (compaction_retry, transient_network_retries, pending) =
-                        match &self.execution_state.active_state {
-                            ActiveState::ExecutingRequest {
-                                compaction_retry,
-                                transient_network_retries,
-                                pending_user_message: Some(p),
-                                ..
-                            } => (*compaction_retry, *transient_network_retries, p.clone()),
-                            _ => {
-                                error!("empty response with no pending user message - entering error state");
-                                self.enter_error_state(err.clone().into()).await;
-                                return Ok(());
-                            },
-                        };
+                    let (compaction_retry, pending) = match &self.execution_state.active_state {
+                        ActiveState::ExecutingRequest {
+                            compaction_retry,
+                            pending_user_message: Some(p),
+                            ..
+                        } => (*compaction_retry, p.clone()),
+                        _ => {
+                            error!("empty response with no pending user message - entering error state");
+                            self.enter_error_state(err.clone().into()).await;
+                            return Ok(());
+                        },
+                    };
                     warn!("empty response from model - retrying once with the same request");
                     let args = self.format_request(&pending).await;
-                    // Same logical request: sibling retry state carries forward so the
-                    // per-request caps still bound a backend alternating failure modes.
+                    // Same logical request: the compaction-retry guard carries forward so
+                    // an empty response inside a post-compaction retry can't reopen the
+                    // overflow loop.
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry,
                         empty_response_retried: true,
-                        transient_network_retries,
                         pending_user_message: Some(pending),
                     };
                     self.send_request(args).await?;
                 }
             },
             LoopError::Stream(stream_err) => match &stream_err.kind {
-                StreamErrorKind::StreamTimeout { .. } => {
+                StreamErrorKind::StreamTimeout { source, .. } => {
+                    self.stall_partial_output |= self.current_stream_had_output;
+                    // Stamp the sequence's producer only when this stall OPENS the
+                    // sequence, so the terminal outcome and the stall events that
+                    // opened the episode always land on the same side of the
+                    // watchdog gate even if a later stall in the same sequence
+                    // has a different producer.
+                    if self.stream_timeout_retries == 0 {
+                        self.last_stall_source = *source;
+                    }
+                    if self.stream_timeout_retries >= MAX_STREAM_TIMEOUT_RETRIES {
+                        error!(
+                            retries = self.stream_timeout_retries,
+                            "stream timed out again after exhausting continuation retries - entering error state"
+                        );
+                        self.agent_event_buf
+                            .push(AgentEvent::Internal(InternalEvent::StreamStallRetry {
+                                outcome: StallRetryOutcome::Exhausted,
+                                attempt_number: self.stream_timeout_retries as u32,
+                                partial_output: self.stall_partial_output,
+                                source: self.last_stall_source,
+                            }));
+                        self.stall_partial_output = false;
+                        self.stream_timeout_retries = 0;
+                        self.enter_error_state(err.clone().into()).await;
+                        return Ok(());
+                    }
+                    self.stream_timeout_retries += 1;
+                    // The recovery window carries the sequence's OPENING producer
+                    // (like the terminal outcome), so every member of the stall
+                    // family for one episode lands on the same side of the gate.
+                    self.stall_recovery_started = Some((Instant::now(), self.last_stall_source));
+
+                    // The continuation abandons the cancelled stream: history gets a
+                    // timeout notice instead of the partial, so clients must drop the
+                    // rendered partial (and any spinning tool row it opened) too.
+                    self.agent_event_buf
+                        .push(AgentEvent::Internal(InternalEvent::StreamStallContinuation {
+                            partial_output: self.current_stream_had_output,
+                        }));
+
                     // Append the original pending user message since we got a (partial) response
                     if let ActiveState::ExecutingRequest {
                         pending_user_message: Some(pending),
@@ -2909,92 +3116,12 @@ impl Agent {
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
-                        transient_network_retries: 0,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
                 },
                 StreamErrorKind::Interrupted => {
                     // nothing to do
-                },
-                StreamErrorKind::TransientNetworkFailure { .. } => {
-                    // The connection dropped mid-stream (e.g. connection reset). The request
-                    // can be re-sent as-is: the partial response is discarded, so history is
-                    // unaffected. Bounded to avoid looping on a persistent network outage.
-                    let state = match &self.execution_state.active_state {
-                        ActiveState::ExecutingRequest {
-                            compaction_retry,
-                            empty_response_retried,
-                            transient_network_retries,
-                            pending_user_message: Some(pending),
-                        } => Some((
-                            *compaction_retry,
-                            *empty_response_retried,
-                            *transient_network_retries,
-                            pending.clone(),
-                        )),
-                        _ => None,
-                    };
-                    match state {
-                        Some((compaction_retry, empty_response_retried, retries, pending))
-                            if retries < consts::MAX_TRANSIENT_NETWORK_RETRIES =>
-                        {
-                            // Exponential backoff (1s, 2s) so the retry budget covers more
-                            // than an instantaneous blip. The original request was attempt 1,
-                            // so the upcoming attempt is retries + 2.
-                            let delay = Duration::from_secs(1 << retries);
-                            let attempt = retries + 2;
-                            let max_attempts = consts::MAX_TRANSIENT_NETWORK_RETRIES + 1;
-                            warn!(
-                                attempt,
-                                ?delay,
-                                "transient network failure during the response stream - retrying"
-                            );
-
-                            // Surface the retry to the UI through the same event the HTTP-level
-                            // retry warnings use. Clients also use this to discard the partial
-                            // response, which the retried stream re-generates from scratch.
-                            if let Ok(handle) = self.agent_loop_handle() {
-                                let loop_id = handle.id().clone();
-                                self.agent_event_buf.push(
-                                    AgentLoopEvent::new(
-                                        loop_id,
-                                        AgentLoopEventKind::Stream(StreamResult::Ok(StreamEvent::RetryWarning(
-                                            RetryWarningEvent {
-                                                attempt,
-                                                max_attempts,
-                                                delay_secs: delay.as_secs_f64(),
-                                                message: format!(
-                                                    "Connection interrupted - retrying in {}s (attempt {attempt}/{max_attempts})",
-                                                    delay.as_secs()
-                                                ),
-                                            },
-                                        ))),
-                                    )
-                                    .into(),
-                                );
-                            }
-
-                            let args = self.format_request(&pending).await;
-                            // The retry re-sends the same logical request, so sibling retry
-                            // state (compaction escalation, empty-response flag) carries
-                            // forward unchanged.
-                            self.execution_state.active_state = ActiveState::ExecutingRequest {
-                                compaction_retry,
-                                empty_response_retried,
-                                transient_network_retries: retries + 1,
-                                pending_user_message: Some(pending),
-                            };
-                            self.pending_transient_retry = Some(PendingTransientRetry {
-                                fire_at: tokio::time::Instant::now() + delay,
-                                args,
-                            });
-                        },
-                        _ => {
-                            error!("transient network failure with no retries left - entering error state");
-                            self.enter_error_state(err.clone().into()).await;
-                        },
-                    }
                 },
                 StreamErrorKind::ContextWindowOverflow if !self.settings.disable_auto_compact => {
                     // Check if this is a retry after compaction
@@ -3045,7 +3172,6 @@ impl Agent {
                                     is_prompt_truncated: true,
                                 }),
                                 empty_response_retried: false,
-                                transient_network_retries: 0,
                                 pending_user_message: Some(truncated_pending),
                             })
                             .await;
@@ -3058,13 +3184,92 @@ impl Agent {
                         self.start_compaction(CompactStrategy::default_strategy()).await?;
                     }
                 },
+                // A between-request auth rejection (401/AccessDenied) on a long
+                // multi-cycle turn usually means the token resolved at request-build
+                // time expired. Force a token refresh and cleanly re-send once before
+                // surfacing it.
+                StreamErrorKind::AccessDenied if !self.auth_refresh_attempted => {
+                    self.auth_refresh_attempted = true;
+                    let pending = match &self.execution_state.active_state {
+                        ActiveState::ExecutingRequest {
+                            pending_user_message: Some(p),
+                            ..
+                        } => p.clone(),
+                        _ => {
+                            error!("auth rejection with no pending user message - entering error state");
+                            self.enter_error_state(err.clone().into()).await;
+                            return Ok(());
+                        },
+                    };
+                    if self.model.refresh_auth().await {
+                        warn!("mid-turn auth rejection - refreshed token, retrying once");
+                        let args = self.format_request(&pending).await;
+                        self.execution_state.active_state = ActiveState::ExecutingRequest {
+                            compaction_retry: None,
+                            empty_response_retried: false,
+                            pending_user_message: Some(pending),
+                        };
+                        self.send_request(args).await?;
+                    } else {
+                        warn!("mid-turn auth rejection - no refreshable token, surfacing error");
+                        self.enter_error_state(err.clone().into()).await;
+                    }
+                },
+                // A transient backend failure (throttle, 5xx, transport drop) is
+                // recoverable: back off and cleanly re-send the same request within a
+                // bounded budget before giving up, honoring any server Retry-After.
+                StreamErrorKind::ServiceFailure
+                | StreamErrorKind::Throttling
+                | StreamErrorKind::ModelOverloaded { .. }
+                | StreamErrorKind::TransientNetworkFailure { .. }
+                | StreamErrorKind::Other { .. }
+                    if stream_err.transient_class().is_some()
+                        && self.transient_retries < error_recovery::MAX_TRANSIENT_RETRIES =>
+                {
+                    // Only retry if we still have the request to re-send; bail before
+                    // spending budget or emitting an event otherwise.
+                    if !matches!(self.active_state(), ActiveState::ExecutingRequest {
+                        pending_user_message: Some(_),
+                        ..
+                    }) {
+                        error!("transient stream failure with no pending user message - entering error state");
+                        self.enter_error_state(err.clone().into()).await;
+                        return Ok(());
+                    }
+                    let class = stream_err.transient_class().expect("guarded by match");
+                    let backoff = error_recovery::transient_backoff(self.transient_retries, stream_err.retry_after());
+                    warn!(
+                        attempt = self.transient_retries + 1,
+                        class = class.as_str(),
+                        backoff_ms = backoff.as_millis() as u64,
+                        "scheduling transient stream retry at the agent layer"
+                    );
+                    self.transient_retries += 1;
+                    self.agent_event_buf
+                        .push(AgentEvent::Internal(InternalEvent::TransientRetry {
+                            class,
+                            attempt_number: self.transient_retries as u32,
+                            backoff,
+                            partial_output: self.current_stream_had_output,
+                        }));
+                    // Schedule the re-send instead of sleeping inline so the actor's
+                    // main loop keeps handling interrupt/cancel during the backoff.
+                    self.scheduled_transient_retry = Some(ScheduledTransientRetry {
+                        at: Instant::now() + backoff,
+                        class,
+                        attempt_number: self.transient_retries as u32,
+                        partial_output: self.current_stream_had_output,
+                    });
+                },
                 StreamErrorKind::Validation { .. }
                 | StreamErrorKind::ServiceFailure
                 | StreamErrorKind::ContextWindowOverflow
                 | StreamErrorKind::Throttling
                 | StreamErrorKind::ModelOverloaded { .. }
                 | StreamErrorKind::MonthlyLimitReached { .. }
+                | StreamErrorKind::AccessDenied
                 | StreamErrorKind::InvalidModelId { .. }
+                | StreamErrorKind::TransientNetworkFailure { .. }
                 | StreamErrorKind::Other { .. } => {
                     self.enter_error_state(err.clone().into()).await;
                 },
@@ -3094,8 +3299,14 @@ impl Agent {
 
         // A fresh user prompt starts a new logical turn — reset the
         // unavailable-tool breaker so prior dummy/parse-error turns don't carry
-        // over and prematurely trip it.
+        // over and prematurely trip it. Same for the stream-timeout breaker.
         self.consecutive_unexecutable_tool_turns = 0;
+        self.stream_timeout_retries = 0;
+        self.transient_retries = 0;
+        self.scheduled_transient_retry = None;
+        self.auth_refresh_attempted = false;
+        self.stall_partial_output = false;
+        self.stall_recovery_started = None;
 
         // Run per-prompt hooks, if required.
         let hooks = self.get_hooks(HookTrigger::UserPromptSubmit);
@@ -3152,7 +3363,14 @@ impl Agent {
         // Create a new agent loop, and send the request.
         let loop_id = AgentLoopId::new(self.id.clone());
         let cancel_token = CancellationToken::new();
-        self.agent_loop = Some(AgentLoop::new(loop_id.clone(), cancel_token).spawn());
+        self.agent_loop = Some(
+            AgentLoop::new(loop_id.clone(), cancel_token)
+                .with_idle_timeouts(
+                    self.settings.stream_idle_soft_timeout,
+                    self.settings.stream_idle_hard_timeout,
+                )
+                .spawn(),
+        );
         let args = self.format_request(&pending).await;
         self.send_request(args)
             .await
@@ -3160,7 +3378,6 @@ impl Agent {
         self.set_active_state(ActiveState::ExecutingRequest {
             compaction_retry: None,
             empty_response_retried: false,
-            transient_network_retries: 0,
             pending_user_message: Some(pending),
         })
         .await;
@@ -3229,6 +3446,7 @@ impl Agent {
 
     async fn send_request(&mut self, request_args: SendRequestArgs) -> Result<AgentLoopResponse, AgentError> {
         debug!(?request_args, "sending request");
+        self.current_stream_had_output = false;
         let model = Arc::clone(&self.model);
         let res = self
             .agent_loop_handle()?
@@ -3300,7 +3518,12 @@ impl Agent {
         // Spawn a new agent loop specifically for compaction
         let loop_id = AgentLoopId::new(self.id.clone());
         let cancel_token = CancellationToken::new();
-        let mut compaction_handle = AgentLoop::new(loop_id, cancel_token).spawn();
+        let mut compaction_handle = AgentLoop::new(loop_id, cancel_token)
+            .with_idle_timeouts(
+                self.settings.stream_idle_soft_timeout,
+                self.settings.stream_idle_hard_timeout,
+            )
+            .spawn();
 
         let model = Arc::clone(&self.model);
         compaction_handle
@@ -3327,6 +3550,42 @@ impl Agent {
             self.compaction_loop = None;
             return Ok(());
         };
+
+        // The compaction stream is armed with the same watchdog as a main-turn
+        // stream, so its stall signals must reach the same consumers. The
+        // soft-tier warning/resumed events forward as-is — their consumers are
+        // narrow (the stall series and the ACP stall notice). A watchdog cancel
+        // emits a dedicated internal event instead of forwarding the raw stream
+        // end, which would enter the message-level request series reserved for
+        // requests carrying actual chat messages. Other compaction loop events
+        // stay unforwarded: a compaction summary is bookkeeping, not a chat
+        // message.
+        match &evt {
+            AgentLoopEventKind::StreamStallWarning { .. }
+            | AgentLoopEventKind::StreamStallResumed { .. }
+            | AgentLoopEventKind::StreamStallFailed { .. } => {
+                if let Some(handle) = self.compaction_loop.as_ref() {
+                    self.agent_event_buf
+                        .push(AgentLoopEvent::new(handle.id().clone(), evt.clone()).into());
+                }
+            },
+            AgentLoopEventKind::ResponseStreamEnd {
+                result: Err(LoopError::Stream(stream_err)),
+                ..
+            } => {
+                if let StreamErrorKind::StreamTimeout {
+                    duration,
+                    source: StreamTimeoutSource::IdleWatchdog,
+                } = &stream_err.kind
+                {
+                    self.agent_event_buf
+                        .push(AgentEvent::Internal(InternalEvent::CompactionStreamStalled {
+                            idle: *duration,
+                        }));
+                }
+            },
+            _ => {},
+        }
 
         let ActiveState::Compacting {
             strategy,
@@ -3356,6 +3615,10 @@ impl Agent {
                     // This is what stops the retry, and every later prompt, from
                     // synthesizing another overflow against a stale value.
                     self.conversation_metadata.last_context_usage = None;
+                    // A completed compaction stream proves the backend recovered, the
+                    // same as a completed main-turn stream: hand the follow-up request
+                    // its full transient budget back.
+                    self.transient_retries = 0;
                     self.compaction_loop = None;
                     self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
                     self.agent_event_buf
@@ -3368,7 +3631,6 @@ impl Agent {
                         self.set_active_state(ActiveState::ExecutingRequest {
                             compaction_retry: Some(CompactionRetry::default()),
                             empty_response_retried: false,
-                            transient_network_retries: 0,
                             pending_user_message: Some(pending),
                         })
                         .await;
@@ -3391,9 +3653,48 @@ impl Agent {
                         LoopError::Stream(stream_err) if matches!(stream_err.kind, StreamErrorKind::ContextWindowOverflow)
                     );
 
+                    // A transient backend failure (throttle/5xx/transport drop) gets
+                    // the same bounded backoff-and-retry budget as a main-turn stream:
+                    // compaction is itself the recovery path for an overflow, so
+                    // failing the turn here would return the user to an over-full
+                    // context at the worst possible moment. The stall-continuation
+                    // budget is deliberately NOT extended here — its recovery shape
+                    // (inject a synthetic follow-up user message) has no meaning for
+                    // a summary-generation request.
+                    let transient_class = match &err {
+                        LoopError::Stream(stream_err) => stream_err.transient_class(),
+                        _ => None,
+                    };
+
                     if is_context_overflow && !strategy.truncate_large_messages {
                         debug!("compaction failed due to context overflow, retrying with aggressive strategy");
                         self.start_compaction(CompactStrategy::aggressive_strategy()).await?;
+                    } else if let Some(class) = transient_class
+                        && self.transient_retries < error_recovery::MAX_TRANSIENT_RETRIES
+                        && let LoopError::Stream(stream_err) = &err
+                    {
+                        let backoff =
+                            error_recovery::transient_backoff(self.transient_retries, stream_err.retry_after());
+                        warn!(
+                            attempt = self.transient_retries + 1,
+                            class = class.as_str(),
+                            backoff_ms = backoff.as_millis() as u64,
+                            "scheduling transient retry of the failed compaction request"
+                        );
+                        self.transient_retries += 1;
+                        self.agent_event_buf
+                            .push(AgentEvent::Internal(InternalEvent::TransientRetry {
+                                class,
+                                attempt_number: self.transient_retries as u32,
+                                backoff,
+                                partial_output: false,
+                            }));
+                        self.scheduled_transient_retry = Some(ScheduledTransientRetry {
+                            at: Instant::now() + backoff,
+                            class,
+                            attempt_number: self.transient_retries as u32,
+                            partial_output: false,
+                        });
                     } else {
                         self.agent_event_buf
                             .push(AgentEvent::Compaction(CompactionEvent::Failed {
@@ -3451,12 +3752,29 @@ impl Agent {
                 content: vec![ToolResultContentBlock::Text(DUMMY_TOOL_RESULT_MESSAGE.to_string())],
                 status: ToolResultStatus::Success,
             }));
-            pre_built_results.insert(tool_use_id, LogToolResult {
+            // Log-side result is an Error so a replayed session renders the same
+            // failed chip the live session shows; the model-facing tool_result
+            // above stays Success so the model self-corrects on the guidance.
+            // The error text carries the same guidance so consumers that render
+            // the model-visible text from the result map (the KAS session
+            // converter) still deliver it rather than a bare unavailability note.
+            pre_built_results.insert(tool_use_id.clone(), LogToolResult {
                 tool: None,
-                result: ToolCallResult::Success(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Text(
-                    DUMMY_TOOL_RESULT_MESSAGE.to_string(),
-                )])),
+                result: ToolCallResult::Error(ToolExecutionError::Custom(DUMMY_TOOL_RESULT_MESSAGE.to_string())),
             });
+            // Close the tool call's client lifecycle like every other
+            // non-executed tool, so the chip resolves now instead of sitting
+            // unresolved until turn end (and so clients that scope in-flight
+            // stream state to tool completion see this request boundary).
+            self.agent_event_buf
+                .push(AgentEvent::Update(UpdateEvent::ToolCallFailed {
+                    tool_use_id,
+                    tool_name: tool_use.name.clone(),
+                    tool_identity: None,
+                    raw_input: tool_use.input.clone(),
+                    reason: ToolCallFailureReason::ToolUnavailable,
+                    error: "This tool is not available to the current agent.".to_string(),
+                }));
         }
 
         if !errors.is_empty() {
@@ -3534,7 +3852,6 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
-                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -3611,7 +3928,6 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
-                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -3964,7 +4280,6 @@ impl Agent {
                     self.set_active_state(ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
-                        transient_network_retries: 0,
                         pending_user_message: Some(pending),
                     })
                     .await;
@@ -4018,7 +4333,6 @@ impl Agent {
                     self.set_active_state(ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
-                        transient_network_retries: 0,
                         pending_user_message: Some(pending),
                     })
                     .await;
@@ -4584,7 +4898,6 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
-                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -4717,7 +5030,6 @@ impl Agent {
         self.set_active_state(ActiveState::ExecutingRequest {
             compaction_retry: None,
             empty_response_retried: false,
-            transient_network_retries: 0,
             pending_user_message: Some(pending),
         })
         .await;
@@ -5578,10 +5890,6 @@ pub enum ActiveState {
         /// retrying again.
         #[serde(default)]
         empty_response_retried: bool,
-        /// Number of times this request has been retried after a transient network failure
-        /// mid-stream. Bounded by [consts::MAX_TRANSIENT_NETWORK_RETRIES].
-        #[serde(default)]
-        transient_network_retries: u32,
         /// User message that triggered this request, to be appended to the event log only after
         /// receiving a successful assistant response. This ensures we don't persist user messages
         /// that fail (e.g., due to ContextWindowOverflow) and need to be retried or truncated.
@@ -5606,14 +5914,6 @@ pub enum ActiveState {
 pub struct CompactionRetry {
     /// Whether the user message has been truncated in a previous retry attempt.
     pub is_prompt_truncated: bool,
-}
-
-/// A request re-send scheduled after a transient network failure, dispatched by the main
-/// loop once `fire_at` is reached.
-#[derive(Debug)]
-struct PendingTransientRetry {
-    fire_at: tokio::time::Instant,
-    args: SendRequestArgs,
 }
 
 /// Tracks approval state for a single tool use.

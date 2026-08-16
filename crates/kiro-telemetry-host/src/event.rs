@@ -158,7 +158,13 @@ impl Event {
             | EventType::ContextUsagePercentage { .. }
             | EventType::ModelInvocation { .. }
             | EventType::EmptyResponseRetry { .. }
-            | EventType::AutomaticRetryCompleted { .. } => properties,
+            | EventType::AutomaticRetryCompleted { .. }
+            | EventType::StreamStall { .. }
+            | EventType::StreamStallEpisodeEnd { .. }
+            | EventType::StreamStallRetry { .. }
+            | EventType::StreamStallRecovery { .. }
+            | EventType::SubagentDeadlineExpired { .. }
+            | EventType::TransientRetry { .. } => properties,
         };
 
         if let Some(session_id) = self.metric_context.log_properties.session_id() {
@@ -303,6 +309,14 @@ pub struct RecordUserTurnCompletionArgs {
     /// Pairs with `reason`/`reason_desc` when the turn failed.
     #[serde(default)]
     pub request_attempts: Option<u32>,
+    /// Number of stream-stall observations (soft and hard) during the turn. `None` when the
+    /// emitting path does not track stalls.
+    #[serde(default)]
+    pub stream_stall_count: Option<u32>,
+    /// Number of stall-continuation retries issued during the turn. `None` when the emitting
+    /// path does not track stalls.
+    #[serde(default)]
+    pub stream_stall_retries: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -576,6 +590,47 @@ pub enum EventType {
         additional_attempts: u32,
         outcome: metric::RetryOutcome,
     },
+    /// A stream-idle watchdog threshold fired for an in-flight response stream.
+    StreamStall {
+        model: Option<String>,
+        tier: metric::StallTier,
+    },
+    /// A stream-stall episode ended, either by the stream resuming or by the hard cancel.
+    StreamStallEpisodeEnd {
+        model: Option<String>,
+        idle_seconds: f64,
+        episode_end: metric::StallEpisodeEnd,
+    },
+    /// A bounded stall-continuation retry sequence reached a terminal outcome.
+    StreamStallRetry {
+        model: Option<String>,
+        outcome: metric::RetryOutcome,
+        attempt_number: u32,
+        /// Whether any assistant output had streamed before the stall. `None` when the
+        /// emitting path cannot tell.
+        partial_output: Option<bool>,
+    },
+    /// A retried stream produced its first event after a hard stall cancel.
+    StreamStallRecovery {
+        model: Option<String>,
+        recovery_seconds: f64,
+    },
+    /// A subagent stage was cancelled because its overall deadline expired.
+    SubagentDeadlineExpired {
+        deadline_seconds: f64,
+    },
+    /// An agent-layer transient-failure retry (throttle/5xx/network) was issued
+    /// after a backoff wait.
+    TransientRetry {
+        model: Option<String>,
+        /// Typed failure class; out-of-set values deserialize to `Unknown`.
+        class: metric::TransientErrorClass,
+        attempt_number: u32,
+        /// Whether assistant output had already streamed (and been rendered) before
+        /// the failure — the retry regenerates from scratch. `None` when the
+        /// emitting path cannot tell.
+        partial_output: Option<bool>,
+    },
 }
 
 fn deserialize_mode_or_default<'de, D>(deserializer: D) -> Result<metric::Mode, D::Error>
@@ -655,6 +710,12 @@ impl EventType {
             Self::ContextUsagePercentage { .. } => None,
             Self::EmptyResponseRetry { .. } => None,
             Self::AutomaticRetryCompleted { .. } => None,
+            Self::StreamStall { .. } => None,
+            Self::StreamStallEpisodeEnd { .. } => None,
+            Self::StreamStallRetry { .. } => None,
+            Self::StreamStallRecovery { .. } => None,
+            Self::SubagentDeadlineExpired { .. } => None,
+            Self::TransientRetry { .. } => None,
             Self::ModelInvocation { .. } => None,
             Self::ChatSessionStarted { .. } => None,
         }

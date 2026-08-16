@@ -5,7 +5,10 @@ pub mod types;
 use std::pin::Pin;
 use std::str::FromStr as _;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use chrono::Utc;
 use eyre::Result;
@@ -50,13 +53,18 @@ use types::{
     StreamError,
     StreamErrorKind,
     StreamEvent,
+    StreamTimeoutSource,
     ToolUseBlock,
 };
 use uuid::Uuid;
 
 use super::tools::BuiltInToolName;
 use crate::agent::AgentId;
-use crate::agent::consts::SYNTHETIC_OVERFLOW_THRESHOLD;
+use crate::agent::consts::{
+    DEFAULT_STREAM_IDLE_HARD_TIMEOUT,
+    DEFAULT_STREAM_IDLE_SOFT_TIMEOUT,
+    SYNTHETIC_OVERFLOW_THRESHOLD,
+};
 use crate::agent::util::request_channel::{
     RequestReceiver,
     RequestSender,
@@ -136,6 +144,21 @@ pub struct AgentLoop {
     /// Parse state for the current stream (separate so cancel handler can access it)
     curr_stream_state: Option<StreamParseState>,
 
+    /// Cancels only the in-flight stream, so abandoning a stalled stream does not cancel
+    /// the whole turn (a retry request on this loop must still be able to stream).
+    curr_stream_cancel: Option<CancellationToken>,
+
+    /// Inter-event stream silence after which a stall warning is emitted. Zero disables.
+    idle_soft_timeout: Duration,
+    /// Inter-event stream silence after which the stream is abandoned and surfaced as a
+    /// stream timeout. Zero disables.
+    idle_hard_timeout: Duration,
+    /// When the most recent stream event was received. Set when a request is dispatched
+    /// so the wait for the first event is also covered.
+    last_stream_event: Option<tokio::time::Instant>,
+    /// Whether the soft stall warning already fired for the current silence window.
+    soft_stall_warned: bool,
+
     /// List of completed stream parse states
     stream_states: Vec<StreamParseState>,
 
@@ -172,6 +195,11 @@ impl AgentLoop {
             cancel_token,
             curr_stream: None,
             curr_stream_state: None,
+            curr_stream_cancel: None,
+            idle_soft_timeout: DEFAULT_STREAM_IDLE_SOFT_TIMEOUT,
+            idle_hard_timeout: DEFAULT_STREAM_IDLE_HARD_TIMEOUT,
+            last_stream_event: None,
+            soft_stall_warned: false,
             stream_states: Vec::new(),
             loop_start_time: None,
             loop_end_time: None,
@@ -180,6 +208,29 @@ impl AgentLoop {
             loop_req_tx: Some(loop_req_tx),
             loop_req_rx,
         }
+    }
+
+    /// Configures the stream-idle watchdog thresholds. A zero duration disables the
+    /// corresponding threshold.
+    pub fn with_idle_timeouts(mut self, soft: Duration, hard: Duration) -> Self {
+        // A soft threshold at or past the hard one can never fire (the hard cancel
+        // wins), so treat it as disabled rather than silently keeping a dead warning
+        // tier. User-facing settings are already reconciled once per session via
+        // `AgentSettings::reconcile_stream_idle_tiers`; this invariant guard covers
+        // direct programmatic construction, and stays at debug level because the
+        // builder runs once per turn.
+        if !soft.is_zero() && !hard.is_zero() && soft >= hard {
+            debug!(
+                ?soft,
+                ?hard,
+                "stream-idle soft timeout is >= the hard timeout; disabling the soft warning tier"
+            );
+            self.idle_soft_timeout = Duration::ZERO;
+        } else {
+            self.idle_soft_timeout = soft;
+        }
+        self.idle_hard_timeout = hard;
+        self
     }
 
     /// Spawns a new task for executing the agent loop, returning a handle for sending messages to
@@ -198,6 +249,13 @@ impl AgentLoop {
 
     async fn main_loop(mut self) {
         loop {
+            // Computed before the select so the watchdog branch doesn't borrow self.
+            let idle_deadline = if self.curr_stream.is_some() {
+                self.next_idle_deadline()
+            } else {
+                None
+            };
+
             tokio::select! {
                 // Branch for handling agent loop messages
                 req = self.loop_req_rx.recv() => {
@@ -217,32 +275,33 @@ impl AgentLoop {
                     }
                 } => {
                     debug!(?self.id, ?res, "agent loop received stream event");
-
                     // Buffer for the stream parser to update with events to send
                     let mut loop_events: Vec<AgentLoopEventKind> = Vec::new();
+
+                    // Ending a warned stall episode is worth reporting either way; the
+                    // observed gap feeds threshold tuning. Only a live event proves a
+                    // resume — an error or end-of-stream item closes the episode as
+                    // failed instead, so soft stalls and episode ends stay reconcilable
+                    // (an unmatched stall would read as one still in flight).
+                    if self.soft_stall_warned && let Some(last) = self.last_stream_event {
+                        loop_events.push(match res {
+                            Some(StreamResult::Ok(_)) => {
+                                AgentLoopEventKind::StreamStallResumed { idle: last.elapsed() }
+                            },
+                            Some(StreamResult::Err(_)) | None => {
+                                AgentLoopEventKind::StreamStallFailed { idle: last.elapsed() }
+                            },
+                        });
+                    }
+                    self.last_stream_event = Some(tokio::time::Instant::now());
+                    self.soft_stall_warned = false;
 
                     // Advance the stream parse state
                     let stream_state = self.curr_stream_state.as_mut().expect("curr_stream_state should exist when curr_stream exists");
                     stream_state.next(res, &mut loop_events);
 
                     if stream_state.ended() {
-                        // Stream ended, clean up
-                        self.curr_stream = None;
-                        let stream_state = self.curr_stream_state.take().unwrap();
-                        self.stream_states.push(stream_state);
-                        let stream_state = self.stream_states.last().expect("should exist after push");
-
-                        if stream_state.errored {
-                            // For errors, don't end the loop - wait for a retry request or a close request.
-                            loop_events.push(self.set_execution_state(LoopState::Errored));
-                        } else if stream_state.has_tool_uses() {
-                            loop_events.push(self.set_execution_state(LoopState::PendingToolUseResults));
-                        } else {
-                            // For successful streams with no tool uses, this always ends a user turn.
-                            loop_events.push(self.set_execution_state(LoopState::UserTurnEnded));
-                            self.loop_end_time = Some(Instant::now());
-                            loop_events.push(AgentLoopEventKind::UserTurnEnd(self.make_user_turn_metadata()));
-                        }
+                        self.end_current_stream(&mut loop_events);
                     }
 
                     // Send agent loop events back from the parsed state so far
@@ -250,7 +309,95 @@ impl AgentLoop {
                         self.loop_event_tx.send(ev).await.ok();
                     }
                 }
+
+                // Watchdog branch: fires when the stream has been silent past a threshold.
+                _ = async {
+                    match idle_deadline {
+                        Some(deadline) => tokio::time::sleep_until(deadline).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    self.handle_idle_deadline().await;
+                }
             }
+        }
+    }
+
+    /// Finalizes the completed stream parse state and applies the resulting state change.
+    /// `loop_events` receives the events to emit; the caller sends them.
+    fn end_current_stream(&mut self, loop_events: &mut Vec<AgentLoopEventKind>) {
+        self.curr_stream = None;
+        self.curr_stream_cancel = None;
+        self.last_stream_event = None;
+        let stream_state = self.curr_stream_state.take().unwrap();
+        self.stream_states.push(stream_state);
+        let stream_state = self.stream_states.last().expect("should exist after push");
+
+        if stream_state.errored {
+            // For errors, don't end the loop - wait for a retry request or a close request.
+            loop_events.push(self.set_execution_state(LoopState::Errored));
+        } else if stream_state.has_tool_uses() {
+            loop_events.push(self.set_execution_state(LoopState::PendingToolUseResults));
+        } else {
+            // For successful streams with no tool uses, this always ends a user turn.
+            loop_events.push(self.set_execution_state(LoopState::UserTurnEnded));
+            self.loop_end_time = Some(Instant::now());
+            loop_events.push(AgentLoopEventKind::UserTurnEnd(self.make_user_turn_metadata()));
+        }
+    }
+
+    /// Next instant at which the stream-idle watchdog should wake, or [None] when both
+    /// thresholds are disabled or no request is in flight.
+    fn next_idle_deadline(&self) -> Option<tokio::time::Instant> {
+        let last = self.last_stream_event?;
+        let soft =
+            (!self.soft_stall_warned && !self.idle_soft_timeout.is_zero()).then(|| last + self.idle_soft_timeout);
+        let hard = (!self.idle_hard_timeout.is_zero()).then(|| last + self.idle_hard_timeout);
+        match (soft, hard) {
+            (Some(s), Some(h)) => Some(s.min(h)),
+            (s, h) => s.or(h),
+        }
+    }
+
+    /// Handles a stream-idle deadline firing: warns on the soft threshold, abandons the
+    /// stream as a [StreamErrorKind::StreamTimeout] on the hard threshold.
+    async fn handle_idle_deadline(&mut self) {
+        let idle = match self.last_stream_event {
+            Some(last) => last.elapsed(),
+            None => return,
+        };
+
+        if !self.idle_hard_timeout.is_zero() && idle >= self.idle_hard_timeout {
+            warn!(?self.id, ?idle, "response stream exceeded the hard idle threshold, abandoning it");
+            // Cancel only this stream's token; the turn-level token stays live so a
+            // retry request on this loop can still stream.
+            if let Some(token) = self.curr_stream_cancel.take() {
+                token.cancel();
+            }
+            let mut loop_events: Vec<AgentLoopEventKind> = Vec::new();
+            let stream_state = self
+                .curr_stream_state
+                .as_mut()
+                .expect("curr_stream_state should exist when curr_stream exists");
+            stream_state.next(
+                Some(StreamResult::Err(StreamError::new(StreamErrorKind::StreamTimeout {
+                    duration: idle,
+                    source: StreamTimeoutSource::IdleWatchdog,
+                }))),
+                &mut loop_events,
+            );
+            stream_state.next(None, &mut loop_events);
+            self.end_current_stream(&mut loop_events);
+            for ev in loop_events.drain(..) {
+                self.loop_event_tx.send(ev).await.ok();
+            }
+        } else {
+            warn!(?self.id, ?idle, "response stream has stalled past the soft idle threshold");
+            self.soft_stall_warned = true;
+            self.loop_event_tx
+                .send(AgentLoopEventKind::StreamStallWarning { idle })
+                .await
+                .ok();
         }
     }
 
@@ -310,7 +457,10 @@ impl AgentLoop {
                     ))?
                     .clone();
 
-                let cancel_token = self.cancel_token.clone();
+                // Child token so the idle watchdog can abandon just this stream while the
+                // turn-level token (which cancels children when cancelled) stays live.
+                let cancel_token = self.cancel_token.child_token();
+                self.curr_stream_cancel = Some(cancel_token.clone());
 
                 // Synthesize a context overflow instead of dispatching when the last
                 // reported context usage already reached the backend-vended limit.
@@ -339,14 +489,32 @@ impl AgentLoop {
 
                 self.curr_stream = Some(stream);
                 self.curr_stream_state = Some(StreamParseState::new(next_user_message, model.model_id()));
+                // Arm the idle watchdog so the wait for the first event is also covered.
+                self.last_stream_event = Some(tokio::time::Instant::now());
+                self.soft_stall_warned = false;
                 Ok(AgentLoopResponse::Success)
             },
 
             AgentLoopRequest::Cancel => {
-                // Always cancel the token first - this will cause RTS to emit Interrupted
+                // A cancel landing inside a warned stall ends that episode; record it
+                // (with the gap up to the cancel, read before the idle clock clears
+                // below) so the stall series doesn't carry it as still in flight.
+                let stall_cancel_idle = match (self.soft_stall_warned, self.last_stream_event) {
+                    (true, Some(last)) => Some(last.elapsed()),
+                    _ => None,
+                };
+                self.soft_stall_warned = false;
+
+                // Always cancel the token first - this will cause RTS to emit Interrupted.
+                // The stream's child token is cancelled along with it.
                 self.cancel_token.cancel();
+                self.curr_stream_cancel = None;
+                self.last_stream_event = None;
 
                 let mut buf = Vec::new();
+                if let Some(idle) = stall_cancel_idle {
+                    buf.push(AgentLoopEventKind::StreamStallCancelled { idle });
+                }
 
                 // Drain the stream only if we have it (stream branch doesn't)
                 if let Some(mut stream) = self.curr_stream.take() {
@@ -1058,6 +1226,201 @@ mod tests {
             .expect("expected ResponseStreamEnd event")
     }
 
+    /// Model whose stream never yields an event, simulating a silently dead connection.
+    #[derive(Debug)]
+    struct SilentModel;
+
+    impl model::Model for SilentModel {
+        fn stream(
+            &self,
+            _messages: Vec<Message>,
+            _tool_specs: Option<Vec<ToolSpec>>,
+            _system_prompt: Option<String>,
+            _cancel_token: CancellationToken,
+        ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>> {
+            Box::pin(futures::stream::pending())
+        }
+    }
+
+    /// Model that yields its events with a fixed delay before each one.
+    #[derive(Debug)]
+    struct PacedModel {
+        gap: std::time::Duration,
+        events: std::sync::Mutex<Option<Vec<StreamResult>>>,
+    }
+
+    impl PacedModel {
+        fn new(gap: std::time::Duration, events: Vec<StreamResult>) -> Self {
+            Self {
+                gap,
+                events: std::sync::Mutex::new(Some(events)),
+            }
+        }
+    }
+
+    impl model::Model for PacedModel {
+        fn stream(
+            &self,
+            _messages: Vec<Message>,
+            _tool_specs: Option<Vec<ToolSpec>>,
+            _system_prompt: Option<String>,
+            _cancel_token: CancellationToken,
+        ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>> {
+            let events = self.events.lock().unwrap().take().expect("stream called once");
+            let gap = self.gap;
+            Box::pin(futures::stream::iter(events).then(move |ev| async move {
+                tokio::time::sleep(gap).await;
+                ev
+            }))
+        }
+    }
+
+    /// Runs a single request against `model` with the given watchdog thresholds and
+    /// collects events until the response stream ends.
+    async fn run_watchdog_case(
+        model: Arc<dyn model::Model>,
+        soft: std::time::Duration,
+        hard: std::time::Duration,
+    ) -> Vec<AgentLoopEventKind> {
+        let agent_loop = AgentLoop::new(AgentLoopId::new(AgentId::default()), CancellationToken::new())
+            .with_idle_timeouts(soft, hard);
+        let mut handle = agent_loop.spawn();
+        handle
+            .send_request(model, SendRequestArgs::new(vec![user_message()], None, None))
+            .await
+            .expect("send_request should succeed");
+
+        let mut events = Vec::new();
+        loop {
+            let ev = handle.recv().await.expect("agent loop should not exit mid-stream");
+            // The post-stream LoopStateChange is emitted after ResponseStreamEnd.
+            let is_last = matches!(ev, AgentLoopEventKind::LoopStateChange { to, .. }
+                if matches!(to, LoopState::Errored | LoopState::UserTurnEnded | LoopState::PendingToolUseResults));
+            events.push(ev);
+            if is_last {
+                break;
+            }
+        }
+        events
+    }
+
+    fn stream_end_result(events: &[AgentLoopEventKind]) -> &Result<Message, LoopError> {
+        events
+            .iter()
+            .find_map(|ev| match ev {
+                AgentLoopEventKind::ResponseStreamEnd { result, .. } => Some(result),
+                _ => None,
+            })
+            .expect("expected ResponseStreamEnd")
+    }
+
+    /// A stream that goes silent forever must be abandoned at the hard idle threshold
+    /// and surfaced as a StreamTimeout, after a soft stall warning.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_hard_cancels_silent_stream() {
+        let events = run_watchdog_case(
+            Arc::new(SilentModel),
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(120),
+        )
+        .await;
+
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "expected a soft stall warning before the hard cancel, got: {events:?}"
+        );
+        // The escalation is one episode: the hard cancel is its only end — no
+        // soft-side resumed/failed/cancelled record may accompany it.
+        assert!(
+            !events.iter().any(|ev| matches!(
+                ev,
+                AgentLoopEventKind::StreamStallResumed { .. }
+                    | AgentLoopEventKind::StreamStallFailed { .. }
+                    | AgentLoopEventKind::StreamStallCancelled { .. }
+            )),
+            "an escalated stall must not emit a soft-side episode end; got: {events:?}"
+        );
+        match stream_end_result(&events) {
+            Err(LoopError::Stream(err)) => {
+                assert!(
+                    matches!(err.kind, StreamErrorKind::StreamTimeout { .. }),
+                    "expected StreamTimeout, got: {err:?}"
+                );
+            },
+            other => panic!("expected a stream error, got: {other:?}"),
+        }
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::LoopStateChange {
+                    to: LoopState::Errored,
+                    ..
+                })),
+            "hard cancel should put the loop in the Errored state so a retry request can engage"
+        );
+    }
+
+    /// Steady event flow with inter-event gaps below the soft threshold must complete
+    /// without tripping either watchdog stage, no matter how long the total turn takes.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_does_not_fire_during_steady_flow() {
+        // 6 events * 25s = 150s total, longer than the 120s hard threshold.
+        let model = PacedModel::new(std::time::Duration::from_secs(25), vec![
+            message_start(),
+            text_delta("a"),
+            text_delta("b"),
+            text_delta("c"),
+            text_delta("d"),
+            message_stop(),
+        ]);
+        let events = run_watchdog_case(
+            Arc::new(model),
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(120),
+        )
+        .await;
+
+        assert!(
+            !events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "steady flow below the soft threshold must not emit stall warnings"
+        );
+        assert!(
+            stream_end_result(&events).is_ok(),
+            "steady flow must complete successfully, got: {events:?}"
+        );
+    }
+
+    /// Gaps between the soft and hard thresholds warn but let the stream recover.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_soft_warns_but_stream_recovers() {
+        let model = PacedModel::new(std::time::Duration::from_secs(45), vec![
+            message_start(),
+            text_delta("slow"),
+            message_stop(),
+        ]);
+        let events = run_watchdog_case(
+            Arc::new(model),
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(120),
+        )
+        .await;
+
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "gaps past the soft threshold should emit a stall warning"
+        );
+        assert!(
+            stream_end_result(&events).is_ok(),
+            "stream that recovers before the hard threshold must complete successfully"
+        );
+    }
+
     #[test]
     fn user_turn_metadata_records_first_prompt_length() {
         fn ended_stream_state(user_message: Message) -> StreamParseState {
@@ -1692,5 +2055,247 @@ mod tests {
         assert_eq!(tb.text, "reasoning text");
         // The old binary wouldn't have model_id field, but since we're using the new struct
         // it picks it up. The key point is: no deserialization error.
+    }
+
+    /// The soft stall-warning tier fires when the stream is silent past idle_soft_timeout
+    /// and the hard tier is disabled (zero).  Verifies that soft_stall_warned is set (by
+    /// observing StreamStallWarning) and that the stream is NOT cancelled (hard = 0).
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_soft_tier_fires_stall_warning() {
+        // Inter-event gap (5 ms) > soft threshold (1 ms): the warning fires before the
+        // first event arrives, then the stream recovers and completes.
+        let model = PacedModel::new(std::time::Duration::from_millis(5), vec![
+            message_start(),
+            text_delta("x"),
+            message_stop(),
+        ]);
+        let events = run_watchdog_case(
+            Arc::new(model),
+            std::time::Duration::from_millis(1), // soft = 1 ms
+            std::time::Duration::ZERO,           // hard = disabled
+        )
+        .await;
+
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "soft threshold must emit StreamStallWarning (soft_stall_warned=true); got: {events:?}"
+        );
+        // Hard is disabled — stream must complete successfully, not time out.
+        assert!(
+            stream_end_result(&events).is_ok(),
+            "with hard disabled the stream should complete successfully; got: {events:?}"
+        );
+        // The live events after each warned gap end those episodes as resumes.
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallResumed { .. })),
+            "a live event after a stall warning must emit StreamStallResumed; got: {events:?}"
+        );
+    }
+
+    /// A warned stall that ends with a stream error is a failure, not a resume: the
+    /// stall-resolution series must not count dead streams as recoveries.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_soft_stall_ending_in_error_is_not_resumed() {
+        // Gap (5 ms) > soft threshold (1 ms): the warning fires, then the only item the
+        // stream ever yields is an error.
+        let model = PacedModel::new(std::time::Duration::from_millis(5), vec![StreamResult::Err(
+            StreamError::new(StreamErrorKind::ServiceFailure),
+        )]);
+        let events = run_watchdog_case(
+            Arc::new(model),
+            std::time::Duration::from_millis(1), // soft = 1 ms
+            std::time::Duration::ZERO,           // hard = disabled
+        )
+        .await;
+
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "soft threshold must emit StreamStallWarning; got: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallResumed { .. })),
+            "a stall ending in a stream error must not be recorded as resumed; got: {events:?}"
+        );
+        // The episode still closes — as failed — so the stall series never carries
+        // a warned episode with no end record.
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallFailed { .. })),
+            "a stall ending in a stream error must close the episode as failed; got: {events:?}"
+        );
+        assert!(
+            stream_end_result(&events).is_err(),
+            "the stream must surface its error; got: {events:?}"
+        );
+    }
+
+    /// A cancel landing inside a warned stall must close the episode as cancelled:
+    /// the stall notice invites Ctrl+C, and those episodes must not read as still
+    /// in flight in the stall series.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_cancel_during_warned_stall_closes_episode() {
+        let agent_loop = AgentLoop::new(AgentLoopId::new(AgentId::default()), CancellationToken::new())
+            .with_idle_timeouts(std::time::Duration::from_millis(1), std::time::Duration::ZERO);
+        let mut handle = agent_loop.spawn();
+        // A paced (timer-backed) stall rather than SilentModel: the Cancel arm
+        // drains the stream to exhaustion, and a pending-forever stream would
+        // hang that drain even under paused time. The eventual item is the
+        // Interrupted error a real model emits once its cancel token fires.
+        let model = PacedModel::new(std::time::Duration::from_secs(3600), vec![StreamResult::Err(
+            StreamError::new(StreamErrorKind::Interrupted),
+        )]);
+        handle
+            .send_request(Arc::new(model), SendRequestArgs::new(vec![user_message()], None, None))
+            .await
+            .expect("send_request should succeed");
+
+        // Wait for the soft warning, then cancel while the stall is outstanding.
+        loop {
+            let ev = handle.recv().await.expect("agent loop should be alive");
+            if matches!(ev, AgentLoopEventKind::StreamStallWarning { .. }) {
+                break;
+            }
+        }
+        handle.cancel().await.expect("cancel should succeed");
+
+        let mut saw_cancelled_episode = false;
+        loop {
+            let ev = handle.recv().await.expect("agent loop should be alive");
+            if matches!(ev, AgentLoopEventKind::StreamStallCancelled { .. }) {
+                saw_cancelled_episode = true;
+            }
+            if matches!(ev, AgentLoopEventKind::UserTurnEnd(_)) {
+                break;
+            }
+        }
+        assert!(
+            saw_cancelled_episode,
+            "a cancel during a warned stall must close the episode as cancelled"
+        );
+    }
+
+    /// The hard stall-cancellation tier fires when idle_hard_timeout elapses while the soft
+    /// tier is disabled (zero).  Verifies StreamTimeout is surfaced and the loop transitions
+    /// to Errored so a retry request can engage.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_hard_tier_cancels_stream() {
+        let events = run_watchdog_case(
+            Arc::new(SilentModel),
+            std::time::Duration::ZERO,           // soft = disabled
+            std::time::Duration::from_millis(1), // hard = 1 ms
+        )
+        .await;
+
+        // Soft is disabled — no stall warning should be emitted.
+        assert!(
+            !events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "soft is disabled, no stall warning expected; got: {events:?}"
+        );
+        // Hard timeout must surface as StreamTimeout.
+        match stream_end_result(&events) {
+            Err(LoopError::Stream(err)) => {
+                assert!(
+                    matches!(err.kind, StreamErrorKind::StreamTimeout { .. }),
+                    "expected StreamTimeout, got: {err:?}"
+                );
+            },
+            other => panic!("expected StreamTimeout error, got: {other:?}"),
+        }
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::LoopStateChange {
+                    to: LoopState::Errored,
+                    ..
+                })),
+            "hard cancel should transition loop to Errored state; got: {events:?}"
+        );
+    }
+
+    /// A token arriving before the soft threshold resets the idle clock so no stall warning
+    /// is emitted, even though the threshold is armed.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_resets_on_token() {
+        // Events delivered with 0 ms gaps — all arrive before the 1 ms soft threshold fires.
+        let model = PacedModel::new(std::time::Duration::ZERO, vec![
+            message_start(),
+            text_delta("fast"),
+            message_stop(),
+        ]);
+        let events = run_watchdog_case(
+            Arc::new(model),
+            std::time::Duration::from_millis(1), // soft = 1 ms (armed but never fires)
+            std::time::Duration::ZERO,           // hard = disabled
+        )
+        .await;
+
+        assert!(
+            !events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "token arriving before soft threshold must reset the clock; no warning expected; got: {events:?}"
+        );
+        assert!(
+            stream_end_result(&events).is_ok(),
+            "stream must complete successfully; got: {events:?}"
+        );
+    }
+
+    /// A soft threshold at or past the hard one can never fire, so the builder must
+    /// disable the soft tier rather than keep a dead warning threshold armed.
+    #[test]
+    fn watchdog_soft_at_or_above_hard_disables_soft_tier() {
+        let agent_loop = AgentLoop::new(AgentLoopId::new(AgentId::default()), CancellationToken::new())
+            .with_idle_timeouts(std::time::Duration::from_secs(300), std::time::Duration::from_secs(300));
+        assert!(
+            agent_loop.idle_soft_timeout.is_zero(),
+            "soft >= hard must disable the soft tier"
+        );
+        assert_eq!(agent_loop.idle_hard_timeout, std::time::Duration::from_secs(300));
+
+        // A valid configuration is preserved untouched.
+        let agent_loop = AgentLoop::new(AgentLoopId::new(AgentId::default()), CancellationToken::new())
+            .with_idle_timeouts(std::time::Duration::from_secs(60), std::time::Duration::from_secs(300));
+        assert_eq!(agent_loop.idle_soft_timeout, std::time::Duration::from_secs(60));
+        assert_eq!(agent_loop.idle_hard_timeout, std::time::Duration::from_secs(300));
+    }
+
+    /// With soft misconfigured >= hard, only the hard tier acts: the silent stream is
+    /// cancelled as a StreamTimeout and no stall warning is ever emitted.
+    #[tokio::test(start_paused = true)]
+    async fn watchdog_misconfigured_soft_never_warns_hard_still_cancels() {
+        let events = run_watchdog_case(
+            Arc::new(SilentModel),
+            std::time::Duration::from_millis(2), // soft = 2 ms, misconfigured past hard
+            std::time::Duration::from_millis(1), // hard = 1 ms
+        )
+        .await;
+
+        assert!(
+            !events
+                .iter()
+                .any(|ev| matches!(ev, AgentLoopEventKind::StreamStallWarning { .. })),
+            "misconfigured soft tier is disabled, no stall warning expected; got: {events:?}"
+        );
+        match stream_end_result(&events) {
+            Err(LoopError::Stream(err)) => {
+                assert!(
+                    matches!(err.kind, StreamErrorKind::StreamTimeout { .. }),
+                    "expected StreamTimeout, got: {err:?}"
+                );
+            },
+            other => panic!("expected StreamTimeout error, got: {other:?}"),
+        }
     }
 }

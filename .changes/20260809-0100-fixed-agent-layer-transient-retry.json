@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Throttling, 5xx, and transport-drop backend failures are now retried at the agent layer with bounded exponential backoff (honoring server Retry-After) instead of ending the turn once the transport SDK's attempts are spent. Each backoff wait is surfaced on the retry banner (class, attempt, and delay) instead of leaving the turn looking frozen"
+}

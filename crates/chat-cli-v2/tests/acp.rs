@@ -289,6 +289,174 @@ async fn reload_active_session_preserves_files_and_stays_usable() {
 #[tokio::test]
 #[timeout(30000)]
 #[serial]
+async fn transient_send_error_recovers_within_budget() {
+    // A single throttling failure is retried at the agent layer; the retry succeeds,
+    // so the turn completes normally instead of surfacing an error.
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("transient_send_error_recovers_within_budget")
+            .build_with_session()
+            .await;
+
+    harness
+        .push_mock_responses_from_file(&session_id.0, "tests/mock_responses/transient_then_success.jsonl")
+        .await;
+
+    client
+        .prompt_text(session_id, "hello")
+        .await
+        .expect("transient failure should be retried and recover the turn");
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn transient_midstream_retry_discards_rendered_partial() {
+    // A mid-stream transient failure after partial output is retried with a clean
+    // re-send. History drops the partial, so the client must be told to drop the
+    // rendered copy too — otherwise the regenerated response is concatenated onto
+    // the truncated one. The discard notice must precede the retry banner so the
+    // partial is gone by the time the wait is announced.
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("transient_midstream_retry_discards_rendered_partial")
+            .build_with_session()
+            .await;
+
+    harness
+        .push_mock_responses_from_file(
+            &session_id.0,
+            "tests/mock_responses/transient_midstream_partial_then_success.jsonl",
+        )
+        .await;
+
+    client
+        .prompt_text(session_id, "hello")
+        .await
+        .expect("mid-stream transient failure should be retried and recover the turn");
+
+    let captured = client.captured().await;
+    let ext_params: Vec<String> = captured
+        .ext_notifications
+        .iter()
+        .map(|ext| ext.params.get().to_string())
+        .collect();
+    let discard_idx = ext_params.iter().position(|p| p.contains("stream_discarded"));
+    let banner_idx = ext_params.iter().position(|p| p.contains("retry_warning"));
+    assert!(
+        discard_idx.is_some(),
+        "abandoning a stream with partial output must send stream_discarded; got: {ext_params:?}"
+    );
+    assert!(
+        banner_idx.is_some(),
+        "the transient retry must surface a retry banner; got: {ext_params:?}"
+    );
+    assert!(
+        discard_idx < banner_idx,
+        "the discard must precede the retry banner (discard at {discard_idx:?}, banner at {banner_idx:?})"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn transient_midstream_retry_discards_partial_with_tool_use() {
+    // A tool-use start mid-stream latches partial_output just like text does. When
+    // the stream then drops before the tool executes, the discard notice must still
+    // be sent so the client can drop both the committed text and the advertised
+    // (never-executed) tool row.
+    let (mut harness, client, session_id, _) =
+        AcpTestHarnessBuilder::new("transient_midstream_retry_discards_partial_with_tool_use")
+            .build_with_session()
+            .await;
+
+    harness
+        .push_mock_responses_from_file(
+            &session_id.0,
+            "tests/mock_responses/transient_midstream_tool_use_then_success.jsonl",
+        )
+        .await;
+
+    client
+        .prompt_text(session_id, "hello")
+        .await
+        .expect("mid-stream transient failure after a tool-use start should recover the turn");
+
+    let captured = client.captured().await;
+    let ext_params: Vec<String> = captured
+        .ext_notifications
+        .iter()
+        .map(|ext| ext.params.get().to_string())
+        .collect();
+    assert!(
+        ext_params.iter().any(|p| p.contains("stream_discarded")),
+        "abandoning a stream with a pending tool-use start must send stream_discarded; got: {ext_params:?}"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn hard_stall_after_tool_use_start_discards_partial() {
+    // A hard-stall cancel abandons the stream the same way a transient retry
+    // does: history replaces the partial with a timeout notice, so the client
+    // must get the same stream_discarded — otherwise the committed text stays on
+    // screen and the never-executed tool row spins past the end of the turn.
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("hard_stall_after_tool_use_start_discards")
+        .with_setting("api.streamIdleSoftTimeout", 1)
+        .with_setting("api.streamIdleHardTimeout", 2)
+        .build_with_session()
+        .await;
+
+    // Stream 1: committed text + a tool-use start, then silence with no
+    // terminator — only the watchdog's hard tier can end it.
+    let stalled = common::parse_mock_response_streams(concat!(
+        r#"{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Let me check that file."}}}"#,
+        "\n",
+        r#"{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_stalled_001","name":"read","input":null,"stop":null}}}"#,
+    ))
+    .remove(0);
+    harness.push_mock_response(&session_id.0, Some(stalled)).await;
+
+    let recovery = common::parse_mock_response_streams(
+        r#"{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Recovered after the stall."}}}"#,
+    )
+    .remove(0);
+
+    let prompt = client.prompt_text(session_id.clone(), "hello");
+    let session_id_str = session_id.0.clone();
+    let feeder = async {
+        // Event-driven feed: wait until the watchdog's continuation actually
+        // issues request 2 (the mock queue blocks an unsatisfied request, so
+        // there is no race), then satisfy it immediately. Feeding on a timer
+        // instead meant racing both watchdog windows — outlast request 1's
+        // threshold but stay inside the continuation's — which flaked on slow
+        // runners whenever the margins compressed.
+        loop {
+            if harness.get_captured_requests(&session_id_str).await.len() >= 2 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        harness.push_mock_response(&session_id_str, Some(recovery)).await;
+        harness.push_mock_response(&session_id_str, None).await;
+    };
+    let (prompt_result, ()) = tokio::join!(prompt, feeder);
+    prompt_result.expect("a hard stall should be continued and the turn recovered");
+
+    let captured = client.captured().await;
+    let ext_params: Vec<String> = captured
+        .ext_notifications
+        .iter()
+        .map(|ext| ext.params.get().to_string())
+        .collect();
+    assert!(
+        ext_params.iter().any(|p| p.contains("stream_discarded")),
+        "a hard-stall cancel of a stream with partial output must send stream_discarded; got: {ext_params:?}"
+    );
+}
+
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
 async fn prompt_with_send_error() {
     let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("prompt_with_send_error")
         .build_with_session()
@@ -392,30 +560,37 @@ async fn rate_limit_notifications_preserve_cause_messages() {
     };
     use chat_cli_v2::api_client::send_message_output::MockStreamItem;
 
+    // An overload is transient-retryable at the agent layer, so the cause message only
+    // surfaces once the bounded retry budget (original + MAX_TRANSIENT_RETRIES re-sends)
+    // is exhausted; the monthly limit is terminal on the first response.
     let cases = [
         (
             "model_overload_notification",
             ConverseStreamErrorKind::ModelOverloadedError,
             "The model you've selected is temporarily unavailable. Please use '/model' to select a different model and try again.",
+            1 + agent::error_recovery::MAX_TRANSIENT_RETRIES,
         ),
         (
             "monthly_limit_notification",
             ConverseStreamErrorKind::MonthlyLimitReached,
             "The monthly usage limit has been reached",
+            1,
         ),
     ];
 
-    for (test_name, kind, expected_message) in cases {
+    for (test_name, kind, expected_message, failures) in cases {
         let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new(test_name).build_with_session().await;
-        let error = ConverseStreamError {
-            request_id: None,
-            status_code: Some(429),
-            kind,
-            source: None,
-        };
-        harness
-            .push_mock_response(&session_id.0, Some(vec![MockStreamItem::SendError(error)]))
-            .await;
+        for _ in 0..failures {
+            let error = ConverseStreamError {
+                request_id: None,
+                status_code: Some(429),
+                kind: kind.clone(),
+                source: None,
+            };
+            harness
+                .push_mock_response(&session_id.0, Some(vec![MockStreamItem::SendError(error)]))
+                .await;
+        }
         harness.push_mock_response(&session_id.0, None).await;
 
         let result = client.prompt_text(session_id, "hello").await;
@@ -4769,9 +4944,10 @@ async fn captured_goal_states(client: &AcpTestClient) -> Vec<String> {
         .collect()
 }
 
-/// A transient dispatch failure (throttle, 5xx, dropped connection) during an active goal
-/// must not end the goal: the dispatch-failure retry path re-sends the goal prompt after a
-/// backoff, and the goal completes on the retry.
+/// A goal-retryable dispatch failure during an active goal must not end the goal: the
+/// dispatch-failure retry path re-sends the goal prompt after a backoff, and the goal
+/// completes on the retry. (Throttles and 5xx are additionally retried at the agent
+/// layer first; the unmodelled-error shape here reaches the goal path directly.)
 #[tokio::test]
 #[timeout(60000)]
 #[serial]
@@ -4788,14 +4964,19 @@ async fn goal_retries_dispatch_failure_and_completes() {
             .build_with_session()
             .await;
 
-    // Turn 1: dispatch failure before any content.
+    // Turn 1: dispatch failure before any content. Unmodelled + 4xx so the
+    // agent-layer transient budget stays out of the way: this test targets the
+    // goal-level retry, which must see the turn fail.
     harness
         .push_mock_response(
             &session_id.0,
             Some(vec![MockStreamItem::SendError(ConverseStreamError {
                 request_id: None,
-                status_code: Some(429),
-                kind: ConverseStreamErrorKind::Throttling,
+                status_code: Some(400),
+                kind: ConverseStreamErrorKind::Unknown {
+                    reason_code: "UnmodelledClientError".to_string(),
+                    message: Some("upstream rejected the request".to_string()),
+                },
                 source: None,
             })]),
         )
@@ -4866,17 +5047,20 @@ async fn goal_pauses_after_consecutive_dispatch_failures() {
             .build_with_session()
             .await;
 
-    // All three attempts (original + 2 backoff retries) fail on dispatch.
+    // All three attempts (original + 2 backoff retries) fail on dispatch. Unmodelled +
+    // 4xx keeps each failure terminal at the agent layer, so every one lands on the
+    // goal-level budget this test exercises (a 5xx would first burn the agent-layer
+    // transient budget, multiplying the attempts).
     for _ in 0..3 {
         harness
             .push_mock_response(
                 &session_id.0,
                 Some(vec![MockStreamItem::SendError(ConverseStreamError {
                     request_id: None,
-                    status_code: Some(500),
+                    status_code: Some(400),
                     kind: ConverseStreamErrorKind::Unknown {
-                        reason_code: "InternalServerException".to_string(),
-                        message: Some("connection reset by peer".to_string()),
+                        reason_code: "UnmodelledClientError".to_string(),
+                        message: Some("upstream rejected the request".to_string()),
                     },
                     source: None,
                 })]),
@@ -4901,6 +5085,67 @@ async fn goal_pauses_after_consecutive_dispatch_failures() {
         requests.len(),
         3,
         "expected exactly 3 attempts (original + 2 retries), got {}",
+        requests.len()
+    );
+}
+
+/// The agent-layer transient budget and the goal-level dispatch budget deliberately
+/// compose: a persistently 5xx-ing backend during a goal costs exactly
+/// `3 * (1 + MAX_TRANSIENT_RETRIES)` requests — each goal attempt spends the full
+/// agent-layer budget before the failure surfaces to the goal loop — and then the
+/// goal pauses. Pins the total request count so the multiplication can never grow
+/// unnoticed.
+#[tokio::test]
+#[timeout(120000)]
+#[serial]
+async fn goal_layered_retry_budgets_compose_bounded() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("goal_layered_retry_budgets_compose_bounded")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    let per_goal_attempt = 1 + agent::error_recovery::MAX_TRANSIENT_RETRIES;
+    let total = 3 * per_goal_attempt;
+    for _ in 0..total {
+        harness
+            .push_mock_response(
+                &session_id.0,
+                Some(vec![MockStreamItem::SendError(ConverseStreamError {
+                    request_id: None,
+                    status_code: Some(500),
+                    kind: ConverseStreamErrorKind::Unknown {
+                        reason_code: "InternalServerException".to_string(),
+                        message: Some("upstream unavailable".to_string()),
+                    },
+                    source: None,
+                })]),
+            )
+            .await;
+        harness.push_mock_response(&session_id.0, None).await;
+    }
+
+    client
+        .prompt_text(session_id.clone(), "/goal sup")
+        .await
+        .expect("a paused goal should resolve the held prompt cleanly, not with an error");
+
+    let goal_states = captured_goal_states(&client).await;
+    assert!(
+        goal_states.iter().any(|s| s == "exhausted"),
+        "goal should pause after both budgets are spent, got states: {goal_states:?}"
+    );
+
+    let requests = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(
+        requests.len(),
+        total,
+        "the layered budgets must cost exactly 3 goal attempts x {per_goal_attempt} agent attempts, got {}",
         requests.len()
     );
 }
@@ -4967,13 +5212,18 @@ async fn goal_cancel_during_retry_backoff_stops_reinjection() {
             .await;
 
     // The goal's first turn fails on dispatch, scheduling a retry after a 2s backoff.
+    // Unmodelled + 4xx so the failure lands on the goal-level backoff being cancelled
+    // here, not the agent-layer transient budget.
     harness
         .push_mock_response(
             &session_id.0,
             Some(vec![MockStreamItem::SendError(ConverseStreamError {
                 request_id: None,
-                status_code: Some(429),
-                kind: ConverseStreamErrorKind::Throttling,
+                status_code: Some(400),
+                kind: ConverseStreamErrorKind::Unknown {
+                    reason_code: "UnmodelledClientError".to_string(),
+                    message: Some("upstream rejected the request".to_string()),
+                },
                 source: None,
             })]),
         )
@@ -5024,8 +5274,11 @@ async fn goal_armed_user_prompt_error_still_surfaces() {
             &session_id.0,
             Some(vec![MockStreamItem::SendError(ConverseStreamError {
                 request_id: None,
-                status_code: Some(429),
-                kind: ConverseStreamErrorKind::Throttling,
+                status_code: Some(400),
+                kind: ConverseStreamErrorKind::Unknown {
+                    reason_code: "UnmodelledClientError".to_string(),
+                    message: Some("upstream rejected the request".to_string()),
+                },
                 source: None,
             })]),
         )
@@ -5044,10 +5297,10 @@ async fn goal_armed_user_prompt_error_still_surfaces() {
             &session_id.0,
             Some(vec![MockStreamItem::SendError(ConverseStreamError {
                 request_id: None,
-                status_code: Some(500),
+                status_code: Some(400),
                 kind: ConverseStreamErrorKind::Unknown {
-                    reason_code: "InternalServerException".to_string(),
-                    message: Some("upstream unavailable".to_string()),
+                    reason_code: "UnmodelledClientError".to_string(),
+                    message: Some("upstream rejected the request".to_string()),
                 },
                 source: None,
             })]),
@@ -5088,8 +5341,11 @@ async fn goal_owns_wake_turn_error_in_backoff_window() {
             &session_id.0,
             Some(vec![MockStreamItem::SendError(ConverseStreamError {
                 request_id: None,
-                status_code: Some(429),
-                kind: ConverseStreamErrorKind::Throttling,
+                status_code: Some(400),
+                kind: ConverseStreamErrorKind::Unknown {
+                    reason_code: "UnmodelledClientError".to_string(),
+                    message: Some("upstream rejected the request".to_string()),
+                },
                 source: None,
             })]),
         )
@@ -5102,8 +5358,11 @@ async fn goal_owns_wake_turn_error_in_backoff_window() {
             &session_id.0,
             Some(vec![MockStreamItem::SendError(ConverseStreamError {
                 request_id: None,
-                status_code: Some(429),
-                kind: ConverseStreamErrorKind::Throttling,
+                status_code: Some(400),
+                kind: ConverseStreamErrorKind::Unknown {
+                    reason_code: "UnmodelledClientError".to_string(),
+                    message: Some("upstream rejected the request".to_string()),
+                },
                 source: None,
             })]),
         )

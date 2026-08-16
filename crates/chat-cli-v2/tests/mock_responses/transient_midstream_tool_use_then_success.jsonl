@@ -1,0 +1,10 @@
+// Text streams, a tool-use start opens (committing the rendered text and
+// advertising a tool call), then the connection drops mid-stream while the tool
+// input is still streaming; the agent-layer retry regenerates from scratch and
+// the second attempt completes with plain text. Exercises the stream_discarded
+// notice covering rows the aborted stream already committed.
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Let me check that file."}}}
+{"kind":"event","data":{"kind":"ToolUseEvent","data":{"tool_use_id":"tooluse_dropped_001","name":"read","input":null,"stop":null}}}
+{"kind":"streamError","data":{"kind":{"Unknown":{"reason_code":"RecvError","message":"connection reset by peer"}},"request_id":null,"status_code":null}}
+
+{"kind":"event","data":{"kind":"AssistantResponseEvent","data":{"content":"Complete recovered response."}}}

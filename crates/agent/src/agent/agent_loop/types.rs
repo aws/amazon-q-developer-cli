@@ -76,6 +76,59 @@ impl StreamError {
         self
     }
 
+    /// The server-requested retry delay, if the concrete source error carried a
+    /// `Retry-After`. Sourced from [`StreamErrorSource::retry_after`] so it costs no
+    /// space on this (already size-sensitive) error type.
+    pub fn retry_after(&self) -> Option<Duration> {
+        self.source.as_ref().and_then(|s| s.retry_after())
+    }
+
+    /// Classifies this stream error as an agent-layer-retryable transient failure,
+    /// or `None` if it is terminal.
+    ///
+    /// Throttling and service (5xx) failures are retryable after the transport SDK's
+    /// own attempts are spent. A capacity-shaped 429 (`ModelOverloaded`) is classed
+    /// with quota throttles: both are the backend asking the client to back off and
+    /// come back, and V1's RTS mapping already folds it into `Throttling` — classing
+    /// it here keeps the engines agreeing from the same backend response. A generic
+    /// `Other` error is retryable only when it is a transport-level drop (connection
+    /// reset, TLS peer-close, unexpected EOF) — which is inferred from a 5xx status,
+    /// or from a network signature in the source chain of an error that carries no
+    /// status at all. A `TransientNetworkFailure` is the same transport drop already
+    /// classified at the RTS layer from the concrete SDK error, so it skips the
+    /// signature inference.
+    pub fn transient_class(&self) -> Option<crate::agent::error_recovery::TransientErrorClass> {
+        use crate::agent::error_recovery::{
+            TransientErrorClass,
+            is_transient_network_error,
+        };
+        match &self.kind {
+            StreamErrorKind::Throttling => Some(TransientErrorClass::Throttle),
+            StreamErrorKind::ModelOverloaded { .. } => Some(TransientErrorClass::Throttle),
+            StreamErrorKind::ServiceFailure => Some(TransientErrorClass::ServerError),
+            StreamErrorKind::TransientNetworkFailure { .. } => Some(TransientErrorClass::Network),
+            StreamErrorKind::Other { .. } => {
+                if matches!(self.original_status_code, Some(500..=599)) {
+                    Some(TransientErrorClass::ServerError)
+                } else if self.original_status_code.is_none()
+                    && self
+                        .source
+                        .as_ref()
+                        .is_some_and(|s| is_transient_network_error(s.as_ref()))
+                {
+                    // A present non-5xx status means the transport delivered a real
+                    // response, so a network-drop signature in the rendered message is
+                    // echoed content (e.g. a validation error quoting the request),
+                    // not a transport failure — only statusless errors take this path.
+                    Some(TransientErrorClass::Network)
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        }
+    }
+
     pub fn with_source(mut self, source: Arc<dyn StreamErrorSource>) -> Self {
         self.source = Some(source);
         self
@@ -116,6 +169,21 @@ impl std::error::Error for StreamError {
     }
 }
 
+/// Producer of a [`StreamErrorKind::StreamTimeout`].
+#[typeshare]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StreamTimeoutSource {
+    /// The agent's stream-idle watchdog cancelled the stream after the
+    /// configured hard threshold of silence.
+    IdleWatchdog,
+    /// The SDK transport's own receive timeout elapsed. The serde default:
+    /// this was the only producer before the watchdog existed, so persisted
+    /// errors without a source are SDK timeouts.
+    #[default]
+    SdkRecv,
+}
+
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
@@ -137,6 +205,12 @@ pub enum StreamErrorKind {
     MonthlyLimitReached {
         message: String,
     },
+    /// Authentication was rejected (HTTP 401/403 or `AccessDeniedException`).
+    ///
+    /// On a long turn this usually means the access token expired mid-request.
+    /// Terminal today; distinguished from `Other` so callers can message it clearly
+    /// and (later) drive a token refresh.
+    AccessDenied,
     /// The request was invalid.
     ///
     /// Not retryable - indicative of a bug with the client.
@@ -152,6 +226,12 @@ pub enum StreamErrorKind {
     ///    work into smaller steps."`
     StreamTimeout {
         duration: Duration,
+        /// Which mechanism abandoned the stream. Retry behavior treats both
+        /// identically; telemetry must not: the stall series answers "how often
+        /// do streams idle past the watchdog threshold", and the SDK's ~59s
+        /// receive timeout is a different, far more common producer.
+        #[serde(default)]
+        source: StreamTimeoutSource,
     },
     /// The stream was closed to due being interrupted (for example, on ctrl+c).
     Interrupted,
@@ -191,7 +271,10 @@ impl std::fmt::Display for StreamErrorKind {
                 message.as_str().into()
             },
             StreamErrorKind::Validation { .. } => "An invalid request was sent".into(),
-            StreamErrorKind::StreamTimeout { duration } => format!(
+            StreamErrorKind::AccessDenied => {
+                "Authentication failed. Your credentials may be invalid or expired.".into()
+            },
+            StreamErrorKind::StreamTimeout { duration, .. } => format!(
                 "The stream timed out receiving the response after {}ms",
                 duration.as_millis()
             )
@@ -213,6 +296,13 @@ impl std::fmt::Display for StreamErrorKind {
 
 pub trait StreamErrorSource: std::any::Any + std::error::Error + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Server-requested wait before retrying, when the concrete error parsed a
+    /// `Retry-After` header. Defaults to `None`; sources that carry the header
+    /// (e.g. a throttled `ConverseStreamError`) override this.
+    fn retry_after(&self) -> Option<Duration> {
+        None
+    }
 }
 
 #[typeshare]
@@ -959,6 +1049,109 @@ mod tests {
     }
 
     #[test]
+    fn transient_class_covers_throttle_and_service_failure() {
+        use crate::agent::error_recovery::TransientErrorClass;
+        assert_eq!(
+            StreamError::new(StreamErrorKind::Throttling).transient_class(),
+            Some(TransientErrorClass::Throttle)
+        );
+        // The capacity-shaped 429 must classify like the quota-shaped one, or the
+        // engines diverge on the same backend response (V1 maps it to Throttling).
+        assert_eq!(
+            StreamError::new(StreamErrorKind::ModelOverloaded {
+                message: "overloaded".to_string()
+            })
+            .transient_class(),
+            Some(TransientErrorClass::Throttle)
+        );
+        assert_eq!(
+            StreamError::new(StreamErrorKind::ServiceFailure).transient_class(),
+            Some(TransientErrorClass::ServerError)
+        );
+        // The RTS layers pre-classify mid-stream transport drops into this kind, so it
+        // must land in the same class the statusless-signature fallback produces.
+        assert_eq!(
+            StreamError::new(StreamErrorKind::TransientNetworkFailure {
+                message: "connection reset".to_string()
+            })
+            .transient_class(),
+            Some(TransientErrorClass::Network)
+        );
+    }
+
+    #[test]
+    fn transient_class_of_other_uses_status_code() {
+        use crate::agent::error_recovery::TransientErrorClass;
+        let server = StreamError::new(StreamErrorKind::Other {
+            reason_code: Some("InternalServerError".to_string()),
+            message: "boom".to_string(),
+        })
+        .set_original_status_code(Some(502));
+        assert_eq!(server.transient_class(), Some(TransientErrorClass::ServerError));
+
+        let client = StreamError::new(StreamErrorKind::Other {
+            reason_code: Some("ValidationException".to_string()),
+            message: "bad".to_string(),
+        })
+        .set_original_status_code(Some(400));
+        assert!(client.transient_class().is_none());
+    }
+
+    /// The network-signature fallback only applies to errors that carry no status
+    /// code: a delivered response (any status) whose message happens to contain a
+    /// drop signature — e.g. a validation error echoing request content — is
+    /// terminal, while the same source without a status is a transport drop.
+    #[test]
+    fn transient_class_network_fallback_requires_statusless_error() {
+        use crate::agent::error_recovery::TransientErrorClass;
+
+        #[derive(Debug)]
+        struct EchoingSource;
+        impl std::fmt::Display for EchoingSource {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "invalid input: \"how do I fix a connection reset error?\"")
+            }
+        }
+        impl std::error::Error for EchoingSource {}
+        impl StreamErrorSource for EchoingSource {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+        }
+
+        let make = || {
+            StreamError::new(StreamErrorKind::Other {
+                reason_code: None,
+                message: "request failed".to_string(),
+            })
+            .with_source(Arc::new(EchoingSource))
+        };
+        assert_eq!(make().transient_class(), Some(TransientErrorClass::Network));
+        assert!(make().set_original_status_code(Some(400)).transient_class().is_none());
+    }
+
+    #[test]
+    fn transient_class_terminal_kinds_are_none() {
+        assert!(
+            StreamError::new(StreamErrorKind::AccessDenied)
+                .transient_class()
+                .is_none()
+        );
+        assert!(
+            StreamError::new(StreamErrorKind::ContextWindowOverflow)
+                .transient_class()
+                .is_none()
+        );
+        assert!(
+            StreamError::new(StreamErrorKind::MonthlyLimitReached {
+                message: "m".to_string()
+            })
+            .transient_class()
+            .is_none()
+        );
+    }
+
+    #[test]
     fn test_stream_error_display_minimal() {
         let e = StreamError::new(StreamErrorKind::Interrupted);
         let s = e.to_string();
@@ -1008,6 +1201,7 @@ mod tests {
     fn test_stream_error_kind_display_timeout() {
         let k = StreamErrorKind::StreamTimeout {
             duration: Duration::from_millis(5000),
+            source: StreamTimeoutSource::IdleWatchdog,
         };
         assert!(k.to_string().contains("5000ms"));
     }
