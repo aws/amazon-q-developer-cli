@@ -27,51 +27,18 @@ describe('TUI welcome rotating tip', () => {
     await testCase.waitForVisibleText('ask a question', 10000);
 
     // Boot: the old static greeting is gone, replaced by a rotating tip with a
-    // "Tip:" prefix. With no rollout env the featured v3/Lite tips are
-    // ineligible, so one of the plain SHARED/TUI tips renders — assert on
-    // stable, slash-free fragments.
-    const boot = testCase.getSnapshot().join('\n');
+    // "Tip:" prefix. Selection is random per launch, so capture the rendered
+    // tip's own text instead of matching against a hardcoded phrase list
+    // (which silently rots every time a tip is added).
+    const bootLines = testCase.getSnapshot();
+    const boot = bootLines.join('\n');
     expect(boot).not.toContain('Welcome to the new Kiro CLI UX!');
     expect(boot).toContain('Tip:');
-    const KNOWN_TIP_PHRASES = [
-      'Choose which layout opens',
-      'Switch between Auto, Dark, Light',
-      'interrupt the current turn',
-      'Share your thoughts anytime',
-      'expand a tool',
-      'Running low on context',
-      'switch between AI models',
-      'adjust reasoning depth',
-      'attach files or folders so Kiro',
-      'list available agents',
-      'Save a conversation with',
-      'Start fresh without quitting',
-      'manage knowledge bases',
-      'check which MCP servers',
-      'see your configured automation hooks',
-      'see plan limits and billing',
-      'high-level map of your codebase',
-      'see all available tools Kiro',
-      'see what shipped in the latest',
-      'customize keybindings, display',
-      'set a persistent goal',
-      'attach a file to context without',
-      'compose long prompts in your $EDITOR',
-      'copy the last response to your clipboard',
-      'full conversation in your $PAGER',
-      'fork the conversation from any earlier',
-      'steer it mid-turn',
-      'attach an image from your clipboard',
-      'structured feature spec with requirements',
-      'structured spec generation mode',
-      'insert a newline instead of sending',
-      'run a shell command without leaving',
-      'reverse-search prompt history',
-      'full-screen monitor of subagent',
-      'toggle plan mode',
-    ];
-    const shown = KNOWN_TIP_PHRASES.filter((p) => boot.includes(p));
-    expect(shown.length).toBeGreaterThanOrEqual(1);
+    const tipLine = bootLines.find((l) => l.includes('Tip:'))!;
+    // A stable fragment of the tip text: after the prefix, trimmed, and short
+    // enough to survive line wrapping of the tail.
+    const tipFragment = (tipLine.split('Tip:')[1] ?? '').trim().slice(0, 40);
+    expect(tipFragment.length).toBeGreaterThan(0);
 
     // First message flushes the welcome into <Static>. The tip is passed to the
     // Static render too, so it must PERSIST (stay in scrollback) afterwards.
@@ -80,7 +47,7 @@ describe('TUI welcome rotating tip', () => {
     await testCase.sleepMs(300);
 
     const after = testCase.getSnapshot().join('\n');
-    for (const phrase of shown) expect(after).toContain(phrase);
+    expect(after).toContain(tipFragment);
 
     // Teardown is handled by trackCleanup() (force-kills the PTY in afterEach).
     // We intentionally don't drive a Ctrl+C exit here: a mock turn may still be
