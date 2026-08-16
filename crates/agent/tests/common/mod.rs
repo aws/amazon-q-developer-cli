@@ -516,6 +516,11 @@ impl TestCase {
         self.agent.remove_resource(path.into()).await
     }
 
+    /// Detach all resources at runtime, as `/context clear` does.
+    pub async fn clear_session_resources(&self) -> std::result::Result<(), agent::protocol::AgentError> {
+        self.agent.clear_session_resources().await
+    }
+
     /// Push a freshly-loaded agent config through the surgical MCP reconcile,
     /// as the config file watcher does on an agent/mcp.json change.
     pub async fn reconcile_mcp_servers(

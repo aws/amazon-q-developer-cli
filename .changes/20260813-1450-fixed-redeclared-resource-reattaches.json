@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Re-declaring a previously removed resource in the agent config re-attaches it instead of staying hidden"
+}

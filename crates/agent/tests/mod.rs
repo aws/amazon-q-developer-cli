@@ -3799,7 +3799,7 @@ async fn test_reconcile_mcp_servers_preserves_runtime_removals() {
         .await
         .expect("re-add after remove failed");
     let fresh = LoadedAgentConfig::new(
-        AgentConfig::V2025_08_22(inner),
+        AgentConfig::V2025_08_22(inner.clone()),
         ConfigSource::Ephemeral,
         ResolvedGlobalPrompt::None,
     );
@@ -3809,5 +3809,137 @@ async fn test_reconcile_mcp_servers_preserves_runtime_removals() {
         resources.iter().filter(|r| *r == declared).count(),
         1,
         "re-added resource must survive reconcile exactly once, got: {resources:?}"
+    );
+
+    // A tombstone expires once the config stops declaring the path, so a
+    // later re-declaration (declare → drop → declare, e.g. a branch switch
+    // rewriting the config file) takes effect again.
+    test.remove_resource("/tmp/declared-notes.md")
+        .await
+        .expect("second remove failed");
+    let fresh_undeclared = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(AgentConfigV2025_08_22::default()),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh_undeclared)
+        .await
+        .expect("undeclared reconcile failed");
+    assert!(
+        !test.get_resources().await.iter().any(|r| r == declared),
+        "resource must stay absent while nothing declares it"
+    );
+    let fresh_redeclared = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(inner),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh_redeclared)
+        .await
+        .expect("re-declaring reconcile failed");
+    assert!(
+        test.get_resources().await.iter().any(|r| r == declared),
+        "a config re-declaration after the tombstone expired must re-attach the resource"
+    );
+}
+
+/// Regression: `/context clear` detaches config-declared resources, but that
+/// used to be runtime-only state — a reconcile adopting the freshly-loaded
+/// config resurrected everything the user just cleared.
+#[tokio::test]
+async fn test_reconcile_mcp_servers_preserves_context_clear() {
+    use agent::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+    };
+    use agent::agent_config::types::ResourcePath;
+    use agent::agent_config::{
+        ConfigSource,
+        LoadedAgentConfig,
+        ResolvedGlobalPrompt,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let declared = "file:///tmp/cleared-notes.md";
+    let mut inner = AgentConfigV2025_08_22::default();
+    inner.resources = vec![ResourcePath::FilePath(declared.to_string())];
+
+    let test = TestCase::builder()
+        .test_name("reconcile_preserves_context_clear")
+        .with_agent_config(AgentConfig::V2025_08_22(inner.clone()))
+        .build()
+        .await
+        .unwrap();
+
+    test.clear_session_resources().await.expect("clear failed");
+    assert!(
+        !test.get_resources().await.iter().any(|r| r == declared),
+        "resource must be detached after clear"
+    );
+
+    let fresh = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(inner),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh).await.expect("reconcile failed");
+    assert!(
+        !test.get_resources().await.iter().any(|r| r == declared),
+        "reconcile must not resurrect resources dropped by /context clear"
+    );
+}
+
+/// Regression: a config-declared resource that is removed and then re-added at
+/// runtime must still be tombstoned by a later `/context rm` or `/context clear`
+/// — classifying it as session-added would let the next reconcile resurrect it.
+#[tokio::test]
+async fn test_reconcile_mcp_servers_holds_clear_of_readded_declared_resource() {
+    use agent::agent_config::definitions::{
+        AgentConfig,
+        AgentConfigV2025_08_22,
+    };
+    use agent::agent_config::types::ResourcePath;
+    use agent::agent_config::{
+        ConfigSource,
+        LoadedAgentConfig,
+        ResolvedGlobalPrompt,
+    };
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let declared = "file:///tmp/readded-notes.md";
+    let mut inner = AgentConfigV2025_08_22::default();
+    inner.resources = vec![ResourcePath::FilePath(declared.to_string())];
+
+    let test = TestCase::builder()
+        .test_name("reconcile_holds_clear_of_readded_declared")
+        .with_agent_config(AgentConfig::V2025_08_22(inner.clone()))
+        .build()
+        .await
+        .unwrap();
+
+    // Detach the declared resource, then re-add it at runtime — it is now in
+    // the session-added set even though the config file still declares it.
+    test.remove_resource("/tmp/readded-notes.md")
+        .await
+        .expect("remove failed");
+    test.add_resource("/tmp/readded-notes.md").await.expect("add failed");
+    assert!(
+        test.get_resources().await.iter().any(|r| r == declared),
+        "re-added resource must be attached before the clear"
+    );
+
+    test.clear_session_resources().await.expect("clear failed");
+
+    let fresh = LoadedAgentConfig::new(
+        AgentConfig::V2025_08_22(inner),
+        ConfigSource::Ephemeral,
+        ResolvedGlobalPrompt::None,
+    );
+    test.reconcile_mcp_servers(fresh).await.expect("reconcile failed");
+    assert!(
+        !test.get_resources().await.iter().any(|r| r == declared),
+        "reconcile must not resurrect a cleared resource just because it was re-added at runtime"
     );
 }

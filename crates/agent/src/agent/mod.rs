@@ -1761,19 +1761,17 @@ impl Agent {
                 }
             },
             AgentRequest::RemoveResource(path) => {
-                let was_session_added = self.session_resource_paths.contains(&path)
-                    || self.session_resource_paths.contains(&format!("file://{path}"));
                 // Try both with and without file:// prefix
                 let removed = self.agent_config.remove_resource(&path)
                     || self.agent_config.remove_resource(&format!("file://{path}"));
                 if removed {
                     self.session_resource_paths.remove(&path);
                     self.session_resource_paths.remove(&format!("file://{path}"));
-                    // Detaching a config-declared resource must hold across config
-                    // reloads, which would otherwise resurrect it.
-                    if !was_session_added {
-                        self.session_removed_paths.insert(path);
-                    }
+                    // Tombstone unconditionally so the detachment holds across
+                    // config reloads even for a config-declared path that was
+                    // removed and re-added this session. A tombstone for a path
+                    // the config never declares is dropped by the next reconcile.
+                    self.session_removed_paths.insert(path);
                     Ok(AgentResponse::Success)
                 } else {
                     Err(AgentError::Custom(format!("Resource not found: {path}")))
@@ -1789,6 +1787,17 @@ impl Agent {
                 Ok(AgentResponse::Resources(resources))
             },
             AgentRequest::ClearSessionResources => {
+                // Tombstone everything being detached — including paths added at
+                // runtime, whose tombstones are harmless because a reconcile drops
+                // any tombstone the config file does not declare. Conditioning on
+                // session state would misclassify a config-declared path that was
+                // removed and re-added, letting a reload resurrect it.
+                // `resources()` excludes knowledgeBase entries deliberately: they
+                // are not user-visible `/context` state, so a clear neither shows
+                // nor tombstones them and a reconcile re-attaches them.
+                for r in self.agent_config.resources() {
+                    self.session_removed_paths.insert(r.as_ref().to_string());
+                }
                 self.agent_config.clear_all_resources();
                 self.session_resource_paths.clear();
                 Ok(AgentResponse::Success)
@@ -2168,10 +2177,17 @@ impl Agent {
 
         // Runtime detachments of config-declared resources must hold as well —
         // the freshly-loaded config would silently resurrect them.
+        let mut stale_tombstones = Vec::new();
         for path in &self.session_removed_paths {
-            if !config.remove_resource(path) {
-                config.remove_resource(&format!("file://{path}"));
+            let suppressed = config.remove_resource(path) || config.remove_resource(&format!("file://{path}"));
+            if !suppressed {
+                stale_tombstones.push(path.clone());
             }
+        }
+        // A tombstone the fresh config no longer declares is stale — drop it so
+        // a later re-declaration in the config file takes effect.
+        for path in stale_tombstones {
+            self.session_removed_paths.remove(&path);
         }
 
         // Adopt the new config. Only invalidate the tool-spec cache when the
