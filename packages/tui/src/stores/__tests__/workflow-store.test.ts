@@ -2,12 +2,15 @@ import { describe, expect, it } from 'bun:test';
 import type {
   WorkflowEvent,
   WorkflowNodeDescriptor,
+  WorkflowNodeState,
+  WorkflowNodeStatus,
   WorkflowStateSnapshot,
 } from '../../types/workflow.js';
 import type {
   WorkflowInspectResponse,
   WorkflowRunSummary,
 } from '../../types/workflow-history.js';
+import type { WorkflowMonitorNode } from '../../types/workflow-monitor.js';
 import {
   createWorkflowStore,
   selectActiveWorkflow,
@@ -78,6 +81,132 @@ const snapshot = (
     ],
   },
 });
+
+const repeatPlan = (): WorkflowNodeDescriptor[] => [
+  {
+    nodeId: 'loop',
+    type: 'repeat',
+    maxIterations: 3,
+    steps: [step('review')],
+  },
+];
+
+const iterationPath = (iteration: number): readonly string[] => [
+  'root',
+  'loop',
+  `iter-${iteration}`,
+  'review',
+];
+
+const iterationStart = (
+  workflowId: string,
+  iteration: number
+): Extract<WorkflowEvent, { type: 'node_start' }> => ({
+  type: 'node_start',
+  workflowId,
+  parentSessionId: 'parent-1',
+  nodeId: 'review',
+  nodePath: iterationPath(iteration),
+  nodeType: 'step',
+  sessionId: `session-${iteration}`,
+  iteration,
+  agentName: 'reviewer',
+});
+
+/** A `node_start` for a repeat-body step, on the canonical `iter-N` path. */
+const bodyStart = (
+  workflowId: string,
+  nodeId: string,
+  iteration: number,
+  ancestors: readonly string[] = []
+): Extract<WorkflowEvent, { type: 'node_start' }> => ({
+  type: 'node_start',
+  workflowId,
+  parentSessionId: 'parent-1',
+  nodeId,
+  nodePath: ['root', 'loop', `iter-${iteration}`, ...ancestors, nodeId],
+  nodeType: 'step',
+  sessionId: `${nodeId}-${iteration}`,
+  iteration,
+});
+
+const iterationComplete = (
+  workflowId: string,
+  iteration: number,
+  status: WorkflowNodeStatus = 'completed'
+): Extract<WorkflowEvent, { type: 'node_complete' }> => ({
+  type: 'node_complete',
+  workflowId,
+  parentSessionId: 'parent-1',
+  nodeId: 'review',
+  nodePath: iterationPath(iteration),
+  status,
+  sessionId: `session-${iteration}`,
+  iteration,
+  durationSecs: iteration + 1,
+});
+
+/** Runs a repeat plan through `count` body iterations, each with its own session. */
+const startedIterations = (workflowId: string, count: number) => {
+  const store = createWorkflowStore(() => 100);
+  store.getState().applyEvent(startEvent(workflowId, repeatPlan()));
+  for (let iteration = 0; iteration < count; iteration += 1) {
+    store.getState().applyEvent(iterationStart(workflowId, iteration));
+  }
+  return store;
+};
+
+/**
+ * The durable shape KAS persists for an unrolled repeat: a per-iteration
+ * `sequence` wrapper around the body step, which is what makes the canonical
+ * `iter-N` path segments agree with the live events above.
+ */
+const repeatSnapshotRoot = (
+  status: WorkflowNodeStatus = 'completed'
+): WorkflowNodeState => ({
+  nodeId: 'root',
+  type: 'sequence',
+  status,
+  children: [
+    {
+      nodeId: 'loop',
+      type: 'repeat',
+      status,
+      iteration: 1,
+      children: [0, 1].map((iteration) => ({
+        nodeId: `loop#${iteration}`,
+        type: 'sequence',
+        status: 'completed',
+        iteration,
+        children: [
+          {
+            nodeId: 'review',
+            type: 'step',
+            status: 'completed',
+            iteration,
+            sessionId: `session-${iteration}`,
+            startedAt: '2026-08-10T00:00:00.000Z',
+            agentName: 'reviewer',
+          },
+        ],
+      })),
+    },
+  ],
+});
+
+const repeatSnapshot = (workflowId: string): WorkflowStateSnapshot => ({
+  workflowId,
+  workflowName: `Workflow ${workflowId}`,
+  status: 'completed',
+  inputs: {},
+  artifacts: {},
+  capturedOutputs: {},
+  parentSessionId: 'parent-1',
+  root: repeatSnapshotRoot(),
+});
+
+const uniqueRowKeys = (nodes: readonly WorkflowMonitorNode[]): number =>
+  new Set(nodes.map((node) => `${node.id}:${node.sessionId ?? ''}`)).size;
 
 describe('workflow store', () => {
   it('flattens nested plans without losing render metadata', () => {
@@ -1178,5 +1307,659 @@ describe('workflow store', () => {
     expect(
       nodes.find((node) => node.id === 'root')?.pauseReason
     ).toBeUndefined();
+  });
+
+  it('gives every started repeat iteration its own row and session', () => {
+    const store = startedIterations('loop-rows', 2);
+
+    const workflow = store.getState().workflows.get('loop-rows')!;
+    expect(workflow.nodes.map((node) => node.id)).toEqual([
+      'loop',
+      'review',
+      'review',
+    ]);
+    expect(workflow.nodes[1]).toMatchObject({
+      id: 'review',
+      type: 'step',
+      status: 'running',
+      label: 'review',
+      parentId: 'loop',
+      depth: 1,
+      iteration: 0,
+      sessionId: 'session-0',
+      nodePath: ['root', 'loop', 'iter-0', 'review'],
+      agentName: 'reviewer',
+      maxIterations: 3,
+    });
+    expect(workflow.nodes[2]).toMatchObject({
+      id: 'review',
+      type: 'step',
+      status: 'running',
+      label: 'review',
+      parentId: 'loop',
+      depth: 1,
+      iteration: 1,
+      sessionId: 'session-1',
+      nodePath: ['root', 'loop', 'iter-1', 'review'],
+      agentName: 'reviewer',
+      maxIterations: 3,
+    });
+    expect(workflow.stepSessions.map((session) => session.sessionId)).toEqual([
+      'session-0',
+      'session-1',
+    ]);
+  });
+
+  it('keeps appended iterations beside their own sibling group', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent(
+      startEvent('loop-order', [
+        {
+          nodeId: 'loop',
+          type: 'repeat',
+          maxIterations: 2,
+          steps: [step('build'), step('review')],
+        },
+      ])
+    );
+    for (const iteration of [0, 1]) {
+      for (const nodeId of ['build', 'review']) {
+        store.getState().applyEvent(bodyStart('loop-order', nodeId, iteration));
+      }
+    }
+
+    expect(
+      store
+        .getState()
+        .workflows.get('loop-order')!
+        .nodes.map((node) => `${node.id}:${node.iteration ?? '-'}`)
+    ).toEqual(['loop:-', 'build:0', 'build:1', 'review:0', 'review:1']);
+  });
+
+  it('selects the repeat iteration that actually started', () => {
+    const store = startedIterations('loop-select', 2);
+
+    const nodes = store.getState().workflows.get('loop-select')!.nodes;
+    const selected = selectWorkflowNodeIndex(store.getState());
+    expect(selected).toBe(2);
+    expect(nodes[selected]).toMatchObject({
+      iteration: 1,
+      sessionId: 'session-1',
+    });
+  });
+
+  it('does not move selection to a new iteration while input owns focus', () => {
+    const store = startedIterations('loop-locked', 1);
+    store.getState().setSelectedNode(1);
+    store.getState().setInputState(true);
+    store.getState().applyEvent(iterationStart('loop-locked', 1));
+
+    expect(selectWorkflowNodeIndex(store.getState())).toBe(1);
+    expect(store.getState().workflows.get('loop-locked')!.nodes).toHaveLength(
+      3
+    );
+  });
+
+  it('keeps a locked selection on its own row when an earlier sibling appends', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent(
+      startEvent('loop-lock-shift', [
+        {
+          nodeId: 'loop',
+          type: 'repeat',
+          maxIterations: 2,
+          steps: [step('build'), step('review')],
+        },
+      ])
+    );
+    for (const nodeId of ['build', 'review']) {
+      store.getState().applyEvent(bodyStart('loop-lock-shift', nodeId, 0));
+    }
+    // review:0 owns the composer, and build:1 inserts ahead of it.
+    store.getState().setSelectedNode(2);
+    store.getState().setInputState(true);
+    store.getState().applyEvent(bodyStart('loop-lock-shift', 'build', 1));
+
+    const nodes = store.getState().workflows.get('loop-lock-shift')!.nodes;
+    expect(nodes.map((node) => `${node.id}:${node.iteration ?? '-'}`)).toEqual([
+      'loop:-',
+      'build:0',
+      'build:1',
+      'review:0',
+    ]);
+    const selected = selectWorkflowNodeIndex(store.getState());
+    expect(selected).toBe(3);
+    expect(nodes[selected]).toMatchObject({
+      id: 'review',
+      iteration: 0,
+      sessionId: 'review-0',
+    });
+  });
+
+  it('keeps one row for a container that iterates inside a repeat body', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent(
+      startEvent('loop-nested', [
+        {
+          nodeId: 'loop',
+          type: 'repeat',
+          maxIterations: 2,
+          steps: [
+            {
+              nodeId: 'fan',
+              type: 'parallel',
+              branches: [step('build')],
+            },
+          ],
+        },
+      ])
+    );
+    for (const iteration of [0, 1]) {
+      store.getState().applyEvent({
+        type: 'node_start',
+        workflowId: 'loop-nested',
+        parentSessionId: 'parent-1',
+        nodeId: 'fan',
+        nodePath: ['root', 'loop', `iter-${iteration}`, 'fan'],
+        nodeType: 'parallel',
+        iteration,
+      });
+      if (iteration === 1) {
+        const selected = selectWorkflowNodeIndex(store.getState());
+        expect(selected).toBe(2);
+        expect(
+          store.getState().workflows.get('loop-nested')!.nodes[selected]
+        ).toBeDefined();
+      }
+      store
+        .getState()
+        .applyEvent(bodyStart('loop-nested', 'build', iteration, ['fan']));
+    }
+
+    const nodes = store.getState().workflows.get('loop-nested')!.nodes;
+    expect(
+      nodes.map(({ id, parentId, depth, iteration }) => ({
+        id,
+        parentId,
+        depth,
+        iteration,
+      }))
+    ).toEqual([
+      { id: 'loop', parentId: null, depth: 0, iteration: undefined },
+      { id: 'fan', parentId: 'loop', depth: 1, iteration: 0 },
+      { id: 'build', parentId: 'fan', depth: 2, iteration: 0 },
+      { id: 'build', parentId: 'fan', depth: 2, iteration: 1 },
+    ]);
+  });
+
+  it('records a watch outcome against the polled instance only', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'watch-rows',
+      parentSessionId: 'parent-1',
+      state: {
+        workflowId: 'watch-rows',
+        workflowName: 'Workflow watch-rows',
+        status: 'running',
+        inputs: {},
+        artifacts: {},
+        capturedOutputs: {},
+        parentSessionId: 'parent-1',
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'running',
+          children: [
+            {
+              nodeId: 'loop',
+              type: 'repeat',
+              status: 'running',
+              iteration: 1,
+              children: [0, 1].map((iteration) => ({
+                nodeId: 'inbox',
+                type: 'watch',
+                status: 'running',
+                iteration,
+              })),
+            },
+          ],
+        },
+      },
+      stepSessions: [],
+    });
+    store.getState().applyEvent({
+      type: 'watch_poll',
+      workflowId: 'watch-rows',
+      parentSessionId: 'parent-1',
+      nodeId: 'inbox',
+      nodePath: ['root', 'loop', 'iter-1'],
+      outcome: 'new-activity',
+      at: '2026-08-10T00:00:00.000Z',
+    });
+
+    const watches = store
+      .getState()
+      .workflows.get('watch-rows')!
+      .nodes.filter((node) => node.id === 'inbox');
+    expect(watches).toHaveLength(2);
+    expect(watches.map((node) => node.watchOutcome)).toEqual([
+      undefined,
+      'new-activity',
+    ]);
+  });
+
+  it('records a watch outcome on a repeat-nested watch past the first iteration', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent(
+      startEvent('watch-loop', [
+        {
+          nodeId: 'loop',
+          type: 'repeat',
+          maxIterations: 3,
+          steps: [{ nodeId: 'inbox', type: 'watch' }],
+        },
+      ])
+    );
+    for (const iteration of [0, 1]) {
+      store.getState().applyEvent({
+        type: 'node_start',
+        workflowId: 'watch-loop',
+        parentSessionId: 'parent-1',
+        nodeId: 'inbox',
+        nodePath: ['root', 'loop', `iter-${iteration}`],
+        nodeType: 'watch',
+        iteration,
+      });
+    }
+    store.getState().applyEvent({
+      type: 'watch_poll',
+      workflowId: 'watch-loop',
+      parentSessionId: 'parent-1',
+      nodeId: 'inbox',
+      nodePath: ['root', 'loop', 'iter-1'],
+      outcome: 'new-activity',
+      at: '2026-08-10T00:00:00.000Z',
+    });
+
+    const watches = store
+      .getState()
+      .workflows.get('watch-loop')!
+      .nodes.filter((node) => node.id === 'inbox');
+    expect(watches).toHaveLength(1);
+    expect(watches[0]!.watchOutcome).toBe('new-activity');
+    const selected = selectWorkflowNodeIndex(store.getState());
+    expect(selected).toBe(1);
+    expect(
+      store.getState().workflows.get('watch-loop')!.nodes[selected]
+    ).toBeDefined();
+  });
+
+  it('binds a relaxed watch outcome to the newest unrolled instance only', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'watch-ahead',
+      parentSessionId: 'parent-1',
+      state: {
+        workflowId: 'watch-ahead',
+        workflowName: 'Workflow watch-ahead',
+        status: 'running',
+        inputs: {},
+        artifacts: {},
+        capturedOutputs: {},
+        parentSessionId: 'parent-1',
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'running',
+          children: [
+            {
+              nodeId: 'loop',
+              type: 'repeat',
+              status: 'running',
+              iteration: 1,
+              children: [0, 1].map((iteration) => ({
+                nodeId: 'inbox',
+                type: 'watch',
+                status: 'running',
+                iteration,
+              })),
+            },
+          ],
+        },
+      },
+      stepSessions: [],
+    });
+    // An iteration the snapshot has no row for: the poll must not stamp both.
+    store.getState().applyEvent({
+      type: 'watch_poll',
+      workflowId: 'watch-ahead',
+      parentSessionId: 'parent-1',
+      nodeId: 'inbox',
+      nodePath: ['root', 'loop', 'iter-2'],
+      outcome: 'new-activity',
+      at: '2026-08-10T00:00:00.000Z',
+    });
+
+    const watches = store
+      .getState()
+      .workflows.get('watch-ahead')!
+      .nodes.filter((node) => node.id === 'inbox');
+    expect(watches.map((node) => node.watchOutcome)).toEqual([
+      undefined,
+      'new-activity',
+    ]);
+  });
+
+  it('settles each repeat iteration on its own completion', () => {
+    const store = startedIterations('loop-complete', 2);
+    store.getState().applyEvent(iterationComplete('loop-complete', 0));
+
+    let nodes = store.getState().workflows.get('loop-complete')!.nodes;
+    expect(nodes[1]).toMatchObject({
+      iteration: 0,
+      sessionId: 'session-0',
+      status: 'completed',
+      durationSecs: 1,
+    });
+    expect(nodes[2]).toMatchObject({
+      iteration: 1,
+      sessionId: 'session-1',
+      status: 'running',
+    });
+    expect(nodes[2]?.durationSecs).toBeUndefined();
+
+    store
+      .getState()
+      .applyEvent(iterationComplete('loop-complete', 1, 'failed'));
+
+    const workflow = store.getState().workflows.get('loop-complete')!;
+    nodes = workflow.nodes;
+    expect(nodes[1]).toMatchObject({
+      status: 'completed',
+      durationSecs: 1,
+    });
+    expect(nodes[2]).toMatchObject({
+      status: 'failed',
+      durationSecs: 2,
+    });
+    expect(
+      workflow.stepSessions.map(({ sessionId, status }) => ({
+        sessionId,
+        status,
+      }))
+    ).toEqual([
+      { sessionId: 'session-0', status: 'completed' },
+      { sessionId: 'session-1', status: 'failed' },
+    ]);
+  });
+
+  it('parks only the repeat iteration that node_paused names', () => {
+    const store = startedIterations('loop-pause', 2);
+    store.getState().applyEvent({
+      type: 'node_paused',
+      workflowId: 'loop-pause',
+      parentSessionId: 'parent-1',
+      nodeId: 'review',
+      nodePath: iterationPath(1),
+      sessionId: 'session-1',
+      reason: 'awaiting answer',
+    });
+
+    const nodes = store.getState().workflows.get('loop-pause')!.nodes;
+    expect(nodes[1]).toMatchObject({
+      sessionId: 'session-0',
+      status: 'running',
+    });
+    expect(nodes[1]?.pauseReason).toBeUndefined();
+    expect(nodes[2]).toMatchObject({
+      sessionId: 'session-1',
+      status: 'paused',
+      pauseReason: 'awaiting answer',
+    });
+  });
+
+  it('reconciles live iteration rows without duplicating them', () => {
+    const store = startedIterations('loop-archive', 2);
+    store.getState().applyEvent({
+      type: 'run_complete',
+      workflowId: 'loop-archive',
+      parentSessionId: 'parent-1',
+      status: 'completed',
+      finalState: repeatSnapshot('loop-archive'),
+    });
+
+    const archived = store.getState().archivedWorkflows.get('loop-archive')!;
+    expect(archived.nodes).toHaveLength(3);
+    const reviews = archived.nodes.filter((node) => node.id === 'review');
+    expect(
+      reviews.map(({ sessionId, status, iteration }) => ({
+        sessionId,
+        status,
+        iteration,
+      }))
+    ).toEqual([
+      { sessionId: 'session-0', status: 'completed', iteration: 0 },
+      { sessionId: 'session-1', status: 'completed', iteration: 1 },
+    ]);
+    expect(archived.stepSessions).toHaveLength(2);
+  });
+
+  it('rebuilds the plan shape when a snapshot lands on live iteration rows', () => {
+    const store = startedIterations('loop-snapshot', 2);
+    store.getState().setSelectedNode(2);
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'loop-snapshot',
+      parentSessionId: 'parent-1',
+      state: repeatSnapshot('loop-snapshot'),
+      stepSessions: [],
+      nodePlan: repeatPlan(),
+    });
+
+    const workflow = store.getState().workflows.get('loop-snapshot')!;
+    expect(workflow.nodes.map((node) => node.id)).toEqual(['loop', 'review']);
+    expect(workflow.nodes[1]?.sessionId).toBe('session-1');
+    expect(uniqueRowKeys(workflow.nodes)).toBe(workflow.nodes.length);
+    // A retained index from the longer live list must not point past the end.
+    const selected = selectWorkflowNodeIndex(store.getState());
+    expect(selected).toBeLessThanOrEqual(1);
+    expect(workflow.nodes[selected]).toBeDefined();
+  });
+
+  it('carries the newest iteration and clamps selection on run replay', () => {
+    const store = startedIterations('loop-replay', 2);
+    store.getState().setSelectedNode(2);
+    store.getState().applyEvent(startEvent('loop-replay', repeatPlan()));
+
+    const workflow = store.getState().workflows.get('loop-replay')!;
+    expect(workflow.nodes.map((node) => node.id)).toEqual(['loop', 'review']);
+    expect(workflow.nodes[1]).toMatchObject({
+      status: 'running',
+      sessionId: 'session-1',
+      iteration: 1,
+    });
+    const selected = selectWorkflowNodeIndex(store.getState());
+    expect(selected).toBe(1);
+    expect(workflow.nodes[selected]).toBeDefined();
+  });
+
+  it('keeps locked input on its row when a rebuild leaves the index in range', () => {
+    const plan = [...repeatPlan(), step('publish')];
+    for (const rebuild of ['run_start', 'run_snapshot'] as const) {
+      const workflowId = `loop-retain-${rebuild}`;
+      const store = createWorkflowStore(() => 100);
+      store.getState().applyEvent(startEvent(workflowId, plan));
+      for (const iteration of [0, 1]) {
+        store.getState().applyEvent(iterationStart(workflowId, iteration));
+      }
+      store.getState().setSelectedNode(2);
+      store.getState().setInputState(true);
+
+      if (rebuild === 'run_start') {
+        store.getState().applyEvent(startEvent(workflowId, plan));
+      } else {
+        const root = repeatSnapshotRoot('running');
+        store.getState().applyEvent({
+          type: 'run_snapshot',
+          workflowId,
+          parentSessionId: 'parent-1',
+          state: {
+            ...repeatSnapshot(workflowId),
+            status: 'running',
+            root: {
+              ...root,
+              children: [
+                ...root.children!,
+                { nodeId: 'publish', type: 'step', status: 'pending' },
+              ],
+            },
+          },
+          stepSessions: [],
+          nodePlan: plan,
+        });
+      }
+
+      const workflow = store.getState().workflows.get(workflowId)!;
+      expect(workflow.nodes.map((node) => node.id)).toEqual([
+        'loop',
+        'review',
+        'publish',
+      ]);
+      const selected = selectWorkflowNodeIndex(store.getState());
+      expect(selected).toBe(1);
+      expect(workflow.nodes[selected]).toMatchObject({
+        id: 'review',
+        sessionId: 'session-1',
+        iteration: 1,
+      });
+    }
+  });
+
+  it('retains a structural selection when a rebuild moves its index', () => {
+    const store = createWorkflowStore(() => 100);
+    const plan: WorkflowNodeDescriptor[] = [
+      {
+        nodeId: 'loop',
+        type: 'repeat',
+        maxIterations: 2,
+        steps: [step('review')],
+      },
+      step('publish'),
+    ];
+    store.getState().applyEvent(startEvent('loop-clamp', plan));
+    for (const iteration of [0, 1]) {
+      store.getState().applyEvent(iterationStart('loop-clamp', iteration));
+    }
+    // The trailing plan row is selected, and the rebuild moves it left.
+    store.getState().setSelectedNode(3);
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'loop-clamp',
+      parentSessionId: 'parent-1',
+      state: {
+        workflowId: 'loop-clamp',
+        workflowName: 'Workflow loop-clamp',
+        status: 'paused',
+        inputs: {},
+        artifacts: {},
+        capturedOutputs: {},
+        parentSessionId: 'parent-1',
+        root: {
+          nodeId: 'root',
+          type: 'sequence',
+          status: 'paused',
+          children: [
+            {
+              nodeId: 'loop',
+              type: 'repeat',
+              status: 'paused',
+              iteration: 1,
+              children: [
+                {
+                  nodeId: 'review',
+                  type: 'step',
+                  status: 'paused',
+                  iteration: 1,
+                  sessionId: 'session-1',
+                  startedAt: '2026-08-10T00:00:00.000Z',
+                  completionSignal: 'need_input',
+                },
+              ],
+            },
+            { nodeId: 'publish', type: 'step', status: 'pending' },
+          ],
+        },
+      },
+      stepSessions: [],
+      nodePlan: plan,
+    });
+
+    const workflow = store.getState().workflows.get('loop-clamp')!;
+    expect(workflow.nodes.map((node) => node.id)).toEqual([
+      'loop',
+      'review',
+      'publish',
+    ]);
+    const selected = selectWorkflowNodeIndex(store.getState());
+    expect(selected).toBe(2);
+    expect(workflow.nodes[selected]).toMatchObject({
+      id: 'publish',
+      status: 'pending',
+    });
+  });
+
+  it('unrolls one row per state iteration when a snapshot carries no plan', () => {
+    const store = startedIterations('loop-unroll', 2);
+    store.getState().applyEvent({
+      type: 'run_snapshot',
+      workflowId: 'loop-unroll',
+      parentSessionId: 'parent-1',
+      state: repeatSnapshot('loop-unroll'),
+      stepSessions: [],
+    });
+
+    const workflow = store.getState().workflows.get('loop-unroll')!;
+    expect(workflow.nodes.map((node) => node.id)).toEqual([
+      'root',
+      'loop',
+      'loop#0',
+      'review',
+      'loop#1',
+      'review',
+    ]);
+    expect(
+      workflow.nodes
+        .filter((node) => node.id === 'review')
+        .map((node) => node.sessionId)
+    ).toEqual(['session-0', 'session-1']);
+    expect(uniqueRowKeys(workflow.nodes)).toBe(workflow.nodes.length);
+  });
+
+  it('rebinds a restarted non-loop step instead of appending a row', () => {
+    const store = createWorkflowStore(() => 100);
+    store.getState().applyEvent(startEvent('plain'));
+    for (const sessionId of ['session-first', 'session-second']) {
+      store.getState().applyEvent({
+        type: 'node_start',
+        workflowId: 'plain',
+        parentSessionId: 'parent-1',
+        nodeId: 'two',
+        nodePath: ['root', 'two'],
+        nodeType: 'step',
+        sessionId,
+      });
+    }
+
+    const workflow = store.getState().workflows.get('plain')!;
+    expect(workflow.nodes.map((node) => node.id)).toEqual(['one', 'two']);
+    expect(workflow.nodes[1]).toMatchObject({
+      status: 'running',
+      sessionId: 'session-second',
+      iteration: undefined,
+      maxIterations: undefined,
+    });
+    expect(selectWorkflowNodeIndex(store.getState())).toBe(1);
   });
 });

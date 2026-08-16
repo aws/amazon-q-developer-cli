@@ -18,6 +18,19 @@ export function workflowNodePathsEqual(
   );
 }
 
+const ITERATION_SEGMENT = /^iter-\d+$/;
+
+/**
+ * Drop `iter-N` segments so two paths for the same logical node compare equal
+ * regardless of which repeat iteration produced them. A live plan holds one row
+ * per step, but KAS stamps every lifecycle event with that iteration's segment.
+ */
+export function workflowNodePathWithoutIterations(
+  path: readonly string[]
+): readonly string[] {
+  return path.filter((segment) => !ITERATION_SEGMENT.test(segment));
+}
+
 /** Normalize KAS repeat wrappers (`step#N`) to lifecycle path segments. */
 export function workflowStatePathSegment(
   node: Pick<WorkflowNodeState, 'nodeId' | 'iteration'>,

@@ -2,6 +2,7 @@ import type {
   WorkflowNodeDescriptor,
   WorkflowNodeState,
   WorkflowNodeStatus,
+  WorkflowNodeType,
   WorkflowProgressEvent,
   WorkflowStateSnapshot,
   WorkflowStatus,
@@ -18,6 +19,7 @@ import {
 } from '../types/workflow-status.js';
 import {
   workflowNodePathsEqual,
+  workflowNodePathWithoutIterations,
   workflowStateEntries,
 } from '../utils/workflow-node-path.js';
 
@@ -187,7 +189,7 @@ function carryForwardNodes(
   previous: readonly WorkflowMonitorNode[]
 ): WorkflowMonitorNode[] {
   return fresh.map((node) => {
-    const prior = previous.find((candidate) => candidate.id === node.id);
+    const prior = previous.findLast((candidate) => candidate.id === node.id);
     if (!prior) return node;
     return {
       ...node,
@@ -271,6 +273,156 @@ function patchNodes(
   return nodes.map((node) =>
     nodeMatches(node, identity) ? { ...node, ...patch } : node
   );
+}
+
+/** Same id, same path once the repeat iteration that produced each is ignored. */
+function nodeMatchesAcrossIterations(
+  node: WorkflowMonitorNode,
+  identity: NodeIdentity
+): boolean {
+  if (node.id !== identity.nodeId) return false;
+  if (identity.nodePath === undefined || node.nodePath === undefined) {
+    return true;
+  }
+  return workflowNodePathsEqual(
+    workflowNodePathWithoutIterations(identity.nodePath),
+    workflowNodePathWithoutIterations(node.nodePath)
+  );
+}
+
+function patchLastNodeAcrossIterations(
+  nodes: readonly WorkflowMonitorNode[],
+  identity: NodeIdentity,
+  patch: Partial<WorkflowMonitorNode>
+): WorkflowMonitorNode[] {
+  const target = nodes.reduce(
+    (last, node, index) =>
+      nodeMatchesAcrossIterations(node, identity) ? index : last,
+    -1
+  );
+  if (target < 0) return [...nodes];
+  const next = [...nodes];
+  next[target] = { ...nodes[target]!, ...patch };
+  return next;
+}
+
+type WorkflowNodeStartEvent = Extract<
+  WorkflowProgressEvent,
+  { type: 'node_start' }
+>;
+
+/** KAS names a repeat wrapper `<nodeId>#N`; the plan only knows `<nodeId>`. */
+function baseNodeId(nodeId: string): string {
+  return nodeId.replace(/#\d+$/, '');
+}
+
+/**
+ * The row a starting instance clones its plan-derived shape from. The type gate
+ * is load-bearing: `#N` stripping alone would let an instance clone a row of a
+ * different kind that happens to share its base id.
+ */
+function startedNodeTemplate(
+  nodes: readonly WorkflowMonitorNode[],
+  nodeId: string,
+  nodeType: WorkflowNodeType
+): { node: WorkflowMonitorNode; index: number } | undefined {
+  const exact = nodes.findIndex(
+    (node) => node.id === nodeId && node.type === nodeType
+  );
+  const index =
+    exact >= 0
+      ? exact
+      : nodes.findIndex(
+          (node) =>
+            baseNodeId(node.id) === baseNodeId(nodeId) && node.type === nodeType
+        );
+  const node = index >= 0 ? nodes[index] : undefined;
+  return node ? { node, index } : undefined;
+}
+
+/**
+ * First index past the template's own subtree and any sibling instance of it, so
+ * a new iteration lands beside its siblings rather than at the end of the list.
+ */
+function instanceBlockEnd(
+  nodes: readonly WorkflowMonitorNode[],
+  template: WorkflowMonitorNode,
+  templateIndex: number
+): number {
+  let end = templateIndex + 1;
+  while (end < nodes.length) {
+    const candidate = nodes[end]!;
+    const isSiblingInstance =
+      candidate.depth === template.depth &&
+      baseNodeId(candidate.id) === baseNodeId(template.id);
+    if (candidate.depth <= template.depth && !isSiblingInstance) break;
+    end += 1;
+  }
+  return end;
+}
+
+/**
+ * Binds a starting node to exactly one row, appending one when nothing matches —
+ * otherwise a loop iteration past the first patches nothing and the monitor
+ * stays pinned to the previous iteration's finished session. The identity omits
+ * `sessionId`, so a retry of the same instance re-binds its row.
+ */
+function upsertStartedNode(
+  nodes: readonly WorkflowMonitorNode[],
+  identity: NodeIdentity,
+  event: WorkflowNodeStartEvent
+): { nodes: WorkflowMonitorNode[]; index: number; appended: boolean } {
+  const patch: Partial<WorkflowMonitorNode> = {
+    status: 'running',
+    sessionId: event.sessionId,
+    nodePath: event.nodePath,
+    agentName: event.agentName,
+    iteration: event.iteration,
+    branchId: event.branchId,
+  };
+  const matched = nodes.findIndex((node) => nodeMatches(node, identity));
+  if (matched >= 0) {
+    const target = nodes[matched]!;
+    const inherited =
+      event.iteration !== undefined && target.maxIterations === undefined
+        ? ancestorMaxIterations(nodes, target)
+        : undefined;
+    const next = [...nodes];
+    next[matched] = {
+      ...target,
+      ...patch,
+      ...(inherited !== undefined ? { maxIterations: inherited } : {}),
+    };
+    return { nodes: next, index: matched, appended: false };
+  }
+  // Only a step earns a row of its own. Rows are parented by plan id, which
+  // cannot tell two instances of one container apart, so a second container row
+  // would draw as a leaf with every iteration's children under the first.
+  if (event.nodeType !== 'step') {
+    return { nodes: [...nodes], index: -1, appended: false };
+  }
+  const template = startedNodeTemplate(nodes, event.nodeId, event.nodeType);
+  if (!template) return { nodes: [...nodes], index: -1, appended: false };
+  const insertAt = instanceBlockEnd(nodes, template.node, template.index);
+  const appended: WorkflowMonitorNode = {
+    ...patch,
+    id: event.nodeId,
+    type: template.node.type,
+    status: 'running',
+    label: template.node.label,
+    parentId: template.node.parentId,
+    depth: template.node.depth,
+    modelId: template.node.modelId,
+    effortLevel: template.node.effortLevel,
+    maxIterations:
+      template.node.maxIterations ??
+      ancestorMaxIterations(nodes, template.node),
+  };
+  return {
+    nodes: [...nodes.slice(0, insertAt), appended, ...nodes.slice(insertAt)],
+    index: insertAt,
+    appended: true,
+  };
 }
 
 function sessionMatches(
@@ -467,6 +619,68 @@ function restoredSelectionIndex(nodes: readonly WorkflowMonitorNode[]): number {
   );
 }
 
+function matchingRetainedNodeIndex(
+  selected: WorkflowMonitorNode,
+  nodes: readonly WorkflowMonitorNode[]
+): number {
+  if (selected.sessionId !== undefined) {
+    const sessionMatch = nodes.findIndex(
+      (node) => node.sessionId === selected.sessionId
+    );
+    if (sessionMatch >= 0) return sessionMatch;
+  }
+  const selectedPath = selected.nodePath;
+  if (selectedPath !== undefined) {
+    const pathMatch = nodes.findIndex(
+      (node) =>
+        node.nodePath !== undefined &&
+        workflowNodePathsEqual(node.nodePath, selectedPath)
+    );
+    if (pathMatch >= 0) return pathMatch;
+  }
+  if (selected.iteration !== undefined || selected.branchId !== undefined) {
+    const instanceMatch = nodes.findIndex(
+      (node) =>
+        node.id === selected.id &&
+        node.type === selected.type &&
+        node.iteration === selected.iteration &&
+        node.branchId === selected.branchId
+    );
+    if (instanceMatch >= 0) return instanceMatch;
+  }
+  if (
+    selected.sessionId !== undefined ||
+    selected.nodePath !== undefined ||
+    selected.iteration !== undefined ||
+    selected.branchId !== undefined
+  ) {
+    return -1;
+  }
+  return nodes.findIndex(
+    (node) =>
+      node.id === selected.id &&
+      node.type === selected.type &&
+      node.parentId === selected.parentId &&
+      node.depth === selected.depth
+  );
+}
+
+function retainedSelectionIndex(
+  state: WorkflowCollectionState,
+  workflowId: string,
+  nodes: readonly WorkflowMonitorNode[]
+): number | undefined {
+  const retained = state.selectedNodeIndices.get(workflowId);
+  if (retained === undefined) return undefined;
+  const selected = state.workflows.get(workflowId)?.nodes[retained];
+  if (selected !== undefined) {
+    const matched = matchingRetainedNodeIndex(selected, nodes);
+    if (matched >= 0) return matched === retained ? undefined : matched;
+  }
+  const fallback = restoredSelectionIndex(nodes);
+  return fallback < nodes.length ? fallback : undefined;
+}
+
 export function reduceWorkflowEvent(
   state: WorkflowCollectionState,
   event: WorkflowProgressEvent,
@@ -496,7 +710,9 @@ export function reduceWorkflowEvent(
       stopInitiator: event.state.stopInitiator,
       stopReason: event.state.stopReason,
     };
-    const selectedIndex = previous ? undefined : restoredSelectionIndex(nodes);
+    const selectedIndex = previous
+      ? retainedSelectionIndex(state, event.workflowId, nodes)
+      : restoredSelectionIndex(nodes);
     const restoredState = replaceRun(state, restored, selectedIndex);
     const archivedWorkflows = new Map(restoredState.archivedWorkflows);
     archivedWorkflows.delete(event.workflowId);
@@ -530,7 +746,18 @@ export function reduceWorkflowEvent(
     const archivedWorkflows = new Map(state.archivedWorkflows);
     archivedWorkflows.delete(event.workflowId);
     const selectedNodeIndices = new Map(state.selectedNodeIndices);
-    if (!previous) selectedNodeIndices.set(event.workflowId, 0);
+    if (!previous) {
+      selectedNodeIndices.set(event.workflowId, 0);
+    } else {
+      const selectedIndex = retainedSelectionIndex(
+        state,
+        event.workflowId,
+        run.nodes
+      );
+      if (selectedIndex !== undefined) {
+        selectedNodeIndices.set(event.workflowId, selectedIndex);
+      }
+    }
     const current = state.activeWorkflowId
       ? state.workflows.get(state.activeWorkflowId)
       : undefined;
@@ -563,22 +790,8 @@ export function reduceWorkflowEvent(
         iteration: event.iteration,
         branchId: event.branchId,
       };
-      const targetNode = run.nodes.find((node) => nodeMatches(node, identity));
-      const inheritedMaxIterations =
-        event.iteration !== undefined && targetNode?.maxIterations === undefined
-          ? ancestorMaxIterations(run.nodes, targetNode)
-          : undefined;
-      const nodes = patchNodes(run.nodes, identity, {
-        status: 'running',
-        sessionId: event.sessionId,
-        nodePath: event.nodePath,
-        agentName: event.agentName,
-        iteration: event.iteration,
-        branchId: event.branchId,
-        ...(inheritedMaxIterations !== undefined
-          ? { maxIterations: inheritedMaxIterations }
-          : {}),
-      });
+      const started = upsertStartedNode(run.nodes, identity, event);
+      const nodes = started.nodes;
       const stepSessions = event.sessionId
         ? mergeSessions(run.stepSessions, [
             {
@@ -592,11 +805,15 @@ export function reduceWorkflowEvent(
             },
           ])
         : run.stepSessions;
-      const selectedIndex = state.selectionLocked
-        ? undefined
-        : nodes.findIndex(
-            (node) => node.id === event.nodeId && node.type === event.nodeType
-          );
+      const retained = state.selectedNodeIndices.get(event.workflowId);
+      // An insertion shifts every row at or after it down one, so a locked
+      // selection has to travel with the row it named or the composer would
+      // start answering a different session mid-message.
+      const lockedIndex =
+        started.appended && retained !== undefined && started.index <= retained
+          ? retained + 1
+          : undefined;
+      const selectedIndex = state.selectionLocked ? lockedIndex : started.index;
       // Clearing the attribution keeps a later autonomous abort from inheriting
       // `'user'` and reading "Stopped by you."
       const resumed =
@@ -677,15 +894,22 @@ export function reduceWorkflowEvent(
           { iteration: event.iteration }
         ),
       });
-    case 'watch_poll':
-      return replaceRun(state, {
-        ...run,
-        nodes: patchNodes(
-          run.nodes,
-          { nodeId: event.nodeId },
-          { watchOutcome: event.outcome }
-        ),
-      });
+    case 'watch_poll': {
+      const identity: NodeIdentity = {
+        nodeId: event.nodeId,
+        nodePath: event.nodePath,
+      };
+      const patch = { watchOutcome: event.outcome };
+      // Only a step earns a row per iteration, so a repeat-nested watch keeps
+      // the path of the iteration that first started it while every later poll
+      // carries its own — without the relaxed retry those outcomes vanish. The
+      // retry binds one row, the newest, so an outcome never lands on a row an
+      // earlier iteration already reported.
+      const nodes = run.nodes.some((node) => nodeMatches(node, identity))
+        ? patchNodes(run.nodes, identity, patch)
+        : patchLastNodeAcrossIterations(run.nodes, identity, patch);
+      return replaceRun(state, { ...run, nodes });
+    }
     case 'paused':
       return replaceRun(
         {
