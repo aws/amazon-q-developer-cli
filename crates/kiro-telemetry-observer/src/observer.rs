@@ -90,6 +90,8 @@ pub const REASON_MONTHLY_LIMIT_REACHED: &str = "MonthlyLimitReached";
 pub const REASON_SERVICE_FAILURE: &str = "ServiceFailure";
 /// Reason: stream timed out waiting for next event.
 pub const REASON_STREAM_TIMEOUT: &str = "StreamTimeout";
+/// Reason: transient network failure while receiving the response stream.
+pub const REASON_TRANSIENT_NETWORK_FAILURE: &str = "TransientNetworkFailure";
 /// Reason: request validation error.
 pub const REASON_VALIDATION_ERROR: &str = "ValidationError";
 /// Reason: backend rejected the request because the model id is not allowed in the current
@@ -888,6 +890,7 @@ fn transport_retry_reason(
         Err(LoopError::Stream(stream_err)) => match &stream_err.kind {
             StreamErrorKind::Throttling => metric::RetryReason::Throttled,
             StreamErrorKind::StreamTimeout { .. } => metric::RetryReason::Timeout,
+            StreamErrorKind::TransientNetworkFailure { .. } => metric::RetryReason::Connection,
             StreamErrorKind::ServiceFailure => metric::RetryReason::ServerError,
             _ if status_code.is_some_and(|status| status >= 500) => metric::RetryReason::ServerError,
             _ => metric::RetryReason::Other,
@@ -952,6 +955,7 @@ pub fn extract_reason_from_kind(stream_err: &StreamError) -> (String, String) {
         StreamErrorKind::Interrupted => REASON_INTERRUPTED,
         StreamErrorKind::ServiceFailure => REASON_SERVICE_FAILURE,
         StreamErrorKind::StreamTimeout { .. } => REASON_STREAM_TIMEOUT,
+        StreamErrorKind::TransientNetworkFailure { .. } => REASON_TRANSIENT_NETWORK_FAILURE,
         StreamErrorKind::Validation { .. } => REASON_VALIDATION_ERROR,
         StreamErrorKind::InvalidModelId { .. } => REASON_INVALID_MODEL_ID,
         StreamErrorKind::Other { reason_code, message } => reason_code.as_deref().unwrap_or_else(|| {

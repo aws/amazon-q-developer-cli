@@ -101,6 +101,16 @@ impl ApiClientError {
             Self::Other(_) => None,
         }
     }
+
+    /// Whether this error is a transient network failure (e.g. connection reset) that occurred
+    /// while receiving a response stream, making the request safe to retry.
+    pub fn is_transient_stream_failure(&self) -> bool {
+        match self {
+            Self::CodewhispererChatResponseStream(SdkError::DispatchFailure(e)) => e.is_io() || e.is_timeout(),
+            Self::QDeveloperChatResponseStream(SdkError::DispatchFailure(e)) => e.is_io() || e.is_timeout(),
+            _ => false,
+        }
+    }
 }
 
 impl ReasonCode for ApiClientError {
@@ -326,6 +336,33 @@ mod tests {
         for error in all_errors() {
             let _ = error.source();
             println!("{error} {error:?}");
+        }
+    }
+
+    #[test]
+    fn test_is_transient_stream_failure() {
+        use aws_smithy_runtime_api::client::result::{
+            ConnectorError,
+            DispatchFailure,
+        };
+
+        let io_failure = || {
+            DispatchFailure::builder()
+                .source(ConnectorError::io("connection reset by peer".into()))
+                .build()
+        };
+        assert!(
+            ApiClientError::CodewhispererChatResponseStream(SdkError::DispatchFailure(io_failure()))
+                .is_transient_stream_failure()
+        );
+        assert!(
+            ApiClientError::QDeveloperChatResponseStream(SdkError::DispatchFailure(io_failure()))
+                .is_transient_stream_failure()
+        );
+
+        // Service-modeled errors and other variants are not transient.
+        for error in all_errors() {
+            assert!(!error.is_transient_stream_failure(), "{error:?}");
         }
     }
 }

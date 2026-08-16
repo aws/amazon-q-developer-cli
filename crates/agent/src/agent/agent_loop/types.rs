@@ -155,6 +155,14 @@ pub enum StreamErrorKind {
     },
     /// The stream was closed to due being interrupted (for example, on ctrl+c).
     Interrupted,
+    /// A transient network failure occurred while receiving the response stream (for example,
+    /// the connection was reset mid-stream).
+    ///
+    /// Retryable: the request is re-sent as-is, discarding any partial response.
+    TransientNetworkFailure {
+        /// Human-readable error description.
+        message: String,
+    },
     /// The backend rejected the request because the specified model id is not allowed in the
     /// current inference path (e.g. removed or gated).
     ///
@@ -189,6 +197,7 @@ impl std::fmt::Display for StreamErrorKind {
             )
             .into(),
             StreamErrorKind::Interrupted => "The stream was interrupted".into(),
+            StreamErrorKind::TransientNetworkFailure { message } => message.as_str().into(),
             StreamErrorKind::InvalidModelId { model_id } => match model_id {
                 Some(id) => format!(
                     "The model '{id}' is not available. Please use '/model' to select a different model and try again."

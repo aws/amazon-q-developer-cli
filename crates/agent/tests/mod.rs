@@ -2437,6 +2437,219 @@ async fn test_empty_response_retry_failure() {
     }
 }
 
+/// Tests that a transient network failure mid-stream (e.g. connection reset) triggers a
+/// retry of the same request. When the retry succeeds, the agent completes normally and
+/// a retry warning is surfaced.
+#[tokio::test]
+async fn test_transient_network_failure_retry_success() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("transient network failure retry success")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/transient_network_retry_success.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected exactly 2 requests (original + retry), got {}",
+        requests.len()
+    );
+
+    // The retry must resend the same conversation: the partial response is discarded and no
+    // synthetic messages are added. Compare structurally (Message lacks PartialEq).
+    let original = requests[0].messages();
+    let retry = requests[1].messages();
+    assert_eq!(
+        original.len(),
+        retry.len(),
+        "retry should have the same number of messages as the original"
+    );
+    for (i, (a, b)) in original.iter().zip(retry.iter()).enumerate() {
+        assert_eq!(a.role, b.role, "message {} role mismatch", i);
+        assert_eq!(a.text(), b.text(), "message {} text mismatch", i);
+    }
+
+    // Clients discard the partial response when the RetryWarning arrives, so it must be
+    // emitted after the stale fragment and before any retried content. Its attempt fields
+    // must use total-attempt semantics (original request = attempt 1), matching the
+    // HTTP-level retry warnings that feed the same banner.
+    let events = test.agent_events();
+    let content_idx = |needle: &str| {
+        events.iter().position(|e| {
+            matches!(
+                e,
+                AgentEvent::Update(agent::protocol::UpdateEvent::AgentContent(
+                    agent::protocol::ContentChunk::Text(t)
+                )) if t.contains(needle)
+            )
+        })
+    };
+    let partial_idx = content_idx("Partial resp").expect("partial fragment should be emitted");
+    let fresh_idx = content_idx("Hello! I can help with that.").expect("retried content should be emitted");
+    let warning_idx = events
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                AgentEvent::Internal(agent::protocol::InternalEvent::AgentLoop(loop_event))
+                if matches!(
+                    &loop_event.kind,
+                    agent::agent_loop::protocol::AgentLoopEventKind::Stream(
+                        agent::agent_loop::protocol::StreamResult::Ok(
+                            agent::agent_loop::types::StreamEvent::RetryWarning(w)
+                        )
+                    ) if w.attempt == 2 && w.max_attempts == 3
+                )
+            )
+        })
+        .expect("expected a RetryWarning event with total-attempt semantics (2/3)");
+    assert!(
+        partial_idx < warning_idx && warning_idx < fresh_idx,
+        "RetryWarning must separate the stale fragment from the retried content \
+         (partial={partial_idx}, warning={warning_idx}, fresh={fresh_idx})"
+    );
+
+    // Final stop reason should be EndTurn (not Error)
+    let stop = test
+        .agent_events()
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            AgentEvent::Stop(reason) => Some(reason.clone()),
+            _ => None,
+        })
+        .expect("agent should emit a Stop event");
+    assert!(
+        matches!(stop, agent::protocol::AgentStopReason::EndTurn),
+        "expected EndTurn, got {:?}",
+        stop
+    );
+}
+
+/// Tests that transient network failure retries are bounded: after the initial request and
+/// two retries all fail, the agent enters the error state instead of retrying again.
+#[tokio::test]
+async fn test_transient_network_failure_retry_exhausted() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("transient network failure retry exhausted")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/transient_network_retry_exhausted.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(10)).await.unwrap();
+
+    let requests = test.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected exactly 3 requests (original + 2 retries, then hard fail), got {}",
+        requests.len()
+    );
+
+    // Final stop reason should be Error wrapping the transient network failure.
+    let stop = test
+        .agent_events()
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            AgentEvent::Stop(reason) => Some(reason.clone()),
+            _ => None,
+        })
+        .expect("agent should emit a Stop event");
+    match stop {
+        agent::protocol::AgentStopReason::Error(agent::protocol::AgentError::AgentLoopError(
+            agent::agent_loop::protocol::LoopError::Stream(stream_err),
+        )) => {
+            assert!(
+                matches!(
+                    stream_err.kind,
+                    agent::agent_loop::types::StreamErrorKind::TransientNetworkFailure { .. }
+                ),
+                "expected TransientNetworkFailure, got {:?}",
+                stream_err.kind
+            );
+        },
+        other => panic!(
+            "expected Stop(Error(AgentLoopError(Stream(TransientNetworkFailure)))), got {:?}",
+            other
+        ),
+    }
+}
+
+/// Tests that cancelling during the retry backoff aborts the scheduled re-send: the turn
+/// ends with Cancelled and the retry request never fires.
+#[tokio::test]
+async fn test_transient_network_failure_cancel_during_backoff() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let mut test = TestCase::builder()
+        .test_name("transient network failure cancel during backoff")
+        .with_default_agent_config()
+        .with_trust_all_tools(true)
+        .with_responses(
+            parse_response_streams(include_str!("./mock_responses/transient_network_retry_exhausted.jsonl"))
+                .await
+                .unwrap(),
+        )
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+
+    // Wait for the retry to be scheduled (announced via RetryWarning), then cancel
+    // while the 1s backoff is still pending.
+    test.wait_until_agent_event(Duration::from_secs(5), |e| {
+        matches!(
+            e,
+            AgentEvent::Internal(agent::protocol::InternalEvent::AgentLoop(loop_event))
+            if matches!(
+                &loop_event.kind,
+                agent::agent_loop::protocol::AgentLoopEventKind::Stream(
+                    agent::agent_loop::protocol::StreamResult::Ok(
+                        agent::agent_loop::types::StreamEvent::RetryWarning(_)
+                    )
+                )
+            )
+        )
+    })
+    .await
+    .expect("expected a RetryWarning before the backoff");
+    test.cancel().await.unwrap();
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    // Sleep past the backoff: a scheduled retry that survived the cancel would fire now.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(
+        test.requests().len(),
+        1,
+        "cancel during backoff must abort the scheduled retry"
+    );
+}
+
 /// Tests that switch_to_execution ends the turn without sending tool results
 /// back to the LLM, so the caller can swap agents and inject the plan.
 #[tokio::test]

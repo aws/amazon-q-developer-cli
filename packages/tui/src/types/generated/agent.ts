@@ -612,6 +612,16 @@ export type StreamErrorKind =
 	/** The stream was closed to due being interrupted (for example, on ctrl+c). */
 	| { kind: "interrupted", data?: undefined }
 	/**
+	 * A transient network failure occurred while receiving the response stream (for example,
+	 * the connection was reset mid-stream).
+	 * 
+	 * Retryable: the request is re-sent as-is, discarding any partial response.
+	 */
+	| { kind: "transientNetworkFailure", data: {
+	/** Human-readable error description. */
+	message: string;
+}}
+	/**
 	 * The backend rejected the request because the specified model id is not allowed in the
 	 * current inference path (e.g. removed or gated).
 	 * 

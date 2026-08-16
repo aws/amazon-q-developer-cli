@@ -27,6 +27,7 @@ use std::collections::{
 };
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use agent_config::definitions::{
     HookConfig,
@@ -48,14 +49,17 @@ use agent_loop::protocol::{
     AgentLoopResponse,
     LoopError,
     SendRequestArgs,
+    StreamResult,
     UserTurnMetadata,
 };
 use agent_loop::types::{
     ContentBlock,
     Message,
     MessageMetadata,
+    RetryWarningEvent,
     Role,
     StreamErrorKind,
+    StreamEvent,
     ToolResultBlock,
     ToolResultContentBlock,
     ToolResultStatus,
@@ -724,6 +728,11 @@ pub struct Agent {
 
     agent_event_buf: Vec<AgentEvent>,
 
+    /// A request re-send scheduled after a transient network failure mid-stream, fired
+    /// from the main loop once the backoff elapses. Deferring keeps the actor responsive
+    /// (e.g. to Cancel) during the wait. Cleared whenever the turn ends.
+    pending_transient_retry: Option<PendingTransientRetry>,
+
     /// Contains an [AgentLoop] if the agent is in the middle of executing a user turn, otherwise
     /// is [None].
     agent_loop: Option<AgentLoopHandle>,
@@ -962,6 +971,7 @@ impl Agent {
             summary_tx,
             summary_rx: Some(summary_rx),
             agent_event_buf: Vec::new(),
+            pending_transient_retry: None,
             agent_loop: None,
             compaction_loop: None,
             task_executor,
@@ -1216,6 +1226,8 @@ impl Agent {
                 let _ = self.agent_event_tx.send(event);
             }
 
+            let transient_retry_at = self.pending_transient_retry.as_ref().map(|r| r.fire_at);
+
             tokio::select! {
                 req = request_rx.recv() => {
                     let Some(req) = req else {
@@ -1287,6 +1299,19 @@ impl Agent {
                         Err(e) => {
                             error!(?e, "mcp manager handle closed");
                         }
+                    }
+                },
+
+                // Branch that fires a scheduled transient-network retry once its backoff
+                // elapses. Kept in the select so Cancel and other requests stay responsive
+                // during the wait.
+                _ = tokio::time::sleep_until(transient_retry_at.unwrap_or_else(tokio::time::Instant::now)),
+                        if transient_retry_at.is_some() => {
+                    if let Some(retry) = self.pending_transient_retry.take()
+                        && let Err(e) = self.send_request(retry.args).await
+                    {
+                        error!(?e, "failed to re-send request after transient network failure");
+                        self.enter_error_state(e).await;
                     }
                 },
             }
@@ -1393,6 +1418,8 @@ impl Agent {
         &mut self,
         salvage_pending_summary: bool,
     ) -> Result<Option<UserTurnMetadata>, AgentError> {
+        // A scheduled retry belongs to the turn being torn down.
+        self.pending_transient_retry = None;
         let Some(mut handle) = self.agent_loop.take() else {
             return Ok(None);
         };
@@ -2558,6 +2585,7 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
+                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -2581,6 +2609,7 @@ impl Agent {
         let Some(evt) = evt else {
             warn!("agent loop channel dropped without EndTurn, emitting Stop event");
             self.agent_loop = None;
+            self.pending_transient_retry = None;
             self.set_active_state(ActiveState::Idle).await;
             self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
             return Ok(());
@@ -2745,6 +2774,7 @@ impl Agent {
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
+                        transient_network_retries: 0,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
@@ -2777,6 +2807,7 @@ impl Agent {
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
+                        transient_network_retries: 0,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
@@ -2795,22 +2826,28 @@ impl Agent {
                     warn!("empty response on retry - entering error state");
                     self.enter_error_state(err.clone().into()).await;
                 } else {
-                    let pending = match &self.execution_state.active_state {
-                        ActiveState::ExecutingRequest {
-                            pending_user_message: Some(p),
-                            ..
-                        } => p.clone(),
-                        _ => {
-                            error!("empty response with no pending user message - entering error state");
-                            self.enter_error_state(err.clone().into()).await;
-                            return Ok(());
-                        },
-                    };
+                    let (compaction_retry, transient_network_retries, pending) =
+                        match &self.execution_state.active_state {
+                            ActiveState::ExecutingRequest {
+                                compaction_retry,
+                                transient_network_retries,
+                                pending_user_message: Some(p),
+                                ..
+                            } => (*compaction_retry, *transient_network_retries, p.clone()),
+                            _ => {
+                                error!("empty response with no pending user message - entering error state");
+                                self.enter_error_state(err.clone().into()).await;
+                                return Ok(());
+                            },
+                        };
                     warn!("empty response from model - retrying once with the same request");
                     let args = self.format_request(&pending).await;
+                    // Same logical request: sibling retry state carries forward so the
+                    // per-request caps still bound a backend alternating failure modes.
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
-                        compaction_retry: None,
+                        compaction_retry,
                         empty_response_retried: true,
+                        transient_network_retries,
                         pending_user_message: Some(pending),
                     };
                     self.send_request(args).await?;
@@ -2856,12 +2893,92 @@ impl Agent {
                     self.execution_state.active_state = ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
+                        transient_network_retries: 0,
                         pending_user_message: Some(retry_pending),
                     };
                     self.send_request(args).await?;
                 },
                 StreamErrorKind::Interrupted => {
                     // nothing to do
+                },
+                StreamErrorKind::TransientNetworkFailure { .. } => {
+                    // The connection dropped mid-stream (e.g. connection reset). The request
+                    // can be re-sent as-is: the partial response is discarded, so history is
+                    // unaffected. Bounded to avoid looping on a persistent network outage.
+                    let state = match &self.execution_state.active_state {
+                        ActiveState::ExecutingRequest {
+                            compaction_retry,
+                            empty_response_retried,
+                            transient_network_retries,
+                            pending_user_message: Some(pending),
+                        } => Some((
+                            *compaction_retry,
+                            *empty_response_retried,
+                            *transient_network_retries,
+                            pending.clone(),
+                        )),
+                        _ => None,
+                    };
+                    match state {
+                        Some((compaction_retry, empty_response_retried, retries, pending))
+                            if retries < consts::MAX_TRANSIENT_NETWORK_RETRIES =>
+                        {
+                            // Exponential backoff (1s, 2s) so the retry budget covers more
+                            // than an instantaneous blip. The original request was attempt 1,
+                            // so the upcoming attempt is retries + 2.
+                            let delay = Duration::from_secs(1 << retries);
+                            let attempt = retries + 2;
+                            let max_attempts = consts::MAX_TRANSIENT_NETWORK_RETRIES + 1;
+                            warn!(
+                                attempt,
+                                ?delay,
+                                "transient network failure during the response stream - retrying"
+                            );
+
+                            // Surface the retry to the UI through the same event the HTTP-level
+                            // retry warnings use. Clients also use this to discard the partial
+                            // response, which the retried stream re-generates from scratch.
+                            if let Ok(handle) = self.agent_loop_handle() {
+                                let loop_id = handle.id().clone();
+                                self.agent_event_buf.push(
+                                    AgentLoopEvent::new(
+                                        loop_id,
+                                        AgentLoopEventKind::Stream(StreamResult::Ok(StreamEvent::RetryWarning(
+                                            RetryWarningEvent {
+                                                attempt,
+                                                max_attempts,
+                                                delay_secs: delay.as_secs_f64(),
+                                                message: format!(
+                                                    "Connection interrupted - retrying in {}s (attempt {attempt}/{max_attempts})",
+                                                    delay.as_secs()
+                                                ),
+                                            },
+                                        ))),
+                                    )
+                                    .into(),
+                                );
+                            }
+
+                            let args = self.format_request(&pending).await;
+                            // The retry re-sends the same logical request, so sibling retry
+                            // state (compaction escalation, empty-response flag) carries
+                            // forward unchanged.
+                            self.execution_state.active_state = ActiveState::ExecutingRequest {
+                                compaction_retry,
+                                empty_response_retried,
+                                transient_network_retries: retries + 1,
+                                pending_user_message: Some(pending),
+                            };
+                            self.pending_transient_retry = Some(PendingTransientRetry {
+                                fire_at: tokio::time::Instant::now() + delay,
+                                args,
+                            });
+                        },
+                        _ => {
+                            error!("transient network failure with no retries left - entering error state");
+                            self.enter_error_state(err.clone().into()).await;
+                        },
+                    }
                 },
                 StreamErrorKind::ContextWindowOverflow if !self.settings.disable_auto_compact => {
                     // Check if this is a retry after compaction
@@ -2912,6 +3029,7 @@ impl Agent {
                                     is_prompt_truncated: true,
                                 }),
                                 empty_response_retried: false,
+                                transient_network_retries: 0,
                                 pending_user_message: Some(truncated_pending),
                             })
                             .await;
@@ -3026,6 +3144,7 @@ impl Agent {
         self.set_active_state(ActiveState::ExecutingRequest {
             compaction_retry: None,
             empty_response_retried: false,
+            transient_network_retries: 0,
             pending_user_message: Some(pending),
         })
         .await;
@@ -3233,6 +3352,7 @@ impl Agent {
                         self.set_active_state(ActiveState::ExecutingRequest {
                             compaction_retry: Some(CompactionRetry::default()),
                             empty_response_retried: false,
+                            transient_network_retries: 0,
                             pending_user_message: Some(pending),
                         })
                         .await;
@@ -3398,6 +3518,7 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
+                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -3474,6 +3595,7 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
+                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -3826,6 +3948,7 @@ impl Agent {
                     self.set_active_state(ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
+                        transient_network_retries: 0,
                         pending_user_message: Some(pending),
                     })
                     .await;
@@ -3879,6 +4002,7 @@ impl Agent {
                     self.set_active_state(ActiveState::ExecutingRequest {
                         compaction_retry: None,
                         empty_response_retried: false,
+                        transient_network_retries: 0,
                         pending_user_message: Some(pending),
                     })
                     .await;
@@ -4444,6 +4568,7 @@ impl Agent {
             self.set_active_state(ActiveState::ExecutingRequest {
                 compaction_retry: None,
                 empty_response_retried: false,
+                transient_network_retries: 0,
                 pending_user_message: Some(pending),
             })
             .await;
@@ -4576,6 +4701,7 @@ impl Agent {
         self.set_active_state(ActiveState::ExecutingRequest {
             compaction_retry: None,
             empty_response_retried: false,
+            transient_network_retries: 0,
             pending_user_message: Some(pending),
         })
         .await;
@@ -5436,6 +5562,10 @@ pub enum ActiveState {
         /// retrying again.
         #[serde(default)]
         empty_response_retried: bool,
+        /// Number of times this request has been retried after a transient network failure
+        /// mid-stream. Bounded by [consts::MAX_TRANSIENT_NETWORK_RETRIES].
+        #[serde(default)]
+        transient_network_retries: u32,
         /// User message that triggered this request, to be appended to the event log only after
         /// receiving a successful assistant response. This ensures we don't persist user messages
         /// that fail (e.g., due to ContextWindowOverflow) and need to be retried or truncated.
@@ -5460,6 +5590,14 @@ pub enum ActiveState {
 pub struct CompactionRetry {
     /// Whether the user message has been truncated in a previous retry attempt.
     pub is_prompt_truncated: bool,
+}
+
+/// A request re-send scheduled after a transient network failure, dispatched by the main
+/// loop once `fire_at` is reached.
+#[derive(Debug)]
+struct PendingTransientRetry {
+    fire_at: tokio::time::Instant,
+    args: SendRequestArgs,
 }
 
 /// Tracks approval state for a single tool use.

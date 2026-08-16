@@ -1,0 +1,14 @@
+// Tests that transient network failure retries are bounded.
+// Flow: prompt -> failure -> retry 1 -> failure -> retry 2 -> failure -> error state (no 4th request)
+
+// Response 1: stream dies with a transient network failure.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"error","data":{"original_request_id":"req-1","original_status_code":null,"original_message":null,"kind":{"kind":"transientNetworkFailure","data":{"message":"A network failure occurred during the response stream: connection reset by peer"}}}}
+
+// Response 2: first retry also fails.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"error","data":{"original_request_id":"req-2","original_status_code":null,"original_message":null,"kind":{"kind":"transientNetworkFailure","data":{"message":"A network failure occurred during the response stream: connection reset by peer"}}}}
+
+// Response 3: second retry also fails - retries exhausted.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"error","data":{"original_request_id":"req-3","original_status_code":null,"original_message":null,"kind":{"kind":"transientNetworkFailure","data":{"message":"A network failure occurred during the response stream: connection reset by peer"}}}}

@@ -1183,6 +1183,13 @@ impl ResponseParser {
             RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout { duration })
                 .set_original_request_id(self.request_id.clone())
                 .with_source(Arc::new(source)),
+            RecvError::Other { source } if source.is_transient_stream_failure() => {
+                StreamError::new(StreamErrorKind::TransientNetworkFailure {
+                    message: format!("A network failure occurred during the response stream: {source}"),
+                })
+                .set_original_request_id(self.request_id.clone())
+                .with_source(Arc::new(source))
+            },
             RecvError::Other { source } => StreamError::new(StreamErrorKind::Other {
                 reason_code: Some(reason_code),
                 message: format!("An unexpected error occurred during the response stream: {source:?}"),

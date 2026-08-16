@@ -1,0 +1,13 @@
+// Tests bounded retry on mid-stream transient network failures (e.g. connection reset).
+// Flow: prompt -> stream drops mid-response -> agent retries same request -> success
+
+// Response 1: stream starts, delivers partial text, then dies with a transient network failure.
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Partial resp"},"contentBlockIndex":null}}}
+{"result":"error","data":{"original_request_id":"c63a5eab-627c-4b01-b86d-1257dad42805","original_status_code":null,"original_message":null,"kind":{"kind":"transientNetworkFailure","data":{"message":"A network failure occurred during the response stream: connection reset by peer"}}}}
+
+// Response 2: retry succeeds with normal content
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello! I can help with that."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:32.000000Z","requestEndTime":"2025-10-23T21:04:33.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"retry-success","statusCode":null}}}}

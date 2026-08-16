@@ -32,6 +32,10 @@ pub const DUMMY_TOOL_RESULT_MESSAGE: &str = "The 'dummy' tool is a placeholder f
 /// request/response loop when the model repeatedly calls an unavailable tool.
 pub const MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS: usize = 3;
 
+/// Maximum number of times a request is re-sent after a transient network failure
+/// mid-stream (e.g. connection reset) before the turn enters the error state.
+pub const MAX_TRANSIENT_NETWORK_RETRIES: u32 = 2;
+
 /// Assistant message surfaced when [`MAX_CONSECUTIVE_UNEXECUTABLE_TOOL_TURNS`]
 /// is reached and the turn is force-ended.
 pub const REPEATED_UNEXECUTABLE_TOOL_MESSAGE: &str = "Stopped after repeated attempts to call tools that aren't available. The required tools may belong to a different agent -- consider switching agents, or rephrase your request.";

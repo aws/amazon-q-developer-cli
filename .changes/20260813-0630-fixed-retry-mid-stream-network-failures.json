@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Mid-stream connection failures (e.g. connection reset) are now retried automatically instead of erroring the turn"
+}

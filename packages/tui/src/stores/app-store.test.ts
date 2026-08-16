@@ -1811,6 +1811,53 @@ describe('RetryWarning event handling', () => {
     expect(retry?.delaySecs).toBe(2.0);
     expect(retry?.message).toBe('Retrying in 2s (attempt 3/6)');
   });
+
+  it('discards the partial streaming row so the retried response starts fresh', async () => {
+    const store = createStore();
+    const handler = store.getState().createStreamEventHandler();
+
+    // Stream a partial response, then let the batched flush land it.
+    handler!({
+      type: AgentEventType.Content,
+      id: 'msg-1',
+      content: { type: ContentType.Text, text: 'Partial resp' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().streamingContent).toBe('Partial resp');
+    expect(
+      store.getState().messages.some((m) => m.role === MessageRole.Model)
+    ).toBe(true);
+
+    // The stream dies mid-response and the agent announces a retry. The
+    // retried stream re-generates the response from scratch, so the partial
+    // row must be discarded — otherwise the retry concatenates onto it and
+    // the transcript diverges from history.
+    handler!({
+      type: AgentEventType.RetryWarning,
+      attempt: 2,
+      maxAttempts: 3,
+      delaySecs: 1.0,
+      message: 'Connection interrupted - retrying in 1s (attempt 2/3)',
+    });
+    expect(store.getState().streamingContent).toBe('');
+    expect(store.getState().streamingMessageId).toBeNull();
+    expect(
+      store.getState().messages.some((m) => m.role === MessageRole.Model)
+    ).toBe(false);
+    expect(store.getState().retryStatus?.attempt).toBe(2);
+
+    // The retried stream renders as a fresh row with no leftover fragment.
+    handler!({
+      type: AgentEventType.Content,
+      id: 'msg-2',
+      content: { type: ContentType.Text, text: 'Hello! I can help with that.' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().streamingContent).toBe(
+      'Hello! I can help with that.'
+    );
+    expect(store.getState().retryStatus).toBeNull();
+  });
 });
 
 describe('reopenSettingsMenu', () => {

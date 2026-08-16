@@ -5132,6 +5132,33 @@ export const createAppStore = (props: AppStoreProps) => {
             break;
           case AgentEventType.RetryWarning:
             {
+              // The retried stream re-generates the response from scratch, so
+              // any partially streamed row is stale — discard it to keep the
+              // transcript aligned with history, which never persists the
+              // partial response. Clearing the row also lets the thinking-line
+              // banner mount (active streaming content suppresses it).
+              if (pendingContentFlush) {
+                clearTimeout(pendingContentFlush);
+                pendingContentFlush = null;
+              }
+              bufferedContent = '';
+              bufferedThinking = '';
+              lastContentEventId = null;
+              thinkingStart = null;
+              thinkingMs = null;
+              if (streamingMsgId != null) {
+                const idToDiscard = streamingMsgId;
+                streamingMsgId = null;
+                set((state) => ({
+                  messages: state.messages.filter(
+                    (m) =>
+                      !(m.role === MessageRole.Model && m.id === idToDiscard)
+                  ),
+                  streamingContent: '',
+                  streamingMessageId: null,
+                  thinkingContent: '',
+                }));
+              }
               get().setRetryStatus({
                 attempt: event.attempt,
                 maxAttempts: event.maxAttempts,
