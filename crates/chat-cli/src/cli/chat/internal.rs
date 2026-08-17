@@ -48,7 +48,7 @@ use chat_cli_v2::auth::kas_token::{
     AcpCallbackToken,
     KasAuthMethod,
     KasProvider,
-    resolve_kas_token_for_callback,
+    resolve_kas_token_for_callback_with_refresh,
 };
 use chat_cli_v2::database::Database;
 use clap::{
@@ -444,11 +444,15 @@ pub struct GetKasTokenArgs {
     /// ISO-8601 expiry of KAS's currently-cached token (informational).
     #[arg(long)]
     pub current_expires_at: Option<String>,
+    /// Force a network token refresh even when the cached token looks valid.
+    /// Set by the TUI host handler when KAS sends `forceRefresh` on the
+    /// getAccessToken covenant during mid-turn 401 recovery.
+    #[arg(long)]
+    pub force_refresh: bool,
 }
 
 impl GetKasTokenArgs {
     async fn execute(self) -> ExitCode {
-        let _ = self;
         record_extracted_kas_version_heartbeat().await;
         let database = match Database::new().await {
             Ok(db) => db,
@@ -459,7 +463,7 @@ impl GetKasTokenArgs {
                 ));
             },
         };
-        match resolve_kas_token_for_callback(&database).await {
+        match resolve_kas_token_for_callback_with_refresh(&database, self.force_refresh).await {
             Ok(Some(token)) => emit(&CliInternalOutput::get_kas_token(&token)),
             Ok(None) => emit(&CliInternalOutput::error(
                 "You are not logged in. Please log in with `kiro-cli login`.",

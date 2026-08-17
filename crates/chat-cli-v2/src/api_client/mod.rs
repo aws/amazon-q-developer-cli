@@ -145,6 +145,12 @@ pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-opto
 
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(600);
 
+/// Wall-clock cap for streaming (chat) requests. Generous by design: it bounds
+/// TOTAL generation time (the read timeout spans the whole event-stream body),
+/// and healthy long generations routinely exceed 10 minutes. Hangs are the
+/// stream-idle watchdog's job; this only backstops a watchdog-disabled config.
+const DEFAULT_STREAMING_TIMEOUT_DURATION: Duration = Duration::from_secs(3600);
+
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
 /// Max attempts for API client requests (control-plane and streaming).
@@ -749,14 +755,23 @@ impl RealApiClient {
             .load()
             .await;
 
-        // Control plane client for CPS operations
+        // Control plane client for CPS operations.
+        //
+        // All three bearer clients resolve their identity per request
+        // (`IdentityCache::no_cache`) instead of using the SDK's lazy cache: the
+        // cache serves a buffered token until shortly before its recorded expiry,
+        // so after a mid-turn forced refresh (which rewrites the store, not the
+        // cache) the one clean retry would re-send the very token the backend
+        // just rejected. The resolver pins this Database handle, so per-request
+        // resolution is a query on the existing pool — not a store open.
         let client = CodewhispererClient::from_conf(
             amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
-                .bearer_token_resolver(UnifiedBearerResolver)
+                .bearer_token_resolver(UnifiedBearerResolver::new(database.clone()))
+                .identity_cache(amzn_codewhisperer_client::config::IdentityCache::no_cache())
                 .app_name(app_name())
                 .endpoint_resolver(StaticCodewhispererEndpointResolver::new(cps_endpoint.url().to_string()))
                 .build(),
@@ -769,7 +784,8 @@ impl RealApiClient {
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
-                .bearer_token_resolver(UnifiedBearerResolver)
+                .bearer_token_resolver(UnifiedBearerResolver::new(database.clone()))
+                .identity_cache(amzn_codewhisperer_client::config::IdentityCache::no_cache())
                 .app_name(app_name())
                 .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
                 .build(),
@@ -812,12 +828,14 @@ impl RealApiClient {
                     MAX_ATTEMPTS,
                 ))
                 .interceptor(TokenTypeInterceptor::new(auth_mode.clone()))
-                .bearer_token_resolver(UnifiedBearerResolver)
+                .bearer_token_resolver(UnifiedBearerResolver::new(database.clone()))
+                .identity_cache(amzn_codewhisperer_streaming_client::config::IdentityCache::no_cache())
                 .app_name(app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(krs_endpoint.url().to_string()))
                 .retry_config(retry_config())
                 .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                 .stalled_stream_protection(stalled_stream_protection_config())
+                .timeout_config(streaming_timeout_config(database))
                 .build(),
         ));
 
@@ -1175,7 +1193,6 @@ impl RealApiClient {
                         .and_then(|err| err.meta().request_id())
                         .map(|s| s.to_string());
                     let status_code = err.raw_response().map(|res| res.status().as_u16());
-
                     let body = err
                         .raw_response()
                         .and_then(|resp| resp.body().bytes())
@@ -1680,11 +1697,12 @@ fn classify_error_kind<R>(
             .is_some_and(|r| r == &ValidationExceptionReason::ContentLengthExceedsThreshold),
         _ => false,
     });
-    // String match exactly on the ContentLengthExceedsThreshold exception reason.
+    // String match on the ContentLengthExceedsThreshold exception reason or its
+    // human-readable message (some responses carry only the message).
     //
     // TODO: Figure out why the rust client returns GenerateAssistantResponseError::Unhandled
     // instead of the well-modeled GenerateAssistantResponseError::ValidationError
-    let is_context_window_overflow = is_context_window_overflow || contains(body, b"CONTENT_LENGTH_EXCEEDS_THRESHOLD");
+    let is_context_window_overflow = is_context_window_overflow || error::contains_overflow_marker(body);
 
     // INVALID_MODEL_ID is returned by the backend when the request's model id is not allowed in
     // the current inference path (e.g. removed or gated). We detect via both the modeled
@@ -1707,6 +1725,27 @@ fn classify_error_kind<R>(
                 b"Encountered unexpectedly high load when processing the request, please try again.",
             ));
     let is_monthly_limit_err = contains(body, b"MONTHLY_REQUEST_COUNT");
+
+    // Extract the user-friendly message from the service error metadata.
+    // The SDK often returns Unhandled instead of the well-modeled ValidationError
+    // (due to a mismatch between the Smithy model name "ValidationError" and the
+    // wire type "ValidationException"), so we use ProvideErrorMetadata which works
+    // for all variants including Unhandled.
+    let service_message = sdk_error
+        .as_service_error()
+        .and_then(|e| e.meta().message().map(|s| s.to_string()));
+
+    // The backend uses 403/`AccessDeniedException` for non-credential conditions
+    // too (gated features, unauthorized profiles), which no token refresh can fix.
+    // Only a 401, or a denial whose payload is credential-shaped, is classified
+    // `AccessDenied` (driving the one-shot refresh); the rest fall through to
+    // `Unknown` so the service's own explanation renders.
+    let is_access_denied = status_code.is_some_and(|status| status == 401)
+        || ((status_code.is_some_and(|status| status == 403) || contains(body, b"AccessDeniedException"))
+            && (error::is_credential_denial_marker(body)
+                || service_message
+                    .as_deref()
+                    .is_some_and(|m| error::is_credential_denial_marker(m.as_bytes()))));
 
     if is_context_window_overflow {
         return ConverseStreamErrorKind::ContextWindowOverflow;
@@ -1732,14 +1771,11 @@ fn classify_error_kind<R>(
         return ConverseStreamErrorKind::MonthlyLimitReached;
     }
 
-    // Extract the user-friendly message from the service error metadata.
-    // The SDK often returns Unhandled instead of the well-modeled ValidationError
-    // (due to a mismatch between the Smithy model name "ValidationError" and the
-    // wire type "ValidationException"), so we use ProvideErrorMetadata which works
-    // for all variants including Unhandled.
-    let service_message = sdk_error
-        .as_service_error()
-        .and_then(|e| e.meta().message().map(|s| s.to_string()));
+    if is_access_denied {
+        return ConverseStreamErrorKind::AccessDenied {
+            message: service_message,
+        };
+    }
 
     ConverseStreamErrorKind::Unknown {
         // do not change - we currently use sdk_error_code for mapping from an arbitrary sdk error
@@ -1784,11 +1820,7 @@ fn parse_endpoint_setting(database: &Database, setting: Setting) -> Option<Endpo
 }
 
 fn timeout_config(database: &Database) -> TimeoutConfig {
-    let timeout = database
-        .settings
-        .get_int(Setting::ApiTimeout)
-        .and_then(|i| i.try_into().ok())
-        .map_or(DEFAULT_TIMEOUT_DURATION, Duration::from_millis);
+    let timeout = explicit_api_timeout(database).unwrap_or(DEFAULT_TIMEOUT_DURATION);
 
     TimeoutConfig::builder()
         .read_timeout(timeout)
@@ -1796,6 +1828,40 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
         .operation_attempt_timeout(timeout)
         .connect_timeout(timeout)
         .build()
+}
+
+fn explicit_api_timeout(database: &Database) -> Option<Duration> {
+    database
+        .settings
+        .get_int(Setting::ApiTimeout)
+        .and_then(|i| i.try_into().ok())
+        .map(Duration::from_millis)
+}
+
+/// Timeout config for the streaming (chat) client only.
+///
+/// The read timeout here becomes a whole-request deadline on the underlying
+/// HTTP client, covering the event-stream body — so it caps TOTAL generation
+/// time, not idle time. A healthy response streaming steadily for longer than
+/// the cap gets killed mid-generation. Since inter-event silence is bounded by
+/// the stream-idle watchdog, the wall-clock cap only needs to be a generous
+/// last resort; the connect timeout stays at the tighter general default. An
+/// explicit `api.timeout` setting still overrides everything.
+fn streaming_timeout_config(database: &Database) -> TimeoutConfig {
+    match explicit_api_timeout(database) {
+        Some(timeout) => TimeoutConfig::builder()
+            .read_timeout(timeout)
+            .operation_timeout(timeout)
+            .operation_attempt_timeout(timeout)
+            .connect_timeout(timeout)
+            .build(),
+        None => TimeoutConfig::builder()
+            .read_timeout(DEFAULT_STREAMING_TIMEOUT_DURATION)
+            .operation_timeout(DEFAULT_STREAMING_TIMEOUT_DURATION)
+            .operation_attempt_timeout(DEFAULT_STREAMING_TIMEOUT_DURATION)
+            .connect_timeout(DEFAULT_TIMEOUT_DURATION)
+            .build(),
+    }
 }
 
 fn retry_config() -> RetryConfig {
@@ -1861,6 +1927,32 @@ mod tests {
         let fs = Fs::new();
         let mut database = crate::database::Database::new().await.unwrap();
         let _ = ApiClient::new(&env, &fs, &mut database, None).await;
+    }
+
+    /// Without an explicit `api.timeout`, streaming requests get the generous
+    /// wall-clock cap (the read timeout spans the whole event-stream body, so the
+    /// old 600s default killed healthy generations longer than 10 minutes) while
+    /// the connect timeout stays at the tighter general default.
+    #[tokio::test]
+    async fn streaming_timeout_default_is_generous_but_connect_stays_tight() {
+        let database = crate::database::Database::new().await.unwrap();
+        let config = streaming_timeout_config(&database);
+        assert_eq!(config.read_timeout(), Some(DEFAULT_STREAMING_TIMEOUT_DURATION));
+        assert_eq!(config.operation_timeout(), Some(DEFAULT_STREAMING_TIMEOUT_DURATION));
+        assert_eq!(config.connect_timeout(), Some(DEFAULT_TIMEOUT_DURATION));
+    }
+
+    /// An explicit `api.timeout` overrides all streaming timeouts, preserving the
+    /// setting's established semantics.
+    #[tokio::test]
+    async fn streaming_timeout_explicit_setting_overrides_everything() {
+        let database = crate::database::Database::new().await.unwrap();
+        database.settings.set(Setting::ApiTimeout, 30_000, None).await.unwrap();
+        let config = streaming_timeout_config(&database);
+        let expected = Duration::from_millis(30_000);
+        assert_eq!(config.read_timeout(), Some(expected));
+        assert_eq!(config.operation_timeout(), Some(expected));
+        assert_eq!(config.connect_timeout(), Some(expected));
     }
 
     #[tokio::test]
@@ -2043,6 +2135,59 @@ mod tests {
         }
     }
 
+    /// Repro for Taskei P491903415: the KRS 413 → 400 ValidationException shape
+    /// observed in incident request c72d117c-edeb-4911-a81c-12bbba722559, arriving
+    /// pre-first-token. The SDK surfaces it as `Unhandled` (not the modeled
+    /// ValidationError), so classification must succeed on the raw body alone —
+    /// including when KRS sends only the human-readable message without the
+    /// CONTENT_LENGTH_EXCEEDS_THRESHOLD reason code.
+    #[test]
+    fn incident_p491903415_overflow_body_classifies_and_routes_as_overflow() {
+        use aws_smithy_runtime_api::http::Response;
+        use aws_smithy_types::body::SdkBody;
+
+        use crate::api_client::error::{
+            GenerateAssistantResponseError,
+            SdkError,
+        };
+
+        let bodies: [&[u8]; 2] = [
+            // Full serialized shape with the reason code
+            br#"{"__type":"ValidationException","message":"Input content length exceeds threshold","reason":"CONTENT_LENGTH_EXCEEDS_THRESHOLD"}"#,
+            // Message-only shape (no reason member)
+            br#"{"__type":"ValidationException","message":"Input content length exceeds threshold"}"#,
+        ];
+
+        for body in bodies {
+            let sdk_error = SdkError::service_error(
+                GenerateAssistantResponseError::unhandled("ValidationException"),
+                Response::new(400.try_into().unwrap(), SdkBody::from(body)),
+            );
+            let kind = classify_error_kind(Some(400), body, Some("gpt-5.6-sol"), &sdk_error);
+            assert!(
+                matches!(kind, ConverseStreamErrorKind::ContextWindowOverflow),
+                "expected ContextWindowOverflow for body {:?}, got {kind:?}",
+                String::from_utf8_lossy(body)
+            );
+
+            // The send-path error must reach the agent crate as a terminal
+            // ContextWindowOverflow so the reactive compaction arm fires.
+            let converse_err = ConverseStreamError::new(kind, Some(sdk_error))
+                .set_request_id(Some("c72d117c-edeb-4911-a81c-12bbba722559".to_string()))
+                .set_status_code(Some(400));
+            let stream_err: agent::agent_loop::types::StreamError = converse_err.into();
+            assert!(
+                matches!(
+                    stream_err.kind,
+                    agent::agent_loop::types::StreamErrorKind::ContextWindowOverflow
+                ),
+                "expected StreamErrorKind::ContextWindowOverflow, got {:?}",
+                stream_err.kind
+            );
+            assert_eq!(stream_err.original_status_code, Some(400));
+        }
+    }
+
     #[tokio::test]
     async fn test_profile_resolver_social_with_profile_returns_arn() {
         let resolver = ProfileResolver::for_social(Some(AuthProfile {
@@ -2093,6 +2238,105 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, "arn:aws:iam::123456789012:profile/Resolved");
+    }
+
+    /// The bearer clients resolve identity per request (`IdentityCache::no_cache`):
+    /// a mid-turn forced refresh rewrites the token store, and the retry that
+    /// follows must carry the refreshed token. The SDK's default lazy cache would
+    /// keep serving the rejected token until shortly before its recorded expiry.
+    #[tokio::test]
+    async fn bearer_identity_is_resolved_per_request_not_cached() {
+        use aws_smithy_runtime_api::client::http::{
+            HttpClient,
+            HttpConnector,
+            HttpConnectorFuture,
+            HttpConnectorSettings,
+            SharedHttpConnector,
+        };
+        use aws_smithy_runtime_api::client::result::ConnectorError;
+        use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
+
+        #[derive(Clone, Debug)]
+        struct CaptureAuthClient {
+            seen: Arc<std::sync::Mutex<Vec<String>>>,
+        }
+        impl HttpConnector for CaptureAuthClient {
+            fn call(&self, request: aws_smithy_runtime_api::client::orchestrator::HttpRequest) -> HttpConnectorFuture {
+                self.seen
+                    .lock()
+                    .unwrap()
+                    .push(request.headers().get("authorization").unwrap_or_default().to_string());
+                HttpConnectorFuture::ready(Err(ConnectorError::io(
+                    std::io::Error::new(
+                        std::io::ErrorKind::ConnectionRefused,
+                        "capture connector never transmits",
+                    )
+                    .into(),
+                )))
+            }
+        }
+        impl HttpClient for CaptureAuthClient {
+            fn http_connector(&self, _: &HttpConnectorSettings, _: &RuntimeComponents) -> SharedHttpConnector {
+                SharedHttpConnector::new(self.clone())
+            }
+        }
+
+        fn idp_token(access: &str) -> ExternalIdpToken {
+            ExternalIdpToken {
+                access_token: crate::database::Secret(access.into()),
+                expires_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+                refresh_token: None,
+                issuer_url: "https://idp.example.com".into(),
+                token_endpoint: "https://idp.example.com/token".into(),
+                client_id: "client-123".into(),
+                scopes: "openid offline_access".into(),
+            }
+        }
+
+        // Locally fresh token A: the lazy cache would consider it servable for
+        // the next hour.
+        let database = Database::new().await.unwrap();
+        database
+            .set_secret(
+                ExternalIdpToken::SECRET_KEY,
+                &serde_json::to_string(&idp_token("token-a")).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let client = CodewhispererClient::from_conf(
+            amzn_codewhisperer_client::config::Builder::new()
+                .behavior_version(behavior_version())
+                .region(Region::new("us-east-1"))
+                .endpoint_resolver(StaticCodewhispererEndpointResolver::new(
+                    "http://127.0.0.1:0".to_string(),
+                ))
+                .http_client(CaptureAuthClient { seen: seen.clone() })
+                .bearer_token_resolver(crate::auth::UnifiedBearerResolver::new(database.clone()))
+                .identity_cache(amzn_codewhisperer_client::config::IdentityCache::no_cache())
+                .retry_config(RetryConfig::disabled())
+                .build(),
+        );
+
+        let _ = client.list_available_profiles().send().await;
+        // The backend rejects token A mid-turn; the forced refresh persists
+        // replacement token B to the store.
+        database
+            .set_secret(
+                ExternalIdpToken::SECRET_KEY,
+                &serde_json::to_string(&idp_token("token-b")).unwrap(),
+            )
+            .await
+            .unwrap();
+        let _ = client.list_available_profiles().send().await;
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(
+            seen.as_slice(),
+            ["Bearer token-a", "Bearer token-b"],
+            "the request after a forced refresh must send the refreshed token, not the SDK-cached one"
+        );
     }
 
     #[tokio::test]

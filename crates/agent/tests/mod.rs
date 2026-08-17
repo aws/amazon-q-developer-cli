@@ -647,7 +647,7 @@ async fn test_auto_compaction_on_context_overflow() {
     assert!(
         compaction_events
             .iter()
-            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed { .. }))),
         "expected CompactionEvent::Completed"
     );
     assert_eq!(
@@ -704,7 +704,7 @@ async fn test_manual_compaction() {
     assert!(
         compaction_events
             .iter()
-            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed { .. }))),
         "expected CompactionEvent::Completed"
     );
 
@@ -1144,7 +1144,7 @@ async fn test_compaction_transient_failure_is_retried() {
     assert!(
         compaction_events
             .iter()
-            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed { .. }))),
         "compaction must complete on the retried request"
     );
     assert!(
@@ -1480,7 +1480,7 @@ async fn test_compaction_retry_on_context_overflow_success() {
     assert!(
         compaction_events
             .iter()
-            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed { .. }))),
         "expected CompactionEvent::Completed"
     );
 
@@ -1493,17 +1493,19 @@ async fn test_compaction_retry_on_context_overflow_success() {
 }
 
 #[tokio::test]
-async fn test_compaction_retry_on_context_overflow_failure() {
+async fn test_compaction_cascade_overflow_recovers_via_history_reduction() {
     let _ = tracing_subscriber::fmt::try_init();
 
-    // Responses: hello_ack -> context overflow -> compaction overflow -> compaction overflow again
-    // (fail)
+    // Responses: hello_ack -> context overflow -> compaction overflow -> compaction
+    // overflow again (aggressive) -> brute-force reduction retries the turn and succeeds.
+    // (P491903415: pre-fix this cascade ended the turn terminally with the context
+    // intact, wedging the session.)
     let responses = parse_response_streams(include_str!("./mock_responses/compaction_retry_failure.jsonl"))
         .await
         .unwrap();
 
     let mut test = TestCase::builder()
-        .test_name("compaction retry on context overflow failure")
+        .test_name("compaction cascade overflow recovers via history reduction")
         .with_default_agent_config()
         .with_responses(responses)
         .build()
@@ -1514,32 +1516,170 @@ async fn test_compaction_retry_on_context_overflow_failure() {
     test.send_prompt("hello".to_string()).await;
     test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
 
-    // Send prompt that triggers context overflow -> compaction retry -> failure
+    // Send prompt that triggers context overflow -> compaction cascade overflow ->
+    // bounded history reduction -> recovered retry
     test.send_prompt("test prompt".to_string()).await;
     test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
 
-    // Verify compaction events: should have Started and Failed
     let compaction_events = test.compaction_events();
-
     assert!(
         compaction_events
             .iter()
             .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Started))),
         "expected CompactionEvent::Started"
     );
-
+    // The reduction persists a compaction record and completes the recovery.
     assert!(
         compaction_events
             .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed { .. }))),
+        "expected CompactionEvent::Completed from the history reduction"
+    );
+    assert!(
+        !compaction_events
+            .iter()
             .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Failed { .. }))),
-        "expected CompactionEvent::Failed"
+        "a recoverable cascade must not surface CompactionEvent::Failed"
     );
 
-    // Verify agent ended in errored state
+    // The reduction is persisted as a compaction log entry (the tombstone the
+    // incident session lacked).
+    assert!(
+        test.agent_events().iter().any(|e| matches!(
+            e,
+            AgentEvent::LogEntryAppended {
+                entry: agent::event_log::LogEntry::V1(agent::event_log::LogEntryV1::Compaction { summary, .. }),
+                ..
+            } if summary.contains("HISTORY REDUCTION NOTICE") || summary.contains("dropped without summarization")
+        )),
+        "expected a persisted compaction entry recording the history reduction"
+    );
+
+    // The turn completed: the agent is idle, not errored.
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected agent idle after recovered cascade, got {:?}",
+        snapshot.execution_state.active_state
+    );
+}
+
+/// A renewed overflow after a history reduction re-enters the compaction
+/// cascade and reaches reduction round two (pre-fix, the retry burned the
+/// single prompt-truncation step and ended the turn terminally, making the
+/// documented multi-round bound unreachable).
+#[tokio::test]
+async fn test_second_reduction_round_recovers_renewed_overflow() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let responses = parse_response_streams(include_str!("./mock_responses/compaction_two_round_reduction.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("second reduction round recovers renewed overflow")
+        .with_default_agent_config()
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // Two turns of history so reduction round one has an interior boundary.
+    test.send_prompt("hello one".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+    test.send_prompt("hello two".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    // Both reduction rounds are persisted as compaction log entries.
+    let reduction_entries = test
+        .agent_events()
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                AgentEvent::LogEntryAppended {
+                    entry: agent::event_log::LogEntry::V1(agent::event_log::LogEntryV1::Compaction { summary, .. }),
+                    ..
+                } if summary.contains("HISTORY REDUCTION NOTICE") || summary.contains("dropped without summarization")
+            )
+        })
+        .count();
+    assert_eq!(reduction_entries, 2, "expected two persisted reduction rounds");
+
+    assert!(
+        !test
+            .compaction_events()
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Failed { .. }))),
+        "a recoverable two-round cascade must not surface CompactionEvent::Failed"
+    );
+
+    let snapshot = test.create_snapshot().await;
+    assert!(
+        matches!(snapshot.execution_state.active_state, ActiveState::Idle),
+        "expected agent idle after the second reduction recovered, got {:?}",
+        snapshot.execution_state.active_state
+    );
+}
+
+/// When every reduction round still overflows, the cascade spends its full
+/// bound and then ends the turn in the error state with a `Failed` event —
+/// instead of looping forever or wedging silently.
+#[tokio::test]
+async fn test_reduction_bound_exhaustion_ends_in_error_state() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let responses = parse_response_streams(include_str!("./mock_responses/compaction_reduction_exhaustion.jsonl"))
+        .await
+        .unwrap();
+
+    let mut test = TestCase::builder()
+        .test_name("reduction bound exhaustion ends in error state")
+        .with_default_agent_config()
+        .with_responses(responses)
+        .build()
+        .await
+        .unwrap();
+
+    // Four turns of history give the cascade boundaries for all three rounds.
+    for i in 1..=4 {
+        test.send_prompt(format!("hello {i}")).await;
+        test.wait_until_agent_stop(Duration::from_secs(2)).await.unwrap();
+    }
+
+    test.send_prompt("test prompt".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    let reduction_entries = test
+        .agent_events()
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                AgentEvent::LogEntryAppended {
+                    entry: agent::event_log::LogEntry::V1(agent::event_log::LogEntryV1::Compaction { summary, .. }),
+                    ..
+                } if summary.contains("HISTORY REDUCTION NOTICE") || summary.contains("dropped without summarization")
+            )
+        })
+        .count();
+    assert_eq!(reduction_entries, 3, "expected the full three-round reduction bound");
+
+    assert!(
+        test.compaction_events()
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Failed { .. }))),
+        "expected CompactionEvent::Failed once the bound is spent"
+    );
+
     let snapshot = test.create_snapshot().await;
     assert!(
         matches!(snapshot.execution_state.active_state, ActiveState::Errored(_)),
-        "expected agent to be in errored state after compaction failure"
+        "expected the error state after exhausting the reduction bound, got {:?}",
+        snapshot.execution_state.active_state
     );
 }
 
@@ -1591,7 +1731,7 @@ async fn test_proactive_compaction_on_high_context_usage() {
     assert!(
         compaction_events
             .iter()
-            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed))),
+            .any(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed { .. }))),
         "expected CompactionEvent::Completed"
     );
 
@@ -1848,7 +1988,7 @@ async fn test_overflow_after_compaction_retry_truncates_user_message() {
         .count();
     let completed_count = compaction_events
         .iter()
-        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed)))
+        .filter(|e| matches!(e, AgentEvent::Compaction(CompactionEvent::Completed { .. })))
         .count();
 
     assert_eq!(started_count, 1, "expected 1 CompactionEvent::Started");
@@ -3890,6 +4030,93 @@ fn single_text_response(text: &str) -> Vec<agent::agent_loop::protocol::StreamRe
             stop_reason: lt::StopReason::EndTurn,
         })),
     ]
+}
+
+/// A stream that fails with an auth rejection (mid-turn 401 / AccessDenied).
+fn access_denied_response() -> Vec<agent::agent_loop::protocol::StreamResult> {
+    use agent::agent_loop::protocol::StreamResult;
+    use agent::agent_loop::types as lt;
+    vec![StreamResult::Err(lt::StreamError::new(
+        lt::StreamErrorKind::AccessDenied { message: None },
+    ))]
+}
+
+/// A mid-turn auth rejection with a refreshable token triggers one token refresh
+/// and a clean re-send that completes the turn (rather than surfacing the error).
+#[tokio::test]
+async fn access_denied_refreshes_token_and_retries_once() {
+    let mut test = TestCase::builder()
+        .test_name("access denied refresh and retry")
+        .with_default_agent_config()
+        .with_refreshable_auth()
+        .with_responses(vec![access_denied_response(), single_text_response("recovered")])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    assert_eq!(
+        test.model().refresh_auth_calls(),
+        1,
+        "expected exactly one token refresh"
+    );
+    assert_eq!(
+        test.requests().len(),
+        2,
+        "expected the initial request plus one retry after refresh"
+    );
+    assert!(
+        test.agent_events().iter().any(|e| matches!(e, AgentEvent::EndTurn(_))),
+        "expected the turn to complete after the auth retry"
+    );
+}
+
+/// The auth refresh-and-retry is bounded to exactly once per turn: if the retry
+/// after a successful refresh also 401s, the turn ends without a second refresh.
+#[tokio::test]
+async fn access_denied_retry_that_also_fails_is_terminal() {
+    let mut test = TestCase::builder()
+        .test_name("access denied retry also fails")
+        .with_default_agent_config()
+        .with_refreshable_auth()
+        .with_responses(vec![access_denied_response(), access_denied_response()])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    assert_eq!(
+        test.model().refresh_auth_calls(),
+        1,
+        "refresh must be attempted exactly once even though the retry also fails"
+    );
+    assert_eq!(
+        test.requests().len(),
+        2,
+        "initial request plus one retry, then terminal — no second refresh/retry"
+    );
+}
+
+/// Without a refreshable token, the auth rejection is terminal — no retry.
+#[tokio::test]
+async fn access_denied_without_refreshable_token_is_terminal() {
+    let mut test = TestCase::builder()
+        .test_name("access denied terminal")
+        .with_default_agent_config()
+        .with_responses(vec![access_denied_response()])
+        .build()
+        .await
+        .unwrap();
+
+    test.send_prompt("hello".to_string()).await;
+    test.wait_until_agent_stop(Duration::from_secs(5)).await.unwrap();
+
+    assert_eq!(test.model().refresh_auth_calls(), 1, "refresh is attempted once");
+    assert_eq!(test.requests().len(), 1, "no retry when there is no refreshable token");
 }
 
 /// Consecutive stream timeouts must exhaust the continuation-retry budget and surface a

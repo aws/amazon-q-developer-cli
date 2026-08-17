@@ -147,6 +147,17 @@ impl SocialToken {
     /// inside the lock and skips the HTTP refresh if a peer already
     /// refreshed.
     pub async fn coordinated_refresh(database: &Database) -> Result<Option<Self>, AuthError> {
+        Self::coordinated_refresh_inner(database, false).await
+    }
+
+    /// Like [`Self::coordinated_refresh`] but forces a network refresh even when the
+    /// cached token is still valid, to honor a `forceRefresh` hint from mid-turn
+    /// 401 recovery.
+    pub async fn coordinated_refresh_inner(database: &Database, force: bool) -> Result<Option<Self>, AuthError> {
+        // Concurrent 401s race to force-refresh the same credential: snapshot the
+        // rejected token before waiting on the lock, so a peer's refresh that lands
+        // in the meantime is reused instead of costing another IdP round-trip.
+        let pre_lock = if force { stored_token(database).await } else { None };
         crate::auth::refresh_coordinator::with_refresh_lock(|| async move {
             let stored = match database.get_secret(Self::SECRET_KEY).await? {
                 Some(s) => s,
@@ -155,7 +166,10 @@ impl SocialToken {
             let Some(token) = serde_json::from_str::<Option<Self>>(&stored.0)? else {
                 return Ok(None);
             };
-            if !token.is_expired() {
+            if !force && !token.is_expired() {
+                return Ok(Some(token));
+            }
+            if pre_lock.is_some_and(|held| held.access_token != token.access_token) {
                 return Ok(Some(token));
             }
             token.refresh_token(database).await.map(Some)
@@ -306,10 +320,14 @@ pub struct TokenResponse {
 
 /// Mirror of the BuilderId helper; see there for rationale.
 async fn peer_token_in_store(database: &Database, held: &SocialToken) -> Option<SocialToken> {
-    let secret = database.get_secret(SocialToken::SECRET_KEY).await.ok()??;
-    let stored: Option<SocialToken> = serde_json::from_str(&secret.0).ok()?;
-    let stored = stored?;
+    let stored = stored_token(database).await?;
     (stored.access_token != held.access_token).then_some(stored)
+}
+
+/// Mirror of the BuilderId helper; see there for rationale.
+pub(crate) async fn stored_token(database: &Database) -> Option<SocialToken> {
+    let secret = database.get_secret(SocialToken::SECRET_KEY).await.ok()??;
+    serde_json::from_str::<Option<SocialToken>>(&secret.0).ok()?
 }
 
 #[derive(Debug, Clone)]

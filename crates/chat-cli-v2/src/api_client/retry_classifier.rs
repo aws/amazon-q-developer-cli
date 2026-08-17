@@ -8,6 +8,8 @@ use aws_smithy_runtime_api::client::retries::classifiers::{
 };
 use tracing::debug;
 
+use crate::api_client::error::contains_overflow_marker;
+
 const MONTHLY_LIMIT_ERROR_MARKER: &str = "MONTHLY_REQUEST_COUNT";
 const HIGH_LOAD_ERROR_MESSAGE: &str =
     "Encountered unexpectedly high load when processing the request, please try again.";
@@ -66,6 +68,16 @@ impl ClassifyRetry for QCliRetryClassifier {
         };
 
         if Self::is_monthly_limit_error(body_str) {
+            return RetryAction::RetryForbidden;
+        }
+
+        // A context-window overflow is deterministic: the request body does not
+        // change between attempts, so retrying just re-uploads the same oversized
+        // request (observed as request_attempts=3 on the P491903415 incident when
+        // a transport-level failure preceded the modeled 400). Forbid it so the
+        // overflow reaches the agent's reactive compaction immediately.
+        if contains_overflow_marker(body_str.as_bytes()) {
+            debug!("QCliRetryClassifier: context-window overflow body; forbidding transport retry");
             return RetryAction::RetryForbidden;
         }
 
@@ -173,6 +185,32 @@ mod tests {
 
         let result = classifier.classify_retry(&ctx);
         assert_eq!(result, RetryAction::NoActionIndicated);
+    }
+
+    #[test]
+    fn overflow_marked_body_forbids_retry() {
+        let classifier = QCliRetryClassifier::new();
+
+        // Both incident shapes: the modeled reason code, and the message-only body.
+        for response_body in [
+            r#"{"__type":"ValidationException","message":"Input content length exceeds threshold","reason":"CONTENT_LENGTH_EXCEEDS_THRESHOLD"}"#,
+            r#"{"__type":"ValidationException","message":"Input content length exceeds threshold"}"#,
+        ] {
+            let mut ctx = InterceptorContext::new(Input::doesnt_matter());
+            let response = Response::builder()
+                .status(400)
+                .body(response_body)
+                .unwrap()
+                .map(SdkBody::from);
+            ctx.set_response(response.try_into().unwrap());
+
+            let result = classifier.classify_retry(&ctx);
+            assert_eq!(
+                result,
+                RetryAction::RetryForbidden,
+                "deterministic overflow must never be re-sent, body: {response_body}"
+            );
+        }
     }
 
     #[test]

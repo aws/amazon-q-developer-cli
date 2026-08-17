@@ -142,8 +142,17 @@ pub struct CompactionStatusNotification {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum CompactionStatus {
     Started,
-    Completed,
-    Failed { error: String },
+    Completed {
+        /// Messages dropped WITHOUT summarization by a brute-force history
+        /// reduction; absent for a genuine summarization. Additive field:
+        /// clients that predate it ignore it and fall back to the notice
+        /// prose carried in the summary.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unsummarized_dropped: Option<usize>,
+    },
+    Failed {
+        error: String,
+    },
 }
 
 /// Clear status notification payload.

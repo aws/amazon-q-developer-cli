@@ -10,6 +10,9 @@ pub enum SendMessageOutput {
         amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseOutput,
     ),
     Mock(Vec<ChatResponseStream>),
+    /// Yields the events, then hangs forever — simulates a silently dead connection.
+    #[cfg(test)]
+    MockSilent(Vec<ChatResponseStream>),
 }
 
 impl SendMessageOutput {
@@ -17,6 +20,8 @@ impl SendMessageOutput {
         match self {
             SendMessageOutput::Codewhisperer(output) => output.request_id(),
             SendMessageOutput::Mock(_) => None,
+            #[cfg(test)]
+            SendMessageOutput::MockSilent(_) => None,
         }
     }
 
@@ -28,6 +33,11 @@ impl SendMessageOutput {
                 .await?
                 .map(|s| s.into())),
             SendMessageOutput::Mock(vec) => Ok(vec.pop()),
+            #[cfg(test)]
+            SendMessageOutput::MockSilent(vec) => match vec.pop() {
+                Some(ev) => Ok(Some(ev)),
+                None => std::future::pending().await,
+            },
         }
     }
 }
@@ -37,6 +47,8 @@ impl RequestId for SendMessageOutput {
         match self {
             SendMessageOutput::Codewhisperer(output) => output.request_id(),
             SendMessageOutput::Mock(_) => Some("<mock-request-id>"),
+            #[cfg(test)]
+            SendMessageOutput::MockSilent(_) => Some("<mock-request-id>"),
         }
     }
 }

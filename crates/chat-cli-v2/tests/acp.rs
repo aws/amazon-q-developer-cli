@@ -2314,6 +2314,361 @@ async fn auto_compaction_on_context_overflow() {
     }
 }
 
+/// Repro for Taskei P491903415 (kiro-cli 2.18.1 incident): a context-window
+/// overflow returned BEFORE any stream event on the FIRST request of a user
+/// turn (number_of_cycles = 0, HTTP 400, kind = contextWindowOverflow) must
+/// enter reactive compaction and retry the same turn, not end it terminally.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn pre_first_token_overflow_on_first_request_compacts_and_retries() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::model::ChatResponseStream;
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _cwd) =
+        AcpTestHarnessBuilder::new("pre_first_token_overflow_on_first_request")
+            .with_trust_all(true)
+            .build_with_session()
+            .await;
+
+    let text_stream = |content: String| {
+        vec![MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
+            content,
+        })]
+    };
+    // Turn 1's large response lands outside the compactor's keep-recent window
+    // (last 2 pairs / 2% of the context window), so compaction must drop it.
+    let old_blob = format!("OLD_HISTORY_BLOB {}", "x".repeat(20_000));
+    // Turns 2-3 are big enough (>8KB pair budget) to pin the keep-window to
+    // exactly the last two pairs.
+    let recent_blob_a = format!("RECENT_BLOB_A {}", "y".repeat(10_000));
+    let recent_blob_b = format!("RECENT_BLOB_B {}", "z".repeat(10_000));
+
+    // Turn 4, request 1: fails BEFORE any stream event with the incident's
+    // serialized shape (HTTP 400, kind contextWindowOverflow).
+    let incident_error = MockStreamItem::SendError(ConverseStreamError {
+        request_id: Some("c72d117c-edeb-4911-a81c-12bbba722559".to_string()),
+        status_code: Some(400),
+        kind: ConverseStreamErrorKind::ContextWindowOverflow,
+        source: None,
+    });
+
+    for stream in [
+        text_stream(old_blob),
+        text_stream(recent_blob_a),
+        text_stream(recent_blob_b),
+        vec![incident_error],
+        text_stream("# Conversation Summary\n\nSUMMARY CONTENT: prior work condensed.".to_string()),
+        text_stream("Recovered: completing the original request.".to_string()),
+    ] {
+        harness.push_mock_response(&session_id.0, Some(stream)).await;
+        harness.push_mock_response(&session_id.0, None).await;
+    }
+
+    // Turns 1-3: normal exchanges to establish history (the incident session was long-running).
+    for prompt in ["hello", "keep going", "one more"] {
+        let result = client.prompt_text(session_id.clone(), prompt).await;
+        assert!(result.is_ok(), "history-building turn should succeed");
+    }
+
+    // Turn 4: the first request fails pre-first-token with the incident's shape.
+    // Acceptance criterion: the original user turn completes without a new prompt.
+    let result = client.prompt_text(session_id.clone(), "continue the work").await;
+    assert!(
+        result.is_ok(),
+        "turn must complete after reactive compaction, got: {result:?}"
+    );
+
+    // The retried request must not be the unchanged oversized request: the old
+    // history must have been replaced by the compaction summary.
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(
+        captured.len(),
+        6,
+        "expected turns 1-3 + failed turn 4 + compaction + retry, got {}",
+        captured.len()
+    );
+    let failed = &captured[3];
+    let retry = &captured[5];
+    assert_eq!(
+        retry.user_input_message.content, failed.user_input_message.content,
+        "retry must re-send the same user turn"
+    );
+    let history_contains = |req: &chat_cli_v2::api_client::model::ConversationState, needle: &str| {
+        req.history.as_ref().is_some_and(|h| {
+            h.iter().any(|m| match m {
+                chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(u) => u.content.contains(needle),
+                chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(a) => a.content.contains(needle),
+            })
+        })
+    };
+    assert!(
+        history_contains(failed, "OLD_HISTORY_BLOB"),
+        "sanity: the failed request carried the old history"
+    );
+    assert!(
+        history_contains(retry, "SUMMARY CONTENT:"),
+        "retry request must carry the compaction summary"
+    );
+    assert!(
+        !history_contains(retry, "OLD_HISTORY_BLOB"),
+        "retry must not re-send the unchanged pre-compaction history"
+    );
+    // The retried request uses measurably less input than the failed one.
+    let failed_len = serde_json::to_string(failed).unwrap().len();
+    let retry_len = serde_json::to_string(retry).unwrap().len();
+    assert!(
+        retry_len < failed_len,
+        "retry must be measurably smaller than the failed request ({retry_len} >= {failed_len})"
+    );
+
+    // Compaction lifecycle must be visible to the client.
+    sleep(Duration::from_millis(100)).await;
+    let captured_client = client.captured().await;
+    let compaction_notifications: Vec<_> = captured_client
+        .ext_notifications
+        .iter()
+        .filter(|n| n.method.as_ref() == "kiro.dev/compaction/status")
+        .collect();
+    assert!(
+        compaction_notifications
+            .iter()
+            .any(|n| n.params.get().contains("\"type\":\"started\"")),
+        "expected compaction started notification"
+    );
+    assert!(
+        compaction_notifications
+            .iter()
+            .any(|n| n.params.get().contains("\"type\":\"completed\"")),
+        "expected compaction completed notification"
+    );
+
+    // Telemetry: the overflow is recorded, and the turn still completes successfully.
+    let events = harness
+        .wait_for_telemetry_events(Duration::from_secs(5), |events| {
+            let turn_completions = events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        &e.ty,
+                        chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+                    )
+                })
+                .count();
+            turn_completions >= 2
+        })
+        .await;
+    let err_event = events
+        .iter()
+        .find(|e| {
+            matches!(
+                &e.ty,
+                chat_cli_v2::telemetry::core::EventType::MessageResponseError { .. }
+            )
+        })
+        .expect("expected messageResponseError for the overflow");
+    if let chat_cli_v2::telemetry::core::EventType::MessageResponseError { reason, .. } = &err_event.ty {
+        assert_eq!(reason.as_deref(), Some("ContextWindowOverflow"));
+    }
+    let turn2 = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                &e.ty,
+                chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { .. }
+            )
+        })
+        .nth(1)
+        .expect("expected a completion record for turn 2");
+    if let chat_cli_v2::telemetry::core::EventType::RecordUserTurnCompletion { result, .. } = &turn2.ty {
+        assert_eq!(*result, chat_cli_v2::telemetry::TelemetryResult::Succeeded);
+    }
+}
+
+/// P491903415 acceptance criterion 2: the same overflow arriving MID-STREAM
+/// (after tokens have flowed) must also enter reactive compaction. Pre-wave,
+/// the recv path rebranded it StreamTimeout (>=59s) or Other (terminal).
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn mid_stream_overflow_compacts_and_retries() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::model::ChatResponseStream;
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _cwd) = AcpTestHarnessBuilder::new("mid_stream_overflow_compacts")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    let text_stream = |content: String| {
+        vec![MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
+            content,
+        })]
+    };
+    // Turn 2's stream starts producing output, then dies with the overflow.
+    let mid_stream_overflow = vec![
+        MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
+            content: "Partial output before the overflow...".to_string(),
+        }),
+        MockStreamItem::StreamError(ConverseStreamError {
+            request_id: Some("c72d117c-edeb-4911-a81c-12bbba722559".to_string()),
+            status_code: Some(400),
+            kind: ConverseStreamErrorKind::ContextWindowOverflow,
+            source: None,
+        }),
+    ];
+
+    for stream in [
+        text_stream(format!("HISTORY_BLOB {}", "x".repeat(9_000))),
+        mid_stream_overflow,
+        text_stream("# Conversation Summary\n\nSUMMARY CONTENT: prior work condensed.".to_string()),
+        text_stream("Recovered after mid-stream overflow.".to_string()),
+    ] {
+        harness.push_mock_response(&session_id.0, Some(stream)).await;
+        harness.push_mock_response(&session_id.0, None).await;
+    }
+
+    let result = client.prompt_text(session_id.clone(), "hello").await;
+    assert!(result.is_ok(), "history-building turn should succeed");
+
+    let result = client.prompt_text(session_id.clone(), "continue the work").await;
+    assert!(
+        result.is_ok(),
+        "turn must complete after reactive compaction, got: {result:?}"
+    );
+
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(
+        captured.len(),
+        4,
+        "expected turn 1 + failed turn 2 + compaction + retry, got {}",
+        captured.len()
+    );
+    let retry = &captured[3];
+    let retry_has_summary = retry.history.as_ref().is_some_and(|h| {
+        h.iter().any(|m| match m {
+            chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(u) => u.content.contains("SUMMARY CONTENT:"),
+            chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(_) => false,
+        })
+    });
+    assert!(retry_has_summary, "retry request must carry the compaction summary");
+    assert_eq!(
+        retry.user_input_message.content, captured[1].user_input_message.content,
+        "retry must re-send the same user turn"
+    );
+}
+
+/// P491903415 incident chain, now recovered: when the compaction request itself
+/// overflows and the aggressive (truncating) retry also overflows, the agent
+/// falls back to bounded brute-force history reduction — the oldest messages are
+/// dropped, the reduction is persisted as a compaction log entry, and the
+/// original turn completes. Pre-fix this ended the turn terminally with the
+/// context intact, so the next turn overflowed again (the incident signature).
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn overflowing_compaction_cascade_recovers_via_history_reduction() {
+    use chat_cli_v2::api_client::error::{
+        ConverseStreamError,
+        ConverseStreamErrorKind,
+    };
+    use chat_cli_v2::api_client::model::ChatResponseStream;
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+
+    let (mut harness, client, session_id, _cwd) = AcpTestHarnessBuilder::new("overflowing_compaction_cascade")
+        .with_trust_all(true)
+        .build_with_session()
+        .await;
+
+    let overflow = || {
+        vec![MockStreamItem::SendError(ConverseStreamError {
+            request_id: Some("c72d117c-edeb-4911-a81c-12bbba722559".to_string()),
+            status_code: Some(400),
+            kind: ConverseStreamErrorKind::ContextWindowOverflow,
+            source: None,
+        })]
+    };
+    let text_stream = |content: String| {
+        vec![MockStreamItem::Event(ChatResponseStream::AssistantResponseEvent {
+            content,
+        })]
+    };
+
+    for stream in [
+        text_stream(format!("HISTORY_BLOB {}", "x".repeat(9_000))),
+        text_stream("Second exchange reply.".to_string()),
+        overflow(), // turn 3, first request
+        overflow(), // compaction request (default strategy)
+        overflow(), // compaction request (aggressive strategy)
+        // Brute-force reduction dropped the oldest history; the retried turn
+        // request now fits and completes.
+        text_stream("Recovered after history reduction.".to_string()),
+    ] {
+        harness.push_mock_response(&session_id.0, Some(stream)).await;
+        harness.push_mock_response(&session_id.0, None).await;
+    }
+
+    for prompt in ["hello", "keep going"] {
+        let result = client.prompt_text(session_id.clone(), prompt).await;
+        assert!(result.is_ok(), "history-building turn should succeed");
+    }
+
+    // Turn 3: overflow, both compaction attempts overflow, then bounded
+    // brute-force reduction drops the oldest messages and the turn completes.
+    let result = client.prompt_text(session_id.clone(), "continue the work").await;
+    assert!(
+        result.is_ok(),
+        "the turn must recover via history reduction when the compaction cascade overflows, got: {result:?}"
+    );
+
+    // 6 requests total: turns 1-2, turn 3's failed request, two failed
+    // compaction requests, and the recovered retry. The retry must NOT carry
+    // the oldest (dropped) history blob — the reduction is what made it fit.
+    let captured = harness.get_captured_requests(&session_id.0).await;
+    assert_eq!(captured.len(), 6, "got {}", captured.len());
+    let retry = &captured[5];
+    let retry_has_blob = retry.history.as_ref().is_some_and(|h| {
+        h.iter().any(|m| match m {
+            chat_cli_v2::api_client::model::ChatMessage::AssistantResponseMessage(a) => {
+                a.content.contains("HISTORY_BLOB")
+            },
+            chat_cli_v2::api_client::model::ChatMessage::UserInputMessage(_) => false,
+        })
+    });
+    assert!(
+        !retry_has_blob,
+        "the recovered retry must not re-send the dropped history"
+    );
+    assert_eq!(
+        retry.user_input_message.content, captured[2].user_input_message.content,
+        "the recovery must retry the same user turn"
+    );
+
+    // The reduction is persisted: a compaction record exists, so a resumed
+    // session sees the reduced history rather than the wedged original.
+    sleep(Duration::from_millis(100)).await;
+    let captured_client = client.captured().await;
+    let compaction_notifications: Vec<_> = captured_client
+        .ext_notifications
+        .iter()
+        .filter(|n| n.method.as_ref() == "kiro.dev/compaction/status")
+        .collect();
+    assert!(
+        compaction_notifications
+            .iter()
+            .any(|n| n.params.get().contains("\"type\":\"completed\"")),
+        "the history reduction must surface as a completed compaction"
+    );
+}
+
 #[tokio::test]
 #[timeout(30000)]
 #[serial]

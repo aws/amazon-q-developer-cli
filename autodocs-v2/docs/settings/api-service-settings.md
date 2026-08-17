@@ -21,7 +21,9 @@ API request timeout in milliseconds.
 
 ### Overview
 
-Sets the timeout duration for API requests made by Kiro CLI. Affects requests to AI models, external services, and other network operations.
+Sets the timeout duration for API requests made by Kiro CLI. Affects requests to AI models, external services, and other network operations. When set, it applies to all request phases (connect, read, whole operation) including streaming chat responses.
+
+When unset, non-streaming requests default to 600 seconds. Streaming chat responses default to a 3600-second wall-clock cap (the read timeout spans the entire response body, so it bounds total generation time, not idle time; hangs are handled by the stream idle watchdog) with the connect timeout kept at 600 seconds.
 
 ### Usage
 
@@ -30,14 +32,14 @@ kiro-cli settings api.timeout 300000
 ```
 
 **Type**: Number  
-**Default**: `300000` (5 minutes)  
+**Default**: unset (600s general / 3600s streaming)  
 **Unit**: Milliseconds  
 **Scope**: Workspace-overridable
 
 ### Examples
 
 ```bash
-# Set 5-minute timeout (default)
+# Set 5-minute timeout
 kiro-cli settings api.timeout 300000
 
 # Set 2-minute timeout for faster failure detection

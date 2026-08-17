@@ -136,6 +136,12 @@ pub enum RecvErrorKind {
     StreamTimeout {
         source: crate::api_client::ApiClientError,
         duration: std::time::Duration,
+        /// Which mechanism abandoned the stream. Retry behavior treats both
+        /// identically; the stall telemetry family must not: it is scoped to the
+        /// locally enforced idle watchdog, and mixing in slow SDK failures would
+        /// contaminate the watchdog's efficacy and recovery metrics (V2 applies
+        /// the same gate).
+        timeout_source: agent::agent_loop::types::StreamTimeoutSource,
     },
     /// Unexpected end of stream while receiving a tool use.
     ///
@@ -173,6 +179,46 @@ pub enum RecvErrorKind {
     /// request.
     #[error("Kiro failed to generate a response")]
     EmptyResponse,
+}
+
+/// Classifies a stream-read failure. A long wait before the error suggests a
+/// stalled generation, classified as [RecvErrorKind::StreamTimeout] so the chat
+/// loop retries with a continuation prompt — EXCEPT for errors the chat loop
+/// handles by their own classification regardless of latency: context overflow
+/// is terminal (retrying the same conversation can never succeed, it must reach
+/// the compaction path), and a modeled mid-stream InternalServerError has its
+/// own bounded clean re-send (rebranding it as a stall would blame the model
+/// for a service 500 and bypass that budget).
+fn classify_recv_failure(err: crate::api_client::ApiClientError, duration: Duration) -> RecvErrorKind {
+    if duration.as_secs() >= 59 && !err.is_context_window_overflow() && !err.is_mid_stream_internal_server_error() {
+        RecvErrorKind::StreamTimeout {
+            source: err,
+            duration,
+            timeout_source: agent::agent_loop::types::StreamTimeoutSource::SdkRecv,
+        }
+    } else {
+        RecvErrorKind::Client(err)
+    }
+}
+
+/// The error shape for a request that received no response headers within the
+/// idle deadline. Carries a `TimedOut` io source so `transient_class` reads it
+/// as a network-class transient failure and the bounded send retry applies.
+fn pre_headers_timeout_error(deadline: Duration) -> crate::api_client::error::ConverseStreamError {
+    crate::api_client::error::ConverseStreamError {
+        request_id: None,
+        status_code: None,
+        retry_after: None,
+        kind: crate::api_client::error::ConverseStreamErrorKind::Unknown {
+            reason_code: "RequestHeadersTimeout".to_string(),
+        },
+        source: Some(crate::api_client::error::ConverseStreamSdkError::SmithyBuild(
+            aws_smithy_types::error::operation::BuildError::other(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("no response headers received within {}s", deadline.as_secs()),
+            )),
+        )),
+    }
 }
 
 /// Represents a response stream from a call to the SendMessage API.
@@ -223,6 +269,7 @@ impl SendMessageStream {
         conversation_state: ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
         message_meta_tags: Option<Vec<MessageMetaTag>>,
+        stream_idle_timeout: Duration,
     ) -> Result<Self, SendMessageError> {
         let message_id = uuid::Uuid::new_v4().to_string();
         info!(?message_id, "Generated new message id");
@@ -236,22 +283,34 @@ impl SendMessageStream {
         let start_time = Instant::now();
         let start_time_sys = SystemTime::now();
         debug!(?start_time, "sending send_message request");
-        let response = client
-            .send_message(conversation_state)
-            .await
-            .map_err(|err| SendMessageError {
-                source: err,
-                request_metadata: RequestMetadata {
-                    message_id: message_id.clone(),
-                    request_start_timestamp_ms: system_time_to_unix_ms(start_time_sys),
-                    stream_end_timestamp_ms: system_time_to_unix_ms(SystemTime::now()),
-                    model_id: model_id.clone(),
-                    user_prompt_length,
-                    message_meta_tags: message_meta_tags.clone(),
-                    // Other fields are irrelevant if we can't get a successful response
-                    ..Default::default()
-                },
-            })?;
+        // The idle deadline below only covers the response body; without a bound
+        // here, the pre-headers wait (the SDK send itself) is limited only by the
+        // 1h streaming read timeout, so a server that accepts the connection but
+        // never sends headers hangs the prompt for up to an hour. Apply the same
+        // deadline, shaped as a transient timeout so the bounded send retry gets
+        // a chance before the turn ends.
+        let send_future = client.send_message(conversation_state);
+        let response = if stream_idle_timeout.is_zero() {
+            send_future.await
+        } else {
+            match tokio::time::timeout(stream_idle_timeout, send_future).await {
+                Ok(result) => result,
+                Err(_) => Err(pre_headers_timeout_error(stream_idle_timeout)),
+            }
+        };
+        let response = response.map_err(|err| SendMessageError {
+            source: err,
+            request_metadata: RequestMetadata {
+                message_id: message_id.clone(),
+                request_start_timestamp_ms: system_time_to_unix_ms(start_time_sys),
+                stream_end_timestamp_ms: system_time_to_unix_ms(SystemTime::now()),
+                model_id: model_id.clone(),
+                user_prompt_length,
+                message_meta_tags: message_meta_tags.clone(),
+                // Other fields are irrelevant if we can't get a successful response
+                ..Default::default()
+            },
+        })?;
         let elapsed = start_time.elapsed();
         debug!(?elapsed, "send_message succeeded");
 
@@ -269,6 +328,7 @@ impl SendMessageStream {
                 start_time_sys,
                 cancel_token_clone,
                 request_metadata_lock,
+                stream_idle_timeout,
             )
             .try_recv()
             .await;
@@ -342,6 +402,9 @@ struct ResponseParser {
 
     request_metadata: Arc<Mutex<Option<RequestMetadata>>>,
     cancel_token: CancellationToken,
+    /// Inter-event stream silence after which the stream is abandoned with a
+    /// [RecvErrorKind::StreamTimeout]. Zero disables the deadline.
+    idle_timeout: Duration,
 
     // metadata fields
     /// Id of the model used with this request.
@@ -379,6 +442,7 @@ impl ResponseParser {
         request_start_time_sys: SystemTime,
         cancel_token: CancellationToken,
         request_metadata: Arc<Mutex<Option<RequestMetadata>>>,
+        idle_timeout: Duration,
     ) -> Self {
         Self {
             response,
@@ -410,6 +474,7 @@ impl ResponseParser {
             cache_read_input_tokens: None,
             cache_write_input_tokens: None,
             cancel_token,
+            idle_timeout,
         }
     }
 
@@ -720,7 +785,27 @@ impl ResponseParser {
         }
         trace!("Attempting to recv next event");
         let start = std::time::Instant::now();
-        let result = self.response.recv().await;
+        // Client-side inter-event deadline: without it, this await can hang forever when
+        // the connection dies silently (no error, no events, no server-side kill).
+        let result = if self.idle_timeout.is_zero() {
+            self.response.recv().await
+        } else {
+            match tokio::time::timeout(self.idle_timeout, self.response.recv()).await {
+                Ok(result) => result,
+                Err(_) => {
+                    let duration = start.elapsed();
+                    error!(?duration, "the response stream exceeded the idle deadline");
+                    return Err(self.error(RecvErrorKind::StreamTimeout {
+                        source: crate::api_client::ApiClientError::Other(format!(
+                            "no stream event received within {}s",
+                            self.idle_timeout.as_secs()
+                        )),
+                        duration,
+                        timeout_source: agent::agent_loop::types::StreamTimeoutSource::IdleWatchdog,
+                    }));
+                },
+            }
+        };
         let duration = std::time::Instant::now().duration_since(start);
         match result {
             Ok(ev) => {
@@ -785,11 +870,7 @@ impl ResponseParser {
             },
             Err(err) => {
                 error!(?err, "failed to receive the next event");
-                if duration.as_secs() >= 59 {
-                    Err(self.error(RecvErrorKind::StreamTimeout { source: err, duration }))
-                } else {
-                    Err(self.error(err))
-                }
+                Err(self.error(classify_recv_failure(err, duration)))
             },
         }
     }
@@ -933,6 +1014,119 @@ fn system_time_to_unix_ms(time: SystemTime) -> u64 {
 mod tests {
     use super::*;
 
+    fn overflow_error() -> crate::api_client::ApiClientError {
+        crate::api_client::ApiClientError::ConverseStream(ConverseStreamError {
+            request_id: None,
+            status_code: Some(400),
+            retry_after: None,
+            kind: crate::api_client::error::ConverseStreamErrorKind::ContextWindowOverflow,
+            source: None,
+        })
+    }
+
+    /// A slow overflow failure must keep its overflow classification: rerouting it
+    /// through StreamTimeout would feed the stall-continuation retry loop with a
+    /// conversation that can never fit (the 40x-retry incident shape).
+    #[test]
+    fn slow_overflow_failure_is_not_reclassified_as_timeout() {
+        let kind = classify_recv_failure(overflow_error(), Duration::from_secs(75));
+        assert!(
+            matches!(&kind, RecvErrorKind::Client(e) if e.is_context_window_overflow()),
+            "expected overflow to keep its Client classification, got: {kind:?}"
+        );
+    }
+
+    /// A modeled mid-stream InternalServerError observed after a long wait must
+    /// keep its Client classification so the chat loop's bounded clean re-send
+    /// applies, instead of being rebranded as a stall — which would synthesize a
+    /// timeout continuation and bypass the 5xx retry budget.
+    #[test]
+    fn slow_mid_stream_5xx_keeps_client_classification() {
+        use amzn_codewhisperer_streaming_client::types::error::ChatResponseStreamError;
+        use aws_smithy_types::event_stream::{
+            Message,
+            RawMessage,
+        };
+
+        let ise = amzn_codewhisperer_streaming_client::types::error::InternalServerError::builder()
+            .message("boom")
+            .build()
+            .unwrap();
+        let err = crate::api_client::ApiClientError::CodewhispererChatResponseStream(
+            crate::api_client::error::SdkError::service_error(
+                ChatResponseStreamError::InternalServerError(ise),
+                RawMessage::Decoded(Message::new(b"<payload>".to_vec())),
+            ),
+        );
+        let kind = classify_recv_failure(err, Duration::from_secs(75));
+        assert!(
+            matches!(&kind, RecvErrorKind::Client(e) if e.is_mid_stream_internal_server_error()),
+            "expected the mid-stream 5xx to keep its Client classification, got: {kind:?}"
+        );
+    }
+
+    /// Non-overflow failures after a long wait still classify as StreamTimeout.
+    #[test]
+    fn slow_generic_failure_still_classifies_as_timeout() {
+        let err = crate::api_client::ApiClientError::Other("connection reset".to_string());
+        let kind = classify_recv_failure(err, Duration::from_secs(75));
+        assert!(matches!(kind, RecvErrorKind::StreamTimeout { .. }));
+    }
+
+    /// A stream that goes silent forever must fail with StreamTimeout once the
+    /// inter-event idle deadline elapses, instead of hanging the turn.
+    #[tokio::test(start_paused = true)]
+    async fn test_idle_deadline_times_out_silent_stream() {
+        let mock = SendMessageOutput::MockSilent(vec![]);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+            Duration::from_secs(120),
+        );
+
+        // The error's duration is wall-clock and stays near zero under paused tokio
+        // time, so only the error kind is asserted.
+        match parser.recv().await {
+            Err(RecvError {
+                source: RecvErrorKind::StreamTimeout { .. },
+                ..
+            }) => {},
+            other => panic!("expected StreamTimeout after the idle deadline, got: {other:?}"),
+        }
+    }
+
+    /// A zero idle deadline disables the client-side timeout entirely.
+    #[tokio::test(start_paused = true)]
+    async fn test_idle_deadline_zero_disables_timeout() {
+        let mock = SendMessageOutput::MockSilent(vec![]);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+            Duration::ZERO,
+        );
+
+        // With the deadline disabled the recv never resolves; a bounded wait must time
+        // out at the caller instead of the parser returning an error.
+        let res = tokio::time::timeout(Duration::from_secs(3600), parser.recv()).await;
+        assert!(res.is_err(), "recv should still be pending with a zero idle deadline");
+    }
+
     #[tokio::test]
     async fn test_response_parser_ignores_licensed_code() {
         // let _ = tracing_subscriber::fmt::try_init();
@@ -994,6 +1188,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         let mut output = String::new();
@@ -1050,6 +1245,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         let mut output = String::new();
@@ -1104,6 +1300,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         // First event should be ToolUseStart
@@ -1140,6 +1337,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         let result = parser.recv().await;
@@ -1174,6 +1372,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         let first = parser.recv().await;
@@ -1215,6 +1414,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         assert!(matches!(parser.recv().await, Ok(ResponseEvent::AssistantText(_))));
@@ -1254,6 +1454,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         // Drain until EndStream; assert we never see EmptyResponse.
@@ -1294,6 +1495,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         loop {
@@ -1350,6 +1552,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         loop {
@@ -1409,6 +1612,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         loop {
@@ -1454,6 +1658,7 @@ mod tests {
             SystemTime::now(),
             CancellationToken::new(),
             Arc::new(Mutex::new(None)),
+            Duration::ZERO,
         );
 
         loop {
@@ -1470,5 +1675,29 @@ mod tests {
                 Err(err) => panic!("unexpected error from redacted-only thinking stream: {err:?}"),
             }
         }
+    }
+
+    /// A slow SDK receive failure is a `SdkRecv`-sourced timeout, so the chat
+    /// loop's watchdog-gated stall telemetry family must not fire for it.
+    #[test]
+    fn slow_sdk_recv_failure_is_not_watchdog_sourced() {
+        let err = crate::api_client::ApiClientError::Other("connection reset by peer".to_string());
+        match classify_recv_failure(err, Duration::from_secs(75)) {
+            RecvErrorKind::StreamTimeout { timeout_source, .. } => {
+                assert_eq!(timeout_source, agent::agent_loop::types::StreamTimeoutSource::SdkRecv);
+            },
+            other => panic!("expected a StreamTimeout classification, got {other:?}"),
+        }
+    }
+
+    /// The pre-headers deadline error must read as a transient network failure
+    /// so the bounded send retry applies instead of ending the turn.
+    #[test]
+    fn pre_headers_timeout_error_is_network_transient() {
+        let err = pre_headers_timeout_error(Duration::from_secs(300));
+        assert_eq!(
+            err.transient_class(),
+            Some(agent::error_recovery::TransientErrorClass::Network)
+        );
     }
 }

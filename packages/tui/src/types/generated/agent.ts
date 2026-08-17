@@ -590,13 +590,17 @@ export type StreamErrorKind =
 	message: string;
 }}
 	/**
-	 * Authentication was rejected (HTTP 401/403 or `AccessDeniedException`).
+	 * Authentication was rejected (HTTP 401, or a credential-shaped 403 /
+	 * `AccessDeniedException`).
 	 * 
 	 * On a long turn this usually means the access token expired mid-request.
-	 * Terminal today; distinguished from `Other` so callers can message it clearly
-	 * and (later) drive a token refresh.
+	 * Distinguished from `Other` so callers can message it clearly and drive
+	 * the one-shot token refresh.
 	 */
-	| { kind: "accessDenied", data?: undefined }
+	| { kind: "accessDenied", data: {
+	/** User-friendly message from the service, if available. */
+	message?: string;
+}}
 	/**
 	 * The request was invalid.
 	 * 

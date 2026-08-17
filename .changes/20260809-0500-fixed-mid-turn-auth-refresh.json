@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "On the V2 TUI engine, a mid-turn authentication expiry (401/AccessDenied) on a long turn now triggers a token refresh and one clean retry instead of ending the turn. The CLI host also honors KAS's forceRefresh hint on the getAccessToken callback so KAS-engine sessions recover the same way. The V1 engine still surfaces the auth error immediately; its recovery is tracked separately"
+}

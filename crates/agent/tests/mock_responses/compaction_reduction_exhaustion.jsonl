@@ -1,0 +1,59 @@
+// hello 1 -> ack
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello 1!"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-1","statusCode":null}}}}
+
+// hello 2 -> ack
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello 2!"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-2","statusCode":null}}}}
+
+// hello 3 -> ack
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello 3!"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-3","statusCode":null}}}}
+
+// hello 4 -> ack
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello 4!"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-4","statusCode":null}}}}
+
+// main request overflows
+{"result":"error","data":{"original_request_id":"main-request","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// round 1: default compaction overflows
+{"result":"error","data":{"original_request_id":"compact-1a","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// round 1: aggressive compaction overflows -> reduction 1
+{"result":"error","data":{"original_request_id":"compact-1b","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// retry after reduction 1 overflows
+{"result":"error","data":{"original_request_id":"retry-1","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// round 2: default compaction overflows
+{"result":"error","data":{"original_request_id":"compact-2a","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// round 2: aggressive compaction overflows -> reduction 2
+{"result":"error","data":{"original_request_id":"compact-2b","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// retry after reduction 2 overflows
+{"result":"error","data":{"original_request_id":"retry-2","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// round 3: default compaction overflows
+{"result":"error","data":{"original_request_id":"compact-3a","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// round 3: aggressive compaction overflows -> reduction 3
+{"result":"error","data":{"original_request_id":"compact-3b","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// retry after reduction 3 overflows
+{"result":"error","data":{"original_request_id":"retry-3","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// final cascade: default compaction overflows
+{"result":"error","data":{"original_request_id":"compact-final-a","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// final cascade: aggressive compaction overflows -> reduction bound spent
+{"result":"error","data":{"original_request_id":"compact-final-b","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}

@@ -129,6 +129,12 @@ pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-opto
 
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(600);
 
+/// Wall-clock cap for streaming (chat) requests. Generous by design: it bounds
+/// TOTAL generation time (the read timeout spans the whole event-stream body),
+/// and healthy long generations routinely exceed 10 minutes. Hangs are the
+/// stream-idle watchdog's job; this only backstops a watchdog-disabled config.
+const DEFAULT_STREAMING_TIMEOUT_DURATION: Duration = Duration::from_secs(3600);
+
 pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
 
 /// Max attempts for API client requests.
@@ -364,6 +370,7 @@ impl ApiClient {
                 .endpoint_resolver(StaticEndpointResolver::new(krs_endpoint.url().to_string()))
                 .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                 .stalled_stream_protection(stalled_stream_protection_config())
+                .timeout_config(streaming_timeout_config(database))
                 .build(),
         ));
 
@@ -739,6 +746,10 @@ impl ApiClient {
                         .and_then(|err| err.meta().request_id())
                         .map(|s| s.to_string());
                     let status_code = err.raw_response().map(|res| res.status().as_u16());
+                    let retry_after = err
+                        .raw_response()
+                        .and_then(|resp| resp.headers().get("retry-after"))
+                        .and_then(agent::error_recovery::parse_retry_after);
 
                     let body = err
                         .raw_response()
@@ -749,7 +760,8 @@ impl ApiClient {
                         Some(err),
                     )
                     .set_request_id(request_id)
-                    .set_status_code(status_code))
+                    .set_status_code(status_code)
+                    .set_retry_after(retry_after))
                 },
             }
         } else {
@@ -974,11 +986,12 @@ fn classify_error_kind<R>(
             .is_some_and(|r| r == &ValidationExceptionReason::ContentLengthExceedsThreshold),
         _ => false,
     });
-    // String match exactly on the ContentLengthExceedsThreshold exception reason.
+    // String match on the ContentLengthExceedsThreshold exception reason or its
+    // human-readable message (some responses carry only the message).
     //
     // TODO: Figure out why the rust client returns GenerateAssistantResponseError::Unhandled
     // instead of the well-modeled GenerateAssistantResponseError::ValidationError
-    let is_context_window_overflow = is_context_window_overflow || contains(body, b"CONTENT_LENGTH_EXCEEDS_THRESHOLD");
+    let is_context_window_overflow = is_context_window_overflow || error::contains_overflow_marker(body);
 
     let is_invalid_model_id = sdk_error.as_service_error().is_some_and(|e| match e {
         GenerateAssistantResponseError::ValidationError(err) => err
@@ -997,7 +1010,8 @@ fn classify_error_kind<R>(
                 b"Encountered unexpectedly high load when processing the request, please try again.",
             ));
     let is_monthly_limit_err = contains(body, b"MONTHLY_REQUEST_COUNT");
-    let is_access_denied = status_code.is_some_and(|status| status == 403) || contains(body, b"AccessDeniedException");
+    let is_access_denied =
+        status_code.is_some_and(|status| status == 401 || status == 403) || contains(body, b"AccessDeniedException");
 
     if is_context_window_overflow {
         return ConverseStreamErrorKind::ContextWindowOverflow;
@@ -1024,7 +1038,14 @@ fn classify_error_kind<R>(
     }
 
     if is_access_denied {
-        return ConverseStreamErrorKind::AccessDenied;
+        // The backend uses `AccessDeniedException` for non-credential conditions
+        // too (e.g. gated features), so carry its own explanation when present
+        // instead of always reporting an expired credential.
+        return ConverseStreamErrorKind::AccessDenied {
+            message: sdk_error
+                .as_service_error()
+                .and_then(|e| e.meta().message().map(|s| s.to_string())),
+        };
     }
 
     ConverseStreamErrorKind::Unknown {
@@ -1069,11 +1090,7 @@ fn parse_endpoint_setting(database: &Database, setting: Setting) -> Option<Endpo
 }
 
 fn timeout_config(database: &Database) -> TimeoutConfig {
-    let timeout = database
-        .settings
-        .get_int(Setting::ApiTimeout)
-        .and_then(|i| i.try_into().ok())
-        .map_or(DEFAULT_TIMEOUT_DURATION, Duration::from_millis);
+    let timeout = explicit_api_timeout(database).unwrap_or(DEFAULT_TIMEOUT_DURATION);
 
     TimeoutConfig::builder()
         .read_timeout(timeout)
@@ -1081,6 +1098,40 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
         .operation_attempt_timeout(timeout)
         .connect_timeout(timeout)
         .build()
+}
+
+fn explicit_api_timeout(database: &Database) -> Option<Duration> {
+    database
+        .settings
+        .get_int(Setting::ApiTimeout)
+        .and_then(|i| i.try_into().ok())
+        .map(Duration::from_millis)
+}
+
+/// Timeout config for the streaming (chat) client only.
+///
+/// The read timeout here becomes a whole-request deadline on the underlying
+/// HTTP client, covering the event-stream body — so it caps TOTAL generation
+/// time, not idle time. A healthy response streaming steadily for longer than
+/// the cap gets killed mid-generation. Since inter-event silence is bounded by
+/// the stream-idle watchdog, the wall-clock cap only needs to be a generous
+/// last resort; the connect timeout stays at the tighter general default. An
+/// explicit `api.timeout` setting still overrides everything.
+fn streaming_timeout_config(database: &Database) -> TimeoutConfig {
+    match explicit_api_timeout(database) {
+        Some(timeout) => TimeoutConfig::builder()
+            .read_timeout(timeout)
+            .operation_timeout(timeout)
+            .operation_attempt_timeout(timeout)
+            .connect_timeout(timeout)
+            .build(),
+        None => TimeoutConfig::builder()
+            .read_timeout(DEFAULT_STREAMING_TIMEOUT_DURATION)
+            .operation_timeout(DEFAULT_STREAMING_TIMEOUT_DURATION)
+            .operation_attempt_timeout(DEFAULT_STREAMING_TIMEOUT_DURATION)
+            .connect_timeout(DEFAULT_TIMEOUT_DURATION)
+            .build(),
+    }
 }
 
 fn retry_config() -> RetryConfig {
@@ -1184,6 +1235,32 @@ mod tests {
         let fs = Fs::new();
         let mut database = crate::database::Database::new_default().await.unwrap();
         let _ = ApiClient::new(&env, &fs, &mut database, None).await;
+    }
+
+    /// Without an explicit `api.timeout`, streaming requests get the generous
+    /// wall-clock cap (the read timeout spans the whole event-stream body, so the
+    /// old 600s default killed healthy generations longer than 10 minutes) while
+    /// the connect timeout stays at the tighter general default.
+    #[tokio::test]
+    async fn streaming_timeout_default_is_generous_but_connect_stays_tight() {
+        let database = crate::database::Database::new_default().await.unwrap();
+        let config = streaming_timeout_config(&database);
+        assert_eq!(config.read_timeout(), Some(DEFAULT_STREAMING_TIMEOUT_DURATION));
+        assert_eq!(config.operation_timeout(), Some(DEFAULT_STREAMING_TIMEOUT_DURATION));
+        assert_eq!(config.connect_timeout(), Some(DEFAULT_TIMEOUT_DURATION));
+    }
+
+    /// An explicit `api.timeout` overrides all streaming timeouts, preserving the
+    /// setting's established semantics.
+    #[tokio::test]
+    async fn streaming_timeout_explicit_setting_overrides_everything() {
+        let mut database = crate::database::Database::new_default().await.unwrap();
+        database.settings.set(Setting::ApiTimeout, 30_000, None).await.unwrap();
+        let config = streaming_timeout_config(&database);
+        let expected = Duration::from_millis(30_000);
+        assert_eq!(config.read_timeout(), Some(expected));
+        assert_eq!(config.operation_timeout(), Some(expected));
+        assert_eq!(config.connect_timeout(), Some(expected));
     }
 
     #[tokio::test]

@@ -881,6 +881,12 @@ pub struct Agent {
     /// arrives. Bounded so a persistently failing backend can't be retried forever.
     transient_retries: usize,
 
+    /// Brute-force history reductions applied in the current recovery cascade.
+    /// Bounds the last-resort fallback (each round halves history) so a backend
+    /// that rejects even a minimal request cannot loop forever. Reset when a
+    /// response stream completes or a new prompt arrives.
+    history_reductions: usize,
+
     /// A scheduled transient re-send: when it should fire, plus the metric payload
     /// emitted only if it actually fires (a cancel during the backoff must not count
     /// as a retry). The main loop selects on the deadline so the backoff wait never
@@ -1063,6 +1069,7 @@ impl Agent {
             last_stall_source: StreamTimeoutSource::default(),
             transient_retries: 0,
             scheduled_transient_retry: None,
+            history_reductions: 0,
             auth_refresh_attempted: false,
             reauth_shadows: HashMap::new(),
         })
@@ -2815,6 +2822,7 @@ impl Agent {
                     }
                     self.stream_timeout_retries = 0;
                     self.transient_retries = 0;
+                    self.history_reductions = 0;
                     // Append pending user message now that we have a successful response
                     if let ActiveState::ExecutingRequest {
                         pending_user_message: Some(pending),
@@ -3142,7 +3150,14 @@ impl Agent {
                     info!("is compaction retry: {:?}", compaction_retry);
 
                     if let Some(retry) = compaction_retry {
-                        if retry.is_prompt_truncated {
+                        if retry.from_history_reduction {
+                            // The reduced history still overflows: re-enter the
+                            // compaction cascade, whose own overflow path runs the
+                            // next bounded reduction round. Prompt truncation is
+                            // deferred until the history itself fits.
+                            warn!("retry after a history reduction overflowed - re-entering the compaction cascade");
+                            self.start_compaction(CompactStrategy::default_strategy()).await?;
+                        } else if retry.is_prompt_truncated {
                             error!("compaction retry failed after truncation, going to error state");
                             self.enter_error_state(err.clone().into()).await;
                         } else {
@@ -3177,6 +3192,7 @@ impl Agent {
                             self.set_active_state(ActiveState::ExecutingRequest {
                                 compaction_retry: Some(CompactionRetry {
                                     is_prompt_truncated: true,
+                                    from_history_reduction: false,
                                 }),
                                 empty_response_retried: false,
                                 pending_user_message: Some(truncated_pending),
@@ -3195,7 +3211,7 @@ impl Agent {
                 // multi-cycle turn usually means the token resolved at request-build
                 // time expired. Force a token refresh and cleanly re-send once before
                 // surfacing it.
-                StreamErrorKind::AccessDenied if !self.auth_refresh_attempted => {
+                StreamErrorKind::AccessDenied { .. } if !self.auth_refresh_attempted => {
                     self.auth_refresh_attempted = true;
                     let pending = match &self.execution_state.active_state {
                         ActiveState::ExecutingRequest {
@@ -3274,7 +3290,7 @@ impl Agent {
                 | StreamErrorKind::Throttling
                 | StreamErrorKind::ModelOverloaded { .. }
                 | StreamErrorKind::MonthlyLimitReached { .. }
-                | StreamErrorKind::AccessDenied
+                | StreamErrorKind::AccessDenied { .. }
                 | StreamErrorKind::InvalidModelId { .. }
                 | StreamErrorKind::TransientNetworkFailure { .. }
                 | StreamErrorKind::Other { .. } => {
@@ -3310,6 +3326,7 @@ impl Agent {
         self.consecutive_unexecutable_tool_turns = 0;
         self.stream_timeout_retries = 0;
         self.transient_retries = 0;
+        self.history_reductions = 0;
         self.scheduled_transient_retry = None;
         self.auth_refresh_attempted = false;
         self.stall_partial_output = false;
@@ -3488,6 +3505,111 @@ impl Agent {
         (last.model_id == self.model.model_id()).then_some(last.percentage)
     }
 
+    /// Last-resort recovery when the compaction request itself overflows: drop
+    /// the oldest history outright (keeping the most recent half, snapped to a
+    /// user-message boundary) and persist the reduction as a compaction log
+    /// entry, so the recovery attempt is visible in the session record and the
+    /// reduced history survives resume. Bounded by [`Self::history_reductions`];
+    /// when the bound is spent (or nothing is left to drop) the turn ends in the
+    /// error state like the pre-fallback behavior — but with the reductions it
+    /// DID apply persisted rather than the context silently intact.
+    async fn brute_force_reduce_history(
+        &mut self,
+        pending_user_message: Option<PendingUserMessage>,
+    ) -> Result<(), AgentError> {
+        const MAX_HISTORY_REDUCTIONS: usize = 3;
+
+        let messages = self.conversation_state.messages();
+        let cut = history_reduction_cut(messages);
+
+        let (cut, true) = (cut, self.history_reductions < MAX_HISTORY_REDUCTIONS) else {
+            error!(
+                reductions = self.history_reductions,
+                messages = messages.len(),
+                "history reduction bound spent (or nothing reducible) after compaction overflow - entering error state"
+            );
+            let err = AgentError::Custom(
+                "context window overflowed and could not be recovered: compaction and bounded history reduction both failed"
+                    .to_string(),
+            );
+            self.agent_event_buf
+                .push(AgentEvent::Compaction(CompactionEvent::Failed {
+                    error: err.to_string(),
+                }));
+            self.enter_error_state(err).await;
+            return Ok(());
+        };
+        // A cut at index 0 drops nothing; treat it like an exhausted bound.
+        if cut == 0 {
+            let err = AgentError::Custom(
+                "context window overflowed and could not be recovered: history has no reducible prefix".to_string(),
+            );
+            self.agent_event_buf
+                .push(AgentEvent::Compaction(CompactionEvent::Failed {
+                    error: err.to_string(),
+                }));
+            self.enter_error_state(err).await;
+            return Ok(());
+        }
+
+        self.history_reductions += 1;
+        warn!(
+            round = self.history_reductions,
+            dropped = cut,
+            kept = messages.len() - cut,
+            "compaction request overflowed - applying brute-force history reduction"
+        );
+
+        let messages_snapshot: Vec<Message> = messages[cut..].to_vec();
+        // Carry the latest summary forward so a prior successful compaction is
+        // not lost with the dropped span, and record what happened in its place.
+        let notice = format!(
+            "History was reduced after repeated context-window overflows: the oldest {cut} messages were \
+             dropped without summarization because the summarization request itself exceeded the context window."
+        );
+        let summary = match self.conversation_state.event_log().latest_summary() {
+            Some(prior) => format!("{prior}\n\n## HISTORY REDUCTION NOTICE\n\n{notice}"),
+            None => notice,
+        };
+        let entry = LogEntry::compaction(summary, CompactStrategy::aggressive_strategy(), messages_snapshot);
+        let index = self.conversation_state.append_log(entry.clone());
+        // History just shrank; a stale reading must not synthesize another
+        // overflow (same rationale as finalize_compaction).
+        self.conversation_metadata.last_context_usage = None;
+        self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
+        // The structured count lets clients report unsummarized loss instead of
+        // presenting the reduction as an ordinary summarization.
+        self.agent_event_buf
+            .push(AgentEvent::Compaction(CompactionEvent::Completed {
+                unsummarized_dropped: Some(cut),
+            }));
+
+        // Retry the pending user message like a successful compaction would. The
+        // marker records that this retry follows a reduction, so a renewed
+        // overflow re-enters the compaction cascade with the smaller history
+        // (and ultimately this fallback again, until the bound is spent).
+        if let Some(pending) = pending_user_message {
+            let pending_request = self.format_request(&pending).await;
+            self.set_active_state(ActiveState::ExecutingRequest {
+                compaction_retry: Some(CompactionRetry {
+                    is_prompt_truncated: false,
+                    from_history_reduction: true,
+                }),
+                empty_response_retried: false,
+                pending_user_message: Some(pending),
+            })
+            .await;
+            self.agent_event_buf
+                .push(AgentEvent::Compaction(CompactionEvent::ContextRecoveryAttempt {
+                    final_attempt: self.history_reductions >= MAX_HISTORY_REDUCTIONS,
+                }));
+            self.send_request(pending_request).await?;
+        } else {
+            self.set_active_state(ActiveState::Idle).await;
+        }
+        Ok(())
+    }
+
     /// Starts compaction of the conversation history.
     ///
     /// This can be triggered either:
@@ -3629,7 +3751,9 @@ impl Agent {
                     self.compaction_loop = None;
                     self.agent_event_buf.push(AgentEvent::LogEntryAppended { entry, index });
                     self.agent_event_buf
-                        .push(AgentEvent::Compaction(CompactionEvent::Completed));
+                        .push(AgentEvent::Compaction(CompactionEvent::Completed {
+                            unsummarized_dropped: None,
+                        }));
 
                     // Retry if we have a pending user message, otherwise go idle
                     if let Some(pending) = pending_user_message {
@@ -3676,6 +3800,14 @@ impl Agent {
                     if is_context_overflow && !strategy.truncate_large_messages {
                         debug!("compaction failed due to context overflow, retrying with aggressive strategy");
                         self.start_compaction(CompactStrategy::aggressive_strategy()).await?;
+                    } else if is_context_overflow {
+                        // The aggressive (truncating) compaction request ITSELF
+                        // overflowed — the P491903415 incident chain: the request
+                        // carries nearly the full history, so no summarization
+                        // attempt can fit. Fall back to bounded brute-force
+                        // reduction instead of wedging the session with its
+                        // context intact.
+                        self.brute_force_reduce_history(pending_user_message).await?;
                     } else if let Some(class) = transient_class
                         && self.transient_retries < error_recovery::MAX_TRANSIENT_RETRIES
                         && let LoopError::Stream(stream_err) = &err
@@ -5923,6 +6055,13 @@ pub enum ActiveState {
 pub struct CompactionRetry {
     /// Whether the user message has been truncated in a previous retry attempt.
     pub is_prompt_truncated: bool,
+    /// Whether the recovery that preceded this retry was a brute-force history
+    /// reduction rather than a successful summarization. A renewed overflow then
+    /// re-enters the compaction cascade (bounded by `history_reductions`) instead
+    /// of spending the single prompt-truncation step while the history itself is
+    /// what does not fit.
+    #[serde(default)]
+    pub from_history_reduction: bool,
 }
 
 /// Tracks approval state for a single tool use.
@@ -6137,11 +6276,118 @@ fn recover_pending_summary(name: &str, input: &serde_json::Value) -> Option<Summ
     }
 }
 
+/// Index where the brute-force history reduction cuts: everything before it is
+/// dropped. Any user message is a valid opening for the kept span — the
+/// history must stay user-first for `enforce_conversation_invariants`, which
+/// also inlines a leading tool result as plain content, so a mid-turn cut
+/// cannot orphan one. Cutting at the first user message at or after the
+/// midpoint drops at least half each round, so even one long agentic turn with
+/// no interior prompt — the shape most likely to overflow — shrinks materially
+/// instead of consuming the reduction bound on near-empty prefixes. Only a
+/// history with no interior user message at all (a single exchange) drops
+/// entirely: the pending user message alone is still a valid request, and
+/// better than wedging.
+fn history_reduction_cut(messages: &[Message]) -> usize {
+    let midpoint = messages.len() / 2;
+    // A cut at index 0 drops nothing, so boundaries must be interior.
+    (midpoint.max(1)..messages.len())
+        .find(|&i| messages[i].role == Role::User)
+        .unwrap_or(messages.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::agent::protocol::PermissionOptionHint;
     use crate::util::test::TestBase;
+
+    fn plain_user(text: &str) -> Message {
+        Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::Text(text.to_string())],
+            None,
+        )
+    }
+
+    fn assistant(text: &str) -> Message {
+        Message::new(
+            Uuid::new_v4().to_string(),
+            Role::Assistant,
+            vec![ContentBlock::Text(text.to_string())],
+            None,
+        )
+    }
+
+    fn tool_result_user() -> Message {
+        Message::new(
+            Uuid::new_v4().to_string(),
+            Role::User,
+            vec![ContentBlock::ToolResult(ToolResultBlock {
+                tool_use_id: "t1".to_string(),
+                content: vec![],
+                status: ToolResultStatus::Success,
+            })],
+            None,
+        )
+    }
+
+    #[test]
+    fn reduction_cut_prefers_boundary_after_midpoint() {
+        // Two turns: the second turn's opening prompt sits at the midpoint.
+        let messages = vec![
+            plain_user("turn 1"),
+            assistant("a1"),
+            plain_user("turn 2"),
+            assistant("a2"),
+        ];
+        assert_eq!(history_reduction_cut(&messages), 2);
+    }
+
+    #[test]
+    fn reduction_cut_halves_unbroken_agentic_tail() {
+        // One long agentic turn dominates the second half: no plain user
+        // message after the midpoint, but the tool-result user message at the
+        // midpoint is a valid opening (a leading tool result is inlined as
+        // content by the conversation invariants), so the round still drops
+        // half instead of consuming the reduction bound on the tiny prefix
+        // before the turn opened.
+        let messages = vec![
+            plain_user("turn 1"),
+            assistant("a1"),
+            plain_user("turn 2 - long agentic turn"),
+            assistant("a2"),
+            tool_result_user(),
+            assistant("a3"),
+            tool_result_user(),
+            assistant("a4"),
+        ];
+        let cut = history_reduction_cut(&messages);
+        assert_eq!(cut, 4);
+        assert!(cut >= messages.len() / 2, "each round must drop at least half");
+    }
+
+    #[test]
+    fn reduction_cut_shrinks_single_oversized_exchange_before_dropping_everything() {
+        // A single oversized agentic exchange still has interior user-message
+        // boundaries; the cut keeps the latest half rather than dropping the
+        // whole history in one step.
+        let messages = vec![
+            plain_user("only turn"),
+            assistant("a1"),
+            tool_result_user(),
+            assistant("a2"),
+        ];
+        assert_eq!(history_reduction_cut(&messages), 2);
+    }
+
+    #[test]
+    fn reduction_cut_with_no_interior_boundary_drops_everything() {
+        // No interior user message at all: the whole history goes, leaving the
+        // pending user message as the entire request rather than wedging.
+        let messages = vec![plain_user("only turn"), assistant("a1")];
+        assert_eq!(history_reduction_cut(&messages), 2);
+    }
 
     #[test]
     fn stale_hook_completion_does_not_finish_new_generation() {

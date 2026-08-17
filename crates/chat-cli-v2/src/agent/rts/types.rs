@@ -21,6 +21,9 @@ impl From<ConverseStreamError> for StreamError {
             ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::ModelOverloaded {
                 message: err.to_string(),
             },
+            ConverseStreamErrorKind::AccessDenied { message } => StreamErrorKind::AccessDenied {
+                message: message.clone(),
+            },
             ConverseStreamErrorKind::InvalidModelId { model_id } => StreamErrorKind::InvalidModelId {
                 model_id: model_id.clone(),
             },

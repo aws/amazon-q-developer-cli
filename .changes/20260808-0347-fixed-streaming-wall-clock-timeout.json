@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Healthy responses streaming longer than 10 minutes are no longer killed by the request timeout — streaming requests default to a 3600s wall-clock cap while connect timeouts stay tight (`api.timeout` still overrides)"
+}

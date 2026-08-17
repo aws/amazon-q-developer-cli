@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "On the V2 TUI engine, when the context window overflows and the summarization request itself also overflows, the agent now recovers by dropping the oldest half of the conversation history (bounded to three rounds) instead of ending the turn with the session wedged. Messages dropped this way are NOT summarized; the compaction report states how many were dropped, and the reduction is persisted to the session record so resumed sessions keep the reduced history"
+}

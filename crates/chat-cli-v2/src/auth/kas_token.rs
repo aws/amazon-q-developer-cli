@@ -126,57 +126,145 @@ pub struct AcpCallbackToken {
 ///
 /// [`UnifiedBearerResolver`]: crate::auth::UnifiedBearerResolver
 pub async fn resolve_kas_token_for_callback(database: &Database) -> Result<Option<AcpCallbackToken>, AuthError> {
-    if let Some(token) = ExternalIdpToken::coordinated_refresh(database).await? {
-        return Ok(Some(AcpCallbackToken {
-            access_token: token.access_token.0.clone(),
-            expires_at: format_time(&token.expires_at),
-            profile_arn: profile_arn_from_db(database)?,
-            auth_method: Some(KasAuthMethod::ExternalIdp),
-            provider: Some(KasProvider::ExternalIdp),
-        }));
+    resolve_kas_token_for_callback_with_refresh(database, false).await
+}
+
+/// Minimum spacing between honored `forceRefresh` hints, persisted in the auth
+/// store because each TUI callback runs in its own short-lived process. A
+/// refresh that was just performed left a fresh token in the store; if the
+/// backend rejects that one too, another IdP round-trip cannot help — and an
+/// unbounded 401 loop of real `refresh_token` calls against a provider that
+/// rotates refresh tokens can end with the user logged out. This is the
+/// callback-side analogue of the Rust agent's once-per-turn refresh guard.
+const FORCED_REFRESH_COOLDOWN_SECS: i64 = 30;
+
+const LAST_FORCED_REFRESH_KEY: &str = "kirocli:auth:last-forced-refresh-at";
+
+/// Claims the right to perform a forced refresh: refuses while a previous
+/// claim is within the cooldown, otherwise records `now_unix` and grants it.
+/// A marker in the future (clock skew) is overwritten rather than honored, so
+/// skew cannot block refreshes indefinitely. Store errors fail open — an
+/// honored hint at worst costs one extra refresh.
+async fn claim_forced_refresh(database: &Database, now_unix: i64) -> bool {
+    let last = database
+        .get_secret(LAST_FORCED_REFRESH_KEY)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| s.0.parse::<i64>().ok());
+    if last.is_some_and(|t| t <= now_unix && now_unix - t < FORCED_REFRESH_COOLDOWN_SECS) {
+        return false;
     }
-    if let Some(token) = BuilderIdToken::coordinated_refresh(database, None).await? {
-        let (profile_arn, provider) = match token.token_type() {
-            TokenType::BuilderId => (BUILDER_ID_PROFILE_ARN.to_string(), KasProvider::BuilderId),
-            // Internal Amazon IdC (`https://amzn.awsapps.com/start`) is sent as `Internal`,
-            // a distinct provider KAS special-cases (keeps telemetry on, skips its GetProfile
-            // path). External/customer IdC stays `Enterprise`. Both resolve their profile ARN
-            // from the DB.
-            TokenType::IamIdentityCenter => {
-                let provider = if token.is_amzn_user() {
-                    KasProvider::Internal
-                } else {
-                    KasProvider::Enterprise
-                };
-                (profile_arn_from_db(database)?, provider)
+    let _ = database
+        .set_secret(LAST_FORCED_REFRESH_KEY, &now_unix.to_string())
+        .await;
+    true
+}
+
+/// Like [`resolve_kas_token_for_callback`] but optionally forces a network token refresh when
+/// `force_refresh` is set, honoring the `forceRefresh` hint KAS sends on the
+/// `_kiro/auth/getAccessToken` covenant during mid-turn 401 recovery. The cached
+/// token was accepted at request-build time but has since been rejected, so
+/// returning it again would just re-fail.
+pub async fn resolve_kas_token_for_callback_with_refresh(
+    database: &Database,
+    force_refresh: bool,
+) -> Result<Option<AcpCallbackToken>, AuthError> {
+    // Within the cooldown the hint downgrades to a plain store read, serving
+    // the previous refresh's result; if the backend rejects that token too,
+    // another IdP round-trip cannot help.
+    let force_refresh =
+        force_refresh && claim_forced_refresh(database, time::OffsetDateTime::now_utc().unix_timestamp()).await;
+    if force_refresh {
+        // A forced refresh must stay pinned to the source that supplied the token
+        // KAS just had rejected. Walking on to a lower-priority provider would hand
+        // KAS a token for a different identity and report the 401 as recovered, so
+        // fail closed (`Ok(None)`) when the active credential cannot be refreshed.
+        return match crate::auth::active_stored_source(database).await {
+            Some(crate::auth::AuthSource::ExternalIdp) => Ok(
+                match ExternalIdpToken::coordinated_refresh_inner(database, true).await? {
+                    Some(token) => Some(external_idp_callback_token(database, &token)?),
+                    None => None,
+                },
+            ),
+            Some(crate::auth::AuthSource::BuilderId) => Ok(
+                match BuilderIdToken::coordinated_refresh_inner(database, None, true).await? {
+                    Some(token) => Some(builder_id_callback_token(database, &token)?),
+                    None => None,
+                },
+            ),
+            Some(crate::auth::AuthSource::Social) => {
+                Ok(match SocialToken::coordinated_refresh_inner(database, true).await? {
+                    Some(token) => Some(social_callback_token(&token)?),
+                    None => None,
+                })
             },
+            Some(crate::auth::AuthSource::ApiKey) | None => Ok(None),
         };
-        return Ok(Some(AcpCallbackToken {
-            access_token: token.access_token.0.clone(),
-            expires_at: format_time(&token.expires_at),
-            profile_arn,
-            auth_method: None,
-            provider: Some(provider),
-        }));
     }
-    if let Some(token) = SocialToken::coordinated_refresh(database).await? {
-        // `SocialToken::load` rejects tokens missing `profile_arn`, so any
-        // token reaching here must carry one. Treat absence as the same
-        // unrecoverable failure we surface elsewhere.
-        let profile_arn = token.profile_arn.clone().ok_or(AuthError::ProfileNotSelected)?;
-        let provider = match token.provider {
-            SocialProvider::Google => KasProvider::Google,
-            SocialProvider::Github => KasProvider::Github,
-        };
-        return Ok(Some(AcpCallbackToken {
-            access_token: token.access_token.0.clone(),
-            expires_at: format_time(&token.expires_at),
-            profile_arn,
-            auth_method: None,
-            provider: Some(provider),
-        }));
+    if let Some(token) = ExternalIdpToken::coordinated_refresh_inner(database, false).await? {
+        return Ok(Some(external_idp_callback_token(database, &token)?));
+    }
+    if let Some(token) = BuilderIdToken::coordinated_refresh_inner(database, None, false).await? {
+        return Ok(Some(builder_id_callback_token(database, &token)?));
+    }
+    if let Some(token) = SocialToken::coordinated_refresh_inner(database, false).await? {
+        return Ok(Some(social_callback_token(&token)?));
     }
     Ok(None)
+}
+
+fn external_idp_callback_token(database: &Database, token: &ExternalIdpToken) -> Result<AcpCallbackToken, AuthError> {
+    Ok(AcpCallbackToken {
+        access_token: token.access_token.0.clone(),
+        expires_at: format_time(&token.expires_at),
+        profile_arn: profile_arn_from_db(database)?,
+        auth_method: Some(KasAuthMethod::ExternalIdp),
+        provider: Some(KasProvider::ExternalIdp),
+    })
+}
+
+fn builder_id_callback_token(database: &Database, token: &BuilderIdToken) -> Result<AcpCallbackToken, AuthError> {
+    let (profile_arn, provider) = match token.token_type() {
+        TokenType::BuilderId => (BUILDER_ID_PROFILE_ARN.to_string(), KasProvider::BuilderId),
+        // Internal Amazon IdC (`https://amzn.awsapps.com/start`) is sent as `Internal`,
+        // a distinct provider KAS special-cases (keeps telemetry on, skips its GetProfile
+        // path). External/customer IdC stays `Enterprise`. Both resolve their profile ARN
+        // from the DB.
+        TokenType::IamIdentityCenter => {
+            let provider = if token.is_amzn_user() {
+                KasProvider::Internal
+            } else {
+                KasProvider::Enterprise
+            };
+            (profile_arn_from_db(database)?, provider)
+        },
+    };
+    Ok(AcpCallbackToken {
+        access_token: token.access_token.0.clone(),
+        expires_at: format_time(&token.expires_at),
+        profile_arn,
+        auth_method: None,
+        provider: Some(provider),
+    })
+}
+
+fn social_callback_token(token: &SocialToken) -> Result<AcpCallbackToken, AuthError> {
+    // `SocialToken::load` rejects tokens missing `profile_arn`, so any
+    // token reaching here must carry one. Treat absence as the same
+    // unrecoverable failure we surface elsewhere.
+    let profile_arn = token.profile_arn.clone().ok_or(AuthError::ProfileNotSelected)?;
+    let provider = match token.provider {
+        SocialProvider::Google => KasProvider::Google,
+        SocialProvider::Github => KasProvider::Github,
+    };
+    Ok(AcpCallbackToken {
+        access_token: token.access_token.0.clone(),
+        expires_at: format_time(&token.expires_at),
+        profile_arn,
+        auth_method: None,
+        provider: Some(provider),
+    })
 }
 
 fn profile_arn_from_db(database: &Database) -> Result<String, AuthError> {
@@ -206,12 +294,23 @@ pub async fn handle_ext_method(
     if &*args.method != KAS_AUTH_EXT_METHOD {
         return Err(agent_client_protocol::Error::method_not_found());
     }
+    let force_refresh = parse_force_refresh(&args.params);
     let database = Database::new().await.map_err(|e| {
         agent_client_protocol::Error::internal_error().data(Some(serde_json::json!({
             "details": format!("failed to open auth store: {e}"),
         })))
     })?;
-    handle_kas_auth_ext_method(&database).await
+    handle_kas_auth_ext_method(&database, force_refresh).await
+}
+
+/// Parse the optional `forceRefresh` boolean KAS sends on the getAccessToken
+/// covenant. Absent/malformed params mean no forced refresh (backward-compatible
+/// with hosts and KAS versions that send an empty payload).
+fn parse_force_refresh(params: &serde_json::value::RawValue) -> bool {
+    serde_json::from_str::<serde_json::Value>(params.get())
+        .ok()
+        .and_then(|v| v.get("forceRefresh").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
 }
 
 /// Handle a `_kiro/auth/getAccessToken` ACP `ext_method` call against a
@@ -222,6 +321,7 @@ pub async fn handle_ext_method(
 /// message in `data.details`. KAS translates that into a `TokenExpiredError`.
 pub(crate) async fn handle_kas_auth_ext_method(
     database: &Database,
+    force_refresh: bool,
 ) -> std::result::Result<agent_client_protocol::ExtResponse, agent_client_protocol::Error> {
     use std::sync::Arc;
 
@@ -234,7 +334,7 @@ pub(crate) async fn handle_kas_auth_ext_method(
         AcpError::internal_error().data(Some(serde_json::json!({ "details": message })))
     }
 
-    let token = match resolve_kas_token_for_callback(database).await {
+    let token = match resolve_kas_token_for_callback_with_refresh(database, force_refresh).await {
         Ok(Some(t)) => t,
         Ok(None) => {
             return Err(fail(
@@ -585,7 +685,7 @@ mod tests {
             .await
             .unwrap();
 
-        let response = handle_kas_auth_ext_method(&database).await.expect("response ok");
+        let response = handle_kas_auth_ext_method(&database, false).await.expect("response ok");
         let body: serde_json::Value = serde_json::from_str(response.0.get()).unwrap();
         let map = body.as_object().expect("object body");
         assert_eq!(
@@ -605,7 +705,7 @@ mod tests {
     #[tokio::test]
     async fn handle_ext_method_empty_store_returns_login_error() {
         let database = Database::new().await.unwrap();
-        let err = handle_kas_auth_ext_method(&database)
+        let err = handle_kas_auth_ext_method(&database, false)
             .await
             .expect_err("not-logged-in error");
         let details = err
@@ -635,7 +735,7 @@ mod tests {
             .await
             .unwrap();
 
-        let err = handle_kas_auth_ext_method(&database)
+        let err = handle_kas_auth_ext_method(&database, false)
             .await
             .expect_err("ProfileNotSelected error");
         let details = err
@@ -645,5 +745,116 @@ mod tests {
             .and_then(|d| d.as_str())
             .expect("data.details set");
         assert_eq!(details, AuthError::ProfileNotSelected.to_string());
+    }
+
+    /// A forced refresh (mid-turn 401 recovery) must stay pinned to the provider
+    /// that supplied the rejected token: an unrefreshable active token fails
+    /// closed instead of falling through to a valid lower-priority credential,
+    /// which would hand KAS a token for a different identity.
+    #[tokio::test]
+    async fn forced_refresh_pins_to_active_provider_and_fails_closed() {
+        let mut database = Database::new().await.unwrap();
+        database.set_auth_profile(&idc_profile()).unwrap();
+        let mut idp = unexpired_external_idp();
+        // No refresh material: the forced refresh deletes the token and yields none.
+        idp.refresh_token = None;
+        database
+            .set_secret(ExternalIdpToken::SECRET_KEY, &serde_json::to_string(&idp).unwrap())
+            .await
+            .unwrap();
+        database
+            .set_secret(
+                BuilderIdToken::SECRET_KEY,
+                &serde_json::to_string(&unexpired_builder_id_freetier()).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let resolved = resolve_kas_token_for_callback_with_refresh(&database, true)
+            .await
+            .unwrap();
+        assert!(
+            resolved.is_none(),
+            "forced refresh must not fall through to the builder ID token"
+        );
+
+        // The lower-priority credential must be neither refreshed nor returned.
+        let builder = crate::auth::builder_id::stored_token(&database)
+            .await
+            .expect("builder ID token still stored");
+        assert_eq!(builder.access_token.0, "builder-access-tok");
+    }
+
+    /// The cooldown claim: the first claim wins, repeats inside the window are
+    /// refused, the window reopens once the cooldown elapses, and a marker in
+    /// the future (clock skew) self-heals instead of blocking forever.
+    #[tokio::test]
+    async fn forced_refresh_cooldown_claims() {
+        let database = Database::new().await.unwrap();
+        let now = 1_000_000i64;
+        assert!(claim_forced_refresh(&database, now).await);
+        assert!(!claim_forced_refresh(&database, now + 1).await);
+        assert!(!claim_forced_refresh(&database, now + FORCED_REFRESH_COOLDOWN_SECS - 1).await);
+        assert!(claim_forced_refresh(&database, now + FORCED_REFRESH_COOLDOWN_SECS).await);
+        // The marker now sits in this claimant's future: overwrite and grant.
+        assert!(claim_forced_refresh(&database, now).await);
+    }
+
+    /// A `forceRefresh` hint inside the cooldown window is served from the
+    /// store without another refresh attempt: the unrefreshable token survives
+    /// (a real forced refresh would have deleted it) and is returned.
+    #[tokio::test]
+    async fn forced_refresh_within_cooldown_serves_stored_token() {
+        let mut database = Database::new().await.unwrap();
+        database.set_auth_profile(&idc_profile()).unwrap();
+        let mut idp = unexpired_external_idp();
+        idp.refresh_token = None;
+        database
+            .set_secret(ExternalIdpToken::SECRET_KEY, &serde_json::to_string(&idp).unwrap())
+            .await
+            .unwrap();
+
+        // A forced refresh was claimed moments ago (the previous 401 recovery).
+        assert!(claim_forced_refresh(&database, OffsetDateTime::now_utc().unix_timestamp()).await);
+
+        let resolved = resolve_kas_token_for_callback_with_refresh(&database, true)
+            .await
+            .unwrap()
+            .expect("the cooldown must serve the stored token instead of failing closed");
+        assert_eq!(resolved.access_token, "idp-access-tok");
+        assert!(
+            crate::auth::external_idp::stored_token(&database).await.is_some(),
+            "the stored token must not be consumed by another refresh attempt"
+        );
+    }
+
+    /// A forced refresh with an empty store (e.g. API-key auth) resolves to no
+    /// token rather than erroring.
+    #[tokio::test]
+    async fn forced_refresh_with_no_stored_token_resolves_none() {
+        let database = Database::new().await.unwrap();
+        let resolved = resolve_kas_token_for_callback_with_refresh(&database, true)
+            .await
+            .unwrap();
+        assert!(resolved.is_none());
+    }
+
+    fn raw(json: &str) -> Box<serde_json::value::RawValue> {
+        serde_json::value::RawValue::from_string(json.to_string()).unwrap()
+    }
+
+    #[test]
+    fn parse_force_refresh_reads_the_hint() {
+        assert!(super::parse_force_refresh(&raw(r#"{"forceRefresh":true}"#)));
+        assert!(!super::parse_force_refresh(&raw(r#"{"forceRefresh":false}"#)));
+    }
+
+    #[test]
+    fn parse_force_refresh_defaults_false_for_empty_or_malformed() {
+        // Backward-compatible: empty payload (older KAS) and malformed input
+        // both mean "no forced refresh".
+        assert!(!super::parse_force_refresh(&raw("{}")));
+        assert!(!super::parse_force_refresh(&raw("null")));
+        assert!(!super::parse_force_refresh(&raw(r#""not an object""#)));
     }
 }

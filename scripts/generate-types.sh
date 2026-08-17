@@ -22,5 +22,10 @@ typeshare crates/chat-cli-v2 crates/kiro-telemetry-host --lang=typescript --outp
 typeshare crates/chat-cli --lang=typescript --output-file=packages/tui/src/types/generated/chat-internal.ts
 typeshare crates/kiro-telemetry-schema --lang=typescript --output-file=packages/tui/src/types/generated/telemetry.ts
 
+# The committed e2e type files are prettier-formatted (raw typeshare output is
+# tab-indented), so normalize them or every regeneration drowns the real diff
+# in formatting churn. src/types/generated is committed as raw output; leave it.
+(cd packages/tui && bunx prettier --write e2e_tests/types)
+
 echo "✓ Generated types at packages/tui/e2e_tests/types/"
 echo "✓ Generated types at packages/tui/src/types/generated/"

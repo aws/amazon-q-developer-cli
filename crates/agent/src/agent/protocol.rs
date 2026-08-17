@@ -148,7 +148,14 @@ pub enum CompactionEvent {
     /// Compaction has started
     Started,
     /// Compaction completed successfully
-    Completed,
+    Completed {
+        /// Messages dropped WITHOUT summarization by a brute-force history
+        /// reduction. `None` for a genuine summarization, so clients can
+        /// distinguish unsummarized loss from a normal compaction instead of
+        /// parsing the notice prose embedded in the summary text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unsummarized_dropped: Option<usize>,
+    },
     /// Distinguishes automatic recovery retries from manual compaction.
     ContextRecoveryAttempt { final_attempt: bool },
     /// Compaction failed
@@ -844,7 +851,12 @@ mod tests {
     fn test_compaction_event_serde() {
         for ev in [
             CompactionEvent::Started,
-            CompactionEvent::Completed,
+            CompactionEvent::Completed {
+                unsummarized_dropped: None,
+            },
+            CompactionEvent::Completed {
+                unsummarized_dropped: Some(7),
+            },
             CompactionEvent::ContextRecoveryAttempt { final_attempt: false },
             CompactionEvent::ContextRecoveryAttempt { final_attempt: true },
             CompactionEvent::Failed { error: "x".to_string() },
@@ -852,6 +864,19 @@ mod tests {
             let json = serde_json::to_string(&ev).unwrap();
             let _: CompactionEvent = serde_json::from_str(&json).unwrap();
         }
+        // Wire compatibility both ways: the pre-field completed payload still
+        // parses, and the count is omitted when absent.
+        let legacy: CompactionEvent = serde_json::from_str(r#"{"kind":"completed"}"#).unwrap();
+        assert!(matches!(legacy, CompactionEvent::Completed {
+            unsummarized_dropped: None
+        }));
+        assert_eq!(
+            serde_json::to_string(&CompactionEvent::Completed {
+                unsummarized_dropped: None
+            })
+            .unwrap(),
+            r#"{"kind":"completed"}"#
+        );
     }
 
     #[test]

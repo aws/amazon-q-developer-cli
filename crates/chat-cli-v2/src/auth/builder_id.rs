@@ -370,6 +370,22 @@ impl BuilderIdToken {
         database: &Database,
         telemetry: Option<&crate::telemetry::TelemetryThread>,
     ) -> Result<Option<Self>, AuthError> {
+        Self::coordinated_refresh_inner(database, telemetry, false).await
+    }
+
+    /// Like [`Self::coordinated_refresh`] but forces a network refresh even when the
+    /// cached token is still valid. Used to honor a `forceRefresh` hint from a
+    /// mid-turn 401 recovery, where the cached token was accepted at build time but
+    /// has since been rejected.
+    pub async fn coordinated_refresh_inner(
+        database: &Database,
+        telemetry: Option<&crate::telemetry::TelemetryThread>,
+        force: bool,
+    ) -> Result<Option<Self>, AuthError> {
+        // Concurrent 401s race to force-refresh the same credential: snapshot the
+        // rejected token before waiting on the lock, so a peer's refresh that lands
+        // in the meantime is reused instead of costing another OIDC round-trip.
+        let pre_lock = if force { stored_token(database).await } else { None };
         crate::auth::refresh_coordinator::with_refresh_lock(|| async move {
             let stored = match database.get_secret(Self::SECRET_KEY).await? {
                 Some(s) => s,
@@ -378,7 +394,10 @@ impl BuilderIdToken {
             let Some(token) = serde_json::from_str::<Option<Self>>(&stored.0)? else {
                 return Ok(None);
             };
-            if !token.is_expired() {
+            if !force && !token.is_expired() {
+                return Ok(Some(token));
+            }
+            if pre_lock.is_some_and(|held| held.access_token != token.access_token) {
                 return Ok(Some(token));
             }
             let region = token.region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
@@ -561,10 +580,16 @@ impl BuilderIdToken {
 /// before the destructive delete to honor a peer's successful refresh
 /// when the lock failed to serialize us.
 async fn peer_token_in_store(database: &Database, held: &BuilderIdToken) -> Option<BuilderIdToken> {
-    let secret = database.get_secret(BuilderIdToken::SECRET_KEY).await.ok()??;
-    let stored: Option<BuilderIdToken> = serde_json::from_str(&secret.0).ok()?;
-    let stored = stored?;
+    let stored = stored_token(database).await?;
     (stored.access_token != held.access_token).then_some(stored)
+}
+
+/// The raw token in the secret store, ignoring expiry. Lets callers identify
+/// the active credential source (or detect a peer's refresh) without the
+/// validation and refresh side effects of `load`.
+pub(crate) async fn stored_token(database: &Database) -> Option<BuilderIdToken> {
+    let secret = database.get_secret(BuilderIdToken::SECRET_KEY).await.ok()??;
+    serde_json::from_str::<Option<BuilderIdToken>>(&secret.0).ok()?
 }
 
 pub enum PollCreateToken {

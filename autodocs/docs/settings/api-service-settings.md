@@ -20,7 +20,9 @@ API request timeout in milliseconds.
 
 ### Overview
 
-Sets the timeout duration for API requests made by Kiro CLI. Affects requests to AI models, external services, and other network operations.
+Sets the timeout duration for API requests made by Kiro CLI. Affects requests to AI models, external services, and other network operations. When set, it applies to all request phases (connect, read, whole operation) including streaming chat responses.
+
+When unset, non-streaming requests default to 600 seconds. Streaming chat responses default to a 3600-second wall-clock cap (the read timeout spans the entire response body, so it bounds total generation time, not idle time; hangs are handled by the stream idle watchdog) with the connect timeout kept at 600 seconds.
 
 ### Usage
 
@@ -29,7 +31,7 @@ kiro-cli settings api.timeout 30000
 ```
 
 **Type**: Number  
-**Default**: `30000`  
+**Default**: unset (600s general / 3600s streaming)  
 **Unit**: Milliseconds
 
 ### Examples
@@ -47,8 +49,10 @@ kiro-cli settings api.timeout
 
 ### Timeout Guidelines
 
+When unset (the default), the fallbacks described above apply: 600 seconds for non-streaming requests, a 3600-second wall-clock cap for streaming chat responses.
+
 - **15000**: Fast networks, quick failure detection (15s)
-- **30000**: Balanced (default, 30s)
+- **30000**: Balanced (30s)
 - **60000**: Slow networks, complex requests (60s)
 - **120000**: Very slow networks or large requests (120s)
 
@@ -72,7 +76,7 @@ Stream idle soft timeout in seconds.
 
 Inter-event silence threshold after which Kiro CLI shows a "stream stalled" warning while continuing to wait for the response stream. Measures the gap between consecutive stream events (never total response time), so long responses with steady output never trigger it.
 
-In the classic (V1) CLI these thresholds govern the delegated subagent engine's response streams; the main chat loop has its own streaming timeout (`api.timeout`).
+In the classic (V1) CLI the soft (warning) tier applies only to the delegated subagent engine's response streams; the main chat loop honors `api.streamIdleHardTimeout` (below) but has no warning tier.
 
 ### Usage
 
@@ -97,6 +101,8 @@ Stream idle hard timeout in seconds.
 ### Overview
 
 Inter-event silence threshold after which Kiro CLI abandons the response stream and retries as a stream timeout. Protects against silently dead connections that would otherwise hang a turn forever. Like the soft threshold, it measures inter-event gaps, not total response time.
+
+In the classic (V1) CLI the same deadline also bounds the pre-headers phase of each request — the wait for response headers, including connect, TLS, and the SDK's own retries. A request that produces no headers within the deadline fails as a transient network error and enters the bounded send retry instead of hanging the prompt.
 
 ### Usage
 

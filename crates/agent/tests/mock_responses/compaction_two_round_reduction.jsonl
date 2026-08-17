@@ -1,0 +1,35 @@
+// hello 1 -> ack
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello 1!"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-1","statusCode":null}}}}
+
+// hello 2 -> ack
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Hello 2!"},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"hello-2","statusCode":null}}}}
+
+// main request overflows
+{"result":"error","data":{"original_request_id":"main-request","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// compaction attempt 1 (default) overflows
+{"result":"error","data":{"original_request_id":"compact-1","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// compaction attempt 2 (aggressive) overflows -> reduction round 1
+{"result":"error","data":{"original_request_id":"compact-2","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// retry after reduction 1 overflows again -> re-enter the cascade
+{"result":"error","data":{"original_request_id":"retry-1","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// compaction attempt 3 (default) overflows
+{"result":"error","data":{"original_request_id":"compact-3","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// compaction attempt 4 (aggressive) overflows -> reduction round 2
+{"result":"error","data":{"original_request_id":"compact-4","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// retry after reduction 2 fits
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Recovered after two reductions."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:00.000000Z","requestEndTime":"2025-10-23T21:04:01.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"reduced-retry-2","statusCode":null}}}}

@@ -1128,7 +1128,7 @@ pub fn extract_reason_from_kind(stream_err: &StreamError) -> (String, String) {
         StreamErrorKind::StreamTimeout { .. } => REASON_STREAM_TIMEOUT,
         StreamErrorKind::TransientNetworkFailure { .. } => REASON_TRANSIENT_NETWORK_FAILURE,
         StreamErrorKind::Validation { .. } => REASON_VALIDATION_ERROR,
-        StreamErrorKind::AccessDenied => REASON_ACCESS_DENIED,
+        StreamErrorKind::AccessDenied { .. } => REASON_ACCESS_DENIED,
         StreamErrorKind::InvalidModelId { .. } => REASON_INVALID_MODEL_ID,
         StreamErrorKind::Other { reason_code, message } => reason_code.as_deref().unwrap_or_else(|| {
             if message.len() > 256 {

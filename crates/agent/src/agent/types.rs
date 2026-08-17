@@ -236,6 +236,23 @@ impl AgentSettings {
     /// watchdog for days; no legitimate idle threshold exceeds an hour.
     pub const STREAM_IDLE_TIMEOUT_CEILING: Duration = Duration::from_secs(3600);
 
+    /// Clamps one stream-idle tier to [`Self::STREAM_IDLE_TIMEOUT_CEILING`], warning
+    /// when the configured value exceeds it. Shared with read sites that resolve the
+    /// setting outside an `AgentSettings` (V1's chat loop), so the documented ceiling
+    /// holds everywhere the setting is honored.
+    pub fn clamp_stream_idle_timeout(tier: &str, value: Duration) -> Duration {
+        if value > Self::STREAM_IDLE_TIMEOUT_CEILING {
+            tracing::warn!(
+                tier,
+                configured = ?value,
+                ceiling = ?Self::STREAM_IDLE_TIMEOUT_CEILING,
+                "configured stream-idle timeout exceeds the ceiling (values are seconds, not milliseconds); clamping"
+            );
+            return Self::STREAM_IDLE_TIMEOUT_CEILING;
+        }
+        value
+    }
+
     /// Reconciles the stream-idle watchdog tiers once, after user settings are applied.
     ///
     /// Values above [`Self::STREAM_IDLE_TIMEOUT_CEILING`] are clamped to it (with a
@@ -252,15 +269,7 @@ impl AgentSettings {
             ("soft", &mut self.stream_idle_soft_timeout),
             ("hard", &mut self.stream_idle_hard_timeout),
         ] {
-            if *tier > Self::STREAM_IDLE_TIMEOUT_CEILING {
-                tracing::warn!(
-                    tier = name,
-                    configured = ?*tier,
-                    ceiling = ?Self::STREAM_IDLE_TIMEOUT_CEILING,
-                    "configured stream-idle timeout exceeds the ceiling (values are seconds, not milliseconds); clamping"
-                );
-                *tier = Self::STREAM_IDLE_TIMEOUT_CEILING;
-            }
+            *tier = Self::clamp_stream_idle_timeout(name, *tier);
         }
         let soft = self.stream_idle_soft_timeout;
         let hard = self.stream_idle_hard_timeout;

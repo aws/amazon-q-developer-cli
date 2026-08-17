@@ -205,12 +205,17 @@ pub enum StreamErrorKind {
     MonthlyLimitReached {
         message: String,
     },
-    /// Authentication was rejected (HTTP 401/403 or `AccessDeniedException`).
+    /// Authentication was rejected (HTTP 401, or a credential-shaped 403 /
+    /// `AccessDeniedException`).
     ///
     /// On a long turn this usually means the access token expired mid-request.
-    /// Terminal today; distinguished from `Other` so callers can message it clearly
-    /// and (later) drive a token refresh.
-    AccessDenied,
+    /// Distinguished from `Other` so callers can message it clearly and drive
+    /// the one-shot token refresh.
+    AccessDenied {
+        /// User-friendly message from the service, if available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
     /// The request was invalid.
     ///
     /// Not retryable - indicative of a bug with the client.
@@ -271,8 +276,9 @@ impl std::fmt::Display for StreamErrorKind {
                 message.as_str().into()
             },
             StreamErrorKind::Validation { .. } => "An invalid request was sent".into(),
-            StreamErrorKind::AccessDenied => {
-                "Authentication failed. Your credentials may be invalid or expired.".into()
+            StreamErrorKind::AccessDenied { message } => match message {
+                Some(message) => format!("Access denied: {message}").into(),
+                None => "Authentication failed. Your credentials may be invalid or expired.".into(),
             },
             StreamErrorKind::StreamTimeout { duration, .. } => format!(
                 "The stream timed out receiving the response after {}ms",
@@ -1133,7 +1139,7 @@ mod tests {
     #[test]
     fn transient_class_terminal_kinds_are_none() {
         assert!(
-            StreamError::new(StreamErrorKind::AccessDenied)
+            StreamError::new(StreamErrorKind::AccessDenied { message: None })
                 .transient_class()
                 .is_none()
         );

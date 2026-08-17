@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Context window overflow errors are now always terminal — they route to automatic compaction instead of feeding retry loops, including slow mid-stream overflows previously misclassified as timeouts"
+}

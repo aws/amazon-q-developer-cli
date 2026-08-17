@@ -198,7 +198,7 @@ impl RtsModel {
                     ConverseStreamErrorKind::InvalidModelId { ref model_id } => StreamErrorKind::InvalidModelId {
                         model_id: model_id.clone(),
                     },
-                    ConverseStreamErrorKind::AccessDenied | ConverseStreamErrorKind::Unknown { .. } => {
+                    ConverseStreamErrorKind::AccessDenied { .. } | ConverseStreamErrorKind::Unknown { .. } => {
                         StreamErrorKind::Other {
                             reason_code: Some(err.reason_code()),
                             message: err.to_string(),
@@ -864,28 +864,7 @@ impl ResponseParser {
     }
 
     fn recv_error_to_stream_error(&self, err: RecvError) -> StreamError {
-        let reason_code = err.reason_code();
-        match err {
-            RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout {
-                duration,
-                source: agent::agent_loop::types::StreamTimeoutSource::SdkRecv,
-            })
-            .set_original_request_id(self.request_id.clone())
-            .with_source(Arc::new(source)),
-            RecvError::Other { source } if source.is_transient_stream_failure() => {
-                StreamError::new(StreamErrorKind::TransientNetworkFailure {
-                    message: format!("A network failure occurred during the response stream: {source}"),
-                })
-                .set_original_request_id(self.request_id.clone())
-                .with_source(Arc::new(source))
-            },
-            RecvError::Other { source } => StreamError::new(StreamErrorKind::Other {
-                reason_code: Some(reason_code),
-                message: format!("An unexpected error occurred during the response stream: {source:?}"),
-            })
-            .set_original_request_id(self.request_id.clone())
-            .with_source(Arc::new(source)),
-        }
+        recv_error_to_stream_error_kind(err).set_original_request_id(self.request_id.clone())
     }
 
     fn make_metadata(&self) -> StreamEvent {
@@ -930,6 +909,43 @@ impl RecvError {
     }
 }
 
+/// Maps a stream-read failure to its [StreamError], without the request id.
+/// Overflow is checked first and is terminal — surfacing it as a timeout or
+/// generic error would feed the stall-continuation retry with a conversation
+/// that can never fit.
+fn recv_error_to_stream_error_kind(err: RecvError) -> StreamError {
+    let reason_code = err.reason_code();
+    match err {
+        RecvError::Timeout { source, .. } | RecvError::Other { source } if source.is_context_window_overflow() => {
+            StreamError::new(StreamErrorKind::ContextWindowOverflow).with_source(Arc::new(source))
+        },
+        // The one 5xx the backend emits mid-stream is a modeled InternalServerError
+        // with no HTTP status; classify it as ServiceFailure so it reaches the same
+        // bounded transient retry as a send-path 5xx instead of dying as terminal.
+        RecvError::Timeout { source, .. } | RecvError::Other { source }
+            if source.is_mid_stream_internal_server_error() =>
+        {
+            StreamError::new(StreamErrorKind::ServiceFailure).with_source(Arc::new(source))
+        },
+        RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout {
+            duration,
+            source: agent::agent_loop::types::StreamTimeoutSource::SdkRecv,
+        })
+        .with_source(Arc::new(source)),
+        RecvError::Other { source } if source.is_transient_stream_failure() => {
+            StreamError::new(StreamErrorKind::TransientNetworkFailure {
+                message: format!("A network failure occurred during the response stream: {source}"),
+            })
+            .with_source(Arc::new(source))
+        },
+        RecvError::Other { source } => StreamError::new(StreamErrorKind::Other {
+            reason_code: Some(reason_code),
+            message: format!("An unexpected error occurred during the response stream: {source:?}"),
+        })
+        .with_source(Arc::new(source)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tokio_stream::StreamExt as _;
@@ -941,6 +957,71 @@ mod tests {
         Fs,
     };
     use crate::util::env_var::is_integ_test;
+
+    /// A slow mid-stream overflow must surface as ContextWindowOverflow, not
+    /// StreamTimeout — the timeout classification would feed the bounded
+    /// stall-continuation retry with a request that can never succeed.
+    #[test]
+    fn mid_stream_overflow_is_terminal_not_timeout() {
+        let overflow = ApiClientError::ConverseStream(crate::api_client::error::ConverseStreamError {
+            request_id: None,
+            status_code: Some(400),
+            retry_after: None,
+            kind: crate::api_client::error::ConverseStreamErrorKind::ContextWindowOverflow,
+            source: None,
+        });
+        let err = recv_error_to_stream_error_kind(RecvError::Timeout {
+            source: overflow,
+            duration: Duration::from_secs(75),
+        });
+        assert!(
+            matches!(err.kind, StreamErrorKind::ContextWindowOverflow),
+            "expected ContextWindowOverflow, got: {:?}",
+            err.kind
+        );
+    }
+
+    /// Non-overflow slow failures still classify as StreamTimeout.
+    #[test]
+    fn non_overflow_timeout_still_classifies_as_timeout() {
+        let err = recv_error_to_stream_error_kind(RecvError::Timeout {
+            source: ApiClientError::Other("connection reset".to_string()),
+            duration: Duration::from_secs(75),
+        });
+        assert!(matches!(err.kind, StreamErrorKind::StreamTimeout { .. }));
+    }
+
+    /// A mid-stream InternalServerError carries no HTTP status, so it must be
+    /// classified as ServiceFailure to be retried as a transient ServerError
+    /// rather than failing the subagent stage terminally (parity with V2).
+    #[test]
+    fn mid_stream_internal_server_error_is_transient_server_error() {
+        use amzn_codewhisperer_streaming_client::types::error::ChatResponseStreamError;
+        use aws_smithy_types::event_stream::{
+            Message,
+            RawMessage,
+        };
+
+        let ise = amzn_codewhisperer_streaming_client::types::error::InternalServerError::builder()
+            .message("boom")
+            .build()
+            .unwrap();
+        let source =
+            ApiClientError::CodewhispererChatResponseStream(crate::api_client::error::SdkError::service_error(
+                ChatResponseStreamError::InternalServerError(ise),
+                RawMessage::Decoded(Message::new(b"<payload>".to_vec())),
+            ));
+        let err = recv_error_to_stream_error_kind(RecvError::Other { source });
+        assert!(
+            matches!(err.kind, StreamErrorKind::ServiceFailure),
+            "expected ServiceFailure, got: {:?}",
+            err.kind
+        );
+        assert_eq!(
+            err.transient_class(),
+            Some(agent::error_recovery::TransientErrorClass::ServerError),
+        );
+    }
 
     /// Manual test to verify cancellation succeeds in a timely manner.
     #[tokio::test]

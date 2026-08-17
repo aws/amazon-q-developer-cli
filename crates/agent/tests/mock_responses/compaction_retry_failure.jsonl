@@ -12,3 +12,9 @@
 
 // contextWindowOverflow on second compaction attempt (aggressive strategy with truncation also fails)
 {"result":"error","data":{"original_request_id":"compaction-attempt-2","original_status_code":400,"original_message":null,"kind":{"kind":"contextWindowOverflow"}}}
+
+// the brute-force history reduction retried the turn; the reduced request fits
+{"result":"ok","data":{"kind":"messageStart","data":{"role":"assistant"}}}
+{"result":"ok","data":{"kind":"contentBlockDelta","data":{"delta":{"kind":"text","data":"Recovered after history reduction."},"contentBlockIndex":null}}}
+{"result":"ok","data":{"kind":"messageStop","data":{"stopReason":"endTurn"}}}
+{"result":"ok","data":{"kind":"metadata","data":{"metrics":{"requestStartTime":"2025-10-23T21:04:02.000000Z","requestEndTime":"2025-10-23T21:04:03.000000Z","timeToFirstChunk":{"secs":0,"nanos":100000000},"timeBetweenChunks":[],"responseStreamLen":30},"usage":null,"service":{"requestId":"reduced-retry","statusCode":null}}}}

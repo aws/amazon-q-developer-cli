@@ -6,13 +6,14 @@
  * pre-expiry refresh, or hard-expired refresh). The host owns the
  * refresh token; KAS only ever sees access tokens.
  *
- * KAS sends an empty payload (`{}`); the host's behavior is identical
- * regardless of why the call was made, so KAS forwards no hints. The
- * handler shells out to the hidden `kiro-cli chat _ get-kas-token`
- * subcommand which:
+ * KAS may send an optional `forceRefresh` hint (true on mid-turn 401
+ * recovery); the handler forwards it as `--force-refresh` so the host mints
+ * a fresh token instead of returning the cached one. An empty payload is
+ * still accepted (older KAS) and means no forced refresh. The handler shells
+ * out to the hidden `kiro-cli chat _ get-kas-token` subcommand which:
  *   - acquires the cross-process refresh lock,
  *   - resolves the highest-priority cached token (External -> Builder -> Social),
- *   - refreshes it via OIDC if it has crossed expiry,
+ *   - refreshes it via OIDC if it has crossed expiry (or always, when forced),
  *   - prints `{kind: "getKasToken", data: {accessToken, expiresAt, profileArn, authMethod?}}`.
  *
  * The handler returns `{accessToken, expiresAt, profileArn, authMethod?}`
@@ -50,18 +51,28 @@ export type { AsyncSpawner };
  */
 export const GET_ACCESS_TOKEN_METHOD = '_kiro/auth/getAccessToken';
 
-/** Wire request from KAS. Empty. */
-export type GetAccessTokenRequest = Record<string, never>;
+/**
+ * Wire request from KAS. Carries an optional `forceRefresh` hint: when true
+ * (sent on mid-turn 401 recovery), the host must mint a fresh token instead of
+ * returning the cached one. Absent/false preserves the cached-token behavior.
+ */
+export type GetAccessTokenRequest = { forceRefresh?: boolean };
 
 /** User-facing string surfaced when the host can't produce a token. */
 export const AUTH_ERROR_USER_FACING =
   'Failed to verify authentication. Please log in again to continue.';
 
 async function runGetKasToken(
-  _request: GetAccessTokenRequest,
+  request: GetAccessTokenRequest,
   spawner?: AsyncSpawner
 ): Promise<GetAccessTokenResponse> {
-  const r = await runChatInternalAsync(['chat', '_', 'get-kas-token'], spawner);
+  // Honor the mid-turn 401 forceRefresh hint by asking the host subcommand to
+  // bypass its token cache and mint a fresh token.
+  const argv = ['chat', '_', 'get-kas-token'];
+  if (request?.forceRefresh) {
+    argv.push('--force-refresh');
+  }
+  const r = await runChatInternalAsync(argv, spawner);
   if (!r.ok) {
     logger.error('[auth-callback] host-side failure', { reason: r.message });
     throw new Error(AUTH_ERROR_USER_FACING);

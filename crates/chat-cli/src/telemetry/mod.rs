@@ -753,6 +753,32 @@ impl TelemetryThread {
         self.send(telemetry_event)
     }
 
+    /// Emits one stall observation plus the observed idle gap for a V1 hard stream stall.
+    /// V1 has no soft tier, so every stall is hard-cancelled.
+    pub async fn send_stream_stall(
+        &self,
+        database: &Database,
+        model: Option<String>,
+        idle: std::time::Duration,
+        session_interface: metric::SessionInterface,
+    ) -> Result<(), TelemetryError> {
+        let mut stall_event = Event::new(EventType::StreamStall {
+            model: model.clone(),
+            tier: metric::StallTier::Hard,
+        });
+        stall_event.set_session_interface(session_interface);
+        set_event_metadata(database, &mut stall_event).await;
+        self.send(stall_event)?;
+
+        let mut episode_event = Event::new(EventType::StreamStallEpisodeEnd {
+            model,
+            idle_seconds: idle.as_secs_f64(),
+            episode_end: metric::StallEpisodeEnd::HardCancelled,
+        });
+        set_event_metadata(database, &mut episode_event).await;
+        self.send(episode_event)
+    }
+
     /// Emits a counter increment when a subagent stage is cancelled by its
     /// overall deadline.
     pub async fn send_subagent_deadline_expired(
@@ -762,6 +788,40 @@ impl TelemetryThread {
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::SubagentDeadlineExpired {
             deadline_seconds: deadline.as_secs_f64(),
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        self.send(telemetry_event)
+    }
+
+    /// Emits the hard-cancel → first-event recovery time of a V1 stall retry.
+    pub async fn send_stream_stall_recovery(
+        &self,
+        database: &Database,
+        model: Option<String>,
+        recovery: std::time::Duration,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::StreamStallRecovery {
+            model,
+            recovery_seconds: recovery.as_secs_f64(),
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        self.send(telemetry_event)
+    }
+
+    /// Emits the terminal outcome of a V1 stall-continuation retry sequence.
+    pub async fn send_stream_stall_retry(
+        &self,
+        database: &Database,
+        model: Option<String>,
+        outcome: metric::RetryOutcome,
+        attempt_number: u32,
+        partial_output: Option<bool>,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::StreamStallRetry {
+            model,
+            outcome,
+            attempt_number,
+            partial_output,
         });
         set_event_metadata(database, &mut telemetry_event).await;
         self.send(telemetry_event)

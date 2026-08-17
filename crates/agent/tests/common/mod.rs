@@ -87,6 +87,9 @@ pub struct TestCaseBuilder {
     /// useful for testing a shadow stuck mid-auth).
     #[allow(clippy::option_option)] // 3 distinct states: off / drive-all / drive-first-n
     oauth_autodrive: Option<Option<usize>>,
+    /// When true, the mock model reports a refreshable token so the mid-turn 401
+    /// refresh-and-retry path can be exercised.
+    refreshable_auth: bool,
 }
 
 impl TestCaseBuilder {
@@ -124,6 +127,13 @@ impl TestCaseBuilder {
 
     pub fn with_mock_response(mut self, response: MockResponse) -> Self {
         self.mock_responses.push(response);
+        self
+    }
+
+    /// Make the mock model report a refreshable token, so the mid-turn 401
+    /// refresh-and-retry path completes instead of surfacing the error.
+    pub fn with_refreshable_auth(mut self) -> Self {
+        self.refreshable_auth = true;
         self
     }
 
@@ -189,6 +199,9 @@ impl TestCaseBuilder {
         let mut model = MockModel::new();
         for response in self.mock_responses {
             model = model.with_response(response);
+        }
+        if self.refreshable_auth {
+            model = model.with_refreshable_auth();
         }
 
         let model = Arc::new(model);
@@ -343,6 +356,11 @@ impl TestCase {
             .send_prompt(prompt.into())
             .await
             .expect("failed to send prompt");
+    }
+
+    /// Access the mock model, e.g. to assert how many times `refresh_auth` ran.
+    pub fn model(&self) -> &Arc<MockModel> {
+        &self.model
     }
 
     /// Invalidate cached tool specs to simulate MCP ToolListChanged race condition.
@@ -585,7 +603,10 @@ impl TestCase {
 
     pub async fn wait_until_compaction_complete(&mut self, timeout: Duration) {
         self.wait_until_agent_event(timeout, |evt| {
-            matches!(evt, AgentEvent::Compaction(agent::protocol::CompactionEvent::Completed))
+            matches!(
+                evt,
+                AgentEvent::Compaction(agent::protocol::CompactionEvent::Completed { .. })
+            )
         })
         .await
         .expect("timed out waiting for compaction");

@@ -1193,6 +1193,10 @@ const WELCOME_ANNOUNCEMENT_MAX_SHOW_COUNT: i64 = 2;
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
+
+/// Max user-message length kept when the overflow recovery ladder falls back to
+/// truncating the prompt after compaction alone could not fit the request.
+const USER_MESSAGE_TRUNCATION_MAX_LEN: usize = 25_000;
 /// Whether a `--resume-id` value belongs to a local (V1/V2) store, meaning
 /// engine inference must NOT reroute it to KAS.
 ///
@@ -1428,6 +1432,31 @@ pub struct ChatSession {
     tool_use_status: ToolUseStatus,
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
+    /// Consecutive stream-timeout continuation retries; reset when a response stream
+    /// completes. Bounded so a persistently stalling backend can't re-prompt forever.
+    stream_timeout_retries: usize,
+    /// Clean re-sends of a request whose stream failed with the backend's modeled
+    /// mid-stream `InternalServerError` (the only 5xx that arrives inside an
+    /// event-stream frame, carrying no HTTP status). Bounded per user turn so the
+    /// same transient failure is retried like a send-path 5xx instead of ending
+    /// the turn.
+    mid_stream_5xx_retries: usize,
+    /// Whether any stream in the current stall-retry sequence had streamed output
+    /// before it stalled. Cleared when the sequence reaches a terminal outcome.
+    stall_partial_output: bool,
+    /// Whether the current stall-retry sequence contains a timeout produced by the
+    /// idle watchdog. The stall telemetry family is scoped to the watchdog (V2
+    /// gates it on `StreamTimeoutSource::IdleWatchdog`), so a sequence made only
+    /// of slow SDK receive failures must not emit it.
+    stall_sequence_from_watchdog: bool,
+    /// Stall observations in the current user turn, for turn-completion telemetry.
+    /// Unlike the retry breaker, not reset on a successful stream — only on new input.
+    turn_stream_stall_count: u32,
+    /// Stall-continuation retries issued in the current user turn.
+    turn_stream_stall_retries: u32,
+    /// When the most recent stall retry was dispatched. Closed (and a recovery-time
+    /// event emitted) on the first event of the retried stream.
+    stall_recovery_started: Option<Instant>,
     /// Pending prompts to be sent
     pending_prompts: VecDeque<PromptMessage>,
     interactive: bool,
@@ -1698,6 +1727,13 @@ impl ChatSession {
             tool_use_telemetry_events: HashMap::new(),
             tool_use_status: ToolUseStatus::Idle,
             failed_request_ids: Vec::new(),
+            stream_timeout_retries: 0,
+            mid_stream_5xx_retries: 0,
+            stall_sequence_from_watchdog: false,
+            stall_partial_output: false,
+            turn_stream_stall_count: 0,
+            turn_stream_stall_retries: 0,
+            stall_recovery_started: None,
             pending_prompts: VecDeque::new(),
             interactive,
             relaunch_in_lite: false,
@@ -1991,6 +2027,21 @@ impl ChatSession {
                 ("Tool use was interrupted", Report::from(err), false)
             },
             ChatError::CompactHistoryFailure => {
+                // A pending next message marks a compaction that was recovering an
+                // in-flight turn; that turn ends here, and its requests were reported
+                // as non-terminal (the recovery was still running), so record the
+                // completion now. A manual /compact between turns records nothing.
+                if self.conversation.next_user_message().is_some() {
+                    let (reason, reason_desc) = get_error_reason(&err);
+                    self.send_user_turn_completion_telemetry(
+                        os,
+                        TelemetryResult::Failed,
+                        Some(reason),
+                        Some(reason_desc),
+                        err.status_code(),
+                    )
+                    .await;
+                }
                 // This error is not retryable - the user must take manual intervention to manage
                 // their context.
                 execute!(
@@ -2250,8 +2301,13 @@ impl ChatSession {
 
                     return Ok(());
                 },
-                ConverseStreamErrorKind::AccessDenied => {
-                    let msg = if crate::util::env_var::get_api_key().is_some() {
+                ConverseStreamErrorKind::AccessDenied { message } => {
+                    // Prefer the service's own explanation: denials also cover
+                    // non-credential conditions (e.g. gated features) where the
+                    // generic expiry advice would misdirect debugging.
+                    let msg = if let Some(message) = message {
+                        format!("Access denied: {message}")
+                    } else if crate::util::env_var::get_api_key().is_some() {
                         format!(
                             "Authentication failed. Your API key may be invalid or expired. Check your {KIRO_API_KEY} value."
                         )
@@ -2725,31 +2781,108 @@ impl ChatSession {
     }
 
     /// Sends a request to the SendMessage API. Emits error telemetry on failure.
+    ///
+    /// `resume_spinner_label` restores the caller's spinner after a successful
+    /// transient-send retry replaced it with the retry label; `None` just drops
+    /// the retry spinner (for callers that clear their spinner on return).
     async fn send_message(
         &mut self,
         os: &mut Os,
         conversation_state: api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
         message_meta_tags: Option<Vec<MessageMetaTag>>,
+        resume_spinner_label: Option<String>,
     ) -> Result<SendMessageStream, ChatError> {
-        match SendMessageStream::send_message(&os.client, conversation_state, request_metadata_lock, message_meta_tags)
+        let stream_idle_timeout =
+            resolve_stream_idle_timeout(os.database.settings.get_int(Setting::ApiStreamIdleHardTimeout));
+
+        // Bounded agent-layer retry for transient send failures (throttling, 5xx,
+        // transport drops) after the SDK's own attempts are spent. Terminal errors
+        // (auth, validation, overflow, quota) fall straight through untouched.
+        let mut transient_attempt = 0usize;
+        loop {
+            match SendMessageStream::send_message(
+                &os.client,
+                conversation_state.clone(),
+                request_metadata_lock.clone(),
+                message_meta_tags.clone(),
+                stream_idle_timeout,
+            )
             .await
-        {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                let (reason, reason_desc) = get_error_reason(&err);
-                self.send_chat_telemetry(
-                    os,
-                    TelemetryResult::Failed,
-                    Some(reason),
-                    Some(reason_desc),
-                    err.status_code(),
-                    true, // We never retry failed requests, so this always ends the current turn.
-                )
-                .await;
-                Err(err.into())
-            },
+            {
+                Ok(res) => {
+                    // A successful retry would otherwise leave the "retrying in Ns..."
+                    // label up for the rest of the stream (the compaction path only
+                    // drops its spinner at EndStream), reading as a stuck retry loop.
+                    if transient_attempt > 0 && self.interactive {
+                        drop(self.spinner.take());
+                        if let Some(label) = resume_spinner_label {
+                            self.spinner = Some(Spinner::new(Spinners::Dots, label));
+                        }
+                    }
+                    return Ok(res);
+                },
+                Err(err) => {
+                    if let Some(class) = err.source.transient_class()
+                        && transient_attempt < agent::error_recovery::MAX_TRANSIENT_RETRIES
+                    {
+                        let backoff =
+                            agent::error_recovery::transient_backoff(transient_attempt, err.source.retry_after);
+                        warn!(
+                            attempt = transient_attempt + 1,
+                            class = class.as_str(),
+                            backoff_ms = backoff.as_millis() as u64,
+                            "retrying transient send failure at the agent layer"
+                        );
+                        self.retrying_transient_send(class, backoff);
+                        tokio::time::sleep(backoff).await;
+                        transient_attempt += 1;
+                        continue;
+                    }
+
+                    let (reason, reason_desc) = get_error_reason(&err);
+                    // Retry budget spent (or terminal). A send-path overflow is the
+                    // exception: with auto-compaction on, the caller recovers it and
+                    // re-sends within the same user turn (the compaction cascade's own
+                    // terminal failure records the completion), so reporting end-of-turn
+                    // here would double-count the turn with a conflicting result.
+                    let ends_turn = !matches!(err.source.kind, ConverseStreamErrorKind::ContextWindowOverflow)
+                        || os
+                            .database
+                            .settings
+                            .get_bool(Setting::ChatDisableAutoCompaction)
+                            .unwrap_or(false);
+                    self.send_chat_telemetry(
+                        os,
+                        TelemetryResult::Failed,
+                        Some(reason),
+                        Some(reason_desc),
+                        err.status_code(),
+                        ends_turn,
+                    )
+                    .await;
+                    return Err(err.into());
+                },
+            }
         }
+    }
+
+    /// Surfaces a user-visible retry signal while an agent-layer transient send
+    /// retry backs off, so a struggling backend does not look like a freeze.
+    fn retrying_transient_send(&mut self, class: agent::error_recovery::TransientErrorClass, backoff: Duration) {
+        if !self.interactive {
+            return;
+        }
+        let label = match class {
+            agent::error_recovery::TransientErrorClass::Throttle => "Service is busy",
+            agent::error_recovery::TransientErrorClass::ServerError => "Service error",
+            agent::error_recovery::TransientErrorClass::Network => "Connection dropped",
+        };
+        drop(self.spinner.take());
+        self.spinner = Some(Spinner::new(
+            Spinners::Dots,
+            format!("{label}, retrying in {}s...", backoff.as_secs().max(1)),
+        ));
     }
 
     #[cfg(test)]
@@ -3093,6 +3226,7 @@ impl ChatSession {
                 summary_state,
                 request_metadata_lock,
                 Some(vec![MessageMetaTag::Compact]),
+                Some("Creating summary...".to_string()),
             )
             .await
         {
@@ -3433,6 +3567,7 @@ impl ChatSession {
                 generation_state,
                 request_metadata_lock,
                 Some(vec![MessageMetaTag::GenerateAgent]),
+                Some(format!("Generating agent config for '{agent_name}'...")),
             )
             .await
         {
@@ -3815,6 +3950,15 @@ impl ChatSession {
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
         // Ensure MCP data is fresh when user submits input (periodic sync check)
         self.ensure_fresh_mcp_data(os).await.ok();
+
+        // A fresh user prompt starts a new logical turn for the stall-retry breaker.
+        self.stream_timeout_retries = 0;
+        self.mid_stream_5xx_retries = 0;
+        self.stall_partial_output = false;
+        self.stall_sequence_from_watchdog = false;
+        self.turn_stream_stall_count = 0;
+        self.turn_stream_stall_retries = 0;
+        self.stall_recovery_started = None;
 
         user_input = sanitize_unicode_tags(&user_input);
         let input_trimmed = user_input.trim().to_string();
@@ -4759,7 +4903,7 @@ impl ChatSession {
         empty_response_retried: bool,
     ) -> Result<ChatState, ChatError> {
         let rx = self
-            .send_message(os, state.clone(), request_metadata_lock.clone(), None)
+            .send_message(os, state.clone(), request_metadata_lock.clone(), None, None)
             .await;
 
         let mut rx = match rx {
@@ -4778,10 +4922,10 @@ impl ChatSession {
                     StyledText::reset(),
                 )?;
                 let mut truncated_state = state;
-                const MAX_LEN: usize = 25_000;
-                truncated_state.truncate_user_input_message(MAX_LEN);
+                truncated_state.truncate_user_input_message(USER_MESSAGE_TRUNCATION_MAX_LEN);
                 // Also truncate the conversation state so the stored message matches what was sent
-                self.conversation.truncate_next_user_message(MAX_LEN);
+                self.conversation
+                    .truncate_next_user_message(USER_MESSAGE_TRUNCATION_MAX_LEN);
                 return Box::pin(self.handle_response(
                     os,
                     truncated_state,
@@ -4836,6 +4980,18 @@ impl ChatSession {
             match rx.recv().await {
                 Some(Ok(msg_event)) => {
                     trace!("Consumed: {:?}", msg_event);
+
+                    // First event of a stall-retried stream proves recovery.
+                    if let Some(started) = self.stall_recovery_started.take() {
+                        os.telemetry
+                            .send_stream_stall_recovery(
+                                &os.database,
+                                self.conversation.model_info.as_ref().map(|m| m.model_id.clone()),
+                                started.elapsed(),
+                            )
+                            .await
+                            .ok();
+                    }
 
                     match msg_event {
                         parser::ResponseEvent::ThinkingText => {},
@@ -4919,7 +5075,26 @@ impl ChatSession {
                                 error!(?request_id, ?message, "Encountered an unexpected model response");
                             }
                             self.conversation.push_assistant_message(os, message, Some(rm.clone()));
-                            self.conversation.user_turn_metadata.add_request(rm);
+                            self.conversation.user_turn_metadata.add_request(rm.clone());
+                            // A completed stream proves the backend can respond again; a
+                            // completed stream after stall retries ends the sequence recovered.
+                            // Scoped to watchdog-produced sequences like the rest of the
+                            // stall family.
+                            if self.stream_timeout_retries > 0 && self.stall_sequence_from_watchdog {
+                                os.telemetry
+                                    .send_stream_stall_retry(
+                                        &os.database,
+                                        rm.model_id.clone(),
+                                        metric::RetryOutcome::Recovered,
+                                        self.stream_timeout_retries as u32,
+                                        Some(self.stall_partial_output),
+                                    )
+                                    .await
+                                    .ok();
+                            }
+                            self.stream_timeout_retries = 0;
+                            self.stall_partial_output = false;
+                            self.stall_sequence_from_watchdog = false;
                             completed_response = true;
                             ended = true;
                         },
@@ -4938,16 +5113,83 @@ impl ChatSession {
                     let response_model = recv_error.request_metadata.model_id.clone();
 
                     match recv_error.source {
-                        RecvErrorKind::StreamTimeout { source, duration } => {
+                        RecvErrorKind::StreamTimeout {
+                            source,
+                            duration,
+                            timeout_source,
+                        } => {
+                            // The stall telemetry family is scoped to the idle watchdog;
+                            // a slow SDK receive failure keeps the continuation retry but
+                            // must not contaminate the watchdog's metric series.
+                            let from_watchdog = matches!(
+                                timeout_source,
+                                agent::agent_loop::types::StreamTimeoutSource::IdleWatchdog
+                            );
+                            let retries_exhausted =
+                                self.stream_timeout_retries >= agent::consts::MAX_STREAM_TIMEOUT_RETRIES;
                             self.send_chat_telemetry(
                                 os,
                                 TelemetryResult::Failed,
                                 Some(reason),
                                 Some(reason_desc),
                                 status_code,
-                                false, // We retry the request, so don't end the current turn yet.
+                                retries_exhausted, // End the turn only once the retry budget is spent.
                             )
                             .await;
+
+                            if from_watchdog {
+                                let session_interface = if self.interactive {
+                                    metric::SessionInterface::InteractiveCli
+                                } else {
+                                    metric::SessionInterface::NoninteractiveCli
+                                };
+                                os.telemetry
+                                    .send_stream_stall(
+                                        &os.database,
+                                        response_model.clone(),
+                                        duration,
+                                        session_interface,
+                                    )
+                                    .await
+                                    .ok();
+                                self.stall_partial_output |= recv_error.request_metadata.response_size > 0;
+                                self.turn_stream_stall_count = self.turn_stream_stall_count.saturating_add(1);
+                                self.stall_sequence_from_watchdog = true;
+                            }
+
+                            if retries_exhausted {
+                                error!(
+                                    retries = self.stream_timeout_retries,
+                                    "stream timed out again after exhausting continuation retries"
+                                );
+                                if self.stall_sequence_from_watchdog {
+                                    os.telemetry
+                                        .send_stream_stall_retry(
+                                            &os.database,
+                                            response_model,
+                                            metric::RetryOutcome::Exhausted,
+                                            self.stream_timeout_retries as u32,
+                                            Some(self.stall_partial_output),
+                                        )
+                                        .await
+                                        .ok();
+                                }
+                                self.stream_timeout_retries = 0;
+                                self.stall_partial_output = false;
+                                self.stall_sequence_from_watchdog = false;
+                                return Err(ChatError::Custom(
+                                    format!(
+                                        "The response stream repeatedly stalled ({}s without data) and retries were exhausted. Try again, or split the work into smaller steps.",
+                                        duration.as_secs()
+                                    )
+                                    .into(),
+                                ));
+                            }
+                            self.stream_timeout_retries += 1;
+                            if from_watchdog {
+                                self.turn_stream_stall_retries = self.turn_stream_stall_retries.saturating_add(1);
+                                self.stall_recovery_started = Some(Instant::now());
+                            }
 
                             error!(
                                 recv_error.request_metadata.request_id,
@@ -5124,6 +5366,139 @@ impl ChatSession {
                             .await;
 
                             return Err(recv_error.into());
+                        },
+                        // The one 5xx the backend emits mid-stream is a modeled
+                        // InternalServerError riding an event-stream frame with no HTTP
+                        // status. Re-send within the same bounded budget as a send-path
+                        // 5xx instead of ending the turn (parity with V2's transient tier).
+                        RecvErrorKind::Client(api_err)
+                            if api_err.is_mid_stream_internal_server_error()
+                                && self.mid_stream_5xx_retries < agent::error_recovery::MAX_TRANSIENT_RETRIES =>
+                        {
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                false, // We retry the request, so don't end the current turn yet.
+                            )
+                            .await;
+
+                            let backoff = agent::error_recovery::transient_backoff(self.mid_stream_5xx_retries, None);
+                            self.mid_stream_5xx_retries += 1;
+                            warn!(
+                                attempt = self.mid_stream_5xx_retries,
+                                backoff_ms = backoff.as_millis() as u64,
+                                "retrying a mid-stream InternalServerError"
+                            );
+                            // Anything already rendered is regenerated from scratch by the
+                            // re-send, so say so instead of silently splicing answers.
+                            if self.interactive && response_prefix_printed {
+                                execute!(
+                                    self.stderr,
+                                    StyledText::warning_fg(),
+                                    style::Print(
+                                        "\n\nThe response was interrupted by a service error. Retrying; the partial response above will be regenerated.\n\n"
+                                    ),
+                                    StyledText::reset(),
+                                )?;
+                            }
+                            self.retrying_transient_send(
+                                agent::error_recovery::TransientErrorClass::ServerError,
+                                backoff,
+                            );
+                            tokio::time::sleep(backoff).await;
+                            self.send_tool_use_telemetry(os).await;
+                            return Ok(ChatState::HandleResponseStream {
+                                state: self
+                                    .conversation
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .await?,
+                                is_compaction_retry,
+                                empty_response_retried,
+                            });
+                        },
+                        // A mid-stream context overflow is terminal for this request: no
+                        // retry can succeed until the history shrinks. Route it through the
+                        // same recovery ladder as a send-time overflow — compaction, then
+                        // user-message truncation when this request was already a
+                        // post-compaction retry — instead of failing wherever the overflow
+                        // happened to surface.
+                        RecvErrorKind::Client(api_err) if api_err.is_context_window_overflow() => {
+                            // The turn ends here only when the recovery ladder is spent
+                            // (truncation already applied) or auto-compaction is off; the
+                            // other paths re-send within the same turn, and reporting
+                            // end-of-turn on them would record two conflicting completions.
+                            let ends_turn = if is_compaction_retry {
+                                is_prompt_truncated
+                            } else {
+                                os.database
+                                    .settings
+                                    .get_bool(Setting::ChatDisableAutoCompaction)
+                                    .unwrap_or(false)
+                            };
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some("ContextWindowOverflow".to_string()),
+                                Some(reason_desc),
+                                status_code,
+                                ends_turn,
+                            )
+                            .await;
+
+                            // Anything already rendered is regenerated from scratch by the
+                            // recovery below, so say so instead of silently splicing a
+                            // second answer onto the partial one.
+                            if self.interactive && response_prefix_printed {
+                                execute!(
+                                    self.stderr,
+                                    StyledText::warning_fg(),
+                                    style::Print(
+                                        "\n\nThe response was interrupted by a context overflow. The partial response above will be regenerated.\n\n"
+                                    ),
+                                    StyledText::reset(),
+                                )?;
+                            }
+
+                            if is_compaction_retry {
+                                if is_prompt_truncated {
+                                    // The whole ladder (compaction + truncation) is spent.
+                                    return Err(ChatError::PromptTooLong);
+                                }
+                                execute!(
+                                    self.stderr,
+                                    StyledText::warning_fg(),
+                                    style::Print("Original prompt is too large to send. Truncating...\n\n"),
+                                    StyledText::reset(),
+                                )?;
+                                self.conversation
+                                    .truncate_next_user_message(USER_MESSAGE_TRUNCATION_MAX_LEN);
+                                let truncated_state = self
+                                    .conversation
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .await?;
+                                return Box::pin(self.handle_response(
+                                    os,
+                                    truncated_state,
+                                    request_metadata_lock,
+                                    is_compaction_retry,
+                                    true,
+                                    empty_response_retried,
+                                ))
+                                .await;
+                            }
+                            return Err(ChatError::SendMessage(Box::new(parser::SendMessageError {
+                                source: crate::api_client::error::ConverseStreamError {
+                                    request_id: recv_error.request_metadata.request_id.clone(),
+                                    status_code,
+                                    retry_after: None,
+                                    kind: ConverseStreamErrorKind::ContextWindowOverflow,
+                                    source: None,
+                                },
+                                request_metadata: recv_error.request_metadata,
+                            })));
                         },
                         _ => {
                             self.send_chat_telemetry(
@@ -5941,82 +6316,99 @@ impl ChatSession {
             },
         };
         os.telemetry
-            .send_chat_added_message(&os.database, conversation_id.clone(), result, data)
+            .send_chat_added_message(&os.database, conversation_id, result, data)
             .await
             .ok();
 
         if is_end_turn {
-            let mds = &self.conversation.user_turn_metadata;
-            let positive_token_sum = |select: fn(&RequestMetadata) -> Option<i32>| -> Option<i64> {
-                let sum = mds
-                    .iter()
-                    .filter_map(select)
-                    .filter(|value| *value > 0)
-                    .map(i64::from)
-                    .sum::<i64>();
-                (sum > 0).then_some(sum)
-            };
-
-            // Get the user turn duration.
-            let start_time = mds.first_request().map(|md| md.request_start_timestamp_ms);
-            let end_time = mds.last_request().map(|md| md.stream_end_timestamp_ms);
-            let user_turn_duration_seconds = match (start_time, end_time) {
-                // Convert ms back to seconds
-                (Some(start), Some(end)) => end.saturating_sub(start) as i64 / 1000,
-                _ => 0,
-            };
-
-            os.telemetry
-                .send_record_user_turn_completion(
-                    &os.database,
-                    conversation_id,
-                    result,
-                    if self.interactive {
-                        metric::SessionInterface::InteractiveCli
-                    } else {
-                        metric::SessionInterface::NoninteractiveCli
-                    },
-                    metric::AgentMode::from_id(Some(&self.conversation.agents.active_idx)),
-                    RecordUserTurnCompletionArgs {
-                        message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
-                        request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
-                        reason,
-                        reason_desc,
-                        status_code,
-                        time_to_first_chunks_ms: mds
-                            .iter()
-                            .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
-                            .collect::<_>(),
-                        chat_conversation_type: md.as_ref().and_then(|md| md.chat_conversation_type),
-                        model: md.as_ref().and_then(|md| md.model_id.clone()),
-                        assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
-                        total_tokens: positive_token_sum(|md| md.total_tokens),
-                        uncached_input_tokens: positive_token_sum(|md| md.uncached_input_tokens),
-                        output_tokens: positive_token_sum(|md| md.output_tokens),
-                        cache_read_input_tokens: positive_token_sum(|md| md.cache_read_input_tokens),
-                        cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
-                        model_invocation_count: 0,
-                        request_attempts: None,
-                        // The V1 chat loop does not track stream stalls yet; the streaming-timeout
-                        // change wires real counters in.
-                        stream_stall_count: None,
-                        stream_stall_retries: None,
-                        emit_user_turn_counter: true,
-                        emit_turn_numeric_metrics: None,
-                        message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
-                        user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
-                        user_turn_duration_seconds,
-                        follow_up_count: mds
-                            .iter()
-                            .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
-                            .count() as i64,
-                        is_subagent: false,
-                        parent_tool_use_id: None,
-                    },
-                )
-                .await
-                .ok();
+            self.send_user_turn_completion_telemetry(os, result, reason, reason_desc, status_code)
+                .await;
         }
+    }
+
+    /// Records the user-turn completion metric. Reported exactly once per turn,
+    /// from the path that actually terminates it — via [`Self::send_chat_telemetry`]
+    /// with `is_end_turn`, or directly when a turn dies between requests (the
+    /// compaction cascade's terminal failure).
+    async fn send_user_turn_completion_telemetry(
+        &self,
+        os: &Os,
+        result: TelemetryResult,
+        reason: Option<String>,
+        reason_desc: Option<String>,
+        status_code: Option<u16>,
+    ) {
+        let md = self.conversation.user_turn_metadata.last_request();
+        let conversation_id = self.conversation.conversation_id().to_owned();
+        let mds = &self.conversation.user_turn_metadata;
+        let positive_token_sum = |select: fn(&RequestMetadata) -> Option<i32>| -> Option<i64> {
+            let sum = mds
+                .iter()
+                .filter_map(select)
+                .filter(|value| *value > 0)
+                .map(i64::from)
+                .sum::<i64>();
+            (sum > 0).then_some(sum)
+        };
+
+        // Get the user turn duration.
+        let start_time = mds.first_request().map(|md| md.request_start_timestamp_ms);
+        let end_time = mds.last_request().map(|md| md.stream_end_timestamp_ms);
+        let user_turn_duration_seconds = match (start_time, end_time) {
+            // Convert ms back to seconds
+            (Some(start), Some(end)) => end.saturating_sub(start) as i64 / 1000,
+            _ => 0,
+        };
+
+        os.telemetry
+            .send_record_user_turn_completion(
+                &os.database,
+                conversation_id,
+                result,
+                if self.interactive {
+                    metric::SessionInterface::InteractiveCli
+                } else {
+                    metric::SessionInterface::NoninteractiveCli
+                },
+                metric::AgentMode::from_id(Some(&self.conversation.agents.active_idx)),
+                RecordUserTurnCompletionArgs {
+                    message_ids: mds.iter().map(|md| md.message_id.clone()).collect::<_>(),
+                    request_ids: mds.iter().map(|md| md.request_id.clone()).collect::<_>(),
+                    reason,
+                    reason_desc,
+                    status_code,
+                    time_to_first_chunks_ms: mds
+                        .iter()
+                        .map(|md| md.time_to_first_chunk.map(|d| d.as_secs_f64() * 1000.0))
+                        .collect::<_>(),
+                    chat_conversation_type: md.as_ref().and_then(|md| md.chat_conversation_type),
+                    model: md.as_ref().and_then(|md| md.model_id.clone()),
+                    assistant_response_length: mds.iter().map(|md| md.response_size as i64).sum(),
+                    total_tokens: positive_token_sum(|md| md.total_tokens),
+                    uncached_input_tokens: positive_token_sum(|md| md.uncached_input_tokens),
+                    output_tokens: positive_token_sum(|md| md.output_tokens),
+                    cache_read_input_tokens: positive_token_sum(|md| md.cache_read_input_tokens),
+                    cache_write_input_tokens: positive_token_sum(|md| md.cache_write_input_tokens),
+                    model_invocation_count: 0,
+                    request_attempts: None,
+                    stream_stall_count: (self.turn_stream_stall_count > 0).then_some(self.turn_stream_stall_count),
+                    stream_stall_retries: (self.turn_stream_stall_retries > 0)
+                        .then_some(self.turn_stream_stall_retries),
+                    emit_user_turn_counter: true,
+                    emit_turn_numeric_metrics: None,
+                    message_meta_tags: mds.last().map(|md| md.message_meta_tags.clone()).unwrap_or_default(),
+                    user_prompt_length: mds.first().map(|md| md.user_prompt_length).unwrap_or_default() as i64,
+                    user_turn_duration_seconds,
+                    follow_up_count: mds
+                        .iter()
+                        .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
+                        .count() as i64,
+                    is_subagent: false,
+                    parent_tool_use_id: None,
+                },
+            )
+            .await
+            .ok();
     }
 
     async fn send_error_telemetry(
@@ -6186,6 +6578,19 @@ async fn get_limit_reached_info(os: &mut Os) -> LimitReachedInfo {
 /// command. If true, then return [Option::Some<ChatState>], otherwise [Option::None].
 /// Strip a surrounding markdown code fence (```` ```json ... ``` ````) from model output, if
 /// present. Falls back to the trimmed input unchanged when no complete fence is found.
+/// Resolves the stream idle deadline from the raw `api.streamIdleHardTimeout`
+/// setting value: an explicit setting overrides the built-in default (0 disables
+/// the deadline), clamped to the shared ceiling the docs guarantee — the setting
+/// is seconds while its `api.timeout` sibling is milliseconds, so an unclamped
+/// unit mistake would silently disable the stall watchdog.
+fn resolve_stream_idle_timeout(setting: Option<i64>) -> Duration {
+    setting
+        .and_then(|i| u64::try_from(i).ok())
+        .map_or(agent::consts::DEFAULT_STREAM_IDLE_HARD_TIMEOUT, |secs| {
+            agent::types::AgentSettings::clamp_stream_idle_timeout("hard", Duration::from_secs(secs))
+        })
+}
+
 fn strip_markdown_code_fences(input: &str) -> &str {
     let trimmed = input.trim();
     let Some(after_open) = trimmed.strip_prefix("```") else {
@@ -6344,6 +6749,23 @@ mod tests {
     #[test]
     fn default_tui_engine_is_v2_when_rollout_inactive() {
         assert_eq!(default_tui_engine(false), AgentEngine::V2);
+    }
+
+    /// The idle-deadline setting is clamped to the documented ceiling: a
+    /// milliseconds-shaped value (the unit mistake the ceiling exists to catch)
+    /// must not yield an 83-hour deadline that disables the stall watchdog.
+    #[test]
+    fn stream_idle_timeout_setting_is_clamped_to_ceiling() {
+        assert_eq!(
+            resolve_stream_idle_timeout(Some(300_000)),
+            agent::types::AgentSettings::STREAM_IDLE_TIMEOUT_CEILING
+        );
+        assert_eq!(resolve_stream_idle_timeout(Some(120)), Duration::from_secs(120));
+        assert_eq!(resolve_stream_idle_timeout(Some(0)), Duration::ZERO);
+        assert_eq!(
+            resolve_stream_idle_timeout(None),
+            agent::consts::DEFAULT_STREAM_IDLE_HARD_TIMEOUT
+        );
     }
 
     #[tokio::test]

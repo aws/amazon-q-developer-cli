@@ -94,6 +94,35 @@ describe('createGetAccessTokenCapability', () => {
     expect(calls[0]!.args).toEqual(['chat', '_', 'get-kas-token']);
   });
 
+  it('passes --force-refresh when KAS requests a forced refresh', async () => {
+    const { spawner, calls } = makeSpawner({
+      status: 0,
+      stdout: SUCCESS_STDOUT,
+    });
+    const cap = createGetAccessTokenCapability(spawner);
+
+    await cap.handler({ forceRefresh: true });
+
+    expect(calls[0]!.args).toEqual([
+      'chat',
+      '_',
+      'get-kas-token',
+      '--force-refresh',
+    ]);
+  });
+
+  it('omits --force-refresh when forceRefresh is false or absent', async () => {
+    const { spawner, calls } = makeSpawner({
+      status: 0,
+      stdout: SUCCESS_STDOUT,
+    });
+    const cap = createGetAccessTokenCapability(spawner);
+
+    await cap.handler({ forceRefresh: false });
+
+    expect(calls[0]!.args).toEqual(['chat', '_', 'get-kas-token']);
+  });
+
   it('ignores any extra fields KAS may send (forward compat)', async () => {
     const { spawner, calls } = makeSpawner({
       status: 0,

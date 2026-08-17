@@ -3181,11 +3181,13 @@ impl AcpSession {
                 tracing::info!("Received compaction event: {:?}", compaction_event);
                 let status = match &compaction_event {
                     CompactionEvent::Started => CompactionStatus::Started,
-                    CompactionEvent::Completed => CompactionStatus::Completed,
+                    CompactionEvent::Completed { unsummarized_dropped } => CompactionStatus::Completed {
+                        unsummarized_dropped: *unsummarized_dropped,
+                    },
                     CompactionEvent::ContextRecoveryAttempt { .. } => return,
                     CompactionEvent::Failed { error } => CompactionStatus::Failed { error: error.clone() },
                 };
-                let summary = if matches!(compaction_event, CompactionEvent::Completed) {
+                let summary = if matches!(compaction_event, CompactionEvent::Completed { .. }) {
                     self.compaction_summary.take()
                 } else {
                     None
@@ -3198,7 +3200,7 @@ impl AcpSession {
                     error!("Failed to send compaction notification: {}", e);
                 }
                 // After compaction completes, recompute and emit updated context usage
-                if matches!(compaction_event, CompactionEvent::Completed) {
+                if matches!(compaction_event, CompactionEvent::Completed { .. }) {
                     if let Ok(snapshot) = self.agent.create_snapshot().await {
                         let context_window = self
                             .rts_state
@@ -4523,7 +4525,7 @@ fn is_goal_retryable_error(err: &agent::protocol::AgentError) -> bool {
             StreamErrorKind::Validation { .. }
             | StreamErrorKind::InvalidModelId { .. }
             | StreamErrorKind::MonthlyLimitReached { .. }
-            | StreamErrorKind::AccessDenied
+            | StreamErrorKind::AccessDenied { .. }
             | StreamErrorKind::ContextWindowOverflow => false,
             // Interrupts never enter the error state today; listed for exhaustiveness.
             StreamErrorKind::Interrupted => false,
@@ -6116,7 +6118,7 @@ mod goal_retryable_error_tests {
             StreamErrorKind::MonthlyLimitReached {
                 message: "limit".into(),
             },
-            StreamErrorKind::AccessDenied,
+            StreamErrorKind::AccessDenied { message: None },
             StreamErrorKind::ContextWindowOverflow,
             StreamErrorKind::Interrupted,
         ] {
