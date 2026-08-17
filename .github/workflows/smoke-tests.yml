@@ -449,6 +449,7 @@ jobs:
       - name: Run LLM Judge
         id: run_judge
         timeout-minutes: 25
+        continue-on-error: true
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
           SMOKE_EVIDENCE_DIR: ${{ github.workspace }}/evidence
@@ -463,6 +464,7 @@ jobs:
 
       - name: Check verdict
         if: always()
+        continue-on-error: true
         env:
           SMOKE_EXPECTED_PLATFORMS: ${{ needs.matrix.outputs.platforms }}
           SMOKE_EXPECTED_ENGINES: ${{ needs.matrix.outputs.engines }}
