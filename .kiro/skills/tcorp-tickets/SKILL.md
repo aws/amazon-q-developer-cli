@@ -32,6 +32,20 @@ sort: "currentSeverity asc"
 rows: 10
 ```
 
+## Mandatory Sev-2 customer-impact investigation
+
+Finding or acknowledging a Sev-2/Sev-2.5 ticket is not sufficient triage. For every high-severity event:
+
+1. Fetch the full ticket, including correspondence, worklogs, holds, and linked incidents.
+2. Establish the exact alarm/degradation window and any broader service-incident window.
+3. Identify the production metric or log source and reproduce its population filters, including version gates, dimensions, excluded failure reasons, sampling, and deduplication.
+4. Quantify impacted requests and a deduplicated customer proxy (`userId`, unique `clientId`, or equivalent). State whether the proxy represents people, accounts, or installations and whether cardinality is approximate.
+5. Break down impact by the dimensions that identify scope, such as model, version, engine, client type, account type, and internal/external population.
+6. Reconcile the calculation against the alarm datapoints or backend metrics. Do not infer customers from metric sample count or count paired telemetry records as separate customer actions.
+7. Record recovery time, the evidence source, and the distinction between exact ticket-window impact and broader linked-incident impact.
+
+Do not recommend or perform downgrade/resolution until the impact is quantified. If credentials, retention, or schema quality blocks measurement, document the checks attempted, the blocker, and the precise evidence still needed instead of guessing.
+
 ## Search by keyword
 
 ```

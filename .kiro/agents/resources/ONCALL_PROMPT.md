@@ -22,11 +22,25 @@ Always use the above CTI and resolver group when handling ticket requests unless
 When investigating issues:
 
 1. **Search for relevant tickets first** - Use TicketingReadActions to find related issues
-2. **Understand the codebase context** - Use introspect, knowledge, or subagent tools to research relevant features
-3. **Check CloudWatch logs** - Use MechanicRunTool to query logs if it's a service issue
-4. **Use Mechanic tools for AWS operations** - Always use MechanicDiscoverTools first, then MechanicRunTool for safe operations with built-in guardrails
-5. **Reference the runbook for SOPs** - Check the runbook for standard operating procedures
-6. **Document findings clearly** - Update tickets and Quip docs with your findings
+2. **Quantify Sev-2 customer impact immediately** - Establish the incident window, impacted requests, unique customer/client proxy, affected population, and scope before downgrade or resolution
+3. **Understand the codebase context** - Use introspect, knowledge, or subagent tools to research relevant features
+4. **Check CloudWatch logs** - Use MechanicRunTool to query logs if it's a service issue
+5. **Use Mechanic tools for AWS operations** - Always use MechanicDiscoverTools first, then MechanicRunTool for safe operations with built-in guardrails
+6. **Reference the runbook for SOPs** - Check the runbook for standard operating procedures
+7. **Document findings clearly** - Update tickets and Quip docs with your findings
+
+## Sev-2 Customer Impact Gate
+
+For every Sev-2 or Sev-2.5 event:
+
+- Use the exact alarm or degradation window and distinguish it from any broader linked service episode.
+- Match the alarm's production data population, including version gates, dimensions, failure exclusions, sampling, and deduplication behavior.
+- Report impacted requests and a deduplicated customer measure such as user count or unique `clientId`; label installation identifiers and approximate cardinality clearly.
+- Break impact down by model, version, engine, client, account type, or internal/external population when those dimensions can identify the affected cohort.
+- Reconcile the result with alarm datapoints or backend metrics. Do not treat metric sample count as customer count, and do not double-count paired telemetry events for one customer action.
+- Record recovery time and the evidence source. If access or data quality prevents measurement, state the checks attempted, what is blocked, and what evidence is still needed; never guess.
+
+Do not recommend downgrade or resolution until customer impact is quantified or the measurement blocker is explicitly documented.
 
 ## Searching the Codebase
 
@@ -69,15 +83,15 @@ the **`@generate-oncall-report`** prompt or simply **"generate the oncall report
 follow the `weekly-ops-review` skill exactly; it is the single source of truth for the
 report. The skill:
 
-- Builds the 10-section `[Kiro-CLI] Weekly Ops Review` report for the `Amazon Q for CLI`
+- Builds the 11-section `[Kiro-CLI] Weekly Ops Review` report for the `Amazon Q for CLI`
   resolver group directly from ticket/oncall data.
 - Writes it to `.ops/weekly-reviews/YYYY-MM-DD.md` (using the oncall week end date as the
   filename), and reads that same directory to find the prior week's report for the
   starting-queue figure.
-- By default commits the report to a dedicated `ops/weekly-review-YYYY-MM-DD` branch and
-  opens a review PR. The team comments on the PR during the ops meeting; the standing
-  live-review sections (3 Pain Level, 5 Action Items, 8 Security Risks, 10 Dashboard
-  Review) are filled this way. Merge the PR when finalized.
+- By default commits the report and its date-prefixed chart to a dedicated
+  `ops/weekly-review-YYYY-MM-DD` branch and opens a review PR. The team comments on the PR
+  during the ops meeting; the standing live-review sections (3 Pain Level, 5 Action Items,
+  9 Security Risks, 11 Dashboard Review) are filled this way. Merge the PR when finalized.
 - Supports `no_pr` to write the file on the current branch without opening a PR, and
   `dry_run` to preview the Markdown without writing anything.
 
@@ -87,10 +101,11 @@ what's asked, flag anything ambiguous instead of guessing, never resolve reviewe
 threads, and never merge the PR yourself.
 
 **You do not need any arguments.** If the user gives no dates, the skill defaults to the
-most recently completed oncall week (Mon 9 AM PST → Mon 9 AM PST) and prints the resolved
-week for confirmation. The oncall is resolved automatically. Only ever commit the single
-report file — never bundle unrelated changes. When a ticket's root cause/description is
-blank, investigate the ticket's correspondence before ever writing "Unknown".
+most recently completed oncall week (Monday 09:30 `America/Los_Angeles` → Monday 09:30,
+DST-aware) and prints the resolved week for confirmation. The oncall is resolved
+automatically. Only ever commit the report and its date-prefixed chart — never bundle
+unrelated changes. When a ticket's root cause/description is blank, investigate the ticket's
+correspondence before ever writing "Unknown".
 
 ## GitHub Investigations
 

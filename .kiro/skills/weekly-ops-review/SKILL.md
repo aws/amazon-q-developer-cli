@@ -102,9 +102,12 @@ Initialize scratch files at the start:
 > /tmp/kcli_oncall_partner.jsonl    # tickets/CRs cut to other teams (Section 10)
 > /tmp/kcli_oncall_queue.jsonl      # every currently-open ticket (Section 8 composition)
 > /tmp/kcli_oncall_queue_cats.tsv   # category<TAB>display_id, one line per open ticket
-> /tmp/kcli_oncall_pages_raw.jsonl  # one row per page NOTIFICATION from Builder Insights
+> /tmp/kcli_oncall_pages_raw.jsonl  # one row per reconciled page NOTIFICATION
+> /tmp/kcli_oncall_pages_archive.jsonl # human-readable primary-oncall page records
 > /tmp/kcli_oncall_pages.jsonl      # page log — one row per paged TICKET w/ page_count (Section 6)
-> /tmp/kcli_oncall_releases.json    # stable release tags in window + trailing 4-week counts
+> /tmp/kcli_oncall_impact_audit_expected_ids.txt # all resolved/downgraded Sev2 IDs
+> /tmp/kcli_oncall_impact_audit.jsonl # normalized impact evidence for validation/fallback
+> /tmp/kcli_oncall_releases.json    # successful public production promotions + trailing 4-week counts
 > /tmp/kcli_oncall_metrics.json     # Section 1 numbers
 > /tmp/kcli_oncall_report.md        # final report
 ```
@@ -257,9 +260,10 @@ report guidance), so do not rely on it either.
 ### Primary source — Builder Insights Silver `PAGING / pages_dim_derived_v2`
 
 This is the paging service's own event log, surfaced through the Nightingale data lake. One
-row per notification. It is the authoritative source: it reproduced the paging website
-exactly for the 2026-08-03 week (all 10 tickets, every per-ticket count) and additionally
-captured escalations the oncall's own mailbox never received.
+row per notification. It is the primary machine-readable source: it reproduced the paging
+website exactly for the 2026-08-03 week and captured manager escalations the oncall's mailbox
+never received. Resolver/CTI metadata and direct personal pages still require the
+reconciliation below before the report is final.
 
 Load the `builder-insights` skill and use the `skillPath` it returns — do NOT hardcode the
 path, it contains a package eventId that changes on update. Then:
@@ -306,35 +310,46 @@ bash $BI getUser '{"alias":"<oncall_alias>"}'   # → supervisorLogin
 Use `supervisorLogin` as `leaderLogin`. Row-level security scopes results to that leader's
 org, so the oncall must be inside it (they are, since it is their own manager).
 
-**Filter the returned rows yourself. Three filters, in this order:**
+**Reconcile the returned rows instead of hard-filtering on current ownership.** Apply these
+steps in order:
 
-1. `ticket_resolver_group == "Amazon Q for CLI"` — scopes to our group. `leaderLogin` alone
-   returns the manager's whole org across every resolver group.
-2. `page_create_timestamp ∈ [start_iso, end_iso]` — **required**, not optional.
+1. `page_create_timestamp ∈ [start_iso, end_iso]` — **required**, not optional.
    `startDate`/`endDate` in the query accept only `YYYY-MM-DD`, so the API returns whole
    calendar days and always over-selects at both ends of the 09:30 handoff. Compare against
    the DST-aware boundary from Parameters.
-3. `recipient == <oncall_alias>` for the headline `pages` figure.
+2. Build the primary-oncall candidate set with `recipient == <oncall_alias>`. Also retain
+   rows addressed to the escalation recipients from Step 1 for the separate escalation count.
+3. Establish CLI relevance for each candidate. A row qualifies when the page-time resolver
+   group is `Amazon Q for CLI`, its CTI identifies Kiro/Q Developer CLI, or the ticket/page
+   record shows that it directly engaged the CLI oncall. Fetch the ticket when metadata is
+   ambiguous. **Do not exclude a row solely because `ticket_resolver_group` is different or
+   blank**: direct personal pages and tickets transferred after paging are still oncall
+   interrupts. Record the inclusion reason for rows admitted without a matching group.
+4. Reconcile the eligible rows against a human-readable page archive or mailbox extract that
+   contains recipient/To, subject or ticket ID, notification type, and timestamp. Write one
+   JSON line per primary-oncall notification to `/tmp/kcli_oncall_pages_archive.jsonl`.
+   Preserve every matching message; repeated notifications for one ticket are separate
+   pages. Add any direct CLI page present in the archive but missing from Silver, and document
+   the source in the reconciled `/tmp/kcli_oncall_pages_raw.jsonl`.
 
 **Filter on `recipient`, NOT on `is_primary`.** `is_primary` looks like the tidier filter but
 it is a rotation snapshot and lags the handoff. In the 2026-08-03 week it returned 18 instead
 of 19, because D499857327's page at `16:30:00.799Z` landed 0.8s into the shift before the
 snapshot flipped, and was recorded `recipient=abhraina, is_primary=false`. `recipient`
-reproduces the paging website exactly, so the report stays verifiable against something a
-human can eyeball, and it does not depend on snapshot timing at the contested week boundary.
+reproduces the paging website more closely and does not depend on snapshot timing at the
+contested week boundary.
 
 Then:
-- `pages` = number of rows surviving all three filters.
+- `pages` = number of reconciled primary-oncall notification rows.
 - `paged_tickets` = distinct `case_id` among them.
-- `pages_outside_work_hours` = rows with `is_outside_work_hour == true` (a better pain
-  signal than the raw count; report it in Section 1 or Section 3 when non-zero).
-- **Escalations**, reported separately: rows passing filters 1 and 2 whose `recipient` is
-  NOT the oncall. These are the `supportOrder > 0` tiers from Step 1. Do NOT fold them into
-  `pages` — they measure escalation reach, not oncall burden, and mixing them makes the
-  headline number unverifiable against any single source. In the 2026-08-03 week this was
-  5 manager escalations on top of 19 oncall pages, each firing 20 to 30 minutes after the
-  oncall's page on the same ticket, which is the auto-escalation ladder behaving normally.
-  Note that managers carry `is_recipient_builder=false`.
+- `pages_outside_work_hours` = rows with `is_outside_work_hour == true`.
+- **Escalations**, reported separately: eligible rows whose `recipient` is an escalation
+  recipient from Step 1. Do NOT fold them into `pages` — they measure escalation reach, not
+  primary-oncall burden.
+- `pages_reconciled = true` only after the Silver rows and human-readable archive agree or all
+  differences have explicit inclusion/exclusion evidence. Without that reconciliation, keep
+  the report as a draft, set `pages_reconciled = false`, and do not present the count as
+  authoritative.
 
 ### Optional cross-check — `opshealth / page_count`
 
@@ -344,22 +359,20 @@ wait, which is a cheap sanity check on the Silver row count. Two caveats: it is 
 Sunday to Saturday, which never aligns with the 09:30-Monday oncall window. Treat a close
 match as corroboration, not equality.
 
-### Fallback — the `engagements` array
+### Fallback — the `engagements` array (unreconciled only)
 
-If Builder Insights is unavailable (no access, query `FAILED` twice, back-filling a week
-outside the retention window), fall back to `get-ticket`'s `engagements[]` on the Step 3
-ticket set. A ticket paged the oncall if any engagement's `engagedEmailAddress` matches an
-`oncall_page_aliases` entry from Step 1 with `lastUpdatedAt` inside the window.
+If Builder Insights and a page archive are unavailable, use `get-ticket`'s `engagements[]`
+only to identify a **lower-bound ticket list**. A ticket may have paged the oncall if an
+engagement's `engagedEmailAddress` matches an `oncall_page_aliases` entry from Step 1 with
+`lastUpdatedAt` inside the window.
 
-This yields the **ticket list but not the counts**, so it is degraded but still correct. Set
-`pages = paged_tickets` and say explicitly in Section 6 and the completion summary that
-per-ticket counts were unavailable. The reason counts are unrecoverable this way is that
-`engagements[]` is **overwritten in place**, one row per alias holding only the latest
-`reason` and `lastUpdatedAt`: `P472355122` shows a single `ROTATED` row for
-`page-cw-jupiter` at its *third* rotation, and the two earlier ones are gone. A
-`lastUpdatedAt` after `end_iso` is therefore lossy — the last touch was outside the window
-but an earlier one may have been inside it. Flag those tickets rather than silently
-dropping or counting them.
+This source cannot produce a notification count. `engagements[]` is overwritten in place,
+one row per alias holding only the latest `reason` and `lastUpdatedAt`, so repeated pages and
+earlier in-window touches disappear. Do not set `pages = paged_tickets` or publish an exact
+headline from this fallback. Set `pages_reconciled = false`, label the ticket list as a lower
+bound, and keep the report in draft until Builder Insights or a human-readable page archive
+can reconcile the notification count. Flag tickets whose latest touch is outside the window,
+because an earlier overwritten touch may still have been inside it.
 
 What does NOT work, so nobody re-derives it: the paging portal at `paging.corp.a2z.com` is a
 JS SPA and returns an empty shell to `ReadInternalWebsites` (`/api/pages` is 404); the SOS
@@ -370,44 +383,68 @@ oncall's week.
 
 **Releases shipped (Section 1 + the cadence chart):**
 
-Count **stable** releases whose tag landed inside the window. Tags live in git, so this needs
-no ticket data, but it does need the tags fetched first — a stale clone silently undercounts:
+Count successful public production promotions from the release workflow in
+`kiro-team/kiro-cli-autocomplete`; tag creation is not a shipment signal.
 
 ```bash
-git fetch --tags origin
+gh run list \
+  --repo kiro-team/kiro-cli-autocomplete \
+  --workflow "Release SOP: 3.0 Promote to Production" \
+  --limit 100 \
+  --json databaseId,headBranch,conclusion,createdAt
 ```
 
-Three rules that each caused a wrong number when skipped:
+For every run whose `headBranch` matches strict `^release/[0-9]+\.[0-9]+\.[0-9]+$`, fetch
+its jobs:
 
-1. **Match strict semver only:** `^v[0-9]+\.[0-9]+\.[0-9]+$`. A filter that merely excludes
-   `nightly`/`beta`/`rc` still admits feature-branch tags such as
-   `v2.8.1-external-idp-refresh-scope.1`, `v2.9.0-rpm-build.1` and
-   `v2.9.0-usage-credit-pooling-overages.2`, inflating the count.
-2. **Bucket by tag timestamp against the 09:30 handoff, not by calendar date.** `v2.15.0` was
-   tagged 2026-07-26 17:00 PDT, which is the *previous* oncall week even though its calendar
-   date sits adjacent to the 2026-07-27 window. Date-only bucketing put it in the wrong week
-   and produced 4 releases instead of 3. Use `creatordate` and compare to `start_iso`/`end_iso`.
-3. **Do not use Python's `round()` for the average.** It is banker's rounding, so
-   `round(3.25, 1)` returns `3.2`, not `3.3`. Format explicitly (e.g.
-   `f"{v:.1f}"` after a `Decimal`/half-up adjustment) or the trailing average is off by 0.1.
+```bash
+gh run view <databaseId> \
+  --repo kiro-team/kiro-cli-autocomplete \
+  --json headBranch,jobs
+```
 
-`release_count` = tags in `[start_iso, end_iso]`; `release_versions` = their names in tag
-order; `release_avg` = mean per week over the trailing 4 oncall weeks (for the week ending
-2026-08-03 those were 3, 5, 3, 2 → 13/4 → `3.3`).
+A version shipped at the `completedAt` timestamp of the successful public-production job.
+GitHub appends reusable-workflow job names after ` / `, so accept either the exact name
+`Release to CloudFront (Public)` or a name beginning
+`Release to CloudFront (Public) / `. Require exactly one such successful job in every
+successful `release/X.Y.Z` run examined. Zero matches means the workflow contract changed;
+multiple matches are ambiguous. Either case is a validation error and the report remains a
+draft rather than recording a zero-release week. Count the job when its completion falls in
+`[start_iso, end_iso]`; derive the version from the branch and render it as `vX.Y.Z`.
+Deduplicate by version in case the workflow was rerun.
 
-Then write an SVG bar chart of per-week release counts to
+Use this same job-completion source for all four trailing oncall-week buckets and the chart.
+Do not mix production jobs for the current week with tags for historical buckets. Compute the
+average with decimal half-up rounding; Python's `round()` uses banker's rounding and turns
+`3.25` into `3.2` instead of `3.3`.
+
+Tags may be fetched only as a cross-check. A tag can precede production by days, and a stale
+clone can omit it, so tag `creatordate` must never add, remove, or rebucket a shipped release.
+If workflow history is unavailable for a bucket, mark that bucket unavailable and do not
+substitute tag counts.
+
+Write `/tmp/kcli_oncall_releases.json` with `current_releases` for the report window,
+`promotions` for all four chart windows, and `successful_runs` for every successful semver
+release run examined. Every promotion records version, release branch, run ID, public job URL
+when available, and `completedAt`; every successful-run record includes `version`, `run_id`,
+and `public_job_match_count`. Also include exactly four `bucket_counts` and the half-up
+average. Then write the SVG bar chart to
 `.ops/weekly-reviews/artifacts/{end_date}-release-rate.svg` and reference it from Section 1.
-Emit the SVG text directly (no plotting dependency); keep it small and dark-theme consistent
+Emit the SVG directly (no plotting dependency); keep it small and dark-theme consistent
 (background `#19161D`, text `#ffffff`, muted `#938f9b`). Include a comment in the SVG stating
-the derivation method and the reliable-data start date.
+that counts come from successful public CloudFront production jobs.
 
-**Reliable tag data starts 2026-05-01.** Earlier months used a `chat`-prefixed tagging scheme
-and are not comparable, so do not chart or average across that boundary. State this caveat
-under the chart via `{release_caveat}` rather than presenting an unqualified long-term trend.
+Set `{release_caveat}` to identify the successful-public-promotion basis and the chart window.
+When earlier published reports used tag timestamps, state that the historical buckets were
+recomputed and are not directly comparable; call out any version moved across a handoff by
+the basis change. If promotion history cannot support an earlier chart range, explicitly say
+the chart is limited to the validated trailing four weeks rather than silently truncating it.
 
 Write `/tmp/kcli_oncall_metrics.json`:
-`{"pages":N,"paged_tickets":N,"escalation_pages":N,"pages_outside_work_hours":N,"queue_start":N,"queue_end":N,"incoming":N,"incoming_raw":N,"resolved":N,"sev2_resolved":N,"non_sev2_resolved":N,"release_count":N,"release_avg":N,"lse_count":N,"queue_start_source":"prev-report|estimate","pages_source":"builder-insights|engagements-fallback"}`
-(`lse_count` filled in Step 6).
+`{"pages":N,"paged_tickets":N,"pages_reconciled":true,"escalation_pages":N,"pages_outside_work_hours":N,"queue_start":N,"queue_end":N,"incoming":N,"incoming_raw":N,"resolved":N,"sev2_resolved":N,"non_sev2_resolved":N,"release_count":N,"release_avg":N,"lse_count":N,"queue_start_source":"prev-report|estimate","pages_source":"builder-insights+archive|page-archive"}`
+(`lse_count` filled in Step 6). If notification reconciliation is incomplete, set
+`pages_reconciled:false`, explain the lower-bound evidence, and do not publish the report as
+final.
 
 ## Step 3 — Fetch high-severity (Sev2) tickets
 
@@ -478,9 +515,44 @@ TicketyCategorizationMaxisRole), `mcms`, and any `paging` events/links.
 When you fetch the ticket, also request the `SYNOPSIS` thread
 (`threads: [...,"SYNOPSIS"]`) and capture its six fields when present — `impact_summary`,
 `root_cause`, `mitigation`, `action_items`, `risk_of_recurrence`, `related_tickets` — into
-the same JSON line. These feed the Section 6 per-ticket synopsis (Step 5). Most alarm and
-customer-support tickets have no synopsis; leave the fields absent here and derive them in
-Step 5 per the "Root cause & descriptions" fallback rule.
+the same JSON line. Most alarm and customer-support tickets have no synopsis; leave the
+fields absent here and derive them in Step 5 per the "Root cause & descriptions" fallback
+rule.
+
+### Mandatory Sev2 customer-impact assessment and audit
+
+For every ticket that reached Sev2/Sev2.5 during the window, derive and store:
+`incident_window`, `customer_impact`, `impact_evidence`, `recovery_time`,
+`current_severity`, `minimum_severity`, and `final_status`. Customer impact must state the
+impacted request/turn count and denominator or rate when available; a deduplicated human
+customer count or a clearly labeled account/installation/`clientId` proxy; affected cohort,
+region, version, engine, or model; and counting caveats. Do not infer human customers from
+metric sample counts or installation identifiers.
+
+If measurement is blocked, `customer_impact` must say that it is unquantified and
+`impact_evidence` must name the checks attempted, the access/retention/schema blocker, the
+missing evidence, and its owner. Generic `Unknown`, `TBD`, or `pending investigation` is not
+sufficient.
+
+For each ticket that meets the resolved/downgraded inclusion rules below, append its ID
+immediately to `/tmp/kcli_oncall_impact_audit_expected_ids.txt`; sort that file uniquely
+before authoring rows. Build `/tmp/kcli_oncall_impact_audit.jsonl` from that expected-ID
+file with one row for every in-window Sev2 that was resolved or downgraded. Open Sev2s still
+receive the assessment above and appear in Section 7, but they do not enter this expected-ID
+file until they are resolved or downgraded. Include a ticket when any of these is true:
+
+- it paged as Sev2/Sev2.5 in the reconciled page data and is now below Sev2 or resolved;
+- `minimumSeverity` is Sev2/Sev2.5 and `lastResolvedDate` is inside the reporting window; or
+- human correspondence records a downgrade inside the reporting window.
+
+Each row contains `display_id`, `title`, `incident_window`, `customer_impact`,
+`impact_evidence`, and `final_status`. The audit file is validation data, not a second copy
+of impact already shown in the report. When a qualifying ticket appears in the Page Log,
+its `customer_impact` and `impact_evidence` must be carried into that Page Log record and it
+must not receive a duplicate audit row in Section 2. If a qualifying ticket did not page,
+render it once in Section 2 under `Unpaged Sev2 Customer Impact` so its impact remains
+visible. Do not resolve or recommend downgrading a Sev2 until the assessment is quantified
+or the measurement blocker is explicitly documented.
 
 ## Step 4 — Open Sev2s + partner-team tickets
 
@@ -514,25 +586,18 @@ findings requiring triage". If the description states a cause, use it, and make 
 `next_step` the next remediation action with its deadline.
 
 **Tickets cut to other teams (Section 10):**
-- Scan `/tmp/kcli_oncall_sev2.jsonl` comments for `https://t.corp.amazon.com/(issues/)?(P|V|D)\d+`
-  (incl. `/communication`) pointing at tickets owned by other teams (backend, ASBX, etc.).
-- Also search reassigned tickets:
-  ```
-  status: ["Assigned","Researching","Work In Progress","Pending","Resolved","Closed"]
-  createDate: "[{start_iso} TO {end_iso}]"
-  query: 'extensions.tt.tags:"Amazon Q for CLI" AND NOT extensions.tt.assignedGroup:"Amazon Q for CLI"'
-  rows: 50
-  responseFields: ["id","aliases","title","status","extensions.tt.assignedGroup"]
-  ```
-  → `/tmp/kcli_oncall_partner.jsonl`.
-- **Also include cross-team code reviews.** Most weeks the oncall drives a fix in another
-  team's package via a CR rather than cutting them a ticket, and a ticket-only search reports
-  `None` while real cross-team work happened. In the 2026-08-03 week the only tickets the
-  oncall submitted were two of our own release tickets, while the actual cross-team items were
-  `CR-292786335` (KiroTelemetryCDK) and `CR-292839013` (ToolkitTelemetryInfrastructure). List
-  those as `{team} - [CR-XXXXXXXXX](https://code.amazon.com/reviews/CR-XXXXXXXXX)` with their
-  approval state. Harvest CR links from the same worklog scan above.
-- If genuinely nothing was cut and no cross-team CR was raised, Section 10 says `None`.
+- Include a ticket only when the oncall actually created it for another team. Verify
+  `ticket.submitter.value == oncall_alias`, or verify from human correspondence that the
+  oncall created the linked child ticket. Record `type`, `display_id`, `team`, `creator`,
+  `created_by_oncall:true`, and `creation_evidence` in `/tmp/kcli_oncall_partner.jsonl`.
+- Include a cross-team CR only when its author is the oncall; verify the author from Code
+  Browser rather than inferring ownership from a link in correspondence.
+- Reassignment, redirection, transferring a ticket, paging another team, commenting on their
+  ticket, or collaborating on an existing ticket does **not** qualify as "cut to another
+  team". A tag or current resolver group is not creation evidence.
+- Harvest candidate ticket/CR links from human comments and worklogs, fetch each candidate,
+  and retain only rows whose submitter/author check passes.
+- If no verified ticket or CR was created by the oncall, Section 10 says `None`.
 
 ## Step 5 — Page Log (Section 6)
 
@@ -540,15 +605,16 @@ The Page Log has **one row per paged ticket**, carrying a `Pages` count of how m
 notifications that ticket produced. Sort by `Pages` descending so the noisiest tickets lead.
 A ticket that paged 4× is ONE row with `Pages = 4`, not four rows.
 
-Build it from the filtered Builder Insights rows from Step 2 (or the engagements fallback).
-Group the surviving notification rows by `case_id`; each group becomes one Section 6 row:
+Build it only from the reconciled notification rows in Step 2. The `engagements[]` fallback
+is a lower-bound candidate list and cannot produce a final Page Log. Group the reconciled
+rows by `case_id`; each group becomes one Section 6 row:
 
 ```json
-{"display_id":"P472355122","page_count":4,
+{"display_id":"P472355122","title":"[ALARM] Example","page_count":4,
  "first_paged_at":"07-28 10:00",
  "page_sequence":"Rotated ×3, Reassigned",
  "notifications":[{"kind":"Rotated","recipient":"abhraina","at":"2026-07-28T10:00:00-07:00"}],
- "impact_summary":"…","root_cause":"…","mitigation":"…",
+ "customer_impact":"…","impact_evidence":"…","root_cause":"…","mitigation":"…",
  "action_items":"…","risk_of_recurrence":"…","related_tickets":"…"}
 ```
 
@@ -556,9 +622,11 @@ Append one line per **ticket** to `/tmp/kcli_oncall_pages.jsonl`. Derive `page_c
 `page_sequence` from the retained `notifications` array rather than authoring them separately,
 so they cannot drift from the underlying data.
 
-- `first_paged_at` — the earliest notification timestamp in the group, rendered in Pacific
-  time as `MM-DD HH:MM` (the report is read by a Pacific-time audience and the handoff is
-  defined in Pacific time).
+- `first_paged_at` — the earliest notification delivery timestamp, rendered in Pacific time
+  as `MM-DD HH:MM`. Never substitute the handoff time or a daily archive-batch timestamp as
+  an exact delivery time. If the archive preserves only a batch timestamp, prefix the value
+  with `~`, label it approximate below the table, and do not use it to calculate an exact
+  outside-work-hours total.
 - `page_sequence` — the notification kinds in chronological order, collapsing repeats with an
   `×N` multiplier: `Upgraded ×3, Reopened`, `Rotated ×3, Reassigned`, `New Sev2, Escalated`.
   Kinds come from the paging notification type, not the ticket status.
@@ -599,12 +667,14 @@ downstream dependency misattributes our bug to a third party. When the descripti
 field disagree, prefer the description and say what the evidence was.
 
 Field guidance (keep each to ONE concise line — these are table cells, so NO pipes `|` and
-NO line breaks): **Impact Summary** = who/what was affected and how; **Root Cause** = the
-confirmed cause, else best current hypothesis; **Mitigation** = what stopped the bleeding /
-the fix shipped; **Action Items** = concrete follow-ups (CR/MCM/Taskei/Sauron IDs) or
-`None recorded`; **Risk of Recurrence** = `Low`/`Medium`/`High` + a short reason, else
-`TBD`; **Related Tickets** = linked ticket display-ID links (backend/KAS/SOC/COE) or
-`None`. Never leave a cell blank — use `TBD`, `None`, or `None recorded`.
+NO line breaks): **Title** = exact ticket title; **Customer Impact** = the Step 3 quantified
+impact or explicit measurement blocker; **Impact Evidence** = metric/log source or attempted
+checks + missing evidence + owner; **Root Cause** = the confirmed cause, else best current
+hypothesis; **Mitigation** = what stopped the bleeding / the fix shipped; **Action Items** =
+concrete follow-ups (CR/MCM/Taskei/Sauron IDs) or `None recorded`; **Risk of Recurrence** =
+`Low`/`Medium`/`High` + a short reason, else `TBD`; **Related Tickets** = linked ticket
+display-ID links (backend/KAS/SOC/COE) or `None`. Never leave a cell blank. Customer impact
+may not use generic `TBD`/`Unknown`; it must be quantified or identify a concrete blocker.
 
 **Call out shared infrastructure across paged tickets.** If two or more paged tickets name the
 same pipeline, package or app bindle, state it in Section 3 or under Section 6 — it is a
@@ -667,10 +737,12 @@ the 19 pages, making the release pipeline the largest single source of paging lo
   2. A prod MCM/COE labeled as an LSE points at the incident.
   3. The team leadership explicitly declared it an LSE in worklog/announcements.
 
-  If none of these apply, Section 4 is `* None` and `lse_count = 0`. Broad customer
-  impact, cross-team coordination, or "big incident this week" ALONE do NOT qualify —
-  those go in Section 2 / Section 10 as normal tickets. When in doubt, leave it out.
-  Update `metrics.lse_count` to the number of qualifying events.
+  If none of these apply, Section 4 starts with `* None formally declared.` and
+  `lse_count = 0`. Broad customer impact or recurring instability alone does not become an
+  LSE. When a material operational pattern affected the week but was not formally declared,
+  add a second bullet explicitly labeled `Operational note — ... (not a declared LSE)` with
+  ticket-backed impact and recurrence evidence. This preserves the operational signal without
+  misclassifying the event. Update `metrics.lse_count` only for formally qualifying events.
 - **Grouping** (for Sections 2/4/6/7): group by same `extensions.tt.dedupeString` prefix, same
   alarm across regions, explicitly linked tickets, or same root cause. Never group
   unrelated tickets; every ticket ID stays individually traceable.
@@ -754,7 +826,7 @@ definitions below, and have it write `category<TAB>display_id` lines to
 | Subagents and hooks | Orchestration of subagents and lifecycle hooks: context injection, hook-induced transcript corruption, per-stage overrides, agent composition and inherited config |
 | Compliance and measurement | Externally committed obligations and reporting: accessibility remediation deadlines, certification and security questionnaires, usage and efficiency reporting |
 | Release infra and access | Release pipeline and repo/org access: deploy Lambdas, artifact pathing, GitHub org and permission sync |
-| Other | Anything that genuinely does not fit a category above. **List the ticket IDs in this row.** One or two tickets here is normal. A cluster of three or more sharing a theme means the taxonomy has stopped describing the product |
+| Other | Anything that genuinely does not fit a category above. One or two tickets here is normal. A cluster of three or more sharing a theme means the taxonomy has stopped describing the product |
 
 Tie-breaks, applied in this order:
 
@@ -805,18 +877,31 @@ means the display ID. Never leave auto-populated fields blank — use real data,
 `Unknown`.
 
 Sections 3, 5, 9 and 11 keep their standing placeholders/links (filled live during the
-meeting). **Section 8 (Open Queue by Category)** is filled from
+meeting). Section 5 may carry an item forward only when it appears in the immediately previous
+report or the linked action-item tracker; do not infer a carried-forward action from this
+week's tickets. **Section 8 (Open Queue by Category)** is filled from
 `/tmp/kcli_oncall_queue_cats.tsv` per Step 6: one row per category with a non-zero count,
 sorted by count descending, omitting empty categories, and a bold `Total` row equal to the
-number of open tickets you paginated to. Shares are whole percentages of that total. The
-provenance note states the open count, that classification was done fresh this week, and why
-the total may differ from the Section 1 week-ending queue figure (Section 1 is measured at the
-handoff boundary, Section 8 when the report runs). Grouped tickets must list ALL their IDs.
+number of open tickets you paginated to. Shares are whole percentages of that total. Every
+category row includes a `Tickets` cell containing links for all display IDs assigned to that
+category, in the classification file's order; the Total row states the linked-ticket count.
+The provenance note states the open count, that classification was done fresh this week, and
+why the total may differ from the Section 1 week-ending queue figure (Section 1 is measured at
+the handoff boundary, Section 8 when the report runs).
 
-Section 2 is TWO tables (Sev2 then non-Sev2). Section 6 is a SINGLE wide table with **one row
-per paged ticket**, a `Pages` count column, `First Page (PT)`, `Page Sequence`, the six
+Section 2 contains the two root-cause tables. Set `{optional_unpaged_sev2_impact}`
+to an empty string when every eligible resolved/downgraded Sev2 appears in Section 6. If an
+eligible ticket did not page, replace the placeholder with an `### Unpaged Sev2 Customer
+Impact` table containing only those unpaged tickets with `Ticket | Title | Incident Window |
+Customer Impact | Evidence / Blocker | Final Status`, sourced from
+`/tmp/kcli_oncall_impact_audit.jsonl`. Never repeat a ticket already represented in the Page
+Log. Section 6 is a SINGLE wide table with **one row per paged ticket**, exact `Title`, a
+`Pages` count column, `First Page (PT)`, `Page Sequence`, `Customer Impact`, the remaining
 synopsis columns, and a bold `Total` row stating `metrics.pages`, all from
-`/tmp/kcli_oncall_pages.jsonl` sorted by page count descending.
+`/tmp/kcli_oncall_pages.jsonl` sorted by page count descending. For every eligible
+resolved/downgraded Sev2 in Section 6, its Page Log JSON record must also carry the
+`impact_evidence` used by the audit validator. Section 7 lists open Sev2s with Customer
+Impact in addition to Description and Next Step.
 
 Write the release chart to `.ops/weekly-reviews/artifacts/{end_date}-release-rate.svg` before
 assembling, since Section 1 references it by relative path and a missing file renders a broken
@@ -847,18 +932,52 @@ grep -q "^\* Releases Shipped: " "$REPORT" || echo "SECTION 1 MISSING 'Releases 
 grep -qF "artifacts/${END_DATE}-release-rate.svg" "$REPORT" || echo "SECTION 1 MISSING CHART REFERENCE"
 [ -s "$CHART" ] || echo "MISSING OR EMPTY CHART FILE: $CHART"
 
-# Section 7 must include the Next Step column.
-grep -q "^| # | Ticket | Description | Next Step | ETA To Resolve |" "$REPORT" \
-  || echo "SECTION 7 MISSING 'Next Step' COLUMN"
+# Section 7 must include Customer Impact and Next Step.
+grep -q "^| # | Ticket | Description | Customer Impact | Next Step | ETA To Resolve |" "$REPORT" \
+  || echo "SECTION 7 MISSING CUSTOMER IMPACT OR NEXT STEP COLUMN"
 
-# Section 6 must be the per-ticket table with the Pages count column.
-grep -q "^| # | Ticket | Pages | First Page (PT) | Page Sequence | Impact Summary | Root Cause | Mitigation | Action Items | Risk of Recurrence | Related Tickets |" "$REPORT" \
-  || echo "SECTION 6 WRONG HEADER (expected per-ticket table with Pages column)"
+# Section 6 must carry exact titles and explicit customer impact.
+grep -q "^| # | Ticket | Title | Pages | First Page (PT) | Page Sequence | Customer Impact | Root Cause | Mitigation | Action Items | Risk of Recurrence | Related Tickets |" "$REPORT" \
+  || echo "SECTION 6 WRONG HEADER (expected Title, Pages, and Customer Impact)"
+
+# Reconcile resolved/downgraded Sev2 impact against Page Log, using Section 2 only for unpaged tickets.
 
 python3 - "$REPORT" <<'PY'
 import json, re, sys
 report = open(sys.argv[1]).read()
 m = json.load(open('/tmp/kcli_oncall_metrics.json'))
+
+if not m.get('pages_reconciled'):
+    print('PAGING NOT RECONCILED — REPORT MUST REMAIN DRAFT')
+else:
+    archive_rows = [json.loads(line) for line in open('/tmp/kcli_oncall_pages_archive.jsonl') if line.strip()]
+    if len(archive_rows) != m['pages']:
+        print(f"PAGE ARCHIVE COUNT {len(archive_rows)} != metrics.pages {m['pages']}")
+    for row in archive_rows:
+        missing = [f for f in ('display_id','recipient','notification_type','timestamp') if not row.get(f)]
+        if missing:
+            print('PAGE ARCHIVE ROW MISSING', row.get('display_id', '<unknown>'), *missing)
+
+releases = json.load(open('/tmp/kcli_oncall_releases.json'))
+shipped = releases.get('current_releases', [])
+promotions = releases.get('promotions', [])
+successful_runs = releases.get('successful_runs', [])
+buckets = releases.get('bucket_counts', [])
+if len(shipped) != m['release_count']:
+    print(f"RELEASE EVIDENCE COUNT {len(shipped)} != metrics.release_count {m['release_count']}")
+if len(buckets) != 4:
+    print(f'RELEASE CHART HAS {len(buckets)} BUCKETS, EXPECTED 4')
+if not successful_runs:
+    print('RELEASE EVIDENCE HAS NO SUCCESSFUL RUN INVENTORY')
+for run in successful_runs:
+    if run.get('public_job_match_count') != 1:
+        print('RELEASE RUN PUBLIC JOB MATCH COUNT != 1:',
+              run.get('version', '<unknown>'), run.get('run_id'),
+              run.get('public_job_match_count'))
+for release in promotions:
+    missing = [f for f in ('version','branch','run_id','completedAt') if not release.get(f)]
+    if missing:
+        print('RELEASE EVIDENCE MISSING', release.get('version', '<unknown>'), *missing)
 
 def section(n):
     mm = re.search(rf'^## {n}\..*?(?=^## |\Z)', report, re.S | re.M)
@@ -869,8 +988,8 @@ s2 = section(2)
 if '**Sev2 (' not in s2 or '**Non-Sev2 (' not in s2:
     print('SECTION 2 MISSING Sev2/Non-Sev2 SPLIT')
 else:
-    sev2_tbl, non_tbl = s2.split('**Non-Sev2 (')[0], s2.split('**Non-Sev2 (')[1]
-    sev2_tbl = sev2_tbl.split('**Sev2 (')[1]
+    sev2_tbl = s2.split('**Sev2 (', 1)[1].split('**Non-Sev2 (', 1)[0]
+    non_tbl = s2.split('**Non-Sev2 (', 1)[1].split('### Unpaged Sev2 Customer Impact', 1)[0]
     ids = lambda b: re.findall(r'\(https://t\.corp\.amazon\.com/([A-Z0-9]+)\)', b)
     a, b = ids(sev2_tbl), ids(non_tbl)
     if len(a) != len(set(a)): print('SECTION 2 DUPLICATE IDS IN Sev2 TABLE')
@@ -902,14 +1021,14 @@ rows = [l for l in s6.splitlines() if re.match(r'^\|\s*\d+\s*\|', l)]
 if len(rows) != m['paged_tickets']:
     print(f"SECTION 6 ROW COUNT {len(rows)} != metrics.paged_tickets {m['paged_tickets']}")
 try:
-    pg = [int(l.split('|')[3].strip()) for l in rows]
+    pg = [int(l.split('|')[4].strip()) for l in rows]
 except (ValueError, IndexError):
     print('SECTION 6 NON-NUMERIC Pages CELL'); pg = []
 if pg and sum(pg) != m['pages']:
     print(f"SECTION 6 Pages COLUMN SUMS TO {sum(pg)} != metrics.pages {m['pages']}")
 if pg and pg != sorted(pg, reverse=True):
     print('SECTION 6 NOT SORTED BY Pages DESCENDING')
-if not re.search(r'\|\s*\*\*Total\*\*\s*\|\s*\*\*%d\*\*\s*\|' % m['pages'], s6):
+if not re.search(r'\|\s*\*\*Total\*\*\s*\|\s*\|\s*\*\*%d\*\*\s*\|' % m['pages'], s6):
     print(f"SECTION 6 MISSING/WRONG Total ROW (expected **{m['pages']}**)")
 
 # Every paged ticket present, exactly once, with no blank synopsis cell.
@@ -921,8 +1040,81 @@ for line in open('/tmp/kcli_oncall_pages.jsonl'):
         print('SECTION 6 TICKET NOT EXACTLY ONE ROW:', r['display_id'])
     if r.get('notifications') and r.get('page_count') != len(r['notifications']):
         print('page_count DISAGREES WITH notifications[]:', r['display_id'])
-    for f in ['impact_summary','root_cause','mitigation','action_items','risk_of_recurrence','related_tickets']:
+    for f in ['title','customer_impact','root_cause','mitigation','action_items','risk_of_recurrence','related_tickets']:
         if not str(r.get(f,'')).strip(): print('SECTION 6 BLANK CELL:', r['display_id'], f)
+
+# --- Resolved/downgraded Sev2 impact: use Page Log; fallback only when unpaged ---
+source_expected_ids = {line.strip() for line in open('/tmp/kcli_oncall_impact_audit_expected_ids.txt') if line.strip()}
+audit_rows = [json.loads(line) for line in open('/tmp/kcli_oncall_impact_audit.jsonl') if line.strip()]
+audit_by_id = {r['display_id']: r for r in audit_rows}
+if len(audit_by_id) != len(audit_rows):
+    print('IMPACT AUDIT SCRATCH DATA HAS DUPLICATE TICKETS')
+if set(audit_by_id) != source_expected_ids:
+    print('IMPACT AUDIT SCRATCH ROWS DO NOT MATCH ELIGIBLE ID LIST:',
+          'missing rows', sorted(source_expected_ids - set(audit_by_id)),
+          'unexpected rows', sorted(set(audit_by_id) - source_expected_ids))
+
+page_data = [json.loads(line) for line in open('/tmp/kcli_oncall_pages.jsonl') if line.strip()]
+pages_by_id = {r['display_id']: r for r in page_data}
+missing_from_page_log = source_expected_ids - set(pages_by_id)
+fallback_heading = '### Unpaged Sev2 Customer Impact'
+fallback_block = s2.split(fallback_heading, 1)[1] if fallback_heading in s2 else ''
+fallback_ids = re.findall(r'\(https://t\.corp\.amazon\.com/([A-Z0-9]+)\)', fallback_block)
+
+if '### Sev2 Customer Impact Audit' in s2:
+    print('SECTION 2 HAS REDUNDANT SEV2 CUSTOMER IMPACT AUDIT')
+if missing_from_page_log:
+    if fallback_heading not in s2:
+        print('SECTION 2 MISSING UNPAGED SEV2 CUSTOMER IMPACT FALLBACK')
+    if set(fallback_ids) != missing_from_page_log or len(fallback_ids) != len(set(fallback_ids)):
+        print('SECTION 2 UNPAGED IMPACT ID MISMATCH:',
+              'missing', sorted(missing_from_page_log - set(fallback_ids)),
+              'extra', sorted(set(fallback_ids) - missing_from_page_log))
+elif fallback_heading in s2:
+    print('SECTION 2 HAS REDUNDANT UNPAGED SEV2 CUSTOMER IMPACT FALLBACK')
+
+for did in source_expected_ids & set(pages_by_id):
+    page = pages_by_id[did]
+    for field in ('customer_impact', 'impact_evidence'):
+        if not str(page.get(field, '')).strip():
+            print('PAGE LOG IMPACT AUDIT BLANK FIELD:', did, field)
+    rendered_rows = [
+        row for row in rows
+        if len(row.split('|')) > 2 and did in re.findall(
+            r'https://t\.corp\.amazon\.com/([A-Z0-9]+)', row.split('|')[2])
+    ]
+    if len(rendered_rows) != 1:
+        print('PAGE LOG IMPACT AUDIT TICKET NOT EXACTLY ONE ROW:', did)
+    else:
+        cells = [cell.strip() for cell in rendered_rows[0].split('|')]
+        if len(cells) <= 7 or not cells[7]:
+            print('PAGE LOG IMPACT AUDIT HAS BLANK RENDERED CUSTOMER IMPACT:', did)
+
+for row in audit_rows:
+    for field in ('title', 'incident_window', 'customer_impact', 'impact_evidence', 'final_status'):
+        if not str(row.get(field, '')).strip():
+            print('IMPACT AUDIT BLANK FIELD:', row['display_id'], field)
+    impact = str(row.get('customer_impact', '')).strip().lower()
+    evidence = str(row.get('impact_evidence', '')).strip().lower()
+    if impact in {'unknown', 'tbd', 'pending investigation', 'unquantified'} and not any(
+            word in evidence for word in ('blocked', 'unavailable', 'retention', 'access', 'missing')):
+        print('IMPACT AUDIT GENERIC IMPACT WITHOUT BLOCKER:', row['display_id'])
+
+# --- Section 10: only artifacts verified as created by the oncall ---
+partner_rows = [json.loads(line) for line in open('/tmp/kcli_oncall_partner.jsonl') if line.strip()]
+for r in partner_rows:
+    if not r.get('created_by_oncall'):
+        print('SECTION 10 ITEM LACKS ONCALL CREATION PROOF:', r.get('display_id'))
+    if not str(r.get('creator', '')).strip() or not str(r.get('creation_evidence', '')).strip():
+        print('SECTION 10 ITEM LACKS CREATOR EVIDENCE:', r.get('display_id'))
+s10 = section(10)
+reported_partner_ids = set(re.findall(
+    r'https://(?:t\.corp\.amazon\.com/|code\.amazon\.com/reviews/)([A-Z]+-?\d+)', s10))
+expected_partner_ids = {r['display_id'] for r in partner_rows}
+if reported_partner_ids != expected_partner_ids:
+    print('SECTION 10 ITEM MISMATCH:',
+          'missing', sorted(expected_partner_ids - reported_partner_ids),
+          'extra', sorted(reported_partner_ids - expected_partner_ids))
 
 # --- Section 8: composition must account for every open ticket, exactly once ---
 CATS = {'Security and trust boundary','MCP servers and tools','TUI and terminal',
@@ -958,10 +1150,26 @@ if counts and counts != sorted(counts, reverse=True):
     print('SECTION 8 NOT SORTED BY Count DESCENDING')
 if shares and not 98 <= sum(shares) <= 102:
     print('SECTION 8 Share COLUMN SUMS TO %d%%, expected ~100' % sum(shares))
+reported_category_ids = []
 for r in body:
-    name = r.split('|')[1].strip()
+    cells = r.split('|')
+    name = cells[1].strip()
     if name not in CATS:
         print('SECTION 8 UNKNOWN CATEGORY ROW:', name)
+        continue
+    row_ids = re.findall(r'https://t\.corp\.amazon\.com/([A-Z0-9]+)', cells[4]) if len(cells) > 4 else []
+    expected_ids = [a[1] for a in assigned if a[0] == name]
+    if len(row_ids) != len(set(row_ids)):
+        print('SECTION 8 DUPLICATE TICKET LINK IN CATEGORY:', name)
+    if set(row_ids) != set(expected_ids):
+        print('SECTION 8 CATEGORY LINK MISMATCH:', name,
+              'missing', sorted(set(expected_ids) - set(row_ids)),
+              'extra', sorted(set(row_ids) - set(expected_ids)))
+    reported_category_ids.extend(row_ids)
+if len(reported_category_ids) != open_n or set(reported_category_ids) != set(ids):
+    print('SECTION 8 LINKED TICKETS DO NOT MATCH OPEN QUEUE')
+if not re.search(r'\|\s*\*\*Total\*\*\s*\|\s*\*\*%d\*\*\s*\|\s*\*\*100%%\*\*\s*\|\s*\*\*%d linked tickets\*\*\s*\|' % (open_n, open_n), s8):
+    print('SECTION 8 TOTAL ROW MISSING LINKED-TICKET COUNT')
 if re.search(r'(?i)(last week|week over week|up from|down from)', s8):
     print('SECTION 8 CLAIMS A TREND (re-classified weekly, not comparable)')
 
@@ -970,9 +1178,6 @@ other_n = sum(1 for a in assigned if a[0] == 'Other')
 if other_n and other_n > 0.10 * open_n and 'New category needed' not in s8:
     print('SECTION 8 Other IS %d/%d (>10%%) BUT NO "New category needed:" PROPOSAL'
           % (other_n, open_n))
-other_row = [r for r in body if r.split('|')[1].strip() == 'Other']
-if other_row and 'https://t.corp.amazon.com/' not in other_row[0]:
-    print('SECTION 8 Other ROW DOES NOT LIST TICKET IDS')
 PY
 ```
 
@@ -1034,9 +1239,10 @@ Print a short summary (do NOT paste the full report): the PR URL (or local file 
 `no_pr`, or "dry run — not written" on `dry_run`); oncall week + current oncall; Pages
 (`{pages}` across `{paged_tickets}` tickets, plus escalations if any), Queue `x→y`, Incoming,
 Resolved (with the Sev2/non-Sev2 split), Releases Shipped, LSE count; counts of paged tickets
-/ open Sev2s / cross-team items; **which paging source was used** (`builder-insights` or the
-degraded `engagements-fallback`, and if the latter, that per-ticket counts are unavailable);
-any approximate (`~`) figures, lossy `lastUpdatedAt` tickets, or warnings; and a reminder that
+/ open Sev2s / cross-team items; **which reconciled paging sources were used**
+(`builder-insights+archive` or `page-archive`), and any discrepancies resolved between them;
+any approximate (`~`) figures, warnings, or blockers. If `pages_reconciled` is false, say that
+the report remains a draft and do not present a final page total. Remind reviewers that
 Sections 3, 5, 9, 11 are filled during the meeting via PR comments
 (`@apply-ops-review-comments`). For Section 8, state the open-ticket count classified, the
 top three categories, and that counts are a fresh snapshot and not comparable to last week.
@@ -1094,6 +1300,15 @@ generation.
   downgraded after paging. Use `minimumSeverity: 2`.
 - Do NOT filter Builder Insights page rows on `is_primary` — it lags the handoff. Use
   `recipient`.
+- Do NOT exclude a page solely because its current resolver group differs from
+  `Amazon Q for CLI`; reconcile recipient, CTI, ticket history, and the page archive.
+- Do NOT publish an exact page total from `engagements[]`; it overwrites repeated events.
+- Do NOT count releases by tag creation time; use the successful public CloudFront production
+  job's completion timestamp.
+- Do NOT count reassignment, redirection, transfer, or collaboration as a ticket cut to
+  another team; verify the oncall as ticket submitter or CR author.
+- Do NOT omit customer-impact evidence for an in-window Sev2 that was resolved or
+  downgraded; use its Page Log row when paged and the Section 2 fallback only when unpaged.
 - Do NOT hardcode `leaderLogin`, the paging aliases, or the Builder Insights `skillPath`.
 - Do NOT fold manager-escalation pages into the `pages` headline figure.
 - Do NOT write "pending root cause" or a generic scan summary without first reading the
@@ -1131,7 +1346,9 @@ apply the ops review comments on PR 3145
   confirm against `shiftStart` from Step 1 rather than converting by hand.
 - Submit the Builder Insights Silver paging query first and poll it while collecting ticket
   data; it is async and has run past 7 minutes.
-- Run `git fetch --tags origin` before counting releases — a stale clone undercounts.
+- Query the `Release SOP: 3.0 Promote to Production` workflow in
+  `kiro-team/kiro-cli-autocomplete` and bucket successful `Release to CloudFront (Public)`
+  job completion timestamps across all four oncall windows.
 - Provide `previous_report_url` for an accurate starting-queue figure when the previous
   week's report hasn't been generated yet.
 - The review PR is the meeting surface: drop comments during the ops review, run

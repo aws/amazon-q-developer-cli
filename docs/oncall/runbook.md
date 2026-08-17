@@ -68,6 +68,28 @@ See [CloudWatch Alarms](cloudwatch_alarms_and_dashboard.md) for alarm definition
 
 ## SOPs
 
+### Sev-2 Customer Impact Investigation
+
+Customer-impact analysis is mandatory for every Sev-2 and Sev-2.5 event. Start it during initial triage; do not wait for recovery.
+
+1. **Define the scope.** Record the exact alarm/degradation window and separately identify any broader linked service episode.
+2. **Use the production source of truth.** Match the alarm's metric-emission conditions, including version gates, dimensions, excluded failures, sampling, and deduplication.
+3. **Measure impact.** Report impacted requests and a deduplicated customer proxy (`userId`, unique `clientId`, account, or installation). State what the identifier represents and whether the count is approximate.
+4. **Identify the affected cohort.** Break down by model, version, engine, client, account type, and internal/external population when available.
+5. **Validate.** Reconcile per-period results with the alarm or backend metrics. Treat sample counts as request-event volume, not customer count. When two telemetry events represent one failed turn, use the one-per-turn event or another stable deduplication key.
+6. **Record recovery.** Capture recovery time and report exact ticket-window impact separately from broader incident impact.
+
+A Sev-2 must not be downgraded or resolved until customer impact is quantified. If access, retention, or schema limitations prevent measurement, record the blocker, checks attempted, and evidence still needed; do not guess or silently report impact as unknown.
+
+Minimum ticket evidence:
+
+- Incident window and data source
+- Impacted request count and unique-customer/client proxy
+- Total population or impact rate when available
+- Affected cohort/model and internal/external scope when available
+- Recovery time and link to a broader incident ticket when applicable
+- Counting caveats, exclusions, and unresolved measurement gaps
+
 ### Q CLI Success Rate Drops
 
 We have alarms for when API call success rate drops.

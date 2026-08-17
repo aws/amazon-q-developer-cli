@@ -34,6 +34,8 @@ that paged at Sev2 and was later downgraded appears in the Non-Sev2 table._
 | {root_cause} | {n} | {topic} | {ticket links} |
 | Total | {non_sev2_resolved} |  |  |
 
+{optional_unpaged_sev2_impact}
+
 ## 3. Operational Pain Level
 
 _Pick one (1–10) during the ops review._
@@ -53,18 +55,18 @@ During the meeting, go over open action items here https://tiny.amazon.com/1auvb
 
 _One row per paged ticket. Pages = notifications delivered to the primary oncall ({oncall_alias}) during the week, sourced from the paging system. Sorted by page count._
 
-| # | Ticket | Pages | First Page (PT) | Page Sequence | Impact Summary | Root Cause | Mitigation | Action Items | Risk of Recurrence | Related Tickets |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | [{id}](https://t.corp.amazon.com/{id}) | {page_count} | {first_paged_at} | {page_sequence} | {impact_summary} | {root_cause} | {mitigation} | {action_items} | {risk_of_recurrence} | {related_tickets} |
-| | **Total** | **{pages}** | | | | | | | | |
+| # | Ticket | Title | Pages | First Page (PT) | Page Sequence | Customer Impact | Root Cause | Mitigation | Action Items | Risk of Recurrence | Related Tickets |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | [{id}](https://t.corp.amazon.com/{id}) | {title} | {page_count} | {first_paged_at} | {page_sequence} | {customer_impact} | {root_cause} | {mitigation} | {action_items} | {risk_of_recurrence} | {related_tickets} |
+| | **Total** | | **{pages}** | | | | | | | | |
 
 {optional escalation note: pages delivered to escalation tiers beyond the primary oncall}
 
 ## 7. Open Sev2s
 
-| # | Ticket | Description | Next Step | ETA To Resolve |
-|---|---|---|---|---|
-| 1 | [{id}](https://t.corp.amazon.com/{id}) | {description} | {next_step} | {eta or TBD} |
+| # | Ticket | Description | Customer Impact | Next Step | ETA To Resolve |
+|---|---|---|---|---|---|
+| 1 | [{id}](https://t.corp.amazon.com/{id}) | {description} | {customer_impact or documented measurement blocker} | {next_step} | {eta or TBD} |
 
 ## 8. Open Queue by Category ({open_count} open as of {MM/DD})
 
@@ -73,10 +75,10 @@ _One row per paged ticket. Pages = notifications delivered to the primary oncall
      non-zero category, sorted by count descending; omit empty categories. This is a
      snapshot of current composition, NOT a trend - do not state week-over-week deltas. -->
 
-| Category | Count | Share | What it covers |
-|---|---|---|---|
-| {category} | {n} | {pct}% | {scope description} |
-| **Total** | **{open_count}** | **100%** | |
+| Category | Count | Share | Tickets | What it covers |
+|---|---|---|---|---|
+| {category} | {n} | {pct}% | {all ticket links assigned to category} | {scope description} |
+| **Total** | **{open_count}** | **100%** | **{open_count} linked tickets** | |
 
 {provenance note: the open-ticket count classified and that classification was done fresh this week; and why this total may differ from the Section 1 week-ending queue figure - Section 1 is measured at the handoff boundary, this section when the report runs}
 
