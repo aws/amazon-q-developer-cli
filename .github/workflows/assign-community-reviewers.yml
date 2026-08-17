@@ -96,9 +96,11 @@ jobs:
             ["rubencu"]="W018ARV7NUQ"
             ["tommy-amzn"]="W018ALXRK24"
             ["jguoamz"]="W017AHACEHL"
-            ["AMZN-hgoffin"]="U025Q1X3R52"
+            # ["AMZN-hgoffin"]="U025Q1X3R52"  # OOO — removed from rotation 2026-08-17
             ["avgvi"]="U08D91S3077"
             ["aNerdFromDuval"]="U04CGL2UKAP"
+            ["namanrajpal"]="W017Q96G68K"
+            ["kensave"]="W017EQCFCUE"
           )
 
           SLACK_USER_ID="${SLACK_IDS[$REVIEWER]:-}"

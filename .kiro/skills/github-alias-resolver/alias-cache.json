@@ -1,8 +1,10 @@
 {
   "_description": "Cache of GitHub username -> Amazon alias, resolved via puzzleglue. Auto-maintained by scripts/resolve-github-aliases.sh.",
-  "_updated": "2026-08-13T17:33:00Z",
+  "_updated": "2026-08-17T15:59:54Z",
   "aliases": {
+    "AMZN-hgoffin": "hgoffin",
     "abhraina-aws": "abhraina",
+    "aNerdFromDuval": "tdw",
     "avgvi": "avgvi",
     "brandonskiser": "bskiser",
     "dingfeli": "dingfeli",
