@@ -121,8 +121,8 @@ export enum Feature {
 	AutoAgentUpgrade = "auto_agent_upgrade",
 	/**
 	 * Consolidated `/config` panel and cloud/local source labels on config
-	 * listings (`/mcp` Source column). Dark outside internal nightly, same
-	 * ramp shape as `remote_sandbox`.
+	 * listings (`/mcp` Source column). Ramped to all internal users on every
+	 * channel; external users stay dark.
 	 */
 	CloudConfig = "cloud_config",
 	/**

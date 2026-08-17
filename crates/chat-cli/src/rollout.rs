@@ -65,8 +65,8 @@ pub enum Feature {
     /// only runs the migration prompt/scan when this is enabled.
     AutoAgentUpgrade,
     /// Consolidated `/config` panel and cloud/local source labels on config
-    /// listings (`/mcp` Source column). Dark outside internal nightly, same
-    /// ramp shape as `remote_sandbox`.
+    /// listings (`/mcp` Source column). Ramped to all internal users on every
+    /// channel; external users stay dark.
     CloudConfig,
     /// Session dashboard: the full-screen `/sessions` browser, the `--sessions`
     /// launch flag, and (on v3) routing `--resume-picker` into the dashboard.
@@ -390,6 +390,10 @@ mod tests {
             json.contains("\"memory\""),
             "memory should be enabled for internal nightly: {json}"
         );
+        assert!(
+            json.contains("\"cloud_config\""),
+            "cloud_config should be enabled for internal nightly: {json}"
+        );
     }
 
     #[test]
@@ -453,20 +457,21 @@ mod tests {
     }
 
     #[test]
-    fn test_cloud_config_enabled_only_for_internal_nightly() {
+    fn test_cloud_config_enabled_for_all_internal_any_channel() {
         let features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
         assert!(
             features.contains_key(<&str>::from(Feature::CloudConfig)),
             "cloud_config must be declared in rollout.json"
         );
 
-        // Dark-shipped like remote_sandbox: internal nightly only. This is
-        // the guarantee that keeps the /config surface and the /mcp Source
-        // column invisible to live customers.
+        // Ramped to all internal users on every channel. External users must
+        // stay dark on any channel — that is the guarantee that keeps the
+        // /config surface and the /mcp Source column invisible to live
+        // customers.
         for (is_internal, is_nightly, expected) in [
             (false, false, false),
             (false, true, false),
-            (true, false, false),
+            (true, false, true),
             (true, true, true),
         ] {
             let r = Rollout::new_for_test(is_internal, is_nightly);
@@ -476,6 +481,45 @@ mod tests {
                 "cloud_config enabled={expected} for internal={is_internal}, nightly={is_nightly}"
             );
         }
+    }
+
+    #[test]
+    fn test_cloud_config_kill_switch_darkens_internal() {
+        // Dialing treatment_percent to 0 in a follow-up release must
+        // re-darken the feature for the ramped (internal) cohort — that is
+        // the kill-switch contract for the ramp. Starts from the shipped
+        // config so the segment/channel under test cannot drift from it.
+        let mut features: HashMap<String, FeatureRollout> = serde_json::from_str(EMBEDDED_CONFIG).unwrap();
+        features
+            .get_mut(<&str>::from(Feature::CloudConfig))
+            .expect("cloud_config must be declared in rollout.json")
+            .treatment_percent = 0;
+        let r = Rollout {
+            features,
+            client_id: Some(Uuid::from_u128(1)),
+            is_internal: true,
+            is_nightly: false,
+        };
+        // With a client id: bucketed into the experiment but gets CONTROL.
+        assert!(!r.is_enabled(Feature::CloudConfig));
+        assert_eq!(r.variation(Feature::CloudConfig), Some(CONTROL));
+        // Without a client id (telemetry opted out): no bucketing is
+        // possible at a partial percent, so the user is out entirely.
+        let no_id = Rollout { client_id: None, ..r };
+        assert!(!no_id.is_enabled(Feature::CloudConfig));
+        assert_eq!(no_id.variation(Feature::CloudConfig), None);
+    }
+
+    #[test]
+    fn test_cloud_config_fully_ramped_needs_no_client_id() {
+        // Internal users with telemetry opted out (no persisted client id)
+        // must still receive the feature at 100%: bucketing only matters for
+        // partial ramps.
+        let r = Rollout {
+            client_id: None,
+            ..Rollout::new_for_test(true, false)
+        };
+        assert_eq!(r.variation(Feature::CloudConfig), Some(TREATMENT));
     }
 
     #[test]
@@ -525,7 +569,7 @@ mod tests {
             "workflows must be declared in rollout.json"
         );
 
-        // Enabled for internal nightly only (same shape as memory/cloud_config).
+        // Enabled for internal nightly only.
         for (is_internal, is_nightly, expected) in [
             (false, false, false),
             (false, true, false),

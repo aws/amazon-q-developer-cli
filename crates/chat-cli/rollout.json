@@ -62,10 +62,9 @@
     "channel": "nightly"
   },
   "cloud_config": {
-    "description": "Consolidated /config panel and cloud/local source labels on config listings. Dark-shipped: internal nightly only, mirroring remote_sandbox; widen segment/channel here for the next ramp stage.",
+    "description": "Consolidated /config panel and cloud/local source labels on config listings. Ramped to 100% for all internal users on every channel; external users stay dark. To kill-switch, set treatment_percent to 0 in a follow-up release (config is compiled in). For the external ramp, widen segment to all but keep treatment_percent at 100: the single per-feature percent buckets internal users too, so a staged external percent would drop the feature for already-ramped internal users.",
     "treatment_percent": 100,
-    "segment": "internal",
-    "channel": "nightly"
+    "segment": "internal"
   },
   "c2s": {
     "description": "Code-to-Spec Explore agent and analysis pipeline. Internal nightly only; launcher exports KIRO_C2S_ROLLOUT_ENABLED and the TUI honors chat.enableC2s + shows the Explore agent only when enabled.",
