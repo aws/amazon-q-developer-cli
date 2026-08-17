@@ -753,6 +753,20 @@ impl TelemetryThread {
         self.send(telemetry_event)
     }
 
+    /// Emits a counter increment when a subagent stage is cancelled by its
+    /// overall deadline.
+    pub async fn send_subagent_deadline_expired(
+        &self,
+        database: &Database,
+        deadline: std::time::Duration,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::SubagentDeadlineExpired {
+            deadline_seconds: deadline.as_secs_f64(),
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        self.send(telemetry_event)
+    }
+
     pub fn send_subagent_record_user_turn_completion(
         &self,
         conversation_id: String,

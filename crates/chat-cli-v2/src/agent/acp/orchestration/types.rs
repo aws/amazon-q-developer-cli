@@ -40,6 +40,23 @@ pub struct OrchestratedSession {
     /// Whether the subagent explicitly signaled "changes_needed" via the summary tool's resultType.
     #[serde(default)]
     pub changes_needed: bool,
+    /// Outstanding human-blocked waits (tool-approval prompts, MCP OAuth grants).
+    /// While non-zero the crew stall probe reports this session as fresh, so a
+    /// child parked on a human is never cancelled as "stalled". Runtime-only.
+    #[serde(skip)]
+    pub human_waits: u32,
+    /// When the current uninterrupted run of human waits began, bounding how
+    /// long it can suspend the stall window (an unanswered prompt must not
+    /// disable the deadline forever). Never refreshed while waits remain
+    /// outstanding: the run start precedes every outstanding wait, so the
+    /// bound provably ages out the oldest one. Runtime-only.
+    #[serde(skip)]
+    pub human_wait_since: Option<SystemTime>,
+    /// Set when this stage was cancelled by the idle deadline: its stored
+    /// result is a cancellation note, not real output, so it must not hide its
+    /// dependencies' genuine results from the final group output. Runtime-only.
+    #[serde(skip)]
+    pub cancelled_by_deadline: bool,
 }
 
 /// Status of an orchestrated session.

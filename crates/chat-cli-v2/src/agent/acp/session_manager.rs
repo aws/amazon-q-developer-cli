@@ -242,7 +242,10 @@ impl SessionManagerBuilder {
         let os = os.expect("Os not found");
         let legacy_session_exporter = legacy_session_exporter.expect("LegacySessionExporter not set");
 
-        let session_manager_handle = SessionManagerHandle { tx };
+        let session_manager_handle = SessionManagerHandle {
+            tx,
+            ping_retry_inflight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
         let session_manager_handle_clone = session_manager_handle.clone();
 
         tokio::spawn(async move {
@@ -581,6 +584,20 @@ pub struct GroupStageResult {
     pub loop_iterations_used: u32,
 }
 
+/// One live stage's effective activity, as reported to the crew stall probe.
+/// A human-waiting stage reports "now" so the per-stage window holds.
+#[derive(Debug, Clone)]
+pub struct StageActivitySnapshot {
+    pub name: String,
+    pub last_activity: std::time::SystemTime,
+}
+
+/// Placeholder result the driver task stamps on a session whose task was
+/// cancelled, so the parent's crew output shows an explicit cancellation
+/// instead of an ambiguous "No result". The StoreSessionResult handler matches
+/// it exactly to keep it from overwriting a deadline-cancellation note.
+const USER_CANCEL_STAMP: &str = "[Cancelled by user]";
+
 /// Result delivered to a blocking group waiter: stage results on success, or a
 /// human-readable error string when a stage fails (fail-fast).
 type GroupCompletionResult = Result<Vec<GroupStageResult>, String>;
@@ -637,6 +654,11 @@ pub struct SessionManager {
     /// before the parent registers its blocking waiter; drained by the next
     /// WaitForGroupCompletion so the parent's tool fails fast instead of hanging.
     group_failures: HashMap<String, String>,
+    /// Per group: pending stages pruned because a dependency was cancelled by
+    /// the idle deadline. They have no session entry, so without this record
+    /// they would vanish from the reported results — indistinguishable from
+    /// never having existed. Appended by `collect_group_results`.
+    deadline_skipped_results: HashMap<String, Vec<GroupStageResult>>,
     /// V1 session exporter for lazy migration of V1 conversations.
     legacy_session_exporter: Arc<dyn LegacySessionExporter>,
     /// Agent config errors encountered during loading at startup.
@@ -716,6 +738,7 @@ impl SessionManager {
             connection_cx: None,
             group_completion_waiters: HashMap::new(),
             group_failures: HashMap::new(),
+            deadline_skipped_results: HashMap::new(),
             legacy_session_exporter,
             agent_config_errors,
             mcp_registry_data,
@@ -752,15 +775,265 @@ impl SessionManager {
             .collect()
     }
 
+    /// Whether a deadline cancel authorized by an out-of-actor observation is
+    /// still valid against live state: refused when the stage progressed past
+    /// the observed timestamp, delivered a result, or entered a human wait
+    /// after the watchdog judged it stalled — the probe→cancel race window.
+    /// Compared at millisecond granularity, the probe's own resolution: the
+    /// stored `SystemTime` keeps sub-ms precision the reported timestamp
+    /// truncates away, and comparing raw would refuse every cancel.
+    fn stage_cancel_authorized(session: &OrchestratedSession, observed_last_activity_ms: Option<u64>) -> bool {
+        // The human-wait veto applies the same freshness bound as the probe:
+        // a wait older than MAX_HUMAN_WAIT_HOLD already reads as stalled to the
+        // watchdog, so vetoing on the raw count would make an abandoned prompt
+        // uncancellable — an unbounded retry loop on the very path the bound
+        // exists to cut off. A wait marked after the observation is still
+        // fresh, so the probe→cancel race stays covered.
+        if session.result.is_some() || (session.human_waits > 0 && Self::human_wait_is_fresh(session.human_wait_since))
+        {
+            return false;
+        }
+        let Some(observed_ms) = observed_last_activity_ms else {
+            return true;
+        };
+        session
+            .last_activity
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(true, |d| d.as_millis() as u64 <= observed_ms)
+    }
+
+    /// Prune every pending stage transitively dependent on `cancelled_name`
+    /// (they can never run), returning one skipped-stage result per victim so
+    /// the final report names them instead of silently dropping them.
+    fn prune_dependents_of(
+        pending_stages: &mut Vec<crate::agent::acp::orchestration::types::PendingStage>,
+        cancelled_name: &str,
+    ) -> Vec<GroupStageResult> {
+        let mut removed: std::collections::HashSet<String> = std::collections::HashSet::new();
+        removed.insert(cancelled_name.to_string());
+        let mut skipped = Vec::new();
+        loop {
+            let pruned: Vec<GroupStageResult> = pending_stages
+                .iter()
+                .filter(|ps| ps.depends_on.iter().any(|d| removed.contains(d)))
+                .map(|ps| GroupStageResult {
+                    name: ps.name.clone(),
+                    result: Some(
+                        "Cancelled by the crew stall deadline before starting (dependencies incomplete).".to_string(),
+                    ),
+                    loop_iterations_used: ps.loop_iteration,
+                })
+                .collect();
+            if pruned.is_empty() {
+                break;
+            }
+            // Remove exactly the stages just reported; their transitive
+            // dependents are found (and reported) on the next pass — removing
+            // by the grown `removed` set here would prune them unreported.
+            let pruned_names: std::collections::HashSet<&str> = pruned.iter().map(|s| s.name.as_str()).collect();
+            pending_stages.retain(|ps| !pruned_names.contains(ps.name.as_str()));
+            removed.extend(pruned.iter().map(|s| s.name.clone()));
+            skipped.extend(pruned);
+        }
+        skipped
+    }
+
+    /// Cancel a single stalled stage without touching its siblings: terminate
+    /// its session off the request loop, prune pending stages that transitively
+    /// depended on it (they can never run), store an explicit cancellation note
+    /// as its result, and resolve the group waiter if nothing live remains.
+    /// Returns `false` — cancelling nothing — when the stage outran the
+    /// watchdog's observation ([`Self::stage_cancel_authorized`]) or when there
+    /// is no live handle to tear down (e.g. mid-spawn); the watchdog retries on
+    /// a later probe rather than reporting a cancellation that did not happen.
+    async fn cancel_group_stage(
+        &mut self,
+        group_name: &str,
+        stage_name: &str,
+        observed_last_activity_ms: Option<u64>,
+    ) -> bool {
+        let Some(sid) = self
+            .orchestrated_sessions
+            .values()
+            .find(|s| {
+                s.group.as_deref() == Some(group_name) && s.name == stage_name && s.status != SessionStatus::Terminated
+            })
+            .filter(|s| Self::stage_cancel_authorized(s, observed_last_activity_ms))
+            .map(|s| s.session_id.clone())
+        else {
+            return false;
+        };
+        let Some(handle) = self.sessions.remove(&sid) else {
+            return false;
+        };
+        {
+            let sid_for_log = sid.clone();
+            tokio::spawn(async move {
+                Self::shutdown_session(&sid_for_log, &handle, "stage-cancel").await;
+            });
+        }
+        if let Some(g) = self.groups.get_mut(group_name) {
+            let skipped = Self::prune_dependents_of(&mut g.pending_stages, stage_name);
+            if !skipped.is_empty() {
+                self.deadline_skipped_results
+                    .entry(group_name.to_string())
+                    .or_default()
+                    .extend(skipped);
+            }
+        }
+        // The cancelled child will never release the waits it (or its subtree)
+        // bubbled to surviving ancestors — rebalance them now, and zero its own
+        // count so its entry cannot read as human-waiting.
+        let removed_ids: std::collections::HashSet<String> = std::iter::once(sid.to_string()).collect();
+        Self::release_bubbled_waits(&mut self.orchestrated_sessions, &removed_ids);
+        if let Some(session) = self.orchestrated_sessions.get_mut(&sid.to_string()) {
+            session.status = SessionStatus::Terminated;
+            session.cancelled_by_deadline = true;
+            session.human_waits = 0;
+            session.human_wait_since = None;
+            session.result = Some(format!(
+                "Cancelled by the idle deadline: stage '{stage_name}' made no observable \
+                 progress for a full window. Stages depending on it (if any) were skipped."
+            ));
+        }
+        // Mirror UpdateSessionStatus's completion check so a group whose last
+        // live piece was just cancelled still resolves its waiter.
+        let has_pending = self
+            .groups
+            .get(group_name)
+            .is_some_and(|g| !g.pending_stages.is_empty());
+        let all_done = !has_pending
+            && self
+                .orchestrated_sessions
+                .values()
+                .filter(|s| s.group.as_deref() == Some(group_name))
+                .all(|s| s.status == SessionStatus::Terminated);
+        self.send_subagent_list_update().await;
+        if all_done {
+            if let Some(waiter) = self.group_completion_waiters.remove(group_name) {
+                let results = self.collect_group_results(group_name);
+                let _ = waiter.send(Ok(results));
+            }
+            self.group_failures.remove(group_name);
+            self.remove_group_state(group_name);
+        }
+        true
+    }
+
+    /// Apply `f` to a session's orchestration entry and every orchestrated
+    /// ancestor up its parent chain, so a nested crew's grandchild signal
+    /// (progress ping, human wait) also keeps the outer group's stall window
+    /// honest. Depth-capped defensively; the chain ends naturally at the first
+    /// non-orchestrated (main) session. A Terminated node detaches its subtree:
+    /// its outstanding waits were rebalanced at termination, so a late signal
+    /// from it (or from an orphaned descendant crossing it) must not touch
+    /// ancestors again — a second walk would double-release a rebalanced wait
+    /// and strip an unrelated stage's legitimate suspension.
+    fn for_session_and_ancestors(
+        orchestrated_sessions: &mut HashMap<String, OrchestratedSession>,
+        session_id: &str,
+        mut f: impl FnMut(&mut OrchestratedSession),
+    ) {
+        const MAX_BUBBLE_DEPTH: usize = 8;
+        let mut current = session_id.to_string();
+        for _ in 0..MAX_BUBBLE_DEPTH {
+            let Some(session) = orchestrated_sessions.get_mut(&current) else {
+                break;
+            };
+            if session.status == SessionStatus::Terminated {
+                break;
+            }
+            f(session);
+            let Some(parent) = session.parent_session.clone() else {
+                break;
+            };
+            current = parent.to_string();
+        }
+    }
+
+    /// Whether a human-blocked wait still suspends the stall window: an
+    /// unanswered prompt older than the hold bound is treated as abandoned so
+    /// it cannot disable the deadline for the rest of the session.
+    fn human_wait_is_fresh(since: Option<std::time::SystemTime>) -> bool {
+        since.is_some_and(|t| {
+            std::time::SystemTime::now()
+                .duration_since(t)
+                .is_ok_and(|elapsed| elapsed < agent::consts::MAX_HUMAN_WAIT_HOLD)
+        })
+    }
+
+    /// Rebalance bubbled human-wait counters before session entries in
+    /// `removed_ids` are dropped (or force-terminated): a mark bubbles up the
+    /// ancestor chain at wait time, but its release re-walks from the child —
+    /// so dropping a child entry with waits outstanding would leave every
+    /// surviving ancestor's counter stuck above zero, suspending the outer
+    /// group's stall window forever. Only the topmost removed node per branch
+    /// is subtracted: a nested removed child's waits are already folded into
+    /// its removed ancestor's count.
+    fn release_bubbled_waits(
+        orchestrated_sessions: &mut HashMap<String, OrchestratedSession>,
+        removed_ids: &std::collections::HashSet<String>,
+    ) {
+        let tops: Vec<(String, u32)> = removed_ids
+            .iter()
+            .filter_map(|id| {
+                let s = orchestrated_sessions.get(id)?;
+                // A Terminated node's waits were already rebalanced when it
+                // terminated; a second release here would double-subtract.
+                if s.human_waits == 0 || s.status == SessionStatus::Terminated {
+                    return None;
+                }
+                let parent_in_removed = s
+                    .parent_session
+                    .as_ref()
+                    .is_some_and(|p| removed_ids.contains(&p.to_string()));
+                (!parent_in_removed).then(|| (id.clone(), s.human_waits))
+            })
+            .collect();
+        for (start, waits) in tops {
+            // Reuse the mark walk itself (starting AT the removed node) so the
+            // release covers exactly the nodes a mark from here could have
+            // reached: same Terminated stop, same depth budget, one constant —
+            // a wider release walk would decrement ancestors the mark never
+            // incremented (e.g. across a Terminated node from a nested crew)
+            // and silently strip an unrelated stage's legitimate suspension.
+            Self::for_session_and_ancestors(orchestrated_sessions, &start, |session| {
+                session.human_waits = session.human_waits.saturating_sub(waits);
+                if session.human_waits == 0 {
+                    session.human_wait_since = None;
+                }
+            });
+        }
+    }
+
+    /// Drop all of a group's session entries and per-group bookkeeping,
+    /// rebalancing any human-wait counts its members had bubbled to surviving
+    /// ancestors first. `group_failures` is intentionally left to call sites:
+    /// some must record a failure for a waiter that has not registered yet.
+    fn remove_group_state(&mut self, group_name: &str) {
+        let removed: std::collections::HashSet<String> = self
+            .orchestrated_sessions
+            .iter()
+            .filter(|(_, s)| s.group.as_deref() == Some(group_name))
+            .map(|(id, _)| id.clone())
+            .collect();
+        Self::release_bubbled_waits(&mut self.orchestrated_sessions, &removed);
+        self.orchestrated_sessions.retain(|id, _| !removed.contains(id));
+        self.groups.remove(group_name);
+        self.deadline_skipped_results.remove(group_name);
+    }
+
     fn collect_group_results(&self, group_name: &str) -> Vec<GroupStageResult> {
         let group: Vec<_> = self
             .orchestrated_sessions
             .values()
             .filter(|s| s.group.as_deref() == Some(group_name))
             .collect();
+        // A deadline-cancelled dependent never consumed its inputs, so it must
+        // not hide its dependencies' genuine results from the final output.
         let depended_on: std::collections::HashSet<&str> = group
             .iter()
-            .filter(|s| s.result.is_some())
+            .filter(|s| s.result.is_some() && !s.cancelled_by_deadline)
             .flat_map(|s| s.depends_on.iter().map(|d| d.as_str()))
             .collect();
         // Stages that are loop targets should always be included in results
@@ -769,7 +1042,7 @@ impl SessionManager {
             .iter()
             .filter_map(|s| s.loop_config.as_ref().map(|lc| lc.target.as_str()))
             .collect();
-        group
+        let mut results: Vec<GroupStageResult> = group
             .iter()
             .filter(|s| !depended_on.contains(s.name.as_str()) || loop_targets.contains(s.name.as_str()))
             .map(|s| GroupStageResult {
@@ -777,7 +1050,13 @@ impl SessionManager {
                 result: s.result.clone(),
                 loop_iterations_used: s.loop_iteration,
             })
-            .collect()
+            .collect();
+        // Pending stages pruned by a deadline cancel have no session entry;
+        // report them as skipped so they don't vanish from the results.
+        if let Some(skipped) = self.deadline_skipped_results.get(group_name) {
+            results.extend(skipped.iter().cloned());
+        }
+        results
     }
 
     /// Get or initialize a CodeIntelligence client for the given CWD.
@@ -1582,6 +1861,22 @@ impl SessionManager {
                 status,
                 resp_sender,
             } => {
+                // A terminating session will never clear the waits it bubbled to
+                // ancestors: rebalance them before the status flips, since the
+                // Terminated node detaches its subtree from all later walks.
+                if status == SessionStatus::Terminated
+                    && self
+                        .orchestrated_sessions
+                        .get(&sid.to_string())
+                        .is_some_and(|s| s.human_waits > 0)
+                {
+                    let removed_ids: std::collections::HashSet<String> = std::iter::once(sid.to_string()).collect();
+                    Self::release_bubbled_waits(&mut self.orchestrated_sessions, &removed_ids);
+                    if let Some(s) = self.orchestrated_sessions.get_mut(&sid.to_string()) {
+                        s.human_waits = 0;
+                        s.human_wait_since = None;
+                    }
+                }
                 if let Some(session) = self.orchestrated_sessions.get_mut(&sid.to_string()) {
                     session.status = status;
                     session.last_activity = std::time::SystemTime::now();
@@ -1613,9 +1908,7 @@ impl SessionManager {
                                 let _ = waiter.send(Ok(results));
                             }
                             self.group_failures.remove(&group);
-                            self.orchestrated_sessions
-                                .retain(|_, s| s.group.as_deref() != Some(&group));
-                            self.groups.remove(&group);
+                            self.remove_group_state(&group);
                         }
                     }
                 }
@@ -1628,7 +1921,14 @@ impl SessionManager {
                 changes_needed,
                 resp_sender,
             } => {
-                if let Some(session) = self.orchestrated_sessions.get_mut(&sid.to_string()) {
+                // The deadline-cancellation note is authoritative over the driver
+                // task's post-cancellation stamp, which arrives after the stage
+                // cancel and must not disguise a deadline cancel as a user action.
+                // ONLY that stamp is suppressed: a genuine summary that lands just
+                // after the cancel is completed work and overwrites the note.
+                if let Some(session) = self.orchestrated_sessions.get_mut(&sid.to_string())
+                    && !(session.cancelled_by_deadline && result == USER_CANCEL_STAMP)
+                {
                     session.result = Some(result);
                     session.changes_needed = changes_needed;
                 }
@@ -1641,9 +1941,7 @@ impl SessionManager {
                 // A stage may have already failed before this waiter registered.
                 if let Some(error) = self.group_failures.remove(&group_name) {
                     let _ = resp_sender.send(Err(error));
-                    self.orchestrated_sessions
-                        .retain(|_, s| s.group.as_deref() != Some(&group_name));
-                    self.groups.remove(&group_name);
+                    self.remove_group_state(&group_name);
                 } else {
                     // Check if all sessions in group are already terminated
                     let all_done = self
@@ -1654,10 +1952,7 @@ impl SessionManager {
                     if all_done {
                         let results = self.collect_group_results(&group_name);
                         let _ = resp_sender.send(Ok(results));
-                        // Clean up completed group
-                        self.orchestrated_sessions
-                            .retain(|_, s| s.group.as_deref() != Some(&group_name));
-                        self.groups.remove(&group_name);
+                        self.remove_group_state(&group_name);
                     } else {
                         // Store waiter — will be fired when last session terminates
                         self.group_completion_waiters.insert(group_name, resp_sender);
@@ -1702,10 +1997,147 @@ impl SessionManager {
                         );
                     }
                 }
-                self.orchestrated_sessions
-                    .retain(|_, s| s.group.as_deref() != Some(&group_name));
-                self.groups.remove(&group_name);
+                self.remove_group_state(&group_name);
                 _ = resp_sender.send(());
+            },
+            SessionManagerRequestData::CancelGroup {
+                group_name,
+                resp_sender,
+            } => {
+                // Snapshot whatever partial results completed before cancelling, so the
+                // parent can continue with them. Unfinished live stages get an explicit
+                // cancellation note (instead of a generic "No result"), and stages still
+                // waiting on dependencies — invisible to collect_group_results — are
+                // named too, so the parent can tell what was cancelled from what never
+                // started.
+                let mut results = self.collect_group_results(&group_name);
+                for result in &mut results {
+                    if result.result.is_none() {
+                        result.result = Some("Cancelled by the crew stall deadline before completing.".to_string());
+                    }
+                }
+                if let Some(g) = self.groups.get(&group_name) {
+                    for pending in &g.pending_stages {
+                        results.push(GroupStageResult {
+                            name: pending.name.clone(),
+                            result: Some(
+                                "Cancelled by the crew stall deadline before starting (dependencies incomplete)."
+                                    .to_string(),
+                            ),
+                            loop_iterations_used: pending.loop_iteration,
+                        });
+                    }
+                }
+                let handles: Vec<(SessionId, AcpSessionHandle)> = self
+                    .orchestrated_sessions
+                    .values()
+                    .filter(|s| s.group.as_deref() == Some(&group_name))
+                    .filter(|s| s.status != SessionStatus::Terminated)
+                    .map(|s| s.session_id.clone())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .filter_map(|session_id| self.sessions.remove(&session_id).map(|h| (session_id, h)))
+                    .collect();
+                // Drop any registered waiter and clean up group state, reply with the
+                // snapshot, THEN tear the children down off the request loop: awaited
+                // per-session shutdowns here would both outrun the caller's collect
+                // bound (discarding the snapshot it just took) and stall activity
+                // probes from every other group for up to 4s per child.
+                self.group_completion_waiters.remove(&group_name);
+                self.group_failures.remove(&group_name);
+                self.remove_group_state(&group_name);
+                self.send_subagent_list_update().await;
+                _ = resp_sender.send(results);
+                tokio::spawn(async move {
+                    let shutdowns = handles
+                        .iter()
+                        .map(|(session_id, handle)| Self::shutdown_session(session_id, handle, "group-cancel"));
+                    futures::future::join_all(shutdowns).await;
+                });
+            },
+            SessionManagerRequestData::NotifySessionActivity { session_id: sid } => {
+                // Cheap progress ping from a child's event stream: bump only the
+                // timestamp, never the status, and emit no TUI update — the crew
+                // stall timer reads this to distinguish a working child from a
+                // stalled one.
+                Self::for_session_and_ancestors(&mut self.orchestrated_sessions, &sid.to_string(), |session| {
+                    session.last_activity = std::time::SystemTime::now();
+                });
+            },
+            SessionManagerRequestData::NotifySessionHumanWait {
+                session_id: sid,
+                waiting,
+            } => {
+                // A human-blocked wait (tool approval, MCP OAuth grant) is not a
+                // stall: while any wait is outstanding the activity probe reports
+                // this session — and its ancestors, for nested crews — as fresh.
+                // Clearing also grants a fresh window so the child has the full
+                // deadline to resume after the human answers. The suspension
+                // anchor is the start of the current uninterrupted run of waits
+                // and is deliberately NOT refreshed by later clears: measuring
+                // from the run start (which can only precede the oldest
+                // outstanding wait) is what makes MAX_HUMAN_WAIT_HOLD a true
+                // bound on an unanswered prompt — an anchor refreshed by
+                // unrelated answered approvals would never age the stuck one out.
+                Self::for_session_and_ancestors(&mut self.orchestrated_sessions, &sid.to_string(), |session| {
+                    if waiting {
+                        session.human_waits = session.human_waits.saturating_add(1);
+                        if session.human_waits == 1 {
+                            session.human_wait_since = Some(std::time::SystemTime::now());
+                        }
+                    } else {
+                        session.human_waits = session.human_waits.saturating_sub(1);
+                        if session.human_waits == 0 {
+                            session.human_wait_since = None;
+                        }
+                        session.last_activity = std::time::SystemTime::now();
+                    }
+                });
+            },
+            SessionManagerRequestData::GroupLastActivity {
+                group_name,
+                resp_sender,
+            } => {
+                // Per-stage effective activity for the crew stall probe. A member
+                // awaiting a human reads as fresh: the stall timer must hold, not
+                // cancel, while an approval or OAuth grant is pending. Bounded by
+                // MAX_HUMAN_WAIT_HOLD so a wait that can never be answered (client
+                // gone, prompt never rendered) cannot suspend the deadline forever.
+                // A stage with a stored result is done working and excluded: the
+                // cancel path refuses result-bearing stages (the summary must not
+                // be overwritten), so still counting one toward live_stages would
+                // keep the whole-group fallback disarmed forever if its driver
+                // wedges between storing the summary and terminating — the parent
+                // would hang with no path able to cut it loose.
+                let stages: Vec<StageActivitySnapshot> = self
+                    .orchestrated_sessions
+                    .values()
+                    .filter(|s| {
+                        s.group.as_deref() == Some(&group_name)
+                            && s.status != SessionStatus::Terminated
+                            && s.result.is_none()
+                    })
+                    .map(|s| StageActivitySnapshot {
+                        name: s.name.clone(),
+                        last_activity: if s.human_waits > 0 && Self::human_wait_is_fresh(s.human_wait_since) {
+                            std::time::SystemTime::now()
+                        } else {
+                            s.last_activity
+                        },
+                    })
+                    .collect();
+                _ = resp_sender.send(stages);
+            },
+            SessionManagerRequestData::CancelGroupStage {
+                group_name,
+                stage_name,
+                observed_last_activity_ms,
+                resp_sender,
+            } => {
+                let cancelled = self
+                    .cancel_group_stage(&group_name, &stage_name, observed_last_activity_ms)
+                    .await;
+                _ = resp_sender.send(cancelled);
             },
             // --- Orchestration handlers ---
             SessionManagerRequestData::SpawnOrchestratedSession {
@@ -1909,6 +2341,9 @@ impl SessionManager {
             loop_config,
             loop_iteration,
             changes_needed: false,
+            human_waits: 0,
+            human_wait_since: None,
+            cancelled_by_deadline: false,
         };
         self.orchestrated_sessions
             .insert(new_session_id.to_string(), orch_session);
@@ -1973,20 +2408,15 @@ impl SessionManager {
                             error!(name = %session_name_clone, "Orchestrated session task failed: {}", e);
                             if cancelled {
                                 // Stamp a placeholder result so the parent's
-                                // agent_crew/subagent output shows "[Cancelled
-                                // by user]" for this stage instead of an
-                                // ambiguous "No result". The orch session
-                                // table is read by collect_group_results to
-                                // build the final agent_crew output; stages
-                                // with `result: None` flow through as "No
-                                // result" via the JSON formatting in
-                                // session_tool_handler.rs, which historically
+                                // agent_crew/subagent output shows an explicit
+                                // cancellation for this stage instead of an
+                                // ambiguous "No result", which historically
                                 // looked indistinguishable from a silent
                                 // backend failure and tempted the parent
                                 // model to re-dispatch the work the user
                                 // just killed.
                                 session_tx
-                                    .store_session_result(&new_sid, "[Cancelled by user]".to_string(), false)
+                                    .store_session_result(&new_sid, USER_CANCEL_STAMP.to_string(), false)
                                     .await;
                             }
                             if persistent {
@@ -2083,6 +2513,9 @@ impl SessionManager {
             loop_config: old_session.loop_config.clone(),
             loop_iteration: old_session.loop_iteration,
             changes_needed: false,
+            human_waits: 0,
+            human_wait_since: None,
+            cancelled_by_deadline: false,
         };
         self.orchestrated_sessions
             .insert(new_session_id.to_string(), orch_session);
@@ -2344,6 +2777,12 @@ impl SessionManager {
     fn check_loop_trigger(
         session: &crate::agent::acp::orchestration::types::OrchestratedSession,
     ) -> Option<crate::agent::acp::orchestration::types::LoopTriggerData> {
+        // A deadline-cancelled stage must never loop back: its stored result is
+        // a cancellation note, and matching the trigger against it would respawn
+        // the very work the watchdog just stopped.
+        if session.cancelled_by_deadline {
+            return None;
+        }
         let cfg = session.loop_config.as_ref()?;
         let result = session.result.as_ref()?;
 
@@ -2670,6 +3109,42 @@ pub(crate) enum SessionManagerRequestData {
         error: String,
         resp_sender: oneshot::Sender<()>,
     },
+    /// Cancel every still-running session in a group and return whatever partial
+    /// results completed. Used when a crew stage's wall-clock deadline expires.
+    CancelGroup {
+        group_name: String,
+        resp_sender: oneshot::Sender<Vec<GroupStageResult>>,
+    },
+    /// Bump a single session's `last_activity` to now without touching its status.
+    /// Fired from the child's per-event hot path so the parent's stall timer can
+    /// reset on genuine child progress. Fire-and-forget: carries no responder.
+    NotifySessionActivity {
+        session_id: SessionId,
+    },
+    /// Mark (`waiting: true`) or clear a human-blocked wait (tool-approval
+    /// prompt, MCP OAuth grant) on a session. Sent awaited, never dropped: a
+    /// lost mark would cancel a child mid-approval, a lost clear would pin the
+    /// group's stall timer open.
+    NotifySessionHumanWait {
+        session_id: SessionId,
+        waiting: bool,
+    },
+    /// Return per-stage effective activity for a group's live sessions (empty
+    /// when the group no longer exists). Drives the crew stall timer.
+    GroupLastActivity {
+        group_name: String,
+        resp_sender: oneshot::Sender<Vec<StageActivitySnapshot>>,
+    },
+    /// Cancel a single stalled stage in a group, leaving its siblings running.
+    /// Responds `false` when no live stage by that name exists.
+    CancelGroupStage {
+        group_name: String,
+        stage_name: String,
+        /// Watchdog-observed activity (ms since epoch) that authorized this
+        /// cancel; the handler refuses if the stage outran the observation.
+        observed_last_activity_ms: Option<u64>,
+        resp_sender: oneshot::Sender<bool>,
+    },
     // --- Orchestration requests ---
     SpawnOrchestratedSession {
         parent_session_id: SessionId,
@@ -2732,9 +3207,27 @@ pub(crate) enum SessionManagerRequestData {
 }
 
 /// Handle for communicating with a [`SessionManager`] actor.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SessionManagerHandle {
     tx: mpsc::Sender<SessionManagerRequest>,
+    /// At most one in-flight full-queue activity-ping retry per handle clone
+    /// (each session's event loop holds its own clone). Without this, every
+    /// coalesced ping dropped during a manager stall would spawn its own 30s
+    /// retry task, and the accumulated backlog would flood the request queue
+    /// on drain — starving the very probes whose sustained failure trips the
+    /// whole-group cancel.
+    ping_retry_inflight: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Clone for SessionManagerHandle {
+    fn clone(&self) -> Self {
+        // Fresh flag per clone: the retry budget is per event loop, not global —
+        // one stuck session's retry must not suppress another session's ping.
+        Self {
+            tx: self.tx.clone(),
+            ping_retry_inflight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
 }
 
 impl SessionManagerHandle {
@@ -2996,6 +3489,143 @@ impl SessionManagerHandle {
             .await;
         rx.await
             .unwrap_or_else(|_| Err("Group wait channel dropped".to_string()))
+    }
+
+    /// Cancel every still-running session in a group and return whatever partial
+    /// results completed. Used when a crew stage's wall-clock deadline expires.
+    pub async fn cancel_group(&self, group_name: String) -> Vec<GroupStageResult> {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::CancelGroup {
+                    group_name,
+                    resp_sender,
+                },
+            })
+            .await;
+        rx.await.unwrap_or_default()
+    }
+
+    /// Bump a child session's `last_activity` from its per-event hot path.
+    ///
+    /// Non-blocking for the caller (`try_send`), but never silently lossy: the
+    /// producer coalesces pings on the assumption each one was observed, so a
+    /// ping that finds the actor queue full is re-sent from a spawned task
+    /// under a bound. A child whose single progress ping raced a saturated
+    /// queue would otherwise read as stalled for the rest of its window. Late
+    /// delivery is harmless — the manager stamps its own clock on receipt. At
+    /// most one retry is in flight per handle clone: while one is pending,
+    /// further dropped pings carry no extra information (the in-flight retry
+    /// will stamp a fresher clock than any of them on arrival), so they are
+    /// discarded instead of piling a task-per-ping backlog onto the
+    /// recovering queue.
+    pub fn notify_session_activity(&self, session_id: &SessionId) {
+        const PING_RETRY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        let request = SessionManagerRequest {
+            session_id: session_id.clone(),
+            data: SessionManagerRequestData::NotifySessionActivity {
+                session_id: session_id.clone(),
+            },
+        };
+        match self.tx.try_send(request) {
+            Ok(()) | Err(mpsc::error::TrySendError::Closed(_)) => {},
+            Err(mpsc::error::TrySendError::Full(request)) => {
+                if self.ping_retry_inflight.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                    return;
+                }
+                let tx = self.tx.clone();
+                let inflight = Arc::clone(&self.ping_retry_inflight);
+                tokio::spawn(async move {
+                    if tokio::time::timeout(PING_RETRY_TIMEOUT, tx.send(request))
+                        .await
+                        .is_err()
+                    {
+                        warn!("activity ping retry timed out; session manager queue still saturated");
+                    }
+                    inflight.store(false, std::sync::atomic::Ordering::Release);
+                });
+            },
+        }
+    }
+
+    /// Mark or clear a human-blocked wait (tool approval, MCP OAuth grant) on a
+    /// child session. Non-blocking: try_send plus one bounded async retry. It
+    /// is rare (per prompt, not per chunk), so the retry preserves the
+    /// must-not-drop guarantee — a lost mark cancels a child mid-approval, a
+    /// lost clear pins the group's stall timer open — but it must never AWAIT
+    /// into the manager from the session event loop: the manager's broadcasts
+    /// await back into every session's bounded queue, so an awaited send here
+    /// closes a cycle of full queues that can wedge every session in the
+    /// process. Also usable from `Drop` paths, which cannot await.
+    pub fn notify_session_human_wait(&self, session_id: &SessionId, waiting: bool) {
+        const WAIT_RETRY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        let request = SessionManagerRequest {
+            session_id: session_id.clone(),
+            data: SessionManagerRequestData::NotifySessionHumanWait {
+                session_id: session_id.clone(),
+                waiting,
+            },
+        };
+        match self.tx.try_send(request) {
+            Ok(()) | Err(mpsc::error::TrySendError::Closed(_)) => {},
+            Err(mpsc::error::TrySendError::Full(request)) => {
+                if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                    let tx = self.tx.clone();
+                    rt.spawn(async move {
+                        if tokio::time::timeout(WAIT_RETRY_TIMEOUT, tx.send(request))
+                            .await
+                            .is_err()
+                        {
+                            warn!("human-wait update retry timed out; session manager queue still saturated");
+                        }
+                    });
+                }
+            },
+        }
+    }
+
+    /// Return per-stage effective activity for a group's live sessions (empty
+    /// when the group is gone). Used by the crew stall timer.
+    pub async fn group_last_activity(&self, group_name: String) -> Vec<StageActivitySnapshot> {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::GroupLastActivity {
+                    group_name,
+                    resp_sender,
+                },
+            })
+            .await;
+        rx.await.unwrap_or_default()
+    }
+
+    /// Cancel a single stalled stage, leaving its siblings running. Returns
+    /// `false` when no live stage by that name exists, the stage outran the
+    /// watchdog's observation, or there was no handle to tear down.
+    pub async fn cancel_group_stage(
+        &self,
+        group_name: String,
+        stage_name: String,
+        observed_last_activity_ms: Option<u64>,
+    ) -> bool {
+        let (resp_sender, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(SessionManagerRequest {
+                session_id: SessionId::new(String::new()),
+                data: SessionManagerRequestData::CancelGroupStage {
+                    group_name,
+                    stage_name,
+                    observed_last_activity_ms,
+                    resp_sender,
+                },
+            })
+            .await;
+        rx.await.unwrap_or(false)
     }
 
     /// Fail-fast: a stage in a blocking group failed. Abort the group's wait
@@ -3350,8 +3980,277 @@ fn stamp_acp_client_name(env: &crate::os::Env, name: &str) {
 #[cfg(test)]
 mod tests {
     use agent::util::truncate_safe;
+    use sacp::schema::SessionId;
 
     use super::SessionManager;
+
+    fn make_orch_session(
+        id: &str,
+        parent: Option<&str>,
+        group: Option<&str>,
+        human_waits: u32,
+    ) -> crate::agent::acp::orchestration::types::OrchestratedSession {
+        crate::agent::acp::orchestration::types::OrchestratedSession {
+            session_id: SessionId::new(id.to_string()),
+            name: id.to_string(),
+            role: None,
+            agent_name: "worker".to_string(),
+            model: None,
+            task: "task".to_string(),
+            parent_session: parent.map(|p| SessionId::new(p.to_string())),
+            group: group.map(str::to_string),
+            status: crate::agent::acp::orchestration::types::SessionStatus::Busy,
+            created_at: std::time::SystemTime::now(),
+            last_activity: std::time::SystemTime::now(),
+            human_attached: false,
+            persistent: false,
+            depends_on: vec![],
+            result: None,
+            loop_config: None,
+            loop_iteration: 0,
+            changes_needed: false,
+            human_waits,
+            human_wait_since: (human_waits > 0).then(std::time::SystemTime::now),
+            cancelled_by_deadline: false,
+        }
+    }
+
+    /// Dropping a child entry with waits outstanding must rebalance the counts
+    /// it bubbled to surviving ancestors — a stuck ancestor counter would
+    /// suspend the outer group's stall window forever. Only the topmost removed
+    /// node per branch is subtracted (a nested removed child's waits are
+    /// already folded into its removed ancestor's count).
+    #[test]
+    fn release_bubbled_waits_rebalances_surviving_ancestors() {
+        let mut sessions = std::collections::HashMap::new();
+        // outer (grandparent, survives) <- mid (parent, removed) <- leaf (removed)
+        // The leaf's 1 wait bubbled through mid and outer at mark time.
+        sessions.insert("outer".to_string(), make_orch_session("outer", None, None, 1));
+        sessions.insert("mid".to_string(), make_orch_session("mid", Some("outer"), Some("g"), 1));
+        sessions.insert("leaf".to_string(), make_orch_session("leaf", Some("mid"), Some("g"), 1));
+
+        let removed: std::collections::HashSet<String> = ["mid".to_string(), "leaf".to_string()].into();
+        SessionManager::release_bubbled_waits(&mut sessions, &removed);
+
+        let outer = sessions.get("outer").unwrap();
+        assert_eq!(
+            outer.human_waits, 0,
+            "the surviving ancestor must be decremented exactly once (by the topmost removed node)"
+        );
+        assert!(outer.human_wait_since.is_none());
+    }
+
+    /// The release walk must not reach further than a mark could have: a mark
+    /// from a live grandchild stops at its Terminated parent, so a release for
+    /// that grandchild must stop there too — decrementing past it would strip
+    /// an outer session's legitimate suspension for a wait it never received.
+    #[test]
+    fn release_walk_stops_at_terminated_nodes_like_the_mark_walk() {
+        let mut sessions = std::collections::HashMap::new();
+        sessions.insert("outer".to_string(), make_orch_session("outer", None, None, 1));
+        let mut mid = make_orch_session("mid", Some("outer"), Some("outer-group"), 0);
+        // mid was deadline-cancelled earlier: entry retained, Terminated.
+        mid.status = crate::agent::acp::orchestration::types::SessionStatus::Terminated;
+        sessions.insert("mid".to_string(), mid);
+        // The grandchild marked its wait AFTER mid terminated, so the mark
+        // stopped at mid and outer's count (1) is outer's own wait only.
+        sessions.insert(
+            "grandchild".to_string(),
+            make_orch_session("grandchild", Some("mid"), Some("inner-group"), 1),
+        );
+
+        // Inner-group teardown releases the grandchild's waits.
+        let removed: std::collections::HashSet<String> = std::iter::once("grandchild".to_string()).collect();
+        SessionManager::release_bubbled_waits(&mut sessions, &removed);
+
+        assert_eq!(
+            sessions.get("outer").unwrap().human_waits,
+            1,
+            "the release must stop at the Terminated node, not strip outer's own wait"
+        );
+    }
+
+    /// A cancel authorized by an out-of-actor observation is refused when the
+    /// stage outran it: progress past the observed timestamp, a delivered
+    /// result, or a human wait entered after the probe all veto the cancel.
+    #[test]
+    fn stage_cancel_refused_when_stage_outran_the_observation() {
+        let observed_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let mut session = make_orch_session("stage", None, Some("g"), 0);
+        // Sub-millisecond precision beyond the probe's ms resolution must not
+        // read as progress: the probe truncates to whole ms.
+        session.last_activity = std::time::UNIX_EPOCH
+            + std::time::Duration::from_millis(observed_ms)
+            + std::time::Duration::from_micros(700);
+        assert!(
+            SessionManager::stage_cancel_authorized(&session, Some(observed_ms)),
+            "an unchanged observation (modulo sub-ms noise) must authorize the cancel"
+        );
+        assert!(
+            SessionManager::stage_cancel_authorized(&session, None),
+            "a missing observation (older caller) must not veto"
+        );
+
+        // Progress after the probe vetoes.
+        session.last_activity += std::time::Duration::from_millis(500);
+        assert!(!SessionManager::stage_cancel_authorized(&session, Some(observed_ms)));
+
+        // A delivered result vetoes even with a stale timestamp.
+        let mut done = make_orch_session("stage", None, Some("g"), 0);
+        done.last_activity = std::time::UNIX_EPOCH + std::time::Duration::from_millis(observed_ms);
+        done.result = Some("real summary".to_string());
+        assert!(!SessionManager::stage_cancel_authorized(&done, Some(observed_ms)));
+
+        // A human wait entered after the probe vetoes.
+        let mut waiting = make_orch_session("stage", None, Some("g"), 1);
+        waiting.last_activity = std::time::UNIX_EPOCH + std::time::Duration::from_millis(observed_ms);
+        assert!(!SessionManager::stage_cancel_authorized(&waiting, Some(observed_ms)));
+
+        // ...but a wait older than the hold bound no longer vetoes: the probe
+        // already reports such a stage as stalled, and an unconditional veto
+        // would make an abandoned prompt uncancellable (unbounded retry loop).
+        waiting.human_wait_since = Some(
+            std::time::SystemTime::now() - (agent::consts::MAX_HUMAN_WAIT_HOLD + std::time::Duration::from_secs(1)),
+        );
+        assert!(
+            SessionManager::stage_cancel_authorized(&waiting, Some(observed_ms)),
+            "an aged-out human wait must not veto the cancel"
+        );
+    }
+
+    /// Pruning removes every transitive dependent of the cancelled stage and
+    /// returns one skipped-stage entry per victim, leaving independent pending
+    /// stages untouched.
+    #[test]
+    fn prune_dependents_reports_every_transitive_victim() {
+        let ps = |name: &str, deps: &[&str]| crate::agent::acp::orchestration::types::PendingStage {
+            name: name.to_string(),
+            role: "r".to_string(),
+            task: "t".to_string(),
+            depends_on: deps.iter().map(|d| d.to_string()).collect(),
+            agent_name: "a".to_string(),
+            model: None,
+            loop_config: None,
+            loop_iteration: 0,
+        };
+        let mut pending = vec![
+            ps("direct", &["victim"]),
+            ps("transitive", &["direct"]),
+            ps("independent", &["other"]),
+        ];
+
+        let skipped = SessionManager::prune_dependents_of(&mut pending, "victim");
+
+        let names: Vec<&str> = skipped.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["direct", "transitive"], "both dependents must be reported");
+        assert!(
+            skipped
+                .iter()
+                .all(|s| s.result.as_deref().is_some_and(|r| r.contains("before starting"))),
+            "skipped entries must carry the skipped-stage note"
+        );
+        assert_eq!(pending.len(), 1, "the independent stage must survive");
+        assert_eq!(pending[0].name, "independent");
+    }
+
+    /// A Terminated node detaches its subtree from the bubble walk: a late
+    /// clear from (or crossing) a cancelled node must not decrement ancestors
+    /// whose counters were already rebalanced at cancellation — otherwise an
+    /// unrelated stage's legitimate suspension is stripped.
+    #[test]
+    fn late_wait_clear_does_not_double_release_ancestors() {
+        let mut sessions = std::collections::HashMap::new();
+        // outer holds two waits: one bubbled from the (about to be cancelled)
+        // victim subtree, one of its own.
+        sessions.insert("outer".to_string(), make_orch_session("outer", None, None, 2));
+        sessions.insert(
+            "victim".to_string(),
+            make_orch_session("victim", Some("outer"), Some("g"), 1),
+        );
+
+        // Deadline cancellation: rebalance, then terminate the victim (entry retained).
+        let removed: std::collections::HashSet<String> = std::iter::once("victim".to_string()).collect();
+        SessionManager::release_bubbled_waits(&mut sessions, &removed);
+        let victim = sessions.get_mut("victim").unwrap();
+        victim.status = crate::agent::acp::orchestration::types::SessionStatus::Terminated;
+        victim.human_waits = 0;
+        victim.human_wait_since = None;
+        assert_eq!(sessions.get("outer").unwrap().human_waits, 1, "rebalance takes one");
+
+        // The detached approval task answers late: the clear starts at the
+        // terminated victim and must stop there.
+        SessionManager::for_session_and_ancestors(&mut sessions, "victim", |session| {
+            session.human_waits = session.human_waits.saturating_sub(1);
+        });
+        assert_eq!(
+            sessions.get("outer").unwrap().human_waits,
+            1,
+            "outer's own wait must survive the late clear"
+        );
+    }
+
+    /// A human wait older than the hold bound no longer suspends the window:
+    /// an unanswerable prompt must not disable the deadline forever.
+    #[test]
+    fn human_wait_freshness_is_bounded() {
+        assert!(!SessionManager::human_wait_is_fresh(None));
+        assert!(SessionManager::human_wait_is_fresh(Some(std::time::SystemTime::now())));
+        let stale =
+            std::time::SystemTime::now() - (agent::consts::MAX_HUMAN_WAIT_HOLD + std::time::Duration::from_secs(1));
+        assert!(!SessionManager::human_wait_is_fresh(Some(stale)));
+    }
+
+    /// A deadline-cancelled stage must never loop back: its stored result is a
+    /// cancellation note, and matching the trigger against it would respawn the
+    /// work the watchdog just stopped.
+    #[test]
+    fn deadline_cancelled_stage_never_triggers_loop() {
+        let mut session = make_orch_session("looper", None, Some("g"), 0);
+        session.loop_config = Some(crate::agent::acp::orchestration::types::LoopConfig {
+            target: "builder".to_string(),
+            max_iterations: 5,
+            trigger: "deadline".to_string(),
+        });
+        session.result = Some("Cancelled by the idle deadline: stage 'looper' made no progress.".to_string());
+        assert!(
+            SessionManager::check_loop_trigger(&session).is_some(),
+            "sanity: the note matches the trigger when not deadline-cancelled"
+        );
+        session.cancelled_by_deadline = true;
+        assert!(
+            SessionManager::check_loop_trigger(&session).is_none(),
+            "a deadline-cancelled stage must not re-trigger its loop"
+        );
+    }
+
+    /// An activity ping that finds the actor queue full must still be delivered
+    /// (bounded async retry), because the producer coalesces pings on the
+    /// assumption each one was observed.
+    #[tokio::test]
+    async fn activity_ping_survives_a_full_queue() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let handle = super::SessionManagerHandle {
+            tx,
+            ping_retry_inflight: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        let sid = SessionId::new("child".to_string());
+        // Fill the queue, then ping into the full queue.
+        handle.notify_session_activity(&sid);
+        handle.notify_session_activity(&sid);
+
+        let mut received = 0;
+        while received < 2 {
+            match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
+                Ok(Some(_)) => received += 1,
+                _ => break,
+            }
+        }
+        assert_eq!(received, 2, "the overflowed ping must be retried, not dropped");
+    }
 
     // resolve_agent_name tests.
     //
@@ -3541,6 +4440,9 @@ mod tests {
             loop_config,
             loop_iteration,
             changes_needed,
+            human_waits: 0,
+            human_wait_since: None,
+            cancelled_by_deadline: false,
         }
     }
 
@@ -3671,6 +4573,9 @@ mod tests {
             loop_config: None,
             loop_iteration: 0,
             changes_needed: false,
+            human_waits: 0,
+            human_wait_since: None,
+            cancelled_by_deadline: false,
         }
     }
 

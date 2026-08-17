@@ -111,3 +111,23 @@ kiro-cli settings api.streamIdleHardTimeout 300
 Set to `0` to disable the client-side stream deadline.
 
 Note the unit: seconds, unlike `api.timeout` which is milliseconds. Values above 3600 (one hour) are clamped to 3600 with a logged warning, so a milliseconds-shaped value cannot silently disable the watchdog.
+
+## api.subagentTimeout
+
+Per-subagent idle window in seconds.
+
+### Overview
+
+Cancels an individual subagent (V1 `use_subagent` child) or crew stage (V2 `agent_crew`) only after that child goes a full window with no observable progress of its own; any of its progress events (assistant tokens, tool calls, tool results) restarts its window, and human-blocked waits (tool-approval prompts, MCP OAuth grants) suspend it, bounded at 24 hours so an unanswerable prompt cannot suspend the deadline forever. Progress means emitted events: a child streaming or calling tools runs indefinitely, but a single tool call that stays silent for a full window counts as a stall — keep the window comfortably above your longest silent command before tuning it down. A busy sibling neither masks a wedged child nor is cancelled as collateral when it trips. On expiry only the stalled child is cancelled (dependent stages that never started are skipped); the parent turn continues with the other children's real summaries plus a cancellation note per cancelled child — the session does not error. One exception: if the watchdog itself cannot observe the group at all (sustained failures of the activity probe against the agent backend), it falls back to cancelling the whole group — healthy children included — rather than leaving the parent turn hung on an unobservable backend.
+
+### Usage
+
+```bash
+kiro-cli settings api.subagentTimeout 3600
+```
+
+**Type**: Number
+**Default**: `3600`
+**Unit**: Seconds
+
+Set to `0` to disable the deadline. The `KIRO_SUBAGENT_STALL_TIMEOUT_MS` environment variable (milliseconds) takes precedence over this setting when present; if your configured value seems ignored, check for that variable in the launching environment.

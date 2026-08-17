@@ -86,6 +86,39 @@ pub fn subagent_stall_timeout() -> Duration {
     env_subagent_stall_timeout().unwrap_or(DEFAULT_SUBAGENT_TIMEOUT)
 }
 
+/// Ceiling on the resolved subagent idle window, shared by both engines so an
+/// identical configuration cancels identically. A sanity bound, not a tuning
+/// limit: multi-hour and multi-day windows are legitimate, so it is set far
+/// beyond any practical wait, and anything above it (e.g. a milliseconds value
+/// pasted into this seconds setting) clamps with a logged warning instead of
+/// being silently honored. Defense in depth for the V1 `Instant + window`
+/// arithmetic, whose `checked_add` is the primary overflow guard.
+pub const MAX_SUBAGENT_TIMEOUT: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// Clamps a resolved idle window to [`MAX_SUBAGENT_TIMEOUT`], warning so an
+/// oversized value (e.g. milliseconds pasted into a seconds setting) is not
+/// silently reinterpreted. Zero (deadline disabled) passes through.
+pub fn clamp_subagent_timeout(window: Duration) -> Duration {
+    if window > MAX_SUBAGENT_TIMEOUT {
+        tracing::warn!(
+            requested_secs = window.as_secs(),
+            max_secs = MAX_SUBAGENT_TIMEOUT.as_secs(),
+            "clamping oversized subagent idle window"
+        );
+        MAX_SUBAGENT_TIMEOUT
+    } else {
+        window
+    }
+}
+
+/// Upper bound on how long a human-blocked wait (tool-approval prompt, MCP
+/// OAuth grant) suspends a child's stall window. Matches the 24h MCP
+/// authorization window, so any legitimately answerable prompt fits; past it
+/// the wait is treated as undeliverable/abandoned (client gone, prompt never
+/// rendered) and the idle window resumes rather than suspending the deadline
+/// for the rest of the session.
+pub const MAX_HUMAN_WAIT_HOLD: Duration = Duration::from_secs(24 * 3600);
+
 /// Inter-event stream silence after which a stall warning is emitted while the response
 /// stream stays open, so clients can show progress instead of a frozen screen.
 pub const DEFAULT_STREAM_IDLE_SOFT_TIMEOUT: Duration = Duration::from_secs(60);

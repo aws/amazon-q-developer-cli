@@ -356,6 +356,173 @@ struct JsonOutput {
     duration_ms: u32,
 }
 
+/// Freshest activity signal shared by a subagent stage: children bump it on
+/// every progress event and the stage deadline loop reads it to restart the
+/// idle window, so an actively-working child is never cut off. Monotonic
+/// (tokio) clock, so wall-clock jumps and suspend/resume cannot fake or hide
+/// progress.
+///
+/// A child waiting on a human (tool-approval prompt, MCP OAuth grant) is not
+/// stalled: such waits register a hold, and while any hold is outstanding the
+/// stage reads as fresh, suspending the idle window until the human answers.
+/// The suspension is bounded by [`agent::consts::MAX_HUMAN_WAIT_HOLD`]: a
+/// prompt that outlives it is treated as abandoned (client gone, never
+/// rendered) and the idle window resumes, so a lost prompt cannot suspend the
+/// deadline for the rest of the session.
+#[derive(Debug)]
+pub struct StageActivity {
+    last: std::sync::Mutex<tokio::time::Instant>,
+    holds: std::sync::Mutex<HoldState>,
+}
+
+/// Outstanding human-blocked waits plus when the current uninterrupted run of
+/// them began, bounding how long the run can suspend the idle window. The
+/// anchor is never refreshed while waits remain outstanding: the run start
+/// precedes every outstanding wait, so the bound provably ages out the oldest
+/// one — an anchor refreshed by unrelated answered prompts would let approval
+/// churn keep one stuck prompt suspended forever.
+#[derive(Debug, Default)]
+struct HoldState {
+    count: usize,
+    since: Option<tokio::time::Instant>,
+}
+
+impl StageActivity {
+    /// Poison recovery is safe throughout: every critical section only assigns
+    /// an Instant or a small counter, so a panicking peer cannot leave a
+    /// half-written state worth propagating a panic over.
+    pub fn bump(&self) {
+        *self.last.lock().unwrap_or_else(|e| e.into_inner()) = tokio::time::Instant::now();
+    }
+
+    /// Suspend the idle window (human-blocked wait started).
+    pub fn hold(&self) {
+        let mut holds = self.holds.lock().unwrap_or_else(|e| e.into_inner());
+        holds.count += 1;
+        if holds.count == 1 {
+            holds.since = Some(tokio::time::Instant::now());
+        }
+    }
+
+    /// Resume the idle window (human answered), granting a fresh full window.
+    pub fn release(&self) {
+        // Bump first so the window restarts from the release, not from before the wait.
+        self.bump();
+        let mut holds = self.holds.lock().unwrap_or_else(|e| e.into_inner());
+        match holds.count.checked_sub(1) {
+            Some(remaining) => {
+                holds.count = remaining;
+                if remaining == 0 {
+                    holds.since = None;
+                }
+            },
+            None => tracing::error!("StageActivity::release without a matching hold"),
+        }
+    }
+
+    pub fn last(&self) -> tokio::time::Instant {
+        let holds = self.holds.lock().unwrap_or_else(|e| e.into_inner());
+        if holds.count > 0
+            && holds
+                .since
+                .is_some_and(|since| since.elapsed() < agent::consts::MAX_HUMAN_WAIT_HOLD)
+        {
+            return tokio::time::Instant::now();
+        }
+        drop(holds);
+        *self.last.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+impl Default for StageActivity {
+    fn default() -> Self {
+        Self {
+            last: std::sync::Mutex::new(tokio::time::Instant::now()),
+            holds: std::sync::Mutex::new(HoldState::default()),
+        }
+    }
+}
+
+/// Per-child bookkeeping for [`StageActivity`] holds. Balances hold/release for
+/// this child and releases anything still outstanding on drop, so a child that
+/// errors or is interrupted mid-wait cannot leave the shared stage suspended.
+struct StageHoldGuard {
+    activity: Option<std::sync::Arc<StageActivity>>,
+    outstanding: usize,
+}
+
+impl StageHoldGuard {
+    fn new(activity: Option<std::sync::Arc<StageActivity>>) -> Self {
+        Self {
+            activity,
+            outstanding: 0,
+        }
+    }
+
+    fn hold(&mut self) {
+        if let Some(activity) = &self.activity {
+            activity.hold();
+            self.outstanding += 1;
+        }
+    }
+
+    fn release(&mut self) {
+        if let Some(activity) = &self.activity
+            && self.outstanding > 0
+        {
+            activity.release();
+            self.outstanding -= 1;
+        }
+    }
+}
+
+impl Drop for StageHoldGuard {
+    fn drop(&mut self) {
+        if let Some(activity) = &self.activity {
+            for _ in 0..self.outstanding {
+                activity.release();
+            }
+        }
+    }
+}
+
+/// Stage idle-window signals from MCP events, shared by the initialization and
+/// main loops: server churn is progress (a slow but moving server must not burn
+/// the window), and an OAuth grant is a human-blocked wait — hold until the
+/// server resolves either way, keyed by server name so a re-request cannot
+/// double-hold. OAuth can also fire mid-session (token refresh, reconnect), so
+/// the main loop must track these signals too, not just initialization.
+fn track_mcp_stage_signals(
+    evt: &AgentEvent,
+    stage_activity: Option<&std::sync::Arc<StageActivity>>,
+    stage_holds: &mut StageHoldGuard,
+    oauth_waits: &mut std::collections::HashSet<String>,
+) {
+    // Initialization-time MCP events arrive as InitializeUpdate; post-init
+    // events (reauth on token refresh, reconnect) arrive as AgentEvent::Mcp.
+    // Both shapes must be tracked or a mid-session grant reads as a stall.
+    let evt = match evt {
+        AgentEvent::InitializeUpdate(InitializeUpdateEvent::Mcp(evt)) | AgentEvent::Mcp(evt) => evt,
+        _ => return,
+    };
+    if let Some(activity) = stage_activity {
+        activity.bump();
+    }
+    match evt {
+        McpServerEvent::OauthRequest { server_name, .. } => {
+            if oauth_waits.insert(server_name.clone()) {
+                stage_holds.hold();
+            }
+        },
+        McpServerEvent::Initialized { server_name, .. } | McpServerEvent::InitializeError { server_name, .. } => {
+            if oauth_waits.remove(server_name) {
+                stage_holds.release();
+            }
+        },
+        _ => {},
+    }
+}
+
 #[derive(Debug)]
 pub struct Subagent<'a> {
     pub id: u16,
@@ -370,6 +537,8 @@ pub struct Subagent<'a> {
     pub code_intelligence: Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
     pub registry_data: Option<&'a crate::mcp_registry::McpRegistryResponse>,
     pub web_tools_enabled: bool,
+    /// Stage-shared activity signal; bumped on this child's progress events when set.
+    pub stage_activity: Option<std::sync::Arc<StageActivity>>,
 }
 
 impl<'a> Subagent<'a> {
@@ -552,6 +721,13 @@ impl<'a> Subagent<'a> {
             &os.telemetry,
         );
 
+        // Human-blocked waits (tool approvals, MCP OAuth grants) suspend the stage
+        // idle window. The guard releases any leftover holds if this child exits
+        // mid-wait, so an errored or interrupted child cannot leave the shared
+        // stage suspended forever.
+        let mut stage_holds = StageHoldGuard::new(self.stage_activity.clone());
+        let mut oauth_waits: std::collections::HashSet<String> = Default::default();
+
         // First, wait for agent initialization
         loop {
             tokio::select! {
@@ -573,6 +749,13 @@ impl<'a> Subagent<'a> {
                     let Ok(agent_evt) = agent_evt else {
                         bail!("agent loop channel closed");
                     };
+
+                    track_mcp_stage_signals(
+                        &agent_evt,
+                        self.stage_activity.as_ref(),
+                        &mut stage_holds,
+                        &mut oauth_waits,
+                    );
 
                     match agent_evt {
                         AgentEvent::InitializeUpdate(initialize_update_evt) => {
@@ -667,6 +850,9 @@ impl<'a> Subagent<'a> {
                             break;
                         },
                         InputEventKind::ToolApproval(id) => {
+                            // Human answered: resume the stage idle window with a fresh
+                            // full window before resuming the tool.
+                            stage_holds.release();
                             agent
                                 .send_tool_use_approval_result(SendApprovalResultArgs {
                                     id,
@@ -679,6 +865,7 @@ impl<'a> Subagent<'a> {
                                 .await?;
                         },
                         InputEventKind::ToolRejection(id) => {
+                            stage_holds.release();
                             agent
                                 .send_tool_use_approval_result(SendApprovalResultArgs {
                                     id,
@@ -711,6 +898,14 @@ impl<'a> Subagent<'a> {
                         },
                     };
                     debug!(?evt, "received new agent event");
+
+                    // Progress ping for the stage idle deadline: an update event
+                    // (assistant tokens, tool calls, tool results) proves this child
+                    // is alive and working, so the stage window restarts.
+                    if let (Some(activity), AgentEvent::Update(_)) = (&self.stage_activity, &evt) {
+                        activity.bump();
+                    }
+                    track_mcp_stage_signals(&evt, self.stage_activity.as_ref(), &mut stage_holds, &mut oauth_waits);
 
                     // Check for exit conditions
                     match evt {
@@ -927,7 +1122,13 @@ impl<'a> Subagent<'a> {
                                         .await?;
                                 }
                                 (true, false) => {
-                                    _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
+                                    // Waiting on the user's approval decision is a
+                                    // human-blocked wait, not a stall: suspend the stage
+                                    // idle window until they answer — but only once the
+                                    // prompt actually reached the UI. A failed send means
+                                    // nobody will ever answer, so holding would suspend
+                                    // the deadline on a wait that cannot end.
+                                    match control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                         agent_id: self.id,
                                         kind: AgentEventKind::ToolCallPermissionRequest(
                                             ToolCallPermissionRequest {
@@ -936,7 +1137,10 @@ impl<'a> Subagent<'a> {
                                                 input: tool_use.input,
                                             }
                                         )
-                                    }));
+                                    })) {
+                                        Ok(()) => stage_holds.hold(),
+                                        Err(e) => error!(?e, "failed to deliver approval prompt to the UI"),
+                                    }
                                 },
                                 (false, false) => {
                                     error!("subagent cannot run in non-interactive mode with tool permission request");
@@ -1070,6 +1274,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Su
             code_intelligence: None,
             registry_data: None,
             web_tools_enabled: true,
+            stage_activity: None,
         })
         .collect::<Vec<_>>();
 
@@ -1123,6 +1328,69 @@ mod tests {
     use chrono::Utc;
 
     use super::*;
+
+    /// While a hold is outstanding the stage reads as fresh (the idle window is
+    /// suspended); release restores normal timestamp reads with a fresh bump.
+    #[tokio::test(start_paused = true)]
+    async fn stage_activity_hold_suspends_idle_window() {
+        let activity = StageActivity::default();
+        let before = activity.last();
+
+        activity.hold();
+        tokio::time::advance(std::time::Duration::from_secs(7200)).await;
+        assert!(
+            activity.last() > before + std::time::Duration::from_secs(7000),
+            "a held stage must read as fresh for the whole (bounded) wait"
+        );
+
+        activity.release();
+        let released_at = activity.last();
+        tokio::time::advance(std::time::Duration::from_secs(600)).await;
+        assert_eq!(
+            activity.last(),
+            released_at,
+            "after release, last() must be the release bump, not a live clock"
+        );
+    }
+
+    /// A hold that outlives [`agent::consts::MAX_HUMAN_WAIT_HOLD`] stops
+    /// suspending the window: an unanswered prompt (client gone, never
+    /// rendered) must not disable the deadline for the rest of the session.
+    #[tokio::test(start_paused = true)]
+    async fn stage_activity_hold_is_bounded() {
+        let activity = StageActivity::default();
+        let before = activity.last();
+
+        activity.hold();
+        tokio::time::advance(agent::consts::MAX_HUMAN_WAIT_HOLD + std::time::Duration::from_secs(1)).await;
+        assert_eq!(
+            activity.last(),
+            before,
+            "past the hold bound the stage must read its real (stale) timestamp"
+        );
+    }
+
+    /// The guard releases whatever holds its child left outstanding, so a child
+    /// that errors or is interrupted mid-approval cannot leave the shared stage
+    /// suspended forever.
+    #[tokio::test(start_paused = true)]
+    async fn stage_hold_guard_releases_outstanding_holds_on_drop() {
+        let activity = std::sync::Arc::new(StageActivity::default());
+        {
+            let mut guard = StageHoldGuard::new(Some(activity.clone()));
+            guard.hold();
+            guard.hold();
+            guard.release();
+            // One hold still outstanding when the guard drops (child exited mid-wait).
+        }
+        let after_drop = activity.last();
+        tokio::time::advance(std::time::Duration::from_secs(600)).await;
+        assert_eq!(
+            activity.last(),
+            after_drop,
+            "drop must release leftover holds so the stage clock resumes"
+        );
+    }
 
     /// Verifies that the subagent snapshot includes CWD in allowed read paths,
     /// so fs_read within the working directory doesn't require approval.

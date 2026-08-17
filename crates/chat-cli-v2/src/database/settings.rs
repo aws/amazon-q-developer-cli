@@ -93,6 +93,8 @@ pub enum Setting {
     ApiStreamIdleSoftTimeout,
     #[strum(message = "Stream idle hard timeout in seconds; abandon the stream after this much silence (number)")]
     ApiStreamIdleHardTimeout,
+    #[strum(message = "Per-subagent idle deadline in seconds; resets on that child's progress; 0 disables (number)")]
+    ApiSubagentTimeout,
     #[strum(message = "Enable edit mode for chat interface (boolean)")]
     ChatEditMode,
     #[strum(message = "Enable desktop notifications (boolean)")]
@@ -286,6 +288,7 @@ impl AsRef<str> for Setting {
             Self::ApiTimeout => "api.timeout",
             Self::ApiStreamIdleSoftTimeout => "api.streamIdleSoftTimeout",
             Self::ApiStreamIdleHardTimeout => "api.streamIdleHardTimeout",
+            Self::ApiSubagentTimeout => "api.subagentTimeout",
             Self::ChatEditMode => "chat.editMode",
             Self::ChatEnableNotifications => "chat.enableNotifications",
             Self::ChatNotificationMethod => "chat.notificationMethod",
@@ -390,6 +393,7 @@ impl TryFrom<&str> for Setting {
             "api.timeout" => Ok(Self::ApiTimeout),
             "api.streamIdleSoftTimeout" => Ok(Self::ApiStreamIdleSoftTimeout),
             "api.streamIdleHardTimeout" => Ok(Self::ApiStreamIdleHardTimeout),
+            "api.subagentTimeout" => Ok(Self::ApiSubagentTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
             "chat.enableNotifications" => Ok(Self::ChatEnableNotifications),
             "chat.notificationMethod" => Ok(Self::ChatNotificationMethod),

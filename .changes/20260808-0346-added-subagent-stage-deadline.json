@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Subagents and crew stages no longer hang the parent turn indefinitely: each child now has an idle deadline (`api.subagentTimeout`, default 3600s, 0 disables) that resets on the child's progress and pauses while it waits on a human; a stalled child is cancelled alone and the parent continues with the remaining results"
+}

@@ -9,6 +9,12 @@ use tracing::{
     warn,
 };
 
+/// Bound on the async retry of a fire-and-forget request that found the queue
+/// full. Generous relative to normal drain latency; if the receiver stays
+/// saturated this long the request is dropped (with a warning), restoring the
+/// original best-effort semantics.
+const FIRE_AND_FORGET_RETRY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// A request to a specific task
 #[derive(Debug)]
 pub struct Request<Req, Res, Err> {
@@ -120,13 +126,31 @@ where
         trace!(?payload, "fire-and-forget send");
         let (res_tx, _res_rx) = oneshot::channel();
         let request = Request { payload, res_tx };
-        if self.tx.try_send(request).is_err() {
-            warn!("request receiver has closed (fire-and-forget)");
+        match self.tx.try_send(request) {
+            Ok(()) => {},
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                warn!("request receiver has closed (fire-and-forget)");
+            },
+            Err(mpsc::error::TrySendError::Full(request)) => {
+                // A full queue is not a dead receiver: the loop is alive but not
+                // draining — for a Terminate from a dropped handle, exactly the wedged
+                // child that must not be orphaned. Retry asynchronously under a bound
+                // instead of discarding; without a runtime (plain drop off-runtime)
+                // this stays best-effort, as before.
+                warn!("request queue full (fire-and-forget); retrying with a bounded async send");
+                if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                    let tx = self.tx.clone();
+                    rt.spawn(async move {
+                        if tokio::time::timeout(FIRE_AND_FORGET_RETRY_TIMEOUT, tx.send(request))
+                            .await
+                            .is_err()
+                        {
+                            warn!("fire-and-forget retry timed out; receiver still saturated");
+                        }
+                    });
+                }
+            },
         }
-    }
-
-    pub fn count(&self) -> usize {
-        self.tx.strong_count()
     }
 }
 
@@ -151,9 +175,27 @@ mod tests {
     struct TestErr(String);
 
     #[tokio::test]
-    async fn test_new_request_channel() {
-        let (tx, _rx): (RequestSender<u32, u32, TestErr>, _) = new_request_channel();
-        assert_eq!(tx.count(), 1);
+    async fn try_send_no_recv_retries_async_when_queue_full() {
+        // Fill the 16-slot queue, then fire one more: it must be retried
+        // asynchronously once the receiver drains, not silently discarded —
+        // a dropped Terminate on a full queue orphans the child it targets.
+        let (tx, mut rx): (RequestSender<String, i32, TestErr>, _) = new_request_channel();
+        for i in 0..16 {
+            tx.try_send_no_recv(format!("fill-{i}"));
+        }
+        tx.try_send_no_recv("terminate".to_string());
+
+        let mut received = Vec::new();
+        while received.len() < 17 {
+            match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
+                Ok(Some(req)) => received.push(req.payload),
+                _ => break,
+            }
+        }
+        assert!(
+            received.iter().any(|p| p == "terminate"),
+            "the overflowed fire-and-forget request must be retried, not dropped; got {received:?}"
+        );
     }
 
     #[tokio::test]
@@ -202,13 +244,6 @@ mod tests {
         let result = tx.send_recv(1).await;
         assert!(result.is_none());
         handle.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_clone() {
-        let (tx, _rx): (RequestSender<i32, i32, TestErr>, _) = new_request_channel();
-        let _tx2 = tx.clone();
-        assert_eq!(tx.count(), 2);
     }
 
     #[test]

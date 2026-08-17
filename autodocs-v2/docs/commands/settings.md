@@ -128,6 +128,7 @@ Some settings are global-only and cannot be overridden at workspace level (e.g.,
 | `api.timeout` | number | API request timeout in milliseconds |
 | `api.streamIdleSoftTimeout` | number | Stream idle warning threshold in seconds |
 | `api.streamIdleHardTimeout` | number | Stream idle abandon threshold in seconds |
+| `api.subagentTimeout` | number | Per-subagent idle window in seconds (that child's progress restarts it) |
 | `api.codewhisperer.service` | string | CodeWhisperer endpoint (global only) |
 | `api.q.service` | string | Q service endpoint (global only) |
 | `mcp.initTimeout` | number | MCP server init timeout |

@@ -115,6 +115,58 @@ pub async fn handle_session_tool_request(
             },
             Err(e) => Err(e),
         },
+        SessionTool::CancelGroup { group } => {
+            let results = session_tx.cancel_group(group.clone()).await;
+            let formatted: Vec<serde_json::Value> = results
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "name": r.name,
+                        "result": r.result.as_deref().unwrap_or("No result"),
+                        "loop_iterations_used": r.loop_iterations_used
+                    })
+                })
+                .collect();
+            Ok(serde_json::json!({
+                "status": "cancelled",
+                "group": group,
+                "results": formatted
+            })
+            .to_string())
+        },
+        SessionTool::GroupLastActivity { group } => {
+            let to_ms = |t: std::time::SystemTime| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0u64, |d| d.as_millis() as u64)
+            };
+            let stages = session_tx.group_last_activity(group.clone()).await;
+            let last_activity_ms = stages.iter().map(|s| to_ms(s.last_activity)).max();
+            let stages: Vec<serde_json::Value> = stages
+                .iter()
+                .map(|s| serde_json::json!({ "name": s.name, "last_activity_ms": to_ms(s.last_activity) }))
+                .collect();
+            Ok(serde_json::json!({
+                "group": group,
+                "last_activity_ms": last_activity_ms,
+                "stages": stages,
+            })
+            .to_string())
+        },
+        SessionTool::CancelGroupStage {
+            group,
+            name,
+            observed_last_activity_ms,
+        } => {
+            let cancelled = session_tx
+                .cancel_group_stage(group.clone(), name.clone(), *observed_last_activity_ms)
+                .await;
+            Ok(serde_json::json!({
+                "group": group,
+                "name": name,
+                "cancelled": cancelled,
+            })
+            .to_string())
+        },
     };
 
     let response = match result {

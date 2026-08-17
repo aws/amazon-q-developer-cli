@@ -51,6 +51,12 @@ pub struct CapturedNotifications {
 pub enum PermissionResponse {
     /// Select an option by its ID
     Select(String),
+    /// Select an option by its ID after a delay — simulates a human taking a
+    /// while to answer an approval prompt.
+    DelayedSelect {
+        option_id: String,
+        delay: std::time::Duration,
+    },
     /// Cancel the permission request
     Cancel,
 }
@@ -202,6 +208,12 @@ impl acp::Client for TestAcpClient {
             PermissionResponse::Select(id) => acp::RequestPermissionOutcome::Selected(
                 acp::SelectedPermissionOutcome::new(acp::PermissionOptionId::new(id)),
             ),
+            PermissionResponse::DelayedSelect { option_id, delay } => {
+                tokio::time::sleep(delay).await;
+                acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
+                    acp::PermissionOptionId::new(option_id),
+                ))
+            },
             PermissionResponse::Cancel => acp::RequestPermissionOutcome::Cancelled,
         };
 

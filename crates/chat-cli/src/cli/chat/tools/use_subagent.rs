@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use chat_cli_ui::conduit::get_conduit;
 use chat_cli_ui::subagent_indicator::SubagentIndicator;
@@ -10,14 +13,20 @@ use eyre::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use tracing::error;
+use tracing::{
+    error,
+    warn,
+};
 
 use super::{
     InvokeOutput,
     Tool,
     ToolInfo,
 };
-use crate::agent::Subagent;
+use crate::agent::{
+    StageActivity,
+    Subagent,
+};
 use crate::cli::Agent;
 use crate::cli::agent::{
     Agents,
@@ -58,6 +67,7 @@ impl InvokeSubagent {
         query_override: Option<&'a str>,
         registry_data: Option<&'a crate::mcp_registry::McpRegistryResponse>,
         web_tools_enabled: bool,
+        stage_activity: Arc<StageActivity>,
     ) -> Subagent<'a> {
         let InvokeSubagent {
             query,
@@ -80,6 +90,7 @@ impl InvokeSubagent {
             code_intelligence,
             registry_data,
             web_tools_enabled,
+            stage_activity: Some(stage_activity),
         }
     }
 }
@@ -326,6 +337,18 @@ impl UseSubagent {
                     resolved_queries.push(resolved);
                 }
 
+                // Original (pre-expansion) task text for cancellation summaries: the
+                // resolved query can be an entire expanded @prompt SOP, which must not
+                // be re-injected into a parent already trying to recover context.
+                let task_descriptions: Vec<String> =
+                    subagents.iter().map(|s| truncate_task_description(&s.query)).collect();
+
+                // One activity anchor per child, so the idle deadline answers "has
+                // THIS child moved recently?" — a busy sibling can neither mask a
+                // wedged child nor be cancelled as collateral when it trips.
+                let stage_activities: Vec<Arc<StageActivity>> = (0..subagents.len())
+                    .map(|_| Arc::new(StageActivity::default()))
+                    .collect();
                 let subagents = subagents
                     .iter()
                     .enumerate()
@@ -339,6 +362,7 @@ impl UseSubagent {
                             Some(resolved_queries[id].as_str()),
                             registry_data,
                             web_tools_enabled,
+                            stage_activities[id].clone(),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -354,21 +378,85 @@ impl UseSubagent {
                 let mut indicator_handle = subagent_indicator.run();
 
                 let parent_conv_id = convo_id.as_deref().unwrap_or_default();
-                let res =
-                    futures::future::try_join_all(subagents.into_iter().map(|subagent| {
-                        subagent.query(os, input_rx.resubscribe(), control_end.clone(), parent_conv_id)
-                    }))
-                    .await;
+
+                // Children have a per-turn stream watchdog but can still run unbounded
+                // many turns; each child races its OWN idle window, which its progress
+                // events (and human-wait holds) keep restarting, so an actively-working
+                // child runs indefinitely. A child that goes a full window without
+                // progress is cancelled alone — its future is dropped (terminating its
+                // session) while healthy siblings keep running — and the parent turn
+                // continues with real summaries plus a cancellation summary per
+                // cancelled child, instead of erroring.
+                let deadline = subagent_deadline(os);
+                let mut in_flight: futures::stream::FuturesUnordered<_> = subagents
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, subagent)| {
+                        let input_rx = input_rx.resubscribe();
+                        let control_end = control_end.clone();
+                        let activity = stage_activities[index].clone();
+                        async move {
+                            let child = subagent.query(os, input_rx, control_end, parent_conv_id);
+                            (index, run_child_with_idle_deadline(child, &activity, deadline).await)
+                        }
+                    })
+                    .collect();
+
+                let StageOutcome {
+                    completed,
+                    child_error,
+                    expired,
+                } = drain_stage(&mut in_flight, task_descriptions.len()).await;
+                drop(in_flight);
 
                 if let Err(e) = indicator_handle.wait_for_clean_screen().await {
                     error!(?e, "failed to wait for clean screen");
                 }
 
-                let summaries = res?;
+                // Telemetry before the fail-fast return: a deadline expiry already
+                // happened even if a sibling then errored, and V2 emits at cancel
+                // time regardless of what siblings do afterwards.
+                let expired_count = expired.iter().filter(|e| **e).count();
+                if expired_count > 0 {
+                    let deadline = deadline.unwrap_or_default();
+                    error!(?deadline, expired_count, "subagent idle deadline expired");
+                    // One event per victim (V2 stage-cancel parity), so dashboards
+                    // count a multi-victim stall at its true size.
+                    for _ in 0..expired_count {
+                        os.telemetry
+                            .send_subagent_deadline_expired(&os.database, deadline)
+                            .await
+                            .ok();
+                    }
+                }
 
-                let output_serialized = serde_json::json!({
-                    "summaries": summaries,
-                });
+                if let Some(e) = child_error {
+                    return Err(e);
+                }
+
+                let summaries: Vec<agent::tools::summary::Summary> = completed
+                    .into_iter()
+                    .zip(task_descriptions)
+                    .map(|(summary, task_description)| {
+                        summary.unwrap_or_else(|| agent::tools::summary::Summary {
+                            task_description,
+                            context_summary: None,
+                            task_result: format!(
+                                "This subagent was cancelled: it made no observable progress for \
+                                 a full idle window ({:?}, setting api.subagentTimeout / env \
+                                 KIRO_SUBAGENT_STALL_TIMEOUT_MS). Sibling subagents were not \
+                                 affected. Work this subagent completed before cancellation (file \
+                                 edits, commands) may have partially applied, and a command it \
+                                 launched may still be running; verify the state and decide \
+                                 whether to retry with a smaller task.",
+                                deadline.unwrap_or_default()
+                            ),
+                            result_type: None,
+                        })
+                    })
+                    .collect();
+
+                let output_serialized = serde_json::json!({ "summaries": summaries });
 
                 Ok(InvokeOutput {
                     output: super::OutputKind::Json(output_serialized),
@@ -443,6 +531,135 @@ impl UseSubagent {
     }
 }
 
+/// One child's terminal state after racing its own idle window.
+enum ChildOutcome {
+    Done(agent::tools::summary::Summary),
+    Failed(eyre::Report),
+    /// The child's idle window elapsed with no progress; its future was
+    /// dropped, terminating its session.
+    DeadlineExpired,
+}
+
+/// Race a single child against its own idle window (`None` disables it). The
+/// window is an idle timer on THIS child's progress alone: its events (and
+/// human-wait holds) restart it, so an actively-working child — however long —
+/// is never cut off, a busy sibling cannot mask this child's wedge, and this
+/// child tripping never cancels a sibling.
+async fn run_child_with_idle_deadline(
+    child: impl Future<Output = Result<agent::tools::summary::Summary>>,
+    activity: &StageActivity,
+    deadline: Option<Duration>,
+) -> ChildOutcome {
+    tokio::pin!(child);
+    // Sleep to the current window edge and re-check: a bump while we slept
+    // moves the edge forward, so only a full window of silence falls through.
+    let idle = async {
+        let Some(window) = deadline else {
+            return std::future::pending::<()>().await;
+        };
+        loop {
+            // Saturate rather than panic if the edge is unrepresentable — an
+            // overflowing expiry simply means "never expires". The resolver
+            // also clamps the window, so this is defense in depth.
+            let Some(expires_at) = activity.last().checked_add(window) else {
+                return std::future::pending::<()>().await;
+            };
+            if tokio::time::Instant::now() >= expires_at {
+                return;
+            }
+            tokio::time::sleep_until(expires_at).await;
+        }
+    };
+    tokio::select! {
+        // Prefer a completed child over the idle trip when both are ready, so a
+        // photo-finish completion isn't reported as a cancellation (V2 parity).
+        biased;
+        res = &mut child => match res {
+            Ok(summary) => ChildOutcome::Done(summary),
+            Err(e) => ChildOutcome::Failed(e),
+        },
+        _ = idle => ChildOutcome::DeadlineExpired,
+    }
+}
+
+struct StageOutcome {
+    /// Per-child summary, index-aligned with the invocation order. `None` for
+    /// children cancelled by their idle window (or still pending when a
+    /// sibling's error ended the stage).
+    completed: Vec<Option<agent::tools::summary::Summary>>,
+    child_error: Option<eyre::Report>,
+    /// Per-child: whether that child's own idle window cancelled it.
+    expired: Vec<bool>,
+}
+
+/// Drain wrapped children until all resolve or one fails. A child error is
+/// fail-fast (remaining futures are dropped), matching the previous
+/// `try_join_all` semantics; per-child deadline expiries are not errors.
+async fn drain_stage(
+    in_flight: &mut (impl futures::Stream<Item = (usize, ChildOutcome)> + Unpin),
+    child_count: usize,
+) -> StageOutcome {
+    use futures::StreamExt as _;
+
+    let mut outcome = StageOutcome {
+        completed: (0..child_count).map(|_| None).collect(),
+        child_error: None,
+        expired: vec![false; child_count],
+    };
+    while let Some((index, res)) = in_flight.next().await {
+        match res {
+            ChildOutcome::Done(summary) => outcome.completed[index] = Some(summary),
+            ChildOutcome::DeadlineExpired => outcome.expired[index] = true,
+            ChildOutcome::Failed(e) => {
+                outcome.child_error = Some(e);
+                break;
+            },
+        }
+    }
+    outcome
+}
+
+/// Bound on a cancellation summary's task description: enough to identify the
+/// task, never a re-injected multi-kilobyte expanded prompt.
+const TASK_DESCRIPTION_MAX_CHARS: usize = 300;
+
+/// Original task text, bounded, for use in cancellation summaries.
+fn truncate_task_description(query: &str) -> String {
+    if query.chars().count() <= TASK_DESCRIPTION_MAX_CHARS {
+        query.to_string()
+    } else {
+        let truncated: String = query.chars().take(TASK_DESCRIPTION_MAX_CHARS).collect();
+        format!("{truncated}…")
+    }
+}
+
+/// Idle window for a subagent stage: `KIRO_SUBAGENT_STALL_TIMEOUT_MS` (ms) wins
+/// over the stored `api.subagentTimeout` setting (seconds), then the shared
+/// default — the same env-over-settings precedence and shared ceiling as V2, so
+/// identical launch configuration cancels identically on both engines. A
+/// resolved `0` disables the deadline (`None`).
+fn subagent_deadline(os: &Os) -> Option<Duration> {
+    let timeout = agent::consts::env_subagent_stall_timeout().unwrap_or_else(|| {
+        match os
+            .database
+            .settings
+            .get_int(crate::database::settings::Setting::ApiSubagentTimeout)
+        {
+            Some(i) => u64::try_from(i).map_or_else(
+                |_| {
+                    // Warn instead of silently defaulting, matching the stream-idle tiers.
+                    warn!(value = i, "ignoring negative api.subagentTimeout; using the default");
+                    agent::consts::DEFAULT_SUBAGENT_TIMEOUT
+                },
+                Duration::from_secs,
+            ),
+            None => agent::consts::DEFAULT_SUBAGENT_TIMEOUT,
+        }
+    });
+    let timeout = agent::consts::clamp_subagent_timeout(timeout);
+    (!timeout.is_zero()).then_some(timeout)
+}
+
 /// Resolve `@prompt-name [args...]` in a subagent query using the shared prompt resolution.
 /// Returns the resolved text content, or the original query unchanged on failure.
 /// Note: subagents only support text today, so non-text prompt messages are skipped.
@@ -481,6 +698,355 @@ mod tests {
         PermissionEvalResult,
         ToolSettingTarget,
     };
+
+    fn summary(result: &str) -> agent::tools::summary::Summary {
+        agent::tools::summary::Summary {
+            task_description: "task".to_string(),
+            context_summary: None,
+            task_result: result.to_string(),
+            result_type: None,
+        }
+    }
+
+    /// Precedence of the stage idle window: env override (ms) over stored
+    /// setting (s) over the shared default, with `0` disabling via either
+    /// path — matching V2's resolution in `acp_agent.rs`. One test function so
+    /// the process-env mutation cannot race a sibling test.
+    #[tokio::test]
+    async fn subagent_deadline_env_and_setting_precedence() {
+        // Serialize with every other test that mutates process env vars: this
+        // test and the clamp test below both set/remove the shared
+        // SUBAGENT_STALL_TIMEOUT_ENV and would race under the parallel harness.
+        let _env_lock = crate::util::paths::ENV_MUTATION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut os = Os::new().await.unwrap();
+        let env_key = agent::consts::SUBAGENT_STALL_TIMEOUT_ENV;
+        unsafe { std::env::remove_var(env_key) };
+
+        // No env, no setting: the shared default.
+        assert_eq!(subagent_deadline(&os), Some(agent::consts::DEFAULT_SUBAGENT_TIMEOUT));
+
+        // Stored setting (whole seconds) applies when the env var is absent.
+        os.database
+            .settings
+            .set(crate::database::settings::Setting::ApiSubagentTimeout, 10, None)
+            .await
+            .unwrap();
+        assert_eq!(subagent_deadline(&os), Some(Duration::from_secs(10)));
+
+        // Env override (ms) wins over the stored setting.
+        unsafe { std::env::set_var(env_key, "500") };
+        assert_eq!(subagent_deadline(&os), Some(Duration::from_millis(500)));
+
+        // Env `0` disables the deadline even with a non-zero stored setting.
+        unsafe { std::env::set_var(env_key, "0") };
+        assert_eq!(subagent_deadline(&os), None);
+
+        // A malformed env value is ignored; the stored setting applies.
+        unsafe { std::env::set_var(env_key, "not-a-number") };
+        assert_eq!(subagent_deadline(&os), Some(Duration::from_secs(10)));
+
+        unsafe { std::env::remove_var(env_key) };
+
+        // Setting `0` disables the deadline.
+        os.database
+            .settings
+            .set(crate::database::settings::Setting::ApiSubagentTimeout, 0, None)
+            .await
+            .unwrap();
+        assert_eq!(subagent_deadline(&os), None);
+
+        // A negative setting is invalid: warned and replaced by the default.
+        os.database
+            .settings
+            .set(crate::database::settings::Setting::ApiSubagentTimeout, -5, None)
+            .await
+            .unwrap();
+        assert_eq!(subagent_deadline(&os), Some(agent::consts::DEFAULT_SUBAGENT_TIMEOUT));
+    }
+
+    /// Test helper: wrap a child future exactly as `invoke` does, racing it
+    /// against its own idle window on its own activity anchor.
+    fn wrap_child(
+        index: usize,
+        activity: Arc<StageActivity>,
+        deadline: Option<Duration>,
+        child: impl Future<Output = eyre::Result<agent::tools::summary::Summary>>,
+    ) -> impl Future<Output = (usize, ChildOutcome)> {
+        async move { (index, run_child_with_idle_deadline(child, &activity, deadline).await) }
+    }
+
+    const WINDOW: Duration = Duration::from_secs(3600);
+
+    /// A human-blocked wait (approval prompt, OAuth grant) suspends the idle
+    /// window: with a hold outstanding the child must not expire no matter how
+    /// long the human takes, and release grants a fresh full window.
+    #[tokio::test(start_paused = true)]
+    async fn child_deadline_suspends_while_hold_outstanding() {
+        let activity = Arc::new(StageActivity::default());
+        let holder = activity.clone();
+        let mut in_flight: futures::stream::FuturesUnordered<_> =
+            vec![wrap_child(0, activity.clone(), Some(WINDOW), async move {
+                // Approval prompt appears immediately; the human takes ten windows
+                // to answer, then the child finishes within its fresh window.
+                holder.hold();
+                tokio::time::sleep(Duration::from_secs(36000)).await;
+                holder.release();
+                tokio::time::sleep(Duration::from_secs(1800)).await;
+                Ok(summary("approved and finished"))
+            })]
+            .into_iter()
+            .collect();
+
+        let outcome = drain_stage(&mut in_flight, 1).await;
+
+        assert!(!outcome.expired[0], "a held (human-blocked) child must never expire");
+        assert_eq!(
+            outcome.completed[0].as_ref().map(|s| s.task_result.as_str()),
+            Some("approved and finished")
+        );
+    }
+
+    /// Releasing the hold resumes the idle window: a full window of silence
+    /// after the release still expires the child.
+    #[tokio::test(start_paused = true)]
+    async fn child_deadline_expires_after_hold_released() {
+        let activity = Arc::new(StageActivity::default());
+        let holder = activity.clone();
+        let mut in_flight: futures::stream::FuturesUnordered<_> =
+            vec![wrap_child(0, activity.clone(), Some(WINDOW), async move {
+                holder.hold();
+                tokio::time::sleep(Duration::from_secs(7200)).await;
+                holder.release();
+                tokio::time::sleep(Duration::from_secs(86400)).await;
+                Ok(summary("never"))
+            })]
+            .into_iter()
+            .collect();
+
+        let outcome = drain_stage(&mut in_flight, 1).await;
+
+        assert!(
+            outcome.expired[0],
+            "silence after the hold is released must still trip the deadline"
+        );
+        assert!(outcome.completed[0].is_none());
+    }
+
+    /// The deadline is per child: a silent child is cancelled on its own
+    /// window while a finished sibling keeps its real summary.
+    #[tokio::test(start_paused = true)]
+    async fn child_deadline_returns_partial_results() {
+        let fast_activity = Arc::new(StageActivity::default());
+        let slow_activity = Arc::new(StageActivity::default());
+        let mut in_flight: futures::stream::FuturesUnordered<_> = vec![
+            futures::future::Either::Left(wrap_child(0, fast_activity, Some(WINDOW), async {
+                Ok(summary("fast child done"))
+            })),
+            futures::future::Either::Right(wrap_child(1, slow_activity, Some(WINDOW), async {
+                tokio::time::sleep(Duration::from_secs(7200)).await;
+                Ok(summary("slow child done"))
+            })),
+        ]
+        .into_iter()
+        .collect();
+
+        let outcome = drain_stage(&mut in_flight, 2).await;
+
+        assert!(outcome.child_error.is_none());
+        assert_eq!(
+            outcome.completed[0].as_ref().map(|s| s.task_result.as_str()),
+            Some("fast child done"),
+            "finished child keeps its real summary"
+        );
+        assert!(outcome.expired[1], "the silent child expires on its own window");
+        assert!(outcome.completed[1].is_none(), "cancelled child yields no summary");
+        assert!(!outcome.expired[0], "the finished child is not marked expired");
+    }
+
+    /// A busy sibling neither masks a wedged child nor is cancelled as
+    /// collateral: the wedged child is cancelled on ITS window while the busy
+    /// sibling keeps working far past it and completes normally.
+    #[tokio::test(start_paused = true)]
+    async fn busy_sibling_does_not_mask_wedged_child() {
+        let busy_activity = Arc::new(StageActivity::default());
+        let wedged_activity = Arc::new(StageActivity::default());
+        let bumper = busy_activity.clone();
+        let mut in_flight: futures::stream::FuturesUnordered<_> = vec![
+            futures::future::Either::Left(wrap_child(0, busy_activity, Some(WINDOW), async move {
+                // Three hours of real work, pinging progress every 30 minutes.
+                for _ in 0..6 {
+                    tokio::time::sleep(Duration::from_secs(1800)).await;
+                    bumper.bump();
+                }
+                Ok(summary("busy sibling done"))
+            })),
+            futures::future::Either::Right(wrap_child(1, wedged_activity, Some(WINDOW), async {
+                // Completely silent: wedged from the start.
+                tokio::time::sleep(Duration::from_secs(86400)).await;
+                Ok(summary("never"))
+            })),
+        ]
+        .into_iter()
+        .collect();
+
+        let outcome = drain_stage(&mut in_flight, 2).await;
+
+        assert!(
+            outcome.expired[1] && outcome.completed[1].is_none(),
+            "the wedged child is cancelled on its own window despite the busy sibling"
+        );
+        assert_eq!(
+            outcome.completed[0].as_ref().map(|s| s.task_result.as_str()),
+            Some("busy sibling done"),
+            "the busy sibling is never collateral of the wedged child's deadline"
+        );
+        assert!(!outcome.expired[0]);
+    }
+
+    /// Child progress restarts the idle window: a child doing hours of
+    /// legitimate work while reporting activity is never cancelled, even
+    /// though its total runtime far exceeds the window.
+    #[tokio::test(start_paused = true)]
+    async fn child_deadline_resets_on_child_progress() {
+        let activity = Arc::new(StageActivity::default());
+        let bumper = activity.clone();
+        let mut in_flight: futures::stream::FuturesUnordered<_> =
+            vec![wrap_child(0, activity.clone(), Some(WINDOW), async move {
+                // Three hours of work, pinging progress every 30 minutes.
+                for _ in 0..6 {
+                    tokio::time::sleep(Duration::from_secs(1800)).await;
+                    bumper.bump();
+                }
+                Ok(summary("slow but active child done"))
+            })]
+            .into_iter()
+            .collect();
+
+        let outcome = drain_stage(&mut in_flight, 1).await;
+
+        assert!(!outcome.expired[0], "an actively-working child must never be cut off");
+        assert_eq!(
+            outcome.completed[0].as_ref().map(|s| s.task_result.as_str()),
+            Some("slow but active child done")
+        );
+    }
+
+    /// Once progress stops, the child expires one full window after the last bump.
+    #[tokio::test(start_paused = true)]
+    async fn child_deadline_expires_after_progress_stops() {
+        let activity = Arc::new(StageActivity::default());
+        let bumper = activity.clone();
+        let mut in_flight: futures::stream::FuturesUnordered<_> =
+            vec![wrap_child(0, activity.clone(), Some(WINDOW), async move {
+                // Progress twice, then go silent for good.
+                for _ in 0..2 {
+                    tokio::time::sleep(Duration::from_secs(1800)).await;
+                    bumper.bump();
+                }
+                tokio::time::sleep(Duration::from_secs(86400)).await;
+                Ok(summary("never"))
+            })]
+            .into_iter()
+            .collect();
+
+        let outcome = drain_stage(&mut in_flight, 1).await;
+
+        assert!(outcome.expired[0], "a full window of silence must trip the deadline");
+        assert!(outcome.completed[0].is_none());
+    }
+
+    /// With the deadline disabled (setting 0), the stage waits for all children.
+    #[tokio::test(start_paused = true)]
+    async fn stage_without_deadline_waits_for_all_children() {
+        let mut in_flight: futures::stream::FuturesUnordered<_> = vec![
+            futures::future::Either::Left(wrap_child(0, Arc::new(StageActivity::default()), None, async {
+                Ok(summary("first"))
+            })),
+            futures::future::Either::Right(wrap_child(1, Arc::new(StageActivity::default()), None, async {
+                tokio::time::sleep(Duration::from_secs(7200)).await;
+                Ok(summary("second"))
+            })),
+        ]
+        .into_iter()
+        .collect();
+
+        let outcome = drain_stage(&mut in_flight, 2).await;
+
+        assert!(!outcome.expired.iter().any(|e| *e));
+        assert!(outcome.completed.iter().all(Option::is_some));
+    }
+
+    /// Children finishing before the deadline end the stage normally.
+    #[tokio::test(start_paused = true)]
+    async fn stage_completes_before_deadline() {
+        let mut in_flight: futures::stream::FuturesUnordered<_> =
+            vec![wrap_child(0, Arc::new(StageActivity::default()), Some(WINDOW), async {
+                Ok(summary("done"))
+            })]
+            .into_iter()
+            .collect();
+
+        let outcome = drain_stage(&mut in_flight, 1).await;
+
+        assert!(!outcome.expired[0]);
+        assert_eq!(
+            outcome.completed[0].as_ref().map(|s| s.task_result.as_str()),
+            Some("done")
+        );
+    }
+
+    /// An oversized window (setting or env) is clamped so deadline arithmetic
+    /// can never overflow and panic mid-stage; a bounded generous value passes
+    /// through untouched.
+    #[tokio::test]
+    async fn subagent_deadline_clamps_oversized_windows() {
+        // Shares SUBAGENT_STALL_TIMEOUT_ENV with the precedence test above.
+        let _env_lock = crate::util::paths::ENV_MUTATION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut os = Os::new().await.unwrap();
+        let env_key = agent::consts::SUBAGENT_STALL_TIMEOUT_ENV;
+        unsafe { std::env::remove_var(env_key) };
+
+        os.database
+            .settings
+            .set(crate::database::settings::Setting::ApiSubagentTimeout, i64::MAX, None)
+            .await
+            .unwrap();
+        assert_eq!(subagent_deadline(&os), Some(agent::consts::MAX_SUBAGENT_TIMEOUT));
+
+        // Largest accepted value passes through unclamped.
+        os.database
+            .settings
+            .set(
+                crate::database::settings::Setting::ApiSubagentTimeout,
+                agent::consts::MAX_SUBAGENT_TIMEOUT.as_secs() as i64,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(subagent_deadline(&os), Some(agent::consts::MAX_SUBAGENT_TIMEOUT));
+
+        // The env path clamps too.
+        unsafe { std::env::set_var(env_key, u64::MAX.to_string()) };
+        assert_eq!(subagent_deadline(&os), Some(agent::consts::MAX_SUBAGENT_TIMEOUT));
+        unsafe { std::env::remove_var(env_key) };
+    }
+
+    /// Cancellation summaries carry a bounded task description, never a
+    /// re-injected multi-kilobyte expanded prompt.
+    #[test]
+    fn task_description_is_bounded() {
+        let short = "fix the flaky test";
+        assert_eq!(truncate_task_description(short), short);
+
+        let long = "x".repeat(10_000);
+        let truncated = truncate_task_description(&long);
+        assert!(truncated.chars().count() <= TASK_DESCRIPTION_MAX_CHARS + 1);
+        assert!(truncated.ends_with('…'));
+    }
 
     #[test]
     fn test_deser() {

@@ -1098,6 +1098,16 @@ struct AcpSession {
     /// to notify the actor of async outcomes without blocking the event loop.
     self_tx: mpsc::Sender<AcpSessionRequest>,
     chat_session_started_emitted: bool,
+    /// Subagent with a non-zero stall window: progress pings and human-wait
+    /// markers are worth sending to the SessionManager.
+    stall_pings_enabled: bool,
+    /// Minimum spacing between activity pings on the per-chunk hot path.
+    stall_ping_coalesce: std::time::Duration,
+    /// Last stall-timer activity ping, for coalescing on the per-chunk hot path.
+    last_stall_ping: Option<tokio::time::Instant>,
+    /// MCP servers whose OAuth grant this subagent is waiting on. While non-empty
+    /// the session is marked human-waiting so the parent's stall timer holds.
+    oauth_waits: std::collections::HashSet<String>,
 }
 
 impl AcpSession {
@@ -1836,7 +1846,38 @@ impl AcpSession {
             // misconfigured soft tier warns and is disabled; an inherited default
             // colliding with a tightened hard cap is clamped instead.
             s.settings.reconcile_stream_idle_tiers(soft_explicit.is_some());
+            // Env override (ms) wins over the stored setting (whole seconds), matching
+            // the ENV-over-settings convention; the setting only applies when the env
+            // var is absent/malformed so KIRO_SUBAGENT_STALL_TIMEOUT_MS is never silently
+            // shadowed.
+            if let Some(env_timeout) = agent::consts::env_subagent_stall_timeout() {
+                s.settings.subagent_timeout = env_timeout;
+            } else if let Some(i) = os.database.settings.get_int(Setting::ApiSubagentTimeout) {
+                match u64::try_from(i) {
+                    Ok(secs) => s.settings.subagent_timeout = std::time::Duration::from_secs(secs),
+                    // Warn instead of silently defaulting, matching the stream-idle tiers.
+                    Err(_) => warn!(value = i, "ignoring negative api.subagentTimeout; using the default"),
+                }
+            }
+            // Shared ceiling with V1 so the same configuration yields the same
+            // window on both engines.
+            s.settings.subagent_timeout = agent::consts::clamp_subagent_timeout(s.settings.subagent_timeout);
             s
+        };
+        // Every subagent pings: the watchdog window is resolved by the PARENT's
+        // session (whose snapshot may predate a mid-session setting change), so
+        // gating pings on the child's own freshly-read window would split
+        // producer from consumer — a child that read `0` would freeze its
+        // activity timestamp while the parent's watchdog stays armed, cancelling
+        // healthy children. Pings are coalesced (quarter window capped at 1s, so
+        // deliberately tiny test/tuning windows are never starved by the
+        // coalescer; a locally-disabled window uses the 1s cap), so the
+        // always-on cost is at most one message per second per child.
+        let stall_pings_enabled = builder.is_subagent;
+        let stall_ping_coalesce = if snapshot.settings.subagent_timeout.is_zero() {
+            std::time::Duration::from_secs(1)
+        } else {
+            (snapshot.settings.subagent_timeout / 4).min(std::time::Duration::from_secs(1))
         };
 
         // Skip knowledge provider in test mode — ensure_models_downloaded fetches embedding
@@ -1965,6 +2006,10 @@ impl AcpSession {
             current_turn_is_goal: false,
             self_tx,
             chat_session_started_emitted: false,
+            stall_pings_enabled,
+            stall_ping_coalesce,
+            last_stall_ping: None,
+            oauth_waits: std::collections::HashSet::new(),
         };
         session.emit_chat_session_started_once();
         Ok(session)
@@ -2881,12 +2926,32 @@ impl AcpSession {
             // not the regular Mcp variant, since they occur before the agent is fully initialized.
             AgentEvent::InitializeUpdate(init_event) => match init_event {
                 agent::protocol::InitializeUpdateEvent::Mcp(mcp_event) => {
+                    self.track_mcp_stall_signals(&mcp_event);
                     if let Err(e) = self.handle_mcp_event(mcp_event).await {
                         error!("Failed to handle MCP event during initialization: {}", e);
                     }
                 },
             },
             AgentEvent::Update(ref update_event) => {
+                // Genuine child progress: every UpdateEvent (assistant tokens, tool
+                // calls, tool results) flows through here. For a subagent this pings
+                // the SessionManager so a parent crew's stall timer resets and never
+                // cancels an actively-working child. Non-blocking so the ping cannot
+                // stall this hot path (a full queue falls back to a bounded async
+                // enqueue inside notify_session_activity, so a coalesced-away ping
+                // was always delivered), and coalesced to ~1/s per session so a fast
+                // stream cannot flood the manager's request queue — sub-second
+                // resolution is irrelevant to a window measured in seconds.
+                if self.stall_pings_enabled {
+                    let now = tokio::time::Instant::now();
+                    if self
+                        .last_stall_ping
+                        .is_none_or(|prev| now.duration_since(prev) >= self.stall_ping_coalesce)
+                    {
+                        self.last_stall_ping = Some(now);
+                        self.session_tx.notify_session_activity(&self.session_id);
+                    }
+                }
                 // Intercept switch_to_execution before forwarding to TUI
                 if let UpdateEvent::ToolCallFinished { tool_call, result } = update_event
                     && tool_call.tool_use_block.name == "switch_to_execution"
@@ -2927,12 +2992,28 @@ impl AcpSession {
                     "AgentEvent::ApprovalRequest: id={}, tool_use={:?}, context={:?}",
                     req.id, req.tool_use, req.context
                 );
+                // A child parked on a permission prompt is waiting on a human, not
+                // stalled: mark the wait before forwarding so the parent's stall timer
+                // holds, and clear it as soon as the client answers (or the request
+                // fails), granting a fresh window either way.
+                let stall_hold = self.stall_pings_enabled;
+                if stall_hold {
+                    self.session_tx.notify_session_human_wait(&self.session_id, true);
+                }
                 // All sessions (main and subagent) forward approval requests to the TUI
                 let connection_cx = self.connection_cx.clone();
                 let session_id = self.session_id.clone();
                 let agent = self.agent.clone();
                 let is_subagent = self.is_subagent;
+                let session_tx = self.session_tx.clone();
                 tokio::spawn(async move {
+                    // Drop-guarded (V1 StageHoldGuard parity): a panic inside the
+                    // approval forward must still clear the mark, or the leaked
+                    // wait suspends every enclosing crew stage's window forever.
+                    let _clear_guard = stall_hold.then(|| HumanWaitClearGuard {
+                        session_tx,
+                        session_id: session_id.clone(),
+                    });
                     handle_approval_request(req, connection_cx, session_id, agent, is_subagent).await;
                 });
             },
@@ -3091,6 +3172,7 @@ impl AcpSession {
                 });
             },
             AgentEvent::Mcp(mcp_event) => {
+                self.track_mcp_stall_signals(&mcp_event);
                 if let Err(e) = self.handle_mcp_event(mcp_event).await {
                     error!("Failed to handle MCP event: {}", e);
                 }
@@ -3344,6 +3426,32 @@ impl AcpSession {
             _ => {
                 // Other events that don't need processing
             },
+        }
+    }
+
+    /// Stall-timer signals from an MCP event, wherever it arrives — during
+    /// initialization (`InitializeUpdate`) or mid-session (`AgentEvent::Mcp`,
+    /// e.g. a reauth grant on token refresh or reconnect): server churn is
+    /// progress for the parent's stall timer (V1 parity), and an OAuth grant is
+    /// a human-blocked wait — hold the timer until the server resolves either
+    /// way, keyed by server name so a re-request cannot double-hold.
+    fn track_mcp_stall_signals(&mut self, mcp_event: &McpServerEvent) {
+        if !self.stall_pings_enabled {
+            return;
+        }
+        self.session_tx.notify_session_activity(&self.session_id);
+        match mcp_event {
+            McpServerEvent::OauthRequest { server_name, .. } => {
+                if self.oauth_waits.insert(server_name.clone()) {
+                    self.session_tx.notify_session_human_wait(&self.session_id, true);
+                }
+            },
+            McpServerEvent::Initialized { server_name, .. } | McpServerEvent::InitializeError { server_name, .. } => {
+                if self.oauth_waits.remove(server_name) {
+                    self.session_tx.notify_session_human_wait(&self.session_id, false);
+                }
+            },
+            _ => {},
         }
     }
 
@@ -3632,6 +3740,22 @@ mod permission_metadata_tests {
                 "/tmp/request-a/image.png"
             ]))
         );
+    }
+}
+
+/// Clears a session's human-wait mark when dropped, so a panic inside the
+/// approval forward cannot leak the mark and permanently suspend the stall
+/// window of every enclosing crew stage (V1's StageHoldGuard, in Drop form —
+/// the clear is fire-and-forget with a bounded retry because Drop cannot
+/// await).
+struct HumanWaitClearGuard {
+    session_tx: super::session_manager::SessionManagerHandle,
+    session_id: SessionId,
+}
+
+impl Drop for HumanWaitClearGuard {
+    fn drop(&mut self) {
+        self.session_tx.notify_session_human_wait(&self.session_id, false);
     }
 }
 

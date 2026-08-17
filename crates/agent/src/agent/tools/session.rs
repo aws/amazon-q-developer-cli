@@ -135,6 +135,35 @@ pub enum SessionTool {
         /// Group name to wait for completion
         group: String,
     },
+    /// Cancel every still-running session in a group and return whatever partial
+    /// results completed (internal, used by agent_crew when its deadline expires).
+    CancelGroup {
+        /// Group name to cancel
+        group: String,
+    },
+    /// Return per-stage child activity across a group's sessions (internal,
+    /// used by agent_crew's stall timer to reset on genuine child progress).
+    /// The response carries `last_activity_ms` (freshest, millis since the Unix
+    /// epoch, or null when the group is gone) plus a `stages` array of
+    /// `{name, last_activity_ms}` for each live stage.
+    GroupLastActivity {
+        /// Group name to query
+        group: String,
+    },
+    /// Cancel a single stalled stage in a group, leaving its siblings running
+    /// (internal, used by agent_crew when one stage's idle window expires).
+    CancelGroupStage {
+        /// Group name containing the stage
+        group: String,
+        /// Stage name to cancel
+        name: String,
+        /// The stage activity timestamp (ms since epoch) the watchdog observed
+        /// when it judged the stage stalled. The manager re-validates against
+        /// its live state and refuses the cancel if the stage progressed,
+        /// delivered a result, or entered a human wait after this observation —
+        /// closing the probe→cancel race window.
+        observed_last_activity_ms: Option<u64>,
+    },
 }
 
 /// Response from session tool execution.

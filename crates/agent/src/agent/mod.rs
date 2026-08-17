@@ -233,11 +233,16 @@ pub struct AgentHandle {
     /// Receiver for the lossless summary channel. Shared across handle clones
     /// (only the subagent driver drains it); see [`Agent::summary_tx`].
     summary_rx: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<Summary>>>,
+    /// Tracks live handle clones for last-drop Terminate detection. Deliberately
+    /// independent of the request channel's sender count: internal machinery
+    /// (e.g. the fire-and-forget full-queue retry) clones the channel sender,
+    /// and counting those would make the last handle drop skip its Terminate.
+    liveness: Arc<()>,
 }
 
 impl Drop for AgentHandle {
     fn drop(&mut self) {
-        if self.sender.count() == 1 {
+        if Arc::strong_count(&self.liveness) == 1 {
             self.terminate();
         }
     }
@@ -249,6 +254,7 @@ impl Clone for AgentHandle {
             sender: self.sender.clone(),
             event_rx: self.event_rx.resubscribe(),
             summary_rx: Arc::clone(&self.summary_rx),
+            liveness: Arc::clone(&self.liveness),
         }
     }
 }
@@ -1083,6 +1089,7 @@ impl Agent {
             // Wrapped so the handle stays `Clone` (clones share the single
             // consumer); only `handle_internal_prompt` actually drains it.
             summary_rx: Arc::new(tokio::sync::Mutex::new(summary_rx)),
+            liveness: Arc::new(()),
         }
     }
 
@@ -4738,7 +4745,9 @@ impl Agent {
                         .tool_settings()
                         .map(|s| s.crew.clone())
                         .unwrap_or_default();
-                    Box::pin(async move { t.execute(tool_use_id, event_tx, &crew_settings).await })
+                    let deadline =
+                        (!self.settings.subagent_timeout.is_zero()).then_some(self.settings.subagent_timeout);
+                    Box::pin(async move { t.execute(tool_use_id, event_tx, &crew_settings, deadline).await })
                 },
                 BuiltInTool::SessionManagement(t) => {
                     let event_tx = self.agent_event_tx.clone();
@@ -6390,5 +6399,42 @@ mod tests {
             !content.contains("The current model is"),
             "unexpected model name in context: {content}"
         );
+    }
+
+    /// Builds a bare handle around the given request channel; the "agent" side
+    /// is just the returned receiver.
+    fn bare_handle(
+        sender: crate::agent::util::request_channel::RequestSender<AgentRequest, AgentResponse, AgentError>,
+    ) -> AgentHandle {
+        let (_event_tx, event_rx) = broadcast::channel(4);
+        let (_summary_tx, summary_rx) = mpsc::unbounded_channel();
+        AgentHandle {
+            sender,
+            event_rx,
+            summary_rx: Arc::new(tokio::sync::Mutex::new(summary_rx)),
+            liveness: Arc::new(()),
+        }
+    }
+
+    #[tokio::test]
+    async fn last_handle_drop_terminates_despite_extra_channel_senders() {
+        // Last-drop detection must count handle clones, not channel senders: the
+        // fire-and-forget full-queue retry holds a cloned channel sender, and if
+        // that inflated the count the last handle drop would skip its Terminate,
+        // orphaning the agent.
+        let (tx, mut rx) = crate::agent::util::request_channel::new_request_channel();
+        let _extra_channel_sender = tx.clone();
+        let handle = bare_handle(tx);
+        let clone = handle.clone();
+
+        drop(clone);
+        assert!(
+            rx.try_recv().is_err(),
+            "dropping a non-last handle must not send Terminate"
+        );
+
+        drop(handle);
+        let req = rx.recv().await.expect("last handle drop must send Terminate");
+        assert!(matches!(req.payload, AgentRequest::Terminate));
     }
 }
