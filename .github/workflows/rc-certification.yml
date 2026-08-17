@@ -138,6 +138,22 @@ jobs:
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
+      - name: Test verification scripts
+        shell: bash
+        run: |
+          for test_file in \
+            ./.github/scripts/rc-binary-cache.test.ts \
+            ./.github/scripts/run-with-retry.test.ts
+          do
+            test_name="$(basename "$test_file" .test.ts)"
+            test_log="$RUNNER_TEMP/$test_name-tests.log"
+            FORCE_COLOR=0 bun test "$test_file" 2>&1 | tee "$test_log"
+            if ! grep -Eq '^[[:space:]]*[1-9][0-9]* pass[[:space:]]*$' "$test_log"; then
+              echo "::error::$test_file executed zero passing tests"
+              exit 1
+            fi
+          done
+
       - id: resolve
         shell: bash
         env:
@@ -248,6 +264,8 @@ jobs:
     name: Build Verification Assets (${{ matrix.os }})
     needs: resolve
     if: needs.resolve.outputs.run_smoke == 'true' || needs.resolve.outputs.run_scenarios == 'true' || needs.resolve.outputs.run_visual == 'true' || needs.resolve.outputs.run_integration == 'true' || needs.resolve.outputs.run_e2e == 'true' || needs.resolve.outputs.live_engines != '[]'
+    env:
+      RC_SCCACHE_VERSION: v0.16.0
     strategy:
       fail-fast: false
       matrix:
@@ -260,13 +278,10 @@ jobs:
         include:
           - os: ubuntu-latest-8-cores
             artifact_suffix: linux
-            binary_path: target/release/chat_cli
           - os: macos-latest-xlarge
             artifact_suffix: macos
-            binary_path: target/release/chat_cli
           - os: windows-x64-latest-16-cores
             artifact_suffix: windows
-            binary_path: target/release/chat_cli.exe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -283,10 +298,14 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Configure sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          version: 'v0.16.0'
+          bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Set Rust compiler wrapper
         shell: bash
@@ -294,7 +313,46 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
           echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
 
+      - name: Configure sccache
+        id: sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: ${{ env.RC_SCCACHE_VERSION }}
+
+      - name: Compute Rust binary identity
+        id: binary-id
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts prepare \
+            --runner-label "${{ matrix.os }}" \
+            --identity-path "$RUNNER_TEMP/rc-binary-identity.json" \
+            --cache-directory "$RUNNER_TEMP/rc-binary-cache"
+
+      - name: Restore exact Rust binary cache
+        id: binary-cache
+        if: steps.binary-id.outputs.cache-enabled == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.binary-id.outputs.cache-directory }}
+          key: ${{ steps.binary-id.outputs.cache-key }}
+          enableCrossOsArchive: false
+
+      - name: Validate restored Rust binary
+        id: binary-restore
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts restore \
+            --enabled "${{ steps.binary-id.outputs.cache-enabled }}" \
+            --outcome "${{ steps.binary-cache.outcome || 'skipped' }}" \
+            --cache-hit "${{ steps.binary-cache.outputs.cache-hit }}" \
+            --identity-path "${{ steps.binary-id.outputs.identity-path }}" \
+            --cache-directory "${{ steps.binary-id.outputs.cache-directory }}" \
+            --destination-path "${{ steps.binary-id.outputs.binary-path }}" \
+            --bundle-manifest-path "${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json"
+
       - name: Cache cargo registry
+        if: steps.binary-restore.outputs.rebuild == 'true'
         uses: actions/cache@v5
         with:
           path: |
@@ -305,33 +363,48 @@ jobs:
           restore-keys: |
             cargo-rc-certification-${{ runner.os }}-
 
-      - name: Read pinned Bun version
-        id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+      - name: Execute recorded chat_cli build plan
+        if: steps.binary-restore.outputs.rebuild == 'true'
+        shell: bash
+        run: bun .github/scripts/rc-binary-cache.ts build --identity-path "${{ steps.binary-id.outputs.identity-path }}"
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Show sccache statistics
+        if: always() && steps.binary-restore.outputs.rebuild == 'true' && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
+
+      - name: Stage Rust binary cache
+        id: binary-stage
+        if: steps.binary-restore.outputs.rebuild == 'true'
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts stage \
+            --identity-path "${{ steps.binary-id.outputs.identity-path }}" \
+            --binary-path "${{ steps.binary-id.outputs.binary-path }}" \
+            --cache-directory "${{ steps.binary-id.outputs.cache-directory }}" \
+            --bundle-manifest-path "${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json"
+
+      - name: Probe selected Rust binary
+        shell: bash
+        run: |
+          "${{ steps.binary-id.outputs.binary-path }}" --version
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path "${{ steps.binary-id.outputs.binary-path }}" \
+            --manifest-path "${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json"
+
+      - name: Save exact Rust binary cache
+        if: steps.binary-restore.outputs.rebuild == 'true' && steps.binary-id.outputs.cache-enabled == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
         with:
-          bun-version: ${{ steps.bun-ver.outputs.version }}
+          path: ${{ steps.binary-id.outputs.cache-directory }}
+          key: ${{ steps.binary-id.outputs.cache-key }}
+          enableCrossOsArchive: false
 
       - name: Login to CodeArtifact
         uses: ./.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
-
-      - name: Build chat_cli
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cargo build -p chat_cli --release --no-default-features
-          else
-            cargo build -p chat_cli --release
-          fi
-
-      - name: Show sccache statistics
-        if: always()
-        run: sccache --show-stats
 
       - name: Build twinki package
         run: bun run build
@@ -346,7 +419,8 @@ jobs:
         with:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: |
-            ${{ matrix.binary_path }}
+            ${{ steps.binary-id.outputs.binary-path }}
+            ${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json
             packages/tui/dist/tui.js
             packages/twinki/packages/twinki/dist/
           retention-days: 7
@@ -381,8 +455,11 @@ jobs:
           name: verification-bundle-linux
           path: .
 
-      - name: Restore binary mode
-        run: chmod +x target/release/chat_cli
+      - name: Verify reusable binary
+        run: |
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path target/release/chat_cli \
+            --manifest-path target/release/chat_cli.rc-binary-manifest.json
 
       - name: Run UI integration tests
         shell: bash
@@ -467,9 +544,12 @@ jobs:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
 
-      - name: Restore binary mode
-        if: runner.os != 'Windows'
-        run: chmod +x ${{ matrix.binary_path }}
+      - name: Verify reusable binary
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path "${{ matrix.binary_path }}" \
+            --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
       - name: Run ACP integration tests
         shell: bash
@@ -554,9 +634,12 @@ jobs:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
 
-      - name: Restore binary mode
-        if: runner.os != 'Windows'
-        run: chmod +x ${{ matrix.binary_path }}
+      - name: Verify reusable binary
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path "${{ matrix.binary_path }}" \
+            --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
       - name: Run E2E tests
         shell: bash
@@ -638,9 +721,12 @@ jobs:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
 
-      - name: Restore binary mode
-        if: runner.os != 'Windows'
-        run: chmod +x ${{ matrix.binary_path }}
+      - name: Verify reusable binary
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path "${{ matrix.binary_path }}" \
+            --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
       - name: Run smoke lane
         timeout-minutes: ${{ matrix.lane_timeout }}
@@ -717,9 +803,12 @@ jobs:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
 
-      - name: Restore binary mode
-        if: runner.os != 'Windows'
-        run: chmod +x ${{ matrix.binary_path }}
+      - name: Verify reusable binary
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path "${{ matrix.binary_path }}" \
+            --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
       - name: Run scenario category shard
         shell: bash
@@ -803,9 +892,12 @@ jobs:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
 
-      - name: Restore binary mode
-        if: runner.os != 'Windows'
-        run: chmod +x ${{ matrix.binary_path }}
+      - name: Verify reusable binary
+        shell: bash
+        run: |
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path "${{ matrix.binary_path }}" \
+            --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
       - name: Run visual certification
         shell: bash
@@ -867,8 +959,11 @@ jobs:
           name: verification-bundle-linux
           path: .
 
-      - name: Restore binary mode
-        run: chmod +x target/release/chat_cli
+      - name: Verify reusable binary
+        run: |
+          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+            --binary-path target/release/chat_cli \
+            --manifest-path target/release/chat_cli.rc-binary-manifest.json
 
       - name: Run live smoke tests
         shell: bash
