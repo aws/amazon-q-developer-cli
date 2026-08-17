@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Spurious alt-screen escape on exit no longer leaks characters into the shell"
+}

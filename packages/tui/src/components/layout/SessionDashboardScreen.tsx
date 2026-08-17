@@ -11,6 +11,7 @@ import { Text } from '../ui/text/Text.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTheme } from '../../hooks/useThemeContext.js';
 import { themeHex } from '../../utils/colorUtils.js';
+import { leaveAltScreen } from '../../utils/alt-screen';
 import { useGlyphs } from '../../hooks/useGlyphs.js';
 import { useAppStore } from '../../stores/app-store.js';
 import { SessionDashboard } from '../ui/SessionDashboard.js';
@@ -494,7 +495,7 @@ export const SessionDashboardScreen: React.FC = () => {
                 void forceFlushMetrics()
                   .catch(() => {})
                   .finally(() => {
-                    process.stdout.write('\x1b[?1049l');
+                    leaveAltScreen();
                     gracefulExit(0);
                   });
                 return;

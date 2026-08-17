@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from '../../renderer.js';
+import { useFullscreen, Box, Text } from '../../renderer.js';
 import { useAppStore } from '../../stores/app-store.js';
 import { SessionOutput } from '../multi-agent/SessionOutput.js';
 import { getAgentColor } from '../../utils/agentColors.js';
@@ -15,6 +15,7 @@ import {
 import { sessionConversationsStore } from '../../stores/session-conversations.js';
 
 export const SessionViewScreen: React.FC = () => {
+  useFullscreen();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const kiro = useAppStore((s) => s.kiro);

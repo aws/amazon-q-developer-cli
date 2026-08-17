@@ -29,6 +29,7 @@ import {
 } from './app-keypress-dispatch.js';
 import { AnimationPausedContext } from '../../contexts/AnimationPausedContext.js';
 import { useAllowAnimations } from '../../hooks/useGlyphs.js';
+import { enterAltScreen } from '../../utils/alt-screen';
 import { UI_VARIANTS } from './ui-variants.js';
 import {
   workflowStore,
@@ -238,11 +239,11 @@ export const AppContainer: React.FC = () => {
         // Enter alt screen immediately (before React re-renders) to prevent
         // CrewMonitorScreen content from polluting main screen scrollback.
         // useFullscreen() will sync twinki's internal altScreen flag on mount.
-        process.stdout.write('\x1b[?1049h');
+        enterAltScreen();
         setMode('crew-monitor');
       },
       enterWorkflowMonitor: () => {
-        process.stdout.write('\x1b[?1049h');
+        enterAltScreen();
         setMode('workflow-monitor');
       },
       enterWorkflowMonitorForLast: () => {
@@ -251,7 +252,7 @@ export const AppContainer: React.FC = () => {
         );
         if (!recent) return false;
         workflowStore.getState().openHistoricalWorkflow(recent);
-        process.stdout.write('\x1b[?1049h');
+        enterAltScreen();
         setMode('workflow-monitor');
         return true;
       },

@@ -6,6 +6,7 @@ import {
   DISABLE_BRACKETED_PASTE,
 } from './terminal-sequences';
 import { system32Path } from './windows-paths.js';
+import { enterAltScreen, leaveAltScreen } from './alt-screen';
 
 /**
  * Re-enable terminal modes that a child process (vim, less, etc.) may have
@@ -141,7 +142,7 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     process.stdout.write(SHOW_CURSOR);
 
     // Enter alternate screen buffer so the command doesn't pollute the TUI
-    process.stdout.write('\x1b[?1049h');
+    enterAltScreen();
 
     const { shell, flag } = getShellAndFlag();
     const cmd =
@@ -153,7 +154,7 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     });
 
     // Leave alternate screen buffer to restore the TUI
-    process.stdout.write('\x1b[?1049l');
+    leaveAltScreen();
 
     // Re-enable TUI terminal modes
     process.stdout.write(HIDE_CURSOR);
@@ -165,7 +166,7 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     return { exitCode: result.status ?? 1, error: result.error?.message };
   } catch (err) {
     try {
-      process.stdout.write('\x1b[?1049l');
+      leaveAltScreen();
       process.stdout.write(HIDE_CURSOR);
       process.stdout.write(ENABLE_BRACKETED_PASTE);
       process.stdin.setRawMode(true);

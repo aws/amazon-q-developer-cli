@@ -101,6 +101,7 @@ import {
 } from './subagent-summaries.js';
 import { usePendingSwap } from './usePendingSwap.js';
 import { logger } from '../../../utils/logger.js';
+import { enterAltScreen } from '../../../utils/alt-screen';
 import { chalk } from '../../../utils/color.js';
 import {
   BackendPanels,
@@ -472,7 +473,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     // Enter alt screen before the re-render so the full-screen dashboard
     // doesn't pollute lite's append-only scrollback (same as crew monitor).
     setShowSessionDashboard(true, getCachedAllWorkspaceSessions(), 'ctrl_e');
-    process.stdout.write('\x1b[?1049h');
+    enterAltScreen();
     liteSetMode('session-dashboard');
   });
 

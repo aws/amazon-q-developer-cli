@@ -53,7 +53,7 @@ describe('Interactive Session Chat Flow - Static Checks', () => {
   it('switchSession effect in effects.ts writes alt screen escape and sets session-view mode', () => {
     const content = readFile('packages/tui/src/commands/effects.ts');
     expect(content).toContain('switchSession');
-    expect(content).toContain('\\x1b[?1049h');
+    expect(content).toContain('enterAltScreen()');
     expect(content).toContain('session-view');
   });
 });

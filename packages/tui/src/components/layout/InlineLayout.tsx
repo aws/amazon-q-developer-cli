@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Text } from './../../renderer.js';
 import { truncateToWidth } from '../../utils/text-width.js';
+import { enterAltScreen } from '../../utils/alt-screen';
 import { usePlanModeToggle } from '../../hooks/usePlanModeToggle.js';
 import {
   AnimationPausedContext,
@@ -344,7 +345,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
       : undefined;
 
   const handleCrewConfigure = useCallback(() => {
-    process.stdout.write('\x1b[?1049h');
+    enterAltScreen();
     setMode('crew-monitor');
   }, [setMode]);
 
@@ -416,7 +417,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
             getCachedAllWorkspaceSessions(),
             'ctrl_e'
           );
-          process.stdout.write('\x1b[?1049h');
+          enterAltScreen();
           setMode('session-dashboard');
         }
       }

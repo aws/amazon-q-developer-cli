@@ -4,6 +4,7 @@
 
 import type { CommandContext } from './types.js';
 import { logger } from '../utils/logger.js';
+import { enterAltScreen } from '../utils/alt-screen';
 import {
   armCloudScrollbackReconcile,
   cancelCloudScrollbackReconcile,
@@ -646,7 +647,7 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
       );
       if (target) {
         ctx.setActiveSession(target.id);
-        process.stdout.write('\x1b[?1049h'); // enter alt screen
+        enterAltScreen();
         ctx.setMode('session-view');
         ctx.showAlert(`Switched to ${target.name}`, 'success', 2000);
       } else {
@@ -1184,7 +1185,7 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
     }
     // Bare `/sessions` — open the full-screen dashboard.
     ctx.setShowSessionDashboard(true, getCachedAllWorkspaceSessions(), 'slash');
-    process.stdout.write('\x1b[?1049h'); // enter alt screen before re-render
+    enterAltScreen();
     ctx.setMode('session-dashboard');
   },
 

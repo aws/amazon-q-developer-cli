@@ -22,6 +22,12 @@ import { connectResizeSource } from './hooks/useTerminalSize';
 import { clearTerminalProgress } from './utils/terminal-capabilities.js';
 import { cmuxCleanup } from './utils/cmux.js';
 import { isGhostty } from './utils/terminal-detection.js';
+import {
+  isAltScreenActive,
+  enterAltScreen,
+  leaveAltScreen,
+  markAltScreenExited,
+} from './utils/alt-screen';
 import { Kiro } from './kiro';
 import { ensureSession } from './utils/ensure-session-cli';
 import { ErrorCode } from './types/generated/chat-internal';
@@ -191,11 +197,10 @@ const resetTerminal = () => {
   try {
     disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
-    // Leave the alternate screen and restore the cursor unconditionally:
-    // signal exits bypass React unmount, so a full-screen surface would
-    // otherwise strand the shell in the alt buffer with a hidden cursor.
-    // Both writes are no-ops when already on the main screen.
-    process.stdout.write('\x1b[?1049l\x1b[?25h');
+    if (isAltScreenActive()) {
+      process.stdout.write('\x1b[?1049l');
+    }
+    process.stdout.write('\x1b[?25h');
     resetKeyboardModes?.();
     process.stdin.setRawMode?.(false);
     clearTerminalProgress();
@@ -974,7 +979,7 @@ const startInitialization = (resumePickerSessionId?: string) => {
             getCachedAllWorkspaceSessions(),
             'boot'
           );
-        process.stdout.write('\x1b[?1049h');
+        enterAltScreen();
         appStore.getState().setMode('session-dashboard');
         appStore
           .getState()
@@ -1703,6 +1708,27 @@ const startApp = async () => {
   // function finds the safety net unset while the protocol is enabled.
   resetKeyboardModes = () => instance.resetKeyboardModes();
   const disconnectMouseCapture = connectMouseCapture(instance);
+
+  // Sync our process-level alt-screen flag when the app leaves a fullscreen
+  // mode. twinki's useFullscreen() unmount writes RMCUP through its own path,
+  // so we clear the tracking flag on mode transitions back to inline/chat.
+  const FULLSCREEN_MODES = new Set([
+    'crew-monitor',
+    'workflow-monitor',
+    'session-view',
+    'session-dashboard',
+  ]);
+  let lastMode = appStore.getState().mode;
+  appStore.subscribe((state) => {
+    const mode = state.mode;
+    if (mode !== lastMode) {
+      if (FULLSCREEN_MODES.has(lastMode) && !FULLSCREEN_MODES.has(mode)) {
+        markAltScreenExited();
+      }
+      lastMode = mode;
+    }
+  });
+
   const stopRenderer = () => {
     disconnectMouseCapture();
     instance.unmount();

@@ -16,6 +16,7 @@ import { Panel } from '../../ui/panel/index.js';
 import { Text } from '../../ui/text/Text.js';
 import { RUN_STATUS_COLOR_TOKEN, runStatusGlyph } from './run-status-style.js';
 import { truncateToWidth, visibleWidth } from '../../../utils/text-width.js';
+import { enterAltScreen } from '../../../utils/alt-screen';
 import {
   workflowControlShortcut,
   type WorkflowControlShortcut,
@@ -205,7 +206,7 @@ export const WorkflowHistoryPanel = React.memo(function WorkflowHistoryPanel({
       const inspected = await kiro.inspectWorkflow(run.workflowId);
       openHistoricalWorkflow(buildHistoricalWorkflowRun(run, inspected));
       onClose();
-      process.stdout.write('\x1b[?1049h');
+      enterAltScreen();
       setMode('workflow-monitor');
     } catch (cause) {
       setError(
