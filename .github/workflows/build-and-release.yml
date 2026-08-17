@@ -463,7 +463,7 @@ jobs:
 
   notify_nightly_failure:
     name: Nightly Failure Notification
-    needs: [tag, prepare, build_darwin, build_linux, build_windows, build_windows_retry, smoke_tests, dispatch_autocomplete]
+    needs: [tag, prepare, build_darwin, build_linux, build_windows, build_windows_retry, dispatch_autocomplete]
     if: |
       always() &&
       needs.prepare.outputs.channel == 'nightly' &&
@@ -471,7 +471,6 @@ jobs:
        needs.build_darwin.result == 'failure' ||
        needs.build_linux.result == 'failure' ||
        (needs.build_windows.result == 'failure' && needs.build_windows_retry.result == 'failure') ||
-       needs.smoke_tests.result == 'failure' ||
        needs.dispatch_autocomplete.result == 'failure')
     runs-on: ubuntu-latest
     steps:
@@ -486,7 +485,6 @@ jobs:
           if [[ "${{ needs.build_darwin.result }}" == "failure" ]]; then FAILED="${FAILED}Darwin ❌  "; fi
           if [[ "${{ needs.build_linux.result }}" == "failure" ]]; then FAILED="${FAILED}Linux ❌  "; fi
           if [[ "${{ needs.build_windows.result }}" == "failure" && "${{ needs.build_windows_retry.result }}" != "success" ]]; then FAILED="${FAILED}Windows ❌  "; fi
-          if [[ "${{ needs.smoke_tests.result }}" == "failure" ]]; then FAILED="${FAILED}Smoke Tests ❌  "; fi
           if [[ "${{ needs.dispatch_autocomplete.result }}" == "failure" ]]; then FAILED="${FAILED}Autocomplete ❌  "; fi
 
           [[ -z "$FAILED" ]] && FAILED="Unknown failure"
