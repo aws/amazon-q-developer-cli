@@ -303,6 +303,19 @@ describe('RC binary cache identity', () => {
       job.includes('ref: ${{ inputs.source_sha')
     );
     expect(untrusted.map(([name]) => name)).toHaveLength(12);
+    for (const [, job] of untrusted) {
+      const checkout = job
+        .split('- uses: actions/checkout@')
+        .find((step) =>
+          step.includes(
+            'repository: ${{ inputs.source_repository || github.repository }}'
+          )
+        );
+      expect(checkout).toContain('persist-credentials: false');
+      expect(checkout).toContain(
+        "allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}"
+      );
+    }
     expect(
       untrusted
         .filter(([, job]) => {

@@ -176,6 +176,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -440,6 +441,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -568,6 +570,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -708,6 +711,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -900,6 +904,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -1021,6 +1026,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -1148,6 +1154,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -1267,6 +1274,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -1381,6 +1389,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -1502,6 +1511,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -1601,6 +1611,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
@@ -1748,6 +1759,7 @@ jobs:
           repository: ${{ inputs.source_repository || github.repository }}
           ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
 
       - name: Checkout trusted CI support
         if: inputs.execution_mode == 'fork'
