@@ -4,7 +4,13 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAppStore } from '../app-store';
-import { Kiro } from '../../kiro';
+
+/**
+ * Import Kiro via a cache-busting query suffix so that mock.module pollution
+ * from earlier test files sharing the bun process does not replace the class.
+ */
+// @ts-expect-error — query suffix bypasses bun's mock registry
+const { Kiro } = await import('../../kiro?session-resume-test');
 
 describe('resumeSession cwd transaction', () => {
   let root: string;

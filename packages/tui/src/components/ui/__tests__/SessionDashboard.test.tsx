@@ -241,7 +241,15 @@ mock.module(
 import { stripAnsiQuick } from '../../../lite/render.js';
 import { SessionDashboard } from '../SessionDashboard.js';
 import { AppStoreContext, createAppStore } from '../../../stores/app-store.js';
-import { Kiro } from '../../../kiro.js';
+/**
+ * Import Kiro via a cache-busting query suffix so that mock.module pollution
+ * from earlier test files sharing the bun process does not replace the class.
+ */
+import type { Kiro as KiroType } from '../../../kiro.js';
+// @ts-expect-error — query suffix bypasses bun's mock registry
+const { Kiro } = (await import('../../../kiro.js?session-dashboard-test')) as {
+  Kiro: typeof KiroType;
+};
 import type { SessionListingInput } from '../../../utils/session-dashboard.js';
 import type { SessionPreview } from '../../../utils/session-preview.js';
 import { visibleWidth } from '../../../utils/text-width.js';
@@ -388,7 +396,7 @@ function mount(
     activeSessionId?: string;
     hostedPreview?: boolean;
     catalogIncomplete?: boolean;
-    kiro?: Kiro;
+    kiro?: KiroType;
   } = {}
 ) {
   const terminal = new MockTerminal();

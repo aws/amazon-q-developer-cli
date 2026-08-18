@@ -59,8 +59,8 @@ interface Scheduled {
 /**
  * Mount the hook with timers recorded, then unmount.
  *
- * Nothing else in this harness calls setTimeout, so the record is exactly what the
- * hook did. Waiting through `realSetTimeout` keeps the helper out of its own record.
+ * Attributes recorded timers to the hook via a stack check so that leaked timers
+ * from other test files sharing the bun process do not inflate the count.
  */
 async function measure(enabled: boolean): Promise<{
   values: (Date | null)[];
@@ -78,7 +78,12 @@ async function measure(enabled: boolean): Promise<{
     ...rest: unknown[]
   ) => {
     const id = realSet(fn, delay as never, ...(rest as never[]));
-    if (delay !== undefined) scheduled.push({ id, delay });
+    if (delay !== undefined) {
+      const stack = new Error().stack ?? '';
+      if (stack.includes('useStatusClock')) {
+        scheduled.push({ id, delay });
+      }
+    }
     return id;
   }) as typeof globalThis.setTimeout;
   globalThis.clearTimeout = ((id: unknown) => {

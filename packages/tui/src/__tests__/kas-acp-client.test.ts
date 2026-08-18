@@ -6535,13 +6535,24 @@ describe('KasAcpClient — listSessions', () => {
 // ── /mcp command (push model) ──
 
 describe('mcp command (push model)', () => {
+  let savedFeatures: string | undefined;
+
   beforeEach(() => {
     freshMocks();
+    savedFeatures = process.env.KIRO_ENABLED_FEATURES;
+    delete process.env.KIRO_ENABLED_FEATURES;
+    features._resetForTests();
     process.env.KIRO_KAS_SERVER_PATH = '/fake/server.js';
   });
 
   afterEach(() => {
     delete process.env.KIRO_KAS_SERVER_PATH;
+    if (savedFeatures !== undefined) {
+      process.env.KIRO_ENABLED_FEATURES = savedFeatures;
+    } else {
+      delete process.env.KIRO_ENABLED_FEATURES;
+    }
+    features._resetForTests();
   });
 
   it('publishes a normalized configured-server snapshot', async () => {
