@@ -294,10 +294,13 @@ describe('RC binary cache identity', () => {
     }
   });
 
-  it('keeps fork cache access read-only and validates before checkout', () => {
+  it('fetches approved fork SHAs through the base repository', () => {
     const workflow = readCertificationWorkflow();
     const jobs = certificationJobs(workflow);
     expect([...jobs.keys()]).toEqual(CERTIFICATION_JOBS);
+    expect(workflow).not.toContain(
+      'repository: ${{ inputs.source_repository || github.repository }}'
+    );
 
     const untrusted = [...jobs].filter(([, job]) =>
       job.includes('ref: ${{ inputs.source_sha')
@@ -306,11 +309,8 @@ describe('RC binary cache identity', () => {
     for (const [, job] of untrusted) {
       const checkout = job
         .split('- uses: actions/checkout@')
-        .find((step) =>
-          step.includes(
-            'repository: ${{ inputs.source_repository || github.repository }}'
-          )
-        );
+        .find((step) => step.includes('repository: ${{ github.repository }}'));
+      expect(checkout).toContain('ref: ${{ inputs.source_sha || github.sha }}');
       expect(checkout).toContain('persist-credentials: false');
       expect(checkout).toContain(
         "allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}"
