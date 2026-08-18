@@ -98,6 +98,23 @@ Work up the pyramid; run the narrowest layer that can catch your bug first.
 
 For TUI behavior that differs between engines, test both paths: `KIRO_AGENT_ENGINE=kas` and unset (Rust ACP). `packages/tui/src/stores/app-store.kas-pipeline.test.ts` shows the pattern for engine-conditional store logic.
 
+## Which KAS Is Actually Running?
+
+Three KAS builds can coexist on one machine. Diagnosing from the wrong one produces confidently wrong conclusions (e.g. reporting a bundled agent "missing" because an old `node_modules` copy predates it), so identify the source before reading any code or version:
+
+| Source | Used when | Version check |
+|---|---|---|
+| Bundle embedded in the installed CLI, extracted under the CLI data dir — `<data dir>/kiro-cli/kas/<cli-version>-<sha256>/node_modules/@kiro/agent/` (Linux default `~/.local/share`, overridable via `KIRO_DATA_DIR`) | Any session launched from an installed `kiro-cli` binary — the launcher extracts the bundle and points `KIRO_KAS_SERVER_PATH` at it (`crates/chat-cli/src/launch.rs`, `embedded_tui.rs`) | `grep '"version"' <extracted dir>/node_modules/@kiro/agent/package.json` |
+| `packages/tui/node_modules/@kiro/agent` (published package) | Source runs without an explicit override: `KasAcpClient` walks up from the TUI bundle to `node_modules` when `KIRO_KAS_SERVER_PATH` is unset | `grep '"version"' packages/tui/node_modules/@kiro/agent/package.json` — and compare against the pin in `packages/tui/package.json` |
+| Local kiro-agent build (`local/kiro-agent` via `--local-kas`, or any checkout) | Only when `KIRO_KAS_SERVER_PATH` points at its `dist/server/acp-server.js` | whatever that checkout says |
+
+To see what a live session runs, check `KIRO_KAS_SERVER_PATH` on the KAS process environment (`ps eww <pid>`), not the repo: a set value is authoritative, while an unset value only tells you the walk-up resolution applied — the server then came from whichever `node_modules/@kiro/agent` sits above the running TUI bundle.
+
+Two gotchas:
+
+- **`node_modules` goes stale silently.** KAS bump PRs move the pin in `packages/tui/package.json`, but only `bun run dev` re-runs `bun install`; a checkout used for pulls and greps can lag many versions behind. Compare installed vs pinned versions before trusting anything in `node_modules`, and run `bun install` on divergence.
+- **An installed-CLI session never uses the repo's `node_modules` at all.** The extracted bundle tracks the installed CLI version, so repo state (pin or install) says nothing about what that session ran.
+
 ## Debugging
 
 - KAS runtime logs: `~/.kiro/logs/<timestamp>/kiro.log` (also see the `search-kiro-logs` skill in the kiro-agent repo)
@@ -108,6 +125,7 @@ For TUI behavior that differs between engines, test both paths: `KIRO_AGENT_ENGI
 ## Common Failure Modes
 
 - **401 on install/build** → expired CodeArtifact token; run `./scripts/codeartifact-login.sh` in both repos
+- **Diagnosis contradicts observed behavior** → you may be reading a different KAS than the session ran; see "Which KAS Is Actually Running?"
 - **TUI unexpectedly on the Rust engine** → something set `KIRO_AGENT_ENGINE=v2` or passed `--v2`; dev mode defaults to KAS (see `packages/tui/scripts/start-dev.ts`)
 - **Stale KAS behavior after editing kiro-agent** → the TUI is resolving a published `@kiro/agent` from `node_modules` instead of your build; use `--local-kas` (and rebuild `local/kiro-agent`), or set `KIRO_KAS_SERVER_PATH`
 - **KAS auth/token errors in dev** → KAS resolves OIDC tokens by shelling out to the chat-cli binary via `KIRO_CHAT_CLI_BIN` (`--auth=acp-callback` mode); the dev script sets it — make sure the Rust binary it points at exists (run without `--skip-rust-build` once)
