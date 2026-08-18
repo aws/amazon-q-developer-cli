@@ -86,6 +86,82 @@ function withTempDirectory(run: (directory: string) => void): void {
   }
 }
 
+const CERTIFICATION_WORKFLOW = '.github/workflows/rc-certification.yml';
+const CODEARTIFACT_LOGIN = '.github/actions/codeartifact-login/action.yml';
+
+const CERTIFICATION_JOBS = [
+  'resolve',
+  'tui-static',
+  'build-assets',
+  'ui-integration',
+  'acp-integration',
+  'e2e',
+  'smoke',
+  'scenario-categories',
+  'visual',
+  'live-parity',
+  'summary',
+  'tui-integ-tests-required',
+  'tui-e2e-required',
+];
+
+// Fork runs execute from the untrusted checkout, so shape assertions must read
+// the same trusted copy of the workflow that GitHub actually ran.
+function trustedCiRoot(): string {
+  return process.env.RC_CI_ROOT || process.cwd();
+}
+
+function readCertificationWorkflow(): string {
+  return fs.readFileSync(
+    path.join(trustedCiRoot(), CERTIFICATION_WORKFLOW),
+    'utf8'
+  );
+}
+
+// A local `uses: ./…` step runs whatever that definition itself pulls in, so a
+// pin assertion is only complete if it follows those references too.
+function localDefinitions(workflow: string): string[] {
+  const references = new Set(
+    [...workflow.matchAll(/^ *(?:- )?uses: \.\/(\S+)/gm)].map((match) =>
+      (match[1] as string).replace(/^\.trusted-ci\//, '')
+    )
+  );
+
+  return [...references].map((reference) =>
+    fs.readFileSync(
+      path.join(
+        trustedCiRoot(),
+        /\.ya?ml$/.test(reference)
+          ? reference
+          : path.join(reference, 'action.yml')
+      ),
+      'utf8'
+    )
+  );
+}
+
+function certificationJobs(workflow: string): Map<string, string> {
+  const section = workflow.slice(workflow.indexOf('\njobs:\n'));
+  const boundaries = [...section.matchAll(/\n {2}([a-z][a-z0-9-]*):\n/g)];
+  const jobs = new Map<string, string>();
+  boundaries.forEach((boundary, position) => {
+    const start = boundary.index ?? 0;
+    const end = boundaries[position + 1]?.index ?? section.length;
+    jobs.set(boundary[1] as string, section.slice(start, end));
+  });
+  return jobs;
+}
+
+function steps(job: string, name: string): string[] {
+  return job
+    .split(`- name: ${name}`)
+    .slice(1)
+    .map((rest) => {
+      const next = rest.indexOf('\n      - ');
+      return next === -1 ? rest : rest.slice(0, next);
+    });
+}
+
 describe('RC binary cache identity', () => {
   it('is canonical regardless of environment insertion order', () => {
     const left = identityInput();
@@ -182,11 +258,8 @@ describe('RC binary cache identity', () => {
     ]);
     expect(windows.binaryPath).toBe('target/release/chat_cli.exe');
 
-    const workflow = fs.readFileSync(
-      '.github/workflows/rc-certification.yml',
-      'utf8'
-    );
-    expect(workflow).toContain('rc-binary-cache.ts build');
+    const workflow = readCertificationWorkflow();
+    expect(workflow).toMatch(/rc-binary-cache\.ts"? build --identity-path/);
     expect(workflow).not.toContain('cargo build -p chat_cli');
 
     const consumers = workflow
@@ -200,6 +273,156 @@ describe('RC binary cache identity', () => {
       expect(verify).toBeGreaterThan(-1);
       expect(execute).toBeGreaterThan(verify);
     }
+  });
+
+  it('keeps fork cache access read-only and validates before checkout', () => {
+    const workflow = readCertificationWorkflow();
+    const jobs = certificationJobs(workflow);
+    expect([...jobs.keys()]).toEqual(CERTIFICATION_JOBS);
+
+    const untrusted = [...jobs].filter(([, job]) =>
+      job.includes('ref: ${{ inputs.source_sha')
+    );
+    expect(untrusted.map(([name]) => name)).toHaveLength(11);
+    expect(
+      untrusted
+        .filter(([, job]) => {
+          const validate = job.indexOf('- name: Validate invocation');
+          if (validate > -1 && validate < job.indexOf('ref: ${{ inputs.')) {
+            return false;
+          }
+          // Needing resolve is equivalent, because resolve validates first —
+          // but only for a job that cannot run once resolve has failed.
+          const header = job.slice(0, job.indexOf('\n    steps:'));
+          return (
+            !/\n {4}needs:.*\bresolve\b/.test(header) ||
+            header.includes('always()')
+          );
+        })
+        .map(([name]) => name)
+    ).toEqual([]);
+
+    expect(workflow).toContain(
+      "EXECUTION_MODE: ${{ inputs.execution_mode || 'internal' }}"
+    );
+    expect(workflow).toContain(
+      "- name: Restore cargo registry\n        if: inputs.execution_mode == 'fork'"
+    );
+    expect(workflow).toContain(
+      "- name: Cache cargo registry\n        if: inputs.execution_mode != 'fork'"
+    );
+    expect(workflow).toContain(
+      "- name: Save exact Rust binary cache\n        if: inputs.execution_mode != 'fork'"
+    );
+    expect(workflow).toContain(
+      "- name: Configure sccache\n        if: inputs.execution_mode != 'fork'"
+    );
+  });
+
+  it('takes trusted CI support from the calling base commit', () => {
+    const workflow = readCertificationWorkflow();
+
+    expect(workflow).not.toContain('ref: ${{ inputs.trusted_sha }}');
+    expect(workflow).toContain('TRUSTED_SHA: ${{ inputs.trusted_sha }}');
+    expect(workflow).toContain('TRUSTED_BASE_SHA: ${{ github.sha }}');
+    expect(workflow).toContain('! "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$');
+    expect(workflow).toContain('"$TRUSTED_SHA" != "$TRUSTED_BASE_SHA"');
+
+    const trusted = steps(workflow, 'Checkout trusted CI support');
+    expect(trusted).toHaveLength(11);
+    for (const checkout of trusted) {
+      expect(checkout).toContain("if: inputs.execution_mode == 'fork'");
+      expect(checkout).toContain('repository: ${{ github.repository }}');
+      expect(checkout).toContain('ref: ${{ github.sha }}');
+      expect(checkout).toContain('persist-credentials: false');
+      expect(checkout).toContain('scripts/const.py');
+    }
+  });
+
+  it('reads the pinned Bun version from the trusted checkout', () => {
+    const workflow = readCertificationWorkflow();
+    const bunVersion = steps(workflow, 'Read pinned Bun version');
+
+    expect(bunVersion).toHaveLength(11);
+    for (const step of bunVersion) {
+      expect(step).toContain('shell: bash');
+      expect(step).toContain('"$RC_CI_ROOT/scripts/const.py"');
+      expect(step).not.toMatch(/[^/]scripts\/const\.py/);
+      expect(step).toContain('^[0-9]+\\.[0-9]+\\.[0-9]+$');
+    }
+  });
+
+  it('pins every third-party action a fork run reaches to a commit SHA', () => {
+    const workflow = readCertificationWorkflow();
+    const local = localDefinitions(workflow);
+    expect(local.length).toBeGreaterThan(0);
+
+    const external = [workflow, ...local].flatMap((definition) =>
+      [...definition.matchAll(/^ *(?:- )?uses: (?!\.\/)(\S+)/gm)].map(
+        (match) => match[1] as string
+      )
+    );
+
+    expect(external.length).toBeGreaterThan(0);
+    expect(
+      external.filter((ref) => !/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/.test(ref))
+    ).toEqual([]);
+  });
+
+  it('keeps the registry credential out of logs and out of later steps', () => {
+    const login = fs.readFileSync(
+      path.join(trustedCiRoot(), CODEARTIFACT_LOGIN),
+      'utf8'
+    );
+
+    expect(login).toContain('echo "::add-mask::$TOKEN"');
+    expect(login.indexOf('::add-mask::')).toBeLessThan(
+      login.indexOf('> .npmrc')
+    );
+    for (const variable of [
+      'AWS_ACCESS_KEY_ID=',
+      'AWS_SECRET_ACCESS_KEY=',
+      'AWS_SESSION_TOKEN=',
+    ]) {
+      expect(login).toContain(`echo '${variable}'`);
+    }
+  });
+
+  it('grants no job more than it needs', () => {
+    const workflow = readCertificationWorkflow();
+    const jobs = certificationJobs(workflow);
+    const header = workflow.slice(0, workflow.indexOf('\njobs:\n'));
+
+    expect(header).toContain('permissions:\n  contents: read\n');
+    expect(header).not.toContain('id-token: write');
+    expect(header).not.toContain('pull-requests:');
+    expect(
+      [...jobs]
+        .filter(([, job]) => !job.includes('\n    permissions:'))
+        .map(([name]) => name)
+    ).toEqual([]);
+    expect(
+      [...jobs]
+        .filter(([, job]) =>
+          /\n {6}(?:contents|pull-requests): write/.test(job)
+        )
+        .map(([name]) => name)
+    ).toEqual([]);
+    expect(
+      [...jobs]
+        .filter(([, job]) => job.includes('id-token: write'))
+        .map(([name]) => name)
+    ).toEqual([
+      'tui-static',
+      'build-assets',
+      'ui-integration',
+      'acp-integration',
+      'e2e',
+      'smoke',
+      'scenario-categories',
+      'visual',
+      'live-parity',
+    ]);
   });
 
   it('uses only the selected stream for stable tool identity', () => {

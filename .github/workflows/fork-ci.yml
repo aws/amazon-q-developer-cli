@@ -1,316 +1,317 @@
-name: "Fork PR: CI"
-
-# Runs TUI CI for fork PRs after a maintainer adds the "safe-to-test" label.
-# This is needed because fork PRs cannot access repo secrets (CodeArtifact, IAM roles).
-#
-# Rust checks (clippy, test, fmt, deny) run automatically via rust.yml +
-# approve-fork-ci.yaml — no label needed. Only TUI jobs require this workflow
-# because they need CodeArtifact access for @kiro/@amzn packages.
-#
-# Security model:
-# - Only triggers on label addition (requires write access to the repo)
-# - A maintainer must review the code BEFORE adding the label
-# - Label is removed after the run so new pushes require re-approval
-# - CodeArtifact login is INLINED (not via ./.github/actions/) to prevent
-#   fork code from hijacking the composite action and exfiltrating credentials
+name: 'Fork PR: RC Certification'
 
 on:
   pull_request_target:
-    types: [labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: fork-rc-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
-  pull-requests: write
+  deployments: read
   id-token: write
-
-env:
-  CI: 1
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  pull-requests: read
+  statuses: write
 
 jobs:
-  guard:
-    name: Check trigger
-    if: github.event.label.name == 'safe-to-test' && github.event.pull_request.head.repo.fork == true
+  prepare:
+    name: Prepare fork certification
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    outputs:
+      source_repository: ${{ steps.prepare.outputs.source_repository }}
+      source_sha: ${{ steps.prepare.outputs.source_sha }}
+      should_run: ${{ steps.prepare.outputs.should_run }}
+      short_sha: ${{ steps.prepare.outputs.short_sha }}
     steps:
-      - run: |
-          echo "Fork PR #${{ github.event.pull_request.number }} approved for CI via safe-to-test label"
-
-  # Remove the label so the next push requires re-approval
-  remove-label:
-    name: Remove safe-to-test label
-    needs: guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v7
+      - name: Validate approval gate and source
+        id: prepare
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
-            await github.rest.issues.removeLabel({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              name: 'safe-to-test'
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const sourceSha = pr.head.sha;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+            const statusContext = 'Fork RC Certification (required)';
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const fileListComplete = files.length === pr.changed_files;
+            const isIgnoredPath = filename => {
+              return (
+                filename.startsWith('docs/') ||
+                filename.startsWith('.changes/') ||
+                filename.startsWith('scripts/testing-cert-status/') ||
+                /^[^/]+\.md$/i.test(filename)
+              );
+            };
+            const needsVerification =
+              !fileListComplete ||
+              files.some(({ filename, previous_filename }) => {
+                return [filename, previous_filename]
+                  .filter(Boolean)
+                  .some(path => !isIgnoredPath(path));
+              });
+            if (!fileListComplete) {
+              core.warning(
+                `Received ${files.length} of ${pr.changed_files} changed files; RC verification is required`
+              );
+            }
+
+            core.setOutput('source_repository', pr.head.repo.full_name);
+            core.setOutput('source_sha', sourceSha);
+            core.setOutput('short_sha', sourceSha.slice(0, 12));
+            core.setOutput(
+              'should_run',
+              pr.head.repo.fork && needsVerification ? 'true' : 'false'
+            );
+
+            if (!pr.head.repo.fork) {
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: sourceSha,
+                state: 'success',
+                context: statusContext,
+                description: 'Internal PR uses the standard RC certification gate',
+                target_url: runUrl,
+              });
+              core.info('Internal PR does not require fork approval');
+              return;
+            }
+
+            if (!needsVerification) {
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: sourceSha,
+                state: 'success',
+                context: statusContext,
+                description: 'No RC verification paths changed',
+                target_url: runUrl,
+              });
+              core.info('No RC verification paths changed');
+              return;
+            }
+
+            let environment;
+            try {
+              ({ data: environment } = await github.rest.repos.getEnvironment({
+                owner,
+                repo,
+                environment_name: 'fork-rc',
+              }));
+            } catch (error) {
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: sourceSha,
+                state: 'failure',
+                context: statusContext,
+                description: 'Unable to verify fork-rc approval protections',
+                target_url: runUrl,
+              });
+              throw error;
+            }
+            const reviewerRule = environment.protection_rules?.find(
+              rule => rule.type === 'required_reviewers'
+            );
+            if (
+              environment.can_admins_bypass ||
+              !reviewerRule?.prevent_self_review ||
+              !reviewerRule.reviewers?.length
+            ) {
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: sourceSha,
+                state: 'failure',
+                context: statusContext,
+                description: 'fork-rc approval environment is not protected',
+                target_url: runUrl,
+              });
+              throw new Error('fork-rc approval protections are incomplete');
+            }
+
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: sourceSha,
+              state: 'pending',
+              context: statusContext,
+              description: 'Waiting for a reviewer to approve RC certification',
+              target_url: runUrl,
             });
 
-  # --- TUI checks (mirrors tui.yml) ---
-
-  tui:
-    name: TUI (${{ matrix.check }})
-    needs: guard
-    strategy:
-      matrix:
-        check: [typecheck, lint, test]
-      fail-fast: false
+  notify:
+    name: Notify fork reviewers
+    needs: prepare
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      KIRO_TUI_FORCE_COLOR: '3'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          # Fork checkout under pull_request_target is gated behind the
-          # maintainer-only safe-to-test label (removed after each run).
-          allow-unsafe-pr-checkout: true
-      - name: Read pinned Bun version
-        id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ steps.bun-ver.outputs.version }}
-      # Keep authentication inline because fork checkouts are untrusted.
-      - name: Configure AWS credentials for CodeArtifact
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
-          aws-region: us-west-2
-      - name: Login to CodeArtifact
+      - name: Post approval request to Slack
+        id: slack
+        continue-on-error: true
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_REVIEWER_BOT_TOKEN }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+        shell: bash
         run: |
-          REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
-          for attempt in 1 2 3; do
-            if TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2) && [ -n "$TOKEN" ] && [ "$TOKEN" != "None" ]; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            echo "CodeArtifact token request failed (attempt $attempt/3); retrying" >&2
-            sleep $((attempt * 5))
-          done
-          printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
-      - name: Install dependencies
-        run: bun install
-      - name: Build twinki
-        run: bun run build
-        working-directory: packages/twinki/packages/twinki
-      - name: Run ${{ matrix.check }}
-        if: matrix.check != 'test'
-        run: bun run ${{ matrix.check }}
-        working-directory: packages/tui
-      # The unit-test leg answers a required check, so it must assert everything that check means on a branch.
-      - name: Run tui tests
-        if: matrix.check == 'test'
-        run: |
-          set -o pipefail
-          bun test 2>&1 | tee /tmp/tui-coverage.txt
-          # Extract coverage from bun's "All files" line
-          FUNCS=$(grep "All files" /tmp/tui-coverage.txt | awk -F'|' '{gsub(/ /,"",$2); print $2}')
-          LINES=$(grep "All files" /tmp/tui-coverage.txt | awk -F'|' '{gsub(/ /,"",$3); print $3}')
-          echo "Coverage — functions: ${FUNCS}%, lines: ${LINES}%"
-          # Minimum thresholds — bun's "All files" includes files that
-          # coveragePathIgnorePatterns excludes from the table but not the
-          # summary (bun bug). Use 80% as the floor for the raw summary;
-          # the real coverage of unit-testable code is 93%+.
-          MIN_FUNCS=80
-          MIN_LINES=80
-          if [ "$(echo "$FUNCS < $MIN_FUNCS" | bc -l)" = "1" ]; then
-            echo "::error::Function coverage regression! ${FUNCS}% < ${MIN_FUNCS}%"
+          PAYLOAD="$(jq -n \
+            --arg channel "C0ARG53D0NL" \
+            --arg author "$PR_AUTHOR" \
+            --arg number "$PR_NUMBER" \
+            --arg title "$PR_TITLE" \
+            --arg pr_url "$PR_URL" \
+            --arg run_url "$RUN_URL" \
+            --arg sha "$SHORT_SHA" \
+            '{
+              channel: $channel,
+              unfurl_links: false,
+              text: ("Fork RC approval requested for #" + $number),
+              blocks: [
+                {
+                  type: "header",
+                  text: {
+                    type: "plain_text",
+                    text: "Fork RC certification needs approval"
+                  }
+                },
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: ("<" + $pr_url + "|#" + $number + ": " + $title + "> by `" + $author + "`")
+                  },
+                  fields: [
+                    {
+                      type: "mrkdwn",
+                      text: ("*Reviewed SHA*\n`" + $sha + "`")
+                    },
+                    {
+                      type: "mrkdwn",
+                      text: "*Runs after approval*\nRC smoke, integration, and E2E"
+                    }
+                  ]
+                },
+                {
+                  type: "actions",
+                  elements: [
+                    {
+                      type: "button",
+                      style: "primary",
+                      text: {
+                        type: "plain_text",
+                        text: "Review and approve RC"
+                      },
+                      url: $run_url
+                    },
+                    {
+                      type: "button",
+                      text: {
+                        type: "plain_text",
+                        text: "Open pull request"
+                      },
+                      url: $pr_url
+                    }
+                  ]
+                },
+                {
+                  type: "context",
+                  elements: [
+                    {
+                      type: "mrkdwn",
+                      text: "Approve only after reviewing this SHA. A new push cancels this run and requests approval again."
+                    }
+                  ]
+                }
+              ]
+            }'
+          )"
+
+          RESPONSE="$(curl -fsS -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$PAYLOAD")"
+          if [ "$(jq -r '.ok' <<<"$RESPONSE")" != "true" ]; then
+            jq -r '.error // "Slack notification failed"' <<<"$RESPONSE" >&2
             exit 1
           fi
-          if [ "$(echo "$LINES < $MIN_LINES" | bc -l)" = "1" ]; then
-            echo "::error::Line coverage regression! ${LINES}% < ${MIN_LINES}%"
-            exit 1
-          fi
-        working-directory: packages/tui
-      - name: Run vitest selector tests
-        if: matrix.check == 'test'
-        run: npx vitest run --config vitest.config.ts
-        working-directory: packages/tui
-      - name: Run twinki tests
-        if: matrix.check == 'test'
-        run: bun run test:run
-        working-directory: packages/twinki
 
-  tui-integ:
-    name: TUI Integration (${{ matrix.os }})
-    needs: guard
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
-      fail-fast: false
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+      - name: Report Slack notification failure
+        if: steps.slack.outcome == 'failure'
+        env:
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "::warning::Slack approval notification failed; approve the fork RC run manually at $RUN_URL"
+          {
+            echo "### Slack approval notification failed"
+            echo
+            echo "Reviewers must open the [fork RC run]($RUN_URL) directly."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  approve:
+    name: Approve reviewed fork SHA
+    needs: [prepare, notify]
+    if: needs.prepare.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: fork-rc
+      url: ${{ github.event.pull_request.html_url }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          # Fork checkout under pull_request_target is gated behind the
-          # maintainer-only safe-to-test label (removed after each run).
-          allow-unsafe-pr-checkout: true
-      - name: Install Linux build deps
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 libasound2-dev
-      - name: Install macOS build deps
-        if: runner.os == 'macOS'
-        run: brew install protobuf
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: fork-cargo-integ-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            fork-cargo-integ-${{ runner.os }}-
-      - name: Build chat_cli
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cargo build -p chat_cli --no-default-features
-          else
-            cargo build -p chat_cli
-          fi
-      - name: Read pinned Bun version
-        id: bun-ver
-        shell: bash
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ steps.bun-ver.outputs.version }}
-      - name: Configure AWS credentials for CodeArtifact
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
-          aws-region: us-west-2
-      - name: Login to CodeArtifact
-        shell: bash
-        run: |
-          REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
-          for attempt in 1 2 3; do
-            if TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2) && [ -n "$TOKEN" ] && [ "$TOKEN" != "None" ]; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            echo "CodeArtifact token request failed (attempt $attempt/3); retrying" >&2
-            sleep $((attempt * 5))
-          done
-          printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
-      - name: Install dependencies
-        run: bun install
-      - name: Build twinki
-        run: bun run build
-        working-directory: packages/twinki/packages/twinki
-      - name: Run integration tests (Linux)
-        if: runner.os == 'Linux'
-        run: bun run test:integ
-        working-directory: packages/tui
-      - name: Run ACP integration tests
-        run: bun run test:acp-integ
-        working-directory: packages/tui
-      - name: Upload test logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fork-integ-logs-${{ matrix.os }}
-          path: packages/tui/integ_tests/test-outputs/
-          retention-days: 7
+      - name: Record approval
+        run: echo "Approved fork commit ${{ needs.prepare.outputs.source_sha }}"
 
-  tui-e2e:
-    name: TUI E2E (${{ matrix.os }})
-    needs: guard
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-x64-latest-16-cores]
-      fail-fast: false
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+  rc-certification:
+    name: Run shared RC certification
+    needs: [prepare, approve]
+    if: needs.prepare.outputs.should_run == 'true'
+    uses: ./.github/workflows/rc-certification.yml
+    with:
+      execution_mode: fork
+      source_repository: ${{ needs.prepare.outputs.source_repository }}
+      source_sha: ${{ needs.prepare.outputs.source_sha }}
+      trusted_sha: ${{ github.sha }}
+      pr_number: ${{ github.event.pull_request.number }}
+
+  publish-status:
+    name: Publish fork certification status
+    needs: [prepare, rc-certification]
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Publish exact-SHA result
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          RC_RESULT: ${{ needs.rc-certification.result }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          # Fork checkout under pull_request_target is gated behind the
-          # maintainer-only safe-to-test label (removed after each run).
-          allow-unsafe-pr-checkout: true
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y -qq build-essential pkg-config jq dpkg curl wget zstd cmake clang libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev valac libibus-1.0-dev libglib2.0-dev sqlite3 libxdo-dev protobuf-compiler libfuse2 libasound2-dev
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: brew install protobuf
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: fork-cargo-e2e-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-      - name: Build chat_cli
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cargo build -p chat_cli --no-default-features
-          else
-            cargo build -p chat_cli
-          fi
-      - name: Read pinned Bun version
-        id: bun-ver
-        shell: bash
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ steps.bun-ver.outputs.version }}
-      - name: Configure AWS credentials for CodeArtifact
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::273221486557:role/kiro-agent-npm-packages-reader
-          aws-region: us-west-2
-      - name: Login to CodeArtifact
-        shell: bash
-        run: |
-          REGISTRY="kiro-agent-273221486557.d.codeartifact.us-west-2.amazonaws.com/npm/npm-packages"
-          for attempt in 1 2 3; do
-            if TOKEN=$(aws codeartifact get-authorization-token --domain kiro-agent --domain-owner 273221486557 --query authorizationToken --output text --region us-west-2) && [ -n "$TOKEN" ] && [ "$TOKEN" != "None" ]; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            echo "CodeArtifact token request failed (attempt $attempt/3); retrying" >&2
-            sleep $((attempt * 5))
-          done
-          printf '@kiro:registry=https://%s/\n@amzn:registry=https://%s/\n//%s/:always-auth=true\n//%s/:_authToken=%s\n' "$REGISTRY" "$REGISTRY" "$REGISTRY" "$REGISTRY" "$TOKEN" > .npmrc
-      - name: Install dependencies
-        run: bun install
-      - name: Build twinki
-        run: bun run build
-        working-directory: packages/twinki/packages/twinki
-      - name: Build TUI
-        run: bun run build
-        working-directory: packages/tui
-      - name: Run E2E tests
-        run: bun test ./e2e_tests/
-        working-directory: packages/tui
-      - name: Upload test logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fork-e2e-logs-${{ matrix.os }}
-          path: packages/tui/e2e_tests/test-outputs/
-          retention-days: 7
-
+          script: |
+            const passed = process.env.RC_RESULT === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.SOURCE_SHA,
+              state: passed ? 'success' : 'failure',
+              context: 'Fork RC Certification (required)',
+              description: passed
+                ? 'Shared RC certification passed'
+                : `Shared RC certification ${process.env.RC_RESULT}`,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+            if (!passed) {
+              core.setFailed(`Shared RC certification ${process.env.RC_RESULT}`);
+            }

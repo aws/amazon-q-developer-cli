@@ -4,6 +4,28 @@ on:
   pull_request:
   schedule:
     - cron: '0 2 * * *'
+  workflow_call:
+    inputs:
+      execution_mode:
+        description: Trusted invocation mode
+        type: string
+        default: internal
+      source_repository:
+        description: Repository containing the source under test
+        type: string
+        default: ''
+      source_sha:
+        description: Immutable source commit under test
+        type: string
+        default: ''
+      trusted_sha:
+        description: Base-repository commit providing trusted CI support
+        type: string
+        default: ''
+      pr_number:
+        description: Pull request number used for concurrency
+        type: number
+        default: 0
   workflow_dispatch:
     inputs:
       run_smoke:
@@ -80,23 +102,25 @@ on:
           - '30'
 
 concurrency:
-  group: rc-certification-${{ github.event.pull_request.number || github.ref }}
+  group: rc-certification-${{ inputs.pr_number || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  pull-requests: read
-  id-token: write
 
 env:
   CI: '1'
   TERM: xterm-256color
   COLORTERM: truecolor
   FORCE_COLOR: '3'
+  RC_CI_ROOT: ${{ inputs.execution_mode == 'fork' && format('{0}/.trusted-ci', github.workspace) || github.workspace }}
 
 jobs:
   resolve:
     name: Resolve Verification Matrix
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       run_smoke: ${{ steps.resolve.outputs.run_smoke }}
@@ -104,6 +128,7 @@ jobs:
       run_visual: ${{ steps.resolve.outputs.run_visual }}
       run_integration: ${{ steps.resolve.outputs.run_integration }}
       run_e2e: ${{ steps.resolve.outputs.run_e2e }}
+      run_tui_static: ${{ steps.resolve.outputs.run_tui_static }}
       live_engines: ${{ steps.resolve.outputs.live_engines }}
       smoke_priority: ${{ steps.resolve.outputs.smoke_priority }}
       visual_suite: ${{ steps.resolve.outputs.visual_suite }}
@@ -113,12 +138,67 @@ jobs:
       lane_attempts: ${{ steps.resolve.outputs.lane_attempts }}
       lane_retry_delay_seconds: ${{ steps.resolve.outputs.lane_retry_delay_seconds }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Validate invocation
+        shell: bash
+        env:
+          EXECUTION_MODE: ${{ inputs.execution_mode || 'internal' }}
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TRUSTED_SHA: ${{ inputs.trusted_sha }}
+          TRUSTED_BASE_SHA: ${{ github.sha }}
+        run: |
+          case "$EXECUTION_MODE" in
+            internal)
+              ;;
+            fork)
+              if [[ ! "$SOURCE_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+                echo "Invalid fork source repository: $SOURCE_REPOSITORY" >&2
+                exit 1
+              fi
+              if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ || ! "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "Fork execution requires immutable source and trusted commit SHAs." >&2
+                exit 1
+              fi
+              if [[ "$TRUSTED_SHA" != "$TRUSTED_BASE_SHA" ]]; then
+                echo "Trusted CI support must come from the calling base commit $TRUSTED_BASE_SHA, not $TRUSTED_SHA." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unsupported execution mode: $EXECUTION_MODE" >&2
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.test.ts
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.test.ts
+            .github/scripts/run-with-retry.sh
+            .github/workflows/rc-certification.yml
+            scripts/const.py
 
       - name: Detect verification changes
         id: paths
         if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
         with:
           predicate-quantifier: every
           filters: |
@@ -131,10 +211,14 @@ jobs:
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
@@ -142,8 +226,8 @@ jobs:
         shell: bash
         run: |
           for test_file in \
-            ./.github/scripts/rc-binary-cache.test.ts \
-            ./.github/scripts/run-with-retry.test.ts
+            "$RC_CI_ROOT/.github/scripts/rc-binary-cache.test.ts" \
+            "$RC_CI_ROOT/.github/scripts/run-with-retry.test.ts"
           do
             test_name="$(basename "$test_file" .test.ts)"
             test_log="$RUNNER_TEMP/$test_name-tests.log"
@@ -157,11 +241,33 @@ jobs:
       - id: resolve
         shell: bash
         env:
+          EXECUTION_MODE: ${{ inputs.execution_mode || 'internal' }}
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TRUSTED_SHA: ${{ inputs.trusted_sha }}
           SCENARIO_CATEGORY: ${{ inputs.scenario_category }}
           SCENARIO_TAG: ${{ inputs.scenario_tag }}
           VISUAL_SUITE: ${{ inputs.visual_suite }}
           LIVE_ENGINE: ${{ inputs.live_engine }}
         run: |
+          if [ "$EXECUTION_MODE" = "fork" ]; then
+            echo "run_smoke=true" >> "$GITHUB_OUTPUT"
+            echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
+            echo "run_visual=false" >> "$GITHUB_OUTPUT"
+            echo "run_integration=true" >> "$GITHUB_OUTPUT"
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+            echo "run_tui_static=true" >> "$GITHUB_OUTPUT"
+            echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
+            echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
+            echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+            echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
+            echo "scenario_tag=" >> "$GITHUB_OUTPUT"
+            echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
+            echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+            echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             if [ "${{ github.event.pull_request.head.repo.fork || false }}" = "true" ] || [ "${{ steps.paths.outputs.verification }}" != "true" ]; then
               echo "run_smoke=false" >> "$GITHUB_OUTPUT"
@@ -169,6 +275,7 @@ jobs:
               echo "run_visual=false" >> "$GITHUB_OUTPUT"
               echo "run_integration=false" >> "$GITHUB_OUTPUT"
               echo "run_e2e=false" >> "$GITHUB_OUTPUT"
+              echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
               echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
               echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
               echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -185,6 +292,7 @@ jobs:
             echo "run_visual=false" >> "$GITHUB_OUTPUT"
             echo "run_integration=true" >> "$GITHUB_OUTPUT"
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+            echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
             echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
             echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -202,6 +310,7 @@ jobs:
             echo "run_visual=false" >> "$GITHUB_OUTPUT"
             echo "run_integration=true" >> "$GITHUB_OUTPUT"
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+            echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
             echo 'live_engines=["v2","kas"]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
             echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -252,6 +361,7 @@ jobs:
           echo "run_visual=${{ inputs.run_visual }}" >> "$GITHUB_OUTPUT"
           echo "run_integration=${{ inputs.run_integration }}" >> "$GITHUB_OUTPUT"
           echo "run_e2e=${{ inputs.run_e2e }}" >> "$GITHUB_OUTPUT"
+          echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
           echo "smoke_priority=${{ inputs.smoke_priority }}" >> "$GITHUB_OUTPUT"
           echo "visual_suite=$VISUAL_SUITE" >> "$GITHUB_OUTPUT"
           echo "scenario_categories=$SCENARIO_CATEGORIES" >> "$GITHUB_OUTPUT"
@@ -260,8 +370,104 @@ jobs:
           echo "lane_attempts=${{ inputs.lane_attempts }}" >> "$GITHUB_OUTPUT"
           echo "lane_retry_delay_seconds=${{ inputs.lane_retry_delay_seconds }}" >> "$GITHUB_OUTPUT"
 
+  tui-static:
+    name: TUI Static (${{ matrix.check }})
+    permissions:
+      contents: read
+      id-token: write
+    needs: resolve
+    if: needs.resolve.outputs.run_tui_static == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [typecheck, lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KIRO_TUI_FORCE_COLOR: '3'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            scripts/const.py
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build twinki package
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Run typecheck or lint
+        if: matrix.check != 'test'
+        run: bun run ${{ matrix.check }}
+        working-directory: packages/tui
+
+      - name: Run TUI unit tests
+        if: matrix.check == 'test'
+        shell: bash
+        run: |
+          set -o pipefail
+          bun test 2>&1 | tee "$RUNNER_TEMP/tui-coverage.txt"
+          FUNCS="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$2); print $2}')"
+          LINES="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$3); print $3}')"
+          echo "Coverage: functions ${FUNCS}%, lines ${LINES}%"
+          if [ "$(awk -v value="$FUNCS" 'BEGIN { print value < 80 }')" = "1" ]; then
+            echo "::error::Function coverage regression: ${FUNCS}% < 80%"
+            exit 1
+          fi
+          if [ "$(awk -v value="$LINES" 'BEGIN { print value < 80 }')" = "1" ]; then
+            echo "::error::Line coverage regression: ${LINES}% < 80%"
+            exit 1
+          fi
+          bun run test:vitest
+        working-directory: packages/tui
+
+      - name: Run twinki tests
+        if: matrix.check == 'test'
+        run: bun run test:run
+        working-directory: packages/twinki
+
   build-assets:
     name: Build Verification Assets (${{ matrix.os }})
+    permissions:
+      contents: read
+      id-token: write
     needs: resolve
     if: needs.resolve.outputs.run_smoke == 'true' || needs.resolve.outputs.run_scenarios == 'true' || needs.resolve.outputs.run_visual == 'true' || needs.resolve.outputs.run_integration == 'true' || needs.resolve.outputs.run_e2e == 'true' || needs.resolve.outputs.live_engines != '[]'
     env:
@@ -285,7 +491,26 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            scripts/const.py
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -296,26 +521,32 @@ jobs:
         run: brew install protobuf
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Set Rust compiler wrapper
+        if: inputs.execution_mode != 'fork'
         shell: bash
         run: |
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
           echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
 
       - name: Configure sccache
+        if: inputs.execution_mode != 'fork'
         id: sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
           version: ${{ env.RC_SCCACHE_VERSION }}
 
@@ -323,7 +554,7 @@ jobs:
         id: binary-id
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts prepare \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" prepare \
             --runner-label "${{ matrix.os }}" \
             --identity-path "$RUNNER_TEMP/rc-binary-identity.json" \
             --cache-directory "$RUNNER_TEMP/rc-binary-cache"
@@ -332,7 +563,7 @@ jobs:
         id: binary-cache
         if: steps.binary-id.outputs.cache-enabled == 'true'
         continue-on-error: true
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ steps.binary-id.outputs.cache-directory }}
           key: ${{ steps.binary-id.outputs.cache-key }}
@@ -342,7 +573,7 @@ jobs:
         id: binary-restore
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts restore \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" restore \
             --enabled "${{ steps.binary-id.outputs.cache-enabled }}" \
             --outcome "${{ steps.binary-cache.outcome || 'skipped' }}" \
             --cache-hit "${{ steps.binary-cache.outputs.cache-hit }}" \
@@ -351,9 +582,21 @@ jobs:
             --destination-path "${{ steps.binary-id.outputs.binary-path }}" \
             --bundle-manifest-path "${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json"
 
+      - name: Restore cargo registry
+        if: inputs.execution_mode == 'fork' && steps.binary-restore.outputs.rebuild == 'true'
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-rc-certification-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-rc-certification-${{ runner.os }}-
+
       - name: Cache cargo registry
-        if: steps.binary-restore.outputs.rebuild == 'true'
-        uses: actions/cache@v5
+        if: inputs.execution_mode != 'fork' && steps.binary-restore.outputs.rebuild == 'true'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/.cargo/registry/index/
@@ -366,7 +609,7 @@ jobs:
       - name: Execute recorded chat_cli build plan
         if: steps.binary-restore.outputs.rebuild == 'true'
         shell: bash
-        run: bun .github/scripts/rc-binary-cache.ts build --identity-path "${{ steps.binary-id.outputs.identity-path }}"
+        run: bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" build --identity-path "${{ steps.binary-id.outputs.identity-path }}"
 
       - name: Show sccache statistics
         if: always() && steps.binary-restore.outputs.rebuild == 'true' && steps.sccache.outcome == 'success'
@@ -377,7 +620,7 @@ jobs:
         if: steps.binary-restore.outputs.rebuild == 'true'
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts stage \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" stage \
             --identity-path "${{ steps.binary-id.outputs.identity-path }}" \
             --binary-path "${{ steps.binary-id.outputs.binary-path }}" \
             --cache-directory "${{ steps.binary-id.outputs.cache-directory }}" \
@@ -387,21 +630,26 @@ jobs:
         shell: bash
         run: |
           "${{ steps.binary-id.outputs.binary-path }}" --version
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path "${{ steps.binary-id.outputs.binary-path }}" \
             --manifest-path "${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json"
 
       - name: Save exact Rust binary cache
-        if: steps.binary-restore.outputs.rebuild == 'true' && steps.binary-id.outputs.cache-enabled == 'true'
+        if: inputs.execution_mode != 'fork' && steps.binary-restore.outputs.rebuild == 'true' && steps.binary-id.outputs.cache-enabled == 'true'
         continue-on-error: true
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ steps.binary-id.outputs.cache-directory }}
           key: ${{ steps.binary-id.outputs.cache-key }}
           enableCrossOsArchive: false
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
@@ -415,7 +663,7 @@ jobs:
         working-directory: packages/tui
 
       - name: Upload reusable bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: |
@@ -427,37 +675,69 @@ jobs:
 
   ui-integration:
     name: UI Integration (ubuntu-latest-8-cores)
+    permissions:
+      contents: read
+      id-token: write
     needs: [resolve, build-assets]
     if: needs.resolve.outputs.run_integration == 'true'
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
 
       - name: Download reusable bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-bundle-linux
           path: .
 
       - name: Verify reusable binary
         run: |
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path target/release/chat_cli \
             --manifest-path target/release/chat_cli.rc-binary-manifest.json
 
@@ -469,7 +749,7 @@ jobs:
           LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
           LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
         run: |
-          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts "$LANE_ATTEMPTS" \
             --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
             --label "UI integration" \
@@ -479,7 +759,7 @@ jobs:
 
       - name: Upload UI integration logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-ui-integration-linux
           path: packages/tui/integ_tests/test-outputs/
@@ -488,7 +768,7 @@ jobs:
 
       - name: Upload UI integration retry status
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-retry-ui-integration-linux
           path: verification-results/retries/ui-integration-linux.txt
@@ -497,6 +777,9 @@ jobs:
 
   acp-integration:
     name: ACP Integration (${{ matrix.os }})
+    permissions:
+      contents: read
+      id-token: write
     needs: [resolve, build-assets]
     if: needs.resolve.outputs.run_integration == 'true'
     strategy:
@@ -521,25 +804,54 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
 
       - name: Download reusable bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
@@ -547,7 +859,7 @@ jobs:
       - name: Verify reusable binary
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path "${{ matrix.binary_path }}" \
             --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
@@ -559,7 +871,7 @@ jobs:
           LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
           LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
         run: |
-          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts "$LANE_ATTEMPTS" \
             --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
             --label "ACP integration:${{ matrix.artifact_suffix }}" \
@@ -574,7 +886,7 @@ jobs:
 
       - name: Upload ACP integration logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-acp-integration-${{ matrix.artifact_suffix }}
           path: packages/tui/integ_tests/test-outputs/
@@ -583,7 +895,7 @@ jobs:
 
       - name: Upload ACP integration retry status
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-retry-acp-integration-${{ matrix.artifact_suffix }}
           path: verification-results/retries/acp-integration-${{ matrix.artifact_suffix }}.txt
@@ -592,6 +904,9 @@ jobs:
 
   e2e:
     name: E2E (${{ matrix.os }})
+    permissions:
+      contents: read
+      id-token: write
     needs: [resolve, build-assets]
     if: needs.resolve.outputs.run_e2e == 'true'
     strategy:
@@ -616,25 +931,54 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
 
       - name: Download reusable bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
@@ -642,7 +986,7 @@ jobs:
       - name: Verify reusable binary
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path "${{ matrix.binary_path }}" \
             --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
@@ -653,7 +997,7 @@ jobs:
           LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
           LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
         run: |
-          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts "$LANE_ATTEMPTS" \
             --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
             --label "E2E:${{ matrix.artifact_suffix }}" \
@@ -663,7 +1007,7 @@ jobs:
 
       - name: Upload E2E logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-e2e-${{ matrix.artifact_suffix }}
           path: packages/tui/e2e_tests/test-outputs/
@@ -672,7 +1016,7 @@ jobs:
 
       - name: Upload E2E retry status
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-retry-e2e-${{ matrix.artifact_suffix }}
           path: verification-results/retries/e2e-${{ matrix.artifact_suffix }}.txt
@@ -681,6 +1025,9 @@ jobs:
 
   smoke:
     name: Smoke Lane (${{ matrix.os }})
+    permissions:
+      contents: read
+      id-token: write
     needs: [resolve, build-assets]
     if: needs.resolve.outputs.run_smoke == 'true'
     strategy:
@@ -703,25 +1050,54 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
 
       - name: Download reusable bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
@@ -729,7 +1105,7 @@ jobs:
       - name: Verify reusable binary
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path "${{ matrix.binary_path }}" \
             --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
@@ -748,7 +1124,7 @@ jobs:
           if [ "${{ needs.resolve.outputs.smoke_priority }}" != "all" ]; then
             ARGS+=(--priority "${{ needs.resolve.outputs.smoke_priority }}")
           fi
-          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts "$LANE_ATTEMPTS" \
             --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
             --label "smoke lane" \
@@ -756,7 +1132,7 @@ jobs:
 
       - name: Upload smoke artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-smoke-${{ matrix.artifact_suffix }}
           path: verification-results/smoke/
@@ -765,6 +1141,9 @@ jobs:
 
   scenario-categories:
     name: Scenario Lane (${{ matrix.os }} / ${{ matrix.category }})
+    permissions:
+      contents: read
+      id-token: write
     needs: [resolve, build-assets]
     if: needs.resolve.outputs.run_scenarios == 'true' && needs.resolve.outputs.scenario_categories != '[]'
     runs-on: ${{ matrix.os }}
@@ -785,25 +1164,54 @@ jobs:
             artifact_suffix: windows
             binary_path: target/release/chat_cli.exe
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
 
       - name: Download reusable bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
@@ -811,7 +1219,7 @@ jobs:
       - name: Verify reusable binary
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path "${{ matrix.binary_path }}" \
             --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
@@ -838,7 +1246,7 @@ jobs:
           if [ -n "$SCENARIO_TAG" ]; then
             ARGS+=(--tag "$SCENARIO_TAG")
           fi
-          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts "$LANE_ATTEMPTS" \
             --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
             --label "scenario lane:${{ matrix.category }}" \
@@ -846,7 +1254,7 @@ jobs:
 
       - name: Upload scenario artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-scenarios-${{ matrix.artifact_suffix }}-${{ matrix.category }}
           path: verification-results/scenarios/${{ matrix.category }}/
@@ -855,6 +1263,9 @@ jobs:
 
   visual:
     name: Visual Lane (${{ matrix.os }} / ${{ needs.resolve.outputs.visual_suite }})
+    permissions:
+      contents: read
+      id-token: write
     needs: [resolve, build-assets]
     if: needs.resolve.outputs.run_visual == 'true'
     strategy:
@@ -874,25 +1285,54 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
 
       - name: Download reusable bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-bundle-${{ matrix.artifact_suffix }}
           path: .
@@ -900,7 +1340,7 @@ jobs:
       - name: Verify reusable binary
         shell: bash
         run: |
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path "${{ matrix.binary_path }}" \
             --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
 
@@ -914,7 +1354,7 @@ jobs:
         run: |
           mkdir -p "verification-results/visual/$VISUAL_SUITE"
           ARGS=(--suite "$VISUAL_SUITE" --out "verification-results/visual/$VISUAL_SUITE")
-          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts "$LANE_ATTEMPTS" \
             --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
             --label "visual lane:$VISUAL_SUITE" \
@@ -923,7 +1363,7 @@ jobs:
 
       - name: Upload visual artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-visual-${{ matrix.artifact_suffix }}-${{ needs.resolve.outputs.visual_suite }}
           path: packages/tui/verification-results/visual/${{ needs.resolve.outputs.visual_suite }}/
@@ -932,6 +1372,9 @@ jobs:
 
   live-parity:
     name: Live Smoke (ubuntu-latest / ${{ matrix.engine }})
+    permissions:
+      contents: read
+      id-token: write
     needs: [resolve, build-assets]
     if: needs.resolve.outputs.live_engines != '[]'
     runs-on: ubuntu-latest
@@ -941,32 +1384,61 @@ jobs:
       matrix:
         engine: ${{ fromJSON(needs.resolve.outputs.live_engines) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
         uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
 
       - name: Install dependencies
         run: bun install
 
       - name: Download reusable bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-bundle-linux
           path: .
 
       - name: Verify reusable binary
         run: |
-          bun .github/scripts/rc-binary-cache.ts verify-bundle \
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
             --binary-path target/release/chat_cli \
             --manifest-path target/release/chat_cli.rc-binary-manifest.json
 
@@ -978,7 +1450,7 @@ jobs:
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
         run: |
           ARGS=(--backend live --engine "${{ matrix.engine }}" --tag smoke --format tap --output-dir verification-results/live/${{ matrix.engine }})
-          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts 1 \
             --delay-seconds 0 \
             --label "live smoke:${{ matrix.engine }}" \
@@ -986,7 +1458,7 @@ jobs:
 
       - name: Upload live smoke artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-live-${{ matrix.engine }}
           path: verification-results/live/${{ matrix.engine }}/
@@ -995,9 +1467,12 @@ jobs:
 
   summary:
     name: Publish Verification Summary
+    permissions:
+      contents: read
     needs:
       [
         resolve,
+        tui-static,
         build-assets,
         ui-integration,
         acp-integration,
@@ -1010,6 +1485,7 @@ jobs:
     if: |
       always() && (
         needs.resolve.result == 'failure' ||
+        needs.tui-static.result != 'skipped' ||
         needs.build-assets.result == 'failure' ||
         needs.ui-integration.result != 'skipped' ||
         needs.acp-integration.result != 'skipped' ||
@@ -1021,41 +1497,93 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Validate invocation
+        shell: bash
+        env:
+          EXECUTION_MODE: ${{ inputs.execution_mode || 'internal' }}
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TRUSTED_SHA: ${{ inputs.trusted_sha }}
+          TRUSTED_BASE_SHA: ${{ github.sha }}
+        run: |
+          case "$EXECUTION_MODE" in
+            internal)
+              ;;
+            fork)
+              if [[ ! "$SOURCE_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+                echo "Invalid fork source repository: $SOURCE_REPOSITORY" >&2
+                exit 1
+              fi
+              if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ || ! "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "Fork execution requires immutable source and trusted commit SHAs." >&2
+                exit 1
+              fi
+              if [[ "$TRUSTED_SHA" != "$TRUSTED_BASE_SHA" ]]; then
+                echo "Trusted CI support must come from the calling base commit $TRUSTED_BASE_SHA, not $TRUSTED_SHA." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unsupported execution mode: $EXECUTION_MODE" >&2
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/const.py
 
       - name: Read pinned Bun version
         id: bun-ver
-        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ steps.bun-ver.outputs.version }}
 
       - name: Download smoke artifacts
         if: needs.smoke.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: verification-smoke-*
           path: verification-artifacts
 
       - name: Download scenario artifacts
         if: needs.scenario-categories.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: verification-scenarios-*
           path: verification-artifacts
 
       - name: Download visual artifacts
         if: needs.visual.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: verification-visual-*
           path: verification-artifacts
 
       - name: Download live smoke artifacts
         if: needs.live-parity.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: verification-live-*
           path: verification-artifacts
@@ -1063,7 +1591,7 @@ jobs:
       - name: Download ACP capability coverage
         if: needs.acp-integration.result != 'skipped'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: verification-acp-integration-linux
           path: verification-artifacts/acp-integration
@@ -1073,7 +1601,7 @@ jobs:
           needs.ui-integration.result != 'skipped' ||
           needs.acp-integration.result != 'skipped' ||
           needs.e2e.result != 'skipped'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: verification-retry-*
           path: verification-artifacts/retries
@@ -1112,6 +1640,7 @@ jobs:
             echo
             echo "| Lane | Result | Attempts |"
             echo "| --- | --- | --- |"
+            echo "| TUI static | ${{ needs.tui-static.result }} | not retried |"
             echo "| UI integration | ${{ needs.ui-integration.result }} | $(retry_status ui-integration) |"
             echo "| ACP integration | ${{ needs.acp-integration.result }} | $(retry_status acp-integration) |"
             echo "| E2E | ${{ needs.e2e.result }} | $(retry_status e2e) |"
@@ -1130,7 +1659,7 @@ jobs:
         run: cat verification-artifacts/summary/summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload summary bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verification-summary
           path: verification-artifacts/summary/
@@ -1139,6 +1668,7 @@ jobs:
       - name: Fail on lane failures
         if: |
           needs.resolve.result == 'failure' ||
+          needs.tui-static.result == 'failure' ||
           needs.build-assets.result == 'failure' ||
           needs.ui-integration.result == 'failure' ||
           needs.acp-integration.result == 'failure' ||
@@ -1151,6 +1681,7 @@ jobs:
 
   tui-integ-tests-required:
     name: 'TUI: Integration Tests (required)'
+    permissions: {}
     if: always()
     needs: [resolve, ui-integration, acp-integration]
     runs-on: ubuntu-latest
@@ -1177,6 +1708,7 @@ jobs:
 
   tui-e2e-required:
     name: 'TUI: E2E Tests (required)'
+    permissions: {}
     if: always()
     needs: [resolve, e2e]
     runs-on: ubuntu-latest

@@ -296,7 +296,7 @@ jobs:
   # Gate jobs: always run so they can be set as required status checks.
   # When TUI files aren't changed OR the PR is from a fork, the upstream
   # jobs are skipped, but these still report success — unblocking the PR.
-  # Fork TUI checks are handled by fork-ci.yml (safe-to-test label).
+  # Fork TUI checks run inside the reviewer-approved RC certification workflow.
 
   tui-unit-tests-required:
     name: "TUI: Unit Tests (required)"
@@ -311,7 +311,7 @@ jobs:
             exit 0
           fi
           if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
-            echo "Fork PR — TUI checks deferred to fork-ci.yml"
+            echo "Fork PR — TUI checks run in reviewer-approved RC certification"
             exit 0
           fi
           if [[ "${{ needs.tui-test.result }}" != "success" ]]; then
@@ -332,7 +332,7 @@ jobs:
             exit 0
           fi
           if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
-            echo "Fork PR — telemetry E2E needs CodeArtifact + Docker, deferred"
+            echo "Fork PR — telemetry E2E needs CodeArtifact + Docker and remains deferred"
             exit 0
           fi
           if [[ "${{ needs.tui-telemetry-e2e.result }}" != "success" ]]; then
@@ -353,7 +353,7 @@ jobs:
             exit 0
           fi
           if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
-            echo "Fork PR — TUI checks deferred to fork-ci.yml"
+            echo "Fork PR — TUI checks run in reviewer-approved RC certification"
             exit 0
           fi
           if [[ "${{ needs.tui-typecheck.result }}" != "success" ]]; then
@@ -374,7 +374,7 @@ jobs:
             exit 0
           fi
           if [[ "${{ needs.check-paths.outputs.is-fork }}" == "true" ]]; then
-            echo "Fork PR — TUI checks deferred to fork-ci.yml"
+            echo "Fork PR — TUI checks run in reviewer-approved RC certification"
             exit 0
           fi
           if [[ "${{ needs.tui-lint.result }}" != "success" ]]; then
