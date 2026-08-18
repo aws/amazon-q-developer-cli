@@ -40,6 +40,10 @@ ignore = [
   # quick-xml 0.39.4 unbounded namespace-declaration allocation (DoS);
   # same transitive path and upgrade blocker as above.
   "RUSTSEC-2026-0195",
+  # h2 0.3.x unbounded empty DATA frames (DoS); the fix only exists in 0.4.16+, and
+  # 0.3.27 is the last 0.3 release. Reachable only through aws-smithy-http-client's
+  # hyper 0.14 stack. remove-when-ready: aws-smithy-http-client moves to hyper 1.x.
+  "RUSTSEC-2026-0258",
 ]
 
 [licenses]
