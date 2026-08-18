@@ -18,11 +18,11 @@ import * as path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { E2ETestCase, type E2ETestCaseBuilder } from '../E2ETestCase';
 
-const TUI_DIR = path.join(__dirname, '../..');
-const KAS_SERVER = path.join(
-  TUI_DIR,
-  'node_modules/@kiro/agent/dist/server/acp-server.js'
-);
+// The wrapper injects `--control-plane-endpoint` (model registry) toward the
+// per-test mock BFF before loading the real acp-server — KAS >= 0.46 settles a
+// registry-served model before prompts/spec ops, so a cold registry fails
+// them closed. See kas-server-wrapper.mjs.
+const KAS_SERVER = path.join(__dirname, 'kas-server-wrapper.mjs');
 const MOCK_BFF = path.join(__dirname, 'mock-bff.mjs');
 
 // Single source of truth, shared with mock-bff.mjs (see mock-space-ids.mjs) —
@@ -116,6 +116,10 @@ export class CloudHarness {
           // Point KAS at the per-test mock BFF; this is also what advertises
           // the cloud capabilities (executionTargets, sessionSources, providers).
           KIRO_REMOTE_SESSIONS_ENDPOINT: `http://127.0.0.1:${bffPort}`,
+          // Model registry (CPS) toward the same mock BFF, consumed by the
+          // kas-server-wrapper as `--control-plane-endpoint`. KAS >= 0.46
+          // requires a warm registry for prompts and spec operations.
+          KIRO_TEST_CONTROL_PLANE_ENDPOINT: `http://127.0.0.1:${bffPort}`,
           // Deterministic auth with no logged-in CLI: KAS's env api-key
           // provider takes precedence over --auth=acp-callback, so the
           // host-token shell-out is never attempted. The mock BFF never

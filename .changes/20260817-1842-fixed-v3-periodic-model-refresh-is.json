@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Periodic model refresh is skipped while signed out"
+}

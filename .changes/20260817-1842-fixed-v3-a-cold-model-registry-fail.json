@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] A cold model registry fails closed instead of reporting an empty model list"
+}

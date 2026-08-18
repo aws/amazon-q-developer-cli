@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "[V3] Session listings no longer rescan the filesystem on every call"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] `null` is accepted for optional string fields in JSON agent profiles"
+}

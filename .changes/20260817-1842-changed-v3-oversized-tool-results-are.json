@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "[V3] Oversized tool results are capped on the wire in both live and replayed turns"
+}

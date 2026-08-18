@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Filesystem permission rules match directory roots correctly"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "[V3] Sessions in the resume picker and `/chat list` are named with a short AI-generated title summarizing your first prompt, so similar conversations are distinguishable at a glance instead of all starting with the same raw prompt words"
+}

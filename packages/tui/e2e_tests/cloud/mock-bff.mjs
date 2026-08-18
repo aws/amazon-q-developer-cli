@@ -723,6 +723,30 @@ function sendUnroutedOperation(res) {
 }
 
 const server = http.createServer((req, res) => {
+  // ── CPS (control-plane) surface: model registry.
+  // KAS >= 0.46 settles a registry-served model before EVERY prompt and spec
+  // operation (kiro-team/kiro-agent#2109 fails closed when the registry is
+  // cold), so an offline harness must serve the catalog for any test that
+  // prompts or runs specs. The CPS bearer client speaks awsJson1.0 — `POST /`
+  // with the operation in `X-Amz-Target` — unlike the CBOR web-portal ops
+  // below. Only reached when the harness launches KAS with
+  // `--control-plane-endpoint` pointed here (see kas-server-wrapper.mjs).
+  const amzTarget = req.headers['x-amz-target'] ?? '';
+  if (String(amzTarget).endsWith('.ListAvailableModels')) {
+    console.log(`[mock-bff] ${req.method} ${req.url} op=ListAvailableModels OK`);
+    // Wire shape per the client's ListAvailableModelsResponse$ schema:
+    // members are `models` (list) and `defaultModel` (a full Model).
+    const model = {
+      modelId: 'claude-sonnet-4.6',
+      modelName: 'Claude Sonnet 4.6',
+      modelProvider: 'anthropic',
+      rateMultiplier: 1,
+    };
+    req.resume(); // drain the JSON body; content is irrelevant to the mock
+    res.writeHead(200, { 'content-type': 'application/x-amz-json-1.0' });
+    res.end(JSON.stringify({ models: [model], defaultModel: model }));
+    return;
+  }
   const chunks = [];
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {

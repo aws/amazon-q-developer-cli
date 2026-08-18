@@ -41,4 +41,7 @@ preload = [
   "./src/test-utils/color-preload.ts",
   "./e2e_tests/preload.ts",
   "./src/test-utils/multiplexer-env-preload.ts",
+  # @kiro/agent >= 0.46 statically imports node:sqlite, which bun lacks (1.3.x).
+  # Shims it so tests can import the real barrel. See the file header.
+  "./src/test-utils/node-sqlite-shim-preload.ts",
 ]

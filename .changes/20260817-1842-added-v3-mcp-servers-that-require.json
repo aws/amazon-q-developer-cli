@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "[V3] MCP servers that require protocol revision `2026-07-28` now connect"
+}

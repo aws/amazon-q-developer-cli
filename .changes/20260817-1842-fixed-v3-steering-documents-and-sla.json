@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Steering documents and slash commands are read per session instead of leaking across sessions"
+}

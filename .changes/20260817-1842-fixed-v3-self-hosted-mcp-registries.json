@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Self-hosted MCP registries no longer return 403 when the catalog is fetched"
+}
