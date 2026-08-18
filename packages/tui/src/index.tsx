@@ -1695,7 +1695,10 @@ const startApp = async () => {
     recordTuiRender(
       {
         durationMs,
-        kind,
+        // The KUTS render_kind dimension is a closed [partial, full] set. A
+        // viewport-tail paint rewrites a whole viewport and has always been
+        // counted in the full bucket; keep it there for series continuity.
+        kind: kind === 'partial' ? 'partial' : 'full',
         version: renderTelemetryVersion,
         platform: process.platform,
       },

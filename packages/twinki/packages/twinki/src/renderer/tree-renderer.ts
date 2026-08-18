@@ -139,7 +139,21 @@ export function renderTree(
 				sc.yogaNode.setWidth(validWidth);
 				sc.yogaNode.calculateLayout(validWidth, undefined, Yoga.DIRECTION_LTR);
 			}
-			staticLines.push(...renderNode(sc, validWidth));
+			// A root margin occupies rows when the same element renders in a
+			// live column — even when the element itself renders zero lines,
+			// the live grid still consumes its margin rows. Committed output
+			// must occupy them too, or every row below shifts at commit and
+			// the scrollback flush re-writes rows the user already saw.
+			const marginTop = sc.yogaNode
+				? Math.max(0, Math.floor(sc.yogaNode.getComputedMargin(Yoga.EDGE_TOP) || 0))
+				: 0;
+			const marginBottom = sc.yogaNode
+				? Math.max(0, Math.floor(sc.yogaNode.getComputedMargin(Yoga.EDGE_BOTTOM) || 0))
+				: 0;
+			const lines = renderNode(sc, validWidth);
+			for (let i = 0; i < marginTop; i++) staticLines.push('');
+			staticLines.push(...lines);
+			for (let i = 0; i < marginBottom; i++) staticLines.push('');
 		}
 	}
 

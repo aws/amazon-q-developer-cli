@@ -538,6 +538,18 @@ type StaticItem =
 // the twinki ReactBridge's monotonic totalStaticWritten cursor will skip the
 // re-emitted items because their indices overlap with already-written ones.
 const _staticItems: StaticItem[] = [];
+// Items constructed this commit but not yet promoted to <Static>: they render
+// in the live region for one painted frame first (settle-then-flush), so the
+// scrollback flush replaces rows byte-identical to what was on screen.
+const _settlingItems: StaticItem[] = [];
+const _settlePromotions = { guarantee: 0, escape: 0 };
+/** Test-only: observes settle promotion (buffer drained into <Static>). */
+export const __settleBufferSizeForTests = (): number => _settlingItems.length;
+/** Test-only: how each promotion released — paint guarantee vs stale-paint escape. */
+export const __settlePromotionsForTests = (): {
+  guarantee: number;
+  escape: number;
+} => ({ ..._settlePromotions });
 const _emittedIds = new Set<string>();
 const _flushedMap = new Map<string, Set<string>>();
 let _lastObservedClearToken = -1;
@@ -646,7 +658,7 @@ export const ConversationView = React.memo(function ConversationView({
 }) {
   const { messages, isProcessing, settings } = useConversationState();
   const { getColor } = useTheme();
-  const { adjustStaticCursor } = useTwinkiContext();
+  const { adjustStaticCursor, tui } = useTwinkiContext();
 
   const greetingEnabled =
     settings !== null && settings[Settings.CHAT_GREETING_ENABLED] !== false;
@@ -694,6 +706,57 @@ export const ConversationView = React.memo(function ConversationView({
   // Persistent, append-only array of static items — never shrinks.
   // <Static> uses array length as its index, so items must stay at stable positions.
   const staticItemsRef = React.useRef(_staticItems);
+  // Settle-then-flush: newly constructed items render in the live region
+  // (via the same item renderer as <Static>) until a terminal paint that
+  // includes them completes; only then do they promote into <Static>. The
+  // scrollback flush then replaces rows byte-identical to those on screen,
+  // which the renderer's overflow dedup recognizes exactly.
+  const settlingItemsRef = React.useRef(_settlingItems);
+  const [, bumpSettleGen] = React.useState(0);
+  const settlePromote = React.useCallback(() => {
+    if (settlingItemsRef.current.length === 0) return;
+    staticItemsRef.current.push(...settlingItemsRef.current);
+    settlingItemsRef.current.length = 0;
+    bumpSettleGen((g) => g + 1);
+  }, []);
+  // Survives re-subscription-free across renders: one persistent listener
+  // decides per paint, so the escape count cannot reset mid-hold.
+  const settleStalePaintsRef = React.useRef(0);
+  React.useEffect(() => {
+    // Paints are deferred to at least nextTick, so any paint this listener
+    // observes with a non-empty buffer includes the commit that filled it —
+    // but only a paint with every frame row physically current proves the
+    // settle rows reached the terminal. Rows stuck above the viewport can
+    // never be painted at all, so after a few stale paints promote anyway:
+    // the flush then degrades to its lossless fallback (bounded duplication,
+    // never loss) instead of the buffer pinning live rows indefinitely.
+    if (typeof tui?.onRenderComplete !== 'function') return undefined;
+    return tui.onRenderComplete((event) => {
+      if (settlingItemsRef.current.length === 0) {
+        settleStalePaintsRef.current = 0;
+        return;
+      }
+      if (!event.frameRowsCurrent && ++settleStalePaintsRef.current < 3) {
+        return;
+      }
+      if (event.frameRowsCurrent) _settlePromotions.guarantee++;
+      else _settlePromotions.escape++;
+      settleStalePaintsRef.current = 0;
+      settlePromote();
+    });
+  }, [tui, settlePromote]);
+  React.useEffect(() => {
+    // Without a renderer (tests), promote on the paint-equivalent deferral.
+    if (typeof tui?.onRenderComplete === 'function') return undefined;
+    if (settlingItemsRef.current.length === 0) return undefined;
+    let cancelled = false;
+    process.nextTick(() => {
+      if (!cancelled) settlePromote();
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
   const emittedIdsRef = React.useRef(_emittedIds);
   const prevStaticLenRef = React.useRef(0);
   const staticItemsSnapshotRef = React.useRef<StaticItem[]>([]);
@@ -715,6 +778,7 @@ export const ConversationView = React.memo(function ConversationView({
       // erasing terminal scrollback, so destination-mode history is not duplicated.
       process.stdout.write(CLEAR_SCREEN_AND_HOME);
       staticItemsRef.current.length = 0;
+      settlingItemsRef.current.length = 0;
       emittedIdsRef.current.clear();
       flushedRef.current.clear();
       staticItemsSnapshotRef.current = [];
@@ -917,14 +981,14 @@ export const ConversationView = React.memo(function ConversationView({
           { ...groupedActiveTurnWithSystems, isActive: false },
         ]
       : completedTurnsWithSystems;
+  const committedAsTurn = (candidate: StaticItem) =>
+    candidate.type === 'turn' &&
+    candidate.id === groupedActiveTurnWithSystems?.userMessage.id;
   const activeTurnCommittedAsTurn =
     !isProcessing &&
     groupedActiveTurnWithSystems !== undefined &&
-    staticItemsRef.current.some(
-      (item) =>
-        item.type === 'turn' &&
-        item.id === groupedActiveTurnWithSystems.userMessage.id
-    );
+    (staticItemsRef.current.some(committedAsTurn) ||
+      settlingItemsRef.current.some(committedAsTurn));
   const activeTurn =
     replayIdleActiveTurn || activeTurnCommittedAsTurn || idleTurnClosedByNotice
       ? undefined
@@ -978,7 +1042,7 @@ export const ConversationView = React.memo(function ConversationView({
   const appendStatic = (item: StaticItem) => {
     if (!emittedIds.has(item.id)) {
       emittedIds.add(item.id);
-      staticItemsRef.current.push(item);
+      settlingItemsRef.current.push(item);
     }
   };
 
@@ -1112,6 +1176,61 @@ export const ConversationView = React.memo(function ConversationView({
     staticItemsSnapshotRef.current = [...staticItemsRef.current];
   }
   const staticItems = staticItemsSnapshotRef.current;
+  const settlingItems = settlingItemsRef.current;
+
+  // Shared by <Static> and the settle region: settling items must produce the
+  // exact bytes their static form will, or the settle frame buys nothing.
+  const renderStaticItem = (item: StaticItem): React.ReactElement | null => {
+    if (item.type === 'welcome') {
+      return (
+        <Box key={item.id} flexDirection="column">
+          <Box marginBottom={1}>
+            <WelcomeScreen
+              agent="kiro"
+              mcpServers={[]}
+              animate={false}
+              tip={welcomeTip}
+            />
+          </Box>
+          {process.env.ASBX_KIRO_TERMINAL_BANNER && (
+            <Box marginY={1}>
+              <StatusBar status="info">
+                <Text>{process.env.ASBX_KIRO_TERMINAL_BANNER}</Text>
+              </StatusBar>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+    if (item.type === 'system') {
+      return <SystemMessage key={item.id} message={item.message} />;
+    }
+    if (item.type === 'turn') {
+      return <StaticTurnCard key={item.id} turn={item.turn} />;
+    }
+    if (item.type === 'divider') {
+      return (
+        <Box key={item.id}>
+          <Box flexDirection="column" width="100%">
+            <Divider />
+          </Box>
+        </Box>
+      );
+    }
+    if (item.type === 'msg') {
+      return (
+        <Box key={item.id} marginBottom={item.isLast ? 1 : 0}>
+          <StaticMessage
+            message={item.msg}
+            agentBarColor={item.agentBarColor}
+            prevRole={item.prevRole}
+            mainAgentName={item.mainAgentName}
+          />
+        </Box>
+      );
+    }
+    return null;
+  };
 
   return (
     <Box flexDirection="column">
@@ -1137,59 +1256,13 @@ export const ConversationView = React.memo(function ConversationView({
       {!_hadUserMessage && <WelcomeMessageBar />}
 
       {staticItems.length > 0 && (
-        <Static items={staticItems}>
-          {(item) => {
-            if (item.type === 'welcome') {
-              return (
-                <Box key={item.id} flexDirection="column">
-                  <Box marginBottom={1}>
-                    <WelcomeScreen
-                      agent="kiro"
-                      mcpServers={[]}
-                      animate={false}
-                      tip={welcomeTip}
-                    />
-                  </Box>
-                  {process.env.ASBX_KIRO_TERMINAL_BANNER && (
-                    <Box marginY={1}>
-                      <StatusBar status="info">
-                        <Text>{process.env.ASBX_KIRO_TERMINAL_BANNER}</Text>
-                      </StatusBar>
-                    </Box>
-                  )}
-                </Box>
-              );
-            }
-            if (item.type === 'system') {
-              return <SystemMessage key={item.id} message={item.message} />;
-            }
-            if (item.type === 'turn') {
-              return <StaticTurnCard key={item.id} turn={item.turn} />;
-            }
-            if (item.type === 'divider') {
-              return (
-                <Box key={item.id}>
-                  <Box flexDirection="column" width="100%">
-                    <Divider />
-                  </Box>
-                </Box>
-              );
-            }
-            if (item.type === 'msg') {
-              return (
-                <Box key={item.id} marginBottom={item.isLast ? 1 : 0}>
-                  <StaticMessage
-                    message={item.msg}
-                    agentBarColor={item.agentBarColor}
-                    prevRole={item.prevRole}
-                    mainAgentName={item.mainAgentName}
-                  />
-                </Box>
-              );
-            }
-            return null;
-          }}
-        </Static>
+        <Static items={staticItems}>{renderStaticItem}</Static>
+      )}
+
+      {/* Settle region: items awaiting promotion to <Static>, rendered in
+          their final static form so the flush replaces byte-identical rows. */}
+      {settlingItems.length > 0 && (
+        <Box flexDirection="column">{settlingItems.map(renderStaticItem)}</Box>
       )}
 
       {/* Active turn tail: last TAIL_SIZE messages, wrapped in CardContext for the left bar.

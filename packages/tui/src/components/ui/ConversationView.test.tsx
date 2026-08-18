@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import React from 'react';
 import stripAnsi from 'strip-ansi';
+import { Terminal as XtermTerminal } from '@xterm/headless';
 import { render, type Instance, type Terminal } from 'twinki';
 import { Kiro } from '../../kiro.js';
 import {
@@ -12,7 +13,11 @@ import {
 } from '../../stores/app-store.js';
 import { resetVerboseCache, setVerboseConfig } from '../../lite/verbose.js';
 import { AgentEventType } from '../../types/agent-events.js';
-import { ConversationView } from './ConversationView.js';
+import {
+  ConversationView,
+  __settleBufferSizeForTests,
+  __settlePromotionsForTests,
+} from './ConversationView.js';
 
 class MockTerminal implements Terminal {
   output = '';
@@ -88,6 +93,156 @@ const completion = (
   workflowTurnId,
   workflowName,
   workflowStatus: 'completed',
+});
+
+describe('ConversationView settle-then-flush', () => {
+  it('promotes a completed turn to <Static> without rewriting settled rows', async () => {
+    const terminal = new MockTerminal();
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const turnMessages: MessageType[] = [
+      user('turn-1'),
+      {
+        id: 'tool-1',
+        role: MessageRole.ToolUse,
+        name: 'read_files',
+        content: JSON.stringify({ paths: ['README.md'] }),
+        isFinished: true,
+        status: ToolUseStatus.Approved,
+        result: { status: 'success', output: 'README.md' },
+      },
+      model('answer-1'),
+    ];
+    store.setState({ messages: turnMessages, isProcessing: true });
+    const promotionsBefore = __settlePromotionsForTests();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={store}>
+        <ConversationView />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false }
+    );
+    await flush();
+
+    // Complete the turn and start the next one: the finished turn settles in
+    // the live region for one painted frame, then promotes to <Static>.
+    store.setState({
+      messages: [...turnMessages, user('turn-2')],
+      isProcessing: false,
+    });
+    await flush();
+    const settledOutput = stripAnsi(terminal.output);
+    const countIn = (haystack: string, needle: string): number =>
+      haystack.split(needle).length - 1;
+    // The user row is byte-identical between tail and settle form: painted
+    // once, never rewritten. The model row restyles in place when streaming
+    // ends (exactly one extra live repaint), never as a divergent copy at
+    // the static boundary.
+    expect(countIn(settledOutput, 'turn-1')).toBe(1);
+    expect(countIn(settledOutput, 'answer-1')).toBe(2);
+
+    // Frames after promotion (spinner ticks, next turn) re-emit nothing:
+    // the static commit matched the settled rows byte-for-byte.
+    store.setState({ isProcessing: true });
+    await flush();
+    store.setState({ isProcessing: false });
+    await flush();
+
+    const output = stripAnsi(terminal.output);
+    expect(countIn(output, 'turn-1')).toBe(1);
+    expect(countIn(output, 'answer-1')).toBe(2);
+    // The short turn fits the viewport, so the paint guarantee — not the
+    // stale-paint escape — must be what released the buffer.
+    const promotions = __settlePromotionsForTests();
+    expect(promotions.guarantee).toBeGreaterThan(promotionsBefore.guarantee);
+    expect(promotions.escape).toBe(promotionsBefore.escape);
+  });
+
+  it('a turn taller than the terminal promotes without loss and with bounded duplication', async () => {
+    const terminal = new MockTerminal();
+    terminal.rows = 20;
+    // Raw-stream counts are meaningless here — every viewport-tail paint
+    // legitimately rewrites the visible window. Judge the final terminal
+    // buffer (screen + scrollback) instead.
+    const xterm = new XtermTerminal({
+      cols: terminal.columns,
+      rows: terminal.rows,
+      scrollback: 5000,
+      allowProposedApi: true,
+    });
+    const baseWrite = terminal.write.bind(terminal);
+    terminal.write = (data: string) => {
+      baseWrite(data);
+      xterm.write(data);
+    };
+    const store = createAppStore({ kiro: new Kiro(), agentEngine: 'kas' });
+    const tallBody = Array.from(
+      { length: 40 },
+      (_, i) => `TALL-LINE-${i} pads the turn far beyond the viewport`
+    ).join('\n');
+    const turnMessages: MessageType[] = [
+      user('tall-turn'),
+      model('tall-answer'),
+    ];
+    (turnMessages[1] as { content: string }).content = tallBody;
+    store.setState({ messages: turnMessages, isProcessing: true });
+    const promotionsBefore = __settlePromotionsForTests();
+
+    activeInstance = render(
+      <AppStoreContext.Provider value={store}>
+        <ConversationView />
+      </AppStoreContext.Provider>,
+      { terminal, exitOnCtrlC: false, preserveScrollbackOnRedraw: true }
+    );
+    await flush();
+
+    store.setState({
+      messages: [...turnMessages, user('next-turn')],
+      isProcessing: false,
+    });
+    await flush();
+    store.setState({ isProcessing: true });
+    await flush();
+    // The escape needs a bounded run of stale paints; each state change
+    // drives one. Keep cycling until the buffer drains or the bound proves
+    // broken.
+    for (let i = 0; i < 6 && __settleBufferSizeForTests() > 0; i++) {
+      store.setState({ isProcessing: i % 2 === 0 });
+      await flush();
+    }
+
+    // Drain pending xterm writes, then read the full buffer.
+    await new Promise<void>((resolve) => xterm.write('', () => resolve()));
+    const buf = xterm.buffer.active;
+    const bufferLines: string[] = [];
+    for (let i = 0; i < buf.length; i++) {
+      bufferLines.push(buf.getLine(i)?.translateToString(true) ?? '');
+    }
+    const committed = bufferLines.join('\n');
+
+    // Promotion must actually happen — a gate that never releases would
+    // leave the turn pinned in the live block and still pass the occurrence
+    // bounds below. With scrollback preservation on, the tall turn takes
+    // the viewport-tail path: the gate holds while live rows above the
+    // window are stale and releases when a paint covers the live region
+    // again (or via the bounded stale-paint escape).
+    expect(__settleBufferSizeForTests()).toBe(0);
+    // And say which mechanism drained it: the tall settle card keeps the
+    // live block above the viewport, so no covering paint arrives while it
+    // is pinned — the bounded stale-paint escape must be what released it.
+    const promotions = __settlePromotionsForTests();
+    expect(promotions.escape).toBeGreaterThan(promotionsBefore.escape);
+
+    // The settle rows sit above the viewport-tail window, so the paint gate
+    // holds them and then escapes after bounded stale paints. Loss is never
+    // acceptable; duplication stays bounded at the lossless-fallback level.
+    const countIn = (haystack: string, needle: string): number =>
+      haystack.split(needle).length - 1;
+    for (let i = 0; i < 40; i++) {
+      const n = countIn(committed, `TALL-LINE-${i} `);
+      expect(n).toBeGreaterThanOrEqual(1);
+      expect(n).toBeLessThanOrEqual(2);
+    }
+  });
 });
 
 describe('ConversationView workflow lifecycle rows', () => {

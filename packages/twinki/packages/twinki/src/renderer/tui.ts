@@ -111,11 +111,26 @@ export interface TUIOptions {
   preserveScrollbackOnRedraw?: boolean;
 }
 
-export type RenderKind = 'full' | 'partial';
+export type RenderKind = 'full' | 'partial' | 'viewport-tail';
 
 export interface RenderCompletedEvent {
   durationMs: number;
+  /**
+   * 'full' and 'partial' name the strategy that painted. A 'viewport-tail'
+   * paint writes only the trailing window; rows above it keep whatever
+   * bytes they last painted with.
+   */
   kind: RenderKind;
+  /**
+   * True only when every live-region row's current bytes are physically on
+   * the terminal (static-prefix rows are committed scrollback and cannot be
+   * repainted). A viewport-tail paint whose window excludes live rows
+   * leaves them stale, and because it commits the whole frame to the shadow
+   * buffer, later differential paints inherit that staleness. It clears
+   * when a paint covers the whole live region again — a full render, or a
+   * tail paint whose window reaches the static prefix.
+   */
+  frameRowsCurrent: boolean;
 }
 
 /**
@@ -187,6 +202,16 @@ export class TUI extends Container {
   private readonly renderCompleteListeners = new Set<
     (event: RenderCompletedEvent) => void
   >();
+  private lastRenderKind: RenderKind = 'partial';
+  /**
+   * Latched when a viewport-tail paint leaves live rows above its window
+   * unwritten while committing the whole frame to the shadow buffer:
+   * differential paints then diff against rows that never reached the
+   * terminal, so the staleness survives them. Clears when a paint covers
+   * the whole live region — a full render, or a tail paint whose window
+   * reaches the static prefix (the post-flush repaint at turn boundaries).
+   */
+  private paintedRowsStale = false;
   /** Number of lines currently held in the static scrollback buffer. */
   get staticBufferLines(): number {
     return this.staticBuffer.length;
@@ -2173,7 +2198,6 @@ export class TUI extends Container {
     }
 
     const renderStart = performance.now();
-    const fullRedrawsBefore = this.fullRedrawCount;
     let completed = false;
     // Mark as internal write so our stdout interceptor ignores any clear
     // sequences emitted by the render strategies (e.g. Strategy 2 CLEAR_ALL).
@@ -2191,7 +2215,8 @@ export class TUI extends Container {
       if (completed && this.renderCompleteListeners.size > 0) {
         const event: RenderCompletedEvent = {
           durationMs: elapsed,
-          kind: this.fullRedrawCount > fullRedrawsBefore ? 'full' : 'partial',
+          kind: this.lastRenderKind,
+          frameRowsCurrent: !this.paintedRowsStale,
         };
         for (const listener of this.renderCompleteListeners) {
           try {
@@ -2227,6 +2252,7 @@ export class TUI extends Container {
    * - Line-based diffing for minimal terminal writes
    */
   private _doRenderInner(): void {
+    this.lastRenderKind = 'partial';
     this.perfLastFrame.prefixCopied = 0;
     const width = Math.max(
       this.terminal.columns - this.scrollbarWidth,
@@ -2504,6 +2530,8 @@ export class TUI extends Container {
      */
     const fullRender = (clearSeq: string, reason?: string): void => {
       this.fullRedrawCount++;
+      this.lastRenderKind = 'full';
+      this.paintedRowsStale = false;
       this.debugLog(
         `fullRedraw #${this.fullRedrawCount}: reason=${reason ?? 'unknown'} lines=${newLines.length}`
       );
@@ -2863,6 +2891,13 @@ export class TUI extends Container {
       this.ownedTopRow = Math.max(0, newPhysRows - Math.min(height, paintedRows));
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       this.positionHardwareCursor(cursorPos, newPhysRows);
+      this.lastRenderKind = 'viewport-tail';
+      // Rows above startIdx keep their old bytes, but static-prefix rows are
+      // committed-current by definition: only unpainted LIVE rows go stale.
+      // A tail paint reaching into the static prefix rewrote the whole live
+      // region, which is the recovery site the scrollback-preserving path
+      // actually hits (the post-flush repaint at every turn boundary).
+      this.paintedRowsStale = startIdx > staticPrefixLen;
       this.commitFrame(
         newLines,
         newHasWide,
@@ -3091,13 +3126,24 @@ export class TUI extends Container {
       // or past the viewport's physical top.
       firstChanged = -1;
       lastChanged = -1;
+      // Skipped rows are committed below without being written; a changed
+      // live row among them is exactly the staleness the latch expresses.
+      let unpaintedLiveChange = false;
       for (
         let i = 0;
         i < Math.max(newLines.length, this.previousLines.length);
         i++
       ) {
         const physStartInNew = physRowOfNew(Math.min(i, newLines.length));
-        if (physStartInNew < previousContentViewportTop) continue;
+        if (physStartInNew < previousContentViewportTop) {
+          if (
+            i >= staticPrefixLen &&
+            (this.previousLines[i] ?? '') !== (newLines[i] ?? '')
+          ) {
+            unpaintedLiveChange = true;
+          }
+          continue;
+        }
         const oldLine = this.previousLines[i] ?? '';
         const newLine = newLines[i] ?? '';
         if (oldLine !== newLine) {
@@ -3105,6 +3151,7 @@ export class TUI extends Container {
           lastChanged = i;
         }
       }
+      if (unpaintedLiveChange) this.paintedRowsStale = true;
       if (firstChanged === -1) {
         // Only off-screen changes — nothing to render
         this.commitFrame(
