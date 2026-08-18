@@ -231,6 +231,13 @@ export class TUI extends Container {
   private preserveScrollbackOnRedraw = false;
   private maxLinesRendered = 0;
   private previousViewportTop = 0;
+  /** Frame physical row of the first row the renderer may touch. Rows above
+   *  it are committed history a repaint left painted in place (a straddled
+   *  wide line, or rows above a short tail paint): relative moves must not
+   *  climb into them and erases must not wipe them. Set by paints, reset
+   *  with the frame; consumed as `max(previousViewportTop, ownedTopRow)` so
+   *  it expires naturally once the viewport scrolls past it. */
+  private ownedTopRow = 0;
   private fullRedrawCount = 0;
   private stopped = false;
   private overlayStack: OverlayEntry[] = [];
@@ -311,6 +318,9 @@ export class TUI extends Container {
       liveStart: number;
       len: number;
     }>;
+    /** Wide line excluded from the capture because it straddled the viewport
+     *  top; its painted rows were left in place as committed history. */
+    straddled: string | null;
   } | null = null;
   private frameBudgetMs = 0;
   private lastRenderTime = 0;
@@ -1128,6 +1138,7 @@ export class TUI extends Container {
     this.hardwareCursorRow = 0;
     this.maxLinesRendered = 0;
     this.previousViewportTop = 0;
+    this.ownedTopRow = 0;
   }
 
   /**
@@ -1238,6 +1249,7 @@ export class TUI extends Container {
       this.hardwareCursorRow = 0;
       this.maxLinesRendered = 0;
       this.previousViewportTop = 0;
+      this.ownedTopRow = 0;
       if (this.pacingTimer) {
         clearTimeout(this.pacingTimer);
         this.pacingTimer = null;
@@ -1903,7 +1915,12 @@ export class TUI extends Container {
         liveRows = this.previousLines.length - staticLogicalCount;
       }
       if (liveRows > this.terminal.rows && !this.altScreen) {
-        const screenRow = this.hardwareCursorRow - this.previousViewportTop;
+        // Rows above `owned` are committed history a previous short paint
+        // left painted; the cursor offset and every erase bound below are
+        // measured from this origin so neither climbs into them.
+        const owned = Math.max(this.previousViewportTop, this.ownedTopRow);
+        const screenRow = this.hardwareCursorRow - owned;
+        let rowsToErase = Math.min(screenRow + 1, this.terminal.rows);
         if (this.preserveScrollbackOnRedraw && !this.pendingFlush) {
           // Capture the rows on screen and match the flushed lines against
           // the old live region. The repaint emits each piece of content
@@ -1919,16 +1936,38 @@ export class TUI extends Container {
           const visible: string[] = [];
           let seen = 0;
           let firstVisibleIdx = this.previousLines.length;
+          let straddled: string | null = null;
+          // Bound the walk by the frame rows physically on screen, measured
+          // from the frame end where the walk starts. The erase's final
+          // \x1b[J runs to the bottom of the screen regardless of where the
+          // cursor is parked (it may sit above trailing chrome), so a
+          // cursor-measured bound would leave the oldest on-screen rows
+          // erased but uncaptured.
+          const prevPhys = this.wideLinesEnabled
+            ? this.previousPhysRowsCache
+            : this.previousLines.length;
+          const onScreenRows = Math.max(
+            0,
+            Math.min(this.terminal.rows, prevPhys - owned)
+          );
           for (
             let i = this.previousLines.length - 1;
-            i >= 0 && seen < this.terminal.rows;
+            i >= 0 && seen < onScreenRows;
             i--
           ) {
             const line = this.previousLines[i] ?? '';
-            // A line straddling the viewport top is included whole: its
-            // visible part must survive; the sliver already in scrollback
-            // duplicating is the lesser harm.
-            seen += capRowOf(line);
+            const rows = capRowOf(line);
+            // A wide line straddling the viewport top stays committed
+            // whole: its on-screen rows are left painted (the erase below
+            // stops under them) and scroll off as immutable history.
+            // Capturing it whole instead would strand its already-scrolled
+            // top rows as a cut copy in scrollback and re-emit the full
+            // row below them, duplicating and misordering the block.
+            if (seen + rows > onScreenRows) {
+              straddled = line;
+              break;
+            }
+            seen += rows;
             visible.unshift(line);
             firstVisibleIdx = i;
           }
@@ -1941,9 +1980,19 @@ export class TUI extends Container {
             visibleStartLive: Math.max(0, firstVisibleIdx - staticLogicalCount),
             flushedCount: finalized.length,
             runs,
+            straddled,
           };
+          // Erase exactly the captured rows. The captured window ends at
+          // the frame's last row while the per-row erase walks up from the
+          // cursor, which may be parked above trailing chrome: the rows
+          // between cursor and frame end are covered by the closing \x1b[J,
+          // so only the captured rows at or above the cursor need walking.
+          const cursorGap = Math.max(0, prevPhys - 1 - this.hardwareCursorRow);
+          rowsToErase = Math.max(
+            0,
+            Math.min(rowsToErase, seen - cursorGap)
+          );
         }
-        const rowsToErase = Math.min(screenRow + 1, this.terminal.rows);
         let buf = this.preserveScrollbackOnRedraw ? '' : '\x1b[3J';
         for (let i = 0; i < rowsToErase; i++) {
           buf += '\x1b[2K' + (i < rowsToErase - 1 ? '\x1b[1A' : '');
@@ -1955,6 +2004,7 @@ export class TUI extends Container {
         this.cursorRow = 0;
         this.maxLinesRendered = 0;
         this.previousViewportTop = 0;
+        this.ownedTopRow = 0;
       }
     }
   }
@@ -2082,6 +2132,7 @@ export class TUI extends Container {
     this.hardwareCursorRow = 0;
     this.cursorRow = 0;
     this.previousViewportTop = 0;
+    this.ownedTopRow = 0;
     this.staticBuffer.clear();
     this.staticHasWide = false;
     this.staticHasWideWidth = -1;
@@ -2474,6 +2525,9 @@ export class TUI extends Container {
         ? newPhysRows
         : Math.max(this.maxLinesRendered, newPhysRows);
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+      // A full paint repaints (or scrolls off) everything: no rows above
+      // the viewport are left painted needing protection.
+      this.ownedTopRow = 0;
       this.positionHardwareCursor(cursorPos, newPhysRows);
       this.commitFrame(
         newLines,
@@ -2507,7 +2561,10 @@ export class TUI extends Container {
     const pending = this.pendingFlush;
     this.pendingFlush = null;
 
-    const viewportTailRender = (reason: string): boolean => {
+    const viewportTailRender = (
+      reason: string,
+      mustPaintPhysRow?: number
+    ): boolean => {
       // Walk back from the frame end until the tail fills the viewport, never
       // exceeding `height` physical rows: surplus rows scroll off into
       // scrollback and are appended again on the next redraw, duplicating the
@@ -2529,6 +2586,41 @@ export class TUI extends Container {
         );
         return false;
       }
+      // The straddled line's painted rows were left in place above the
+      // erased region. If the rows below it shrank across the flush, the
+      // tail window walked back over it and would paint a second copy
+      // under the painted one — start the tail below it instead. Anchor on
+      // the frame-wide first occurrence: when that sits above the tail the
+      // straddled line is safely out of the window (an identical row inside
+      // the tail is a different logical row and must still be painted).
+      if (pending?.straddled != null) {
+        const at = newLines.indexOf(pending.straddled);
+        if (at >= startIdx) startIdx = at + 1;
+        // The skip can empty the tail (the straddled line is the frame's
+        // last line); painting nothing while committing the frame as
+        // displayed would leave the cleared region permanently blank.
+        if (startIdx === newLines.length) {
+          this.debugLog(
+            `viewport-tail declined: reason=${reason} lines=${newLines.length} (straddled line is the tail)`
+          );
+          return false;
+        }
+      }
+      // A caller routing a specific change here needs that change painted.
+      // A change above the tail window would commit unpainted: the frame
+      // then records the new bytes as displayed, and a later flush's run
+      // matcher suppresses re-emitting them — the only painted copy stays
+      // stale and the change never reaches the terminal. Decline to a full
+      // render instead.
+      if (
+        mustPaintPhysRow !== undefined &&
+        mustPaintPhysRow < physRowOfNew(startIdx)
+      ) {
+        this.debugLog(
+          `viewport-tail declined: reason=${reason} changeRow=${mustPaintPhysRow} tailStart=${physRowOfNew(startIdx)} (change above tail)`
+        );
+        return false;
+      }
       this.fullRedrawCount++;
       this.debugLog(
         `fullRedraw #${this.fullRedrawCount}: reason=${reason} lines=${newLines.length} (viewport-tail)`
@@ -2536,30 +2628,63 @@ export class TUI extends Container {
       // Matched finalized rows replace erased screen rows, but never rows already
       // committed above the viewport; unmatched rows retain the lossless fallback.
       const preserved: string[] = [];
-      // Suffix-dedup `rows` against the painted tail at every candidate
-      // shift (streaming across the flush advances the live region, so the
-      // re-presented rows sit deeper in the tail window, not at the frame
-      // end); emit only the prefix before the longest overlap.
-      const pushTailDeduped = (rows: string[]): void => {
+      // Dedup `rows` against the painted tail: drop the longest trailing
+      // segment whose rows all reappear, in order, among the tail rows
+      // (gaps allowed — streaming across the flush advances the live region
+      // and may insert new rows between re-presented ones). At most one row
+      // may match as a strict prefix of its tail counterpart, and only at
+      // the frame index where that same logical row lands after the flush:
+      // the live stream tip keeps growing between capture and repaint, so
+      // its captured form is a stale prefix of the row the tail paints in
+      // its place. A prefix elsewhere is an unrelated row — preserving it
+      // risks bounded duplication, dropping it risks loss, so preserve.
+      // Emitting only the prefix before the matched segment keeps preserved
+      // rows contiguous and above the tail, so scrollback order holds.
+      const pushTailDeduped = (
+        rows: string[],
+        grownRowIdx?: Array<number | null>
+      ): void => {
         if (rows.length === 0) return;
-        let bestMatched = 0;
-        const lastIdx = newLines.length - 1;
-        for (let shift = 0; lastIdx - shift >= startIdx; shift++) {
-          let matched = 0;
-          while (matched < rows.length) {
-            const frameIdx = lastIdx - shift - matched;
-            if (frameIdx < startIdx) break;
-            if (
-              (rows[rows.length - 1 - matched] ?? '') !==
-              (newLines[frameIdx] ?? '')
-            ) {
-              break;
+        const reset = TUI.SEGMENT_RESET;
+        const bareOf = (s: string): string =>
+          s.endsWith(reset) ? s.slice(0, -reset.length) : s;
+        const isGrownForm = (captured: string, tail: string): boolean => {
+          const bare = bareOf(captured);
+          if (visibleWidth(bare.trim()) === 0) return false;
+          const bareTail = bareOf(tail);
+          return bareTail.length > bare.length && bareTail.startsWith(bare);
+        };
+        const suffixMatchesTail = (from: number): boolean => {
+          let tipUsed = false;
+          let j = startIdx;
+          for (let i = from; i < rows.length; i++) {
+            const row = rows[i] ?? '';
+            const grownIdx = grownRowIdx?.[i] ?? null;
+            let found = -1;
+            for (let k = j; k < newLines.length; k++) {
+              const tailRow = newLines[k] ?? '';
+              if (row === tailRow) {
+                found = k;
+                break;
+              }
+              if (
+                !tipUsed &&
+                k === grownIdx &&
+                isGrownForm(row, tailRow)
+              ) {
+                tipUsed = true;
+                found = k;
+                break;
+              }
             }
-            matched++;
+            if (found === -1) return false;
+            j = found + 1;
           }
-          if (matched > bestMatched) bestMatched = matched;
-        }
-        for (let i = 0; i < rows.length - bestMatched; i++) {
+          return true;
+        };
+        let from = 0;
+        while (from < rows.length && !suffixMatchesTail(from)) from++;
+        for (let i = 0; i < from; i++) {
           preserved.push(rows[i] ?? '');
         }
       };
@@ -2635,13 +2760,47 @@ export class TUI extends Container {
           }
           if (startIdx > staticPrefixLen) {
             const afterRuns: string[] = [];
+            // A live row surviving the flush keeps its logical position:
+            // the flush replaces the live head the run covers, so the row
+            // lands at staticPrefixLen + (liveIndex - lastRunLiveEnd). Only
+            // there may its captured form prefix-match as a grown tip.
+            // The mapping holds only when one run anchored at live 0
+            // covers every flushed line: with divergent or gapped runs the
+            // absorbed-row count is ambiguous (a gap row may be a flushed
+            // line rewritten as it finalized, or a live row that survives),
+            // and flushedCount may have grown past the matched batch. Any
+            // ambiguity keeps the allowance off — bounded duplication over
+            // a mis-slotted prefix match, which risks loss.
+            const slotsKnown =
+              pending.runs.length === 1 &&
+              firstRun.liveStart === 0 &&
+              firstRun.len === pending.flushedCount;
+            const afterRunsGrownIdx: Array<number | null> = [];
             const lastRunLiveEnd = lastRun.liveStart + lastRun.len;
+            // Slots are exact only through the first divergence between the
+            // captured remainder and the live rows it maps onto: rows before
+            // it are unchanged survivors verified in place, the divergent row
+            // is the stream tip (growth and insertions happen at or after
+            // it), and rows past it are shifted by an unknowable amount.
+            let pastDivergence = false;
             for (let v = 0; v < pending.visible.length; v++) {
-              if (pending.visibleStartLive + v >= lastRunLiveEnd) {
+              const liveIndex = pending.visibleStartLive + v;
+              if (liveIndex >= lastRunLiveEnd) {
+                const slot = staticPrefixLen + (liveIndex - lastRunLiveEnd);
                 afterRuns.push(pending.visible[v] ?? '');
+                afterRunsGrownIdx.push(
+                  slotsKnown && !pastDivergence ? slot : null
+                );
+                if (
+                  !slotsKnown ||
+                  slot >= newLines.length ||
+                  (pending.visible[v] ?? '') !== (newLines[slot] ?? '')
+                ) {
+                  pastDivergence = true;
+                }
               }
             }
-            pushTailDeduped(afterRuns);
+            pushTailDeduped(afterRuns, afterRunsGrownIdx);
           }
         } else {
           pushTailDeduped(pending.visible);
@@ -2664,10 +2823,20 @@ export class TUI extends Container {
       const sync = !process.env['TWINKI_NO_SYNC'];
       let buffer = (sync ? '\x1b[?2026h' : '') + preservedSegment;
       // Relative moves only — absolute addressing or clears above the
-      // viewport would touch committed scrollback.
+      // viewport would touch committed scrollback. Read the cursor fields,
+      // not this function's enclosing locals: a static flush during this
+      // same render pass may have erased the screen and reset them, and
+      // moving up by the pre-erase offset would climb into rows left
+      // painted above the erased region and wipe them. The owned origin
+      // caps the climb the same way when a previous short paint left rows
+      // above its start.
       const screenRow = Math.max(
         0,
-        Math.min(height - 1, hardwareCursorRow - prevViewportTop)
+        Math.min(
+          height - 1,
+          this.hardwareCursorRow -
+            Math.max(this.previousViewportTop, this.ownedTopRow)
+        )
       );
       if (screenRow > 0) buffer += `\x1b[${screenRow}A`;
       buffer += '\r\x1b[J';
@@ -2679,10 +2848,19 @@ export class TUI extends Container {
       this.terminal.write(buffer);
       this.cursorRow = Math.max(0, newPhysRows - 1);
       this.hardwareCursorRow = this.cursorRow;
-      // The viewport now shows the frame tail, so content-row coordinates
-      // must anchor the viewport at newPhysRows - height (never the old
-      // high-water mark: rows above the repainted region are unreachable).
+      // The viewport anchor keeps its contract (frame row at the top of the
+      // visible viewport); what a short paint changes is ownership. When the
+      // tail painted fewer rows than the viewport — a straddled-line skip,
+      // or a wide line tripping the tail walk — the rows above the paint
+      // start were left painted, not repainted, so they are committed
+      // history: record the paint start as the ownership boundary that
+      // relative moves and erases must not cross.
+      let paintedRows = 0;
+      for (let i = startIdx; i < newLines.length; i++) {
+        paintedRows += this.wideLinesEnabled ? rowOf(newLines[i] ?? '') : 1;
+      }
       this.maxLinesRendered = newPhysRows;
+      this.ownedTopRow = Math.max(0, newPhysRows - Math.min(height, paintedRows));
       this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
       this.positionHardwareCursor(cursorPos, newPhysRows);
       this.commitFrame(
@@ -2812,6 +2990,26 @@ export class TUI extends Container {
             rowOf(newLines[lastLogicalIdx] ?? '') -
             1
         );
+        // A deletion ending inside rows a short paint left painted cannot
+        // be reached by relative moves; repaint the tail from the owned
+        // origin instead.
+        if (
+          this.ownedTopRow > prevViewportTop &&
+          targetPhysRow < this.ownedTopRow
+        ) {
+          if (
+            !this.altScreen &&
+            this.preserveScrollbackOnRedraw &&
+            viewportTailRender('owned-band-shrink')
+          ) {
+            return;
+          }
+          fullRender(
+            this.altScreen ? CLEAR_SCREEN : CLEAR_ALL,
+            'owned-band-shrink'
+          );
+          return;
+        }
         const lineDiff = computeLineDiff(targetPhysRow);
         if (lineDiff > 0) buffer += `\x1b[${lineDiff}B`;
         else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
@@ -2859,6 +3057,31 @@ export class TUI extends Container {
     // index) against it.
     const previousContentViewportTop = Math.max(0, prevPhysRows - height);
     const firstChangedPhysRow = physRowOfNew(firstChanged);
+    // Rows below the ownership boundary were left painted by a short tail
+    // paint; relative moves cannot reach them (the up-move clamps at the
+    // paint start, landing short by the stale band's height, and the wide
+    // branch's clear-to-end would then wipe rows this renderer no longer
+    // owns). A change there — a straddled live line growing mid-stream —
+    // repaints the tail from the owned origin instead: the stale band
+    // scrolls into scrollback as the committed history the frame already
+    // considers it.
+    if (
+      this.ownedTopRow > previousContentViewportTop &&
+      firstChangedPhysRow < this.ownedTopRow
+    ) {
+      if (
+        !this.altScreen &&
+        this.preserveScrollbackOnRedraw &&
+        viewportTailRender('owned-band-change', firstChangedPhysRow)
+      ) {
+        return;
+      }
+      fullRender(
+        this.altScreen ? CLEAR_SCREEN : CLEAR_ALL,
+        'owned-band-change'
+      );
+      return;
+    }
     if (
       firstChangedPhysRow < previousContentViewportTop &&
       newPhysRows >= prevPhysRows

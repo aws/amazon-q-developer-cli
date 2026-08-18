@@ -554,7 +554,12 @@ export const LiteLiveRegion: React.FC = () => {
 
   return (
     <Box flexDirection="column">
-      {hasThinkingBlock && <Text>{thinkingBlockWithBreaks}</Text>}
+      {/* wrap="overflow" as in LiteLayout's Static <Text>: the flushed static
+          form must be byte-identical to the live rows or the renderer's
+          overflow-capture dedup re-commits the stale live copy to scrollback. */}
+      {hasThinkingBlock && (
+        <Text wrap="overflow">{thinkingBlockWithBreaks}</Text>
+      )}
       {liveHistoryLines.map((row) => {
         return (
           <Text key={row.id} wrap="overflow">
