@@ -1,4 +1,8 @@
 import type { Key } from '../../../hooks/useKeypress.js';
+import {
+  normalizeLineEndings,
+  stripNonPrintable,
+} from '../../../utils/index.js';
 
 export type InputKeyAction =
   | 'cancel'
@@ -8,13 +12,12 @@ export type InputKeyAction =
   | { append: string };
 
 function sanitizePaste(input: string): string {
-  const firstLine = input.split(/\r?\n/)[0] ?? '';
-  // eslint-disable-next-line no-control-regex
-  return firstLine.replace(/[\x00-\x1f\x7f]/g, '');
+  return stripNonPrintable(normalizeLineEndings(input));
 }
 
 export function classifyInputKey(input: string, key: Key): InputKeyAction {
   if (key.escape) return 'cancel';
+  if (key.return && key.shift) return { append: '\n' };
   if (key.return) return 'submit';
   if (key.backspace || key.delete) return 'delete';
   if (key.paste || input.length > 1) {

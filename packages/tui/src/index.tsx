@@ -1681,6 +1681,11 @@ const startApp = async () => {
     // Install hit testing once. Terminal mouse reporting is immediately
     // disabled below and only enabled by an explicit in-app toggle.
     mouse: true,
+    // Gives the renderer selection highlighting, OSC 52 copy, and copy
+    // listeners. They are reachable only while terminal mouse reporting is on,
+    // so on surfaces that leave it off the terminal's own native selection
+    // stays in charge.
+    textSelection: true,
     // Lite and wrap-disabled surfaces use wrap="overflow", where a logical
     // line can occupy multiple terminal rows. TUI -> lite switches update
     // this below so ordinary TUI sessions keep the old fast path.

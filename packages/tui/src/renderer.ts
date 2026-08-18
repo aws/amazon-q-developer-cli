@@ -27,6 +27,7 @@ export {
   usePaste,
   useFullscreen,
   useTabs,
+  useSelectionCopy,
   render,
   measureElement,
   CURSOR_MARKER,

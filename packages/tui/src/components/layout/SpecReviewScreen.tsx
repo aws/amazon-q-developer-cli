@@ -269,7 +269,9 @@ export const SpecReviewScreen: React.FC = () => {
           <Text>{getColor('error')(review.error)}</Text>
         </Box>
       ) : (
-        <Box flexDirection="column" marginTop={1}>
+        // Bounds a drag started here to the document body, so a copy cannot
+        // splice in surrounding chat scrollback or the footer chrome.
+        <Box flexDirection="column" marginTop={1} selectionScope>
           {visible.map((row, offset) => {
             const focused =
               row.kind === 'comment'

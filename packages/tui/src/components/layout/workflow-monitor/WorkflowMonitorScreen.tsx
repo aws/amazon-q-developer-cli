@@ -21,7 +21,6 @@ import { WorkerOutputPanel } from '../crew-monitor/WorkerOutputPanel.js';
 import { ApprovalPanel } from '../crew-monitor/ApprovalPanel.js';
 import { CrewMonitorContent } from '../crew-monitor/CrewMonitorScreen.js';
 import type { Stage } from '../crew-monitor/types.js';
-import { classifyInputKey } from './classify-input-key.js';
 import {
   MONITOR_RESIZE_STEP,
   monitorPaneDimensions,
@@ -42,6 +41,7 @@ import {
   buildWorkflowTabs,
   workflowDigitToIndex,
 } from './workflow-tabs.js';
+import { classifyInputKey } from './classify-input-key.js';
 import { classifyWorkflowStopKey } from './workflow-stop-confirmation.js';
 import { runStopNotice } from './run-stop-notice.js';
 import { messageModeForNode } from './workflow-message-mode.js';
@@ -788,6 +788,7 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
             </Box>
           ) : inputMode !== 'none' ? (
             <WorkflowMessageComposer
+              key={selectedConversation?.target.sessionId ?? selectedIndex}
               mode={inputMode}
               targetLabel={
                 selectedConversation?.label ?? selectedNode?.label ?? 'step'

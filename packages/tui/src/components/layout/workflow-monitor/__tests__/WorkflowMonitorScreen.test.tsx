@@ -563,6 +563,56 @@ describe('WorkflowMonitorScreen', () => {
     expect(workflowStore.getState().inputActive).toBe(true);
   });
 
+  // Verify Up/Down navigation works alongside EditorInput without losing typed text
+  it('navigates between nodes with up/down while EditorInput is active', async () => {
+    openMultiNodeMessageableWorkflow();
+
+    const messages: Array<{
+      target: WorkflowNodeSessionTarget;
+      content: string;
+    }> = [];
+    const kiro = new Kiro();
+    kiro.messageWorkflowNode = async (target, content) => {
+      messages.push({ target, content });
+    };
+    const appStore = createAppStore({ kiro, agentEngine: 'kas' });
+    const terminal = new MockTerminal();
+    activeInstance = render(
+      <AppStoreContext.Provider value={appStore}>
+        <WorkflowMonitorScreen />
+      </AppStoreContext.Provider>,
+      {
+        terminal,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        mouse: true,
+      }
+    );
+    await flush();
+
+    // Open composer on first node, type text, then navigate down
+    terminal.sendInput('s');
+    await flush();
+    terminal.sendInput('message for first');
+    await flush();
+    terminal.sendInput('\x1b[B'); // Down — navigate to second node
+    await flush();
+
+    // Should still be in input mode (composer stays open)
+    expect(workflowStore.getState().inputActive).toBe(true);
+
+    // Type on second node and submit
+    terminal.sendInput('message for second');
+    await flush();
+    terminal.sendInput('\r');
+    await flush();
+
+    // Should have sent to the second node
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.content).toBe('message for second');
+    expect(messages[0]!.target.sessionId).toBe('child-2');
+  });
+
   it('restores the submitted workflow message when sending fails', async () => {
     openMessageableWorkflow('Failure recovery');
 

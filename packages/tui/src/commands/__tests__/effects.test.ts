@@ -12,6 +12,13 @@ import {
 // --- Module mocks MUST be declared before importing the module under test ---
 import * as realChildProcess from 'child_process';
 const mockSpawnSync = mock(() => ({ status: 1 }));
+const mockSpawn = mock((_bin: string, _args: string[], _opts: unknown) => ({
+  on: (_event: string, _cb: () => void) => {},
+  stdin: {
+    on: (_event: string, _cb: () => void) => {},
+    end: (_t: string) => {},
+  },
+}));
 
 import { restoreRealModulesAfterAll } from '../../test-utils/restore-modules.js';
 
@@ -25,6 +32,7 @@ restoreRealModulesAfterAll(import.meta.dir, ['child_process']);
 mock.module('child_process', () => ({
   ...realChildProcess,
   spawnSync: mockSpawnSync,
+  spawn: mockSpawn,
 }));
 
 import * as fs from 'fs';
@@ -38,6 +46,7 @@ afterAll(() => {
 });
 
 import { runEffect, sendSpecRevision } from '../effects.js';
+import { copyToSystemClipboard } from '../effects.js';
 import {
   noteCloudScrollbackRepaint,
   cancelCloudScrollbackReconcile,
@@ -155,6 +164,71 @@ describe('/copy OSC 52 clipboard fallback', () => {
     // contract as the OSC 52 path above.
     expect(ctx._spies.announceSystem).toHaveBeenCalled();
     expect(ctx._spies.announceSystem!.mock.calls[0]![0]).toContain('Copied');
+  });
+});
+
+describe('copyToSystemClipboard options', () => {
+  let originalPlatform: string;
+
+  beforeEach(() => {
+    originalPlatform = process.platform;
+    mockSpawnSync.mockReset();
+    mockSpawn.mockReset();
+    mockWriteFileSync.mockReset();
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', {
+      value: originalPlatform,
+      configurable: true,
+    });
+  });
+
+  it('skips the OSC 52 fallback when the caller already emitted it', () => {
+    mockSpawnSync.mockImplementation(() => ({ status: 1 }));
+
+    expect(copyToSystemClipboard('text', { osc52Fallback: false })).toBe(false);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
+
+  it('still writes OSC 52 by default when every tool fails', () => {
+    mockSpawnSync.mockImplementation(() => ({ status: 1 }));
+
+    expect(copyToSystemClipboard('text')).toBe(true);
+    expect(mockWriteFileSync).toHaveBeenCalled();
+  });
+
+  it('does not block the caller when blocking is disabled', () => {
+    expect(copyToSystemClipboard('text', { blocking: false })).toBe(true);
+    expect(mockSpawnSync).not.toHaveBeenCalled();
+    const calls = mockSpawn.mock.calls as unknown as unknown[][];
+    expect(calls[0]![0]).toBe('pbcopy');
+  });
+
+  it('falls through to the next tool when a non-blocking spawn errors', () => {
+    Object.defineProperty(process, 'platform', {
+      value: 'linux',
+      configurable: true,
+    });
+    mockSpawn.mockImplementation(
+      () =>
+        ({
+          on: (event: string, cb: () => void) => {
+            if (event === 'error') cb();
+          },
+          stdin: { on: () => {}, end: () => {} },
+        }) as never
+    );
+
+    copyToSystemClipboard('text', { blocking: false, osc52Fallback: false });
+    const bins = (mockSpawn.mock.calls as unknown as unknown[][]).map(
+      (call) => call[0]
+    );
+    expect(bins).toEqual(['xclip', 'xsel']);
   });
 });
 

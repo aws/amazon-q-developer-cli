@@ -1695,7 +1695,7 @@ import {
   getDiffPreset,
   getBundledTheme,
 } from '../theme/user-theme.js';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 /** Every document `/spec view` can open, for validating an explicit argument. */
 const VIEWABLE_DOCUMENTS: readonly ArtifactKind[] = [
@@ -1942,7 +1942,25 @@ export async function sendSpecRevision(
  *   Windows → powershell Set-Clipboard (handles UTF-8 correctly, unlike clip.exe)
  *   Linux  → wl-copy (Wayland) → xclip (X11) → xsel (X11 fallback)
  */
-export function copyToSystemClipboard(text: string): boolean {
+export interface CopyToClipboardOptions {
+  /**
+   * Write OSC 52 to /dev/tty when no native tool succeeds. Disable when the
+   * caller has already emitted OSC 52 for the same text.
+   */
+  osc52Fallback?: boolean;
+  /**
+   * Wait for the clipboard tool to exit. Disable on paths that run inside the
+   * render loop, where a slow tool (powershell is 100ms+) would freeze the UI;
+   * the return value then only reports that a spawn was attempted.
+   */
+  blocking?: boolean;
+}
+
+export function copyToSystemClipboard(
+  text: string,
+  options: CopyToClipboardOptions = {}
+): boolean {
+  const { osc52Fallback = true, blocking = true } = options;
   const candidates: Array<{ bin: string; args: string[] }> = [];
 
   if (process.platform === 'darwin') {
@@ -1964,6 +1982,27 @@ export function copyToSystemClipboard(text: string): boolean {
     );
   }
 
+  if (!blocking) {
+    // Spawn errors surface asynchronously, so walk the candidates on failure
+    // rather than assuming the first tool is installed.
+    const tryFrom = (index: number): void => {
+      const candidate = candidates[index];
+      if (!candidate) return;
+      try {
+        const child = spawn(candidate.bin, candidate.args, {
+          stdio: ['pipe', 'ignore', 'ignore'],
+        });
+        child.on('error', () => tryFrom(index + 1));
+        child.stdin?.on('error', () => {});
+        child.stdin?.end(text);
+      } catch {
+        tryFrom(index + 1);
+      }
+    };
+    tryFrom(0);
+    return candidates.length > 0;
+  }
+
   for (const { bin, args } of candidates) {
     try {
       const result = spawnSync(bin, args, {
@@ -1980,6 +2019,7 @@ export function copyToSystemClipboard(text: string): boolean {
   // Last resort: OSC 52 escape sequence — works over SSH/multiplexers
   // Most terminals cap OSC 52 at ~1MB; use conservative limit.
   if (
+    osc52Fallback &&
     process.platform !== 'win32' &&
     Buffer.byteLength(text, 'utf-8') <= 100_000
   ) {

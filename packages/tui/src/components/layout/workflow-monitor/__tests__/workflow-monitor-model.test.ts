@@ -143,7 +143,7 @@ describe('workflow monitor view model', () => {
     expect(classifyInputKey('', key({ return: true }))).toBe('submit');
     expect(classifyInputKey('', key({ backspace: true }))).toBe('delete');
     expect(classifyInputKey('hello\nignored', key({ paste: true }))).toEqual({
-      append: 'hello',
+      append: 'hello\nignored',
     });
   });
 

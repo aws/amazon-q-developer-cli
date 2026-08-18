@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useStore } from 'zustand';
+import { useSelectionCopy } from '../../renderer.js';
 import { ExpandedLayout } from './ExpandedLayout';
 import { CrewMonitorScreen } from './CrewMonitorScreen';
 import { SessionViewScreen } from './SessionViewScreen';
@@ -289,6 +290,16 @@ export const AppContainer: React.FC = () => {
   });
 
   const { allowAnimations } = useAllowAnimations();
+
+  // Copies a renderer-managed drag selection to the system clipboard. Fires
+  // only on surfaces that enable terminal mouse capture; everywhere else the
+  // terminal's own native selection handles the copy and this never runs.
+  // The renderer has already written OSC 52 by this point, so only the native
+  // clipboard tools are needed here.
+  useSelectionCopy((text) => {
+    copyToSystemClipboard(text, { osc52Fallback: false, blocking: false });
+  });
+
   const { Layout, ApprovalPrompt, StatusLine, ActivityTray } =
     UI_VARIANTS[uiMode];
 

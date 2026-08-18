@@ -5,7 +5,9 @@ import { useTheme } from '../../../hooks/useThemeContext.js';
 
 export type WorkflowMessageMode = 'steer' | 'respond' | 'message';
 
-export const WORKFLOW_MESSAGE_COMPOSER_HEIGHT = 5;
+export const WORKFLOW_MESSAGE_COMPOSER_HEIGHT = 8;
+
+const MAX_COMPOSER_HEIGHT = 8;
 
 const MODE_LABEL: Record<WorkflowMessageMode, string> = {
   steer: 'Steer',
@@ -34,22 +36,21 @@ export const WorkflowMessageComposer = React.memo(
       <Box
         flexDirection="column"
         width={Math.max(4, width - 2)}
-        height={WORKFLOW_MESSAGE_COMPOSER_HEIGHT}
+        height={MAX_COMPOSER_HEIGHT}
         marginX={1}
         paddingX={1}
         borderStyle="round"
         borderColor={getColor('brand').hex}
+        overflow="hidden"
       >
         <Text wrap="truncate">
           {getColor('brand')(
             `${MODE_LABEL[mode]} ${glyphs.arrow} ${targetLabel}`
           )}
         </Text>
-        <Text wrap="truncate">
+        <Text wrap="wrap">
           {value}
           {CURSOR_MARKER}
-          {/* Painted unconditionally: the frame's cursor cell loses its
-              inversion whenever the terminal draws its own cursor there. */}
           <Text inverse> </Text>
         </Text>
         <Text wrap="truncate">
