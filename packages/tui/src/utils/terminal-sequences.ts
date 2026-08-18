@@ -5,6 +5,11 @@
  * duplicated in index.tsx, AppContainer, shell-escape, etc.
  */
 
+// SGR reset — clears any active text attributes (color, bold, underline).
+// The TUI renders inline, so a stray attribute from rendered content is
+// never restored automatically and would leak into the parent shell.
+export const RESET_SGR = '\x1b[0m';
+
 // Bracketed paste mode
 export const ENABLE_BRACKETED_PASTE = '\x1b[?2004h';
 export const DISABLE_BRACKETED_PASTE = '\x1b[?2004l';

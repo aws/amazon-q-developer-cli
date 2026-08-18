@@ -18,6 +18,7 @@ import {
   SHOW_CURSOR,
   HIDE_CURSOR,
   CLEAR_SCREEN,
+  RESET_SGR,
 } from '../../utils/terminal-sequences';
 import { copyToSystemClipboard } from '../../commands/effects.js';
 import { startMcpOAuth } from '../../utils/mcp-oauth.js';
@@ -71,6 +72,10 @@ function suspendProcess(): void {
     // SIGTSTP (e.g. Ctrl+R prints `13;5u`).
     twinkiInstance()?.suspendKeyboard?.();
     process.stdin.setRawMode?.(false);
+    // Reset SGR before backgrounding: a stray attribute (e.g. underline) left
+    // active by rendered content would otherwise corrupt the shell prompt
+    // while the TUI is suspended.
+    process.stdout.write(RESET_SGR);
     process.stdout.write(DISABLE_BRACKETED_PASTE);
     process.stdout.write(SHOW_CURSOR);
     process.stdout.write(

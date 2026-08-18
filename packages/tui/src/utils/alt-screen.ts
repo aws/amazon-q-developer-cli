@@ -10,6 +10,8 @@
  * characters into the shell.
  */
 
+import { RESET_SGR } from './terminal-sequences.js';
+
 const SMCUP = '\x1b[?1049h';
 const RMCUP = '\x1b[?1049l';
 
@@ -30,6 +32,10 @@ export function enterAltScreen(): void {
 export function leaveAltScreen(): void {
   active = false;
   process.stdout.write(RMCUP);
+  // RMCUP restores the rendition saved at SMCUP, so clear SGR after it — both
+  // on exit (so nothing leaks to the parent shell) and mid-session (so a stale
+  // attribute doesn't bleed back into the TUI when a surface closes).
+  process.stdout.write(RESET_SGR);
 }
 
 /**

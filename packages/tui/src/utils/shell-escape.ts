@@ -4,6 +4,7 @@ import {
   HIDE_CURSOR,
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
+  RESET_SGR,
 } from './terminal-sequences';
 import { system32Path } from './windows-paths.js';
 import { enterAltScreen, leaveAltScreen } from './alt-screen';
@@ -140,6 +141,9 @@ export function executeShellEscapeTTY(command: string): ShellEscapeResult {
     process.stdout.write(DISABLE_BRACKETED_PASTE);
     process.stdout.write('\x1b[<u'); // pop Kitty keyboard protocol
     process.stdout.write(SHOW_CURSOR);
+    // Clear any stuck SGR attribute so the child's output isn't styled by a
+    // leaked escape from prior TUI content.
+    process.stdout.write(RESET_SGR);
 
     // Enter alternate screen buffer so the command doesn't pollute the TUI
     enterAltScreen();

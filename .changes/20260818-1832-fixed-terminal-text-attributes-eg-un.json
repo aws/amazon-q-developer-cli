@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Terminal text attributes (e.g. underline) no longer persist in the parent shell after exiting the TUI"
+}

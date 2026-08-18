@@ -82,6 +82,7 @@ import {
 import {
   ENABLE_BRACKETED_PASTE,
   DISABLE_BRACKETED_PASTE,
+  RESET_SGR,
 } from './utils/terminal-sequences';
 import {
   enableFocusTracking,
@@ -188,17 +189,25 @@ let terminalReset = false;
 // keyboard protocol / modifyOtherKeys).
 let resetKeyboardModes: (() => void) | null = null;
 
-// Restore every terminal mode the TUI turns on: focus reporting (1004),
-// bracketed paste (2004), keyboard protocol, raw mode, progress, and title.
-// Synchronous and run-once, so it is safe to invoke from the 'exit' event.
+// Restore every terminal mode the TUI turns on: SGR attributes, focus
+// reporting (1004), bracketed paste (2004), keyboard protocol, raw mode,
+// progress, and title. Synchronous and run-once, so it is safe to invoke
+// from the 'exit' event.
 const resetTerminal = () => {
   if (terminalReset) return;
   terminalReset = true;
   try {
     disableFocusTracking();
     process.stdout.write(DISABLE_BRACKETED_PASTE);
+    // Reset SGR only AFTER any alt-screen exit: RMCUP (?1049l) restores the
+    // graphic rendition saved at SMCUP (?1049h), so a reset written before it
+    // would be undone and re-leak a stray attribute (e.g. underline) into the
+    // parent shell. leaveAltScreen() writes RMCUP then the reset in that order;
+    // with no alt screen there's no RMCUP to undo it, so reset directly.
     if (isAltScreenActive()) {
-      process.stdout.write('\x1b[?1049l');
+      leaveAltScreen();
+    } else {
+      process.stdout.write(RESET_SGR);
     }
     process.stdout.write('\x1b[?25h');
     resetKeyboardModes?.();
@@ -1740,6 +1749,14 @@ const startApp = async () => {
   const stopRenderer = () => {
     disconnectMouseCapture();
     instance.unmount();
+    // Must be the LAST teardown write: twinki's unmount emits RMCUP when a
+    // fullscreen surface was open, which restores the rendition saved at SMCUP
+    // and would re-apply a stray attribute. resetTerminal() runs in an earlier
+    // exit handler, so its reset is not last on paths that reach here (signals,
+    // stdin-EOF, uncaughtException, natural drain). Reset SGR here so nothing
+    // leaks into the parent shell. The cloud epilogue below is self-contained
+    // (opens dim, closes with a reset), so it doesn't reintroduce state.
+    process.stdout.write(RESET_SGR);
   };
   // Only wideLines tracks the ui mode. Scrollback preservation no longer does:
   // it follows the setting alone, so a /tui swap cannot change it.
