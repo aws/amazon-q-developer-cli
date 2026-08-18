@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-04-24
+  validated: 2026-08-12
   commit: 22dc5f71
   status: validated
   testable_headless: false
   category: feature
   title: Session Management
   description: Automatic session saving, resumption, and custom storage via scripts
-  keywords: [session, save, load, resume, auto-save, storage, queue, queuing]
+  keywords: [session, save, load, resume, auto-save, storage, queue, queuing, slash commands, mid-turn]
   related: [chat-save, chat-load, cmd-chat]
 ---
 
@@ -198,18 +198,25 @@ While the assistant is processing a request, you can type additional messages th
 **What can be queued**:
 - Regular messages and questions
 - Follow-up instructions
+- Slash commands (e.g., `/model`, `/compact`, `/clear`)
+
+Slash commands you submit during a turn are handled one of two ways:
+
+| Disposition | Commands | Behavior |
+|-------------|----------|----------|
+| **Runs immediately** | Read-only views: `/help`, `/context`, `/usage`, `/mcp`, `/tools`, `/hooks`, `/knowledge`, `/stats`, `/changelog`, `/goal` (no argument), `/session-id`, `/verbosity`, `/title`, `/feedback` | Opens right away — the turn keeps running underneath |
+| **Held until turn-end** | Everything else: `/model`, `/agent`, `/settings`, `/clear`, `/compact`, `/plan`, `/quit`, plus argument forms that change state or aren't recognized (`/context add`, `/mcp add`, `/goal <description>`) | Appears in the queue strip, then dispatches when the turn finishes |
+
+Held commands run in submit order alongside queued messages, and each one is recorded in the transcript as a dimmed `[queue] /command` row when it fires.
+
+**Unrecognized commands**: A slash command name Kiro doesn't know is refused up front rather than sent to the model as text:
+```
+Unrecognized command: /foozle
+```
+Text that merely starts with a slash — a pasted path like `/tmp/notes.md`, or prose like `/summarize the diff below` — is still delivered to the agent as a message. If a queued command becomes unavailable before it runs (for example, an agent switch withdraws a prompt or skill), it reports the same error instead of reaching the model.
 
 **What cannot be queued**:
-- Slash commands (e.g., `/help`, `/context`, `/model`)
-
-If you try to queue a slash command while processing, you'll see a warning:
-```
-Slash commands can't be queued — wait for the current task to finish
-```
-
-**Why**: Slash commands often require immediate UI interaction or state changes that can't be deferred.
-
-**Workaround**: Wait for the current task to complete, then run your slash command.
+- Shell escapes (`!command`) — wait for the current task to finish
 
 ## Technical Details
 

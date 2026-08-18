@@ -57,8 +57,8 @@ function createTestStore() {
  * KAS_COMMANDS when agentEngine === 'kas' (app-store.ts), so KAS-only
  * commands like `/rewind` live in the `kasCommands` slice and are NOT
  * mirrored into `slashCommands`. These tests pin that the lite submit/queue
- * gates recognize those commands via the merged `liteGateCommands` list
- * rather than leaking them to the model as chat text.
+ * gates recognize those commands via the merged dispatchable catalog rather
+ * than leaking them to the model as chat text.
  */
 function createKasTestStore() {
   const mockKiro = new Kiro();
@@ -567,7 +567,113 @@ describe('Message queue (backend-driven)', () => {
       }
     );
 
-    it('rejects slash commands with a warning when processing', async () => {
+    it('forwards a pasted path as a message when processing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'steer',
+      });
+
+      await store.getState().handleUserInput('/some/file/path');
+
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-abc',
+        '/some/file/path'
+      );
+      expect(store.getState().transientAlert).toBeNull();
+    });
+
+    it('forwards an existing single-segment absolute path when processing', async () => {
+      if (process.platform === 'win32') return;
+      const firstSegment = process.cwd().split('/').filter(Boolean)[0];
+      const absolutePath = `/${firstSegment}`;
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'steer',
+      });
+
+      await store.getState().handleUserInput(absolutePath);
+
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-abc',
+        absolutePath
+      );
+      expect(store.getState().transientAlert).toBeNull();
+    });
+
+    it('refuses a bare unknown command name in a cloud session', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        cloudSessionActive: true,
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'steer',
+      });
+
+      await store.getState().handleUserInput('/sandbox-only');
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().transientAlert?.message).toContain(
+        'Unrecognized command: /sandbox-only'
+      );
+    });
+
+    it('forwards a nested cloud sandbox path without local filesystem probing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({
+        cloudSessionActive: true,
+        isProcessing: true,
+        sessionId: 'session-abc',
+        activeInterruptMode: 'steer',
+      });
+
+      await store.getState().handleUserInput('/sandbox-only/file.txt');
+
+      expect(mockSteerMessage).toHaveBeenCalledWith(
+        'session-abc',
+        '/sandbox-only/file.txt'
+      );
+      expect(store.getState().transientAlert).toBeNull();
+    });
+
+    it('refuses a bare unknown command name when processing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ isProcessing: true, sessionId: 'session-abc' });
+
+      await store.getState().handleUserInput('/foozle');
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().transientAlert?.message).toContain(
+        'Unrecognized command: /foozle'
+      );
+    });
+
+    it('queues a turn-affecting slash command when processing', async () => {
+      const store = createTestStore();
+      const mockSteerMessage = mock(() => Promise.resolve());
+      (store.getState().kiro as any).steerMessage = mockSteerMessage;
+      store.setState({ isProcessing: true, sessionId: 'session-abc' });
+
+      await store.getState().handleUserInput('/model');
+
+      expect(mockSteerMessage).not.toHaveBeenCalled();
+      expect(store.getState().queuedMessages).toEqual(['/model']);
+    });
+
+    it('runs a read-only slash command immediately when processing', async () => {
       const store = createTestStore();
       const mockSteerMessage = mock(() => Promise.resolve());
       (store.getState().kiro as any).steerMessage = mockSteerMessage;
@@ -575,11 +681,9 @@ describe('Message queue (backend-driven)', () => {
 
       await store.getState().handleUserInput('/help');
 
-      // Slash command should NOT be queued
       expect(mockSteerMessage).not.toHaveBeenCalled();
-      // A transient alert should be shown
-      expect(store.getState().transientAlert).not.toBeNull();
-      expect(store.getState().transientAlert?.status).toBe('warning');
+      expect(store.getState().queuedMessages).toEqual([]);
+      expect(store.getState().isProcessing).toBe(true);
     });
 
     it('records busy-session goal shortcuts through the invocation boundary', async () => {
@@ -901,6 +1005,65 @@ describe('Queueing mode behaviors', () => {
       ]);
     });
 
+    it.each(['tui', 'lite'] as const)(
+      'keeps consecutive queued selection commands in FIFO order (%s)',
+      async (uiMode) => {
+        const store = createTestStore();
+        const getCommandOptions = mock(async (commandName: string) => ({
+          options:
+            commandName === '/model'
+              ? [{ value: 'sonnet', label: 'Sonnet' }]
+              : [{ value: 'coder', label: 'Coder' }],
+        }));
+        const executeCommand = mock(async () => ({
+          success: true,
+          data: { model: { id: 'sonnet', name: 'Sonnet' } },
+        }));
+        (store.getState().kiro as any).getCommandOptions = getCommandOptions;
+        (store.getState().kiro as any).executeCommand = executeCommand;
+        store.setState({
+          uiMode,
+          slashCommands: [
+            ...store
+              .getState()
+              .slashCommands.filter(
+                (command) =>
+                  command.name !== '/model' && command.name !== '/agent'
+              ),
+            {
+              name: '/model',
+              description: 'Switch model',
+              source: 'backend',
+              meta: { inputType: 'selection' },
+            },
+            {
+              name: '/agent',
+              description: 'Switch agent',
+              source: 'backend',
+              meta: { inputType: 'selection' },
+            },
+          ],
+          queuedMessages: ['/model', '/agent'],
+        });
+
+        await store.getState().processQueue();
+
+        expect(store.getState().activeCommand?.command.name).toBe('/model');
+        expect(store.getState().queuedMessages).toEqual(['/agent']);
+        expect(getCommandOptions).toHaveBeenCalledTimes(1);
+
+        await store.getState().executeCommandWithArg('sonnet');
+
+        expect(executeCommand).toHaveBeenCalledWith({
+          command: 'model',
+          args: { value: 'sonnet' },
+        });
+        expect(store.getState().currentModel?.id).toBe('sonnet');
+        expect(store.getState().activeCommand?.command.name).toBe('/agent');
+        expect(store.getState().queuedMessages).toEqual([]);
+      }
+    );
+
     it('applyQueuedInputRestore restores the snapshot and clears the slot', () => {
       // Pure store action — exercises the consumer half of
       // queuedInputRestore independently of processQueue. Called by
@@ -1100,17 +1263,79 @@ describe('Queueing mode behaviors', () => {
       expect(store.getState().commandInputValue).toBe('');
     });
 
-    it('rejects slash commands with a warning when not initialized', async () => {
+    it('queues a known slash command when not initialized', async () => {
       const store = createTestStore();
       store.setState({ isInitialized: false });
 
-      await store.getState().handleUserInput('/context');
+      await store.getState().handleUserInput('/help');
 
-      expect(store.getState().queuedMessages).toEqual([]);
-      expect(store.getState().transientAlert).not.toBeNull();
+      expect(store.getState().queuedMessages).toEqual(['/help']);
+      expect(store.getState().transientAlert).toBeNull();
     });
 
-    it('queues regular messages but not slash commands when processing (queueing mode)', async () => {
+    it.each(['tui', 'lite'] as const)(
+      'holds a %s pre-init command until the backend catalog arrives',
+      async (uiMode) => {
+        const store = createAppStore({
+          kiro: new Kiro(),
+          agentEngine: 'v2',
+          uiMode,
+        });
+        store.setState({ isInitialized: false, sessionId: null });
+
+        await store.getState().handleUserInput('/model');
+
+        expect(store.getState().queuedMessages).toEqual(['/model']);
+        expect(store.getState().transientAlert).toBeNull();
+
+        const dispatch = mock(() => Promise.resolve());
+        store.setState({
+          isInitialized: true,
+          sessionId: 'session-abc',
+          isProcessing: false,
+          handleUserInput: dispatch as never,
+        });
+        store.getState().setSlashCommands([
+          {
+            name: '/model',
+            description: 'Switch model',
+            source: 'backend',
+          },
+        ]);
+
+        await store.getState().processQueue();
+
+        expect(dispatch).toHaveBeenCalledWith('/model', 'queue');
+        expect(store.getState().queuedMessages).toEqual([]);
+      }
+    );
+
+    it('queues unadvertised remote /voice in lite mode', async () => {
+      const previous = process.env.KIRO_VOICE_SERVER_URL;
+      process.env.KIRO_VOICE_SERVER_URL = 'http://voice.test';
+      try {
+        const store = createTestStore();
+        store.setState({
+          uiMode: 'lite',
+          isProcessing: true,
+          sessionId: 'session-abc',
+          activeInterruptMode: 'queue',
+          slashCommands: store
+            .getState()
+            .slashCommands.filter((command) => command.name !== '/voice'),
+        });
+
+        await store.getState().handleUserInput('/voice');
+
+        expect(store.getState().queuedMessages).toEqual(['/voice']);
+        expect(store.getState().transientAlert).toBeNull();
+      } finally {
+        if (previous === undefined) delete process.env.KIRO_VOICE_SERVER_URL;
+        else process.env.KIRO_VOICE_SERVER_URL = previous;
+      }
+    });
+
+    it('queues turn-affecting commands alongside regular messages when processing (queueing mode)', async () => {
       const store = createTestStore();
       store.setState({
         isProcessing: true,
@@ -1119,32 +1344,39 @@ describe('Queueing mode behaviors', () => {
       });
 
       await store.getState().handleUserInput('fix the bug');
-      await store.getState().handleUserInput('/help');
+      await store.getState().handleUserInput('/model');
       await store.getState().handleUserInput('add tests too');
 
-      // Only regular messages should be queued
       expect(store.getState().queuedMessages).toEqual([
         'fix the bug',
+        '/model',
         'add tests too',
       ]);
     });
 
-    it('does not queue slash commands when processing (queueing mode)', async () => {
-      // We can't fully test /quit since it calls process.exit, but we can
-      // verify that slash commands are never added to the queue while the
-      // agent is processing — they pass through the slash-command handler.
+    it('splits commands by whether they disturb the turn (queueing mode)', async () => {
       const store = createTestStore();
       store.setState({
         isProcessing: true,
         sessionId: 'session-abc',
         activeInterruptMode: 'queue',
+        slashCommands: [
+          ...store.getState().slashCommands,
+          {
+            name: '/context',
+            description: 'Context',
+            source: 'local' as const,
+          },
+          { name: '/clear', description: 'Clear', source: 'local' as const },
+        ],
       });
 
       await store.getState().handleUserInput('/help');
       await store.getState().handleUserInput('/context');
       await store.getState().handleUserInput('/model');
+      await store.getState().handleUserInput('/clear');
 
-      expect(store.getState().queuedMessages).toEqual([]);
+      expect(store.getState().queuedMessages).toEqual(['/model', '/clear']);
     });
   });
 
@@ -1384,7 +1616,7 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
   // so `/plan` (and /effort, /spec, /model, /knowledge, /rewind, …) fell
   // through and got sent to the LLM as chat text — the panel never opened and
   // a billed turn was wasted each time. The gates now consult
-  // `liteGateCommands`, which in KAS mode is the merged visible list
+  // the merged visible list, which includes KAS-owned commands
   // (kasCommands ∪ slashCommands ∪ projections) — exactly what the dispatcher
   // can resolve.
   const KAS_ONLY_CMD = '/plan';
@@ -1514,21 +1746,26 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       expect(store.getState().uiMode).toBe('tui');
     });
 
-    it('pauses after an argument opens a menu and resumes when it closes', async () => {
+    it('pauses while queued /settings panel is open and resumes after close', async () => {
       const store = createKasTestStore();
       store.setState({
         uiMode: 'lite',
         sessionId: 'session-abc',
         activeInterruptMode: 'queue',
-        queuedMessages: ['/settings terminal', '/tui'],
+        queuedMessages: ['/settings', '/tui'],
       });
 
       await store.getState().processQueue();
 
-      expect(store.getState().activeCommand?.command.name).toBe('/settings');
+      expect(store.getState().showSettingsPanel).toBe(true);
       expect(store.getState().queuedMessages).toEqual(['/tui']);
       expect(store.getState().uiMode).toBe('lite');
 
+      await store.getState().processQueue();
+      expect(store.getState().queuedMessages).toEqual(['/tui']);
+      expect(store.getState().uiMode).toBe('lite');
+
+      store.getState().setShowSettingsPanel(false);
       store.getState().setActiveCommand(null);
       await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -1648,7 +1885,7 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       expect(store.getState().currentAgent?.name).toBe('kiro_planner');
     });
 
-    it('still sends an unknown slash token as chat (lite contract preserved in KAS mode)', async () => {
+    it('still sends a pasted path as chat (lite contract preserved in KAS mode)', async () => {
       const store = createKasTestStore();
       const mockSendMessage = mock(() => Promise.resolve());
       store.setState({
@@ -1658,22 +1895,40 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
         sendMessage: mockSendMessage as never,
       });
 
-      await store.getState().handleUserInput('/foozle');
+      await store.getState().handleUserInput('/some/file/path');
 
-      // Typos and pasted paths are not commands in either slice → they remain
-      // chat messages, exactly as in v2. The fix widens the known set to
-      // include KAS commands; it does not turn every slash token into a
-      // command.
       expect(mockSendMessage).toHaveBeenCalled();
     });
   });
 
   describe('v2 no-op guard: KAS gating must not change v2 behavior', () => {
-    it('a /rewind-style token unknown to v2 still goes to chat (v2 has no kasCommands)', async () => {
-      // In v2 mode `kasCommands` is empty and `liteGateCommands` returns the
-      // raw `slashCommands` slice — byte-identical to the pre-fix gate. A
-      // token that is not a backend/host v2 command must still be sent as a
-      // chat message.
+    it('accepts an existing single-segment path while preserving mode normalization', async () => {
+      if (process.platform === 'win32') return;
+      const firstSegment = process.cwd().split('/').filter(Boolean)[0];
+      const absolutePath = `/${firstSegment}`;
+
+      for (const uiMode of ['lite', 'tui'] as const) {
+        const store = createTestStore();
+        const mockSendMessage = mock(() => Promise.resolve());
+        store.setState({
+          uiMode,
+          sessionId: 'session-abc',
+          isProcessing: false,
+          sendMessage: mockSendMessage as never,
+        });
+
+        await store.getState().handleUserInput(absolutePath);
+
+        expect(mockSendMessage, uiMode).toHaveBeenCalledWith(
+          uiMode === 'tui' ? absolutePath.slice(1) : absolutePath,
+          undefined,
+          absolutePath
+        );
+        expect(store.getState().transientAlert, uiMode).toBeNull();
+      }
+    });
+
+    it('a /rewind-style token unknown to v2 never dispatches (v2 has no kasCommands)', async () => {
       const store = createTestStore(); // v2 store (default engine)
       const mockSendMessage = mock(() => Promise.resolve());
       store.setState({
@@ -1686,7 +1941,10 @@ describe('KAS mode lite command gating (regression: KAS-only commands must not l
       await store.getState().handleUserInput('/rewind');
 
       expect(store.getState().agentEngine).toBe('v2');
-      expect(mockSendMessage).toHaveBeenCalled();
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(store.getState().transientAlert?.message).toContain(
+        'Unrecognized command: /rewind'
+      );
     });
   });
 });

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "An unrecognized slash command name is now refused instead of being sent to the model as chat text"
+}

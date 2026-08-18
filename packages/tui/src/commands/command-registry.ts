@@ -289,7 +289,8 @@ interface LocalSlashCommand extends AvailableCommand {
 }
 
 function registryName(commandName: string): RegisteredCommandName | undefined {
-  const normalized = commandName.replace(/^\//, '');
+  // Classification and dispatch must agree on case-insensitive command names.
+  const normalized = commandName.replace(/^\//, '').toLowerCase();
   return normalized in COMMAND_REGISTRY
     ? (normalized as RegisteredCommandName)
     : undefined;
@@ -306,6 +307,76 @@ export function getCommandEffect(
 
 export function hasCommandEffect(commandName: string): boolean {
   return getCommandEffect(commandName) !== undefined;
+}
+
+/** Effects proven not to alter the active agent/backend turn. */
+const TURN_INERT_EFFECTS = new Set<CommandEffectName>([
+  'showContextPanel',
+  'showHelpPanel',
+  'showUsagePanel',
+  'showMcpPanel',
+  'showToolsPanel',
+  'showHooksPanel',
+  'showKnowledgePanel',
+  'showFeedbackUrl',
+  'showThemeMenu',
+  'showGoalPanel',
+  'showChangelogPanel',
+  'showSessionId',
+  'showStatsPanel',
+  'verbosityConfig',
+  'updateTitle',
+]);
+
+const READ_ONLY_SUBCOMMANDS: Partial<
+  Record<RegisteredCommandName, ReadonlySet<string>>
+> = {
+  context: new Set(['show']),
+  mcp: new Set(['list']),
+  knowledge: new Set(['show']),
+};
+
+const ARGUMENT_SENSITIVE_COMMANDS = new Set<RegisteredCommandName>([
+  'context',
+  'mcp',
+  'tools',
+  'knowledge',
+]);
+
+export type TurnCommandDisposition = 'immediate' | 'queued';
+
+export function classifyCommandDuringTurn(
+  commandName: string,
+  args = ''
+): TurnCommandDisposition {
+  const name = registryName(commandName);
+  if (!name) return 'queued';
+
+  const trimmedArgs = args.trim();
+  if (name === 'goal') return trimmedArgs.length > 0 ? 'queued' : 'immediate';
+  if (name === 'stats' && trimmedArgs) {
+    const maxU32 = 0xffff_ffff;
+    const isValidLimit =
+      /^\d+$/.test(trimmedArgs) && Number(trimmedArgs) <= maxU32;
+    return isValidLimit ? 'immediate' : 'queued';
+  }
+
+  if (trimmedArgs && ARGUMENT_SENSITIVE_COMMANDS.has(name)) {
+    const subcommand = trimmedArgs.split(/\s+/, 1)[0]?.toLowerCase() ?? '';
+    return READ_ONLY_SUBCOMMANDS[name]?.has(subcommand)
+      ? 'immediate'
+      : 'queued';
+  }
+
+  const effect = getCommandEffect(name);
+  return effect && TURN_INERT_EFFECTS.has(effect) ? 'immediate' : 'queued';
+}
+
+export function isTurnAffectingCommand(
+  commandName: string,
+  args = ''
+): boolean {
+  return classifyCommandDuringTurn(commandName, args) === 'queued';
 }
 
 export function getCommandPanelState(

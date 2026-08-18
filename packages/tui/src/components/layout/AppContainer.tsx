@@ -9,6 +9,7 @@ import { SpecReviewScreen } from './SpecReviewScreen.js';
 import { SessionDashboardScreen } from './SessionDashboardScreen';
 import { TrustAllToolsGate } from '../ui/TrustAllToolsGate';
 import { useAppStore } from '../../stores/app-store';
+import { hasBlockingCommandInteraction } from '../../stores/ui-interaction.js';
 import { useKeypress } from '../../hooks/useKeypress';
 import {
   ENABLE_BRACKETED_PASTE,
@@ -139,6 +140,7 @@ export const AppContainer: React.FC = () => {
   const editingSteerLineIndex = useAppStore(
     (state) => state.editingSteerLineIndex
   );
+  const commandInteractionOpen = useAppStore(hasBlockingCommandInteraction);
 
   const transientAlert = useAppStore((state) => state.transientAlert);
   const dismissTransientAlert = useAppStore(
@@ -218,6 +220,7 @@ export const AppContainer: React.FC = () => {
       specReviewOpen,
       editingQueueIndex: editingQueueIndex ?? null,
       editingSteerLineIndex: editingSteerLineIndex ?? null,
+      commandInteractionOpen,
       transientAlertHasAction: !!transientAlert?.action,
       pendingOAuthUrl: firstOAuthUrl,
       subagentPanelOpen,

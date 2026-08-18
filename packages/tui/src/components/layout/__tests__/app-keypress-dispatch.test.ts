@@ -46,6 +46,7 @@ const baseState = (
   pendingApproval: false,
   editingQueueIndex: null,
   editingSteerLineIndex: null,
+  commandInteractionOpen: false,
   transientAlertHasAction: false,
   pendingOAuthUrl: null,
   subagentPanelOpen: false,
@@ -202,6 +203,18 @@ describe('dispatchAppKeypress: cancelStream binding', () => {
       '',
       blankKey({ escape: true }),
       baseState({ isProcessing: true, subagentPanelOpen: true }),
+      actions,
+      DEFAULT_BINDINGS
+    );
+    expect(actions._calls.cancelMessage).toBeUndefined();
+  });
+
+  it('esc while a command interaction is open does NOT cancel streaming', () => {
+    const actions = makeActions();
+    dispatchAppKeypress(
+      '',
+      blankKey({ escape: true }),
+      baseState({ isProcessing: true, commandInteractionOpen: true }),
       actions,
       DEFAULT_BINDINGS
     );

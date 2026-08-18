@@ -18,6 +18,8 @@ const ALLOWED_CANONICAL_NAME_COLLECTIONS = new Set([
   'utils/kas-settings.ts:GATED_FEATURES',
   'utils/kas-settings.ts:boolMappings',
   'components/ui/CommandMenu.tsx:VERBOSITY_PREVIEW_KEYS',
+  // Slash-command admission policy, not tool call classification.
+  'commands/command-registry.ts:ARGUMENT_SENSITIVE_COMMANDS',
   // Renderer ids are typed by ScrollbackToolRenderer and resolved only after
   // the capability registry has classified the tool.
   'components/ui/ToolUseMessage.tsx:labels',

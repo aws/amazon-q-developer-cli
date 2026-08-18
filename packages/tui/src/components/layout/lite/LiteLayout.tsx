@@ -16,7 +16,6 @@ import React, {
   useMemo,
   useState,
   useEffect,
-  useLayoutEffect,
   useRef,
 } from 'react';
 import { useStore } from 'zustand';
@@ -76,6 +75,7 @@ import { Divider } from '../../ui/divider/Divider.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useInteractionReady } from '../../../hooks/useInteractionReady.js';
 import { usePlanModeToggle } from '../../../hooks/usePlanModeToggle.js';
+import { useQueuedInputRestore } from '../../../hooks/useQueuedInputRestore.js';
 import { useKeybindings } from '../../../hooks/useKeybindings.js';
 import { useCheckpointAnswer } from '../../../hooks/useCheckpointAnswer.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
@@ -198,8 +198,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const setActiveCommand = useAppStore((s) => s.setActiveCommand);
   const clearCommandInput = useAppStore((s) => s.clearCommandInput);
   const uiMode = useAppStore((s) => s.uiMode);
-  const queuedInputRestore = useAppStore((s) => s.queuedInputRestore);
-  const applyQueuedInputRestore = useAppStore((s) => s.applyQueuedInputRestore);
   const mcpInitStatus = useAppStore((s) => s.mcpInitStatus);
   const bootProgress = useAppStore((s) => s.bootProgress);
   const cloudSessionActive = useAppStore((s) => s.cloudSessionActive);
@@ -382,6 +380,17 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     if (isEditingEntry() && key.escape) {
       return;
     }
+    if (key.escape && activeCommandRef.current) {
+      // Prompt details own Escape as an in-panel back action.
+      if (promptDetailOpenRef.current) return;
+      setActiveCommand(null);
+      clearCommandInput();
+      return;
+    }
+    if (key.escape && activeTriggerRef.current) {
+      clearCommandInput();
+      return;
+    }
     if ((key.ctrl && input === 'c') || key.escape) {
       logger.debug('[lite] interrupt key', {
         ctrl: !!key.ctrl,
@@ -407,17 +416,6 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     if (key.ctrl && input === 'c' && inMenu) {
       queueMicrotask(() => resetExitSequence());
       return;
-    }
-    if (key.escape && activeCommandRef.current) {
-      // /prompts in detail view: PromptDetails handles its own Esc-back
-      // (picker↔detail). Don't drop the whole overlay too.
-      if (promptDetailOpenRef.current) return;
-      setActiveCommand(null);
-      clearCommandInput();
-      return;
-    }
-    if (key.escape && activeTriggerRef.current) {
-      clearCommandInput();
     }
   });
 
@@ -770,22 +768,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     }
   }
 
-  // Queue-drain input restore. A queued slash command that opens a picker
-  // stashes the user's pre-drain input in `queuedInputRestore` (see app-store);
-  // this fires on the picker-close edge (activeCommand non-null → null) and
-  // applies the restore. Catches both close paths (Esc-dismiss and selection);
-  // restoring on the local edge rather than awaiting the dispatch RPC shows the
-  // text back immediately. useLayoutEffect (not useEffect) so it commits in the
-  // same frame and the empty input never paints (visible flicker). The ref
-  // gates to the non-null → null edge only.
-  const prevActiveCommandRef = useRef(activeCommand);
-  useLayoutEffect(() => {
-    const prev = prevActiveCommandRef.current;
-    prevActiveCommandRef.current = activeCommand;
-    if (prev != null && activeCommand == null && queuedInputRestore != null) {
-      applyQueuedInputRestore();
-    }
-  }, [activeCommand, queuedInputRestore, applyQueuedInputRestore]);
+  useQueuedInputRestore();
 
   const activeToolBatchIds = useMemo(
     () => computeActiveToolBatchIds(messages, agentName),

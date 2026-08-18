@@ -3,9 +3,11 @@ import {
   executeCommand,
   executeCommandWithArg,
   isKnownSlashCommandToken,
+  resolveSlashCommandForDispatch,
 } from '../index.js';
 import type { SlashCommand } from '../../stores/app-store.js';
 import { createMockCommandContext } from './test-helpers.js';
+import { getKasCommands, KasCommandName } from '../../kas-commands.js';
 
 function makeCmd(overrides: Partial<SlashCommand> = {}): SlashCommand {
   return {
@@ -137,6 +139,20 @@ describe('executeCommand', () => {
     expect(ctx._spies.clearMessages!.mock.calls.length).toBe(0);
   });
 
+  it('resolves prefixes with the same KAS-first precedence used by dispatch', () => {
+    const chatCmd = getKasCommands().find(
+      (command) => command.name === KasCommandName.Chat
+    )!;
+    const changelogCmd = makeCmd({ name: '/changelog' });
+
+    expect(
+      resolveSlashCommandForDispatch('/ch new', {
+        kasCommands: [chatCmd],
+        slashCommands: [chatCmd, changelogCmd],
+      })
+    ).toBe(chatCmd);
+  });
+
   it('uses an agent-advertised telemetry id as the stable command identity', async () => {
     const cmd = makeCmd({
       name: '/renamed-workflow-command',
@@ -263,6 +279,17 @@ describe('isKnownSlashCommandToken', () => {
     expect(isKnownSlashCommandToken('/VERBOSE', commands)).toBe(true);
   });
 
+  it('matches unadvertised remote voice case-insensitively', () => {
+    const previous = process.env.KIRO_VOICE_SERVER_URL;
+    process.env.KIRO_VOICE_SERVER_URL = 'http://voice.test';
+    try {
+      expect(isKnownSlashCommandToken('/VOICE', commands)).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.KIRO_VOICE_SERVER_URL;
+      else process.env.KIRO_VOICE_SERVER_URL = previous;
+    }
+  });
+
   it('looks at the FIRST whitespace-separated token only', () => {
     // /verbose foozle: first token "verbose" is known → true (handler will
     // error on the bogus subcommand, that's the dispatcher's job).
@@ -272,11 +299,9 @@ describe('isKnownSlashCommandToken', () => {
     );
   });
 
-  it('returns false for prefix-only matches (exact only)', () => {
-    // /ver does not exactly match /verbose. Lite mode treats this as a
-    // chat message rather than dispatching the prefix-matched command.
-    expect(isKnownSlashCommandToken('/ver', commands)).toBe(false);
-    expect(isKnownSlashCommandToken('/cl', commands)).toBe(false);
+  it('uses the dispatcher prefix matching rules', () => {
+    expect(isKnownSlashCommandToken('/ver', commands)).toBe(true);
+    expect(isKnownSlashCommandToken('/cl', commands)).toBe(true);
   });
 
   it('returns false for unknown commands like /foozle', () => {

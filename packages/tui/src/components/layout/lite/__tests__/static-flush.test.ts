@@ -127,6 +127,30 @@ test('keeps a question answer visible behind an unfinished subagent', () => {
   ).toEqual(['parent', 'question-1', 'answer-1', 'question-2']);
 });
 
+test('keeps a failed system row live until its preceding tool settles', () => {
+  const error: MessageType = {
+    id: 'error',
+    role: MessageRole.System,
+    content: 'command failed',
+    success: false,
+  };
+  const pending = [user('prompt'), tool('active', false), error];
+  expect(
+    selectStaticEligible(pending, true).map((message) => message.id)
+  ).toEqual(['prompt']);
+  expect(
+    selectLiteLiveHistory(pending, true).rows.map((message) => message.id)
+  ).toEqual(['active', 'error']);
+
+  const settled = [user('prompt'), tool('active', true), error];
+  expect(
+    selectLiteLiveHistory(settled, true).rows.map((message) => message.id)
+  ).toEqual([]);
+  expect(
+    selectStaticEligible(settled, true).map((message) => message.id)
+  ).toEqual(['prompt', 'active', 'error']);
+});
+
 describe('firstUnfinishedToolIndex', () => {
   // Shared boundary used by computeActiveToolBatchIds and selectStaticEligible.
   test('front-scan finds the first unfinished tool', () => {

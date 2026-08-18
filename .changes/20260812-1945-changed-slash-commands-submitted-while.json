@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Slash commands submitted while the agent is working now run immediately when read-only, or run automatically when the turn ends"
+}

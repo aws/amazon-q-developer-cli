@@ -27,6 +27,7 @@ export interface AppKeypressState {
   pendingApproval: boolean;
   editingQueueIndex: number | null;
   editingSteerLineIndex: number | null;
+  commandInteractionOpen: boolean;
   transientAlertHasAction: boolean;
   pendingOAuthUrl: string | null;
   /**
@@ -215,6 +216,7 @@ export function dispatchAppKeypress(
     if (state.mode === 'workflow-monitor') return true;
     // Subagent panel claims Esc to close itself — don't piggyback a cancel.
     if (state.subagentPanelOpen) return true;
+    if (state.commandInteractionOpen && key.escape) return true;
     if (
       state.isProcessing &&
       !state.pendingApproval &&

@@ -3,6 +3,7 @@ import { Box, Text } from './../../renderer.js';
 import { truncateToWidth } from '../../utils/text-width.js';
 import { enterAltScreen } from '../../utils/alt-screen';
 import { usePlanModeToggle } from '../../hooks/usePlanModeToggle.js';
+import { useQueuedInputRestore } from '../../hooks/useQueuedInputRestore.js';
 import {
   AnimationPausedContext,
   useAnimationPaused,
@@ -449,6 +450,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
 
   // Shift+Tab toggles plan mode (shared with LiteLayout).
   usePlanModeToggle(!pendingQuestion);
+  useQueuedInputRestore();
   const interactionReady = useInteractionReady(
     pendingQuestion ?? pendingApproval
   );

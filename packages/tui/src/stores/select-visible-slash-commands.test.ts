@@ -518,7 +518,7 @@ describe('UI mode commands — KAS vs V2', () => {
   };
 
   // /tui must stay visible in both engines — KAS lite↔TUI switching dispatches
-  // it through this list (liteGateCommands), so filtering it breaks the swap.
+  // it through the visible command list, so filtering it breaks the swap.
   for (const agentEngine of ['kas', 'v2'] as const) {
     it(`keeps /tui visible for ${agentEngine} mode switching`, () => {
       const cmd = selectVisibleSlashCommands(

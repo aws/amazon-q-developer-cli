@@ -33,20 +33,40 @@ function findCommand<T extends AvailableCommand>(
   );
 }
 
-/**
- * Whether the input's first whitespace-separated token names a known slash
- * command (exact match, no prefix). Used by lite mode to decide between
- * "dispatch a command" and "send as a chat message" — the latter is the
- * lite contract for typos like /foozle and pasted paths like /some/path.
- */
+/** Resolve the input's first token using the same matching as executeCommand. */
+export function resolveSlashCommand(
+  input: string,
+  commands: readonly AvailableCommand[]
+): AvailableCommand | undefined {
+  const { isCommand, name } = parseCommand(input);
+  if (!isCommand) return undefined;
+  if (name.toLowerCase() === 'voice' && process.env.KIRO_VOICE_SERVER_URL) {
+    return { name: '/voice', description: 'Voice input' };
+  }
+  return findCommand(commands, name);
+}
+
+export function resolveSlashCommandForDispatch(
+  input: string,
+  commandCatalog: Pick<CommandContext, 'kasCommands' | 'slashCommands'>
+): AvailableCommand | undefined {
+  const { isCommand, name } = parseCommand(input);
+  if (!isCommand) return undefined;
+  if (name.toLowerCase() === 'voice' && process.env.KIRO_VOICE_SERVER_URL) {
+    return { name: '/voice', description: 'Voice input' };
+  }
+  return (
+    findCommand(commandCatalog.kasCommands, name) ??
+    findCommand(commandCatalog.slashCommands, name)
+  );
+}
+
+/** Whether the input resolves to a command the dispatcher can execute. */
 export function isKnownSlashCommandToken(
   input: string,
   commands: readonly AvailableCommand[]
 ): boolean {
-  const { isCommand, name } = parseCommand(input);
-  if (!isCommand) return false;
-  const lower = name.toLowerCase();
-  return commands.some((c) => c.name.toLowerCase() === `/${lower}`);
+  return resolveSlashCommand(input, commands) !== undefined;
 }
 
 export function recordSlashCommandInvocation(
@@ -63,22 +83,12 @@ export async function executeCommand(
   input: string,
   ctx: CommandContext
 ): Promise<boolean> {
-  const { isCommand, name, args } = parseCommand(input);
+  const { isCommand, args } = parseCommand(input);
   if (!isCommand) {
     return false;
   }
 
-  // Voice command: always handle client-side when remote voice server is configured,
-  // even if the backend doesn't advertise /voice (rollout gate may block it).
-  if (name === 'voice' && process.env.KIRO_VOICE_SERVER_URL) {
-    const syntheticCmd = { name: '/voice', meta: {} } as any;
-    recordSlashCommandInvocation(syntheticCmd, ctx);
-    await dispatch(syntheticCmd, args, ctx);
-    return true;
-  }
-
-  const cmd =
-    findCommand(ctx.kasCommands, name) ?? findCommand(ctx.slashCommands, name);
+  const cmd = resolveSlashCommandForDispatch(input, ctx);
   if (!cmd) {
     // Not a known command — let the caller handle it as a regular message
     // (e.g. pasted file paths like "/Users/me/file.txt")

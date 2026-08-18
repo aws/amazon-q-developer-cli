@@ -1,7 +1,7 @@
 /**
- * LiteLiveRegion: active tool calls + streaming content + thinking. All running
- * tools shown at once; thinking timer resets per round; streaming content is
- * not height-bounded (terminal scrolls naturally).
+ * LiteLiveRegion: active tools + withheld errors + streaming content + thinking.
+ * All running tools show at once; thinking resets per round; streaming content
+ * is not height-bounded (terminal scrolls naturally).
  */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, Text } from '../../../renderer.js';
@@ -80,6 +80,9 @@ export function selectLiteLiveHistory(
       (message.role === MessageRole.ToolUse && activeToolIds.has(message.id)) ||
       (message.role === MessageRole.User &&
         message.questionToolCallId !== undefined &&
+        !staticIds.has(message.id)) ||
+      (message.role === MessageRole.System &&
+        message.success === false &&
         !staticIds.has(message.id))
   );
 
@@ -379,14 +382,11 @@ export const LiteLiveRegion: React.FC = () => {
     currentAgent?.name,
     getColor,
   ]);
-  const renderedQuestionAnswers = useMemo(() => {
+  const renderedNonToolRows = useMemo(() => {
     const out = new Map<string, string>();
     const ctx: RenderContext = { termCols, theme: renderTheme, glyphs };
     for (const row of liveRows) {
-      if (
-        row.role === MessageRole.User &&
-        row.questionToolCallId !== undefined
-      ) {
+      if (row.role !== MessageRole.ToolUse) {
         out.set(row.id, renderMessageToText(row, currentAgent?.name, ctx));
       }
     }
@@ -537,7 +537,7 @@ export const LiteLiveRegion: React.FC = () => {
       const bar = liveBarsByToolId.get(row.id);
       body = bar?.length ? `${head}\n${bar.join('\n')}` : head;
     } else {
-      body = renderedQuestionAnswers.get(row.id) ?? '';
+      body = renderedNonToolRows.get(row.id) ?? '';
     }
     const needsBreak =
       index === 0

@@ -90,6 +90,26 @@ describe('submit-time @prompt interception', () => {
     expect(streamedContents(mockKiro)).toEqual(['/agent-sop:pdd']);
   });
 
+  it('sends a projected slash prompt to the v2 backend in lite mode', async () => {
+    const { store, mockKiro } = createTestStore();
+    store.setState({ uiMode: 'lite' });
+
+    await store.getState().handleUserInput('/agent-sop:pdd');
+
+    expect(streamedContents(mockKiro)).toEqual(['/agent-sop:pdd']);
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
+  it('sends a projected @prompt to the v2 backend in lite mode', async () => {
+    const { store, mockKiro } = createTestStore();
+    store.setState({ uiMode: 'lite' });
+
+    await store.getState().handleUserInput('@agent-sop:pdd');
+
+    expect(streamedContents(mockKiro)).toEqual(['/agent-sop:pdd']);
+    expect(store.getState().transientAlert).toBeNull();
+  });
+
   it('sends unknown @names verbatim', async () => {
     const { store, mockKiro } = createTestStore();
 
@@ -179,6 +199,57 @@ describe('submit-time @prompt interception', () => {
     expect(streamedContents(mockKiro)).toEqual(['/agent-sop:pdd from queue']);
     const userRows = store.getState().messages.filter((m) => m.role === 'user');
     expect(userRows.at(-1)?.content).toBe('@agent-sop:pdd from queue');
+  });
+
+  it('queues a projected slash prompt in lite mode and sends it on drain', async () => {
+    const { store, mockKiro } = createTestStore();
+    store.setState({
+      uiMode: 'lite',
+      isProcessing: true,
+      sessionId: 'test-session',
+      activeInterruptMode: InterruptMode.QUEUE,
+    });
+
+    await store.getState().handleUserInput('/agent-sop:pdd from queue');
+
+    expect(store.getState().queuedMessages).toEqual([
+      '/agent-sop:pdd from queue',
+    ]);
+    expect(streamedContents(mockKiro)).toEqual([]);
+
+    store.setState({ isProcessing: false });
+    await store.getState().processQueue();
+
+    expect(streamedContents(mockKiro)).toEqual(['/agent-sop:pdd from queue']);
+    expect(mockKiro.recordSlashCommandInvocation).toHaveBeenCalledWith(
+      '/prompt'
+    );
+  });
+
+  it('queues slash-prefixed prose mid-turn and sends it on drain', async () => {
+    const { store, mockKiro } = createTestStore();
+    const history = CommandHistory.getInstance();
+    history.clear();
+    store.setState({
+      isProcessing: true,
+      sessionId: 'test-session',
+      activeInterruptMode: InterruptMode.QUEUE,
+    });
+
+    await store.getState().handleUserInput('/note to self about the refactor');
+
+    expect(store.getState().queuedMessages).toEqual([
+      '/note to self about the refactor',
+    ]);
+    expect(store.getState().transientAlert).toBeNull();
+
+    store.setState({ isProcessing: false });
+    await store.getState().processQueue();
+
+    expect(streamedContents(mockKiro)).toEqual([
+      '/note to self about the refactor',
+    ]);
+    expect(history.getAll()).toEqual(['/note to self about the refactor']);
   });
 
   it('normalizes a pending steer @prompt when replayed as a fresh prompt', async () => {

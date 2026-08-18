@@ -1,6 +1,7 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { access } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 import type { Kiro } from '../kiro';
 import { chalk } from '../utils/color.js';
 import type { TerminalColor } from '../types/themeTypes';
@@ -85,6 +86,7 @@ import type {
   SkillEntry,
   SteeringEntry,
 } from '../types/commands';
+import { parseCommand } from '../types/commands';
 import type { WorkflowRecipeInputPanelModel } from '../types/workflow-command.js';
 import type {
   AgentEntry,
@@ -407,9 +409,14 @@ import {
   executeCommandWithArg,
   isKnownSlashCommandToken,
   recordSlashCommandInvocation,
+  resolveSlashCommand,
+  resolveSlashCommandForDispatch,
   type CommandContext,
 } from '../commands/index.js';
-import { getLocalSlashCommands } from '../commands/command-registry.js';
+import {
+  classifyCommandDuringTurn,
+  getLocalSlashCommands,
+} from '../commands/command-registry.js';
 import {
   loadArtifactSource,
   loadArtifactSummary,
@@ -1469,13 +1476,6 @@ interface BaseAppActions {
    * `editingQueueIndex`. No side effects.
    */
   setEditingSteerLineIndex: (index: number | null) => void;
-  /**
-   * Apply the pending `queuedInputRestore` snapshot back into
-   * `commandInputValue` and `input`, then clear the snapshot. No-op when
-   * `queuedInputRestore` is null. See the field's doc comment for the
-   * full lifecycle. Called from a `useLayoutEffect` in `LiteLayout` on
-   * `activeCommand` transitions non-null → null.
-   */
   applyQueuedInputRestore: () => void;
   setSlashCommands: (commands: SlashCommand[]) => void;
   setKasCommands: (commands: KasCommand[]) => void;
@@ -1974,29 +1974,7 @@ export interface AppState {
   messages: MessageType[];
   liveOutputs: Map<string, string[][]>;
   pendingSteerContent: string | null;
-  /**
-   * Pending input restore for queued slash-command drains that opened a
-   * picker (e.g. `/model`, `/agent`). When the user has typed pending
-   * text in the prompt while a slash command is queued, processQueue
-   * snapshots that text before dispatching. If the dispatch opens a
-   * picker (i.e. `activeCommand` becomes non-null after the await), an
-   * inline restore would be invisible — PromptInput renders
-   * `activeCommand.command.name` instead of segments while the picker is
-   * up, AND the picker's close handlers (`handleActiveCommandClose` and
-   * the no-hint `onSelect` branch) call `clearCommandInput()` which
-   * would clobber any restored value the moment the picker dismisses.
-   *
-   * Stash the snapshot here instead. A `useLayoutEffect` in `LiteLayout`
-   * watches `activeCommand` transitions from non-null → null and applies
-   * the restore via `applyQueuedInputRestore()`. That path catches BOTH
-   * Esc-dismissal (handleActiveCommandClose) and selection
-   * (executeCommandWithArg → set activeCommand:null) without either
-   * close-handler having to know about the queue-drain context.
-   *
-   * Stays null in the common case (no slash queued, or queued slash is a
-   * non-picker command like `/verbose`). For non-picker commands the
-   * existing inline restore in processQueue still applies.
-   */
+  /** Defers restoring typed input until a queued command's picker closes. */
   queuedInputRestore: {
     commandInputValue: string;
     input: InputBufferState;
@@ -2895,38 +2873,49 @@ function isActiveCompactionTerminalEvent(
   );
 }
 
-/**
- * Command set the lite "dispatch locally vs. send to agent" gate
- * (`isKnownSlashCommandToken`) should match against.
- *
- * In KAS mode the backend advertises commands (`/rewind`, `/usage`, `/spec`,
- * …) via `kasCommands` that are NOT mirrored into `slashCommands`; gating on
- * `slashCommands` alone made those tokens fall through the gate and get sent
- * to the model as chat text instead of dispatching (panel never opens, a
- * billed turn wasted). `selectVisibleSlashCommands` prepends `kasCommands`
- * (and folds prompt/skill/steering projections), so it's the correct gate set
- * in KAS mode.
- *
- * v2 is intentionally left on the raw `slashCommands` slice so this is a
- * provable no-op for the v2 backend: `selectVisibleSlashCommands` would also
- * fold in prompt/skill projections the v2 gate never recognized before, and
- * we are not changing v2 behavior here.
- */
-function liteGateCommands(state: AppState): readonly AvailableCommand[] {
-  return state.agentEngine === 'kas'
-    ? selectVisibleSlashCommands(state)
-    : state.slashCommands;
-}
-
 function recordBusySlashCommandInvocation(
   name: string,
   state: AppState & AppActions
 ): void {
-  const command = liteGateCommands(state).find(
+  const command = selectVisibleSlashCommands(state).find(
     (candidate) => candidate.name.toLowerCase() === name
   );
   if (command) {
     recordSlashCommandInvocation(command, { kiro: state.kiro });
+  }
+}
+
+async function reportUnrecognizedCommand(
+  input: string,
+  state: AppState & AppActions
+): Promise<boolean> {
+  const { isCommand, name, args } = parseCommand(input);
+  if (!isCommand || !name || !state.isInitialized) return false;
+  // `/summarize the diff below` is a message, not a typo.
+  if (args.trim().length > 0) return false;
+  const cloudSessionActive =
+    state.cloudSessionActive || state.kiro.isCloudSessionActive?.() === true;
+  if (
+    isKnownSlashCommandToken(input, selectVisibleSlashCommands(state)) ||
+    (!cloudSessionActive && (await isExistingAbsolutePathToken(input)))
+  )
+    return false;
+  state.showTransientAlert({
+    message: `Unrecognized command: /${name}`,
+    status: 'error',
+    autoHideMs: 4000,
+  });
+  return true;
+}
+
+async function isExistingAbsolutePathToken(input: string): Promise<boolean> {
+  const token = input.trim().split(/\s+/, 1)[0];
+  if (!token || !isAbsolute(token)) return false;
+  try {
+    await access(token);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -3228,6 +3217,8 @@ export const createAppStore = (props: AppStoreProps) => {
   let pendingInterruptModeSyncs = 0;
   let interruptModeSyncQueue = Promise.resolve();
   let resumeSessionInFlight = false;
+  let inertCommandDispatchInProgress = false;
+  let queuedCommandDispatchInProgress = false;
   const store = createStore<AppState & AppActions>((set, get) => ({
     // Initial state
     messages: [],
@@ -7063,9 +7054,19 @@ export const createAppStore = (props: AppStoreProps) => {
       if (!activeCommand) return;
 
       const cmdName = activeCommand.command.name.replace(/^\//, '');
+      const effectiveArg = cmdName === 'agent' && arg ? `swap ${arg}` : arg;
+      const commandInput = `/${cmdName}${effectiveArg ? ` ${effectiveArg}` : ''}`;
       set({ activeCommand: null });
 
       const state = get();
+      const turnDisposition = classifyCommandDuringTurn(cmdName, effectiveArg);
+      if (state.isProcessing && turnDisposition === 'queued') {
+        state.queueMessage(commandInput);
+        return;
+      }
+
+      queuedCommandDispatchInProgress = true;
+
       const ctx: CommandContext = buildCommandContext(state, set, get, {
         showChangelogPanel: false,
         showMemoriesPanel: false,
@@ -7075,7 +7076,11 @@ export const createAppStore = (props: AppStoreProps) => {
 
       applyLiteAlertRouting(ctx, state, set);
 
-      await executeCommandWithArg(cmdName, arg, ctx);
+      try {
+        await executeCommandWithArg(cmdName, arg, ctx);
+      } finally {
+        queuedCommandDispatchInProgress = false;
+      }
       if (get().queuedMessages.length > 0) {
         await get().processQueue();
       }
@@ -7198,15 +7203,17 @@ export const createAppStore = (props: AppStoreProps) => {
         uiMode,
         isProcessing,
       } = get();
-      const gateCommands = liteGateCommands(get());
+      const gateCommands = selectVisibleSlashCommands(get());
       const isKnownSlashCommand = isKnownSlashCommandToken(
         trimmed,
         gateCommands
       );
+      const isPreInitSlashInput =
+        !isInitialized && parseCommand(trimmed).isCommand;
 
-      // Lite local queue: it renders pending entries from `queuedMessages`
-      // (the "(N queued)" strip) and drains them via processQueue. Keep BOTH
-      // (a) known slash tokens (the slash-command queue) AND (b) any input
+      // Local queue: pending entries in `queuedMessages` are rendered for the
+      // user and drained via processQueue. Keep BOTH (a) known slash tokens in
+      // either UI mode (the slash-command queue) AND (b) in lite, any input
       // that arrives while no agent turn is active — pre-init, or a
       // `loadingMessage` window (/agent swap, /chat resume, /<cmd> options
       // fetch), all isProcessing=false. Only a genuine mid-turn chat message
@@ -7214,7 +7221,11 @@ export const createAppStore = (props: AppStoreProps) => {
       // matches TUI steering. Routing a slash command — or a message during a
       // resume window where sessionId is stale/absent and there's no turn to
       // drain into — to steerMessage would silently lose it.
-      if (uiMode === 'lite' && (!isProcessing || isKnownSlashCommand)) {
+      if (
+        isKnownSlashCommand ||
+        isPreInitSlashInput ||
+        (uiMode === 'lite' && !isProcessing)
+      ) {
         set((state) => ({
           queuedMessages: [...state.queuedMessages, trimmed],
         }));
@@ -7287,6 +7298,8 @@ export const createAppStore = (props: AppStoreProps) => {
         isProcessing ||
         isCompacting ||
         loadingMessage ||
+        inertCommandDispatchInProgress ||
+        queuedCommandDispatchInProgress ||
         hasBlockingCommandInteraction(queueState) ||
         workflowStore.getState().history.isOpen
       )
@@ -7327,17 +7340,10 @@ export const createAppStore = (props: AppStoreProps) => {
         editingQueueIndex: newEditingIndex,
         commandInputValue: stoppedEditing ? '' : state.commandInputValue,
       }));
-      // Lite mode queues known slash commands so they fire at turn-end
-      // (handleUserInput's queue branch). Dispatch them via handleUserInput
-      // so slash commands like /tui actually run rather than getting sent
-      // to the agent as a chat message. Mode-check is on `nextMessage`
-      // shape (slash + known) rather than current uiMode — a queued /lite
-      // following a queued /tui must still dispatch as a slash command
-      // even though the swap put us in TUI mode mid-drain.
-      const isSlash = nextMessage.startsWith('/');
-      const gateCommands = liteGateCommands(get());
-      const isKnownSlashCommand =
-        isSlash && isKnownSlashCommandToken(nextMessage, gateCommands);
+      const gateCommands = selectVisibleSlashCommands(get());
+      const matchedCommand = resolveSlashCommand(nextMessage, gateCommands);
+      const isKnownSlashCommand = matchedCommand !== undefined;
+
       if (isKnownSlashCommand) {
         // Keep a durable record when a queued slash command runs.
         set((state) => ({
@@ -7351,32 +7357,19 @@ export const createAppStore = (props: AppStoreProps) => {
             },
           ],
         }));
-        // Snapshot the user's current prompt buffer before dispatching the
-        // queued slash command. handleUserInput's main path clears
-        // `commandInputValue` before dispatching — fine when the user just
-        // hit enter, but during a queue drain the user may have typed new
-        // text after queueing the command. Without the snapshot, that mid-
-        // typed text disappears the moment the drain fires (P438912313).
-        //
-        // Three guards on the restore:
-        //   1. `userTypedExtra` — the snapshot has to differ from the
-        //      queued command itself; otherwise we'd put the very command
-        //      we just dispatched back in the input.
-        //   2. `userTypedDuringDispatch` — handleUserInput is async; for
-        //      RPC-bound commands the user can type into the cleared
-        //      buffer during the await. Restoring the pre-dispatch
-        //      snapshot in that window would CLOBBER the new typing.
-        //   3. Picker open vs. closed — when activeCommand is non-null
-        //      after the await, stash the snapshot in `queuedInputRestore`
-        //      and let LiteLayout's effect apply it on the picker's close
-        //      transition. Inline restore in that case would be invisible
-        //      while the picker is up (PromptInput renders the command
-        //      name) and gets clobbered by clearCommandInput on dismiss.
+        // Preserve prompt edits made while this queued command waited to run.
         const commandSnapshot = get().commandInputValue;
         const inputSnapshot = get().input;
         const userTypedExtra = commandSnapshot.trim() !== nextMessage.trim();
-        await get().handleUserInput(nextMessage, 'queue');
+        queuedCommandDispatchInProgress = true;
+        try {
+          await get().handleUserInput(nextMessage, 'queue');
+        } finally {
+          queuedCommandDispatchInProgress = false;
+        }
         if (userTypedExtra) {
+          // Dispatch was awaited, so a non-empty buffer means the user typed
+          // into the cleared prompt meanwhile; restoring would clobber that.
           const userTypedDuringDispatch = !!get().commandInputValue.trim();
           if (!userTypedDuringDispatch) {
             if (get().activeCommand != null) {
@@ -7398,6 +7391,14 @@ export const createAppStore = (props: AppStoreProps) => {
         // /clear, panel toggles) leave isProcessing false — the next
         // queued item won't drain on its own. Re-enter processQueue
         // so the rest of the queue keeps draining in FIFO order.
+        if (!get().isProcessing) {
+          await get().processQueue();
+        }
+        return;
+      }
+
+      if (await reportUnrecognizedCommand(nextMessage, get())) {
+        CommandHistory.getInstance().add(nextMessage);
         if (!get().isProcessing) {
           await get().processQueue();
         }
@@ -7458,8 +7459,8 @@ export const createAppStore = (props: AppStoreProps) => {
       if (!trimmed) return;
 
       set({
-        queuedMessages: queuedMessages.map((msg, i) =>
-          i === index ? trimmed : msg
+        queuedMessages: queuedMessages.map((message, i) =>
+          i === index ? trimmed : message
         ),
         editingQueueIndex: null,
       });
@@ -9336,7 +9337,9 @@ export const createAppStore = (props: AppStoreProps) => {
       if (recordAs !== null) {
         CommandHistory.getInstance().add(recordAs ?? execCmd);
       }
-      const ctx: CommandContext = buildCommandContext(get(), set, get);
+      const state = get();
+      const ctx: CommandContext = buildCommandContext(state, set, get);
+      applyLiteAlertRouting(ctx, state, set);
       await executeCommand(execCmd, ctx);
     },
 
@@ -9448,17 +9451,51 @@ export const createAppStore = (props: AppStoreProps) => {
           await runWhileProcessing('status', 'Failed to read goal status');
           return;
         }
-        // TODO: support queuing non-interactive slash commands (e.g. /clear, /compact)
-        //       that don't require UI interaction to complete
         if (trimmed.startsWith('/')) {
-          // Lite mode queues slash commands so they fire at turn-end. Unknown
-          // tokens (e.g. "/foozle", pasted "/some/file/path") fall through to
-          // chat-message queueing — the lite contract is "first token must
-          // exactly match a known command, otherwise it's a message".
-          const allCommands = liteGateCommands(state);
-          const isLite = state.uiMode === 'lite';
-          const isKnown = isKnownSlashCommandToken(trimmed, allCommands);
-          if (isLite && isKnown) {
+          const allCommands = selectVisibleSlashCommands(state);
+          const matchedCommand = resolveSlashCommandForDispatch(trimmed, {
+            kasCommands: state.kasCommands,
+            slashCommands: allCommands,
+          });
+          const isKnown = matchedCommand !== undefined;
+
+          if (!isKnown && (await reportUnrecognizedCommand(trimmed, state))) {
+            CommandHistory.getInstance().add(trimmed);
+            state.clearInput();
+            state.clearCommandInput();
+            return;
+          }
+
+          // Run inert commands unless another command already owns the UI.
+          const parsed = parseCommand(trimmed);
+          const turnDisposition = classifyCommandDuringTurn(
+            matchedCommand?.name ?? '',
+            parsed.args
+          );
+          const runsAlongsideTurn =
+            isKnown &&
+            state.isProcessing &&
+            !state.isCompacting &&
+            !state.loadingMessage &&
+            state.isInitialized &&
+            !inertCommandDispatchInProgress &&
+            !queuedCommandDispatchInProgress &&
+            !hasBlockingCommandInteraction(state) &&
+            turnDisposition === 'immediate';
+          if (runsAlongsideTurn) {
+            state.clearInput();
+            state.clearCommandInput();
+            inertCommandDispatchInProgress = true;
+            try {
+              await state.dispatchSlashCommand(trimmed);
+            } finally {
+              inertCommandDispatchInProgress = false;
+              if (!get().isProcessing) await get().processQueue();
+            }
+            return;
+          }
+
+          if (isKnown) {
             // The queue strip above the divider already shows the new entry
             // (and "(N queued)") the moment queueMessage returns, so no
             // transient alert is needed.
@@ -9478,16 +9515,8 @@ export const createAppStore = (props: AppStoreProps) => {
             state.clearCommandInput();
             return;
           }
-          if (!isLite) {
-            state.showTransientAlert({
-              message:
-                "Slash commands can't be queued — wait for the current task to finish",
-              status: 'warning',
-              autoHideMs: 4000,
-            });
-            return;
-          }
-          // Lite + unknown token: fall through to chat-message queueing below.
+
+          // Unknown token: fall through to chat-message queueing below.
         }
         if (trimmed.startsWith('!')) {
           state.showTransientAlert({
@@ -9515,7 +9544,7 @@ export const createAppStore = (props: AppStoreProps) => {
       const pendingSpec = state.pendingSpecDescription;
       const isCommandInput = isKnownSlashCommandToken(
         trimmed,
-        liteGateCommands(state)
+        selectVisibleSlashCommands(state)
       );
       const isSpecDescription = !!pendingSpec && !isCommandInput;
       if (isSpecDescription && !trimmed) {
@@ -9596,21 +9625,6 @@ export const createAppStore = (props: AppStoreProps) => {
 
         applyLiteAlertRouting(ctx, state, set);
 
-        // Lite mode: only dispatch when the first whitespace-separated token
-        // is an EXACT command-registry match. Typos like "/foozle" and pasted
-        // paths like "/some/file/path" go straight to chat. Subcommand errors
-        // (e.g. "/verbose foozle") still flow through the dispatcher so the
-        // command's own handler can show the proper error.
-        if (state.uiMode === 'lite') {
-          const allCommands = liteGateCommands(state);
-          if (isKnownSlashCommandToken(routed, allCommands)) {
-            await executeCommand(routed, ctx);
-            return;
-          }
-          await state.sendMessage(routed, undefined, trimmed);
-          return;
-        }
-
         const handled = await executeCommand(routed, ctx);
         if (handled) return;
         // Dispatch declined a rewritten @prompt (the command parser can
@@ -9620,10 +9634,14 @@ export const createAppStore = (props: AppStoreProps) => {
           await state.sendMessage(trimmed);
           return;
         }
-        // Not a recognized command — could be a file path like /Users/...
-        // Strip the leading "/" only for file paths to match V1 behavior
-        // (leaving it confuses the LLM's path extraction for tool calls).
-        // For other inputs like "// hello world", send as-is.
+        if (await reportUnrecognizedCommand(routed, state)) return;
+        if (state.uiMode === 'lite') {
+          await state.sendMessage(routed, undefined, trimmed);
+          return;
+        }
+        // Strip the leading "/" only for file paths to match V1 behavior —
+        // leaving it confuses the model's path extraction for tool calls.
+        // Anything else, e.g. "// hello world", is sent as typed.
         const afterSlash = routed.slice(1);
         const isFilePath =
           afterSlash.length > 0 &&
