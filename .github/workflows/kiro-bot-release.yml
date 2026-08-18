@@ -10,8 +10,21 @@ name: kiro-bot-release
 #     bot binaries or the eval suite — avoids rebuilding the world on
 #     unrelated kiro-cli changes.
 #   - tag push matching kiro-bot-v* — promotes the digest to /prod/.
+#   - manual dispatch — this workflow revision fails explicitly; select a
+#     revision that implements the manual release jobs.
 
 on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source ref verified by the selected manual-release workflow revision
+        required: false
+        type: string
+      bootstrap_carrier:
+        description: Ask the selected manual-release workflow revision to publish the alpha carrier
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -30,7 +43,6 @@ on:
       # three-file allowlist to avoid the bot running on a stale binary.
       - 'crates/chat-cli/**'
       - 'crates/chat-cli-v2/**'
-      - '.github/workflows/kiro-bot-release.yml'
 
 permissions:
   id-token: write
@@ -44,8 +56,20 @@ env:
   TARGET: aarch64-unknown-linux-gnu
 
 jobs:
+  reject-manual-dispatch:
+    name: Reject unsupported manual release
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    permissions: {}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain the required workflow selection
+        run: |
+          echo "::error title=Manual release unavailable::Select a workflow revision that implements the manual release jobs."
+          exit 1
+
   test:
     name: Test
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
