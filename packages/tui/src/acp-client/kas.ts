@@ -2558,7 +2558,10 @@ export class KasAcpClient extends BaseAcpClient {
 
   private async executeKnowledge(value: string): Promise<CommandResult> {
     const parts = value.trim().split(/\s+/);
-    const subcommand = parts[0] || 'show';
+    const raw = parts[0] || 'show';
+    // The agent only accepts the canonical name, so normalize here to keep the
+    // `rm` shorthand users relied on before the KAS engine.
+    const subcommand = raw === 'rm' ? 'remove' : raw;
 
     const params: Record<string, unknown> = { subcommand };
 

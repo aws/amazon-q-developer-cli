@@ -4501,6 +4501,25 @@ describe('KasAcpClient', () => {
       );
     });
 
+    it('executeCommand knowledge rm is normalized to the remove subcommand', async () => {
+      seedInitializeWithKnowledge();
+      mockKiroSendExtMethod.mockResolvedValue({ message: 'Removed' });
+      const client = new KasAcpClient();
+      await client.initialize();
+      await client.newSession();
+      mockKiroSendExtMethod.mockClear();
+
+      await client.executeCommand({
+        command: 'knowledge',
+        args: { value: 'rm my-kb' },
+      } as any);
+
+      expect(mockKiroSendExtMethod).toHaveBeenCalledWith(
+        '_kiro/knowledge',
+        expect.objectContaining({ subcommand: 'remove', target: 'my-kb' })
+      );
+    });
+
     it('executeCommand knowledge update parses path correctly', async () => {
       seedInitializeWithKnowledge();
       mockKiroSendExtMethod.mockResolvedValue({ message: 'Re-indexing' });

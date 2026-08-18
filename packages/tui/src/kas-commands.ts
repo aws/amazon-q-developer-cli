@@ -224,7 +224,23 @@ export const KAS_COMMANDS: readonly KasCommand[] = [
   {
     name: KasCommandName.Knowledge,
     description: 'Manage knowledge bases',
-    meta: { inputType: 'panel' },
+    meta: {
+      inputType: 'panel',
+      subcommands: ['show', 'add', 'remove', 'update', 'clear', 'cancel'],
+      subcommandDescriptions: {
+        show: 'Show knowledge bases',
+        add: 'Index a file or directory',
+        remove: 'Remove an entry',
+        update: 'Re-index a path',
+        clear: 'Remove all entries',
+        cancel: 'Cancel a background operation',
+      },
+      subcommandHints: {
+        add: '<name> <path>',
+        remove: '<name|path>',
+        update: '<path>',
+      },
+    },
   },
   {
     name: KasCommandName.Compact,
