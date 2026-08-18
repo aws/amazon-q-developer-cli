@@ -10,18 +10,19 @@ Create changelog entries by analyzing recent changes and proposing commands to a
 ## Workflow
 
 1. **Analyze recent changes** using `git diff` or `git log` to understand what changed
-2. **Determine the change type**:
+2. **Check visibility first** against `.changes/VISIBILITY.md`: internal-only changes and **unreleased features** (KAS/V3-gated surfaces like specs, workflows, cloud sessions, or anything feature-flagged) get NO entry — recommend the `no-changelog` PR label instead and stop. Unreleased features get one entry at launch, not while being built
+3. **Determine the change type**:
    - `added` - New features
    - `changed` - Changes to existing functionality
    - `deprecated` - Features marked for removal
    - `removed` - Removed features
    - `fixed` - Bug fixes
    - `security` - Security fixes
-3. **Propose a command** in this format:
+4. **Propose a command** in this format:
    ```bash
    ./scripts/new-change.sh <type> "<description>"
    ```
-4. **Wait for user confirmation** before executing
+5. **Wait for user confirmation** before executing
 
 ## Guidelines
 

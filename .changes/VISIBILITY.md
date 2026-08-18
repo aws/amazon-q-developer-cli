@@ -14,6 +14,8 @@ KAS indicators:
 
 KAS is behind a feature gate and not customer-facing.
 
+The same applies to any feature that has not shipped to customers, whatever gates it: no changelog entries while it is being built — one entry when it launches. Use the `no-changelog` PR label.
+
 ## User-facing (needs changelog and/or docs)
 
 - New features, commands, or settings

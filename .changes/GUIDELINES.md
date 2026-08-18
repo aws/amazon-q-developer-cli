@@ -17,6 +17,8 @@ Create entries with: `./scripts/new-change.sh <type> "<description>"`
 
 See `.changes/VISIBILITY.md` for rules on what counts as user-facing vs internal.
 
+**Unreleased features never get entries.** If the change is to a feature that has not shipped to customers (KAS/V3-gated surfaces such as specs, workflows, and cloud sessions, or anything behind a feature flag), do not create a fragment — add the `no-changelog` label to the PR instead. The feature gets one changelog entry when it launches, not a trickle of entries while it is being built.
+
 ## Rules
 
 1. Do NOT start the description with the type verb (Added, Fixed, Changed, etc.) — the type is shown as a section header
@@ -27,7 +29,7 @@ See `.changes/VISIBILITY.md` for rules on what counts as user-facing vs internal
 6. Mention the specific feature or command affected
 7. No trailing period
 8. Wrap code references in backticks: slash commands (`/settings`), tool names (`fs_write`), settings (`chat.showThinking`), env vars (`KIRO_HOME`), flags (`--resume`)
-9. Prefix with `[V3]` only if the change exclusively affects V3 (KAS agent engine) features — e.g. specs, workflows, cloud sessions. Do NOT use `[V3]` for shared TUI changes that affect both V2 (Rust agent) and V3
+9. Prefix with `[V3]` only if the change exclusively affects V3 (KAS agent engine) features — e.g. specs, workflows, cloud sessions — AND that feature has already shipped to customers; unreleased features get no entry at all (see "When to create an entry"). Do NOT use `[V3]` for shared TUI changes that affect both V2 (Rust agent) and V3
 
 ## Good examples
 
