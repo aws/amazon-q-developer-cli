@@ -87,11 +87,13 @@ function withTempDirectory(run: (directory: string) => void): void {
 }
 
 const CERTIFICATION_WORKFLOW = '.github/workflows/rc-certification.yml';
+const FORK_WORKFLOW = '.github/workflows/fork-ci.yml';
 const CODEARTIFACT_LOGIN = '.github/actions/codeartifact-login/action.yml';
 
 const CERTIFICATION_JOBS = [
   'resolve',
   'tui-static',
+  'twinki-perf',
   'build-assets',
   'ui-integration',
   'acp-integration',
@@ -101,6 +103,9 @@ const CERTIFICATION_JOBS = [
   'visual',
   'live-parity',
   'summary',
+  'tui-unit-tests-required',
+  'tui-typecheck-required',
+  'tui-lint-required',
   'tui-integ-tests-required',
   'tui-e2e-required',
 ];
@@ -116,6 +121,10 @@ function readCertificationWorkflow(): string {
     path.join(trustedCiRoot(), CERTIFICATION_WORKFLOW),
     'utf8'
   );
+}
+
+function readForkWorkflow(): string {
+  return fs.readFileSync(path.join(trustedCiRoot(), FORK_WORKFLOW), 'utf8');
 }
 
 // A local `uses: ./…` step runs whatever that definition itself pulls in, so a
@@ -283,7 +292,7 @@ describe('RC binary cache identity', () => {
     const untrusted = [...jobs].filter(([, job]) =>
       job.includes('ref: ${{ inputs.source_sha')
     );
-    expect(untrusted.map(([name]) => name)).toHaveLength(11);
+    expect(untrusted.map(([name]) => name)).toHaveLength(12);
     expect(
       untrusted
         .filter(([, job]) => {
@@ -329,7 +338,7 @@ describe('RC binary cache identity', () => {
     expect(workflow).toContain('"$TRUSTED_SHA" != "$TRUSTED_BASE_SHA"');
 
     const trusted = steps(workflow, 'Checkout trusted CI support');
-    expect(trusted).toHaveLength(11);
+    expect(trusted).toHaveLength(12);
     for (const checkout of trusted) {
       expect(checkout).toContain("if: inputs.execution_mode == 'fork'");
       expect(checkout).toContain('repository: ${{ github.repository }}');
@@ -343,7 +352,7 @@ describe('RC binary cache identity', () => {
     const workflow = readCertificationWorkflow();
     const bunVersion = steps(workflow, 'Read pinned Bun version');
 
-    expect(bunVersion).toHaveLength(11);
+    expect(bunVersion).toHaveLength(12);
     for (const step of bunVersion) {
       expect(step).toContain('shell: bash');
       expect(step).toContain('"$RC_CI_ROOT/scripts/const.py"');
@@ -414,6 +423,7 @@ describe('RC binary cache identity', () => {
         .map(([name]) => name)
     ).toEqual([
       'tui-static',
+      'twinki-perf',
       'build-assets',
       'ui-integration',
       'acp-integration',
@@ -423,6 +433,70 @@ describe('RC binary cache identity', () => {
       'visual',
       'live-parity',
     ]);
+  });
+
+  it('can inspect the protected fork approval environment', () => {
+    const workflow = readForkWorkflow();
+    const header = workflow.slice(0, workflow.indexOf('\njobs:\n'));
+
+    expect(header).toContain('permissions:\n  actions: read\n');
+    expect(header).not.toContain('deployments: read');
+    expect(workflow).toContain('github.rest.repos.getEnvironment');
+    expect(readCertificationWorkflow()).toContain(
+      '.github/workflows/fork-ci.yml'
+    );
+  });
+
+  it('keeps TUI-only checks independent from Rust asset builds', () => {
+    const jobs = certificationJobs(readCertificationWorkflow());
+
+    for (const name of ['tui-static', 'twinki-perf']) {
+      const job = jobs.get(name) as string;
+      const header = job.slice(0, job.indexOf('\n    steps:'));
+      expect(header).toContain('\n    needs: resolve\n');
+      expect(header).not.toContain('build-assets');
+    }
+
+    expect(jobs.get('twinki-perf')).toContain(
+      "if: needs.resolve.outputs.run_twinki_perf == 'true'"
+    );
+    expect(jobs.get('tui-static')).toContain("FORCE_COLOR: '0'");
+  });
+
+  it('filters documentation without hiding required TUI statuses', () => {
+    const workflow = readCertificationWorkflow();
+    const jobs = certificationJobs(workflow);
+    const pathFilter = steps(workflow, 'Detect TUI changes');
+    const header = workflow.slice(0, workflow.indexOf('\njobs:\n'));
+
+    expect(header).toContain('on:\n  pull_request:\n  schedule:');
+    expect(pathFilter).toHaveLength(1);
+    expect(pathFilter[0]).toContain('predicate-quantifier: every');
+    expect(pathFilter[0]).toContain('infrastructure:');
+    expect(pathFilter[0]).toContain(
+      "'{package.json,bun.lock,eslint.config.js,.prettierrc,scripts/const.py,"
+    );
+    for (const exclusion of [
+      "'!packages/tui/**/*.md'",
+      "'!packages/tui/docs/**'",
+      "'!packages/twinki/**/*.md'",
+      "'!packages/twinki/docs/**'",
+    ]) {
+      expect(pathFilter[0]).toContain(exclusion);
+    }
+    expect(workflow).toContain(
+      'run_twinki_perf: ${{ steps.resolve.outputs.run_twinki_perf }}'
+    );
+
+    for (const name of [
+      'tui-unit-tests-required',
+      'tui-typecheck-required',
+      'tui-lint-required',
+      'tui-integ-tests-required',
+      'tui-e2e-required',
+    ]) {
+      expect(jobs.get(name)).toContain('\n    if: always()\n');
+    }
   });
 
   it('uses only the selected stream for stable tool identity', () => {

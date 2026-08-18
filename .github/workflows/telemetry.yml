@@ -1,0 +1,94 @@
+name: 'PR: Telemetry'
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.docs/**'
+      - '.ops/**'
+      - '.changes/**'
+      - 'autodocs/**'
+      - 'autodocs-v2/**'
+      - 'pending_autodocs/**'
+      - 'scripts/testing-cert-status/**'
+      - 'packages/tui/docs/**'
+      - 'packages/twinki/docs/**'
+      - 'crates/*/docs/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  CI: 1
+  # Avoid GitHub API rate limits (403) during postinstall scripts
+  # that download from GitHub Releases (e.g. @vscode/ripgrep).
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  tui-telemetry-e2e:
+    name: Telemetry E2E
+    if: github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+
+      - name: Install telemetry E2E build deps
+        run: sudo apt-get update && sudo apt-get install -y -qq protobuf-compiler jq curl sqlite3
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-telemetry-e2e-registry-v1-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-telemetry-e2e-registry-v1-${{ runner.os }}-
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: echo "version=$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Twinki workspace dependency
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Run telemetry E2E validation
+        # Brings up the local OTel stack (collector + Prometheus + Grafana) via
+        # `docker compose`, runs a real non-interactive V1 dual-write chat,
+        # records and compares OTLP + legacy Toolkit delivery, then exercises
+        # Rust/TUI metric constructors and exporters before verifying
+        # Prometheus plus the provisioned Grafana dashboard. The script starts
+        # from empty volumes and tears the stack down on EXIT.
+        run: COMPOSE_CMD="docker compose" bash dev/telemetry/validate-metrics-e2e.sh
+
+      - name: Upload collector logs on failure
+        if: failure()
+        run: docker compose -f dev/telemetry/compose.yaml logs > /tmp/telemetry-stack.log 2>&1 || true
+      - name: Upload stack logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetry-e2e-stack-logs
+          path: /tmp/telemetry-stack.log
+          retention-days: 7

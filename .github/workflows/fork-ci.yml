@@ -9,8 +9,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
-  deployments: read
   id-token: write
   pull-requests: read
   statuses: write
@@ -48,8 +48,18 @@ jobs:
             const isIgnoredPath = filename => {
               return (
                 filename.startsWith('docs/') ||
+                filename.startsWith('.docs/') ||
+                filename.startsWith('.ops/') ||
+                filename.startsWith('.kiro/') ||
                 filename.startsWith('.changes/') ||
+                filename.startsWith('pending_autodocs/') ||
                 filename.startsWith('scripts/testing-cert-status/') ||
+                filename.startsWith('packages/tui/docs/') ||
+                filename.startsWith('packages/twinki/docs/') ||
+                /^\.github\/.*\.md$/i.test(filename) ||
+                /^packages\/(?:tui|twinki)\/.*\.md$/i.test(filename) ||
+                /^crates\/[^/]+\/README\.md$/i.test(filename) ||
+                /^crates\/[^/]+\/docs\//i.test(filename) ||
                 /^[^/]+\.md$/i.test(filename)
               );
             };

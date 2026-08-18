@@ -129,6 +129,7 @@ jobs:
       run_integration: ${{ steps.resolve.outputs.run_integration }}
       run_e2e: ${{ steps.resolve.outputs.run_e2e }}
       run_tui_static: ${{ steps.resolve.outputs.run_tui_static }}
+      run_twinki_perf: ${{ steps.resolve.outputs.run_twinki_perf }}
       live_engines: ${{ steps.resolve.outputs.live_engines }}
       smoke_priority: ${{ steps.resolve.outputs.smoke_priority }}
       visual_suite: ${{ steps.resolve.outputs.visual_suite }}
@@ -192,6 +193,7 @@ jobs:
             .github/scripts/rc-binary-cache/
             .github/scripts/run-with-retry.test.ts
             .github/scripts/run-with-retry.sh
+            .github/workflows/fork-ci.yml
             .github/workflows/rc-certification.yml
             scripts/const.py
 
@@ -205,9 +207,38 @@ jobs:
             verification:
               - '**'
               - '!docs/**'
+              - '!.docs/**'
+              - '!.ops/**'
+              - '!.kiro/**'
               - '!.changes/**'
+              - '!pending_autodocs/**'
               - '!scripts/testing-cert-status/**'
+              - '!.github/**/*.md'
+              - '!packages/tui/**/*.md'
+              - '!packages/tui/docs/**'
+              - '!packages/twinki/**/*.md'
+              - '!packages/twinki/docs/**'
+              - '!crates/*/README.md'
+              - '!crates/*/docs/**'
               - '!*.md'
+
+      - name: Detect TUI changes
+        id: tui-paths
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        with:
+          predicate-quantifier: every
+          filters: |
+            tui:
+              - 'packages/tui/**'
+              - '!packages/tui/**/*.md'
+              - '!packages/tui/docs/**'
+            twinki:
+              - 'packages/twinki/**'
+              - '!packages/twinki/**/*.md'
+              - '!packages/twinki/docs/**'
+            infrastructure:
+              - '{package.json,bun.lock,eslint.config.js,.prettierrc,scripts/const.py,.github/workflows/rc-certification.yml,.github/actions/codeartifact-login/**,.github/scripts/run-with-retry*}'
 
       - name: Read pinned Bun version
         id: bun-ver
@@ -249,6 +280,9 @@ jobs:
           SCENARIO_TAG: ${{ inputs.scenario_tag }}
           VISUAL_SUITE: ${{ inputs.visual_suite }}
           LIVE_ENGINE: ${{ inputs.live_engine }}
+          TUI_CHANGED: ${{ steps.tui-paths.outputs.tui }}
+          TWINKI_CHANGED: ${{ steps.tui-paths.outputs.twinki }}
+          TUI_INFRASTRUCTURE_CHANGED: ${{ steps.tui-paths.outputs.infrastructure }}
         run: |
           if [ "$EXECUTION_MODE" = "fork" ]; then
             echo "run_smoke=true" >> "$GITHUB_OUTPUT"
@@ -257,6 +291,7 @@ jobs:
             echo "run_integration=true" >> "$GITHUB_OUTPUT"
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
             echo "run_tui_static=true" >> "$GITHUB_OUTPUT"
+            echo "run_twinki_perf=true" >> "$GITHUB_OUTPUT"
             echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
             echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -276,6 +311,7 @@ jobs:
               echo "run_integration=false" >> "$GITHUB_OUTPUT"
               echo "run_e2e=false" >> "$GITHUB_OUTPUT"
               echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
+              echo "run_twinki_perf=false" >> "$GITHUB_OUTPUT"
               echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
               echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
               echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -292,7 +328,16 @@ jobs:
             echo "run_visual=false" >> "$GITHUB_OUTPUT"
             echo "run_integration=true" >> "$GITHUB_OUTPUT"
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
-            echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
+            if [[ "$TUI_CHANGED" == "true" || "$TWINKI_CHANGED" == "true" || "$TUI_INFRASTRUCTURE_CHANGED" == "true" ]]; then
+              echo "run_tui_static=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
+            fi
+            if [[ "$TWINKI_CHANGED" == "true" || "$TUI_INFRASTRUCTURE_CHANGED" == "true" ]]; then
+              echo "run_twinki_perf=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run_twinki_perf=false" >> "$GITHUB_OUTPUT"
+            fi
             echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
             echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -310,7 +355,8 @@ jobs:
             echo "run_visual=false" >> "$GITHUB_OUTPUT"
             echo "run_integration=true" >> "$GITHUB_OUTPUT"
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
-            echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
+            echo "run_tui_static=true" >> "$GITHUB_OUTPUT"
+            echo "run_twinki_perf=true" >> "$GITHUB_OUTPUT"
             echo 'live_engines=["v2","kas"]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
             echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
@@ -361,7 +407,8 @@ jobs:
           echo "run_visual=${{ inputs.run_visual }}" >> "$GITHUB_OUTPUT"
           echo "run_integration=${{ inputs.run_integration }}" >> "$GITHUB_OUTPUT"
           echo "run_e2e=${{ inputs.run_e2e }}" >> "$GITHUB_OUTPUT"
-          echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
+          echo "run_tui_static=true" >> "$GITHUB_OUTPUT"
+          echo "run_twinki_perf=true" >> "$GITHUB_OUTPUT"
           echo "smoke_priority=${{ inputs.smoke_priority }}" >> "$GITHUB_OUTPUT"
           echo "visual_suite=$VISUAL_SUITE" >> "$GITHUB_OUTPUT"
           echo "scenario_categories=$SCENARIO_CATEGORIES" >> "$GITHUB_OUTPUT"
@@ -384,6 +431,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      # Bun's large colored coverage report can fail while writing to piped CI output.
+      FORCE_COLOR: '0'
       KIRO_TUI_FORCE_COLOR: '3'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -403,6 +452,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/actions/codeartifact-login
+            .github/scripts/run-with-retry.sh
             scripts/const.py
 
       - name: Read pinned Bun version
@@ -429,39 +479,201 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build twinki package
+      - name: Build Twinki workspace dependency
         run: bun run build
         working-directory: packages/twinki/packages/twinki
 
       - name: Run typecheck or lint
         if: matrix.check != 'test'
-        run: bun run ${{ matrix.check }}
+        shell: bash
+        env:
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "TUI ${{ matrix.check }}" \
+            --status-file "$GITHUB_WORKSPACE/verification-results/retries/tui-${{ matrix.check }}-linux.txt" \
+            -- bun run "${{ matrix.check }}"
         working-directory: packages/tui
 
       - name: Run TUI unit tests
         if: matrix.check == 'test'
         shell: bash
+        env:
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+          UNIT_TEST_COMMAND: |
+            set -euo pipefail
+            bun test 2>&1 | tee "$RUNNER_TEMP/tui-coverage.txt"
+            FUNCS="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$2); print $2}')"
+            LINES="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$3); print $3}')"
+            echo "Coverage: functions ${FUNCS}%, lines ${LINES}%"
+            if [ "$(awk -v value="$FUNCS" 'BEGIN { print value < 80 }')" = "1" ]; then
+              echo "::error::Function coverage regression: ${FUNCS}% < 80%"
+              exit 1
+            fi
+            if [ "$(awk -v value="$LINES" 'BEGIN { print value < 80 }')" = "1" ]; then
+              echo "::error::Line coverage regression: ${LINES}% < 80%"
+              exit 1
+            fi
+            bun run test:vitest
         run: |
-          set -o pipefail
-          bun test 2>&1 | tee "$RUNNER_TEMP/tui-coverage.txt"
-          FUNCS="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$2); print $2}')"
-          LINES="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$3); print $3}')"
-          echo "Coverage: functions ${FUNCS}%, lines ${LINES}%"
-          if [ "$(awk -v value="$FUNCS" 'BEGIN { print value < 80 }')" = "1" ]; then
-            echo "::error::Function coverage regression: ${FUNCS}% < 80%"
-            exit 1
-          fi
-          if [ "$(awk -v value="$LINES" 'BEGIN { print value < 80 }')" = "1" ]; then
-            echo "::error::Line coverage regression: ${LINES}% < 80%"
-            exit 1
-          fi
-          bun run test:vitest
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "TUI unit tests" \
+            --status-file "$GITHUB_WORKSPACE/verification-results/retries/tui-unit-linux.txt" \
+            -- bash -c "$UNIT_TEST_COMMAND"
         working-directory: packages/tui
 
       - name: Run twinki tests
         if: matrix.check == 'test'
-        run: bun run test:run
+        shell: bash
+        env:
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "Twinki unit tests" \
+            --status-file "$GITHUB_WORKSPACE/verification-results/retries/tui-twinki-linux.txt" \
+            -- bun run test:run
         working-directory: packages/twinki
+
+      - name: Upload TUI static retry status
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verification-retry-tui-${{ matrix.check }}-linux
+          path: verification-results/retries/
+          retention-days: 7
+          if-no-files-found: warn
+
+  twinki-perf:
+    name: Twinki Perf Suite (non-blocking)
+    permissions:
+      contents: read
+      id-token: write
+    needs: resolve
+    if: needs.resolve.outputs.run_twinki_perf == 'true'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/run-with-retry.sh
+            scripts/const.py
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Twinki workspace dependency
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Run twinki perf suite
+        id: perf
+        shell: bash
+        env:
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "Twinki perf suite" \
+            --status-file "$GITHUB_WORKSPACE/verification-results/retries/twinki-perf-linux.txt" \
+            -- bun run test:perf
+        working-directory: packages/twinki
+
+      - name: Summarize perf measurements
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=(test/.artifacts/*/*/report.txt)
+          outcome='${{ steps.perf.outcome }}'
+          case "$outcome" in
+            success) verdict='All perf assertions passed.' ;;
+            failure) verdict='**A perf assertion failed**; this lane is non-blocking.' ;;
+            *) verdict="Perf suite outcome: \`$outcome\`." ;;
+          esac
+          {
+            echo "## Twinki perf measurements"
+            echo
+            echo "$verdict"
+            echo
+            echo "${#reports[@]} report(s) produced."
+            for report in "${reports[@]}"; do
+              echo
+              echo "<details><summary>${report#test/.artifacts/}</summary>"
+              echo
+              echo '```'
+              cat "$report"
+              echo '```'
+              echo
+              echo "</details>"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Upload perf reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: twinki-perf-reports
+          path: packages/twinki/packages/twinki/test/.artifacts/
+          include-hidden-files: true
+          retention-days: 7
+
+      - name: Upload twinki perf retry status
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verification-retry-twinki-perf-linux
+          path: verification-results/retries/twinki-perf-linux.txt
+          retention-days: 7
+          if-no-files-found: warn
 
   build-assets:
     name: Build Verification Assets (${{ matrix.os }})
@@ -654,7 +866,7 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build twinki package
+      - name: Build Twinki workspace dependency
         run: bun run build
         working-directory: packages/twinki/packages/twinki
 
@@ -1473,6 +1685,7 @@ jobs:
       [
         resolve,
         tui-static,
+        twinki-perf,
         build-assets,
         ui-integration,
         acp-integration,
@@ -1486,6 +1699,7 @@ jobs:
       always() && (
         needs.resolve.result == 'failure' ||
         needs.tui-static.result != 'skipped' ||
+        needs.twinki-perf.result != 'skipped' ||
         needs.build-assets.result == 'failure' ||
         needs.ui-integration.result != 'skipped' ||
         needs.acp-integration.result != 'skipped' ||
@@ -1598,6 +1812,8 @@ jobs:
 
       - name: Download test retry status
         if: |
+          needs.tui-static.result != 'skipped' ||
+          needs.twinki-perf.result != 'skipped' ||
           needs.ui-integration.result != 'skipped' ||
           needs.acp-integration.result != 'skipped' ||
           needs.e2e.result != 'skipped'
@@ -1640,7 +1856,11 @@ jobs:
             echo
             echo "| Lane | Result | Attempts |"
             echo "| --- | --- | --- |"
-            echo "| TUI static | ${{ needs.tui-static.result }} | not retried |"
+            echo "| TUI typecheck | ${{ needs.tui-static.result }} | $(retry_status tui-typecheck) |"
+            echo "| TUI lint | ${{ needs.tui-static.result }} | $(retry_status tui-lint) |"
+            echo "| TUI unit | ${{ needs.tui-static.result }} | $(retry_status tui-unit) |"
+            echo "| Twinki unit | ${{ needs.tui-static.result }} | $(retry_status tui-twinki) |"
+            echo "| Twinki perf | ${{ needs.twinki-perf.result }} | $(retry_status twinki-perf) |"
             echo "| UI integration | ${{ needs.ui-integration.result }} | $(retry_status ui-integration) |"
             echo "| ACP integration | ${{ needs.acp-integration.result }} | $(retry_status acp-integration) |"
             echo "| E2E | ${{ needs.e2e.result }} | $(retry_status e2e) |"
@@ -1678,6 +1898,75 @@ jobs:
           needs.visual.result == 'failure' ||
           needs.live-parity.result == 'failure'
         run: exit 1
+
+  tui-unit-tests-required:
+    name: 'TUI: Unit Tests (required)'
+    permissions: {}
+    if: always()
+    needs: [resolve, tui-static]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        shell: bash
+        run: |
+          if [[ "${{ needs.resolve.result }}" != "success" ]]; then
+            echo "::error::RC verification matrix resolution failed"
+            exit 1
+          fi
+          if [[ "${{ needs.resolve.outputs.run_tui_static }}" != "true" ]]; then
+            echo "TUI files not changed; static checks are disabled"
+            exit 0
+          fi
+          if [[ "${{ needs.tui-static.result }}" != "success" ]]; then
+            echo "::error::TUI static checks failed"
+            exit 1
+          fi
+
+  tui-typecheck-required:
+    name: 'TUI: Typecheck (required)'
+    permissions: {}
+    if: always()
+    needs: [resolve, tui-static]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        shell: bash
+        run: |
+          if [[ "${{ needs.resolve.result }}" != "success" ]]; then
+            echo "::error::RC verification matrix resolution failed"
+            exit 1
+          fi
+          if [[ "${{ needs.resolve.outputs.run_tui_static }}" != "true" ]]; then
+            echo "TUI files not changed; static checks are disabled"
+            exit 0
+          fi
+          if [[ "${{ needs.tui-static.result }}" != "success" ]]; then
+            echo "::error::TUI static checks failed"
+            exit 1
+          fi
+
+  tui-lint-required:
+    name: 'TUI: Lint (required)'
+    permissions: {}
+    if: always()
+    needs: [resolve, tui-static]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        shell: bash
+        run: |
+          if [[ "${{ needs.resolve.result }}" != "success" ]]; then
+            echo "::error::RC verification matrix resolution failed"
+            exit 1
+          fi
+          if [[ "${{ needs.resolve.outputs.run_tui_static }}" != "true" ]]; then
+            echo "TUI files not changed; static checks are disabled"
+            exit 0
+          fi
+          if [[ "${{ needs.tui-static.result }}" != "success" ]]; then
+            echo "::error::TUI static checks failed"
+            exit 1
+          fi
 
   tui-integ-tests-required:
     name: 'TUI: Integration Tests (required)'
