@@ -259,14 +259,6 @@ jobs:
 
           echo "Tag=$TAG Version=$VERSION Channel=$CHANNEL"
 
-  generate_embeddings:
-    name: Generate Autodocs Embeddings
-    needs: prepare
-    uses: ./.github/workflows/generate-embeddings.yml
-    secrets: inherit
-    with:
-      commit_sha: ${{ needs.prepare.outputs.commit_sha }}
-
   publish_changelog:
     name: Publish Changelog to Gamma
     needs: [prepare, build_darwin, build_linux, build_windows, build_windows_retry]
@@ -298,7 +290,7 @@ jobs:
 
   build_darwin:
     name: Darwin Build (${{ matrix.environment }})
-    needs: [prepare, generate_embeddings]
+    needs: [prepare]
     strategy:
       matrix:
         environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
@@ -315,7 +307,7 @@ jobs:
 
   build_linux:
     name: Linux Build (${{ matrix.environment }})
-    needs: [prepare, generate_embeddings]
+    needs: [prepare]
     strategy:
       matrix:
         environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
@@ -332,7 +324,7 @@ jobs:
 
   build_windows:
     name: Windows Build (${{ matrix.environment }})
-    needs: [prepare, generate_embeddings]
+    needs: [prepare]
     strategy:
       matrix:
         environment: ${{ fromJSON(needs.prepare.outputs.environment) }}
@@ -349,7 +341,7 @@ jobs:
 
   build_windows_retry:
     name: Windows Build Retry (${{ matrix.environment }})
-    needs: [prepare, generate_embeddings, build_windows]
+    needs: [prepare, build_windows]
     if: failure() && needs.build_windows.result == 'failure'
     strategy:
       matrix:

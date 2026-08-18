@@ -158,33 +158,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-duration-seconds: 7200
 
-      - name: Download autodocs embeddings
-        uses: actions/download-artifact@v4
-        with:
-          pattern: autodocs-embeddings-*
-          path: autodocs-artifacts
-
-      - name: Install autodocs embeddings
-        run: |
-          echo "=== Before: committed files ==="
-          echo "V1: $(python3 -c "import json; d=json.load(open('autodocs/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
-          echo "V1 tar.gz sha256: $(shasum -a 256 autodocs/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
-          echo "V2: $(python3 -c "import json; d=json.load(open('autodocs-v2/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
-          echo "V2 tar.gz sha256: $(shasum -a 256 autodocs-v2/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
-          echo ""
-          echo "=== Installing from artifacts ==="
-          find autodocs-artifacts -type f | sort
-          cp autodocs-artifacts/autodocs-embeddings-v1/doc-search-index.tar.gz autodocs/meta/doc-search-index.tar.gz
-          cp autodocs-artifacts/autodocs-embeddings-v1/doc-index.json autodocs/meta/doc-index.json
-          cp autodocs-artifacts/autodocs-embeddings-v2/doc-search-index.tar.gz autodocs-v2/meta/doc-search-index.tar.gz
-          cp autodocs-artifacts/autodocs-embeddings-v2/doc-index.json autodocs-v2/meta/doc-index.json
-          echo ""
-          echo "=== After: installed from CI ==="
-          echo "V1: $(python3 -c "import json; d=json.load(open('autodocs/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
-          echo "V1 tar.gz sha256: $(shasum -a 256 autodocs/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
-          echo "V2: $(python3 -c "import json; d=json.load(open('autodocs-v2/meta/doc-index.json')); print(f'generated_at={d[\"generated_at\"]} total_docs={d[\"total_docs\"]}')")"
-          echo "V2 tar.gz sha256: $(shasum -a 256 autodocs-v2/meta/doc-search-index.tar.gz | cut -d' ' -f1)"
-
       - uses: ./.github/actions/codeartifact-login
         with:
           restore-role-arn: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
@@ -227,13 +200,19 @@ jobs:
           S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
           S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
           
-          if [ -d "build" ] && [ "$(ls -A build)" ]; then
-              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/" --recursive
-              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
-              
-              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/" --recursive
-              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
-          else
-              echo "❌ Build directory not found or empty"
-              exit 1
-          fi
+          # build/ also holds bundle-assembly intermediates (~50K loose files); upload
+          # only the release artifacts so the copy takes seconds instead of minutes.
+          for REQUIRED in kiro-cli-chat.tar.gz kiro-cli-chat.tar.gz.sha256 kiro-cli-chat.zip kiro-cli-chat.zip.sha256 BUILD_INFO.json; do
+              if [ ! -s "build/${REQUIRED}" ]; then
+                  echo "❌ build/${REQUIRED} missing or empty"
+                  exit 1
+              fi
+          done
+          for DEST in "${S3_PATH_COMMIT}" "${S3_PATH_LATEST}"; do
+              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${DEST}/" --recursive \
+                  --exclude "*" \
+                  --include "kiro-cli-chat.tar.gz*" \
+                  --include "kiro-cli-chat.zip*" \
+                  --include "BUILD_INFO.json"
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${DEST}/"
+          done

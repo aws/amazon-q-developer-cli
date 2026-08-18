@@ -245,6 +245,31 @@ Compares docs against source code for missing features.
 
 ## Maintenance Workflow
 
+### Regenerating Embeddings (required after any doc change)
+
+The search indexes in `autodocs/meta/` and `autodocs-v2/meta/` are **committed
+artifacts embedded into the binary at compile time**. The GitHub Actions build
+workflows do not regenerate them (they pass `--skip-autodocs-embeddings`); the
+CodeBuild specs under `build-config/` still regenerate at build time. After
+changing any doc, run:
+
+```bash
+./scripts/generate-embeddings.sh      # V1 (autodocs/)
+./scripts/generate-embeddings-v2.sh   # V2 (autodocs-v2/)
+```
+
+and commit the updated `doc-index.json` and `doc-search-index.tar.gz`.
+
+To check for drift (docs changed since each index was generated):
+
+```bash
+for V in autodocs autodocs-v2; do
+  STAMP=$(python3 -c "import json;print(json.load(open('$V/meta/doc-index.json'))['generated_at'])")
+  echo "--- $V (generated_at=$STAMP) ---"
+  git log --oneline --since="$STAMP" -- "$V/docs/"
+done
+```
+
 ### After Code Changes
 1. Identify affected features
 2. Read updated source code

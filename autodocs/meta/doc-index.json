@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-11T17:32:47.118920",
-  "total_docs": 106,
+  "generated_at": "2026-08-17T23:05:56.030465",
+  "total_docs": 138,
   "by_category": {
     "command": [
       "commands/acp.md",
@@ -15,6 +15,7 @@
     ],
     "feature": [
       "features/agent-configuration.md",
+      "features/api-key-authentication.md",
       "features/cmux-integration.md",
       "features/code-intelligence.md",
       "features/diff-tool.md",
@@ -23,16 +24,24 @@
       "features/file-references.md",
       "features/help-agent.md",
       "features/hooks.md",
+      "features/input-editing.md",
+      "features/keyboard-shortcuts.md",
       "features/knowledge-management.md",
       "features/mcp-registry.md",
       "features/mid-turn-steering.md",
       "features/paste-chips.md",
+      "features/path-tab-completion.md",
       "features/planning-agent.md",
       "features/research-surveys.md",
+      "features/reverse-search.md",
       "features/session-management.md",
+      "features/shell-escape.md",
       "features/steering-files.md",
       "features/tangent-mode.md",
       "features/terminal-progress-indicator.md",
+      "features/tool-approval-flow.md",
+      "features/tool-search.md",
+      "features/turn-usage-summary.md",
       "features/voice-mode.md"
     ],
     "settings-group": [
@@ -44,6 +53,8 @@
       "settings/telemetry-privacy-settings.md"
     ],
     "setting": [
+      "settings/app-disable-autoupdates.md",
+      "settings/auto-expand-tool-output.md",
       "settings/cleanup-period-days.md",
       "settings/context-usage-indicator.md",
       "settings/default-agent.md",
@@ -51,6 +62,7 @@
       "settings/default-model.md",
       "settings/diff-tool-settings.md",
       "settings/disable-markdown-rendering.md",
+      "settings/disable-trust-all-confirmation.md",
       "settings/disable-wrap.md",
       "settings/enable-checkpoint.md",
       "settings/enable-code-intelligence.md",
@@ -63,9 +75,13 @@
       "settings/introspect-progressive-mode.md",
       "settings/introspect-tangent-mode.md",
       "settings/model-defaults.md",
+      "settings/notification-settings.md",
       "settings/show-thinking.md",
       "settings/tangent-mode-key.md",
       "settings/terminal-title.md",
+      "settings/tool-search-enabled.md",
+      "settings/tool-search-min-pct.md",
+      "settings/tool-search-min-tokens.md",
       "settings/voice-settings.md"
     ],
     "slash_command": [
@@ -86,9 +102,11 @@
       "slash-commands/code.md",
       "slash-commands/compact.md",
       "slash-commands/context.md",
+      "slash-commands/copy.md",
       "slash-commands/editor.md",
       "slash-commands/experiment.md",
       "slash-commands/goal.md",
+      "slash-commands/guide.md",
       "slash-commands/help.md",
       "slash-commands/hooks.md",
       "slash-commands/issue.md",
@@ -122,10 +140,12 @@
       "tools/knowledge.md",
       "tools/read.md",
       "tools/report-issue.md",
+      "tools/session.md",
       "tools/shell.md",
       "tools/switch-to-execution.md",
       "tools/thinking.md",
       "tools/todo-list.md",
+      "tools/tool-search.md",
       "tools/use-aws.md",
       "tools/use-subagent.md",
       "tools/web-fetch.md",
@@ -199,7 +219,11 @@
         "KIRO_LOG_NO_COLOR",
         "KIRO_HOME",
         "KIRO_DATA_DIR",
-        "config-directory"
+        "config-directory",
+        "resume",
+        "list",
+        "enterprise",
+        "AppLocker"
       ],
       "related": [
         "slash-chat-save",
@@ -207,7 +231,7 @@
         "slash-agent",
         "exit-codes"
       ],
-      "validated": "2026-05-29",
+      "validated": "2026-08-11",
       "status": "validated"
     },
     {
@@ -247,13 +271,14 @@
         "github",
         "device-flow",
         "remote",
-        "headless"
+        "headless",
+        "api-key"
       ],
       "related": [
         "logout",
         "whoami"
       ],
-      "validated": "2026-04-16",
+      "validated": "2026-07-17",
       "status": "validated"
     },
     {
@@ -266,13 +291,14 @@
         "logout",
         "signout",
         "clear",
-        "credentials"
+        "credentials",
+        "api-key"
       ],
       "related": [
         "login",
         "whoami"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-07-17",
       "status": "validated"
     },
     {
@@ -363,9 +389,33 @@
       "related": [
         "cmd-agent",
         "slash-agent",
-        "slash-agent-generate"
+        "slash-agent-generate",
+        "knowledge-management"
       ],
-      "validated": "2026-05-01",
+      "validated": "2026-05-07",
+      "status": "validated"
+    },
+    {
+      "path": "features/api-key-authentication.md",
+      "file": "api-key-authentication.md",
+      "title": "API Key Authentication",
+      "description": "Authenticate with Kiro CLI using KIRO_API_KEY environment variable for headless and CI/CD use",
+      "category": "feature",
+      "keywords": [
+        "api-key",
+        "authentication",
+        "headless",
+        "ci-cd",
+        "automation",
+        "KIRO_API_KEY",
+        "non-interactive"
+      ],
+      "related": [
+        "login",
+        "chat",
+        "exit-codes"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -496,7 +546,7 @@
         "read",
         "context"
       ],
-      "validated": "2026-02-09",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -543,7 +593,54 @@
         "slash-hooks",
         "hooks-show-status"
       ],
-      "validated": "2026-03-10",
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "features/input-editing.md",
+      "file": "input-editing.md",
+      "title": "Input Editing",
+      "description": "Emacs-style keybindings for editing text in the chat prompt",
+      "category": "feature",
+      "keywords": [
+        "keybindings",
+        "emacs",
+        "readline",
+        "input",
+        "editing",
+        "cursor",
+        "undo",
+        "kill",
+        "yank"
+      ],
+      "related": [
+        "key-bindings-settings"
+      ],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "features/keyboard-shortcuts.md",
+      "file": "keyboard-shortcuts.md",
+      "title": "Keyboard Shortcuts",
+      "description": "Readline-style keyboard shortcuts for text editing in the chat prompt",
+      "category": "feature",
+      "keywords": [
+        "keyboard",
+        "shortcuts",
+        "readline",
+        "emacs",
+        "editing",
+        "kill ring",
+        "yank",
+        "delete",
+        "navigation"
+      ],
+      "related": [
+        "key-bindings-settings",
+        "chat-interface-settings"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -564,9 +661,10 @@
       "related": [
         "knowledge-tool",
         "slash-knowledge",
-        "enable-knowledge"
+        "enable-knowledge",
+        "agent-configuration"
       ],
-      "validated": "2025-12-22",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -588,7 +686,7 @@
         "slash-mcp",
         "agent-configuration"
       ],
-      "validated": "2025-12-22",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -614,7 +712,7 @@
         "tangent-mode",
         "key-bindings-settings"
       ],
-      "validated": "2026-06-08",
+      "validated": "2026-06-15",
       "status": "validated"
     },
     {
@@ -638,6 +736,27 @@
         "editor"
       ],
       "validated": "2026-05-04",
+      "status": "validated"
+    },
+    {
+      "path": "features/path-tab-completion.md",
+      "file": "path-tab-completion.md",
+      "title": "Path Tab Completion",
+      "description": "Press Tab to auto-complete filesystem paths while typing in the chat input",
+      "category": "feature",
+      "keywords": [
+        "tab",
+        "completion",
+        "path",
+        "filesystem",
+        "autocomplete",
+        "input"
+      ],
+      "related": [
+        "file-references",
+        "chat"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -682,6 +801,27 @@
       "status": "validated"
     },
     {
+      "path": "features/reverse-search.md",
+      "file": "reverse-search.md",
+      "title": "Reverse Incremental Search",
+      "description": "Search command history with Ctrl+R, similar to bash/readline",
+      "category": "feature",
+      "keywords": [
+        "ctrl-r",
+        "reverse search",
+        "history",
+        "search",
+        "readline",
+        "bash"
+      ],
+      "related": [
+        "session-management",
+        "key-bindings-settings"
+      ],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
       "path": "features/session-management.md",
       "file": "session-management.md",
       "title": "Session Management",
@@ -693,14 +833,38 @@
         "load",
         "resume",
         "auto-save",
-        "storage"
+        "storage",
+        "queue",
+        "queuing"
       ],
       "related": [
         "chat-save",
         "chat-load",
         "cmd-chat"
       ],
-      "validated": "2026-03-24",
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "features/shell-escape.md",
+      "file": "shell-escape.md",
+      "title": "Shell Escape",
+      "description": "Run shell commands directly from chat using !command syntax",
+      "category": "feature",
+      "keywords": [
+        "shell",
+        "escape",
+        "command",
+        "terminal",
+        "bash",
+        "interactive",
+        "pty"
+      ],
+      "related": [
+        "chat",
+        "execute-bash"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -767,6 +931,77 @@
       "status": "validated"
     },
     {
+      "path": "features/tool-approval-flow.md",
+      "file": "tool-approval-flow.md",
+      "title": "Tool Approval Flow",
+      "description": "Interactive approval prompts for tool execution with trust options and keyboard shortcuts",
+      "category": "feature",
+      "keywords": [
+        "approval",
+        "permission",
+        "trust",
+        "allow",
+        "deny",
+        "prompt",
+        "tool",
+        "execute",
+        "confirm"
+      ],
+      "related": [
+        "tools",
+        "execute-bash",
+        "fs-write",
+        "agent-configuration"
+      ],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "features/tool-search.md",
+      "file": "tool-search.md",
+      "title": "Tool Search",
+      "description": "On-demand MCP tool discovery to reduce context window usage",
+      "category": "feature",
+      "keywords": [
+        "tool",
+        "search",
+        "mcp",
+        "discovery",
+        "context",
+        "deferred",
+        "bm25"
+      ],
+      "related": [
+        "mcp-registry",
+        "tool-search-tool"
+      ],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "features/turn-usage-summary.md",
+      "file": "turn-usage-summary.md",
+      "title": "Turn Usage Summary",
+      "description": "Displays credit usage and duration after each AI response",
+      "category": "feature",
+      "keywords": [
+        "usage",
+        "credits",
+        "metering",
+        "cost",
+        "duration",
+        "time",
+        "turn",
+        "summary"
+      ],
+      "related": [
+        "usage",
+        "context-usage-indicator"
+      ],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
       "path": "features/voice-mode.md",
       "file": "voice-mode.md",
       "title": "Voice Mode",
@@ -787,7 +1022,7 @@
         "voice-command",
         "voice-settings"
       ],
-      "validated": "2026-05-21",
+      "validated": "2026-06-04",
       "status": "validated"
     },
     {
@@ -805,6 +1040,45 @@
       ],
       "related": [],
       "validated": "2026-02-25",
+      "status": "validated"
+    },
+    {
+      "path": "settings/app-disable-autoupdates.md",
+      "file": "app-disable-autoupdates.md",
+      "title": "app.disableAutoupdates",
+      "description": "Disable automatic update checks on startup",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "update",
+        "auto-update",
+        "disable",
+        "autoupdate"
+      ],
+      "related": [],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "settings/auto-expand-tool-output.md",
+      "file": "auto-expand-tool-output.md",
+      "title": "chat.autoExpandToolOutput",
+      "description": "Always show full tool output inline without truncation",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "tool",
+        "output",
+        "expand",
+        "truncate",
+        "verbose"
+      ],
+      "related": [
+        "fs-read",
+        "execute-bash",
+        "grep"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -908,7 +1182,7 @@
         "mid-turn-steering",
         "key-bindings-settings"
       ],
-      "validated": "2026-06-08",
+      "validated": "2026-06-15",
       "status": "validated"
     },
     {
@@ -962,6 +1236,27 @@
       ],
       "related": [],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "settings/disable-trust-all-confirmation.md",
+      "file": "disable-trust-all-confirmation.md",
+      "title": "chat.disableTrustAllConfirmation",
+      "description": "Skip the trust-all-tools confirmation gate on startup",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "trust",
+        "tools",
+        "confirmation",
+        "gate",
+        "startup",
+        "security"
+      ],
+      "related": [
+        "chat-interface-settings"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1104,16 +1399,17 @@
       "path": "settings/greeting-enabled.md",
       "file": "greeting-enabled.md",
       "title": "chat.greeting.enabled",
-      "description": "Show or hide greeting message when starting chat sessions",
+      "description": "Show or hide the welcome screen when starting chat sessions",
       "category": "setting",
       "keywords": [
         "setting",
         "greeting",
         "welcome",
-        "message"
+        "message",
+        "welcome screen"
       ],
       "related": [],
-      "validated": "2025-12-19",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1193,7 +1489,7 @@
         "toggleInterruptBehavior"
       ],
       "related": [],
-      "validated": "2026-06-08",
+      "validated": "2026-06-15",
       "status": "validated"
     },
     {
@@ -1251,6 +1547,25 @@
         "slash-model"
       ],
       "validated": "2026-05-26",
+      "status": "validated"
+    },
+    {
+      "path": "settings/notification-settings.md",
+      "file": "notification-settings.md",
+      "title": "chat.enableNotifications",
+      "description": "Configure terminal notifications when responses complete or tool approval is needed",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "notification",
+        "bell",
+        "alert",
+        "sound",
+        "osc9",
+        "terminal"
+      ],
+      "related": [],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1327,7 +1642,71 @@
       "related": [
         "title"
       ],
-      "validated": "2026-05-27",
+      "validated": "2026-06-05",
+      "status": "validated"
+    },
+    {
+      "path": "settings/tool-search-enabled.md",
+      "file": "tool-search-enabled.md",
+      "title": "toolSearch.enabled",
+      "description": "Enable on-demand MCP tool discovery to reduce context window usage",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "tool",
+        "search",
+        "mcp",
+        "discovery",
+        "context",
+        "deferred"
+      ],
+      "related": [
+        "tool-search-min-pct"
+      ],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "settings/tool-search-min-pct.md",
+      "file": "tool-search-min-pct.md",
+      "title": "toolSearch.minPct",
+      "description": "Minimum context window percentage of MCP tool specs to activate Tool Search",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "tool",
+        "search",
+        "threshold",
+        "percentage",
+        "context",
+        "window"
+      ],
+      "related": [
+        "tool-search-enabled"
+      ],
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "settings/tool-search-min-tokens.md",
+      "file": "tool-search-min-tokens.md",
+      "title": "toolSearch.minTokens",
+      "description": "Minimum MCP tool spec token count to activate Tool Search",
+      "category": "setting",
+      "keywords": [
+        "setting",
+        "tool",
+        "search",
+        "threshold",
+        "tokens",
+        "context"
+      ],
+      "related": [
+        "tool-search-enabled",
+        "tool-search-min-pct",
+        "tool-search-feature"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1350,7 +1729,7 @@
         "voice-mode",
         "voice-command"
       ],
-      "validated": "2026-05-21",
+      "validated": "2026-06-04",
       "status": "validated"
     },
     {
@@ -1374,7 +1753,7 @@
         "cmd-agent",
         "agent-config"
       ],
-      "validated": "2026-02-18",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1508,17 +1887,21 @@
       "path": "slash-commands/changelog.md",
       "file": "changelog.md",
       "title": "/changelog",
-      "description": "View Kiro CLI changelog and version history with recent updates",
+      "description": "Show recent release notes inline in the terminal",
       "category": "slash_command",
       "keywords": [
         "changelog",
         "version",
         "history",
         "releases",
-        "updates"
+        "updates",
+        "release notes",
+        "what's new"
       ],
-      "related": [],
-      "validated": "2025-12-19",
+      "related": [
+        "help"
+      ],
+      "validated": "2026-05-07",
       "status": "validated"
     },
     {
@@ -1540,7 +1923,7 @@
         "chat-list",
         "cmd-chat"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1605,7 +1988,7 @@
         "chat-list",
         "cmd-chat"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1631,18 +2014,20 @@
       "path": "slash-commands/clear.md",
       "file": "clear.md",
       "title": "/clear",
-      "description": "Erase conversation history and context from current session",
+      "description": "Clear the conversation history within the current session",
       "category": "slash_command",
       "keywords": [
         "clear",
         "erase",
         "reset",
-        "history"
+        "history",
+        "fresh"
       ],
       "related": [
-        "compact"
+        "compact",
+        "chat-new"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-05-06",
       "status": "validated"
     },
     {
@@ -1666,7 +2051,7 @@
         "code-tool",
         "enable-code-intelligence"
       ],
-      "validated": "2026-01-13",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1708,7 +2093,27 @@
         "agent-config",
         "hooks"
       ],
-      "validated": "2026-02-04",
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/copy.md",
+      "file": "copy.md",
+      "title": "/copy",
+      "description": "Copy the last assistant response to the system clipboard",
+      "category": "slash_command",
+      "keywords": [
+        "copy",
+        "clipboard",
+        "response",
+        "paste",
+        "export"
+      ],
+      "related": [
+        "clear",
+        "compact"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1766,14 +2171,39 @@
         "criteria",
         "complete",
         "autonomous",
-        "agent"
+        "agent",
+        "retry",
+        "failure"
       ],
       "related": [
         "compact",
         "spawn",
         "effort"
       ],
-      "validated": "2026-06-01",
+      "validated": "2026-08-13",
+      "status": "validated"
+    },
+    {
+      "path": "slash-commands/guide.md",
+      "file": "guide.md",
+      "title": "/guide",
+      "description": "Switch to the Kiro guide agent for help with CLI features",
+      "category": "slash_command",
+      "keywords": [
+        "guide",
+        "help",
+        "kiro",
+        "agent",
+        "swap",
+        "toggle",
+        "features",
+        "documentation"
+      ],
+      "related": [
+        "agent-swap",
+        "help"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1803,20 +2233,25 @@
       "path": "slash-commands/hooks.md",
       "file": "hooks.md",
       "title": "/hooks",
-      "description": "View context hooks configuration and execution status",
+      "description": "View configured hooks in a searchable panel with trigger, command, and matcher info",
       "category": "slash_command",
       "keywords": [
         "hooks",
         "context",
         "commands",
         "triggers",
-        "stop"
+        "stop",
+        "panel",
+        "preToolUse",
+        "postToolUse",
+        "agentSpawn"
       ],
       "related": [
         "hooks-feature",
-        "agent-config"
+        "agent-configuration",
+        "tools"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1835,7 +2270,7 @@
       "related": [
         "report-issue"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1894,7 +2329,7 @@
         "knowledge-tool",
         "enable-knowledge"
       ],
-      "validated": "2026-03-06",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1933,7 +2368,7 @@
         "cmd-mcp",
         "agent-config"
       ],
-      "validated": "2026-01-28",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -1954,7 +2389,7 @@
         "default-model",
         "cmd-chat"
       ],
-      "validated": "2026-01-26",
+      "validated": "2026-05-07",
       "status": "validated"
     },
     {
@@ -2007,13 +2442,17 @@
         "local",
         "global",
         "manage",
-        "autocomplete"
+        "autocomplete",
+        "search",
+        "substring",
+        "slash command menu",
+        "command menu"
       ],
       "related": [
         "agent-config",
         "mcp"
       ],
-      "validated": "2026-01-27",
+      "validated": "2026-08-11",
       "status": "validated"
     },
     {
@@ -2031,7 +2470,7 @@
       "related": [
         "chat-save"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2175,23 +2614,29 @@
         "agent-config",
         "cmd-chat"
       ],
-      "validated": "2026-02-09",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
       "path": "slash-commands/usage.md",
       "file": "usage.md",
       "title": "/usage",
-      "description": "Show billing and credits information for current session",
+      "description": "Show billing and credits information for current plan",
       "category": "slash_command",
       "keywords": [
         "usage",
         "billing",
         "credits",
-        "cost"
+        "cost",
+        "limit",
+        "overage",
+        "subscription",
+        "plan"
       ],
-      "related": [],
-      "validated": "2025-12-19",
+      "related": [
+        "context"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2213,7 +2658,7 @@
         "voice-mode",
         "voice-settings"
       ],
-      "validated": "2026-05-21",
+      "validated": "2026-06-04",
       "status": "validated"
     },
     {
@@ -2282,7 +2727,7 @@
         "grep",
         "shell"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2296,13 +2741,15 @@
         "complete",
         "iteration",
         "loop",
-        "verification"
+        "verification",
+        "retry",
+        "failure"
       ],
       "related": [
         "task",
         "subagent"
       ],
-      "validated": "2026-06-01",
+      "validated": "2026-06-05",
       "status": "validated"
     },
     {
@@ -2324,7 +2771,7 @@
         "glob",
         "code"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2371,7 +2818,7 @@
     {
       "path": "tools/read.md",
       "file": "read.md",
-      "title": "read",
+      "title": "fs_read",
       "description": "Read files, directories, and images with support for line ranges, pattern search, and batch operations",
       "category": "tool",
       "keywords": [
@@ -2384,11 +2831,11 @@
         "batch"
       ],
       "related": [
-        "write",
+        "fs-write",
         "grep",
         "glob"
       ],
-      "validated": "2026-04-10",
+      "validated": "2026-08-11",
       "status": "validated"
     },
     {
@@ -2408,6 +2855,26 @@
         "slash-issue"
       ],
       "validated": "2025-12-19",
+      "status": "validated"
+    },
+    {
+      "path": "tools/session.md",
+      "file": "session.md",
+      "title": "session",
+      "description": "Adjust session settings temporarily (in-memory only, cleared on exit)",
+      "category": "tool",
+      "keywords": [
+        "session",
+        "settings",
+        "configuration",
+        "temporary",
+        "in-memory"
+      ],
+      "related": [
+        "introspect",
+        "fs-write"
+      ],
+      "validated": "2026-08-11",
       "status": "validated"
     },
     {
@@ -2479,12 +2946,36 @@
         "todo",
         "task",
         "checklist",
-        "tracking"
+        "tracking",
+        "activity tray"
       ],
       "related": [
-        "slash-todo"
+        "slash-todo",
+        "key-bindings-settings"
       ],
-      "validated": "2025-12-19",
+      "validated": "2026-04-24",
+      "status": "validated"
+    },
+    {
+      "path": "tools/tool-search.md",
+      "file": "tool-search.md",
+      "title": "tool_search",
+      "description": "Find and load MCP tools on demand to reduce context window usage",
+      "category": "tool",
+      "keywords": [
+        "tool",
+        "search",
+        "mcp",
+        "discovery",
+        "load",
+        "bm25",
+        "deferred"
+      ],
+      "related": [
+        "mcp-registry",
+        "tool-search-feature"
+      ],
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2505,7 +2996,7 @@
       "related": [
         "shell"
       ],
-      "validated": "2026-01-29",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2521,13 +3012,14 @@
         "parallel",
         "multi-agent",
         "availableAgents",
-        "trustedAgents"
+        "trustedAgents",
+        "crew"
       ],
       "related": [
         "delegate",
         "slash-agent"
       ],
-      "validated": "2026-05-21",
+      "validated": "2026-04-24",
       "status": "validated"
     },
     {
@@ -2595,7 +3087,7 @@
         "read",
         "code"
       ],
-      "validated": "2026-05-21",
+      "validated": "2026-08-11",
       "status": "validated"
     }
   ]

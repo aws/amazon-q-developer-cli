@@ -251,17 +251,8 @@ jobs:
             echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
           fi
 
-  GenerateEmbeddings:
-    needs: [check_nightly_skip, UpdateVersionNumber]
-    if: needs.check_nightly_skip.outputs.should_skip == 'false'
-    name: Generate Autodocs Embeddings
-    uses: ./.github/workflows/generate-embeddings.yml
-    secrets: inherit
-    with:
-      commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
-
   TriggerDarwinBuild:
-    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber, GenerateEmbeddings]
+    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
     if: needs.check_nightly_skip.outputs.should_skip == 'false'
     name: Trigger Darwin Universal Build (${{ matrix.environment }})
     strategy:
@@ -279,7 +270,7 @@ jobs:
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
 
   TriggerLinuxBuild:
-    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber, GenerateEmbeddings]
+    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
     if: needs.check_nightly_skip.outputs.should_skip == 'false'
     name: Trigger Linux Build (${{ matrix.environment }})
     strategy:
@@ -297,7 +288,7 @@ jobs:
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
 
   TriggerWindowsBuild:
-    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber, GenerateEmbeddings]
+    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
     if: needs.check_nightly_skip.outputs.should_skip == 'false' && (github.event.inputs.include_windows != 'false')
     name: Trigger Windows Build (${{ matrix.environment }})
     strategy:

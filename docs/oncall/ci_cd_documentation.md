@@ -68,7 +68,6 @@ The chat binary - the core CLI functionality.
 | `build-darwin.yml` | Builds macOS universal binary | Called by build-and-release.yml |
 | `build-linux.yml` | Builds Linux binaries (4 targets) | Called by build-and-release.yml |
 | `build-windows.yml` | Builds Windows binary + MSI | Called by build-and-release.yml |
-| `generate-embeddings.yml` | Generates autodocs embeddings | Called by build-and-release.yml |
 | `smoke-tests.yml` | Non-blocking post-build validation (rust + kas engines) | Called by build-and-release.yml |
 | `nightly-release-notification.yml` | Sends Slack notification for nightly releases | Called by autocomplete or manual |
 | `notify-slack.yml` | Generic Slack notification helper | Called by other workflows |
@@ -129,12 +128,12 @@ PHASE 1: Tag + Build (kiro-cli repo, build-and-release.yml)
    - Derives version, channel, branch_name, build_timestamp, environment matrix
    - channel: nightly | stable | <feature-slug>
            │
-           ├─────────────┬──────────────┬───────────────┐
-           ▼             ▼              ▼               ▼
-  generate_embeddings  build_darwin  build_linux   build_windows (+ build_windows_retry)
-   (autodocs)          (universal)   (4 targets)   (binary + MSI)
-           │             │              │               │
-           └─────────────┴──────┬───────┴───────────────┘
+           ├──────────────┬───────────────┐
+           ▼              ▼               ▼
+     build_darwin    build_linux    build_windows (+ build_windows_retry)
+     (universal)     (4 targets)    (binary + MSI)
+           │              │               │
+           └──────┬───────┴───────────────┘
                                 ▼
               (all platform builds succeeded?)
                     │                        │
@@ -238,8 +237,8 @@ The current orchestrator (replaced `build-kiro-cli.yml`).
 
 **Jobs Flow:**
 ```
-tag → prepare → generate_embeddings
-                      │
+tag → prepare
+        │
         ┌─────────────┼──────────────┬───────────────┐
         ▼             ▼              ▼               ▼
   build_darwin   build_linux   build_windows   build_windows_retry
