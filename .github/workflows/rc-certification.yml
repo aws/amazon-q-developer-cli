@@ -87,7 +87,7 @@ on:
       lane_attempts:
         description: Full lane attempts for flaky workflow steps
         type: choice
-        default: '2'
+        default: '3'
         options:
           - '1'
           - '2'
@@ -298,7 +298,7 @@ jobs:
             echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
             echo "scenario_tag=" >> "$GITHUB_OUTPUT"
             echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
-            echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+            echo "lane_attempts=3" >> "$GITHUB_OUTPUT"
             echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -318,7 +318,7 @@ jobs:
               echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
               echo "scenario_tag=" >> "$GITHUB_OUTPUT"
               echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
-              echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+              echo "lane_attempts=3" >> "$GITHUB_OUTPUT"
               echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -344,7 +344,7 @@ jobs:
             echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
             echo "scenario_tag=" >> "$GITHUB_OUTPUT"
             echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
-            echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+            echo "lane_attempts=3" >> "$GITHUB_OUTPUT"
             echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -363,7 +363,7 @@ jobs:
             echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
             echo "scenario_tag=" >> "$GITHUB_OUTPUT"
             echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
-            echo "lane_attempts=2" >> "$GITHUB_OUTPUT"
+            echo "lane_attempts=3" >> "$GITHUB_OUTPUT"
             echo "lane_retry_delay_seconds=15" >> "$GITHUB_OUTPUT"
             exit 0
           fi

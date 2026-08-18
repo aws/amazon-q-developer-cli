@@ -172,6 +172,16 @@ function steps(job: string, name: string): string[] {
 }
 
 describe('RC binary cache identity', () => {
+  it('gives automatic certification lanes three total attempts', () => {
+    const workflow = readCertificationWorkflow();
+
+    expect(workflow).toContain(
+      "lane_attempts:\n        description: Full lane attempts for flaky workflow steps\n        type: choice\n        default: '3'"
+    );
+    expect(workflow.match(/echo "lane_attempts=3"/g)).toHaveLength(4);
+    expect(workflow).not.toContain('echo "lane_attempts=2"');
+  });
+
   it('is canonical regardless of environment insertion order', () => {
     const left = identityInput();
     const right = identityInput();
