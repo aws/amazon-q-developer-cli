@@ -17,7 +17,9 @@
     "shell",
     "subagent/kiro-research-agent",
     "subagent/kiro_default",
+    "subagent/wf-workflow-creator",
     "todo_list",
+    "validate_workflow",
     "write"
   ],
   "allowedTools": [
@@ -133,7 +135,8 @@
       {
         "capability": "subagent",
         "match": [
-          "kiro-research-agent"
+          "kiro-research-agent",
+          "wf-workflow-creator"
         ],
         "effect": "allow"
       },
