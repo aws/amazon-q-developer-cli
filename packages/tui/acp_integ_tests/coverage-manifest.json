@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "suite": "acp-integration",
+  "description": "KAS ACP wire operations and user-visible journeys exercised through the spawned TUI.",
+  "denominator": "Supported KAS ACP operations, notifications, workflow lifecycle events, and critical UI journeys declared in this manifest. A capability is covered only when it names an ACP integration test as evidence.",
+  "capabilities": [
+    {
+      "id": "acp.initialize",
+      "area": "ACP session",
+      "description": "Initialize the ACP connection and negotiate capabilities.",
+      "evidence": [
+        "acp_integ_tests/initialize-handshake.test.ts#TUI performs initialize + session/new against the mock transport"
+      ]
+    },
+    {
+      "id": "acp.session.new",
+      "area": "ACP session",
+      "description": "Create a new ACP session.",
+      "evidence": [
+        "acp_integ_tests/initialize-handshake.test.ts#TUI performs initialize + session/new against the mock transport"
+      ]
+    },
+    {
+      "id": "acp.session.load",
+      "area": "ACP session",
+      "description": "Load a persisted ACP session.",
+      "evidence": [
+        "acp_integ_tests/resume-live-handoff.test.ts#renders the live tail of a replayed open turn without user input"
+      ]
+    },
+    {
+      "id": "acp.session.list",
+      "area": "ACP session",
+      "description": "List sessions for resume and chat selection.",
+      "evidence": [
+        "acp_integ_tests/resume.test.ts#boots a fresh session and warns when no saved sessions exist for the cwd"
+      ]
+    },
+    {
+      "id": "acp.session.fork",
+      "area": "ACP session",
+      "description": "Fork an existing session.",
+      "evidence": [
+        "acp_integ_tests/rewind-command.test.ts#session/fork sends messageId and sessionId to KAS"
+      ]
+    },
+    {
+      "id": "acp.session.prompt",
+      "area": "ACP session",
+      "description": "Send a prompt and process its response.",
+      "evidence": [
+        "acp_integ_tests/thinking-display.test.ts#stores thinking text and duration on the model message"
+      ]
+    },
+    {
+      "id": "acp.session.cancel",
+      "area": "ACP session",
+      "description": "Cancel an active prompt.",
+      "evidence": [
+        "acp_integ_tests/model-switch.test.ts#Ctrl+C sends session/cancel notification"
+      ]
+    },
+    {
+      "id": "acp.session.set-mode",
+      "area": "ACP session",
+      "description": "Change the active agent mode.",
+      "evidence": [
+        "acp_integ_tests/model-switch.test.ts#/agent swap sends set_config_option(mode) and server confirms via current_mode_update"
+      ]
+    },
+    {
+      "id": "acp.session.set-config-option",
+      "area": "ACP session",
+      "description": "Change model and effort configuration.",
+      "evidence": [
+        "acp_integ_tests/model-switch.test.ts#/model selection sends session/set_config_option with configId model",
+        "acp_integ_tests/effort-command.test.ts#setting a level fires set_config_option and shows the success message"
+      ]
+    },
+    {
+      "id": "acp.client.request-permission",
+      "area": "ACP session",
+      "description": "Render and answer an agent permission request.",
+      "evidence": [
+        "acp_integ_tests/permission-request.test.ts#session/request_permission renders approval panel and user can approve"
+      ]
+    },
+    {
+      "id": "acp.client.user-input",
+      "area": "ACP session",
+      "description": "Render and answer an agent user-input request.",
+      "evidence": [
+        "acp_integ_tests/user-input.test.ts#renders markdown as a question and returns the selected answer"
+      ]
+    },
+    {
+      "id": "acp.update.agent-message",
+      "area": "ACP updates",
+      "description": "Render streamed assistant content.",
+      "evidence": [
+        "acp_integ_tests/markdown-rendering.test.ts#preserves text during streaming"
+      ]
+    },
+    {
+      "id": "acp.update.agent-thought",
+      "area": "ACP updates",
+      "description": "Render and finalize streamed reasoning.",
+      "evidence": [
+        "acp_integ_tests/thinking-display.test.ts#stores thinking text and duration on the model message"
+      ]
+    },
+    {
+      "id": "acp.update.tool-call",
+      "area": "ACP updates",
+      "description": "Render tool calls, updates, failures, and parallel completion.",
+      "evidence": [
+        "acp_integ_tests/tool-rendering.test.ts#multiple parallel tool calls complete independently"
+      ]
+    },
+    {
+      "id": "acp.update.turn-completion",
+      "area": "ACP updates",
+      "description": "Complete processing state from session information.",
+      "evidence": [
+        "acp_integ_tests/permission-request.test.ts#session_info_update with turn_completion clears processing state"
+      ]
+    },
+    {
+      "id": "acp.update.available-commands",
+      "area": "ACP updates",
+      "description": "Apply available command updates.",
+      "evidence": [
+        "acp_integ_tests/prompts-command.test.ts#lists prompts (workspace/global/mcp), skills, and steering with source kinds preserved"
+      ]
+    },
+    {
+      "id": "acp.update.config-option",
+      "area": "ACP updates",
+      "description": "Apply server-confirmed configuration changes.",
+      "evidence": [
+        "acp_integ_tests/effort-command.test.ts#autonomous config_option_update refreshes the chip"
+      ]
+    },
+    {
+      "id": "kas.help",
+      "area": "KAS requests",
+      "description": "Request KAS help content.",
+      "evidence": []
+    },
+    {
+      "id": "kas.usage",
+      "area": "KAS requests",
+      "description": "Request account usage.",
+      "evidence": [
+        "acp_integ_tests/usage-command.test.ts#sends _kiro/account/getUsage and receives quota data"
+      ]
+    },
+    {
+      "id": "kas.code-intelligence",
+      "area": "KAS requests",
+      "description": "Route code intelligence subcommands.",
+      "evidence": [
+        "acp_integ_tests/code-commands.test.ts#/code status sends _kiro/codeIntelligence with subcommand status"
+      ]
+    },
+    {
+      "id": "kas.hooks.list",
+      "area": "KAS requests",
+      "description": "List configured hooks.",
+      "evidence": [
+        "acp_integ_tests/hooks-did-change.test.ts#/hooks command triggers _kiro/hooks/list when no cached hooks"
+      ]
+    },
+    {
+      "id": "kas.knowledge",
+      "area": "KAS requests",
+      "description": "Request knowledge configuration.",
+      "evidence": [
+        "acp_integ_tests/knowledge-command.test.ts#sends _kiro/knowledge request with correct params"
+      ]
+    },
+    {
+      "id": "kas.mcp.reset",
+      "area": "KAS requests",
+      "description": "Reset an MCP server.",
+      "evidence": []
+    },
+    {
+      "id": "kas.session.compact",
+      "area": "KAS requests",
+      "description": "Compact the current KAS session.",
+      "evidence": [
+        "acp_integ_tests/compact-command.test.ts#sends _kiro/session/compact with sessionId on /compact"
+      ]
+    },
+    {
+      "id": "kas.session.context",
+      "area": "KAS requests",
+      "description": "Show and mutate KAS context.",
+      "evidence": [
+        "acp_integ_tests/context-command.test.ts#show: sends _kiro/session/context with subcommand show and surfaces entries"
+      ]
+    },
+    {
+      "id": "kas.session.workflow-notification-delivery",
+      "area": "KAS requests",
+      "description": "Change workflow notification delivery policy.",
+      "evidence": []
+    },
+    {
+      "id": "kas.source-providers.list",
+      "area": "KAS requests",
+      "description": "List cloud source providers.",
+      "evidence": [
+        "acp_integ_tests/cloud-repo-notification.test.ts#a pushed repositories set lights the cloud footer (repo, branch, +N others)"
+      ]
+    },
+    {
+      "id": "kas.source-providers.list-resources",
+      "area": "KAS requests",
+      "description": "List source-provider repositories.",
+      "evidence": [
+        "acp_integ_tests/cloud-repo-notification.test.ts#a pushed repositories set lights the cloud footer (repo, branch, +N others)"
+      ]
+    },
+    {
+      "id": "kas.spec.resolve-session",
+      "area": "KAS requests",
+      "description": "Resolve the session for a spec operation.",
+      "evidence": [
+        "acp_integ_tests/spec-command.test.ts#/spec run calls resolveSession with featureName"
+      ]
+    },
+    {
+      "id": "kas.spec.invoke",
+      "area": "KAS requests",
+      "description": "Invoke a spec operation.",
+      "evidence": [
+        "acp_integ_tests/spec-command.test.ts#/spec run calls invoke with runAllTasks operation"
+      ]
+    },
+    {
+      "id": "kas.notification.agent-not-found",
+      "area": "KAS notifications",
+      "description": "Handle a missing custom agent.",
+      "evidence": [
+        "acp_integ_tests/agent-notifications.test.ts#_kiro/customAgent/not_found updates initErrors AND currentAgent to fallback"
+      ]
+    },
+    {
+      "id": "kas.notification.agent-config-error",
+      "area": "KAS notifications",
+      "description": "Handle a custom-agent configuration error.",
+      "evidence": [
+        "acp_integ_tests/agent-notifications.test.ts#_kiro/customAgent/config_error is suppressed (no-op)"
+      ]
+    },
+    {
+      "id": "kas.notification.rate-limit",
+      "area": "KAS notifications",
+      "description": "Surface a KAS rate-limit notification.",
+      "evidence": [
+        "acp_integ_tests/agent-notifications.test.ts#_kiro/error/rate_limit surfaces rate limit message via transientAlert"
+      ]
+    },
+    {
+      "id": "kas.notification.governance-state",
+      "area": "KAS notifications",
+      "description": "Apply governance state.",
+      "evidence": [
+        "acp_integ_tests/agent-notifications.test.ts#_kiro/governance/state with webToolsEnabled=false surfaces web tools disabled"
+      ]
+    },
+    {
+      "id": "kas.notification.hooks-changed",
+      "area": "KAS notifications",
+      "description": "Refresh hooks after a change notification.",
+      "evidence": [
+        "acp_integ_tests/hooks-did-change.test.ts#_kiro/hooks/didChange notification populates store hooksList"
+      ]
+    },
+    {
+      "id": "kas.notification.mcp-governance-disabled",
+      "area": "KAS notifications",
+      "description": "Handle MCP governance disablement.",
+      "evidence": [
+        "acp_integ_tests/agent-notifications.test.ts#_kiro/mcp/governance_disabled is handled without crash"
+      ]
+    },
+    {
+      "id": "kas.notification.mcp-status",
+      "area": "KAS notifications",
+      "description": "Apply MCP server and OAuth status.",
+      "evidence": [
+        "acp_integ_tests/mcp-status.test.ts#_kiro/mcp/status with running servers is accessible via /mcp command",
+        "acp_integ_tests/mcp-oauth.test.ts#broadcasts McpOauthRequest when status has failedAuthorization + authorizationUrl"
+      ]
+    },
+    {
+      "id": "kas.notification.diagnostics-changed",
+      "area": "KAS notifications",
+      "description": "Apply diagnostics changes.",
+      "evidence": []
+    },
+    {
+      "id": "kas.notification.powers-changed",
+      "area": "KAS notifications",
+      "description": "Apply powers item changes.",
+      "evidence": []
+    },
+    {
+      "id": "kas.notification.sessions-changed",
+      "area": "KAS notifications",
+      "description": "React to persisted session changes.",
+      "evidence": []
+    },
+    {
+      "id": "kas.notification.steering-changed",
+      "area": "KAS notifications",
+      "description": "Apply steering document changes.",
+      "evidence": []
+    },
+    {
+      "id": "kas.notification.tools-changed",
+      "area": "KAS notifications",
+      "description": "Apply tool availability changes.",
+      "evidence": []
+    },
+    {
+      "id": "workflow.request.list",
+      "area": "Workflow requests",
+      "description": "List runs for the current workspace and parent session.",
+      "evidence": [
+        "acp_integ_tests/workflow-command.test.ts#stays hidden when empty, resumes directly, and resumes from history",
+        "acp_integ_tests/workflow-resume.test.ts#shows active workflows after resuming their parent session"
+      ]
+    },
+    {
+      "id": "workflow.request.load",
+      "area": "Workflow requests",
+      "description": "Load an active run during parent-session restoration.",
+      "evidence": [
+        "acp_integ_tests/workflow-resume.test.ts#shows active workflows after resuming their parent session"
+      ]
+    },
+    {
+      "id": "workflow.request.inspect",
+      "area": "Workflow requests",
+      "description": "Inspect a run selected from workflow history.",
+      "evidence": [
+        "acp_integ_tests/workflow-command.test.ts#stays hidden when empty, resumes directly, and resumes from history"
+      ]
+    },
+    {
+      "id": "workflow.request.pause",
+      "area": "Workflow requests",
+      "description": "Pause a running workflow.",
+      "evidence": [
+        "acp_integ_tests/workflow-controls.test.ts#routes monitor navigation and lifecycle shortcuts to the owning run"
+      ]
+    },
+    {
+      "id": "workflow.request.resume",
+      "area": "Workflow requests",
+      "description": "Resume a paused workflow.",
+      "evidence": [
+        "acp_integ_tests/workflow-command.test.ts#stays hidden when empty, resumes directly, and resumes from history",
+        "acp_integ_tests/workflow-controls.test.ts#routes monitor navigation and lifecycle shortcuts to the owning run"
+      ]
+    },
+    {
+      "id": "workflow.request.retry",
+      "area": "Workflow requests",
+      "description": "Retry a failed workflow step.",
+      "evidence": [
+        "acp_integ_tests/workflow-controls.test.ts#routes monitor navigation and lifecycle shortcuts to the owning run"
+      ]
+    },
+    {
+      "id": "workflow.request.cancel",
+      "area": "Workflow requests",
+      "description": "Cancel a running workflow.",
+      "evidence": [
+        "acp_integ_tests/workflow-controls.test.ts#routes monitor navigation and lifecycle shortcuts to the owning run"
+      ]
+    },
+    {
+      "id": "workflow.request.list-recipes",
+      "area": "Workflow requests",
+      "description": "List workflow recipes.",
+      "evidence": []
+    },
+    {
+      "id": "workflow.request.new",
+      "area": "Workflow requests",
+      "description": "Create a workflow plan.",
+      "evidence": []
+    },
+    {
+      "id": "workflow.request.invoke",
+      "area": "Workflow requests",
+      "description": "Invoke a created workflow.",
+      "evidence": []
+    },
+    {
+      "id": "workflow.event.run-start",
+      "area": "Workflow events",
+      "description": "Create and render a workflow run.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.event.node-start",
+      "area": "Workflow events",
+      "description": "Start a workflow node and register its child session.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.event.node-complete",
+      "area": "Workflow events",
+      "description": "Complete a workflow node and render captured output.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.event.node-paused",
+      "area": "Workflow events",
+      "description": "Pause a workflow node with an actionable reason.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.event.loop-iteration",
+      "area": "Workflow events",
+      "description": "Advance repeat container and child iteration labels.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type",
+        "acp_integ_tests/workflow-lifecycle.test.ts#renders a repeated child journey through pause, resume, and completion"
+      ]
+    },
+    {
+      "id": "workflow.event.watch-poll",
+      "area": "Workflow events",
+      "description": "Render the latest watch outcome.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.event.paused",
+      "area": "Workflow events",
+      "description": "Apply a run-level pause.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.event.run-complete",
+      "area": "Workflow events",
+      "description": "Reconcile and archive terminal workflow state.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.event.steps-queued",
+      "area": "Workflow events",
+      "description": "Add and resolve dynamically queued steps.",
+      "evidence": [
+        "acp_integ_tests/workflow-events.test.ts#renders every lifecycle event and workflow node type"
+      ]
+    },
+    {
+      "id": "workflow.journey.child-output",
+      "area": "Workflow UI journeys",
+      "description": "Route child output and tool calls to the owning workflow.",
+      "evidence": [
+        "acp_integ_tests/workflow-multi-run.test.ts#keeps child output, tools, and permissions with the owning workflow"
+      ]
+    },
+    {
+      "id": "workflow.journey.permission",
+      "area": "Workflow UI journeys",
+      "description": "Display permissions only on the owning workflow and child.",
+      "evidence": [
+        "acp_integ_tests/workflow-lifecycle.test.ts#renders a repeated child journey through pause, resume, and completion",
+        "acp_integ_tests/workflow-multi-run.test.ts#keeps child output, tools, and permissions with the owning workflow"
+      ]
+    },
+    {
+      "id": "workflow.journey.steer",
+      "area": "Workflow UI journeys",
+      "description": "Steer a running workflow child.",
+      "evidence": [
+        "acp_integ_tests/workflow-lifecycle.test.ts#renders a repeated child journey through pause, resume, and completion"
+      ]
+    },
+    {
+      "id": "workflow.journey.respond-thinking",
+      "area": "Workflow UI journeys",
+      "description": "Respond to a paused child and show thinking while its prompt runs.",
+      "evidence": [
+        "acp_integ_tests/workflow-lifecycle.test.ts#renders a repeated child journey through pause, resume, and completion"
+      ]
+    },
+    {
+      "id": "workflow.journey.multi-run-navigation",
+      "area": "Workflow UI journeys",
+      "description": "Navigate multiple workflows without leaking output.",
+      "evidence": [
+        "acp_integ_tests/workflow-multi-run.test.ts#keeps child output, tools, and permissions with the owning workflow"
+      ]
+    },
+    {
+      "id": "workflow.journey.monitor-controls",
+      "area": "Workflow UI journeys",
+      "description": "Exercise monitor navigation, layout, resize, lifecycle, and exit controls.",
+      "evidence": [
+        "acp_integ_tests/workflow-controls.test.ts#routes monitor navigation and lifecycle shortcuts to the owning run"
+      ]
+    },
+    {
+      "id": "workflow.journey.history",
+      "area": "Workflow UI journeys",
+      "description": "List, resume, inspect, and reopen workflow history.",
+      "evidence": [
+        "acp_integ_tests/workflow-command.test.ts#stays hidden when empty, resumes directly, and resumes from history"
+      ]
+    },
+    {
+      "id": "workflow.journey.parent-resume",
+      "area": "Workflow UI journeys",
+      "description": "Restore active workflows when their parent chat session resumes.",
+      "evidence": [
+        "acp_integ_tests/workflow-resume.test.ts#shows active workflows after resuming their parent session"
+      ]
+    }
+  ]
+}

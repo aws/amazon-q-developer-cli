@@ -567,6 +567,11 @@ jobs:
             -- bun run test:acp-integ
         working-directory: packages/tui
 
+      - name: Generate ACP capability coverage
+        if: matrix.artifact_suffix == 'linux'
+        run: bun run report:acp-integ-coverage
+        working-directory: packages/tui
+
       - name: Upload ACP integration logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -1055,6 +1060,14 @@ jobs:
           pattern: verification-live-*
           path: verification-artifacts
 
+      - name: Download ACP capability coverage
+        if: needs.acp-integration.result != 'skipped'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: verification-acp-integration-linux
+          path: verification-artifacts/acp-integration
+
       - name: Download test retry status
         if: |
           needs.ui-integration.result != 'skipped' ||
@@ -1103,6 +1116,14 @@ jobs:
             echo "| ACP integration | ${{ needs.acp-integration.result }} | $(retry_status acp-integration) |"
             echo "| E2E | ${{ needs.e2e.result }} | $(retry_status e2e) |"
           } >> verification-artifacts/summary/summary.md
+
+          coverage_report="verification-artifacts/acp-integration/coverage/acp-integration.md"
+          if [[ -f "$coverage_report" ]]; then
+            {
+              echo
+              cat "$coverage_report"
+            } >> verification-artifacts/summary/summary.md
+          fi
 
       - name: Publish workflow summary
         shell: bash

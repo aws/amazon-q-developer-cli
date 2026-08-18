@@ -70,11 +70,17 @@ export const WorkflowNodeRow = React.memo(function WorkflowNodeRow({
     node.type === 'step'
       ? (node.agentName ?? node.label)
       : `[${node.type}] ${node.label}`;
+  // Keyed on the live status, not on `pauseReason` being present: a node keeps
+  // its reason across a restart, so a presence check would pin a resumed row to it.
   const activity = hasApproval
     ? 'needs approval'
-    : node.type === 'step' && node.status === 'running'
-      ? 'thinking...'
-      : node.pauseReason;
+    : node.status === 'paused' && node.pauseReason
+      ? node.pauseReason
+      : node.type === 'step' && node.status === 'running'
+        ? 'thinking...'
+        : node.type === 'watch' && node.watchOutcome
+          ? node.watchOutcome.replaceAll('-', ' ')
+          : node.pauseReason;
   const prefix = `${cursor}${indent}${connector} ${icon}${repeatSuffix(node, glyphs)} `;
   const renderedLabel = capNodeLabel(label, width, node.depth);
   const activitySuffix = activity ? `  ${activity}` : '';

@@ -1,79 +1,44 @@
-# ACP Integration Test Coverage Matrix
+# ACP Integration Coverage
 
-## Summary
+ACP integration coverage is reported as **capability coverage**, not source-code
+line coverage.
 
-**37 tests** across **10 files** covering the KAS ↔ CLI ACP integration surface.
-All tests pass. 3 product bugs found and fixed.
+The suite runs the TUI in a spawned Bun process. Bun's `--coverage` output only
+instruments the parent test process, so its `All files` percentage describes the
+test harness and must not be published as TUI source coverage. Bun 1.3.14 also
+does not emit child coverage through `NODE_V8_COVERAGE`.
 
----
+## Metric
 
-## Extension Methods (Client → Agent)
+`coverage-manifest.json` declares the denominator:
 
-| Extension Method                     | Test File                    | Scenarios                              | Status |
-| ------------------------------------ | ---------------------------- | -------------------------------------- | ------ |
-| `_kiro/session/context` (show)       | `context-command.test.ts`    | Sends correct params, receives entries | ✅     |
-| `_kiro/session/context` (add)        | `context-command.test.ts`    | Sends path + sessionId                 | ✅     |
-| `_kiro/session/context` (remove)     | `context-command.test.ts`    | Sends path + sessionId                 | ✅     |
-| `_kiro/session/context` (clear)      | `context-command.test.ts`    | Sends sessionId                        | ✅     |
-| `_kiro/session/compact`              | `compact-command.test.ts`    | Sends sessionId                        | ✅     |
-| `_kiro/account/getUsage`             | `usage-command.test.ts`      | Sends sessionId, receives quota        | ✅     |
-| `_kiro/codeIntelligence` (status)    | `code-commands.test.ts`      | Subcommand routing                     | ✅     |
-| `_kiro/codeIntelligence` (init)      | `code-commands.test.ts`      | Subcommand routing                     | ✅     |
-| `_kiro/codeIntelligence` (overview)  | `code-commands.test.ts`      | Subcommand routing                     | ✅     |
-| `_kiro/hooks/list`                   | `hooks-did-change.test.ts`   | Fallback pull path                     | ✅     |
-| `_kiro/knowledge` (show)             | `knowledge-command.test.ts`  | Existing test                          | ✅     |
-| `session/set_config_option` (model)  | `model-switch.test.ts`       | /model picker selection                | ✅     |
-| `session/set_config_option` (mode)   | `agent-flag.test.ts`         | --agent CLI flag                       | ✅     |
-| `session/set_config_option` (effort) | `effort-command.test.ts`     | Existing test                          | ✅     |
-| `session/cancel`                     | `model-switch.test.ts`       | Ctrl+C during processing               | ✅     |
-| `session/request_permission`         | `permission-request.test.ts` | Approve + Deny flows                   | ✅     |
+- ACP session operations and updates
+- KAS extension requests and notifications
+- workflow requests and lifecycle events
+- critical workflow UI journeys
 
-## Notifications (Agent → Client)
+A capability is covered when the manifest names an exact ACP integration
+testcase as evidence. The suite writes a Bun JUnit report, and the reporter
+requires every referenced `file#test name` to appear as passed before reporting
+overall, per-area, and uncovered capability counts.
 
-| Notification                                    | Test File                     | Scenarios                          | Status |
-| ----------------------------------------------- | ----------------------------- | ---------------------------------- | ------ |
-| `_kiro/hooks/didChange`                         | `hooks-did-change.test.ts`    | Populates store hooksList          | ✅     |
-| `_kiro/customAgent/not_found`                   | `agent-notifications.test.ts` | initErrors + currentAgent fallback | ✅     |
-| `_kiro/customAgent/config_error`                | `agent-notifications.test.ts` | Error surfaces in TUI              | ✅     |
-| `_kiro/error/rate_limit`                        | `agent-notifications.test.ts` | transientAlert populated           | ✅     |
-| `_kiro/mcp/governance_disabled`                 | `agent-notifications.test.ts` | Handled without crash              | ✅     |
-| `_kiro/mcp/status` (OAuth)                      | `mcp-oauth.test.ts`           | Existing test                      | ✅     |
-| `_kiro/mcp/status` (servers online)             | `mcp-status.test.ts`          | /mcp shows servers + tools         | ✅     |
-| `agent_thought_chunk`                           | `mcp-status.test.ts`          | Thinking text renders on screen    | ✅     |
-| `current_mode_update`                           | `agent-notifications.test.ts` | store.currentAgent updated         | ✅     |
-| `config_option_update`                          | `effort-command.test.ts`      | Existing test                      | ✅     |
-| `available_commands_update`                     | `prompts-command.test.ts`     | Existing test                      | ✅     |
-| `session_info_update` (summarization_started)   | `compact-command.test.ts`     | isCompacting=true                  | ✅     |
-| `session_info_update` (summarization_completed) | `compact-command.test.ts`     | isCompacting=false                 | ✅     |
-| `session_info_update` (summarization_failed)    | `compact-command.test.ts`     | isCompacting=false                 | ✅     |
-| `session_info_update` (context_usage)           | `permission-request.test.ts`  | contextUsagePercent updated        | ✅     |
-| `session_info_update` (turn_completion)         | `permission-request.test.ts`  | isProcessing=false                 | ✅     |
+Run the suite and report:
 
-## Tool Rendering (KAS Tools via `tool_call` → `tool_call_update`)
+```bash
+bun run test:acp-integ
+bun run report:acp-integ-coverage
+```
 
-| Tool Name                        | KAS Kind  | Test File                | Status        |
-| -------------------------------- | --------- | ------------------------ | ------------- |
-| `execute_bash`                   | `execute` | `tool-rendering.test.ts` | ✅            |
-| `read_file`                      | `read`    | `tool-rendering.test.ts` | ✅            |
-| `fs_write`                       | `edit`    | `tool-rendering.test.ts` | ✅            |
-| `grep_search`                    | `search`  | `tool-rendering.test.ts` | ✅            |
-| `web_fetch`                      | `fetch`   | `tool-rendering.test.ts` | ✅            |
-| `invoke_sub_agent`               | `other`   | `tool-rendering.test.ts` | ✅            |
-| Tool failure (status: failed)    | any       | `tool-rendering.test.ts` | ✅            |
-| Parallel tools (3x out-of-order) | mixed     | `tool-rendering.test.ts` | ✅            |
-| MCP tool name/output transform   | —         | `mcp-transform.test.ts`  | ✅ (existing) |
+Reports are written to:
 
-## Advanced Interaction Scenarios
+```text
+integ_tests/test-outputs/coverage/acp-integration.json
+integ_tests/test-outputs/coverage/acp-integration.md
+```
 
-| Scenario                                    | Test File                    | Status        |
-| ------------------------------------------- | ---------------------------- | ------------- |
-| Permission approve (Enter)                  | `permission-request.test.ts` | ✅            |
-| Permission deny (Escape)                    | `permission-request.test.ts` | ✅            |
-| Cancel mid-processing (Ctrl+C)              | `model-switch.test.ts`       | ✅            |
-| Cancel mid-tool → new prompt recovery       | `model-switch.test.ts`       | ✅            |
-| /agent swap → server confirms mode switch   | `model-switch.test.ts`       | ✅            |
-| Subagent tool events routed to main store   | `tool-rendering.test.ts`     | ✅            |
-| Steering docs via available_commands_update | `prompts-command.test.ts`    | ✅ (existing) |
+RC Certification publishes the Linux report in its summary and artifact bundle.
+The reporter is manifest-driven so smoke and scenario lanes can use the same
+schema without pretending that protocol coverage is source coverage.
 
 ## Bugs Found and Fixed
 
@@ -83,7 +48,7 @@ All tests pass. 3 product bugs found and fixed.
 | RateLimitError dropped at idle          | Same as above                                    | Same fix                                 | `agent-notifications.test.ts` |
 | `not_found` doesn't update currentAgent | `acp-client.ts` didn't broadcast `AgentSwitched` | Added broadcast after cache update       | `agent-notifications.test.ts` |
 
-## KAS Kind Reference (from `kiro-agent/src/acp/tool-call-emitter.ts`)
+## KAS Kind Reference
 
 | KAS Kind  | Tools                                         | Notes                |
 | --------- | --------------------------------------------- | -------------------- |
@@ -95,4 +60,10 @@ All tests pass. 3 product bugs found and fixed.
 | `execute` | execute_bash, execute_pwsh                    | No `locations`       |
 | `other`   | knowledge, invoke_sub_agent, introspect, etc. | No `locations`       |
 
-**Note:** TUI `ToolKind` type includes `'shell'` but KAS never sends it. KAS sends `'execute'`.
+TUI `ToolKind` includes `shell`, but KAS sends `execute` for shell tools.
+
+## Source Coverage Follow-up
+
+Source line coverage requires instrumentation inside the spawned TUI process,
+followed by source-map-aware merging across processes. Until Bun exposes that
+data reliably, the suite must not reuse the parent-process coverage percentage.
