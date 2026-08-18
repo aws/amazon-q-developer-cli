@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Preserve the active model when `/model` rejects an unavailable model"
+}

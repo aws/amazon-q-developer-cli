@@ -120,15 +120,119 @@ describe('handleModel', () => {
     );
   });
 
-  it('errors when the switch does not land', async () => {
+  it('restores the previous model when the requested model is unavailable', async () => {
+    const setConfigOption = mock((_configId: string, _value: string) =>
+      Promise.resolve()
+    );
     const ctx = createMockCommandContext({
-      kasAvailableModels: [{ id: 'opus', name: 'Opus' }],
+      kasAvailableModels: [{ id: 'sonnet', name: 'Sonnet' }],
       currentModel: { id: 'sonnet', name: 'Sonnet' },
-      kiro: { setConfigOption: mock(() => Promise.resolve()) } as any,
+      kiro: { setConfigOption } as any,
     });
-    await handleModel(MODEL_CMD, 'opus', ctx);
+    await handleModel(MODEL_CMD, 'abcd', ctx);
+    expect(setConfigOption.mock.calls).toEqual([
+      ['model', 'abcd'],
+      ['model', 'sonnet'],
+    ]);
     expect(ctx._spies.showAlert).toHaveBeenCalledWith(
-      "Model 'opus' not available",
+      "The model 'abcd' is not available. Continuing with Sonnet.",
+      'error',
+      5000
+    );
+  });
+
+  it('reports when a resolved restore is not adopted by the store', async () => {
+    let currentModel = { id: 'sonnet', name: 'Sonnet' };
+    const setConfigOption = mock((_configId: string, value: string) => {
+      if (value === 'sonnet') {
+        currentModel = { id: 'haiku', name: 'Haiku' };
+      }
+      return Promise.resolve();
+    });
+    const ctx = createMockCommandContext({
+      currentModel,
+      kiro: { setConfigOption } as any,
+    });
+    ctx.getCurrentModel = () => currentModel;
+
+    await handleModel(MODEL_CMD, 'abcd', ctx);
+
+    expect(setConfigOption.mock.calls).toEqual([
+      ['model', 'abcd'],
+      ['model', 'sonnet'],
+    ]);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "The model 'abcd' is not available, and Sonnet could not be restored. Run /model to select a model.",
+      'error',
+      5000
+    );
+  });
+
+  it('does not restore stale state when the current model changed during the switch', async () => {
+    let currentModel: { id: string; name: string } = {
+      id: 'sonnet',
+      name: 'Sonnet',
+    };
+    const setConfigOption = mock((_configId: string, value: string) => {
+      if (value === 'abcd') {
+        currentModel = { id: 'haiku', name: 'Haiku' };
+      }
+      return Promise.resolve();
+    });
+    const ctx = createMockCommandContext({
+      currentModel,
+      kiro: { setConfigOption } as any,
+    });
+    ctx.getCurrentModel = () => currentModel;
+
+    await handleModel(MODEL_CMD, 'abcd', ctx);
+
+    expect(setConfigOption.mock.calls).toEqual([['model', 'abcd']]);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "Model 'abcd' not available",
+      'error',
+      5000
+    );
+  });
+
+  it('reports when the previous model cannot be restored', async () => {
+    const setConfigOption = mock((_configId: string, value: string) =>
+      value === 'sonnet'
+        ? Promise.reject(new Error('restore failed'))
+        : Promise.resolve()
+    );
+    const ctx = createMockCommandContext({
+      currentModel: { id: 'sonnet', name: 'Sonnet' },
+      kiro: { setConfigOption } as any,
+    });
+
+    await handleModel(MODEL_CMD, 'abcd', ctx);
+
+    expect(setConfigOption.mock.calls).toEqual([
+      ['model', 'abcd'],
+      ['model', 'sonnet'],
+    ]);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "The model 'abcd' is not available, and Sonnet could not be restored. Run /model to select a model.",
+      'error',
+      5000
+    );
+  });
+
+  it('keeps the requested model when no previous model can be restored', async () => {
+    const setConfigOption = mock((_configId: string, _value: string) =>
+      Promise.resolve()
+    );
+    const ctx = createMockCommandContext({
+      currentModel: null,
+      kiro: { setConfigOption } as any,
+    });
+
+    await handleModel(MODEL_CMD, 'abcd', ctx);
+
+    expect(setConfigOption.mock.calls).toEqual([['model', 'abcd']]);
+    expect(ctx._spies.showAlert).toHaveBeenCalledWith(
+      "Model 'abcd' not available",
       'error',
       5000
     );

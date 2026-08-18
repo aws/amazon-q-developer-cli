@@ -10,7 +10,8 @@ import { logger } from '../../utils/logger';
  * `kasAvailableModels` store slice (parsed from the ACP `configOptions`
  * payload); selecting one performs the switch via
  * `ctx.kiro.setConfigOption('model', …)`, which re-emits the normalized
- * model events so the store self-heals. Validation reads the store back.
+ * model events so the store self-heals. Validation reads the store back, and
+ * rejected switches restore the previously active model.
  */
 export async function handleModel(
   cmd: KasCommand,
@@ -68,6 +69,7 @@ async function switchModel(
   ctx: CommandContext,
   modelId: string
 ): Promise<void> {
+  const previousModel = ctx.getCurrentModel?.();
   try {
     await ctx.kiro.setConfigOption('model', modelId);
   } catch (err) {
@@ -78,11 +80,34 @@ async function switchModel(
     );
     return;
   }
-  // The store self-heals from the events emitted by the switch. Validate
-  // against it: KAS leaves currentValue unchanged when it rejects a value.
+  // The store only adopts a currentValue that matches an available model.
+  // Restore the server when a rejected switch leaves the display unchanged.
   const current = ctx.getCurrentModel?.();
   if (current?.id !== modelId) {
-    ctx.showAlert(`Model '${modelId}' not available`, 'error', 5000);
+    let restoredModel: typeof previousModel;
+    let restoreFailed = false;
+    if (previousModel && current?.id === previousModel.id) {
+      try {
+        await ctx.kiro.setConfigOption('model', previousModel.id);
+        if (ctx.getCurrentModel?.()?.id === previousModel.id) {
+          restoredModel = previousModel;
+        } else {
+          restoreFailed = true;
+        }
+      } catch (err) {
+        restoreFailed = true;
+        logger.warn(
+          `[model] failed to restore ${previousModel.id} after rejected switch:`,
+          err
+        );
+      }
+    }
+    const message = restoredModel
+      ? `The model '${modelId}' is not available. Continuing with ${restoredModel.name}.`
+      : restoreFailed
+        ? `The model '${modelId}' is not available, and ${previousModel?.name ?? 'the previous model'} could not be restored. Run /model to select a model.`
+        : `Model '${modelId}' not available`;
+    ctx.showAlert(message, 'error', 5000);
     return;
   }
   ctx.showAlert(`Switched to ${current.name}`, 'success', 3000);
