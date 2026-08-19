@@ -36,6 +36,15 @@ describe('verification artifact report', () => {
         suite: 'workflow-monitor',
         generatedAt: '2026-08-11T00:00:00.000Z',
         frames: [{ status: 'passed' }, { status: 'failed' }],
+        coverage: {
+          totalStories: 45,
+          coveredStories: 5,
+          totalVariants: 215,
+          executedVariants: 28,
+          totalComponents: 206,
+          coveredComponents: 74,
+          stories: [{ status: 'ignored by aggregate report' }],
+        },
       })
     );
     fs.writeFileSync(path.join(visualDir, 'index.html'), '<html></html>');
@@ -46,6 +55,14 @@ describe('verification artifact report', () => {
     expect(collected.visualSuites[0]?.reportPath).toBe(
       'verification-visual-workflow-monitor/index.html'
     );
+    expect(collected.visualSuites[0]?.coverage).toEqual({
+      totalStories: 45,
+      coveredStories: 5,
+      totalVariants: 215,
+      executedVariants: 28,
+      totalComponents: 206,
+      coveredComponents: 74,
+    });
 
     writeVerificationReport(root, outDir);
     expect(fs.existsSync(path.join(outDir, 'summary.json'))).toBe(true);
@@ -79,6 +96,11 @@ describe('verification artifact report', () => {
     expect(markdown).toContain(
       '`artifacts/verification-visual-workflow-monitor/index.html`'
     );
+    expect(markdown).toContain(
+      '| 5/45 (11.1%) | 28/215 (13.0%) | 74/206 (35.9%) |'
+    );
+    expect(markdown).toContain('Component coverage is a static reachability');
+    expect(markdown).not.toContain('Interaction');
     expect(markdown).not.toContain('[json](');
     expect(markdown).not.toContain('[artifact](');
 
@@ -89,6 +111,60 @@ describe('verification artifact report', () => {
     expect(html).toContain(
       'href="artifacts/verification-visual-workflow-monitor/index.html"'
     );
+    expect(html).toContain('<th>Component Coverage</th>');
+    expect(html).toContain('<td>74/206 (35.9%)</td>');
+    expect(html).toContain('Component coverage is a static reachability');
+    expect(html).not.toContain('Interaction');
+  });
+
+  it('reports unavailable coverage for legacy visual manifests', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-verification-'));
+    const visualDir = path.join(root, 'verification-visual-legacy');
+    const outDir = path.join(root, 'summary');
+
+    fs.mkdirSync(visualDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(visualDir, 'manifest.json'),
+      JSON.stringify({
+        version: 1,
+        suite: 'legacy',
+        generatedAt: '2026-08-11T00:00:00.000Z',
+        frames: [{ status: 'passed' }],
+      })
+    );
+
+    writeVerificationReport(root, outDir);
+    const markdown = fs.readFileSync(path.join(outDir, 'summary.md'), 'utf8');
+    expect(markdown).toContain(
+      '| verification-visual-legacy | legacy | 1 | 0 | n/a | n/a | n/a |'
+    );
+  });
+
+  it('rejects inconsistent visual coverage values', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-verification-'));
+    const visualDir = path.join(root, 'verification-visual-invalid');
+
+    fs.mkdirSync(visualDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(visualDir, 'manifest.json'),
+      JSON.stringify({
+        version: 1,
+        suite: 'invalid',
+        generatedAt: '2026-08-11T00:00:00.000Z',
+        frames: [{ status: 'passed' }],
+        coverage: {
+          totalStories: 1,
+          coveredStories: 2,
+          totalVariants: 1,
+          executedVariants: 1,
+          totalComponents: 1,
+          coveredComponents: 1,
+        },
+      })
+    );
+
+    const collected = collectVerificationArtifacts(root);
+    expect(collected.visualSuites[0]?.coverage).toBeUndefined();
   });
 
   it('keeps only the newest scenario report per lane after retries', () => {

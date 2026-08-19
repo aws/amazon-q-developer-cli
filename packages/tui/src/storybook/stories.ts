@@ -46,11 +46,13 @@ import * as PieSpinnerStories from '../components/ui/spinner/PieSpinner.stories.
 import * as SpinnerStories from '../components/ui/spinner/Spinner.stories.js';
 import * as ToolStories from '../components/chat/tools/Tool.stories.js';
 import * as ImageReadStories from '../components/chat/tools/ImageRead.stories.js';
+import * as LsStories from '../components/chat/tools/Ls.stories.js';
 import * as WorkflowMonitorStories from '../components/layout/workflow-monitor/WorkflowMonitorScreen.stories.js';
 import * as WorkflowHistoryPanelStories from '../components/layout/workflow-monitor/WorkflowHistoryPanel.stories.js';
 import * as ActivityTrayStories from '../components/ui/activity-tray/ActivityTray.stories.js';
 import * as WorkflowToolStories from '../components/chat/tools/WorkflowTool.stories.js';
 import * as WorkflowLifecycleRowStories from '../components/ui/WorkflowLifecycleRow.stories.js';
+import * as CrewMonitorStories from '../components/multi-agent/CrewMonitor.stories.js';
 
 interface RawStory {
   args?: Record<string, unknown>;
@@ -148,7 +150,7 @@ function deriveTitleFromPath(importPath: string): string {
 // Convert Storybook format to our internal format
 function convertStoryModule(
   storyModule: Record<string, unknown>,
-  importPath?: string
+  importPath: string
 ): StorybookDefinition {
   const { default: metaValue, ...storyExports } = storyModule;
   const meta = rawMeta(metaValue);
@@ -158,9 +160,7 @@ function convertStoryModule(
   }
 
   // Use provided title or derive from import path
-  const title =
-    meta.title ||
-    (importPath ? deriveTitleFromPath(importPath) : 'Uncategorized/Component');
+  const title = meta.title || deriveTitleFromPath(importPath);
   const componentName = title.split('/').pop() ?? 'Component';
 
   // Check if the meta has a custom story order defined
@@ -202,6 +202,7 @@ function convertStoryModule(
     name: componentName, // Get component name from title
     description: getComponentName(meta.component) + ' component',
     category: title, // Use full title as category (e.g., "UI/Radio/RadioButton")
+    sourcePath: importPath,
     variants: storyEntries.map(([name, story]) => ({
       id: slug(name),
       name,
@@ -328,6 +329,7 @@ export const stories = [
     ImageReadStories,
     '../components/chat/tools/ImageRead.stories.js'
   ),
+  convertStoryModule(LsStories, '../components/chat/tools/Ls.stories.js'),
   convertStoryModule(
     WorkflowMonitorStories,
     '../components/layout/workflow-monitor/WorkflowMonitorScreen.stories.js'
@@ -347,6 +349,10 @@ export const stories = [
   convertStoryModule(
     WorkflowLifecycleRowStories,
     '../components/ui/WorkflowLifecycleRow.stories.js'
+  ),
+  convertStoryModule(
+    CrewMonitorStories,
+    '../components/multi-agent/CrewMonitor.stories.js'
   ),
 ];
 

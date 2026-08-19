@@ -284,7 +284,7 @@ describe('RC binary cache identity', () => {
     const consumers = workflow
       .split('\n      - name: Download reusable bundle')
       .slice(1);
-    expect(consumers).toHaveLength(7);
+    expect(consumers).toHaveLength(6);
     expect(workflow).not.toContain('Restore binary mode');
     for (const consumer of consumers) {
       const verify = consumer.indexOf('\n      - name: Verify reusable binary');
@@ -292,6 +292,11 @@ describe('RC binary cache identity', () => {
       expect(verify).toBeGreaterThan(-1);
       expect(execute).toBeGreaterThan(verify);
     }
+
+    const visual = certificationJobs(workflow).get('visual');
+    expect(visual).toBeDefined();
+    expect(visual).not.toContain('Download reusable bundle');
+    expect(visual).not.toContain('Verify reusable binary');
   });
 
   it('fetches approved fork SHAs through the base repository', () => {
@@ -373,10 +378,15 @@ describe('RC binary cache identity', () => {
     const binaryCacheCheckouts = trusted.filter((checkout) =>
       checkout.includes('.github/scripts/rc-binary-cache.ts')
     );
-    expect(binaryCacheCheckouts).toHaveLength(9);
+    expect(binaryCacheCheckouts).toHaveLength(8);
     for (const checkout of binaryCacheCheckouts) {
       expect(checkout).toContain(ASSET_ENV_CONTRACT_PATH);
     }
+
+    const visual = certificationJobs(workflow).get('visual');
+    expect(visual).toBeDefined();
+    expect(visual).not.toContain('.github/scripts/rc-binary-cache.ts');
+    expect(visual).not.toContain(ASSET_ENV_CONTRACT_PATH);
   });
 
   it('reads the pinned Bun version from the trusted checkout', () => {

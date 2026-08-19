@@ -17,11 +17,21 @@ interface VisualFrame {
   status: 'passed' | 'failed';
 }
 
+interface VisualCoverageSummary {
+  totalStories: number;
+  coveredStories: number;
+  totalVariants: number;
+  executedVariants: number;
+  totalComponents: number;
+  coveredComponents: number;
+}
+
 interface VisualManifest {
   version: 1;
   suite: string;
   generatedAt: string;
   frames: VisualFrame[];
+  coverage?: VisualCoverageSummary;
 }
 
 interface ScenarioReportSummary {
@@ -43,6 +53,7 @@ interface VisualManifestSummary {
   totalFrames: number;
   passedFrames: number;
   failedFrames: number;
+  coverage?: VisualCoverageSummary;
   reportPath?: string;
 }
 
@@ -70,6 +81,59 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function formatCoverage(covered: number, total: number): string {
+  const percent = total === 0 ? 0 : (covered / total) * 100;
+  return `${covered}/${total} (${percent.toFixed(1)}%)`;
+}
+
+function visualCoverageCells(
+  coverage: VisualCoverageSummary | undefined
+): [string, string, string] {
+  if (!coverage) {
+    return ['n/a', 'n/a', 'n/a'];
+  }
+  return [
+    formatCoverage(coverage.coveredStories, coverage.totalStories),
+    formatCoverage(coverage.executedVariants, coverage.totalVariants),
+    formatCoverage(coverage.coveredComponents, coverage.totalComponents),
+  ];
+}
+
+function parseVisualCoverage(
+  value: VisualCoverageSummary | undefined
+): VisualCoverageSummary | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const counts = [
+    value.totalStories,
+    value.coveredStories,
+    value.totalVariants,
+    value.executedVariants,
+    value.totalComponents,
+    value.coveredComponents,
+  ];
+  if (
+    counts.some(
+      (count) =>
+        typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0
+    ) ||
+    value.coveredStories > value.totalStories ||
+    value.executedVariants > value.totalVariants ||
+    value.coveredComponents > value.totalComponents
+  ) {
+    return undefined;
+  }
+  return {
+    totalStories: value.totalStories,
+    coveredStories: value.coveredStories,
+    totalVariants: value.totalVariants,
+    executedVariants: value.executedVariants,
+    totalComponents: value.totalComponents,
+    coveredComponents: value.coveredComponents,
+  };
 }
 
 function walkFiles(rootDir: string): string[] {
@@ -180,6 +244,7 @@ export function collectVerificationArtifacts(
       (frame) => frame.status === 'passed'
     ).length;
     const failedFrames = manifest.frames.length - passedFrames;
+    const coverage = parseVisualCoverage(manifest.coverage);
     const reportPath = fs.existsSync(
       path.join(path.dirname(filePath), 'index.html')
     )
@@ -199,6 +264,7 @@ export function collectVerificationArtifacts(
       totalFrames: manifest.frames.length,
       passedFrames,
       failedFrames,
+      ...(coverage ? { coverage } : {}),
       ...(reportPath ? { reportPath } : {}),
     });
   }
@@ -300,18 +366,22 @@ function generateMarkdown(
 
   if (summary.visualSuites.length > 0) {
     lines.push(
-      '| Visual Artifact | Suite | Passed Frames | Failed Frames | Bundle Path |'
+      '| Visual Artifact | Suite | Passed Frames | Failed Frames | Story Coverage | Variant Execution | Component Coverage | Bundle Path |'
     );
-    lines.push('|---|---|---:|---:|---|');
+    lines.push('|---|---|---:|---:|---:|---:|---:|---|');
     for (const report of summary.visualSuites) {
       const bundlePath =
         publication.visualLinks.get(report.relativePath) ??
         report.reportPath ??
         report.relativePath;
+      const coverage = visualCoverageCells(report.coverage);
       lines.push(
-        `| ${report.artifact} | ${report.suite} | ${report.passedFrames} | ${report.failedFrames} | \`${bundlePath}\` |`
+        `| ${report.artifact} | ${report.suite} | ${report.passedFrames} | ${report.failedFrames} | ${coverage.join(' | ')} | \`${bundlePath}\` |`
       );
     }
+    lines.push(
+      '_Story coverage counts a story once any variant runs. Component coverage is a static reachability estimate; the linked artifact lists every covered and missed story, variant, and component._'
+    );
     lines.push('');
   }
 
@@ -346,11 +416,13 @@ function generateHtml(
       const linkCell = href
         ? `<a href="${escapeHtml(href)}">artifact</a>`
         : escapeHtml(report.reportPath ?? report.relativePath);
+      const coverage = visualCoverageCells(report.coverage);
       return `<tr>
   <td>${escapeHtml(report.artifact)}</td>
   <td>${escapeHtml(report.suite)}</td>
   <td>${report.passedFrames}</td>
   <td>${report.failedFrames}</td>
+  ${coverage.map((value) => `<td>${value}</td>`).join('\n  ')}
   <td>${linkCell}</td>
 </tr>`;
     })
@@ -367,7 +439,8 @@ body{font-family:system-ui,sans-serif;margin:0;background:#0b1220;color:#dbe4ff}
 main{max-width:1200px;margin:0 auto;padding:24px}
 h1,h2{margin:0 0 12px}
 section{margin-top:24px;background:#111827;border:1px solid #334155;border-radius:12px;padding:16px}
-table{width:100%;border-collapse:collapse}
+section{overflow-x:auto}
+table{width:100%;border-collapse:collapse;white-space:nowrap}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #334155}
 th{color:#93c5fd;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 a{color:#7dd3fc}
@@ -389,7 +462,7 @@ a{color:#7dd3fc}
     <h2>Visual Suites</h2>
     ${
       summary.visualSuites.length > 0
-        ? `<table><thead><tr><th>Artifact</th><th>Suite</th><th>Passed Frames</th><th>Failed Frames</th><th>Link</th></tr></thead><tbody>${visualRows}</tbody></table>`
+        ? `<p class="explanation">Story coverage counts a story once any variant runs. Component coverage is a static reachability estimate; open the artifact for every covered and missed story, variant, and component.</p><table><thead><tr><th>Artifact</th><th>Suite</th><th>Passed Frames</th><th>Failed Frames</th><th>Story Coverage</th><th>Variant Execution</th><th>Component Coverage</th><th>Link</th></tr></thead><tbody>${visualRows}</tbody></table>`
         : '<p class="empty">No visual suite artifacts found.</p>'
     }
   </section>

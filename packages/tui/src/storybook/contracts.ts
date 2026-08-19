@@ -65,6 +65,7 @@ export interface StorybookDefinition {
   name: string;
   description: string;
   category: string;
+  sourcePath: string;
   variants: StorybookVariant[];
   component: React.ElementType | null;
 }

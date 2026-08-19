@@ -590,9 +590,10 @@ const armStopConfirmation: StorybookPlay = async ({ press, waitFor }) => {
   await waitFor('ctrl+x stop workflow');
 };
 
-const enableMouseMode: StorybookPlay = async ({ type, waitFor }) => {
+const disableMouseMode: StorybookPlay = async ({ type, waitFor }) => {
+  await waitFor('MOUSE ON');
   await type('m');
-  await waitFor('m mouse:on');
+  await waitFor('m mouse:off');
 };
 
 const STEER_MESSAGE = 'Prioritize the protocol-boundary evidence.';
@@ -656,6 +657,7 @@ const meta = {
       'Narrow',
       'StopConfirmation',
       'MouseMode',
+      'MouseModeToggle',
     ],
   },
 };
@@ -721,8 +723,13 @@ export const SteerConversationLifecycle = {
 export const Failed = {
   args: { scenario: 'failed' satisfies WorkflowMonitorScenario },
   parameters: certification({
-    visible: ['topology-validation - failed', 'stop-condition', 'Blocked:'],
-    hidden: ['s steer', 's message'],
+    visible: [
+      'topology-validation - failed',
+      'stop-condition',
+      'Blocked:',
+      's message',
+    ],
+    hidden: ['s steer'],
   }),
 };
 
@@ -785,5 +792,13 @@ export const MouseMode = {
   parameters: certification({
     visible: ['MOUSE ON', 'm mouse:on'],
   }),
-  play: enableMouseMode,
+};
+
+export const MouseModeToggle = {
+  args: { scenario: 'mouse-mode' satisfies WorkflowMonitorScenario },
+  parameters: certification({
+    visible: ['m mouse:off'],
+    hidden: ['MOUSE ON'],
+  }),
+  play: disableMouseMode,
 };

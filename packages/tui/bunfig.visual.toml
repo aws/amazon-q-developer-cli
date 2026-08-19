@@ -1,0 +1,7 @@
+[test]
+coverage = false
+preload = [
+  "./src/test-utils/color-preload.ts",
+  "./src/test-utils/multiplexer-env-preload.ts",
+  "./src/test-utils/node-sqlite-shim-preload.ts",
+]

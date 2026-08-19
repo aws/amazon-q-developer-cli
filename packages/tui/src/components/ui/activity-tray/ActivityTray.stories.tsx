@@ -170,7 +170,7 @@ export const ExpandedWorkflow = {
       assertions: {
         visible: [
           'release-hardening',
-          'Workflow (1/2)',
+          'release-hardening (1/2)',
           'left/right workflows',
           'tab switch',
           'ctrl+x collapse',

@@ -39,7 +39,7 @@ on:
       run_visual:
         description: Run visual story certification
         type: boolean
-        default: false
+        default: true
       run_integration:
         description: Run UI and ACP integration tests
         type: boolean
@@ -327,13 +327,14 @@ jobs:
 
             echo "run_smoke=true" >> "$GITHUB_OUTPUT"
             echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
-            echo "run_visual=false" >> "$GITHUB_OUTPUT"
             echo "run_integration=true" >> "$GITHUB_OUTPUT"
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
             if [[ "$TUI_CHANGED" == "true" || "$TWINKI_CHANGED" == "true" || "$TUI_INFRASTRUCTURE_CHANGED" == "true" ]]; then
               echo "run_tui_static=true" >> "$GITHUB_OUTPUT"
+              echo "run_visual=true" >> "$GITHUB_OUTPUT"
             else
               echo "run_tui_static=false" >> "$GITHUB_OUTPUT"
+              echo "run_visual=false" >> "$GITHUB_OUTPUT"
             fi
             if [[ "$TWINKI_CHANGED" == "true" || "$TUI_INFRASTRUCTURE_CHANGED" == "true" ]]; then
               echo "run_twinki_perf=true" >> "$GITHUB_OUTPUT"
@@ -354,7 +355,7 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "run_smoke=true" >> "$GITHUB_OUTPUT"
             echo "run_scenarios=false" >> "$GITHUB_OUTPUT"
-            echo "run_visual=false" >> "$GITHUB_OUTPUT"
+            echo "run_visual=true" >> "$GITHUB_OUTPUT"
             echo "run_integration=true" >> "$GITHUB_OUTPUT"
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
             echo "run_tui_static=true" >> "$GITHUB_OUTPUT"
@@ -685,7 +686,7 @@ jobs:
       contents: read
       id-token: write
     needs: resolve
-    if: needs.resolve.outputs.run_smoke == 'true' || needs.resolve.outputs.run_scenarios == 'true' || needs.resolve.outputs.run_visual == 'true' || needs.resolve.outputs.run_integration == 'true' || needs.resolve.outputs.run_e2e == 'true' || needs.resolve.outputs.live_engines != '[]'
+    if: needs.resolve.outputs.run_smoke == 'true' || needs.resolve.outputs.run_scenarios == 'true' || needs.resolve.outputs.run_integration == 'true' || needs.resolve.outputs.run_e2e == 'true' || needs.resolve.outputs.live_engines != '[]'
     env:
       RC_SCCACHE_VERSION: v0.16.0
     strategy:
@@ -1490,11 +1491,11 @@ jobs:
           if-no-files-found: warn
 
   visual:
-    name: Visual Lane (${{ matrix.os }} / ${{ needs.resolve.outputs.visual_suite }})
+    name: Visual Stories (${{ matrix.os }} / ${{ needs.resolve.outputs.visual_suite }})
     permissions:
       contents: read
       id-token: write
-    needs: [resolve, build-assets]
+    needs: resolve
     if: needs.resolve.outputs.run_visual == 'true'
     strategy:
       fail-fast: false
@@ -1503,13 +1504,10 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_suffix: linux
-            binary_path: target/release/chat_cli
           - os: macos-latest-xlarge
             artifact_suffix: macos
-            binary_path: target/release/chat_cli
           - os: windows-x64-latest-16-cores
             artifact_suffix: windows
-            binary_path: target/release/chat_cli.exe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -1531,10 +1529,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/actions/codeartifact-login
-            .github/scripts/rc-binary-cache.ts
-            .github/scripts/rc-binary-cache/
             .github/scripts/run-with-retry.sh
-            crates/asset-embedding-env.txt
             scripts/const.py
 
       - name: Read pinned Bun version
@@ -1561,23 +1556,18 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Download reusable bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: verification-bundle-${{ matrix.artifact_suffix }}
-          path: .
+      - name: Build Twinki workspace dependency
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
 
-      - name: Verify reusable binary
-        shell: bash
-        run: |
-          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
-            --binary-path "${{ matrix.binary_path }}" \
-            --manifest-path "${{ matrix.binary_path }}.rc-binary-manifest.json"
+      - name: Measure visual story coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: bun run test:storybook:coverage
+        working-directory: packages/tui
 
-      - name: Run visual certification
+      - name: Run visual stories
         shell: bash
         env:
-          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/${{ matrix.binary_path }}
           VISUAL_SUITE: ${{ needs.resolve.outputs.visual_suite }}
           LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
           LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
@@ -1591,6 +1581,19 @@ jobs:
             -- bun run test:storybook:visual -- "${ARGS[@]}"
         working-directory: packages/tui
 
+      - name: Publish visual coverage summary
+        if: always()
+        shell: bash
+        env:
+          VISUAL_SUITE: ${{ needs.resolve.outputs.visual_suite }}
+        run: |
+          COVERAGE_PATH="packages/tui/verification-results/visual/$VISUAL_SUITE/coverage-summary.md"
+          if [ -f "$COVERAGE_PATH" ]; then
+            cat "$COVERAGE_PATH" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Visual coverage was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload visual artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -1598,7 +1601,7 @@ jobs:
           name: verification-visual-${{ matrix.artifact_suffix }}-${{ needs.resolve.outputs.visual_suite }}
           path: packages/tui/verification-results/visual/${{ needs.resolve.outputs.visual_suite }}/
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
 
   live-parity:
     name: Live Smoke (ubuntu-latest / ${{ matrix.engine }})

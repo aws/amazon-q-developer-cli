@@ -1,8 +1,16 @@
 #!/usr/bin/env bun
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { PtyManager } from '../test-utils/shared/pty-manager.js';
 import { stories } from './stories.js';
+import {
+  collectVisualCoverage,
+  visualCoverageHtml,
+  visualCoverageMarkdown,
+  visualCoverageSummaryMarkdown,
+  type VisualCoverage,
+} from './visual-coverage.js';
 import type {
   StorybookAssertions,
   StorybookKey,
@@ -30,6 +38,7 @@ interface CaptureManifest {
   version: 1;
   suite: string;
   generatedAt: string;
+  coverage: VisualCoverage;
   frames: CapturedFrame[];
 }
 
@@ -167,11 +176,11 @@ function generateReport(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Workflow monitor visual certification</title>
+<title>Visual stories</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#0d1117;color:#c9d1d9;font-family:system-ui,sans-serif}
 nav{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:16px;padding:12px 18px;background:#161b22;border-bottom:1px solid #30363d}
-nav h1{font-size:16px;margin:0}nav span{font-size:13px;color:#8b949e}
+nav h1{font-size:16px;margin:0}nav span{font-size:13px;color:#8b949e}nav a{margin-left:auto;color:#58a6ff}
 main{padding:16px}section{margin:0 0 16px;border:1px solid #30363d;border-radius:6px;overflow:hidden;background:#010409}
 section>header{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;background:#161b22;border-bottom:1px solid #30363d}
 .viewport,.passed,.failed,.matched,.changed,.missing{margin-left:10px;font-size:12px}.passed,.matched{color:#3fb950}.failed,.changed{color:#f85149}.missing{color:#d29922}.viewport{color:#8b949e}
@@ -182,7 +191,7 @@ section>header{display:flex;justify-content:space-between;gap:12px;padding:10px 
 </style>
 </head>
 <body>
-<nav><h1>Workflow monitor visual certification</h1><span>${manifest.frames.length} frames</span><span>${passed} passed</span><span>${failed} failed</span><span>${escapeHtml(manifest.generatedAt)}</span></nav>
+<nav><h1>Visual stories</h1><span>${manifest.frames.length} frames</span><span>${passed} passed</span><span>${failed} failed</span><span>${formatCoverage(manifest.coverage.storyCoveragePercent)} stories</span><span>${formatCoverage(manifest.coverage.variantExecutionPercent)} variants</span><span>${formatCoverage(manifest.coverage.componentCoveragePercent)} components</span><a href="coverage.html">coverage</a></nav>
 <main>${sections}</main>
 </body>
 </html>`;
@@ -199,6 +208,10 @@ function standaloneFrameDocument(frameHtml: string): string {
 </head>
 <body>${frameHtml}</body>
 </html>`;
+}
+
+function formatCoverage(value: number): string {
+  return `${value.toFixed(1)}%`;
 }
 
 function writeEvidence(
@@ -228,6 +241,22 @@ function writeEvidence(
     path.join(outputDirectory, 'index.html'),
     generateReport(manifest, baseline)
   );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'coverage.json'),
+    JSON.stringify(manifest.coverage, null, 2)
+  );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'coverage.md'),
+    visualCoverageMarkdown(manifest.coverage)
+  );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'coverage-summary.md'),
+    visualCoverageSummaryMarkdown(manifest.coverage)
+  );
+  fs.writeFileSync(
+    path.join(outputDirectory, 'coverage.html'),
+    visualCoverageHtml(manifest.coverage)
+  );
 }
 
 async function captureVariant(
@@ -242,6 +271,9 @@ async function captureVariant(
   const viewport = certification.viewport ?? DEFAULT_VIEWPORT;
   const tuiRoot = path.resolve(import.meta.dir, '../..');
   const runner = path.join(import.meta.dir, 'run-storybook.tsx');
+  const kiroHome = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'kiro-storybook-visual-')
+  );
   const pty = new PtyManager({
     width: viewport.columns,
     height: viewport.rows,
@@ -249,6 +281,7 @@ async function captureVariant(
     env: {
       CI: 'true',
       FORCE_COLOR: '3',
+      KIRO_HOME: kiroHome,
       KIRO_STORYBOOK_STORY: storyId,
       KIRO_STORYBOOK_VARIANT: variant.id,
     },
@@ -304,7 +337,24 @@ async function captureVariant(
     scenarioError = error instanceof Error ? error.message : String(error);
     await capture(`${variant.name} - capture failure`);
   } finally {
-    pty.kill();
+    try {
+      pty.kill();
+      await pty.expectExit(5000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Storybook PTY teardown failed: ${message}`);
+    }
+    try {
+      fs.rmSync(kiroHome, {
+        force: true,
+        maxRetries: 5,
+        recursive: true,
+        retryDelay: 100,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Storybook KIRO_HOME cleanup failed: ${message}`);
+    }
   }
 }
 
@@ -321,6 +371,11 @@ async function main(): Promise<void> {
   );
   const baseline = readBaseline(option('baseline'));
   const frames: CapturedFrame[] = [];
+  const coverage = collectVisualCoverage(
+    path.resolve(import.meta.dir, '..'),
+    stories,
+    suite
+  );
   const variants = stories.flatMap((story) =>
     story.variants
       .filter((variant) => variant.parameters.certification?.suite === suite)
@@ -328,7 +383,7 @@ async function main(): Promise<void> {
   );
 
   if (variants.length === 0) {
-    throw new Error(`No certified Storybook variants found for "${suite}"`);
+    throw new Error(`No Visual Stories variants found for "${suite}"`);
   }
 
   for (const { story, variant } of variants) {
@@ -342,11 +397,13 @@ async function main(): Promise<void> {
     version: 1,
     suite,
     generatedAt: new Date().toISOString(),
+    coverage,
     frames,
   };
   writeEvidence(outputDirectory, manifest, baseline);
   const failures = frames.filter((frame) => frame.status === 'failed');
   console.log(`Report: ${path.join(outputDirectory, 'index.html')}`);
+  console.log(`Coverage: ${path.join(outputDirectory, 'coverage.html')}`);
   if (failures.length > 0) {
     throw new Error(`${failures.length} visual certification frame(s) failed`);
   }
