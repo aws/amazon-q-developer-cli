@@ -109,6 +109,9 @@ export interface TUIOptions {
    * Enable only for layouts whose off-screen rows are self-contained.
    */
   preserveScrollbackOnRedraw?: boolean;
+  /** Whether the terminal supports BSU (DEC 2026). When false, multi-line
+   *  writes draw progressively. Default: true unless TWINKI_NO_SYNC=1. */
+  synchronizedOutput?: boolean;
 }
 
 export type RenderKind = 'full' | 'partial' | 'viewport-tail';
@@ -254,6 +257,10 @@ export class TUI extends Container {
   private showHardwareCursor = isHardwareCursorEnabled();
   private clearOnShrink = process.env.TWINKI_CLEAR_ON_SHRINK === '1';
   private preserveScrollbackOnRedraw = false;
+  /** Emit DEC 2026 markers unless explicitly disabled for debugging. */
+  private emitBsu = !process.env['TWINKI_NO_SYNC'];
+  /** Whether DEC 2026 makes multi-line writes atomic. */
+  private synchronizedOutput = !process.env['TWINKI_NO_SYNC'];
   private maxLinesRendered = 0;
   private previousViewportTop = 0;
   /** Frame physical row of the first row the renderer may touch. Rows above
@@ -401,6 +408,9 @@ export class TUI extends Container {
     }
     if (opts.preserveScrollbackOnRedraw) {
       this.preserveScrollbackOnRedraw = true;
+    }
+    if (opts.synchronizedOutput !== undefined) {
+      this.synchronizedOutput = opts.synchronizedOutput;
     }
     this.minWidth = Math.max(opts.minWidth ?? 10, 1);
     if (
@@ -1940,6 +1950,11 @@ export class TUI extends Container {
         liveRows = this.previousLines.length - staticLogicalCount;
       }
       if (liveRows > this.terminal.rows && !this.altScreen) {
+        if (this.preserveScrollbackOnRedraw && !this.synchronizedOutput) {
+          // Avoid replaying immutable history without atomic output. The next
+          // differential render reconciles the mutable tail.
+          return;
+        }
         // Rows above `owned` are committed history a previous short paint
         // left painted; the cursor offset and every erase bound below are
         // measured from this origin so neither climbs into them.
@@ -2535,7 +2550,7 @@ export class TUI extends Container {
       this.debugLog(
         `fullRedraw #${this.fullRedrawCount}: reason=${reason ?? 'unknown'} lines=${newLines.length}`
       );
-      const sync = !process.env['TWINKI_NO_SYNC'];
+      const sync = this.emitBsu;
       let buffer = (sync ? '\x1b[?2026h' : '') + clearSeq;
       // Write each logical line, separated by \r\n. Lines wider than `width`
       // are written as-is — the terminal soft-wraps them into multiple rows
@@ -2841,15 +2856,16 @@ export class TUI extends Container {
           }
         }
       }
+      const sync = this.synchronizedOutput;
+      const cursorUp = height > 1 ? `\x1b[${height - 1}A` : '';
+      // Replaying captured rows is safe only when the write is atomic.
       let preservedSegment = '';
-      if (preserved.length > 0) {
+      if (preserved.length > 0 && sync) {
         preservedSegment =
-          preserved.join('\r\n') +
-          '\r\n'.repeat(height) +
-          (height > 1 ? `\x1b[${height - 1}A` : '');
+          preserved.join('\r\n') + '\r\n'.repeat(height) + cursorUp;
       }
-      const sync = !process.env['TWINKI_NO_SYNC'];
-      let buffer = (sync ? '\x1b[?2026h' : '') + preservedSegment;
+      const bsu = this.emitBsu;
+      let buffer = (bsu ? '\x1b[?2026h' : '') + preservedSegment;
       // Relative moves only — absolute addressing or clears above the
       // viewport would touch committed scrollback. Read the cursor fields,
       // not this function's enclosing locals: a static flush during this
@@ -2872,7 +2888,7 @@ export class TUI extends Container {
         if (i > startIdx) buffer += '\r\n';
         buffer += newLines[i];
       }
-      if (sync) buffer += '\x1b[?2026l';
+      if (bsu) buffer += '\x1b[?2026l';
       this.terminal.write(buffer);
       this.cursorRow = Math.max(0, newPhysRows - 1);
       this.hardwareCursorRow = this.cursorRow;
@@ -3013,7 +3029,7 @@ export class TUI extends Container {
     // All changes are tail deletions (new ends before any new content at firstChanged).
     if (firstChanged >= newLines.length) {
       if (this.previousLines.length > newLines.length) {
-        const sync = !process.env['TWINKI_NO_SYNC'];
+        const sync = this.emitBsu;
         let buffer = sync ? '\x1b[?2026h' : '';
         // The logical row where the new content ends, expressed as a
         // physical row (cursor will land on the last physical row of the
@@ -3180,7 +3196,7 @@ export class TUI extends Container {
     }
 
     // Build differential buffer
-    const sync = !process.env['TWINKI_NO_SYNC'];
+    const sync = this.emitBsu;
     let buffer = sync ? '\x1b[?2026h' : '';
     const prevViewportBottom = prevViewportTop + height - 1;
     // `moveTargetPhysRow` is the PHYSICAL row we position the cursor at

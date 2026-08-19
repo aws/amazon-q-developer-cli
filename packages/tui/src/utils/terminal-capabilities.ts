@@ -34,6 +34,18 @@ function envOptOut(name: string): boolean {
   );
 }
 
+function tmuxSupportsSynchronizedOutput(
+  termProgram: string,
+  version: string
+): boolean {
+  if (termProgram !== 'tmux') return false;
+  const match = version.match(/^(\d+)\.(\d+)/);
+  if (!match) return false;
+  const major = Number.parseInt(match[1]!, 10);
+  const minor = Number.parseInt(match[2]!, 10);
+  return major > 3 || (major === 3 && minor >= 7);
+}
+
 function buildCapabilityCache(): Map<TerminalCapability, boolean> {
   const cache = new Map<TerminalCapability, boolean>();
 
@@ -45,20 +57,38 @@ function buildCapabilityCache(): Map<TerminalCapability, boolean> {
   }
 
   const termProgram = process.env.TERM_PROGRAM ?? '';
+  const termProgramVersion = process.env.TERM_PROGRAM_VERSION ?? '';
+  const term = process.env.TERM ?? '';
   const terminalEmulator = process.env.TERMINAL_EMULATOR ?? '';
   const isTmux = !!process.env.TMUX;
+  const isGnuScreen =
+    !!process.env.STY || (!isTmux && /^screen(?:[.-]|$)/.test(term));
 
   // Synchronized output (DEC private mode 2026)
-  const supportsSynchronizedOutput =
-    !envOptOut('KIRO_NO_SYNCHRONIZED') &&
-    (termProgram === 'iTerm.app' ||
+  let supportsSynchronizedOutput: boolean;
+  if (envOptOut('KIRO_NO_SYNCHRONIZED')) {
+    supportsSynchronizedOutput = false;
+  } else if (isGnuScreen) {
+    // Screen does not implement DEC 2026; outer-emulator hints are inherited.
+    supportsSynchronizedOutput = false;
+  } else if (isTmux) {
+    // Outer-emulator variables leak through tmux, so only tmux's own pane
+    // identity and version may enable DEC 2026. Unknown versions fail closed.
+    supportsSynchronizedOutput = tmuxSupportsSynchronizedOutput(
+      termProgram,
+      termProgramVersion
+    );
+  } else {
+    // Direct emulator: check emulator-specific signals.
+    supportsSynchronizedOutput =
+      termProgram === 'iTerm.app' ||
       termProgram === 'Alacritty' ||
       termProgram === 'WezTerm' ||
       termProgram === 'contour' ||
       termProgram === 'foot' ||
       isKitty() ||
-      isGhostty() ||
-      isTmux);
+      isGhostty();
+  }
   cache.set('synchronizedOutput', supportsSynchronizedOutput);
 
   // OSC 8 hyperlinks

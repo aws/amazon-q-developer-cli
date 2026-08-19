@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Avoided overflow-flush replay on tmux < 3.7 and other terminals without synchronized output when scrollback preservation is enabled"
+}

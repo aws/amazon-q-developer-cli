@@ -98,6 +98,7 @@ export interface TwinkiRenderOptions {
 	 * gaps, because rows above are left as committed history.
 	 */
 	preserveScrollbackOnRedraw?: boolean;
+	synchronizedOutput?: boolean;
 }
 
 /**
@@ -339,6 +340,7 @@ export function render(element: React.ReactElement, options: TwinkiRenderOptions
 		staticScrollbackCap: options.staticScrollbackCap,
 		wideLines: options.wideLines,
 		preserveScrollbackOnRedraw: options.preserveScrollbackOnRedraw,
+		synchronizedOutput: options.synchronizedOutput,
 	});
 
 	const bridge = new ReactBridge(() => tui.requestRender());

@@ -19,7 +19,10 @@ import {
   cloudErrorGuidance,
 } from './utils/cloud-error-classify';
 import { connectResizeSource } from './hooks/useTerminalSize';
-import { clearTerminalProgress } from './utils/terminal-capabilities.js';
+import {
+  clearTerminalProgress,
+  hasCapability,
+} from './utils/terminal-capabilities.js';
 import { cmuxCleanup } from './utils/cmux.js';
 import { isGhostty } from './utils/terminal-detection.js';
 import {
@@ -1678,12 +1681,12 @@ const startApp = async () => {
   const rendererPreserveScrollback = () =>
     resolvePreserveScrollback({ settingEnabled: preserveScrollbackSetting });
 
-  // `wideLines` and `preserveScrollbackOnRedraw` are twinki-specific render
-  // options. We type the options object explicitly so the compiler doesn't
-  // require a cast.
+  // These are twinki-specific render options. We type the options object
+  // explicitly so the compiler doesn't require a cast.
   const renderOptions: Parameters<typeof render>[1] & {
     wideLines?: boolean;
     preserveScrollbackOnRedraw?: boolean;
+    synchronizedOutput?: boolean;
   } = {
     exitOnCtrlC: false,
     patchConsole: false,
@@ -1700,6 +1703,7 @@ const startApp = async () => {
     // this below so ordinary TUI sessions keep the old fast path.
     wideLines: rendererWideLinesEnabled(uiMode),
     preserveScrollbackOnRedraw: rendererPreserveScrollback(),
+    synchronizedOutput: hasCapability('synchronizedOutput'),
   };
   const instance = render(<App />, renderOptions);
   const renderTelemetryEngine: 'v2' | 'v3' =

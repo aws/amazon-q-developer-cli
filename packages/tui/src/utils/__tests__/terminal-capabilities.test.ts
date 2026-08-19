@@ -27,9 +27,12 @@ beforeEach(() => {
   // Clean env for predictable tests
   delete process.env.TERM_PROGRAM;
   delete process.env.TERM;
+  delete process.env.STY;
   delete process.env.TERMINAL_EMULATOR;
   delete process.env.TMUX;
   delete process.env.WT_SESSION;
+  delete process.env.KITTY_WINDOW_ID;
+  delete process.env.TERM_PROGRAM_VERSION;
   delete process.env.KIRO_NO_HYPERLINKS;
   delete process.env.KIRO_NO_PROGRESS;
   delete process.env.KIRO_NO_SYNCHRONIZED;
@@ -75,9 +78,52 @@ describe('hasCapability', () => {
       expect(hasCapability('synchronizedOutput')).toBe(true);
     });
 
-    it('detects tmux via TMUX env', () => {
+    it('detects synchronized output in tmux 3.7+', () => {
       process.env.TMUX = '/tmp/tmux-1000/default,12345,0';
+      process.env.TERM = 'screen-256color';
+      process.env.TERM_PROGRAM = 'tmux';
+      process.env.TERM_PROGRAM_VERSION = '3.7b';
       expect(hasCapability('synchronizedOutput')).toBe(true);
+    });
+
+    it('uses the bounded path for tmux before 3.7', () => {
+      process.env.TMUX = '/tmp/tmux-1000/default,12345,0';
+      process.env.TERM_PROGRAM = 'tmux';
+      process.env.TERM_PROGRAM_VERSION = '3.6a';
+      expect(hasCapability('synchronizedOutput')).toBe(false);
+    });
+
+    it('uses the bounded path when the tmux version is unknown', () => {
+      process.env.TMUX = '/tmp/tmux-1000/default,12345,0';
+      expect(hasCapability('synchronizedOutput')).toBe(false);
+    });
+
+    it('ignores inherited KITTY_WINDOW_ID when inside tmux', () => {
+      process.env.TMUX = '/tmp/tmux-1000/default,12345,0';
+      process.env.KITTY_WINDOW_ID = '7';
+      expect(hasCapability('synchronizedOutput')).toBe(false);
+    });
+
+    it('uses the bounded path for GNU screen with inherited iTerm metadata', () => {
+      process.env.STY = '12345.pts-0.host';
+      process.env.TERM = 'screen-256color';
+      process.env.TERM_PROGRAM = 'iTerm.app';
+      expect(hasCapability('synchronizedOutput')).toBe(false);
+    });
+
+    it('recognizes GNU screen from TERM when STY is unavailable', () => {
+      process.env.TERM = 'screen.xterm-256color';
+      process.env.KITTY_WINDOW_ID = '7';
+      expect(hasCapability('synchronizedOutput')).toBe(false);
+    });
+
+    it('keeps the bounded path when GNU screen contains tmux', () => {
+      process.env.STY = '12345.pts-0.host';
+      process.env.TERM = 'screen-256color';
+      process.env.TMUX = '/tmp/tmux-1000/default,12345,0';
+      process.env.TERM_PROGRAM = 'tmux';
+      process.env.TERM_PROGRAM_VERSION = '3.7b';
+      expect(hasCapability('synchronizedOutput')).toBe(false);
     });
 
     it('is disabled by KIRO_NO_SYNCHRONIZED', () => {
