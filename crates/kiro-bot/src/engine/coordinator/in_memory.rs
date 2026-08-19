@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{
+    BTreeSet,
+    HashMap,
+};
 use std::sync::{
     Arc,
     Mutex,
@@ -120,6 +123,7 @@ struct ClusterState {
     dedup: InMemoryDedup,
     leases: HashMap<String, Lease>,
     transcripts: HashMap<String, Vec<Turn>>,
+    citation_resets: HashMap<String, usize>,
     approvals: HashMap<String, (String, DateTime<Utc>)>,
     rate_limits: InMemoryRateLimits,
 }
@@ -136,8 +140,35 @@ struct NoopState {
     dedup: InMemoryDedup,
     leases: HashMap<String, LeaseToken>,
     transcripts: HashMap<String, Vec<Turn>>,
+    citation_resets: HashMap<String, usize>,
     approvals: HashMap<String, DateTime<Utc>>,
     rate_limits: InMemoryRateLimits,
+}
+
+fn citation_sources(
+    transcripts: &HashMap<String, Vec<Turn>>,
+    citation_resets: &HashMap<String, usize>,
+    conversation_id: &str,
+) -> Vec<String> {
+    let Some(turns) = transcripts.get(conversation_id) else {
+        return Vec::new();
+    };
+    let reset = citation_resets
+        .get(conversation_id)
+        .copied()
+        .unwrap_or_default()
+        .min(turns.len());
+    let window_start = turns
+        .len()
+        .saturating_sub(super::CITATION_PROVENANCE_TURN_LIMIT)
+        .max(reset);
+    turns[window_start..]
+        .iter()
+        .filter(|turn| turn.role == super::TurnRole::Assistant)
+        .flat_map(|turn| turn.chunk_ids.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 impl InMemoryClusterCoordinator {
@@ -258,6 +289,22 @@ impl Coordinator for InMemoryClusterCoordinator {
         } else {
             Ok(all[all.len() - limit..].to_vec())
         }
+    }
+
+    async fn load_citation_sources(&self, conversation_id: &str) -> anyhow::Result<Vec<String>> {
+        let state = self.cluster.lock().expect("cluster state poisoned");
+        Ok(citation_sources(
+            &state.transcripts,
+            &state.citation_resets,
+            conversation_id,
+        ))
+    }
+
+    async fn reset_citation_sources(&self, conversation_id: &str) -> anyhow::Result<()> {
+        let mut state = self.cluster.lock().expect("cluster state poisoned");
+        let reset = state.transcripts.get(conversation_id).map_or(0, Vec::len);
+        state.citation_resets.insert(conversation_id.to_string(), reset);
+        Ok(())
     }
 
     async fn register_approval(
@@ -395,6 +442,22 @@ impl Coordinator for NoopCoordinator {
         }
     }
 
+    async fn load_citation_sources(&self, conversation_id: &str) -> anyhow::Result<Vec<String>> {
+        let state = self.state.lock().expect("noop state poisoned");
+        Ok(citation_sources(
+            &state.transcripts,
+            &state.citation_resets,
+            conversation_id,
+        ))
+    }
+
+    async fn reset_citation_sources(&self, conversation_id: &str) -> anyhow::Result<()> {
+        let mut state = self.state.lock().expect("noop state poisoned");
+        let reset = state.transcripts.get(conversation_id).map_or(0, Vec::len);
+        state.citation_resets.insert(conversation_id.to_string(), reset);
+        Ok(())
+    }
+
     async fn register_approval(
         &self,
         slack_msg_ts: &str,
@@ -435,7 +498,10 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
-    use crate::engine::coordinator::TurnRole;
+    use crate::engine::coordinator::{
+        CITATION_PROVENANCE_TURN_LIMIT,
+        TurnRole,
+    };
 
     fn at(seconds: i64) -> DateTime<Utc> {
         Utc.timestamp_opt(seconds, 0).single().unwrap()
@@ -534,6 +600,60 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].text, "turn-3");
         assert_eq!(history[1].text, "turn-4");
+    }
+
+    #[tokio::test]
+    async fn citation_sources_are_assistant_scoped_and_resettable() {
+        let coordinator = NoopCoordinator::new();
+        let mut assistant = turn(TurnRole::Assistant, "grounded", 1000);
+        assistant.chunk_ids = vec!["docs/b.md".into(), "docs/a.md".into()];
+        coordinator.append_turn("convo-A", assistant).await.unwrap();
+
+        let mut user = turn(TurnRole::User, "untrusted", 1001);
+        user.chunk_ids = vec!["docs/untrusted.md".into()];
+        coordinator.append_turn("convo-A", user).await.unwrap();
+
+        assert_eq!(coordinator.load_citation_sources("convo-A").await.unwrap(), vec![
+            "docs/a.md",
+            "docs/b.md"
+        ]);
+        assert!(coordinator.load_citation_sources("convo-B").await.unwrap().is_empty());
+
+        coordinator.reset_citation_sources("convo-A").await.unwrap();
+        assert!(coordinator.load_citation_sources("convo-A").await.unwrap().is_empty());
+
+        let mut new_session = turn(TurnRole::Assistant, "new source", 1002);
+        new_session.chunk_ids = vec!["docs/new.md".into()];
+        coordinator.append_turn("convo-A", new_session).await.unwrap();
+        assert_eq!(coordinator.load_citation_sources("convo-A").await.unwrap(), vec![
+            "docs/new.md"
+        ]);
+    }
+
+    #[tokio::test]
+    async fn citation_sources_are_bounded_to_recent_transcript_rows() {
+        let coordinator = NoopCoordinator::new();
+        let mut old = turn(TurnRole::Assistant, "old source", 1000);
+        old.chunk_ids = vec!["docs/old.md".into()];
+        coordinator.append_turn("convo-A", old).await.unwrap();
+
+        for index in 0..CITATION_PROVENANCE_TURN_LIMIT {
+            coordinator
+                .append_turn(
+                    "convo-A",
+                    turn(TurnRole::User, &format!("filler-{index}"), 1001 + index as i64),
+                )
+                .await
+                .unwrap();
+        }
+
+        let mut recent = turn(TurnRole::Assistant, "recent source", 2000);
+        recent.chunk_ids = vec!["docs/recent.md".into()];
+        coordinator.append_turn("convo-A", recent).await.unwrap();
+
+        assert_eq!(coordinator.load_citation_sources("convo-A").await.unwrap(), vec![
+            "docs/recent.md"
+        ]);
     }
 
     #[tokio::test]

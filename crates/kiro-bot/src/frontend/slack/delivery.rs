@@ -30,6 +30,7 @@ use tracing::{
 use super::SlackFrontend;
 use super::attachments::AttachmentFiles;
 use super::events::log_thread_context_error;
+use super::feedback::feedback_block;
 use crate::engine::acp::{
     ProgressStatus,
     ProgressUpdate,
@@ -42,13 +43,14 @@ use crate::engine::core::{
 
 pub(super) const MARKDOWN_CHAR_LIMIT: usize = 11_500;
 pub(super) const MAX_FENCE_HEADER_CHARS: usize = 128;
-const FALLBACK_CHAR_LIMIT: usize = 300;
+pub(super) const FALLBACK_CHAR_LIMIT: usize = 4_000;
+const FALLBACK_SOURCE_CHAR_LIMIT: usize = 1_000;
 const DELIVERY_TTL: Duration = Duration::from_secs(30 * 60);
 const DELIVERY_RETRY_ATTEMPTS: usize = 4;
 const DELIVERY_RETRY_BASE: Duration = Duration::from_millis(200);
 pub(super) const DELIVERY_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
 pub(super) const PROGRESS_ACK: &str = "_Looking into it..._";
-const RESPONSE_TASK_ID: &str = "kiro-response";
+pub(super) const RESPONSE_TASK_ID: &str = "kiro-response";
 pub(super) const DISCLAIMER_CONTEXT: &str = "AI-generated; verify before acting.";
 
 static CORRELATION_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -59,7 +61,7 @@ pub(super) struct RenderedMessage {
     pub(super) chunks: Vec<SlackMessageContent>,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum SlackStreamTaskStatus {
     Pending,
@@ -79,7 +81,16 @@ impl From<ProgressStatus> for SlackStreamTaskStatus {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+impl SlackStreamTaskStatus {
+    fn terminal(self, outcome: ProgressStatus) -> Self {
+        match self {
+            Self::Complete | Self::Error => self,
+            Self::Pending | Self::InProgress => outcome.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(super) enum SlackStreamChunk {
     TaskUpdate {
@@ -117,7 +128,7 @@ pub(super) struct SlackStopStreamRequest {
     ts: String,
     chunks: Vec<SlackStreamChunk>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    blocks: Vec<SlackBlock>,
+    blocks: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -125,8 +136,9 @@ pub(super) struct SlackStopStreamFallbackRequest {
     channel: String,
     ts: String,
     markdown_text: String,
+    chunks: Vec<SlackStreamChunk>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    blocks: Vec<SlackBlock>,
+    blocks: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -142,12 +154,210 @@ fn response_task(status: SlackStreamTaskStatus) -> SlackStreamChunk {
     }
 }
 
-pub(super) fn progress_task(update: ProgressUpdate) -> SlackStreamChunk {
-    SlackStreamChunk::TaskUpdate {
-        id: truncate_chars(&update.id, 255),
-        title: truncate_chars(&update.title, 200),
-        status: update.status.into(),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum SemanticPlanPhase {
+    Context,
+    Work,
+    Verification,
+}
+
+impl SemanticPlanPhase {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Context => "kiro-context",
+            Self::Work => "kiro-work",
+            Self::Verification => "kiro-verification",
+        }
     }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Context => "Gathering context",
+            Self::Work => "Working through the request",
+            Self::Verification => "Checking the result",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TrackedProgressTask {
+    phase: SemanticPlanPhase,
+    status: SlackStreamTaskStatus,
+}
+
+#[derive(Debug, Default)]
+struct StreamPlan {
+    tasks: HashMap<String, TrackedProgressTask>,
+    phase_order: Vec<SemanticPlanPhase>,
+}
+
+impl StreamPlan {
+    fn record(&mut self, update: ProgressUpdate) -> SlackStreamChunk {
+        let phase = self
+            .tasks
+            .get(&update.id)
+            .map(|task| task.phase)
+            .unwrap_or_else(|| semantic_phase(&update.title));
+        if !self.phase_order.contains(&phase) {
+            self.phase_order.push(phase);
+        }
+        self.tasks.insert(update.id, TrackedProgressTask {
+            phase,
+            status: update.status.into(),
+        });
+        self.phase_chunk(phase, self.phase_status(phase))
+    }
+
+    fn terminal_chunks(&self, outcome: ProgressStatus) -> Vec<SlackStreamChunk> {
+        self.phase_order
+            .iter()
+            .map(|phase| self.phase_chunk(*phase, self.terminal_phase_status(*phase, outcome)))
+            .collect()
+    }
+
+    fn phase_status(&self, phase: SemanticPlanPhase) -> SlackStreamTaskStatus {
+        let statuses = self
+            .tasks
+            .values()
+            .filter(|task| task.phase == phase)
+            .map(|task| task.status);
+        let mut aggregate = SlackStreamTaskStatus::Complete;
+        for status in statuses {
+            match status {
+                SlackStreamTaskStatus::InProgress => return SlackStreamTaskStatus::InProgress,
+                SlackStreamTaskStatus::Pending => aggregate = SlackStreamTaskStatus::Pending,
+                SlackStreamTaskStatus::Error if aggregate == SlackStreamTaskStatus::Complete => {
+                    aggregate = SlackStreamTaskStatus::Error;
+                },
+                SlackStreamTaskStatus::Complete | SlackStreamTaskStatus::Error => {},
+            }
+        }
+        aggregate
+    }
+
+    fn terminal_phase_status(&self, phase: SemanticPlanPhase, outcome: ProgressStatus) -> SlackStreamTaskStatus {
+        let mut has_unfinished = false;
+        for status in self
+            .tasks
+            .values()
+            .filter(|task| task.phase == phase)
+            .map(|task| task.status)
+        {
+            match status {
+                SlackStreamTaskStatus::Error => return SlackStreamTaskStatus::Error,
+                SlackStreamTaskStatus::Pending | SlackStreamTaskStatus::InProgress => has_unfinished = true,
+                SlackStreamTaskStatus::Complete => {},
+            }
+        }
+        if has_unfinished {
+            SlackStreamTaskStatus::InProgress.terminal(outcome)
+        } else {
+            SlackStreamTaskStatus::Complete
+        }
+    }
+
+    fn phase_chunk(&self, phase: SemanticPlanPhase, status: SlackStreamTaskStatus) -> SlackStreamChunk {
+        SlackStreamChunk::TaskUpdate {
+            id: phase.id().into(),
+            title: phase.title().into(),
+            status,
+        }
+    }
+}
+
+fn semantic_phase(title: &str) -> SemanticPlanPhase {
+    let words = title
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    if words.iter().any(|word| {
+        matches!(
+            word.as_str(),
+            "read"
+                | "reading"
+                | "search"
+                | "searching"
+                | "fetch"
+                | "fetching"
+                | "find"
+                | "finding"
+                | "inspect"
+                | "inspecting"
+                | "list"
+                | "listing"
+                | "query"
+                | "querying"
+                | "lookup"
+                | "browse"
+                | "browsing"
+                | "load"
+                | "loading"
+                | "retrieve"
+                | "retrieving"
+        )
+    }) {
+        return SemanticPlanPhase::Context;
+    }
+    if words.iter().any(|word| {
+        matches!(
+            word.as_str(),
+            "test"
+                | "tests"
+                | "testing"
+                | "check"
+                | "checks"
+                | "checking"
+                | "verify"
+                | "verifying"
+                | "validate"
+                | "validating"
+                | "build"
+                | "builds"
+                | "building"
+                | "compile"
+                | "compiling"
+                | "lint"
+                | "linting"
+                | "format"
+                | "formatting"
+        )
+    }) {
+        return SemanticPlanPhase::Verification;
+    }
+    SemanticPlanPhase::Work
+}
+
+fn terminal_progress_tasks(message_id: &str, outcome: ProgressStatus) -> Vec<SlackStreamChunk> {
+    DELIVERIES
+        .lock()
+        .unwrap()
+        .stream_plans
+        .get(message_id)
+        .map(|plan| plan.terminal_chunks(outcome))
+        .unwrap_or_default()
+}
+
+fn finish_stream_tracking(message_id: &str) {
+    DELIVERIES.lock().unwrap().stream_plans.remove(message_id);
+}
+
+fn track_stream(message_id: String) {
+    DELIVERIES
+        .lock()
+        .unwrap()
+        .stream_plans
+        .insert(message_id.clone(), StreamPlan::default());
+    tokio::spawn(async move {
+        tokio::time::sleep(DELIVERY_TTL).await;
+        DELIVERIES.lock().unwrap().stream_plans.remove(&message_id);
+    });
+}
+
+fn track_progress(message_id: &str, update: ProgressUpdate) -> SlackStreamChunk {
+    let mut deliveries = DELIVERIES.lock().unwrap();
+    let plan = deliveries.stream_plans.entry(message_id.to_string()).or_default();
+    plan.record(update)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -171,6 +381,7 @@ pub(super) struct DeliveryTracker {
     attachments: HashMap<DeliveryKey, Vec<AttachmentFiles>>,
     citations: HashMap<String, Vec<String>>,
     pub(super) citation_order: VecDeque<String>,
+    stream_plans: HashMap<String, StreamPlan>,
 }
 
 impl DeliveryTracker {
@@ -549,7 +760,7 @@ pub(super) fn truncate_chars(text: &str, limit: usize) -> String {
     text.chars().take(limit).collect()
 }
 
-fn fallback_text(markdown: &str) -> String {
+fn plain_fallback_text(markdown: &str) -> String {
     let plain = markdown
         .lines()
         .map(str::trim)
@@ -566,7 +777,29 @@ fn fallback_text(markdown: &str) -> String {
     } else {
         plain.as_str()
     };
-    truncate_chars(plain, FALLBACK_CHAR_LIMIT)
+    plain.to_string()
+}
+
+fn fallback_text(markdown: &str, sources: Option<&str>, has_disclaimer: bool) -> String {
+    let mut details = Vec::new();
+    if let Some(sources) = sources {
+        details.push(truncate_chars(
+            &plain_fallback_text(sources),
+            FALLBACK_SOURCE_CHAR_LIMIT,
+        ));
+    }
+    if has_disclaimer {
+        details.push(DISCLAIMER_CONTEXT.to_string());
+    }
+    let details = details.join("\n");
+    let separator_chars = usize::from(!details.is_empty());
+    let body_limit = FALLBACK_CHAR_LIMIT.saturating_sub(char_len(&details) + separator_chars);
+    let mut fallback = truncate_chars(&plain_fallback_text(markdown), body_limit);
+    if !details.is_empty() {
+        fallback.push('\n');
+        fallback.push_str(&details);
+    }
+    fallback
 }
 
 pub(super) fn context_message_text(content: &SlackMessageContent) -> Option<String> {
@@ -645,11 +878,51 @@ pub(super) fn render_message(text: &str) -> RenderedMessage {
                 }
             }
             SlackMessageContent::new()
-                .with_text(fallback_text(&markdown))
+                .with_text(fallback_text(
+                    &markdown,
+                    (index == last).then_some(sources.as_deref()).flatten(),
+                    index == last && has_disclaimer,
+                ))
                 .with_blocks(blocks)
         })
         .collect();
     RenderedMessage { chunks }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct DegradedFinalChunk {
+    pub(super) content: SlackMessageContent,
+    pub(super) feedback_enabled: bool,
+}
+
+pub(super) fn degraded_final_chunks(text: &str, feedback_enabled: bool) -> VecDeque<DegradedFinalChunk> {
+    let mut chunks = render_message(text)
+        .chunks
+        .into_iter()
+        .map(|content| DegradedFinalChunk {
+            content,
+            feedback_enabled: false,
+        })
+        .collect::<VecDeque<_>>();
+    if feedback_enabled && let Some(last) = chunks.back_mut() {
+        last.feedback_enabled = true;
+    }
+    chunks
+}
+
+pub(super) fn request_with_feedback<T: serde::Serialize>(request: &T, feedback_enabled: bool) -> serde_json::Value {
+    let mut request = serde_json::to_value(request).expect("Slack request is serializable");
+    if feedback_enabled {
+        let blocks = request
+            .as_object_mut()
+            .expect("Slack request is an object")
+            .entry("blocks")
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+            .as_array_mut()
+            .expect("Slack request blocks are an array");
+        blocks.push(feedback_block());
+    }
+    request
 }
 
 pub(super) fn start_stream_request(
@@ -663,7 +936,7 @@ pub(super) fn start_stream_request(
         thread_ts,
         recipient_user_id,
         recipient_team_id,
-        task_display_mode: "timeline",
+        task_display_mode: "plan",
         chunks: vec![response_task(SlackStreamTaskStatus::InProgress)],
     }
 }
@@ -673,9 +946,12 @@ pub(super) fn stop_stream_request(
     ts: String,
     text: &str,
     status: ProgressStatus,
+    progress_chunks: Vec<SlackStreamChunk>,
+    feedback_enabled: bool,
 ) -> SlackStopStreamRequest {
     let rendered = render_message(text);
     let mut chunks = vec![response_task(status.into())];
+    chunks.extend(progress_chunks);
     let mut blocks = Vec::new();
     let content_count = rendered.chunks.len();
     for (index, content) in rendered.chunks.into_iter().enumerate() {
@@ -687,8 +963,14 @@ pub(super) fn stop_stream_request(
         chunks.push(SlackStreamChunk::MarkdownText { text: markdown_text });
         if index + 1 == content_count && matches!(content_blocks.first(), Some(SlackBlock::Markdown(_))) {
             content_blocks.remove(0);
-            blocks = content_blocks;
+            blocks = content_blocks
+                .into_iter()
+                .map(|block| serde_json::to_value(block).expect("Slack block is serializable"))
+                .collect();
         }
+    }
+    if feedback_enabled {
+        blocks.push(feedback_block());
     }
     SlackStopStreamRequest {
         channel,
@@ -702,6 +984,8 @@ pub(super) fn stop_stream_fallback_request(
     channel: String,
     ts: String,
     text: &str,
+    status: ProgressStatus,
+    progress_chunks: Vec<SlackStreamChunk>,
 ) -> Option<SlackStopStreamFallbackRequest> {
     let mut rendered = render_message(text);
     if rendered.chunks.len() != 1 {
@@ -716,10 +1000,19 @@ pub(super) fn stop_stream_fallback_request(
     if matches!(blocks.first(), Some(SlackBlock::Markdown(_))) {
         blocks.remove(0);
     }
+    let blocks = blocks
+        .into_iter()
+        .map(|block| serde_json::to_value(block).expect("Slack block is serializable"))
+        .collect::<Vec<_>>();
     Some(SlackStopStreamFallbackRequest {
         channel,
         ts,
         markdown_text,
+        chunks: {
+            let mut chunks = vec![response_task(status.into())];
+            chunks.extend(progress_chunks);
+            chunks
+        },
         blocks,
     })
 }
@@ -930,7 +1223,11 @@ impl Frontend for SlackFrontend {
                 })
                 .await
                 {
-                    Ok(response) => Ok(response.ts.to_string()),
+                    Ok(response) => {
+                        let message_id = response.ts.to_string();
+                        track_stream(message_id.clone());
+                        Ok(message_id)
+                    },
                     Err(error) if stream_start_can_fallback(&error) => {
                         warn!(%error, "Slack stream unavailable; using a threaded progress message");
                         let content = render_message(PROGRESS_ACK).chunks.remove(0);
@@ -939,7 +1236,9 @@ impl Frontend for SlackFrontend {
                             session.chat_post_message(&post)
                         })
                         .await?;
-                        Ok(response.ts.to_string())
+                        let message_id = response.ts.to_string();
+                        track_stream(message_id.clone());
+                        Ok(message_id)
                     },
                     Err(error) => Err(error.into()),
                 }
@@ -949,11 +1248,12 @@ impl Frontend for SlackFrontend {
                 message_id,
                 update,
             } => {
+                let progress = track_progress(&message_id, update);
                 let request = SlackAppendStreamRequest {
                     channel: conversation,
                     ts: message_id.clone(),
                     markdown_text: None,
-                    chunks: vec![progress_task(update)],
+                    chunks: vec![progress],
                 };
                 let result: ClientResult<SlackStreamResponse> =
                     slack_api_with_retry("chat.appendStream", RetrySafety::Idempotent, || {
@@ -976,7 +1276,15 @@ impl Frontend for SlackFrontend {
                 status,
             } => {
                 release_attachments(&DeliveryKey::new(conversation.clone(), Some(reply_to.clone())));
-                let request = stop_stream_request(conversation.clone(), message_id.clone(), &text, status);
+                let progress_chunks = terminal_progress_tasks(&message_id, status);
+                let request = stop_stream_request(
+                    conversation.clone(),
+                    message_id.clone(),
+                    &text,
+                    status,
+                    progress_chunks.clone(),
+                    self.feedback_enabled,
+                );
                 let result: ClientResult<SlackStreamResponse> =
                     slack_api_with_retry("chat.stopStream", RetrySafety::Idempotent, || {
                         session.http_session_api.http_post("chat.stopStream", &request, None)
@@ -984,12 +1292,19 @@ impl Frontend for SlackFrontend {
                     .await;
                 if result.is_ok() {
                     track_citations(&message_id, &text);
+                    finish_stream_tracking(&message_id);
                     return Ok(message_id);
                 }
 
                 let stop_error = result.unwrap_err();
                 warn!(%stop_error, %message_id, "Falling back after Slack stream finalization failed");
-                if let Some(fallback) = stop_stream_fallback_request(conversation.clone(), message_id.clone(), &text) {
+                if let Some(fallback) = stop_stream_fallback_request(
+                    conversation.clone(),
+                    message_id.clone(),
+                    &text,
+                    status,
+                    progress_chunks,
+                ) {
                     let fallback_result: ClientResult<SlackStreamResponse> =
                         slack_api_with_retry("chat.stopStream", RetrySafety::Idempotent, || {
                             session.http_session_api.http_post("chat.stopStream", &fallback, None)
@@ -997,33 +1312,43 @@ impl Frontend for SlackFrontend {
                         .await;
                     if fallback_result.is_ok() {
                         track_citations(&message_id, &text);
+                        finish_stream_tracking(&message_id);
                         return Ok(message_id);
                     }
                 }
 
-                let mut rendered = render_message(&text).chunks;
-                let first = rendered.remove(0);
-                let update = SlackApiChatUpdateRequest::new(
-                    conversation.clone().into(),
-                    first.clone(),
-                    message_id.clone().into(),
+                let mut rendered = degraded_final_chunks(&text, self.feedback_enabled);
+                let first = rendered.pop_front().expect("rendered response has at least one chunk");
+                let update = request_with_feedback(
+                    &SlackApiChatUpdateRequest::new(
+                        conversation.clone().into(),
+                        first.content.clone(),
+                        message_id.clone().into(),
+                    ),
+                    first.feedback_enabled,
                 );
                 let mut delivered_ids = Vec::new();
-                if slack_api_with_retry("chat.update", RetrySafety::Idempotent, || session.chat_update(&update))
-                    .await
-                    .is_ok()
-                {
+                let update_result: ClientResult<SlackApiChatUpdateResponse> =
+                    slack_api_with_retry("chat.update", RetrySafety::Idempotent, || {
+                        session.http_session_api.http_post("chat.update", &update, None)
+                    })
+                    .await;
+                if update_result.is_ok() {
                     delivered_ids.push(message_id.clone());
                 } else {
-                    rendered.insert(0, first);
+                    rendered.push_front(first);
                 }
 
-                for content in rendered {
-                    let post = post_request(conversation.clone().into(), content, Some(reply_to.clone()));
-                    let response = slack_api_with_retry("chat.postMessage", RetrySafety::PostMessage, || {
-                        session.chat_post_message(&post)
-                    })
-                    .await?;
+                while let Some(chunk) = rendered.pop_front() {
+                    let post = request_with_feedback(
+                        &post_request(conversation.clone().into(), chunk.content, Some(reply_to.clone())),
+                        chunk.feedback_enabled,
+                    );
+                    let response: SlackApiChatPostMessageResponse =
+                        slack_api_with_retry("chat.postMessage", RetrySafety::PostMessage, || {
+                            session.http_session_api.http_post("chat.postMessage", &post, None)
+                        })
+                        .await?;
                     delivered_ids.push(response.ts.to_string());
                 }
                 track_all_citations(&delivered_ids, &text);
@@ -1037,6 +1362,7 @@ impl Frontend for SlackFrontend {
                         warn!(%error, %message_id, "Failed to clean up unfinished Slack stream");
                     }
                 }
+                finish_stream_tracking(&message_id);
                 delivered_ids
                     .last()
                     .cloned()
@@ -1187,6 +1513,125 @@ impl Frontend for SlackFrontend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn task_chunk_fields(chunk: &SlackStreamChunk) -> (&str, &str, SlackStreamTaskStatus) {
+        match chunk {
+            SlackStreamChunk::TaskUpdate { id, title, status } => (id, title, *status),
+            SlackStreamChunk::MarkdownText { .. } => panic!("expected task update"),
+        }
+    }
+
+    #[test]
+    fn progress_uses_stable_semantic_phases_instead_of_raw_tool_titles() {
+        let cases = [
+            (
+                "tool-read",
+                "Reading crates/kiro-bot/src/frontend/slack.rs",
+                "kiro-context",
+                "Gathering context",
+            ),
+            (
+                "tool-edit",
+                "Editing the Slack renderer",
+                "kiro-work",
+                "Working through the request",
+            ),
+            (
+                "tool-test",
+                "Running cargo test",
+                "kiro-verification",
+                "Checking the result",
+            ),
+        ];
+
+        for (id, raw_title, expected_id, expected_title) in cases {
+            let mut plan = StreamPlan::default();
+            let chunk = plan.record(ProgressUpdate {
+                id: id.into(),
+                title: raw_title.into(),
+                status: ProgressStatus::InProgress,
+            });
+            let (actual_id, actual_title, status) = task_chunk_fields(&chunk);
+            assert_eq!(actual_id, expected_id);
+            assert_eq!(actual_title, expected_title);
+            assert_eq!(status, SlackStreamTaskStatus::InProgress);
+            assert!(!serde_json::to_string(&chunk).unwrap().contains(raw_title));
+        }
+    }
+
+    #[test]
+    fn concurrent_tools_keep_their_semantic_phase_in_progress() {
+        let mut plan = StreamPlan::default();
+        plan.record(ProgressUpdate {
+            id: "read-1".into(),
+            title: "Reading the implementation".into(),
+            status: ProgressStatus::InProgress,
+        });
+        let chunk = plan.record(ProgressUpdate {
+            id: "read-2".into(),
+            title: "Searching the tests".into(),
+            status: ProgressStatus::Pending,
+        });
+
+        assert_eq!(task_chunk_fields(&chunk).2, SlackStreamTaskStatus::InProgress);
+    }
+
+    #[test]
+    fn finalization_retains_every_observed_phase_after_append_failures() {
+        let mut plan = StreamPlan::default();
+        for update in [
+            ProgressUpdate {
+                id: "read-1".into(),
+                title: "Reading the implementation".into(),
+                status: ProgressStatus::InProgress,
+            },
+            ProgressUpdate {
+                id: "edit-1".into(),
+                title: "Editing the renderer".into(),
+                status: ProgressStatus::Complete,
+            },
+            ProgressUpdate {
+                id: "test-1".into(),
+                title: "Running focused tests".into(),
+                status: ProgressStatus::Pending,
+            },
+        ] {
+            plan.record(update);
+        }
+        let tasks = plan.terminal_chunks(ProgressStatus::Error);
+        let fields = tasks.iter().map(task_chunk_fields).collect::<Vec<_>>();
+
+        assert_eq!(fields, [
+            ("kiro-context", "Gathering context", SlackStreamTaskStatus::Error),
+            (
+                "kiro-work",
+                "Working through the request",
+                SlackStreamTaskStatus::Complete
+            ),
+            ("kiro-verification", "Checking the result", SlackStreamTaskStatus::Error),
+        ]);
+        assert!(
+            fields
+                .iter()
+                .all(|(_, _, status)| matches!(status, SlackStreamTaskStatus::Complete | SlackStreamTaskStatus::Error))
+        );
+    }
+
+    #[test]
+    fn successful_stop_terminalizes_unfinished_semantic_phase() {
+        let mut plan = StreamPlan::default();
+        plan.record(ProgressUpdate {
+            id: "tool-1".into(),
+            title: "Searching Kiro docs".into(),
+            status: ProgressStatus::InProgress,
+        });
+        let chunk = plan.terminal_chunks(ProgressStatus::Complete).remove(0);
+
+        assert_eq!(
+            task_chunk_fields(&chunk),
+            ("kiro-context", "Gathering context", SlackStreamTaskStatus::Complete)
+        );
+    }
 
     #[test]
     fn oversized_self_closing_fence_pairs_preserve_separator_text() {

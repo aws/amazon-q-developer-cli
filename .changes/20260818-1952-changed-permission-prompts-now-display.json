@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "Permission prompts now display the tool's input parameters for better visibility before approval"
+}

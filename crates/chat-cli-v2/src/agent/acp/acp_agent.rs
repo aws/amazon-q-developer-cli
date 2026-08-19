@@ -3861,6 +3861,54 @@ mod permission_metadata_tests {
             ]))
         );
     }
+
+    #[test]
+    fn permission_request_preserves_exact_tool_input() {
+        use agent::agent_loop::types::ToolUseBlock;
+        use agent::tools::mcp::McpTool;
+
+        let input = serde_json::json!({
+            "query": "server shut down unexpectedly",
+            "repo": "kiro-team/kiro-cli",
+            "limit": 10
+        });
+        let request = ApprovalRequest {
+            id: "tc-1".to_string(),
+            tool_use: ToolUseBlock {
+                tool_use_id: "tc-1".to_string(),
+                name: "search_github_issues".to_string(),
+                input: input.clone(),
+            },
+            tool: Tool {
+                tool_use_purpose: None,
+                kind: AgentToolKind::Mcp(McpTool {
+                    tool_name: "search_github_issues".to_string(),
+                    server_name: "kiro-github-read".to_string(),
+                    params: input.as_object().cloned(),
+                    annotations: None,
+                }),
+            },
+            context: None,
+            options: Vec::new(),
+            trust_options: Vec::new(),
+        };
+
+        let update = permission_tool_call_update(&request);
+        assert_eq!(
+            update.fields.title.as_deref(),
+            Some("Running: @kiro-github-read/search_github_issues")
+        );
+        assert_eq!(update.fields.raw_input, Some(input));
+    }
+}
+
+fn permission_tool_call_update(req: &ApprovalRequest) -> ToolCallUpdate {
+    ToolCallUpdate::new(
+        ToolCallId::new(req.id.clone()),
+        ToolCallUpdateFields::new()
+            .title(Some(get_tool_title(&req.tool)))
+            .raw_input(Some(req.tool_use.input.clone())),
+    )
 }
 
 /// Clears a session's human-wait mark when dropped, so a panic inside the
@@ -3917,14 +3965,7 @@ async fn handle_approval_request(
     }
 
     debug!("Sending permission request: {:?}", req);
-    let mut permission_request = RequestPermissionRequest::new(
-        session_id,
-        ToolCallUpdate::new(
-            ToolCallId::new(req.id.clone()),
-            ToolCallUpdateFields::new().title(Some(get_tool_title(&req.tool))),
-        ),
-        options,
-    );
+    let mut permission_request = RequestPermissionRequest::new(session_id, permission_tool_call_update(&req), options);
 
     // Build a single _meta map and merge in any per-feature payloads. ACP v1
     // does not carry MCP tool behavior annotations or granular trust options

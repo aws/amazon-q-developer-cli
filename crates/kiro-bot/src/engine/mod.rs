@@ -11,7 +11,6 @@ pub mod dynamo_coordinator;
 pub mod feedback;
 pub mod rate_limit;
 pub mod response_policy;
-pub mod retrieval_check;
 pub mod task_metadata;
 pub mod tool_budget;
 pub mod user_map;

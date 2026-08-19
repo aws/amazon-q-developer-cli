@@ -32,6 +32,8 @@ use kiro_bot::engine::coordinator::{
     LeaseManager,
     LeaseToken,
     RateLimitOutcome,
+    Turn,
+    TurnRole,
 };
 use kiro_bot::engine::core::{
     BotCore,
@@ -390,12 +392,13 @@ async fn commands_do_not_consume_or_block_prompt_quota() {
 }
 
 #[tokio::test]
-async fn accepted_prompts_persist_feedback_ready_transcript_turns() {
+async fn model_authored_sources_without_tool_provenance_are_removed() {
     let coordinator = Arc::new(kiro_bot::engine::coordinator::NoopCoordinator::new());
     let core = build_core_with_reply(
         coordinator.clone(),
         "Grounded answer.\n\nSources: `crates/kiro-bot/src/engine/core.rs:100-120`",
     );
+    let frontend = Arc::new(RecorderFrontend::new());
 
     dispatch_with_receipt(
         &core,
@@ -404,7 +407,7 @@ async fn accepted_prompts_persist_feedback_ready_transcript_turns() {
             Conversation::Channel("C-transcript".into()),
             Some(slack_envelope("EvTranscript")),
         ),
-        Arc::new(RecorderFrontend::new()),
+        frontend.clone(),
     )
     .await
     .unwrap()
@@ -414,7 +417,162 @@ async fn accepted_prompts_persist_feedback_ready_transcript_turns() {
     assert_eq!(turns.len(), 2);
     assert_eq!(turns[0].role, kiro_bot::engine::coordinator::TurnRole::User);
     assert_eq!(turns[0].text, "How does dispatch work?");
-    assert_eq!(turns[1].chunk_ids, vec!["crates/kiro-bot/src/engine/core.rs:100-120"]);
+    assert_eq!(turns[1].text, "Grounded answer.");
+    assert!(turns[1].chunk_ids.is_empty());
+    assert!(
+        frontend
+            .sends()
+            .iter()
+            .all(|message| !message.contains("crates/kiro-bot/src/engine/core.rs:100-120"))
+    );
+}
+
+#[tokio::test]
+async fn follow_up_carries_forward_only_validated_sources_from_the_same_conversation() {
+    let coordinator = Arc::new(kiro_bot::engine::coordinator::NoopCoordinator::new());
+    coordinator
+        .append_turn("channel:C-carry-forward", Turn {
+            role: TurnRole::Assistant,
+            text: "Prior grounded answer.\n\nSources: `docs/prior.md`".into(),
+            ts: chrono::Utc::now(),
+            chunk_ids: vec!["docs/prior.md".into()],
+        })
+        .await
+        .unwrap();
+    let core = build_core_with_reply(
+        coordinator.clone(),
+        "Follow-up answer.\n\nSources: `docs/prior.md`, `docs/fabricated.md`",
+    );
+    let frontend = Arc::new(RecorderFrontend::new());
+
+    dispatch_with_receipt(
+        &core,
+        incoming(
+            "Can you expand on that?",
+            Conversation::Channel("C-carry-forward".into()),
+            Some(slack_envelope("EvCarryForward")),
+        ),
+        frontend.clone(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let turns = wait_for_history_len(coordinator.as_ref(), "channel:C-carry-forward", 3).await;
+    assert_eq!(turns[2].text, "Follow-up answer.\n\nSources: `docs/prior.md`");
+    assert_eq!(turns[2].chunk_ids, vec!["docs/prior.md"]);
+    assert!(
+        frontend
+            .sends()
+            .iter()
+            .any(|message| message.contains("`docs/prior.md`"))
+    );
+    assert!(
+        frontend
+            .sends()
+            .iter()
+            .all(|message| !message.contains("docs/fabricated.md"))
+    );
+}
+
+#[tokio::test]
+async fn prior_citation_provenance_does_not_cross_conversations() {
+    let coordinator = Arc::new(kiro_bot::engine::coordinator::NoopCoordinator::new());
+    coordinator
+        .append_turn("channel:C-source", Turn {
+            role: TurnRole::Assistant,
+            text: "Grounded elsewhere.".into(),
+            ts: chrono::Utc::now(),
+            chunk_ids: vec!["docs/private-to-source.md".into()],
+        })
+        .await
+        .unwrap();
+    let core = build_core_with_reply(coordinator.clone(), "Answer.\n\nSources: `docs/private-to-source.md`");
+    let frontend = Arc::new(RecorderFrontend::new());
+
+    dispatch_with_receipt(
+        &core,
+        incoming(
+            "Can this conversation cite it?",
+            Conversation::Channel("C-other".into()),
+            Some(slack_envelope("EvConversationIsolation")),
+        ),
+        frontend.clone(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let turns = wait_for_history_len(coordinator.as_ref(), "channel:C-other", 2).await;
+    assert_eq!(turns[1].text, "Answer.");
+    assert!(turns[1].chunk_ids.is_empty());
+    assert!(
+        frontend
+            .sends()
+            .iter()
+            .all(|message| !message.contains("docs/private-to-source.md"))
+    );
+}
+
+#[tokio::test]
+async fn new_session_clears_prior_citation_provenance() {
+    let coordinator = Arc::new(kiro_bot::engine::coordinator::NoopCoordinator::new());
+    let conversation = Conversation::Channel("C-reset-provenance".into());
+    coordinator
+        .append_turn(&conversation.id(), Turn {
+            role: TurnRole::Assistant,
+            text: "Grounded before reset.".into(),
+            ts: chrono::Utc::now(),
+            chunk_ids: vec!["docs/old-session.md".into()],
+        })
+        .await
+        .unwrap();
+    let core = build_core_with_reply(
+        coordinator.clone(),
+        "New-session answer.\n\nSources: `docs/old-session.md`",
+    );
+    let frontend = Arc::new(RecorderFrontend::new());
+
+    dispatch_with_receipt(
+        &core,
+        incoming("!new", conversation.clone(), Some(slack_envelope("EvResetProvenance"))),
+        frontend.clone(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    frontend.wait_for_send_count(1).await;
+    wait_for_dispatch_idle(&core, &conversation.id()).await;
+    assert!(
+        coordinator
+            .load_citation_sources(&conversation.id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    dispatch_with_receipt(
+        &core,
+        incoming(
+            "Can you still cite the old source?",
+            conversation.clone(),
+            Some(slack_envelope("EvAfterReset")),
+        ),
+        frontend.clone(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let turns = wait_for_history_len(coordinator.as_ref(), &conversation.id(), 3).await;
+    assert_eq!(turns[2].text, "New-session answer.");
+    assert!(turns[2].chunk_ids.is_empty());
+    assert!(
+        frontend
+            .sends()
+            .iter()
+            .all(|message| !message.contains("docs/old-session.md"))
+    );
 }
 
 #[tokio::test]
@@ -1265,79 +1423,6 @@ async fn lease_loss_cancels_active_prompt_before_ttl_expires() {
     assert_eq!(frontend.send_count(), 1, "first failed renewal must not cancel early");
 
     tokio::time::advance(Duration::from_secs(10)).await;
-    cancel_seen_rx.await.unwrap();
-    for _ in 0..5 {
-        tokio::task::yield_now().await;
-    }
-
-    let sends = frontend.sends();
-    assert_eq!(sends.len(), 2, "ack plus lease-loss error expected: {sends:?}");
-    assert!(sends[1].contains("Coordination lease was lost"));
-    assert_eq!(coordinator.releases.load(std::sync::atomic::Ordering::Relaxed), 1);
-}
-
-#[tokio::test(start_paused = true)]
-async fn lease_loss_cancels_active_citation_retry() {
-    let coordinator = Arc::new(LeaseLossCoordinator {
-        releases: std::sync::atomic::AtomicUsize::new(0),
-    });
-    let (work_sender, mut work_receiver) = mpsc::unbounded_channel();
-    let (retry_seen_tx, retry_seen_rx) = tokio::sync::oneshot::channel();
-    let (cancel_seen_tx, cancel_seen_rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        let mut prompt_count = 0;
-        let mut retry_seen_tx = Some(retry_seen_tx);
-        let mut cancel_seen_tx = Some(cancel_seen_tx);
-        let mut pending_retry = None;
-        while let Some(work) = work_receiver.recv().await {
-            match work {
-                Work::Prompt { input, reply_tx, .. } => {
-                    accept_prompt_input(input).await;
-                    prompt_count += 1;
-                    if prompt_count == 1 {
-                        let _ = reply_tx.send("Kiro can do that without a source.".into());
-                    } else {
-                        pending_retry = Some(reply_tx);
-                        if let Some(tx) = retry_seen_tx.take() {
-                            let _ = tx.send(());
-                        }
-                    }
-                },
-                Work::CancelAndWait { reply_tx, .. } => {
-                    if let Some(tx) = cancel_seen_tx.take() {
-                        let _ = tx.send(());
-                    }
-                    drop(pending_retry.take());
-                    let _ = reply_tx.send(());
-                },
-                _ => {},
-            }
-        }
-    });
-    let core = BotCore {
-        work_sender,
-        work_capacity: BotCore::work_capacity(64),
-        inflight: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
-        authz: None,
-        response_policy: Arc::new(ResponsePolicyConfig::default_policy()),
-        acp_info: Arc::new(std::sync::Mutex::new(AcpInfo::default())),
-        coordinator: coordinator.clone(),
-        lease_manager: LeaseManager::new(coordinator.clone()),
-        rate_limit: kiro_bot::config::RateLimitConfig::default(),
-    };
-    let frontend = Arc::new(RecorderFrontend::new());
-    dispatch(
-        &core,
-        incoming(
-            "How does Kiro handle this?",
-            Conversation::Channel("C-retry-lease-loss".into()),
-            Some(slack_envelope("EvRetryLeaseLoss")),
-        ),
-        frontend.clone(),
-    );
-    retry_seen_rx.await.unwrap();
-
-    tokio::time::advance(Duration::from_secs(21)).await;
     cancel_seen_rx.await.unwrap();
     for _ in 0..5 {
         tokio::task::yield_now().await;

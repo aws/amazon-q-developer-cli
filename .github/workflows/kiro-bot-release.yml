@@ -1,14 +1,12 @@
 name: kiro-bot-release
 
-# Phase 5 of the kiro-help bot roadmap. Builds, evals, and publishes the three
-# kiro-bot binaries (kiro-bot, kiro-cli, kiro-knowledge-mcp) into a single
-# binary-carrier image in ECR, then writes the digest to SSM so CodeBuild can
-# rebuild the runtime image and ECS can roll the service.
+# Phase 5 of the kiro-help bot roadmap. Builds and publishes the bot binaries
+# into a single binary-carrier image in ECR, then writes the digest to SSM so
+# CodeBuild can rebuild the runtime image and ECS can roll the service.
 #
 # Triggers:
 #   - push to feature/kiro-bot or main, restricted to paths that affect the
-#     bot binaries or the eval suite — avoids rebuilding the world on
-#     unrelated kiro-cli changes.
+#     bot binaries — avoids rebuilding the world on unrelated kiro-cli changes.
 #   - tag push matching kiro-bot-v* — promotes the digest to /prod/.
 #   - manual dispatch — this workflow revision fails explicitly; select a
 #     revision that implements the manual release jobs.
@@ -36,7 +34,6 @@ on:
       - 'crates/kiro-knowledge-mcp/**'
       - 'crates/kiro-github-mcp/**'
       - 'crates/kiro-mcp/**'
-      - 'crates/kiro-bot-eval/**'
       # chat-cli ships as the `kiro-cli` binary the bot execs, so any
       # change to the ACP server, tool dispatch, agent loader, or v2
       # chat surface affects bot behavior. Broadened from the original
@@ -80,37 +77,12 @@ jobs:
           # Without `with: toolchain:` set, this action reads the file.
           toolchain: 1.92.0
       - uses: Swatinem/rust-cache@v2
+      - name: Test no-RAG release contract
+        run: bash .github/scripts/kiro-bot-release/test-no-rag-contract.sh
       - run: |
           cargo test \
             -p kiro-bot \
-            -p kiro-knowledge-mcp \
-            -p kiro-bot-eval
-
-  eval:
-    name: Eval (RAG recall@5)
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          # Honor the workspace's rust-toolchain.toml so the build runs on
-          # the same compiler everyone else uses (1.92.0 at time of writing).
-          # Without `with: toolchain:` set, this action reads the file.
-          toolchain: 1.92.0
-      - uses: Swatinem/rust-cache@v2
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.PUBLISHER_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-      - run: |
-          KB_ID=$(aws ssm get-parameter \
-            --name /kiro-help-bot/alpha/kb-id \
-            --query Parameter.Value --output text)
-          cargo run --release -p kiro-bot-eval -- \
-            --kb-id "$KB_ID" \
-            --top-n 5 \
-            --threshold 0.7
+            -p kiro-knowledge-mcp
 
   build-binaries:
     name: Cross-compile ARM64 binaries
@@ -176,7 +148,7 @@ jobs:
   publish-image:
     name: Publish binary-carrier image
     runs-on: ubuntu-latest
-    needs: [build-binaries, eval]
+    needs: [build-binaries]
     outputs:
       digest: ${{ steps.push.outputs.digest }}
       stage: ${{ steps.stage.outputs.stage }}

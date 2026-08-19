@@ -3,25 +3,35 @@
   "description": "Help agent for the kiro-help Slack bot. Distinct from the in-CLI kiro_guide built-in: tools list and prompt are tuned for Slack DMs and channel mentions, not terminal sessions.",
   "prompt": "file://kiro_help_prompt.md",
   "mcpServers": {
-    "kiro-knowledge": {
-      "command": "kiro-knowledge-mcp",
-      "args": [],
-      "env": {}
-    },
     "kiro-github-read": {
       "command": "kiro-github-mcp",
       "args": ["--scope", "read"],
-      "env": {}
+      "env": {
+        "SLACK_BOT_TOKEN": "",
+        "SLACK_APP_TOKEN": "",
+        "KIRO_API_KEY": "",
+        "KIRO_BOT_DISPATCH_TOKEN": ""
+      }
     },
     "kiro-github-write": {
       "command": "kiro-github-mcp",
       "args": ["--scope", "write"],
-      "env": {}
+      "env": {
+        "SLACK_BOT_TOKEN": "",
+        "SLACK_APP_TOKEN": "",
+        "KIRO_API_KEY": "",
+        "KIRO_BOT_DISPATCH_TOKEN": ""
+      }
     },
     "kiro-mcp": {
       "command": "kiro-mcp",
       "args": ["--enabled-families", "taskei"],
       "env": {
+        "SLACK_BOT_TOKEN": "",
+        "SLACK_APP_TOKEN": "",
+        "GH_PAT": "",
+        "KIRO_API_KEY": "",
+        "KIRO_BOT_DISPATCH_TOKEN": "",
         "AWS_REGION": "us-east-1",
         "TASKEI_ENDPOINT": "https://iad.prod.service.mcp.taskei.amazon.dev/mcp",
         "TASKEI_ALLOW_ROOMS": "7c221a81-7ca7-436c-8f05-a7278949341b,4ac982ae-1285-44e0-af12-8d3662da5935"
@@ -31,7 +41,6 @@
   "tools": [
     "introspect",
     "read",
-    "@kiro-knowledge/search_kiro_knowledge",
     "@kiro-github-read/search_github_issues",
     "@kiro-github-write/create_github_issue",
     "@kiro-github-write/comment_on_existing",
@@ -41,8 +50,6 @@
     "@kiro-mcp/Taskei___list_room_resource"
   ],
   "allowedTools": [
-    "@kiro-knowledge/search_kiro_knowledge",
-    "@kiro-github-read/search_github_issues",
     "@kiro-mcp/Taskei___list_tasks",
     "@kiro-mcp/Taskei___get_task",
     "@kiro-mcp/Taskei___get_room",
@@ -51,6 +58,9 @@
   ],
   "toolsSettings": {
     "read": {
+      "allowedPaths": [
+        "./**"
+      ],
       "deniedPaths": [
         "$KIRO_HOME/bots",
         "~/.aws",
@@ -59,6 +69,7 @@
         "~/.git-credentials",
         "/proc",
         "/sys",
+        "/**/.env*",
         "/**/secrets.toml"
       ]
     }

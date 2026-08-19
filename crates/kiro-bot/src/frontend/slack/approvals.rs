@@ -14,20 +14,19 @@ use tracing::{
 
 use super::SlackState;
 use super::delivery::{
-    DELIVERIES,
     correlation_id,
     log_post_error,
     neutralize_slack_controls,
     post_request,
     render_message,
 };
+use super::feedback::record_feedback;
 use crate::engine::acp::{
     ApprovalRequest,
     ApprovalResponse,
 };
 use crate::engine::coordinator::DedupeOutcome;
 use crate::engine::core::{
-    Conversation,
     Frontend,
     Reply,
 };
@@ -52,16 +51,6 @@ fn wrong_requester(pending: &PendingApprovals, ts: &str, reactor: &str) -> Optio
         .get(ts)
         .map(|a| a.requester.clone())
         .filter(|requester| requester != reactor)
-}
-
-fn citation_lookup_keys(channel: &str, thread_ts: Option<&str>, resolved_user: &str) -> Vec<String> {
-    let mut keys = Vec::with_capacity(3);
-    if let Some(thread_ts) = thread_ts {
-        keys.push(Conversation::thread_session_id(channel, thread_ts));
-    }
-    keys.push(format!("dm:{resolved_user}"));
-    keys.push(format!("channel:{channel}"));
-    keys
 }
 
 fn is_approval_reaction(emoji: &str) -> bool {
@@ -232,39 +221,17 @@ pub(super) async fn handle_reaction(
         tracing::debug!(event_id, "duplicate reaction event, dropping");
         return Ok(());
     }
-    if let Some(writer) = state.feedback_writer.as_ref()
-        && let Some(reaction_kind) = feedback_reaction
-    {
+    if let Some(reaction_kind) = feedback_reaction {
         let channel = channel.as_ref().map(|value| value.to_string()).unwrap_or_default();
-        let mut chunk_ids = { DELIVERIES.lock().unwrap().citations(&ts) };
-        if chunk_ids.is_empty() {
-            let resolved_user = state.frontend.user_map.resolve(&reactor);
-            for conversation in citation_lookup_keys(
-                &channel,
-                msg.origin.thread_ts.as_ref().map(|thread| thread.0.as_str()),
-                resolved_user,
-            ) {
-                let turns = state
-                    .core
-                    .coordinator
-                    .load_history(&conversation, 5)
-                    .await
-                    .unwrap_or_default();
-                chunk_ids = crate::engine::feedback::chunk_ids_for_recent_assistant_turn(&turns);
-                if !chunk_ids.is_empty() {
-                    break;
-                }
-            }
-        }
-        let record = crate::engine::feedback::FeedbackRecord {
-            slack_msg_id: format!("{channel}:{ts}"),
-            reaction: reaction_kind,
-            chunk_ids,
-            ts: chrono::Utc::now(),
-        };
-        if let Err(error) = writer.record(record).await {
-            warn!(%error, "Feedback write failed");
-        }
+        record_feedback(
+            state,
+            &reactor,
+            &channel,
+            msg.origin.thread_ts.as_ref().map(|thread| thread.0.as_str()),
+            &ts,
+            reaction_kind,
+        )
+        .await;
     }
     Ok(())
 }
@@ -386,6 +353,25 @@ fn conv_id_for_approval(channel: &str, thread_ts: Option<&str>) -> String {
     }
 }
 
+fn approval_value(value: &str) -> String {
+    let encoded = serde_json::to_string(value).expect("serializing a string cannot fail");
+    neutralize_slack_controls(&encoded).replace('`', "'")
+}
+
+fn approval_message(req: &ApprovalRequest, options_text: &str, reaction_instructions: &str) -> String {
+    let details = req.github_search.as_ref().map_or_else(String::new, |search| {
+        format!(
+            "\n\n**Repository:** `{}`\n**Query:** `{}`",
+            approval_value(&search.repository),
+            approval_value(&search.query),
+        )
+    });
+    format!(
+        "**Permission request**\n\n`{}`{details}\n\nOptions: {options_text}\n\nOnly REQUESTER_MENTION can approve. React with {reaction_instructions}.",
+        neutralize_slack_controls(&req.tool_name.replace('`', "'")),
+    )
+}
+
 /// Spawn a task that posts approval requests to Slack and seeds emoji reactions.
 pub fn spawn_approval_listener(
     mut approval_rx: tokio::sync::mpsc::UnboundedReceiver<ApprovalRequest>,
@@ -415,10 +401,7 @@ pub fn spawn_approval_listener(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            let text = format!(
-                "**Permission request**\n\n`{}`\n\nOptions: {options_text}\n\nOnly REQUESTER_MENTION can approve. React with {reaction_instructions}.",
-                neutralize_slack_controls(&req.tool_name.replace('`', "'")),
-            );
+            let text = approval_message(&req, &options_text, &reaction_instructions);
             let mut rendered = render_message(&text);
             let mut content = rendered.chunks.remove(0);
             if let Some(blocks) = content.blocks.as_mut()
@@ -508,6 +491,46 @@ mod tests {
     };
 
     use super::*;
+
+    fn github_approval_request(query: &str, repository: &str) -> ApprovalRequest {
+        let (reply_tx, _reply_rx) = oneshot::channel();
+        ApprovalRequest {
+            tool_name: "Search GitHub issues".to_string(),
+            tool_call_id: "tc-1".to_string(),
+            github_search: Some(crate::engine::acp::GitHubSearchApproval {
+                query: query.to_string(),
+                repository: repository.to_string(),
+            }),
+            options: vec![("allow_once".to_string(), "Allow once".to_string())],
+            channel: "C1".to_string(),
+            thread_ts: Some("1.0".to_string()),
+            slack_user_id: "U_REQUESTER".to_string(),
+            reply_tx,
+        }
+    }
+
+    #[test]
+    fn github_approval_message_contains_complete_neutralized_query_and_repository() {
+        let request = github_approval_request(
+            "server <@U_BYSTANDER> shut down\n```unexpected```",
+            "kiro-team/kiro-cli",
+        );
+        let text = approval_message(&request, "Allow once", "yes to allow");
+
+        assert!(text.contains("**Repository:** `\"kiro-team/kiro-cli\"`"));
+        assert!(text.contains("server &lt;@U_BYSTANDER> shut down\\n'''unexpected'''"));
+        assert!(!text.contains("<@U_BYSTANDER>"));
+
+        let max_query = "q".repeat(crate::engine::acp::MAX_GITHUB_ISSUE_QUERY_CHARS);
+        let max_repository = "r".repeat(crate::engine::acp::MAX_GITHUB_ISSUE_REPOSITORY_CHARS);
+        let text = approval_message(
+            &github_approval_request(&max_query, &max_repository),
+            "Allow once",
+            "yes to allow",
+        );
+        assert!(text.contains(&format!("**Repository:** `\"{max_repository}\"`")));
+        assert!(text.contains(&format!("**Query:** `\"{max_query}\"`")));
+    }
 
     fn reaction_event(event_id: &str) -> SlackPushEventCallback {
         serde_json::from_value(serde_json::json!({
@@ -722,21 +745,5 @@ mod tests {
             reply_rx.try_recv(),
             Err(tokio::sync::oneshot::error::TryRecvError::Closed)
         ));
-    }
-
-    #[test]
-    fn citation_lookup_prefers_the_thread_scoped_dm_session() {
-        let dm = Conversation::Dm {
-            channel: "D123".into(),
-            user: "alice".into(),
-            thread_ts: "1700000000.1".into(),
-        };
-        let channel = Conversation::Channel("D123".into());
-
-        assert_eq!(citation_lookup_keys("D123", Some("1700000000.1"), "alice"), vec![
-            dm.id(),
-            "dm:alice".to_string(),
-            channel.id()
-        ]);
     }
 }

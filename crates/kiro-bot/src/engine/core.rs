@@ -271,6 +271,14 @@ fn try_admit_work(
     }
 }
 
+fn work_admission_user_message(error: &str) -> String {
+    if error == "ACP work capacity exhausted" {
+        "⏳ The bot is at capacity — try again shortly".into()
+    } else {
+        format!("Error: {error}")
+    }
+}
+
 fn try_enqueue_admitted_work(
     core: &BotCore,
     work: Work,
@@ -296,21 +304,6 @@ fn enqueue_admitted_work(
         Err((permit, work)) => {
             work.reject("Error: ACP runtime is unavailable");
             permit
-        },
-    }
-}
-
-fn enqueue_work(core: &BotCore, work: Work) -> Option<tokio::sync::OwnedSemaphorePermit> {
-    let conversation_id = work.conversation_id().unwrap_or("runtime").to_string();
-    match try_admit_work(core, &conversation_id) {
-        Ok(permit) => Some(enqueue_admitted_work(core, work, permit)),
-        Err(error) => {
-            if error.contains("capacity") {
-                work.reject("⏳ The bot is at capacity — try again shortly");
-            } else {
-                work.reject(format!("Error: {error}"));
-            }
-            None
         },
     }
 }
@@ -784,7 +777,7 @@ fn dispatch_inner(
                             .send(Reply::Send {
                                 conversation: platform_id,
                                 reply_to,
-                                text: format!("Error: {error}"),
+                                text: work_admission_user_message(&error),
                             })
                             .await;
                     }
@@ -979,10 +972,6 @@ async fn run_action(
                 preparation.prepare(&mut text).await;
             }
 
-            // Capture a copy of the user prompt before move so we can run
-            // the post-reply retrieval check without re-fetching it.
-            let prompt_for_check = text.clone();
-
             let (approval_channel, approval_thread) = match &conversation {
                 Conversation::Dm { channel, .. } => (channel.clone(), reply_to.clone()),
                 Conversation::Channel(id) => (id.clone(), reply_to.clone()),
@@ -1057,104 +1046,32 @@ async fn run_action(
                 };
             drop(work_permit);
 
-            // Post-reply retrieval check. If the model answered a
-            // kiro-shaped question without citing, log a structured
-            // warning AND inject a coercive retry through the same ACP
-            // session asking it to redo the answer with retrieval. The
-            // retry takes the place of the original reply so the user
-            // never sees the un-cited draft.
-            use crate::engine::retrieval_check::{
-                RetrievalCheck,
-                check,
-            };
-            let final_reply_text = match check(&prompt_for_check, &reply_text) {
-                RetrievalCheck::MissingCitation => {
+            let mut authorized_sources = match core.coordinator.load_citation_sources(&session_key).await {
+                Ok(sources) => sources,
+                Err(error) => {
                     tracing::warn!(
-                        target: "retrieval_check",
+                        %error,
                         conversation = %session_key,
-                        user = %msg.user,
-                        prompt_preview = %prompt_for_check.chars().take(120).collect::<String>(),
-                        "model answered a kiro-related question without citing — issuing retry"
+                        "Failed to load prior citation provenance"
                     );
-                    // Coercive retry. Don't repeat the user's question —
-                    // the ACP session retains its own history. Just give
-                    // the model a one-line procedural correction.
-                    let retry_prompt = "[system retry] You answered the previous question \
-                        without calling search_kiro_knowledge. That violates the workflow. \
-                        Call search_kiro_knowledge now with a focused query, then re-answer \
-                        the original question and end with a `Sources:` line citing the \
-                        retrieved chunk paths. Do not apologize or explain — just produce \
-                        the corrected answer.";
-                    let (retry_tx, mut retry_rx) = oneshot::channel();
-                    let retry_permit = enqueue_work(&core, Work::Prompt {
-                        input: PromptInput::ready(
-                            retry_prompt.to_string(),
-                            Vec::new(),
-                            match &conversation {
-                                Conversation::Dm { channel, .. } => channel.clone(),
-                                Conversation::Channel(id) => id.clone(),
-                                Conversation::Thread { channel, .. } => channel.clone(),
-                            },
-                            match &conversation {
-                                Conversation::Thread { thread_ts, .. } => Some(thread_ts.clone()),
-                                _ => reply_to.clone(),
-                            },
-                            msg.user.clone(),
-                            msg.slack_user_id.clone(),
-                        ),
-                        conversation: session_key.clone(),
-                        reply_tx: retry_tx,
-                        progress_tx: progress_tx.clone(),
-                    });
-                    let retry_result =
-                        await_prompt_reply(&core, &session_key, &request_id, &mut retry_rx, lease_loss.as_mut()).await;
-                    drop(retry_permit);
-                    match retry_result {
-                        Ok(retried) => {
-                            if matches!(check(&prompt_for_check, &retried), RetrievalCheck::Cited) {
-                                retried
-                            } else {
-                                tracing::warn!(
-                                    target: "retrieval_check",
-                                    conversation = %session_key,
-                                    "retry also lacked a citation — sending original answer with a soft note"
-                                );
-                                format!(
-                                    "{reply_text}\n\n_(I answered from training; if this should be grounded in our docs, ask me to cite a source.)_"
-                                )
-                            }
-                        },
-                        Err(PromptWaitFailure::ReplyChannelClosed) => {
-                            tracing::error!(target: "retrieval_check", "retry channel closed");
-                            reply_text
-                        },
-                        Err(PromptWaitFailure::LeaseLost(failure)) => {
-                            tracing::debug!(%request_id, conversation_id = %session_key, %failure);
-                            drop(progress_tx);
-                            stop_progress_updates(progress_handle).await;
-                            if let Some(ack_id) = ack_id.as_deref() {
-                                report_lease_loss(&frontend, &platform_id, ack_id, &stream_thread).await;
-                            } else {
-                                let _ = frontend
-                                    .send(Reply::Send {
-                                        conversation: platform_id,
-                                        reply_to: Some(stream_thread),
-                                        text:
-                                            "Error: Coordination lease was lost, so this request was cancelled. Please retry."
-                                                .into(),
-                                    })
-                                    .await;
-                            }
-                            return;
-                        },
-                    }
+                    Vec::new()
                 },
-                _ => reply_text,
             };
-            let response_status = progress_status_for_reply(&final_reply_text);
+            authorized_sources.extend(
+                core.acp_info
+                    .lock()
+                    .unwrap()
+                    .prompt_sources
+                    .remove(&session_key)
+                    .unwrap_or_default(),
+            );
+            let validated = crate::engine::feedback::validate_cited_sources(&reply_text, &authorized_sources);
+            let reply_text = validated.text;
+            let chunk_ids = validated.sources;
+            let response_status = progress_status_for_reply(&reply_text);
 
             drop(progress_tx);
-            let final_reply = with_genai_disclaimer(&final_reply_text);
+            let final_reply = with_genai_disclaimer(&reply_text);
             let delivery = if let Some(ack_id) = ack_id {
                 finish_progress_with_reply(
                     &frontend,
@@ -1187,12 +1104,11 @@ async fn run_action(
                 return;
             }
 
-            let chunk_ids = crate::engine::feedback::extract_cited_sources(&final_reply_text);
             if let Err(error) = core
                 .coordinator
                 .append_turn(&session_key, Turn {
                     role: TurnRole::Assistant,
-                    text: final_reply_text,
+                    text: reply_text,
                     ts: chrono::Utc::now(),
                     chunk_ids,
                 })
@@ -1252,6 +1168,15 @@ async fn run_action(
                     .await;
                 },
                 Action::NewSession => {
+                    if let Err(error) = core.coordinator.reset_citation_sources(&session_key).await {
+                        tracing::error!(
+                            %error,
+                            conversation = %session_key,
+                            "Failed to reset citation provenance"
+                        );
+                        send("Error: Session reset failed. Please retry.".into()).await;
+                        return;
+                    }
                     let (tx, rx) = oneshot::channel();
                     let permit = enqueue_admitted_work(
                         &core,
@@ -1724,7 +1649,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn work_capacity_rejects_overload_with_explicit_reply() {
+    async fn production_work_admission_rejects_overload() {
         let work_capacity = BotCore::work_capacity(1);
         let all_permits = work_capacity.clone().acquire_owned().await.unwrap();
         let (work_sender, _work_receiver) = mpsc::unbounded_channel();
@@ -1742,15 +1667,12 @@ mod tests {
             lease_manager: LeaseManager::new(coordinator),
             rate_limit: crate::config::RateLimitConfig::default(),
         };
-        let (reply_tx, reply_rx) = oneshot::channel();
-
-        let permit = enqueue_work(&core, Work::Status {
-            conversation: "conversation-overload".into(),
-            reply_tx,
-        });
-
-        assert!(permit.is_none());
-        assert_eq!(reply_rx.await.unwrap(), "⏳ The bot is at capacity — try again shortly");
+        let error = try_admit_work(&core, "conversation-overload").unwrap_err();
+        assert_eq!(error, "ACP work capacity exhausted");
+        assert_eq!(
+            work_admission_user_message(&error),
+            "⏳ The bot is at capacity — try again shortly"
+        );
         assert_eq!(acp_info.lock().unwrap().overload_rejections, 1);
         drop(all_permits);
     }

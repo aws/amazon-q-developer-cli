@@ -4,6 +4,7 @@
 //! and dispatches them through the bot core. Handles:
 //! - Message and app_mention events → [`crate::engine::core::dispatch`]
 //! - Reaction events → tool approval (✅/❌/🔓)
+//! - Feedback button interactions → response quality persistence
 //! - File downloads from message attachments
 //! - Native Slack Markdown Block Kit rendering
 
@@ -11,6 +12,7 @@ mod approvals;
 mod attachments;
 mod delivery;
 mod events;
+mod feedback;
 mod socket_admission;
 
 use std::collections::HashMap;
@@ -41,16 +43,14 @@ use self::attachments::AttachmentStore;
 #[cfg(test)]
 use self::delivery::*;
 pub use self::events::dispatch_event;
+pub use self::feedback::on_interaction;
 pub use self::socket_admission::{
     SlackSocketState,
     on_error,
     on_push,
 };
 #[cfg(test)]
-use crate::engine::acp::{
-    ProgressStatus,
-    ProgressUpdate,
-};
+use crate::engine::acp::ProgressStatus;
 use crate::engine::attachment_read::AttachmentReadAuthorizer;
 use crate::engine::core::BotCore;
 #[cfg(test)]
@@ -68,6 +68,7 @@ pub struct SlackFrontend {
     pub conversation_history: u16,
     pub last_seen: Mutex<HashMap<String, SlackTs>>,
     pub recipient_teams: Mutex<HashMap<String, String>>,
+    feedback_enabled: bool,
     attachment_store: AttachmentStore,
 }
 
@@ -78,6 +79,7 @@ impl SlackFrontend {
         user_map: Arc<UserMap>,
         conversation_history: u16,
         attachment_reads: Arc<AttachmentReadAuthorizer>,
+        feedback_enabled: bool,
     ) -> Result<Self> {
         Ok(Self {
             client,
@@ -86,6 +88,7 @@ impl SlackFrontend {
             conversation_history,
             last_seen: Mutex::new(HashMap::new()),
             recipient_teams: Mutex::new(HashMap::new()),
+            feedback_enabled,
             attachment_store: AttachmentStore::new_default(attachment_reads)?,
         })
     }
@@ -106,10 +109,8 @@ pub struct SlackState {
     pub bot_id: String,
     pub user_map: Arc<UserMap>,
     pub pending_approvals: PendingApprovals,
-    /// 👍/👎 reactions on bot-authored messages flow into this writer for the
-    /// nightly metrics Lambda. None when no feedback table is configured —
-    /// reactions are still consumed by the approval flow above, just not
-    /// persisted as feedback.
+    /// Native feedback controls and thumbs reactions flow into this writer for
+    /// the nightly metrics Lambda. None when no feedback table is configured.
     pub feedback_writer: Option<Arc<dyn crate::engine::feedback::FeedbackWriter>>,
     /// This task's identity, as written into the cross-task approvals table.
     /// Read by the reaction handler to compare against the lookup-owner so a
@@ -207,23 +208,50 @@ mod tests {
             "## Root cause\nThe worker stopped.\n\nSources: `crates/kiro-bot/src/engine/acp.rs:10`\n\n{GENAI_DISCLAIMER}"
         ));
         let content = &rendered.chunks[0];
-        assert_eq!(content.text.as_deref(), Some("Root cause The worker stopped."));
-        let blocks = content.blocks.as_ref().unwrap();
-        assert_eq!(blocks.len(), 2);
-        match &blocks[1] {
-            SlackBlock::Context(context) => {
-                assert_eq!(context.elements.len(), 2);
-                match &context.elements[0] {
-                    SlackContextBlockElement::MarkDown(text) => assert!(text.text.contains("Sources:")),
-                    other => panic!("expected source context, got {other:?}"),
-                }
-                match &context.elements[1] {
-                    SlackContextBlockElement::MarkDown(text) => assert_eq!(text.text, DISCLAIMER_CONTEXT),
-                    other => panic!("expected disclaimer context, got {other:?}"),
-                }
-            },
-            other => panic!("expected context block, got {other:?}"),
-        }
+        assert_eq!(
+            serde_json::to_value(content).unwrap(),
+            serde_json::json!({
+                "text": concat!(
+                    "Root cause The worker stopped.\n",
+                    "Sources: crates/kiro-bot/src/engine/acp.rs:10\n",
+                    "AI-generated; verify before acting."
+                ),
+                "blocks": [
+                    {
+                        "type": "markdown",
+                        "text": "## Root cause\nThe worker stopped."
+                    },
+                    {
+                        "type": "context",
+                        "elements": [
+                            {
+                                "type": "mrkdwn",
+                                "text": "Sources: `crates/kiro-bot/src/engine/acp.rs:10`",
+                                "verbatim": true
+                            },
+                            {
+                                "type": "mrkdwn",
+                                "text": "AI-generated; verify before acting.",
+                                "verbatim": true
+                            }
+                        ]
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn accessible_fallback_reserves_room_for_sources_and_disclaimer() {
+        let body = "answer ".repeat(FALLBACK_CHAR_LIMIT);
+        let rendered = render_message(&format!(
+            "{body}\n\nSources: `crates/kiro-bot/src/engine/acp.rs:10`\n\n{GENAI_DISCLAIMER}"
+        ));
+        let fallback = rendered.chunks.last().unwrap().text.as_deref().unwrap();
+
+        assert!(char_len(fallback) <= FALLBACK_CHAR_LIMIT);
+        assert!(fallback.contains("Sources: crates/kiro-bot/src/engine/acp.rs:10"));
+        assert!(fallback.ends_with(DISCLAIMER_CONTEXT));
     }
 
     #[test]
@@ -323,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_requests_match_slack_task_update_contract() {
+    fn stream_requests_match_slack_plan_live_card_contract() {
         let start = serde_json::to_value(start_stream_request(
             "C123".into(),
             "170.1".into(),
@@ -335,25 +363,29 @@ mod tests {
         assert_eq!(start["thread_ts"], "170.1");
         assert_eq!(start["recipient_user_id"], "U123");
         assert_eq!(start["recipient_team_id"], "T123");
-        assert_eq!(start["task_display_mode"], "timeline");
+        assert_eq!(start["task_display_mode"], "plan");
         assert_eq!(start["chunks"][0]["type"], "task_update");
+        assert_eq!(start["chunks"][0]["id"], RESPONSE_TASK_ID);
+        assert_eq!(start["chunks"][0]["title"], "Working on your request");
         assert_eq!(start["chunks"][0]["status"], "in_progress");
 
+        let progress = SlackStreamChunk::TaskUpdate {
+            id: "kiro-context".into(),
+            title: "Gathering context".into(),
+            status: SlackStreamTaskStatus::Complete,
+        };
         let append = serde_json::to_value(SlackAppendStreamRequest {
             channel: "C123".into(),
             ts: "170.2".into(),
             markdown_text: None,
-            chunks: vec![progress_task(ProgressUpdate {
-                id: "tool-1".into(),
-                title: "Searching Kiro docs".into(),
-                status: ProgressStatus::Complete,
-            })],
+            chunks: vec![progress.clone()],
         })
         .unwrap();
         assert_eq!(append["ts"], "170.2");
         assert!(append.get("markdown_text").is_none());
-        assert_eq!(append["chunks"][0]["id"], "tool-1");
-        assert_eq!(append["chunks"][0]["title"], "Searching Kiro docs");
+        assert_eq!(append["chunks"][0]["type"], "task_update");
+        assert_eq!(append["chunks"][0]["id"], "kiro-context");
+        assert_eq!(append["chunks"][0]["title"], "Gathering context");
         assert_eq!(append["chunks"][0]["status"], "complete");
 
         let complete = serde_json::to_value(stop_stream_request(
@@ -361,32 +393,96 @@ mod tests {
             "170.2".into(),
             &format!("**Answer**\n\n{GENAI_DISCLAIMER}"),
             ProgressStatus::Complete,
+            vec![progress.clone()],
+            true,
         ))
         .unwrap();
+        assert_eq!(complete["chunks"][0]["id"], RESPONSE_TASK_ID);
         assert_eq!(complete["chunks"][0]["status"], "complete");
-        assert_eq!(complete["chunks"][1]["type"], "markdown_text");
-        assert_eq!(complete["chunks"][1]["text"], "**Answer**");
+        assert_eq!(complete["chunks"][1]["id"], "kiro-context");
+        assert_eq!(complete["chunks"][1]["status"], "complete");
+        assert_eq!(complete["chunks"][2]["type"], "markdown_text");
+        assert_eq!(complete["chunks"][2]["text"], "**Answer**");
         assert!(complete.get("markdown_text").is_none());
         assert_eq!(complete["blocks"][0]["type"], "context");
+        assert_eq!(complete["blocks"][1]["type"], "context_actions");
 
         let fallback = serde_json::to_value(stop_stream_fallback_request(
             "C123".into(),
             "170.2".into(),
             &format!("**Answer**\n\n{GENAI_DISCLAIMER}"),
+            ProgressStatus::Complete,
+            vec![progress],
         ))
         .unwrap();
-        assert!(fallback.get("chunks").is_none());
         assert_eq!(fallback["markdown_text"], "**Answer**");
+        assert_eq!(fallback["chunks"][0]["id"], RESPONSE_TASK_ID);
+        assert_eq!(fallback["chunks"][1]["id"], "kiro-context");
+        assert_eq!(fallback["chunks"][1]["status"], "complete");
         assert_eq!(fallback["blocks"][0]["type"], "context");
+        assert_eq!(fallback["blocks"].as_array().unwrap().len(), 1);
 
         let failed = serde_json::to_value(stop_stream_request(
             "C123".into(),
             "170.2".into(),
             "Error",
             ProgressStatus::Error,
+            Vec::new(),
+            false,
         ))
         .unwrap();
         assert_eq!(failed["chunks"][0]["status"], "error");
+    }
+
+    #[test]
+    fn degraded_stream_update_preserves_feedback_after_start_or_append_fallback() {
+        let mut chunks = degraded_final_chunks(
+            &format!("Answer.\n\nSources: `crates/kiro-bot/src/frontend/slack.rs:1`\n\n{GENAI_DISCLAIMER}"),
+            true,
+        );
+        let chunk = chunks.pop_front().unwrap();
+        assert!(chunks.is_empty());
+        let request = SlackApiChatUpdateRequest::new("C123".into(), chunk.content, "1700000000.2".into());
+        let payload = request_with_feedback(&request, chunk.feedback_enabled);
+
+        assert_eq!(payload["channel"], "C123");
+        assert_eq!(payload["ts"], "1700000000.2");
+        assert_eq!(
+            payload["text"],
+            concat!(
+                "Answer.\n",
+                "Sources: crates/kiro-bot/src/frontend/slack.rs:1\n",
+                "AI-generated; verify before acting."
+            )
+        );
+        assert_eq!(payload["blocks"][0]["type"], "markdown");
+        assert_eq!(payload["blocks"][1]["type"], "context");
+        assert_eq!(payload["blocks"][2], super::feedback::feedback_block());
+    }
+
+    #[test]
+    fn degraded_stream_posts_feedback_only_with_the_final_chunk() {
+        let text = format!(
+            "{}\n\nSources: `crates/kiro-bot/src/frontend/slack.rs:1`\n\n{GENAI_DISCLAIMER}",
+            "A complete answer sentence. ".repeat(1_000)
+        );
+        let chunks = degraded_final_chunks(&text, true);
+        assert!(chunks.len() > 1);
+        let last_index = chunks.len() - 1;
+
+        for (index, chunk) in chunks.into_iter().enumerate() {
+            let request = post_request("C123".into(), chunk.content, Some("1700000000.1".into()));
+            let payload = request_with_feedback(&request, chunk.feedback_enabled);
+            let feedback_count = payload["blocks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|block| block["type"] == "context_actions")
+                .count();
+
+            assert_eq!(feedback_count, usize::from(index == last_index));
+            assert_eq!(payload["thread_ts"], "1700000000.1");
+        }
     }
 
     #[test]

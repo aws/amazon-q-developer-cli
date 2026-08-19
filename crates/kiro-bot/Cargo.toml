@@ -46,6 +46,7 @@ subtle = "2.6"
 uuid.workspace = true
 
 [dev-dependencies]
+agent.workspace = true
 aws-sdk-dynamodb = { workspace = true, features = ["test-util"] }
 aws-smithy-mocks.workspace = true
 tempfile.workspace = true

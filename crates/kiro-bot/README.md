@@ -117,6 +117,7 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 ### 2. Enable Socket Mode
 
 - **Settings → Socket Mode** → Toggle **Enable Socket Mode**
+- **Features → Interactivity & Shortcuts** → Toggle **Interactivity On**
 - Generate an **App-Level Token** with the `connections:write` scope
 - Save the token (`xapp-...`) — you'll need it during install
 
@@ -146,7 +147,7 @@ Under **App Home**, enable the **Messages Tab** and allow users to send messages
 |-------|---------|
 | `app_mention` | Respond when @mentioned in channels |
 | `message.im` | Respond to direct messages |
-| `reaction_added` | Tool approval via ✅/❌/🔓 reactions |
+| `reaction_added` | Tool approval and fallback response feedback via reactions |
 | `reaction_removed` | Handle approval retraction |
 
 ### 5. Install to Workspace

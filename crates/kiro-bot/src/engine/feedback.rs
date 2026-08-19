@@ -7,7 +7,11 @@
 //! `KiroHelpBot::NegativeFeedbackRate`, which feeds the
 //! `kiro-bot-<stage>-negative-feedback-high` alarm.
 
-use std::collections::HashMap;
+use std::collections::{
+    BTreeSet,
+    HashMap,
+    HashSet,
+};
 
 use anyhow::Context;
 use aws_sdk_dynamodb::Client;
@@ -119,31 +123,305 @@ pub fn chunk_ids_for_recent_assistant_turn(turns: &[crate::engine::coordinator::
 }
 
 pub fn extract_cited_sources(reply: &str) -> Vec<String> {
-    let Some(sources) = reply
-        .lines()
-        .rev()
-        .find_map(|line| line.trim().strip_prefix("Sources:"))
-    else {
+    let Some((_, sources)) = sources_line(reply) else {
         return Vec::new();
     };
 
-    let quoted = sources
-        .split('`')
-        .enumerate()
-        .filter_map(|(index, value)| (index % 2 == 1).then_some(value.trim()))
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
+    parse_cited_sources(sources)
+        .into_iter()
+        .map(|source| source.identifier)
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedReply {
+    pub text: String,
+    pub sources: Vec<String>,
+}
+
+#[derive(Debug)]
+struct CitedSource {
+    rendered: String,
+    identifier: String,
+}
+
+/// Keep only citations backed by trusted conversation provenance.
+pub fn validate_cited_sources(reply: &str, authorized: &[String]) -> ValidatedReply {
+    let Some((source_line, sources)) = sources_line(reply) else {
+        return ValidatedReply {
+            text: reply.to_string(),
+            sources: Vec::new(),
+        };
+    };
+    let authorized = authorized.iter().map(String::as_str).collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    let valid = parse_cited_sources(sources)
+        .into_iter()
+        .filter_map(|source| {
+            authorized_source(&source.identifier, &authorized)
+                .and_then(|identifier| seen.insert(identifier.clone()).then_some((source.rendered, identifier)))
+        })
         .collect::<Vec<_>>();
-    if !quoted.is_empty() {
-        return quoted;
+
+    let mut lines = reply.lines().map(str::to_string).collect::<Vec<_>>();
+    if valid.is_empty() {
+        lines.remove(source_line);
+        if source_line > 0
+            && source_line < lines.len()
+            && lines[source_line - 1].trim().is_empty()
+            && lines[source_line].trim().is_empty()
+        {
+            lines.remove(source_line);
+        } else if source_line == lines.len() && lines.last().is_some_and(|line| line.trim().is_empty()) {
+            lines.pop();
+        }
+    } else {
+        lines[source_line] = format!(
+            "Sources: {}",
+            valid
+                .iter()
+                .map(|(rendered, _)| rendered.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
 
+    ValidatedReply {
+        text: lines.join("\n"),
+        sources: valid.into_iter().map(|(_, identifier)| identifier).collect(),
+    }
+}
+
+/// Extract source identifiers from one successful ACP tool result.
+pub fn successful_tool_sources(
+    server_name: Option<&str>,
+    tool_name: &str,
+    raw_input: &serde_json::Value,
+    raw_output: &serde_json::Value,
+) -> Vec<String> {
+    if output_reports_error(raw_output) {
+        return Vec::new();
+    }
+
+    let mut sources = BTreeSet::new();
+    match (server_name, tool_name) {
+        (None, "read" | "fs_read" | "fsRead") => collect_read_paths(raw_input, &mut sources),
+        (Some("kiro-github-read"), "search_github_issues") => {
+            visit_mcp_payloads(raw_output, &mut |key, value| {
+                if matches!(key, "html_url" | "htmlUrl")
+                    && let Some(url) = value.as_str()
+                    && url.starts_with("https://github.com/")
+                {
+                    sources.insert(normalize_source_identifier(url));
+                    if let Some(alias) = github_source_alias(url) {
+                        sources.insert(alias);
+                    }
+                }
+            });
+        },
+        (Some("kiro-mcp"), tool) if tool.starts_with("Taskei___") => {
+            visit_mcp_payloads(raw_output, &mut |key, value| {
+                if taskei_source_key(tool, key)
+                    && let Some(identifier) = value.as_str()
+                    && !identifier.trim().is_empty()
+                {
+                    sources.insert(format!("taskei:{}", identifier.trim()));
+                }
+            });
+        },
+        _ => {},
+    }
+
+    sources.into_iter().collect()
+}
+
+fn sources_line(reply: &str) -> Option<(usize, &str)> {
+    reply
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| line.trim().strip_prefix("Sources:").map(|sources| (index, sources)))
+        .last()
+}
+
+fn parse_cited_sources(sources: &str) -> Vec<CitedSource> {
     sources
         .split([',', '|'])
         .map(|value| value.trim().trim_matches(['*', '_']))
         .filter(|value| !value.is_empty())
-        .map(str::to_string)
+        .map(|value| {
+            let quoted = value
+                .strip_prefix('`')
+                .and_then(|value| value.strip_suffix('`'))
+                .filter(|value| !value.is_empty());
+            CitedSource {
+                rendered: value.to_string(),
+                identifier: quoted
+                    .or_else(|| markdown_link_target(value))
+                    .map(normalize_source_identifier)
+                    .unwrap_or_else(|| normalize_source_identifier(value)),
+            }
+        })
         .collect()
+}
+
+fn markdown_link_target(value: &str) -> Option<&str> {
+    let (_, target) = value.strip_prefix('[')?.split_once("](")?;
+    target.strip_suffix(')').filter(|target| !target.is_empty())
+}
+
+fn authorized_source(identifier: &str, authorized: &HashSet<&str>) -> Option<String> {
+    if authorized.contains(identifier) && !identifier.ends_with("-*") {
+        return Some(identifier.to_string());
+    }
+
+    let (path, cited_start, cited_end) = parse_line_qualifier(identifier)?;
+    authorized
+        .iter()
+        .filter_map(|source| parse_authorized_line_scope(source))
+        .any(|(authorized_path, authorized_start, authorized_end)| {
+            path == authorized_path
+                && cited_start >= authorized_start
+                && authorized_end.is_none_or(|authorized_end| cited_end <= authorized_end)
+        })
+        .then(|| identifier.to_string())
+}
+
+fn parse_line_qualifier(identifier: &str) -> Option<(&str, u64, u64)> {
+    let (path, lines) = identifier.rsplit_once(':')?;
+    let mut ranges = lines.split('-');
+    let start = ranges.next()?.parse().ok()?;
+    let end = ranges.next().map(str::parse).transpose().ok()?.unwrap_or(start);
+    if ranges.next().is_some() || end < start {
+        return None;
+    }
+    Some((path, start, end))
+}
+
+fn parse_authorized_line_scope(identifier: &str) -> Option<(&str, u64, Option<u64>)> {
+    let (path, lines) = identifier.rsplit_once(':')?;
+    let (start, end) = lines.split_once('-')?;
+    let start = start.parse().ok()?;
+    let end = if end == "*" { None } else { Some(end.parse().ok()?) };
+    Some((path, start, end))
+}
+
+fn normalize_source_identifier(identifier: &str) -> String {
+    identifier
+        .trim()
+        .strip_prefix("./")
+        .unwrap_or(identifier.trim())
+        .to_string()
+}
+
+fn collect_read_paths(input: &serde_json::Value, sources: &mut BTreeSet<String>) {
+    let Some(operations) = input.get("operations").and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    for operation in operations {
+        if let Some(path) = operation.get("path").and_then(serde_json::Value::as_str) {
+            let path = normalize_source_identifier(path);
+            sources.insert(path.clone());
+            if operation.get("mode").and_then(serde_json::Value::as_str) == Some("Line") {
+                let offset = operation
+                    .get("offset")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or_default();
+                let start = offset.saturating_add(1);
+                let end = operation
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .filter(|limit| *limit > 0)
+                    .map_or_else(|| "*".to_string(), |limit| offset.saturating_add(limit).to_string());
+                sources.insert(format!("{path}:{start}-{end}"));
+            }
+        }
+        if let Some(paths) = operation.get("paths").and_then(serde_json::Value::as_array) {
+            sources.extend(
+                paths
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(normalize_source_identifier),
+            );
+        }
+    }
+}
+
+fn output_reports_error(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(object) => {
+            object.get("isError").and_then(serde_json::Value::as_bool) == Some(true)
+                || object.values().any(output_reports_error)
+        },
+        serde_json::Value::Array(values) => values.iter().any(output_reports_error),
+        _ => false,
+    }
+}
+
+fn visit_mcp_payloads(value: &serde_json::Value, visitor: &mut impl FnMut(&str, &serde_json::Value)) {
+    match value {
+        serde_json::Value::Object(object) => {
+            if object.get("type").and_then(serde_json::Value::as_str) == Some("text")
+                && let Some(text) = object.get("text").and_then(serde_json::Value::as_str)
+                && let Ok(payload) = serde_json::from_str(text)
+            {
+                visit_json_payload(&payload, visitor);
+            }
+            for value in object.values() {
+                visit_mcp_payloads(value, visitor);
+            }
+        },
+        serde_json::Value::Array(values) => {
+            for value in values {
+                visit_mcp_payloads(value, visitor);
+            }
+        },
+        _ => {},
+    }
+}
+
+fn visit_json_payload(value: &serde_json::Value, visitor: &mut impl FnMut(&str, &serde_json::Value)) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, value) in object {
+                visitor(key, value);
+                visit_json_payload(value, visitor);
+            }
+        },
+        serde_json::Value::Array(values) => {
+            for value in values {
+                visit_json_payload(value, visitor);
+            }
+        },
+        _ => {},
+    }
+}
+
+fn taskei_source_key(tool: &str, key: &str) -> bool {
+    match tool {
+        "Taskei___list_tasks" | "Taskei___get_task" => matches!(key, "id" | "taskId" | "task_id"),
+        "Taskei___get_room" => matches!(key, "id" | "roomId" | "room_id"),
+        "Taskei___list_room_resource" => {
+            matches!(key, "id" | "resourceId" | "resource_id" | "roomId" | "room_id")
+        },
+        _ => false,
+    }
+}
+
+fn github_source_alias(url: &str) -> Option<String> {
+    let path = url.strip_prefix("https://github.com/")?;
+    let mut segments = path.split('/');
+    let owner = segments.next()?;
+    let repo = segments.next()?;
+    let kind = match segments.next()? {
+        "issues" => "github_issue",
+        "pull" => "github_pr",
+        _ => return None,
+    };
+    let number = segments.next()?.split(['#', '?']).next()?;
+    if owner.is_empty() || repo.is_empty() || number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!("{kind}:{owner}/{repo}#{number}"))
 }
 
 fn build_item(record: &FeedbackRecord) -> HashMap<String, AttributeValue> {
@@ -301,5 +579,143 @@ mod tests {
             vec!["docs/a.md", "github_issue:#42"]
         );
         assert!(extract_cited_sources("Answer without sources").is_empty());
+    }
+
+    #[test]
+    fn successful_read_authorizes_requested_paths() {
+        let input = serde_json::json!({
+            "operations": [
+                { "mode": "Line", "path": "./crates/kiro-bot/src/engine/acp.rs", "offset": 10, "limit": 20 },
+                { "mode": "Image", "paths": ["docs/diagram.png"] }
+            ]
+        });
+        let output = serde_json::json!({
+            "items": [{ "Text": "source contents" }]
+        });
+
+        assert_eq!(successful_tool_sources(None, "read", &input, &output), vec![
+            "crates/kiro-bot/src/engine/acp.rs",
+            "crates/kiro-bot/src/engine/acp.rs:11-30",
+            "docs/diagram.png"
+        ]);
+    }
+
+    #[test]
+    fn successful_github_search_extracts_returned_sources() {
+        let output = serde_json::json!({
+            "items": [{
+                "Json": {
+                    "content": [{
+                        "type": "text",
+                        "text": "[{\"number\":42,\"html_url\":\"https://github.com/kiro-team/kiro-cli/issues/42\"}]"
+                    }],
+                    "isError": false
+                }
+            }]
+        });
+
+        assert_eq!(
+            successful_tool_sources(
+                Some("kiro-github-read"),
+                "search_github_issues",
+                &serde_json::json!({ "query": "shutdown" }),
+                &output,
+            ),
+            vec![
+                "github_issue:kiro-team/kiro-cli#42",
+                "https://github.com/kiro-team/kiro-cli/issues/42"
+            ]
+        );
+    }
+
+    #[test]
+    fn mcp_application_errors_authorize_no_sources() {
+        let output = serde_json::json!({
+            "items": [{
+                "Json": {
+                    "content": [{
+                        "type": "text",
+                        "text": "{\"taskId\":\"fabricated\"}"
+                    }],
+                    "isError": true
+                }
+            }]
+        });
+
+        assert!(
+            successful_tool_sources(Some("kiro-mcp"), "Taskei___get_task", &serde_json::json!({}), &output,).is_empty()
+        );
+    }
+
+    #[test]
+    fn taskei_sources_come_from_returned_schema_ids_only() {
+        let output = serde_json::json!({
+            "items": [{
+                "Json": {
+                    "content": [{
+                        "type": "text",
+                        "text": "{\"tasks\":[{\"taskId\":\"task-123\",\"description\":\"{\\\"id\\\":\\\"injected\\\"}\"}]}"
+                    }],
+                    "isError": false
+                }
+            }]
+        });
+
+        assert_eq!(
+            successful_tool_sources(Some("kiro-mcp"), "Taskei___list_tasks", &serde_json::json!({}), &output,),
+            vec!["taskei:task-123"]
+        );
+    }
+
+    #[test]
+    fn cited_sources_are_intersected_before_rendering_and_persistence() {
+        let reply = concat!(
+            "The worker stays alive.\n\n",
+            "Sources: `crates/kiro-bot/src/engine/acp.rs:840-875`, `docs/invented.md`, ",
+            "[Issue 42](https://github.com/kiro-team/kiro-cli/issues/42)"
+        );
+        let validated = validate_cited_sources(reply, &[
+            "crates/kiro-bot/src/engine/acp.rs".into(),
+            "crates/kiro-bot/src/engine/acp.rs:800-900".into(),
+            "https://github.com/kiro-team/kiro-cli/issues/42".into(),
+        ]);
+
+        assert_eq!(validated.sources, vec![
+            "crates/kiro-bot/src/engine/acp.rs:840-875",
+            "https://github.com/kiro-team/kiro-cli/issues/42"
+        ]);
+        assert!(validated.text.contains("`crates/kiro-bot/src/engine/acp.rs:840-875`"));
+        assert!(
+            validated
+                .text
+                .contains("[Issue 42](https://github.com/kiro-team/kiro-cli/issues/42)")
+        );
+        assert!(!validated.text.contains("docs/invented.md"));
+    }
+
+    #[test]
+    fn line_citations_must_stay_inside_the_successful_read_scope() {
+        let validated = validate_cited_sources(
+            "Answer.\n\nSources: `src/lib.rs:12-18`, `src/lib.rs:99`, `https://example.com:80`",
+            &[
+                "src/lib.rs".into(),
+                "src/lib.rs:10-20".into(),
+                "https://example.com".into(),
+            ],
+        );
+
+        assert_eq!(validated.sources, vec!["src/lib.rs:12-18"]);
+        assert!(!validated.text.contains("src/lib.rs:99"));
+        assert!(!validated.text.contains("https://example.com:80"));
+    }
+
+    #[test]
+    fn source_line_is_removed_when_nothing_is_authorized() {
+        let validated = validate_cited_sources("Answer.\n\nSources: `docs/prior-turn.md`, `docs/fabricated.md`", &[
+            "docs/current-turn.md".into(),
+        ]);
+
+        assert_eq!(validated.text, "Answer.");
+        assert!(validated.sources.is_empty());
     }
 }

@@ -20,6 +20,7 @@ use std::cell::{
 };
 use std::collections::{
     HashMap,
+    HashSet,
     VecDeque,
 };
 use std::path::{
@@ -125,11 +126,18 @@ fn next_request_id() -> String {
 pub struct ApprovalRequest {
     pub tool_name: String,
     pub tool_call_id: String,
+    pub github_search: Option<GitHubSearchApproval>,
     pub options: Vec<(String, String)>,
     pub channel: String,
     pub thread_ts: Option<String>,
     pub slack_user_id: String,
     pub reply_tx: oneshot::Sender<ApprovalResponse>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitHubSearchApproval {
+    pub query: String,
+    pub repository: String,
 }
 
 pub enum ApprovalResponse {
@@ -172,6 +180,7 @@ pub struct AcpInfo {
     pub dropped_progress_updates: u64,
     pub pending_approvals: usize,
     pub last_failure: Option<String>,
+    pub(crate) prompt_sources: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +196,21 @@ pub struct ProgressUpdate {
     pub id: String,
     pub title: String,
     pub status: ProgressStatus,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PromptResult {
+    pub text: String,
+    pub sources: Vec<String>,
+}
+
+impl PromptResult {
+    fn text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            sources: Vec::new(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +373,7 @@ pub trait Worker {
         &self,
         messages: Vec<String>,
         progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
-    ) -> Result<String, String>;
+    ) -> Result<PromptResult, String>;
     async fn cancel(&self);
     async fn set_mode(&self, mode: String) -> Result<String, String>;
     async fn kill(&self);
@@ -407,6 +431,8 @@ struct AcpClient {
     chunks: Rc<RefCell<Vec<String>>>,
     progress: Rc<RefCell<Option<mpsc::UnboundedSender<ProgressUpdate>>>>,
     progress_titles: Rc<RefCell<HashMap<String, String>>>,
+    tool_provenance: Rc<RefCell<HashMap<String, ToolProvenance>>>,
+    successful_tool_sources: Rc<RefCell<HashSet<String>>>,
     last_progress_update: Rc<Cell<Option<Instant>>>,
     mcp_ready_count: Rc<RefCell<u32>>,
     mcp_notify: Rc<tokio::sync::Notify>,
@@ -416,6 +442,13 @@ struct AcpClient {
     attachment_reads: Arc<AttachmentReadAuthorizer>,
     current_request: Rc<RefCell<(String, String)>>,
     current_conv: Rc<RefCell<(String, Option<String>, String)>>,
+}
+
+#[derive(Debug)]
+struct ToolProvenance {
+    server_name: Option<String>,
+    tool_name: String,
+    raw_input: serde_json::Value,
 }
 
 struct ApprovalCapacityGuard {
@@ -437,11 +470,81 @@ fn mcp_tool_identity_from_meta(meta: Option<&serde_json::Map<String, serde_json:
     ))
 }
 
-fn is_auto_approved_mcp_read(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> bool {
-    let Some(identity) = mcp_tool_identity_from_meta(meta) else {
-        return false;
+fn tool_provenance(
+    meta: Option<&serde_json::Map<String, serde_json::Value>>,
+    raw_input: Option<&serde_json::Value>,
+) -> Option<ToolProvenance> {
+    let identity = meta?.get("kiro")?;
+    Some(ToolProvenance {
+        server_name: identity
+            .get("mcpServerName")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        tool_name: identity.get("toolName")?.as_str()?.to_string(),
+        raw_input: raw_input?.clone(),
+    })
+}
+
+const GITHUB_ISSUE_SEARCH_IDENTITY: (&str, &str) = ("kiro-github-read", "search_github_issues");
+const GITHUB_ISSUE_SEARCH_REPO: &str = "kiro-team/kiro-cli";
+const GITHUB_ISSUE_SEARCH_TITLE: &str = "Running: @kiro-github-read/search_github_issues";
+pub(crate) const MAX_GITHUB_ISSUE_QUERY_CHARS: usize = 300;
+pub(crate) const MAX_GITHUB_ISSUE_REPOSITORY_CHARS: usize = 120;
+const MAX_GITHUB_ISSUE_SEARCH_LIMIT: u64 = 30;
+
+fn meta_claims_github_search(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> bool {
+    meta.and_then(|meta| meta.get("mcpToolIdentity"))
+        .and_then(|identity| identity.get("toolName"))
+        .and_then(serde_json::Value::as_str)
+        == Some(GITHUB_ISSUE_SEARCH_IDENTITY.1)
+}
+
+fn github_search_approval(
+    meta: Option<&serde_json::Map<String, serde_json::Value>>,
+    title: Option<&str>,
+    raw_input: Option<&serde_json::Value>,
+) -> Result<Option<GitHubSearchApproval>, ()> {
+    match (mcp_tool_identity_from_meta(meta), title) {
+        (Some(GITHUB_ISSUE_SEARCH_IDENTITY), Some(GITHUB_ISSUE_SEARCH_TITLE)) => {},
+        (Some(GITHUB_ISSUE_SEARCH_IDENTITY), _) => return Err(()),
+        _ if title == Some(GITHUB_ISSUE_SEARCH_TITLE) || meta_claims_github_search(meta) => return Err(()),
+        _ => return Ok(None),
+    }
+    let input = raw_input.and_then(serde_json::Value::as_object).ok_or(())?;
+    if input
+        .keys()
+        .any(|key| !matches!(key.as_str(), "query" | "repo" | "limit"))
+    {
+        return Err(());
+    }
+    if input
+        .get("limit")
+        .is_some_and(|limit| !matches!(limit.as_u64(), Some(1..=MAX_GITHUB_ISSUE_SEARCH_LIMIT)))
+    {
+        return Err(());
+    }
+    let query = input
+        .get("query")
+        .and_then(serde_json::Value::as_str)
+        .filter(|query| !query.trim().is_empty() && query.chars().count() <= MAX_GITHUB_ISSUE_QUERY_CHARS)
+        .ok_or(())?;
+    let repository = match input.get("repo") {
+        Some(repository) => repository
+            .as_str()
+            .filter(|repository| {
+                !repository.trim().is_empty() && repository.chars().count() <= MAX_GITHUB_ISSUE_REPOSITORY_CHARS
+            })
+            .ok_or(())?,
+        None => GITHUB_ISSUE_SEARCH_REPO,
     };
-    crate::agents::AUTO_APPROVED_MCP_READS.contains(&identity)
+    Ok(Some(GitHubSearchApproval {
+        query: query.to_string(),
+        repository: repository.to_string(),
+    }))
+}
+
+fn is_auto_approved_mcp_read(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> bool {
+    mcp_tool_identity_from_meta(meta).is_some_and(|identity| crate::agents::AUTO_APPROVED_MCP_READS.contains(&identity))
 }
 
 fn fs_read_paths_from_meta(
@@ -477,6 +580,7 @@ fn permission_option(args: &acp::RequestPermissionRequest, option_id: &str) -> O
 async fn request_slack_approval(
     client: &AcpClient,
     args: &acp::RequestPermissionRequest,
+    github_search: Option<GitHubSearchApproval>,
 ) -> acp::Result<acp::RequestPermissionResponse> {
     let cancelled = || acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled);
     let Some(tx) = &client.approval_tx else {
@@ -506,6 +610,7 @@ async fn request_slack_approval(
     let req = ApprovalRequest {
         tool_name: title,
         tool_call_id: args.tool_call.tool_call_id.to_string(),
+        github_search,
         options,
         channel,
         thread_ts,
@@ -522,6 +627,53 @@ async fn request_slack_approval(
             ))),
         )),
         _ => Ok(cancelled()),
+    }
+}
+
+impl AcpClient {
+    #[cfg(test)]
+    fn reset_tool_provenance(&self) {
+        self.tool_provenance.borrow_mut().clear();
+        self.successful_tool_sources.borrow_mut().clear();
+    }
+
+    #[cfg(test)]
+    fn take_successful_tool_sources(&self) -> Vec<String> {
+        let mut sources = self.successful_tool_sources.borrow_mut().drain().collect::<Vec<_>>();
+        sources.sort();
+        sources
+    }
+
+    fn start_tool_provenance(
+        &self,
+        id: &str,
+        meta: Option<&serde_json::Map<String, serde_json::Value>>,
+        raw_input: Option<&serde_json::Value>,
+    ) {
+        if let Some(provenance) = tool_provenance(meta, raw_input) {
+            self.tool_provenance.borrow_mut().insert(id.to_string(), provenance);
+        }
+    }
+
+    fn finish_tool_provenance(&self, id: &str, status: &acp::ToolCallStatus, raw_output: Option<&serde_json::Value>) {
+        if !matches!(status, acp::ToolCallStatus::Completed | acp::ToolCallStatus::Failed) {
+            return;
+        }
+        let provenance = self.tool_provenance.borrow_mut().remove(id);
+        if !matches!(status, acp::ToolCallStatus::Completed) {
+            return;
+        }
+        let (Some(provenance), Some(raw_output)) = (provenance, raw_output) else {
+            return;
+        };
+        self.successful_tool_sources
+            .borrow_mut()
+            .extend(crate::engine::feedback::successful_tool_sources(
+                provenance.server_name.as_deref(),
+                &provenance.tool_name,
+                &provenance.raw_input,
+                raw_output,
+            ));
     }
 }
 
@@ -547,6 +699,17 @@ impl acp::Client for AcpClient {
         match self.approval_policy {
             ApprovalPolicy::Deny => Ok(cancelled()),
             ApprovalPolicy::Approve | ApprovalPolicy::Ask => {
+                let github_search = match github_search_approval(
+                    args.meta.as_ref(),
+                    args.tool_call.fields.title.as_deref(),
+                    args.tool_call.fields.raw_input.as_ref(),
+                ) {
+                    Ok(github_search) => github_search,
+                    Err(()) => return Ok(cancelled()),
+                };
+                if github_search.is_some() {
+                    return request_slack_approval(self, &args, github_search).await;
+                }
                 let fs_read_paths = match fs_read_paths_from_meta(args.meta.as_ref()) {
                     Ok(paths) => paths,
                     Err(()) => return Ok(cancelled()),
@@ -558,13 +721,13 @@ impl acp::Client for AcpClient {
                             .map(selected)
                             .unwrap_or_else(cancelled)),
                         AttachmentReadDecision::Deny => Ok(cancelled()),
-                        AttachmentReadDecision::Unmanaged => request_slack_approval(self, &args).await,
+                        AttachmentReadDecision::Unmanaged => request_slack_approval(self, &args, None).await,
                     };
                 }
                 if is_auto_approved_mcp_read(args.meta.as_ref()) {
                     Ok(selected(first_option))
                 } else {
-                    request_slack_approval(self, &args).await
+                    request_slack_approval(self, &args, None).await
                 }
             },
         }
@@ -628,6 +791,8 @@ impl acp::Client for AcpClient {
             acp::SessionUpdate::ToolCall(tool_call) => {
                 self.chunks.borrow_mut().clear();
                 let id = tool_call.tool_call_id.to_string();
+                self.start_tool_provenance(&id, tool_call.meta.as_ref(), tool_call.raw_input.as_ref());
+                self.finish_tool_provenance(&id, &tool_call.status, tool_call.raw_output.as_ref());
                 let title = format!("{} {}", tool_emoji(&tool_call.kind), tool_call.title);
                 self.progress_titles.borrow_mut().insert(id.clone(), title.clone());
                 let status = match tool_call.status {
@@ -653,6 +818,10 @@ impl acp::Client for AcpClient {
             },
             acp::SessionUpdate::ToolCallUpdate(tool_call) => {
                 let id = tool_call.tool_call_id.to_string();
+                self.start_tool_provenance(&id, tool_call.meta.as_ref(), tool_call.fields.raw_input.as_ref());
+                if let Some(status) = tool_call.fields.status.as_ref() {
+                    self.finish_tool_provenance(&id, status, tool_call.fields.raw_output.as_ref());
+                }
                 if let Some(title) = tool_call.fields.title {
                     self.progress_titles.borrow_mut().insert(id.clone(), title);
                 }
@@ -718,6 +887,8 @@ struct AcpWorker {
     chunks: Rc<RefCell<Vec<String>>>,
     progress: Rc<RefCell<Option<mpsc::UnboundedSender<ProgressUpdate>>>>,
     progress_titles: Rc<RefCell<HashMap<String, String>>>,
+    tool_provenance: Rc<RefCell<HashMap<String, ToolProvenance>>>,
+    successful_tool_sources: Rc<RefCell<HashSet<String>>>,
     last_progress_update: Rc<Cell<Option<Instant>>>,
     current_conv: Rc<RefCell<(String, Option<String>, String)>>,
     _settings_overlay: Option<SettingsOverlay>,
@@ -841,9 +1012,11 @@ impl Worker for AcpWorker {
         &self,
         messages: Vec<String>,
         progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
-    ) -> Result<String, String> {
+    ) -> Result<PromptResult, String> {
         self.chunks.borrow_mut().clear();
         self.progress_titles.borrow_mut().clear();
+        self.tool_provenance.borrow_mut().clear();
+        self.successful_tool_sources.borrow_mut().clear();
         self.last_progress_update.set(None);
         *self.progress.borrow_mut() = Some(progress_tx);
         let _progress_guard = PromptProgressGuard {
@@ -853,13 +1026,18 @@ impl Worker for AcpWorker {
             .into_iter()
             .map(|s| acp::ContentBlock::Text(acp::TextContent::new(s)))
             .collect();
-        match self
+        let result = self
             .connection
             .prompt(acp::PromptRequest::new(self.session.clone(), acp_messages))
-            .await
-        {
-            Ok(r) if r.stop_reason == acp::StopReason::Cancelled => Ok("❌ Cancelled".into()),
-            Ok(_) => Ok(self.chunks.borrow().join("")),
+            .await;
+        let mut sources = self.successful_tool_sources.borrow_mut().drain().collect::<Vec<_>>();
+        sources.sort();
+        match result {
+            Ok(r) if r.stop_reason == acp::StopReason::Cancelled => Ok(PromptResult::text("❌ Cancelled")),
+            Ok(_) => Ok(PromptResult {
+                text: self.chunks.borrow().join(""),
+                sources,
+            }),
             Err(error) => Err(error.to_string()),
         }
     }
@@ -1159,6 +1337,8 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
     let chunks: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let progress: Rc<RefCell<Option<mpsc::UnboundedSender<ProgressUpdate>>>> = Rc::new(RefCell::new(None));
     let progress_titles = Rc::new(RefCell::new(HashMap::new()));
+    let tool_provenance = Rc::new(RefCell::new(HashMap::new()));
+    let successful_tool_sources = Rc::new(RefCell::new(HashSet::new()));
     let last_progress_update = Rc::new(Cell::new(None));
     let mcp_ready_count: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
     let mcp_notify = Rc::new(tokio::sync::Notify::new());
@@ -1187,6 +1367,8 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
             chunks: chunks.clone(),
             progress: progress.clone(),
             progress_titles: progress_titles.clone(),
+            tool_provenance: tool_provenance.clone(),
+            successful_tool_sources: successful_tool_sources.clone(),
             last_progress_update: last_progress_update.clone(),
             mcp_ready_count: mcp_ready_count.clone(),
             mcp_notify: mcp_notify.clone(),
@@ -1364,6 +1546,8 @@ async fn spawn_acp_worker(cfg: &AcpConfig, acp_info: &Arc<Mutex<AcpInfo>>) -> Re
         chunks,
         progress,
         progress_titles,
+        tool_provenance,
+        successful_tool_sources,
         last_progress_update,
         current_conv,
         _settings_overlay: settings_overlay,
@@ -1645,7 +1829,7 @@ async fn execute_prompt(
     progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
     prompt_timeout: Duration,
     acp_info: Arc<Mutex<AcpInfo>>,
-) -> String {
+) -> PromptResult {
     let started_at = Instant::now();
     info!(
         %request_id,
@@ -1664,7 +1848,7 @@ async fn execute_prompt(
                     %error,
                     "failed to allocate ACP worker"
                 );
-                return error;
+                return PromptResult::text(error);
             },
         };
         worker.set_request_context(request_id.clone(), conversation.clone());
@@ -1679,7 +1863,7 @@ async fn execute_prompt(
                     %error,
                     "failed to start ACP worker activity"
                 );
-                return format!("Error: {error}");
+                return PromptResult::text(format!("Error: {error}"));
             },
         };
 
@@ -1702,7 +1886,7 @@ async fn execute_prompt(
                 preflight_retry_available = false;
                 continue;
             }
-            return "Error: ACP worker was unavailable after one restart".into();
+            return PromptResult::text("Error: ACP worker was unavailable after one restart");
         }
 
         let mut prompt = Box::pin(worker.prompt(messages.clone(), progress_tx.clone()));
@@ -1743,10 +1927,10 @@ async fn execute_prompt(
                     outcome = "timeout",
                     "ACP prompt finished"
                 );
-                return format!(
+                return PromptResult::text(format!(
                     "Error: Request exceeded the {} second deadline and was cancelled",
                     prompt_timeout.as_secs()
-                );
+                ));
             },
         };
 
@@ -1754,7 +1938,7 @@ async fn execute_prompt(
         let reply = match result {
             Ok(reply) => reply,
             Err(error) => match worker.health() {
-                WorkerHealth::Healthy => format!("Error: {error}"),
+                WorkerHealth::Healthy => PromptResult::text(format!("Error: {error}")),
                 WorkerHealth::Dead(failure) => {
                     warn!(
                         %request_id,
@@ -1768,7 +1952,7 @@ async fn execute_prompt(
                         info.last_failure = Some(failure.clone());
                     }
                     pool.remove(&conversation).await;
-                    "Error: ACP worker stopped during the request; please retry".into()
+                    PromptResult::text("Error: ACP worker stopped during the request; please retry")
                 },
             },
         };
@@ -1776,7 +1960,7 @@ async fn execute_prompt(
             %request_id,
             conversation_id = %conversation,
             elapsed_ms = started_at.elapsed().as_millis(),
-            outcome = if reply.starts_with("Error:") { "error" } else { "completed" },
+            outcome = if reply.text.starts_with("Error:") { "error" } else { "completed" },
             "ACP prompt finished"
         );
         return reply;
@@ -2051,6 +2235,7 @@ async fn run_work_loop(
                     let _ = reply_tx.send("Error: A request is already active for this conversation".into());
                     continue;
                 }
+                acp_info.lock().unwrap().prompt_sources.remove(&conversation);
                 next_generation = next_generation.wrapping_add(1).max(1);
                 let generation = next_generation;
                 let request_id = next_request_id();
@@ -2059,7 +2244,7 @@ async fn run_work_loop(
                 let task_conversation = conversation.clone();
                 let completion_conversation = conversation.clone();
                 let prompt = prompts.spawn_local(async move {
-                    let reply = match input.resolve().await {
+                    let result = match input.resolve().await {
                         Ok(PromptPayload {
                             text,
                             context,
@@ -2083,16 +2268,21 @@ async fn run_work_loop(
                                 messages,
                                 progress_tx,
                                 prompt_timeout,
-                                acp_info,
+                                acp_info.clone(),
                             )
                             .await
                         },
-                        Err(error) => format!("Error: {error}"),
+                        Err(error) => PromptResult::text(format!("Error: {error}")),
                     };
+                    acp_info
+                        .lock()
+                        .unwrap()
+                        .prompt_sources
+                        .insert(completion_conversation.clone(), result.sources);
                     PromptCompletion {
                         conversation: completion_conversation,
                         generation,
-                        reply,
+                        reply: result.text,
                         reply_tx,
                     }
                 });
@@ -2563,6 +2753,8 @@ mod tests {
             chunks: Rc::new(RefCell::new(Vec::new())),
             progress: Rc::new(RefCell::new(None)),
             progress_titles: Rc::new(RefCell::new(HashMap::new())),
+            tool_provenance: Rc::new(RefCell::new(HashMap::new())),
+            successful_tool_sources: Rc::new(RefCell::new(HashSet::new())),
             last_progress_update: Rc::new(Cell::new(None)),
             mcp_ready_count: Rc::new(RefCell::new(0)),
             mcp_notify: Rc::new(tokio::sync::Notify::new()),
@@ -2581,12 +2773,29 @@ mod tests {
     /// Build a `RequestPermissionRequest` with one permission option
     /// (`allow_once`) and an optional `_meta` payload.
     fn make_permission_request(meta: Option<serde_json::Value>) -> acp::RequestPermissionRequest {
+        make_permission_request_with_input(meta, None)
+    }
+
+    fn make_permission_request_with_input(
+        meta: Option<serde_json::Value>,
+        raw_input: Option<serde_json::Value>,
+    ) -> acp::RequestPermissionRequest {
+        make_permission_request_with_title_and_input(meta, "Test tool", raw_input)
+    }
+
+    fn make_permission_request_with_title_and_input(
+        meta: Option<serde_json::Value>,
+        title: &str,
+        raw_input: Option<serde_json::Value>,
+    ) -> acp::RequestPermissionRequest {
         let meta_map = meta.and_then(|v| v.as_object().cloned());
         acp::RequestPermissionRequest::new(
             acp::SessionId::new("test-session"),
             acp::ToolCallUpdate::new(
                 acp::ToolCallId::new("tc-1"),
-                acp::ToolCallUpdateFields::new().title(Some("Test tool".to_string())),
+                acp::ToolCallUpdateFields::new()
+                    .title(Some(title.to_string()))
+                    .raw_input(raw_input),
             ),
             vec![acp::PermissionOption::new(
                 acp::PermissionOptionId::new("allow_once"),
@@ -2604,6 +2813,88 @@ mod tests {
             .unwrap();
         let local = tokio::task::LocalSet::new();
         local.block_on(&runtime, fut)
+    }
+
+    async fn notify_read_result(client: &AcpClient, id: &str, path: &str, status: acp::ToolCallStatus) {
+        let meta = json!({
+            "kiro": {
+                "toolName": "read"
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        client
+            .session_notification(acp::SessionNotification::new(
+                "test-session",
+                acp::SessionUpdate::ToolCall(
+                    acp::ToolCall::new(id.to_string(), format!("Read {path}"))
+                        .kind(acp::ToolKind::Read)
+                        .raw_input(json!({
+                            "operations": [{
+                                "mode": "Line",
+                                "path": path
+                            }]
+                        }))
+                        .meta(meta),
+                ),
+            ))
+            .await
+            .unwrap();
+        client
+            .session_notification(acp::SessionNotification::new(
+                "test-session",
+                acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+                    id.to_string(),
+                    acp::ToolCallUpdateFields::new()
+                        .status(status)
+                        .raw_output(json!({ "items": [{ "Text": "contents" }] })),
+                )),
+            ))
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn only_successful_tool_results_enter_provenance() {
+        run(async {
+            let client = make_test_client(ApprovalPolicy::Approve);
+            notify_read_result(
+                &client,
+                "successful",
+                "crates/kiro-bot/src/engine/acp.rs",
+                acp::ToolCallStatus::Completed,
+            )
+            .await;
+            notify_read_result(&client, "failed", "docs/failed.md", acp::ToolCallStatus::Failed).await;
+
+            assert_eq!(client.take_successful_tool_sources(), vec![
+                "crates/kiro-bot/src/engine/acp.rs",
+                "crates/kiro-bot/src/engine/acp.rs:1-*"
+            ]);
+        });
+    }
+
+    #[test]
+    fn prompt_boundary_discards_prior_turn_provenance() {
+        run(async {
+            let client = make_test_client(ApprovalPolicy::Approve);
+            notify_read_result(&client, "prior", "docs/prior-turn.md", acp::ToolCallStatus::Completed).await;
+
+            client.reset_tool_provenance();
+            notify_read_result(
+                &client,
+                "current",
+                "docs/current-turn.md",
+                acp::ToolCallStatus::Completed,
+            )
+            .await;
+
+            assert_eq!(client.take_successful_tool_sources(), vec![
+                "docs/current-turn.md",
+                "docs/current-turn.md:1-*"
+            ]);
+        });
     }
 
     #[test]
@@ -2634,16 +2925,80 @@ mod tests {
         }
     }
 
+    fn github_search_meta() -> serde_json::Value {
+        json!({
+            "mcpToolIdentity": {
+                "serverName": "kiro-github-read",
+                "toolName": "search_github_issues"
+            },
+            "mcpAnnotations": { "readOnlyHint": true }
+        })
+    }
+
+    fn github_search_request(raw_input: Option<serde_json::Value>) -> acp::RequestPermissionRequest {
+        make_permission_request_with_title_and_input(Some(github_search_meta()), GITHUB_ISSUE_SEARCH_TITLE, raw_input)
+    }
+
     #[test]
-    fn exact_host_owned_read_is_auto_approved() {
-        for policy in [ApprovalPolicy::Approve, ApprovalPolicy::Ask] {
-            let client = make_test_client(policy);
+    fn github_searches_require_approval_with_exact_query_and_resolved_repository() {
+        for (input, expected_query, expected_repository) in [
+            (
+                json!({ "query": "server shut down unexpectedly" }),
+                "server shut down unexpectedly",
+                GITHUB_ISSUE_SEARCH_REPO,
+            ),
+            (
+                json!({
+                    "query": r#"Error: Internal error: "server shut down unexpectedly""#,
+                    "repo": "kiro-team/kiro-cli",
+                    "limit": 10
+                }),
+                r#"Error: Internal error: "server shut down unexpectedly""#,
+                "kiro-team/kiro-cli",
+            ),
+        ] {
+            run(async {
+                let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+                let mut client = make_test_client(ApprovalPolicy::Approve);
+                client.approval_tx = Some(approval_tx);
+
+                let respond = async {
+                    let approval = approval_rx.recv().await.expect("approval request");
+                    assert_eq!(
+                        approval.github_search,
+                        Some(GitHubSearchApproval {
+                            query: expected_query.to_string(),
+                            repository: expected_repository.to_string(),
+                        })
+                    );
+                    assert!(
+                        approval
+                            .reply_tx
+                            .send(ApprovalResponse::Selected("allow_once".into()))
+                            .is_ok()
+                    );
+                };
+                let (response, ()) =
+                    tokio::join!(client.request_permission(github_search_request(Some(input))), respond);
+                let response = response.expect("request_permission ok");
+                assert!(matches!(
+                    response.outcome,
+                    acp::RequestPermissionOutcome::Selected(ref outcome)
+                        if outcome.option_id.to_string() == "allow_once"
+                ));
+            });
+        }
+    }
+
+    #[test]
+    fn taskei_reads_keep_exact_identity_auto_approval() {
+        for (server_name, tool_name) in crate::agents::AUTO_APPROVED_MCP_READS {
+            let client = make_test_client(ApprovalPolicy::Approve);
             let request = make_permission_request(Some(json!({
                 "mcpToolIdentity": {
-                    "serverName": "kiro-github-read",
-                    "toolName": "search_github_issues"
-                },
-                "mcpAnnotations": { "readOnlyHint": false }
+                    "serverName": server_name,
+                    "toolName": tool_name
+                }
             })));
             let response = run(client.request_permission(request)).expect("request_permission ok");
             assert!(matches!(
@@ -2655,14 +3010,91 @@ mod tests {
     }
 
     #[test]
+    fn missing_and_malformed_github_search_arguments_fail_closed_without_approval() {
+        for raw_input in [
+            None,
+            Some(json!(null)),
+            Some(json!({})),
+            Some(json!({ "query": 42 })),
+            Some(json!({ "query": "" })),
+            Some(json!({ "query": "   " })),
+            Some(json!({ "query": "shutdown", "repo": 42 })),
+            Some(json!({ "query": "shutdown", "repo": "" })),
+            Some(json!({ "query": "shutdown", "repo": "   " })),
+            Some(json!({ "query": "shutdown", "hidden": "not displayed" })),
+            Some(json!({ "query": "shutdown", "limit": 0 })),
+            Some(json!({ "query": "shutdown", "limit": MAX_GITHUB_ISSUE_SEARCH_LIMIT + 1 })),
+            Some(json!({ "query": "shutdown", "limit": 1.5 })),
+            Some(json!({ "query": "shutdown", "limit": "10" })),
+            Some(json!({ "query": "q".repeat(MAX_GITHUB_ISSUE_QUERY_CHARS + 1) })),
+            Some(json!({
+                "query": "shutdown",
+                "repo": "r".repeat(MAX_GITHUB_ISSUE_REPOSITORY_CHARS + 1)
+            })),
+        ] {
+            let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+            let mut client = make_test_client(ApprovalPolicy::Approve);
+            client.approval_tx = Some(approval_tx);
+            let response =
+                run(client.request_permission(github_search_request(raw_input))).expect("request_permission ok");
+            assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+            assert!(approval_rx.try_recv().is_err());
+        }
+    }
+
+    #[test]
+    fn missing_or_dishonest_github_identity_fails_closed_without_approval() {
+        for meta in [
+            None,
+            Some(json!({
+                "mcpToolIdentity": {
+                    "toolName": "search_github_issues"
+                }
+            })),
+            Some(json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-write",
+                    "toolName": "search_github_issues"
+                }
+            })),
+            Some(json!({
+                "mcpToolIdentity": {
+                    "serverName": "kiro-github-read",
+                    "toolName": "create_github_issue"
+                }
+            })),
+        ] {
+            let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+            let mut client = make_test_client(ApprovalPolicy::Approve);
+            client.approval_tx = Some(approval_tx);
+            let request = make_permission_request_with_title_and_input(
+                meta,
+                GITHUB_ISSUE_SEARCH_TITLE,
+                Some(json!({ "query": "shutdown" })),
+            );
+
+            let response = run(client.request_permission(request)).expect("request_permission ok");
+            assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+            assert!(approval_rx.try_recv().is_err());
+        }
+
+        let (approval_tx, mut approval_rx) = mpsc::unbounded_channel();
+        let mut client = make_test_client(ApprovalPolicy::Approve);
+        client.approval_tx = Some(approval_tx);
+        let request = make_permission_request_with_title_and_input(
+            Some(github_search_meta()),
+            "Running: @kiro-github-write/create_github_issue",
+            Some(json!({ "query": "shutdown" })),
+        );
+        let response = run(client.request_permission(request)).expect("request_permission ok");
+        assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
+        assert!(approval_rx.try_recv().is_err());
+    }
+
+    #[test]
     fn deny_policy_rejects_even_known_reads() {
         let client = make_test_client(ApprovalPolicy::Deny);
-        let request = make_permission_request(Some(json!({
-            "mcpToolIdentity": {
-                "serverName": "kiro-github-read",
-                "toolName": "search_github_issues"
-            }
-        })));
+        let request = github_search_request(Some(json!({ "query": "shutdown timeout" })));
         let response = run(client.request_permission(request)).expect("request_permission ok");
         assert!(matches!(response.outcome, acp::RequestPermissionOutcome::Cancelled));
     }
@@ -2952,12 +3384,12 @@ mod tests {
             &self,
             _messages: Vec<String>,
             _progress_tx: mpsc::UnboundedSender<ProgressUpdate>,
-        ) -> Result<String, String> {
+        ) -> Result<PromptResult, String> {
             match &self.prompt {
-                TestPrompt::Reply(reply) => reply.clone(),
+                TestPrompt::Reply(reply) => reply.clone().map(PromptResult::text),
                 TestPrompt::Wait(release, reply) => {
                     release.notified().await;
-                    reply.clone()
+                    reply.clone().map(PromptResult::text)
                 },
                 TestPrompt::Pending => std::future::pending().await,
             }
@@ -3339,61 +3771,6 @@ mod tests {
             .await;
     }
 
-    #[tokio::test]
-    async fn completion_is_cleared_before_reply_allows_immediate_citation_retry() {
-        tokio::task::LocalSet::new()
-            .run_until(async {
-                let acp_info = Arc::new(Mutex::new(AcpInfo::default()));
-                let worker = TestWorker::new(
-                    "retry-worker",
-                    acp_info.clone(),
-                    vec![WorkerHealth::Healthy],
-                    TestPrompt::Reply(Ok("done".into())),
-                );
-                let (pool, _) = test_pool(worker, Vec::new(), acp_info.clone());
-                let (work_tx, work_rx) = mpsc::unbounded_channel();
-                let loop_task = tokio::task::spawn_local(run_work_loop(
-                    pool,
-                    work_rx,
-                    acp_info,
-                    Duration::from_secs(300),
-                    Duration::from_secs(900),
-                ));
-
-                for text in ["initial", "citation retry"] {
-                    let (reply_tx, reply_rx) = oneshot::channel();
-                    let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
-                    work_tx
-                        .send(Work::Prompt {
-                            input: PromptInput::ready(
-                                text.into(),
-                                Vec::new(),
-                                "channel".into(),
-                                None,
-                                "user".into(),
-                                "U1".into(),
-                            ),
-                            conversation: "conversation-retry".into(),
-                            reply_tx,
-                            progress_tx,
-                        })
-                        .unwrap();
-                    assert_eq!(reply_rx.await.unwrap(), "done");
-                }
-
-                let (shutdown_tx, shutdown_rx) = oneshot::channel();
-                work_tx
-                    .send(Work::Shutdown {
-                        grace: Duration::ZERO,
-                        reply_tx: shutdown_tx,
-                    })
-                    .unwrap();
-                shutdown_rx.await.unwrap();
-                loop_task.await.unwrap();
-            })
-            .await;
-    }
-
     #[tokio::test(flavor = "current_thread")]
     async fn stale_task_completion_cannot_clear_newer_prompt_generation() {
         tokio::task::LocalSet::new()
@@ -3579,7 +3956,7 @@ mod tests {
                 tokio::task::yield_now().await;
                 tokio::time::advance(Duration::from_secs(6)).await;
                 let reply = task.await.unwrap();
-                assert!(reply.contains("900 second deadline"));
+                assert!(reply.text.contains("900 second deadline"));
                 assert_eq!(worker.cancellations.get(), 1);
                 assert_eq!(worker.kills.get(), 1);
                 let info = acp_info.lock().unwrap();
@@ -3655,7 +4032,7 @@ mod tests {
                     acp_info,
                 )
                 .await;
-                assert_eq!(reply, "done");
+                assert_eq!(reply.text, "done");
 
                 tokio::time::advance(Duration::from_secs(300)).await;
                 pool.reap_idle(Duration::from_secs(300)).await;
@@ -3705,7 +4082,7 @@ mod tests {
                 )
                 .await;
 
-                assert_eq!(reply, "recovered");
+                assert_eq!(reply.text, "recovered");
                 assert_eq!(dead.kills.get(), 1);
                 assert_eq!(factory.spawns.get(), 1);
             })
@@ -3749,7 +4126,7 @@ mod tests {
                 )
                 .await;
 
-                assert!(reply.contains("stopped during the request"));
+                assert!(reply.text.contains("stopped during the request"));
                 assert_eq!(dead.kills.get(), 1);
                 assert_eq!(factory.spawns.get(), 0);
             })

@@ -45,6 +45,7 @@ use crate::frontend::slack::{
     SlackSocketState,
     SlackState,
     on_error,
+    on_interaction,
     on_push,
     spawn_approval_listener,
 };
@@ -118,6 +119,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     );
     let slack_client = Arc::new(SlackClient::new(slack_connector));
     let bot_token = SlackApiToken::new(slack_secrets.bot_token.clone().into());
+    let feedback_writer = build_feedback_writer().await;
 
     let frontend = Arc::new(SlackFrontend::new(
         slack_client.clone(),
@@ -125,6 +127,7 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
         user_map.clone(),
         conversation_history.unwrap_or(10),
         attachment_reads,
+        feedback_writer.is_some(),
     )?);
 
     // Hoisted above the coordinator so the self-id we write into DDB is the
@@ -182,8 +185,6 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     };
     info!(bot_user_id, bot_id, "Bot authenticated");
 
-    let feedback_writer = build_feedback_writer().await;
-
     let state = Arc::new(SlackState {
         core,
         frontend,
@@ -200,14 +201,17 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
     let env = Arc::new(
         SlackClientEventsListenerEnvironment::new(slack_client.clone())
             .with_error_handler(on_error)
-            .with_user_state(SlackSocketState::new(state.clone())),
+            .with_user_state(SlackSocketState::new(state.clone()))
+            .with_user_state(state.clone()),
     );
 
     let socket_config = SlackClientSocketModeConfig::new().with_ping_interval_in_seconds(30);
     let listener = SlackClientSocketModeListener::new(
         &socket_config,
         env,
-        SlackSocketModeListenerCallbacks::new().with_push_events(on_push),
+        SlackSocketModeListenerCallbacks::new()
+            .with_interaction_events(on_interaction)
+            .with_push_events(on_push),
     );
     listener
         .listen_for(&SlackApiToken::new(slack_secrets.app_token.clone().into()))

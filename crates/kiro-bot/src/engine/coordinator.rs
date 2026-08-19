@@ -28,6 +28,8 @@ pub(crate) use lease_manager::{
     ManagedLeaseAcquisition,
 };
 
+pub(crate) const CITATION_PROVENANCE_TURN_LIMIT: usize = 20;
+
 /// User vs assistant turn in a conversation transcript.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -147,6 +149,14 @@ pub trait Coordinator: Send + Sync {
     async fn append_turn(&self, conversation_id: &str, turn: Turn) -> anyhow::Result<()>;
 
     async fn load_history(&self, conversation_id: &str, limit: usize) -> anyhow::Result<Vec<Turn>>;
+
+    async fn load_citation_sources(&self, _conversation_id: &str) -> anyhow::Result<Vec<String>> {
+        anyhow::bail!("citation provenance is unavailable")
+    }
+
+    async fn reset_citation_sources(&self, _conversation_id: &str) -> anyhow::Result<()> {
+        anyhow::bail!("citation provenance reset is unavailable")
+    }
 
     async fn register_approval(
         &self,

@@ -88,6 +88,7 @@ mod col {
     pub const TS: &str = "ts";
     pub const EXPIRES_AT: &str = "expires_at";
     pub const CHUNK_IDS: &str = "chunk_ids";
+    pub const CITATION_RESET_SEQ: &str = "citation_reset_seq";
     pub const SLACK_MSG_TS: &str = "slack_msg_ts";
     pub const RATE_COUNT: &str = "rate_count";
 }
@@ -435,6 +436,90 @@ impl Coordinator for DynamoCoordinator {
         Ok(turns)
     }
 
+    async fn load_citation_sources(&self, conversation_id: &str) -> anyhow::Result<Vec<String>> {
+        let counter_pk = format!("{conversation_id}:counter");
+        let counter = self
+            .client
+            .get_item()
+            .table_name(&self.transcripts_table)
+            .key(col::CONVERSATION_ID, Self::s(&counter_pk))
+            .key(col::TURN_SEQ, Self::n(0))
+            .consistent_read(true)
+            .send()
+            .await
+            .context("citation provenance GetItem")?
+            .item;
+        let reset = citation_reset_seq(counter.as_ref())?;
+
+        let mut remaining = crate::engine::coordinator::CITATION_PROVENANCE_TURN_LIMIT;
+        let mut exclusive_start_key = None;
+        let mut sources = std::collections::BTreeSet::new();
+        while remaining > 0 {
+            let response = self
+                .client
+                .query()
+                .table_name(&self.transcripts_table)
+                .key_condition_expression(format!("{} = :pk AND {} > :reset", col::CONVERSATION_ID, col::TURN_SEQ))
+                .expression_attribute_values(":pk", Self::s(conversation_id))
+                .expression_attribute_values(":reset", Self::n(reset))
+                .projection_expression("#role, #chunks")
+                .expression_attribute_names("#role", col::ROLE)
+                .expression_attribute_names("#chunks", col::CHUNK_IDS)
+                .scan_index_forward(false)
+                .limit(remaining as i32)
+                .consistent_read(true)
+                .set_exclusive_start_key(exclusive_start_key)
+                .send()
+                .await
+                .context("citation provenance Query")?;
+
+            let next_start_key = response.last_evaluated_key.filter(|key| !key.is_empty());
+            let items = response.items.unwrap_or_default();
+            let examined = items.len().min(remaining);
+            for item in items.into_iter().take(examined) {
+                if item
+                    .get(col::ROLE)
+                    .and_then(|value| value.as_s().ok())
+                    .map(String::as_str)
+                    != Some("assistant")
+                {
+                    continue;
+                }
+                if let Some(chunk_ids) = item.get(col::CHUNK_IDS).and_then(|value| value.as_ss().ok()) {
+                    sources.extend(chunk_ids.iter().cloned());
+                }
+            }
+
+            anyhow::ensure!(
+                examined > 0 || next_start_key.is_none(),
+                "citation provenance Query returned a continuation without transcript rows"
+            );
+            remaining -= examined;
+            if remaining == 0 || next_start_key.is_none() {
+                break;
+            }
+            exclusive_start_key = next_start_key;
+        }
+        Ok(sources.into_iter().collect())
+    }
+
+    async fn reset_citation_sources(&self, conversation_id: &str) -> anyhow::Result<()> {
+        let counter_pk = format!("{conversation_id}:counter");
+        self.client
+            .update_item()
+            .table_name(&self.transcripts_table)
+            .key(col::CONVERSATION_ID, Self::s(&counter_pk))
+            .key(col::TURN_SEQ, Self::n(0))
+            .update_expression("SET #reset = if_not_exists(#next, :zero)")
+            .expression_attribute_names("#reset", col::CITATION_RESET_SEQ)
+            .expression_attribute_names("#next", "next_seq")
+            .expression_attribute_values(":zero", Self::n(0))
+            .send()
+            .await
+            .context("citation provenance reset UpdateItem")?;
+        Ok(())
+    }
+
     async fn register_approval(
         &self,
         slack_msg_ts: &str,
@@ -681,6 +766,20 @@ fn item_to_turn(item: &HashMap<String, AttributeValue>) -> Option<Turn> {
     })
 }
 
+fn citation_reset_seq(item: Option<&HashMap<String, AttributeValue>>) -> anyhow::Result<i64> {
+    let Some(value) = item.and_then(|item| item.get(col::CITATION_RESET_SEQ)) else {
+        return Ok(0);
+    };
+    let encoded = value
+        .as_n()
+        .map_err(|_| anyhow::anyhow!("citation_reset_seq must be a number"))?;
+    let reset = encoded
+        .parse::<i64>()
+        .context("citation_reset_seq must be an integer in the i64 range")?;
+    anyhow::ensure!(reset >= 0, "citation_reset_seq must be non-negative");
+    Ok(reset)
+}
+
 fn is_conditional_check_failed_put(err: &SdkError<PutItemError>) -> bool {
     matches!(
         err,
@@ -719,6 +818,10 @@ mod tests {
         GetItemOutput,
     };
     use aws_sdk_dynamodb::operation::put_item::PutItemError;
+    use aws_sdk_dynamodb::operation::query::{
+        QueryInput,
+        QueryOutput,
+    };
     use aws_sdk_dynamodb::types::error::{
         ConditionalCheckFailedException,
         InternalServerError,
@@ -854,6 +957,242 @@ mod tests {
             get_rule,
             delete_rule,
         )
+    }
+
+    fn citation_item(role: &str, index: usize) -> HashMap<String, AttributeValue> {
+        HashMap::from([
+            (col::ROLE.to_string(), AttributeValue::S(role.to_string())),
+            (
+                col::CHUNK_IDS.to_string(),
+                AttributeValue::Ss(vec![format!("docs/source-{index}.md")]),
+            ),
+        ])
+    }
+
+    fn citation_page(
+        conversation_id: &str,
+        start: usize,
+        count: usize,
+        user_rows: &[usize],
+        last_evaluated_seq: Option<i64>,
+    ) -> QueryOutput {
+        let mut output = QueryOutput::builder().set_items(Some(
+            (start..start + count)
+                .map(|index| {
+                    let role = if user_rows.contains(&index) {
+                        "user"
+                    } else {
+                        "assistant"
+                    };
+                    citation_item(role, index)
+                })
+                .collect(),
+        ));
+        if let Some(sequence) = last_evaluated_seq {
+            output = output
+                .last_evaluated_key(col::CONVERSATION_ID, AttributeValue::S(conversation_id.to_string()))
+                .last_evaluated_key(col::TURN_SEQ, AttributeValue::N(sequence.to_string()));
+        }
+        output.build()
+    }
+
+    fn matches_citation_query(
+        input: &QueryInput,
+        conversation_id: &str,
+        reset: i64,
+        limit: i32,
+        start_sequence: Option<i64>,
+    ) -> bool {
+        let expected_conversation = AttributeValue::S(conversation_id.to_string());
+        let expected_reset = AttributeValue::N(reset.to_string());
+        let start_key_matches = match (start_sequence, input.exclusive_start_key()) {
+            (None, None) => true,
+            (Some(sequence), Some(key)) => {
+                key.get(col::CONVERSATION_ID) == Some(&expected_conversation)
+                    && key.get(col::TURN_SEQ) == Some(&AttributeValue::N(sequence.to_string()))
+            },
+            _ => false,
+        };
+
+        input.table_name() == Some("transcripts")
+            && input.key_condition_expression() == Some("conversation_id = :pk AND turn_seq > :reset")
+            && input.expression_attribute_values().and_then(|values| values.get(":pk")) == Some(&expected_conversation)
+            && input
+                .expression_attribute_values()
+                .and_then(|values| values.get(":reset"))
+                == Some(&expected_reset)
+            && input.projection_expression() == Some("#role, #chunks")
+            && input
+                .expression_attribute_names()
+                .and_then(|names| names.get("#role"))
+                .map(String::as_str)
+                == Some(col::ROLE)
+            && input
+                .expression_attribute_names()
+                .and_then(|names| names.get("#chunks"))
+                .map(String::as_str)
+                == Some(col::CHUNK_IDS)
+            && input.scan_index_forward() == Some(false)
+            && input.consistent_read() == Some(true)
+            && input.limit() == Some(limit)
+            && start_key_matches
+    }
+
+    async fn assert_invalid_citation_reset_is_rejected(value: AttributeValue) {
+        let get_rule = mock!(aws_sdk_dynamodb::Client::get_item).then_output(move || {
+            GetItemOutput::builder()
+                .item(col::CITATION_RESET_SEQ, value.clone())
+                .build()
+        });
+        let query_rule = mock!(aws_sdk_dynamodb::Client::query).then_output(|| QueryOutput::builder().build());
+        let client = mock_client!(
+            aws_sdk_dynamodb,
+            RuleMode::MatchAny,
+            [&get_rule, &query_rule],
+            |builder| builder.retry_config(RetryConfig::disabled())
+        );
+        let coordinator = DynamoCoordinator::new(client, "leases", "transcripts", "dedup", "task");
+
+        let error = coordinator
+            .load_citation_sources("conversation")
+            .await
+            .expect_err("invalid reset metadata must fail closed");
+
+        assert!(
+            format!("{error:#}").contains("citation_reset_seq"),
+            "unexpected error: {error:#}"
+        );
+        assert_eq!(get_rule.num_calls(), 1);
+        assert_eq!(query_rule.num_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn citation_reset_metadata_fails_closed_when_present_but_invalid() {
+        for value in [
+            AttributeValue::S("12".to_string()),
+            AttributeValue::N("not-a-number".to_string()),
+            AttributeValue::N("-1".to_string()),
+            AttributeValue::N("9223372036854775808".to_string()),
+            AttributeValue::N("1.5".to_string()),
+        ] {
+            assert_invalid_citation_reset_is_rejected(value).await;
+        }
+    }
+
+    #[test]
+    fn missing_citation_reset_metadata_means_no_reset() {
+        assert_eq!(citation_reset_seq(None).unwrap(), 0);
+        assert_eq!(citation_reset_seq(Some(&HashMap::new())).unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn citation_provenance_paginates_descending_until_twenty_rows_are_examined() {
+        const CONVERSATION: &str = "conversation-A";
+        const RESET: i64 = 9;
+
+        let get_rule = mock!(aws_sdk_dynamodb::Client::get_item)
+            .match_requests(|input| {
+                input.table_name() == Some("transcripts")
+                    && input.key().and_then(|key| key.get(col::CONVERSATION_ID))
+                        == Some(&AttributeValue::S(format!("{CONVERSATION}:counter")))
+                    && input.key().and_then(|key| key.get(col::TURN_SEQ)) == Some(&AttributeValue::N("0".to_string()))
+                    && input.consistent_read() == Some(true)
+            })
+            .then_output(|| {
+                GetItemOutput::builder()
+                    .item(col::CITATION_RESET_SEQ, AttributeValue::N(RESET.to_string()))
+                    .build()
+            });
+        let first_page = mock!(aws_sdk_dynamodb::Client::query)
+            .match_requests(|input| matches_citation_query(input, CONVERSATION, RESET, 20, None))
+            .then_output(|| citation_page(CONVERSATION, 0, 7, &[1], Some(24)));
+        let second_page = mock!(aws_sdk_dynamodb::Client::query)
+            .match_requests(|input| matches_citation_query(input, CONVERSATION, RESET, 13, Some(24)))
+            .then_output(|| citation_page(CONVERSATION, 7, 10, &[7, 12], Some(14)));
+        let final_page = mock!(aws_sdk_dynamodb::Client::query)
+            .match_requests(|input| matches_citation_query(input, CONVERSATION, RESET, 3, Some(14)))
+            .then_output(|| citation_page(CONVERSATION, 17, 3, &[18], Some(11)));
+        let client = mock_client!(
+            aws_sdk_dynamodb,
+            RuleMode::MatchAny,
+            [&get_rule, &first_page, &second_page, &final_page],
+            |builder| builder.retry_config(RetryConfig::disabled())
+        );
+        let coordinator = DynamoCoordinator::new(client, "leases", "transcripts", "dedup", "task");
+
+        let sources = coordinator.load_citation_sources(CONVERSATION).await.unwrap();
+
+        assert_eq!(sources.len(), 16);
+        assert!(sources.contains(&"docs/source-0.md".to_string()));
+        assert!(sources.contains(&"docs/source-19.md".to_string()));
+        for unauthorized in [1, 7, 12, 18] {
+            assert!(!sources.contains(&format!("docs/source-{unauthorized}.md")));
+        }
+        assert_eq!(get_rule.num_calls(), 1);
+        assert_eq!(first_page.num_calls(), 1);
+        assert_eq!(second_page.num_calls(), 1);
+        assert_eq!(final_page.num_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn citation_provenance_stops_when_descending_rows_are_exhausted() {
+        const CONVERSATION: &str = "conversation-B";
+
+        let get_rule = mock!(aws_sdk_dynamodb::Client::get_item).then_output(|| GetItemOutput::builder().build());
+        let first_page = mock!(aws_sdk_dynamodb::Client::query)
+            .match_requests(|input| matches_citation_query(input, CONVERSATION, 0, 20, None))
+            .then_output(|| citation_page(CONVERSATION, 0, 4, &[2], Some(6)));
+        let final_page = mock!(aws_sdk_dynamodb::Client::query)
+            .match_requests(|input| matches_citation_query(input, CONVERSATION, 0, 16, Some(6)))
+            .then_output(|| citation_page(CONVERSATION, 4, 2, &[5], None));
+        let client = mock_client!(
+            aws_sdk_dynamodb,
+            RuleMode::MatchAny,
+            [&get_rule, &first_page, &final_page],
+            |builder| builder.retry_config(RetryConfig::disabled())
+        );
+        let coordinator = DynamoCoordinator::new(client, "leases", "transcripts", "dedup", "task");
+
+        let sources = coordinator.load_citation_sources(CONVERSATION).await.unwrap();
+
+        assert_eq!(sources, vec![
+            "docs/source-0.md",
+            "docs/source-1.md",
+            "docs/source-3.md",
+            "docs/source-4.md",
+        ]);
+        assert_eq!(get_rule.num_calls(), 1);
+        assert_eq!(first_page.num_calls(), 1);
+        assert_eq!(final_page.num_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn citation_provenance_rejects_empty_page_with_continuation() {
+        const CONVERSATION: &str = "conversation-C";
+
+        let get_rule = mock!(aws_sdk_dynamodb::Client::get_item).then_output(|| GetItemOutput::builder().build());
+        let empty_page = mock!(aws_sdk_dynamodb::Client::query)
+            .match_requests(|input| matches_citation_query(input, CONVERSATION, 0, 20, None))
+            .then_output(|| citation_page(CONVERSATION, 0, 0, &[], Some(20)));
+        let client = mock_client!(
+            aws_sdk_dynamodb,
+            RuleMode::MatchAny,
+            [&get_rule, &empty_page],
+            |builder| builder.retry_config(RetryConfig::disabled())
+        );
+        let coordinator = DynamoCoordinator::new(client, "leases", "transcripts", "dedup", "task");
+
+        let error = coordinator
+            .load_citation_sources(CONVERSATION)
+            .await
+            .expect_err("an empty continuing page must fail closed");
+
+        assert!(
+            format!("{error:#}").contains("continuation without transcript rows"),
+            "unexpected error: {error:#}"
+        );
+        assert_eq!(get_rule.num_calls(), 1);
+        assert_eq!(empty_page.num_calls(), 1);
     }
 
     /// Smoke test: the table-name plumbing accepts owned strings + slices and
