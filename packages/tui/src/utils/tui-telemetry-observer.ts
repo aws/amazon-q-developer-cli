@@ -46,6 +46,7 @@ export const DEFAULT_ENGINE = 'v3';
 
 /** Engine discriminator shared by the KAS and Rust client-experience metrics. */
 export type Engine = 'v2' | 'v3';
+export type TrustPosture = 'prompt_on_demand' | 'trust_all_tools' | 'unknown';
 const SESSION_INTERFACE = 'interactive_cli';
 
 /**
@@ -193,6 +194,7 @@ export function recordTuiSessionStarted(
     mode: string;
     version: string;
     engine?: Engine;
+    trustPosture: TrustPosture;
     logProperties?: MetricLogProperties;
   },
   deps?: TuiTelemetryDeps
@@ -206,6 +208,7 @@ export function recordTuiSessionStarted(
       session_interface: SESSION_INTERFACE,
       agent_mode: modeFromId(args.mode),
       agent_engine: args.engine ?? DEFAULT_ENGINE,
+      trust_posture: args.trustPosture,
     },
     TUI_SCOPE,
     args.logProperties

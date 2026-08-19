@@ -142,6 +142,7 @@ impl<'a> ScenarioEmitter<'a> {
             scenario.session_interface,
             scenario.agent_mode,
             scenario.engine,
+            scenario.trust_posture,
         ));
         self.emit(record_slash_command(scenario.commands.slash.as_str(), scenario.engine));
         self.emit(record_top_level_command(scenario.commands.top_level.as_str()));

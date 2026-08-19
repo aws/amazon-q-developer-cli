@@ -244,6 +244,87 @@ impl ToolMetricOutcome {
     }
 }
 
+/// Permission posture when a chat session is created or loaded.
+/// Changes made later in the session require a separate transition signal.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustPosture {
+    PromptOnDemand,
+    TrustAllTools,
+    #[default]
+    Unknown,
+}
+
+impl TrustPosture {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PromptOnDemand => "prompt_on_demand",
+            Self::TrustAllTools => "trust_all_tools",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub const fn from_trust_all_tools(trust_all_tools: bool) -> Self {
+        if trust_all_tools {
+            Self::TrustAllTools
+        } else {
+            Self::PromptOnDemand
+        }
+    }
+}
+
+/// How authorization for one attempted tool execution was obtained.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalPath {
+    AutoAllowed,
+    UserApproved,
+    Denied,
+    #[default]
+    Unknown,
+}
+
+impl ApprovalPath {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AutoAllowed => "auto_allowed",
+            Self::UserApproved => "user_approved",
+            Self::Denied => "denied",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Coarse location of the resolved target of a filesystem tool.
+///
+/// Never carries a path. The point is to distinguish edits inside the project
+/// the user is working in, which are cheap to undo, from edits that reach
+/// outside it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PathScope {
+    Workspace,
+    OutsideWorkspace,
+    Home,
+    System,
+    NotApplicable,
+    #[default]
+    Unknown,
+}
+
+impl PathScope {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Workspace => "workspace",
+            Self::OutsideWorkspace => "outside_workspace",
+            Self::Home => "home",
+            Self::System => "system",
+            Self::NotApplicable => "not_applicable",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ToolMetric<'a> {
     pub engine: Engine,
@@ -251,6 +332,8 @@ pub struct ToolMetric<'a> {
     pub builtin_tool_name: Option<&'a str>,
     pub outcome: ToolMetricOutcome,
     pub execution_context: ExecutionContext,
+    pub approval_path: ApprovalPath,
+    pub path_scope: PathScope,
 }
 
 impl<'a> ToolMetric<'a> {
@@ -266,11 +349,23 @@ impl<'a> ToolMetric<'a> {
             builtin_tool_name: None,
             outcome,
             execution_context,
+            approval_path: ApprovalPath::Unknown,
+            path_scope: PathScope::NotApplicable,
         }
     }
 
     pub const fn builtin_tool_name(mut self, name: Option<&'a str>) -> Self {
         self.builtin_tool_name = name;
+        self
+    }
+
+    pub const fn approval_path(mut self, approval_path: ApprovalPath) -> Self {
+        self.approval_path = approval_path;
+        self
+    }
+
+    pub const fn path_scope(mut self, path_scope: PathScope) -> Self {
+        self.path_scope = path_scope;
         self
     }
 }
@@ -636,6 +731,8 @@ fn with_tool_dimensions(builder: super::MetricBuilder, metric: ToolMetric<'_>) -
         .attribute("agent_engine", metric.engine.as_str())
         .attribute("tool_origin", metric.origin.as_str())
         .attribute("tool_outcome", metric.outcome.as_str())
+        .attribute("approval_path", metric.approval_path.as_str())
+        .attribute("path_scope", metric.path_scope.as_str())
         .attribute("execution_context", metric.execution_context.as_str());
     if metric.origin == ToolMetricOrigin::Builtin {
         builder.attribute(
@@ -696,6 +793,7 @@ pub fn record_chat_session_started(
     session_interface: SessionInterface,
     agent_mode: AgentMode,
     engine: Engine,
+    trust_posture: TrustPosture,
 ) -> MetricRecord {
     with_common_product_dimensions(
         counter("kiro_cli_chat_session_started_total", 1),
@@ -704,6 +802,7 @@ pub fn record_chat_session_started(
         None,
     )
     .attribute("agent_mode", agent_mode.as_str())
+    .attribute("trust_posture", trust_posture.as_str())
     .expect_valid()
 }
 
@@ -1487,6 +1586,9 @@ mod tests {
     use super::{
         AcpClient,
         AgentMode,
+        ApprovalPath,
+        PathScope,
+        TrustPosture,
     };
 
     #[test]
@@ -1511,5 +1613,55 @@ mod tests {
     #[test]
     fn built_in_default_agent_uses_default_bucket() {
         assert_eq!(AgentMode::from_id(Some("kiro_default")), AgentMode::Default);
+    }
+
+    fn assert_schema_values(attribute_name: &str, actual: &[&str]) {
+        let attribute = kiro_telemetry_schema::registry()
+            .attribute(attribute_name)
+            .unwrap_or_else(|| panic!("missing {attribute_name} in types.yaml"));
+        assert_eq!(attribute.allowed_values.len(), actual.len());
+        for value in actual {
+            assert!(
+                attribute.accepts_value(value),
+                "{value:?} is missing from {attribute_name} in types.yaml"
+            );
+        }
+    }
+
+    #[test]
+    fn every_variant_maps_to_a_declared_schema_value() {
+        assert_schema_values("approval_path", &[
+            ApprovalPath::AutoAllowed.as_str(),
+            ApprovalPath::UserApproved.as_str(),
+            ApprovalPath::Denied.as_str(),
+            ApprovalPath::Unknown.as_str(),
+        ]);
+    }
+
+    #[test]
+    fn trust_all_tools_is_reported_as_such() {
+        assert_eq!(TrustPosture::from_trust_all_tools(true), TrustPosture::TrustAllTools);
+        assert_eq!(TrustPosture::from_trust_all_tools(false), TrustPosture::PromptOnDemand);
+    }
+
+    #[test]
+    fn every_trust_posture_variant_maps_to_a_declared_schema_value() {
+        assert_schema_values("trust_posture", &[
+            TrustPosture::PromptOnDemand.as_str(),
+            TrustPosture::TrustAllTools.as_str(),
+            TrustPosture::Unknown.as_str(),
+        ]);
+    }
+
+    #[test]
+    fn every_path_scope_variant_maps_to_a_declared_schema_value() {
+        assert_schema_values("path_scope", &[
+            PathScope::Workspace.as_str(),
+            PathScope::OutsideWorkspace.as_str(),
+            PathScope::Home.as_str(),
+            PathScope::System.as_str(),
+            PathScope::NotApplicable.as_str(),
+            PathScope::Unknown.as_str(),
+        ]);
     }
 }

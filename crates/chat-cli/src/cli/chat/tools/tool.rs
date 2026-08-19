@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 
+use agent::protocol::ToolTargetScope;
 use chat_cli_ui::conduit::{
     ControlEnd,
     DestinationStdout,
@@ -125,6 +127,11 @@ pub enum Tool {
     Session(Session),
 }
 
+pub struct ToolPermissionObservation {
+    pub result: PermissionEvalResult,
+    pub target_scope: ToolTargetScope,
+}
+
 impl Tool {
     /// The display name of a tool
     pub fn display_name(&self) -> &str {
@@ -174,6 +181,71 @@ impl Tool {
             Tool::SwitchToExecution(_) => PermissionEvalResult::Allow,
             Tool::Session(session) => session.eval_perm(os, agent),
         }
+    }
+
+    pub fn evaluate_permission(&self, os: &Os, agent: &Agent) -> ToolPermissionObservation {
+        ToolPermissionObservation {
+            result: self.requires_acceptance(os, agent),
+            target_scope: self.target_scope(os),
+        }
+    }
+
+    pub fn target_scope(&self, os: &Os) -> ToolTargetScope {
+        let Some(paths) = self.resolved_target_paths(os) else {
+            return ToolTargetScope::NotApplicable;
+        };
+        let Ok(paths) = paths else {
+            return ToolTargetScope::Unknown;
+        };
+        let working_dir = os
+            .env
+            .current_dir()
+            .ok()
+            .and_then(|path| crate::util::paths::canonicalizes_path(os, &path.to_string_lossy()).ok())
+            .map(PathBuf::from);
+        let home = os
+            .env
+            .home()
+            .and_then(|path| crate::util::paths::canonicalizes_path(os, &path.to_string_lossy()).ok())
+            .map(PathBuf::from);
+
+        ToolTargetScope::widest(
+            paths
+                .iter()
+                .map(|path| ToolTargetScope::from_resolved_path(path, working_dir.as_deref(), home.as_deref())),
+        )
+    }
+
+    fn resolved_target_paths(&self, os: &Os) -> Option<Result<Vec<PathBuf>>> {
+        let resolve =
+            |path: &str| -> Result<PathBuf> { Ok(PathBuf::from(crate::util::paths::canonicalizes_path(os, path)?)) };
+        let current_dir = || -> Result<PathBuf> { Ok(os.env.current_dir()?) };
+        Some(match self {
+            Tool::FsRead(read) => read.paths().iter().map(|path| resolve(path)).collect(),
+            Tool::FsWrite(write) => {
+                let path = write.path(os).to_string_lossy().into_owned();
+                resolve(&path).map(|path| vec![path])
+            },
+            Tool::Grep(grep) => grep
+                .get_base_path(os)
+                .and_then(|path| resolve(&path.to_string_lossy()))
+                .map(|path| vec![path]),
+            Tool::Glob(glob) => glob
+                .get_base_path(os)
+                .and_then(|path| resolve(&path.to_string_lossy()))
+                .map(|path| vec![path]),
+            Tool::Code(code) => {
+                let paths = code.target_paths();
+                if paths.is_empty() {
+                    current_dir()
+                        .and_then(|path| resolve(&path.to_string_lossy()))
+                        .map(|path| vec![path])
+                } else {
+                    paths.iter().map(|path| resolve(path)).collect()
+                }
+            },
+            _ => return None,
+        })
     }
 
     /// Invokes the tool asynchronously

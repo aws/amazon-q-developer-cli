@@ -146,6 +146,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
   private readonly v2SessionStartedSessions = new Set<string>();
   /** Current TUI mode id, captured from session results + setMode. */
   private v2CurrentMode = 'interactive';
+  private readonly initialTrustPosture: 'prompt_on_demand' | 'trust_all_tools';
 
   constructor(
     agentPath: string,
@@ -167,6 +168,9 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     });
     super(toAgentProcess(proc));
     this.version = version;
+    this.initialTrustPosture = extraAcpArgs.includes('--trust-all-tools')
+      ? 'trust_all_tools'
+      : 'prompt_on_demand';
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     this.connection = new acp.ClientSideConnection(() => this, finalStream);
@@ -252,6 +256,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       mode,
       version: this.version,
       engine: 'v2',
+      trustPosture: this.initialTrustPosture,
     });
   }
 

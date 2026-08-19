@@ -2319,6 +2319,7 @@ describe('KasAcpClient', () => {
     expect(mockRecordTuiSessionStarted).toHaveBeenCalledTimes(1);
     expect(mockRecordTuiSessionStarted.mock.calls[0]![0]).toMatchObject({
       version: '9.9.9-test',
+      trustPosture: 'prompt_on_demand',
     });
 
     await client.prompt([{ type: 'text', text: 'hello' } as any]);
@@ -2332,6 +2333,18 @@ describe('KasAcpClient', () => {
 
     await client.loadSession('kas-loaded');
     expect(mockRecordTuiSessionStarted).toHaveBeenCalledTimes(2);
+  });
+
+  it('records trust-all posture from the launch options', async () => {
+    const client = new KasAcpClient({
+      version: '9.9.9-test',
+      initialTrustAllTools: true,
+    });
+    await client.newSession();
+
+    expect(mockRecordTuiSessionStarted.mock.calls[0]![0]).toMatchObject({
+      trustPosture: 'trust_all_tools',
+    });
   });
 
   it('cancel() calls kiroClient.cancel with sessionId', async () => {

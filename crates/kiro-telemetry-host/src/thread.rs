@@ -872,6 +872,8 @@ impl TelemetryThread {
             mcp_server_name: event.mcp_server_name,
             is_accepted: event.is_accepted,
             is_trusted: event.is_trusted,
+            path_scope: event.path_scope,
+            approval_path: event.approval_path,
             is_success: event.is_success,
             reason_desc: event.reason_desc,
             is_valid: event.is_valid,

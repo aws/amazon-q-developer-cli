@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -26,8 +27,10 @@ use agent::protocol::{
     PermissionOptionId,
     SendApprovalResultArgs,
     SendPromptArgs,
+    ToolApprovalOutcome,
     ToolCallFailureReason,
     ToolCallResult,
+    ToolTargetScope,
     UpdateEvent,
 };
 use agent::tools::summary::Summary;
@@ -278,20 +281,68 @@ fn telemetry_result(metadata: &[UserTurnMetadata], existing: Option<TelemetryRes
     }
 }
 
-fn subagent_tool_use_event(
-    conversation_id: &str,
+#[derive(Clone, Copy)]
+struct SubagentPermissionObservation {
+    approval_path: Option<metric::ApprovalPath>,
+    target_scope: ToolTargetScope,
+}
+
+impl SubagentPermissionObservation {
+    fn from_result(result: &agent::protocol::PermissionEvalResult, target_scope: ToolTargetScope) -> Self {
+        Self {
+            approval_path: match result {
+                agent::protocol::PermissionEvalResult::Allow => Some(metric::ApprovalPath::AutoAllowed),
+                agent::protocol::PermissionEvalResult::Ask { .. } => None,
+                agent::protocol::PermissionEvalResult::Deny { .. } => Some(metric::ApprovalPath::Denied),
+            },
+            target_scope,
+        }
+    }
+
+    fn apply_approval(&mut self, outcome: ToolApprovalOutcome) {
+        if self.approval_path == Some(metric::ApprovalPath::AutoAllowed) {
+            return;
+        }
+        self.approval_path = Some(match outcome {
+            ToolApprovalOutcome::Approved => metric::ApprovalPath::UserApproved,
+            ToolApprovalOutcome::Denied => metric::ApprovalPath::Denied,
+        });
+    }
+}
+
+struct SubagentToolUseEventArgs {
     tool_use_id: String,
     tool_name: String,
     mcp_server_name: Option<String>,
     outcome: metric::ToolMetricOutcome,
+    permission: Option<SubagentPermissionObservation>,
     is_valid: Option<bool>,
     reason_desc: Option<String>,
-) -> ToolUseEventBuilder {
+}
+
+fn subagent_tool_use_event(conversation_id: &str, args: SubagentToolUseEventArgs) -> ToolUseEventBuilder {
+    let SubagentToolUseEventArgs {
+        tool_use_id,
+        tool_name,
+        mcp_server_name,
+        outcome,
+        permission,
+        is_valid,
+        reason_desc,
+    } = args;
+    let approval_path = permission
+        .and_then(|permission| permission.approval_path)
+        .unwrap_or(metric::ApprovalPath::Unknown);
     let mut event = ToolUseEventBuilder::new(conversation_id.to_string(), tool_use_id, None);
     event.tool_name = Some(tool_name);
     event.is_custom_tool = mcp_server_name.is_some();
     event.mcp_server_name = mcp_server_name;
     event.is_accepted = outcome != metric::ToolMetricOutcome::Denied;
+    event.is_trusted = approval_path == metric::ApprovalPath::AutoAllowed;
+    event.approval_path = Some(approval_path);
+    if let Some(permission) = permission {
+        event.set_target_scope(permission.target_scope);
+    }
     event.is_valid = is_valid;
     event.is_success = match outcome {
         metric::ToolMetricOutcome::Success => Some(true),
@@ -826,6 +877,7 @@ impl<'a> Subagent<'a> {
         // text — the most recent non-empty turn is what we degrade to.
         let mut current_turn_text = String::new();
         let mut last_message: Option<String> = None;
+        let mut tool_permissions = HashMap::<String, SubagentPermissionObservation>::new();
 
         loop {
             tokio::select! {
@@ -928,6 +980,7 @@ impl<'a> Subagent<'a> {
                                     }));
                                 },
                                 UpdateEvent::ToolCallFinished { tool_call, result } => {
+                                    let permission = tool_permissions.remove(&tool_call.id);
                                     let tool_name = tool_call.tool.kind.canonical_tool_name().tool_name().to_string();
                                     let mcp_server_name =
                                         tool_call.tool.kind.mcp_server_name().map(str::to_string);
@@ -941,12 +994,15 @@ impl<'a> Subagent<'a> {
                                     let tool_use_id = tool_call.id;
                                     let event = subagent_tool_use_event(
                                         parent_conversation_id,
-                                        tool_use_id.clone(),
-                                        tool_name.clone(),
-                                        mcp_server_name,
-                                        outcome,
-                                        Some(true),
-                                        reason_desc,
+                                        SubagentToolUseEventArgs {
+                                            tool_use_id: tool_use_id.clone(),
+                                            tool_name: tool_name.clone(),
+                                            mcp_server_name,
+                                            outcome,
+                                            permission,
+                                            is_valid: Some(true),
+                                            reason_desc,
+                                        },
                                     );
                                     os.telemetry
                                         .send_tool_use_suggested(
@@ -974,30 +1030,53 @@ impl<'a> Subagent<'a> {
                                     error,
                                     ..
                                 } => {
+                                    let permission = tool_permissions.remove(&tool_use_id);
                                     let (tool_name, mcp_server_name) = tool_identity
                                         .map_or((tool_name, None), |identity| {
                                             (identity.tool_name, identity.mcp_server_name)
                                         });
-                                    let (outcome, is_valid) = match reason {
+                                    let (outcome, permission, is_valid) = match reason {
                                         // Unavailable-tool (dummy placeholder) calls are model
                                         // errors like parse failures: well-formed but unusable.
                                         ToolCallFailureReason::ParseError
                                         | ToolCallFailureReason::ToolUnavailable => {
-                                            (metric::ToolMetricOutcome::Error, Some(false))
+                                            (
+                                                metric::ToolMetricOutcome::Error,
+                                                permission.map(|permission| SubagentPermissionObservation {
+                                                    approval_path: None,
+                                                    ..permission
+                                                }),
+                                                Some(false),
+                                            )
                                         },
-                                        ToolCallFailureReason::PermissionDenied
-                                        | ToolCallFailureReason::HookRejected => {
-                                            (metric::ToolMetricOutcome::Denied, Some(true))
+                                        ToolCallFailureReason::PermissionDenied => {
+                                            (
+                                                metric::ToolMetricOutcome::Denied,
+                                                Some(SubagentPermissionObservation {
+                                                    approval_path: Some(metric::ApprovalPath::Denied),
+                                                    target_scope: permission.map_or(
+                                                        ToolTargetScope::Unknown,
+                                                        |permission| permission.target_scope,
+                                                    ),
+                                                }),
+                                                Some(true),
+                                            )
+                                        },
+                                        ToolCallFailureReason::HookRejected => {
+                                            (metric::ToolMetricOutcome::Denied, permission, Some(true))
                                         },
                                     };
                                     let event = subagent_tool_use_event(
                                         parent_conversation_id,
-                                        tool_use_id,
-                                        tool_name,
-                                        mcp_server_name,
-                                        outcome,
-                                        is_valid,
-                                        Some(error),
+                                        SubagentToolUseEventArgs {
+                                            tool_use_id,
+                                            tool_name,
+                                            mcp_server_name,
+                                            outcome,
+                                            permission,
+                                            is_valid,
+                                            reason_desc: Some(error),
+                                        },
                                     );
                                     os.telemetry
                                         .send_tool_use_suggested(
@@ -1038,6 +1117,7 @@ impl<'a> Subagent<'a> {
                             }
                         },
                         AgentEvent::EndTurn(metadata) => {
+                            tool_permissions.clear();
                             // Snapshot this turn's text for the empty-response fallback.
                             let turn_text = std::mem::take(&mut current_turn_text);
                             trace!(turn_text_len = turn_text.len(), has_sent_failsafe_msg, "subagent EndTurn received");
@@ -1110,6 +1190,13 @@ impl<'a> Subagent<'a> {
                             match (self.is_interactive, self.dangerously_trust_all_tools) {
                                 (_, true) => {
                                     warn!(?tool_use, "trust all is enabled, ignoring approval request");
+                                    tool_permissions
+                                        .entry(tool_use.tool_use_id.clone())
+                                        .or_insert(SubagentPermissionObservation {
+                                            approval_path: None,
+                                            target_scope: ToolTargetScope::Unknown,
+                                        })
+                                        .approval_path = Some(metric::ApprovalPath::AutoAllowed);
                                     agent
                                         .send_tool_use_approval_result(SendApprovalResultArgs {
                                             id: id.clone(),
@@ -1156,6 +1243,25 @@ impl<'a> Subagent<'a> {
                         },
                         AgentEvent::SubagentSummary(summary) => {
                             query_status = QueryStatus::Resolved(summary);
+                        },
+                        AgentEvent::Internal(agent::protocol::InternalEvent::ToolPermissionEvalResult {
+                            tool_use_id,
+                            result,
+                            target_scope,
+                            ..
+                        }) => {
+                            tool_permissions.insert(
+                                tool_use_id,
+                                SubagentPermissionObservation::from_result(&result, target_scope),
+                            );
+                        },
+                        AgentEvent::Internal(agent::protocol::InternalEvent::ToolApprovalResult {
+                            tool_use_id,
+                            outcome,
+                        }) => {
+                            if let Some(permission) = tool_permissions.get_mut(&tool_use_id) {
+                                permission.apply_approval(outcome);
+                            }
                         },
                         // A retry/continuation abandons the in-flight stream and its
                         // partial is dropped from history, so the fallback-summary
@@ -1489,32 +1595,56 @@ mod tests {
 
     #[test]
     fn subagent_tool_events_preserve_typed_outcomes() {
-        let success = subagent_tool_use_event(
-            "conversation",
-            "tool-use".to_string(),
-            "read".to_string(),
-            None,
-            metric::ToolMetricOutcome::Success,
-            Some(true),
-            None,
-        );
+        let success = subagent_tool_use_event("conversation", SubagentToolUseEventArgs {
+            tool_use_id: "tool-use".to_string(),
+            tool_name: "read".to_string(),
+            mcp_server_name: None,
+            outcome: metric::ToolMetricOutcome::Success,
+            permission: Some(SubagentPermissionObservation {
+                approval_path: Some(metric::ApprovalPath::AutoAllowed),
+                target_scope: ToolTargetScope::Workspace,
+            }),
+            is_valid: Some(true),
+            reason_desc: None,
+        });
         assert!(success.is_accepted);
+        assert!(success.is_trusted);
+        assert_eq!(success.approval_path, Some(metric::ApprovalPath::AutoAllowed));
+        assert_eq!(success.path_scope, Some(metric::PathScope::Workspace));
         assert_eq!(success.is_success, Some(true));
         assert!(!success.is_custom_tool);
 
-        let denied = subagent_tool_use_event(
-            "conversation",
-            "tool-use".to_string(),
-            "search".to_string(),
-            Some("server".to_string()),
-            metric::ToolMetricOutcome::Denied,
-            Some(true),
-            Some("permission denied".to_string()),
-        );
+        let denied = subagent_tool_use_event("conversation", SubagentToolUseEventArgs {
+            tool_use_id: "tool-use".to_string(),
+            tool_name: "search".to_string(),
+            mcp_server_name: Some("server".to_string()),
+            outcome: metric::ToolMetricOutcome::Denied,
+            permission: Some(SubagentPermissionObservation {
+                approval_path: Some(metric::ApprovalPath::Denied),
+                target_scope: ToolTargetScope::NotApplicable,
+            }),
+            is_valid: Some(true),
+            reason_desc: Some("permission denied".to_string()),
+        });
         assert!(!denied.is_accepted);
         assert_eq!(denied.is_success, None);
         assert!(denied.is_custom_tool);
         assert_eq!(denied.mcp_server_name.as_deref(), Some("server"));
+    }
+
+    #[test]
+    fn subagent_permission_observation_requires_an_explicit_prompt_result() {
+        let mut observation =
+            SubagentPermissionObservation::from_result(&PermissionEvalResult::ask(), ToolTargetScope::Workspace);
+        assert_eq!(observation.approval_path, None);
+
+        observation.apply_approval(ToolApprovalOutcome::Approved);
+        assert_eq!(observation.approval_path, Some(metric::ApprovalPath::UserApproved));
+
+        let mut auto_allowed =
+            SubagentPermissionObservation::from_result(&PermissionEvalResult::Allow, ToolTargetScope::Workspace);
+        auto_allowed.apply_approval(ToolApprovalOutcome::Approved);
+        assert_eq!(auto_allowed.approval_path, Some(metric::ApprovalPath::AutoAllowed));
     }
 
     /// Verifies that fs_read outside CWD still requires approval.

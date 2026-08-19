@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use kiro_telemetry::metric;
+
 /// Builder-shaped struct carrying the fields needed to construct a
 /// `ToolUseSuggested` telemetry event. Lives on the host so harnesses share
 /// the same shape when calling [`TelemetryThread::send_tool_use_suggested`].
@@ -13,6 +15,11 @@ pub struct ToolUseEventBuilder {
     pub mcp_server_name: Option<String>,
     pub is_accepted: bool,
     pub is_trusted: bool,
+    /// Coarse location of the resolved filesystem target. Never a path.
+    pub path_scope: Option<metric::PathScope>,
+    /// How authorization was obtained, when the emitter knows it outright.
+    /// `None` means derive it from `is_accepted`/`is_trusted`.
+    pub approval_path: Option<metric::ApprovalPath>,
     pub is_success: Option<bool>,
     pub reason_desc: Option<String>,
     pub is_valid: Option<bool>,

@@ -308,6 +308,16 @@ impl Code {
         }
     }
 
+    pub fn target_paths(&self) -> Vec<String> {
+        match self {
+            Code::RenameSymbol(p) => vec![p.file_path.clone()],
+            Code::Format(p) => p.file_path.iter().cloned().collect(),
+            Code::PatternRewrite(p) => p.file_path.iter().cloned().collect(),
+            Code::ApplyCodeAction(p) => vec![p.file_path.clone()],
+            _ => self.read_paths(),
+        }
+    }
+
     /// Validate code operation parameters
     pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
         match self {

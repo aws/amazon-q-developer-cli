@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use kiro_telemetry::metric;
 pub use kiro_telemetry_host::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
@@ -24,6 +25,7 @@ pub struct ToolUseEventBuilder {
     pub mcp_server_name: Option<String>,
     pub is_accepted: bool,
     pub is_trusted: bool,
+    pub approval_path: Option<metric::ApprovalPath>,
     pub is_success: Option<bool>,
     pub reason_desc: Option<String>,
     pub is_valid: Option<bool>,
@@ -36,6 +38,8 @@ pub struct ToolUseEventBuilder {
     pub turn_duration: Option<Duration>,
     pub aws_service_name: Option<String>,
     pub aws_operation_name: Option<String>,
+    /// Coarse location of the resolved filesystem target. Never a path.
+    pub path_scope: Option<metric::PathScope>,
 }
 
 impl ToolUseEventBuilder {
@@ -49,6 +53,8 @@ impl ToolUseEventBuilder {
             mcp_server_name: None,
             is_accepted: false,
             is_trusted: false,
+            approval_path: Some(metric::ApprovalPath::Unknown),
+            path_scope: None,
             is_success: None,
             reason_desc: None,
             is_valid: None,
@@ -77,6 +83,17 @@ impl ToolUseEventBuilder {
     pub fn set_tool_name(mut self, name: String) -> Self {
         self.tool_name.replace(name);
         self
+    }
+
+    pub fn set_target_scope(&mut self, scope: agent::protocol::ToolTargetScope) {
+        self.path_scope = Some(match scope {
+            agent::protocol::ToolTargetScope::Workspace => metric::PathScope::Workspace,
+            agent::protocol::ToolTargetScope::OutsideWorkspace => metric::PathScope::OutsideWorkspace,
+            agent::protocol::ToolTargetScope::Home => metric::PathScope::Home,
+            agent::protocol::ToolTargetScope::System => metric::PathScope::System,
+            agent::protocol::ToolTargetScope::NotApplicable => metric::PathScope::NotApplicable,
+            agent::protocol::ToolTargetScope::Unknown => metric::PathScope::Unknown,
+        });
     }
 }
 

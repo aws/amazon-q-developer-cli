@@ -118,6 +118,16 @@ impl Code {
             Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_) | Code::ApplyCodeAction(_) => vec![],
         }
     }
+
+    pub fn target_paths(&self) -> Vec<String> {
+        match self {
+            Code::RenameSymbol(p) => vec![p.file_path.clone()],
+            Code::Format(p) => p.file_path.iter().cloned().collect(),
+            Code::PatternRewrite(p) => p.file_path.iter().cloned().collect(),
+            Code::ApplyCodeAction(p) => vec![p.file_path.clone()],
+            _ => self.read_paths(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2277,12 +2287,15 @@ mod code_perm_tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
+    use agent::protocol::ToolTargetScope;
+
     use super::*;
     use crate::cli::agent::{
         Agent,
         PermissionEvalResult,
         ToolSettingTarget,
     };
+    use crate::cli::chat::tools::Tool;
 
     fn pattern_search(file_path: Option<&str>) -> Code {
         Code::PatternSearch(PatternSearchParams {
@@ -2398,5 +2411,19 @@ mod code_perm_tests {
         });
         let res = Code::eval_perm(&os, &agent, &code);
         assert!(matches!(res, PermissionEvalResult::Allow), "got: {res:?}");
+    }
+
+    #[tokio::test]
+    async fn code_write_scope_uses_its_target_path() {
+        let os = test_os_with_cwd("/home/user/project").await;
+        let tool = Tool::Code(Code::RenameSymbol(RenameSymbolParams {
+            file_path: "/home/user/project/src/main.rs".to_string(),
+            row: 1,
+            column: 1,
+            new_name: "renamed".to_string(),
+            dry_run: Some(false),
+        }));
+
+        assert_eq!(tool.target_scope(&os), ToolTargetScope::Workspace);
     }
 }

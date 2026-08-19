@@ -1108,6 +1108,9 @@ struct AcpSession {
     /// MCP servers whose OAuth grant this subagent is waiting on. While non-empty
     /// the session is marked human-waiting so the parent's stall timer holds.
     oauth_waits: std::collections::HashSet<String>,
+    /// Trust posture captured when the session was created. A mid-session
+    /// switch to trust-all is a separate signal and does not rewrite this.
+    initial_trust_all_tools: bool,
 }
 
 impl AcpSession {
@@ -1611,6 +1614,9 @@ impl AcpSession {
         self.telemetry_observer
             .send_telemetry_event(Event::new(EventType::ChatSessionStarted {
                 mode: kiro_telemetry::metric::Mode::from_name(&self.current_agent_name),
+                trust_posture: Some(kiro_telemetry::metric::TrustPosture::from_trust_all_tools(
+                    self.initial_trust_all_tools,
+                )),
             }));
     }
 
@@ -1783,6 +1789,7 @@ impl AcpSession {
         // notification so the user is aware they have an active goal.
         let restored_goal = saved_goal.map(super::goal::GoalController::from_snapshot);
 
+        let trust_all_tools_at_start = builder.trust_all_tools;
         let snapshot = {
             let mut s = snapshot;
             s.settings.trust_all_tools = builder.trust_all_tools;
@@ -2010,6 +2017,7 @@ impl AcpSession {
             stall_ping_coalesce,
             last_stall_ping: None,
             oauth_waits: std::collections::HashSet::new(),
+            initial_trust_all_tools: trust_all_tools_at_start,
         };
         session.emit_chat_session_started_once();
         Ok(session)

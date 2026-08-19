@@ -1840,7 +1840,11 @@ impl ChatSession {
             metric::SessionInterface::NoninteractiveCli
         };
         let agent_mode = metric::AgentMode::from_id(Some(&self.conversation.agents.active_idx));
-        if let Err(err) = os.telemetry.send_chat_session_started(session_interface, agent_mode) {
+        let trust_posture = metric::TrustPosture::from_trust_all_tools(self.conversation.agents.trust_all_tools);
+        if let Err(err) = os
+            .telemetry
+            .send_chat_session_started(session_interface, agent_mode, trust_posture)
+        {
             tracing::warn!(?err, "Failed to emit chat session start telemetry");
         }
     }
@@ -4234,6 +4238,9 @@ impl ChatSession {
                     }
                 }
                 tool_use.accepted = true;
+                self.tool_use_telemetry_events
+                    .entry(tool_use.id.clone())
+                    .and_modify(|event| event.approval_path = Some(metric::ApprovalPath::UserApproved));
 
                 return Ok(ChatState::ExecuteTools);
             }
@@ -4248,7 +4255,10 @@ impl ChatSession {
         // Otherwise continue with normal chat on 'n' or other responses
         self.tool_use_status = ToolUseStatus::Idle;
 
-        if self.pending_tool_index.is_some() {
+        if let Some(index) = self.pending_tool_index {
+            self.tool_use_telemetry_events
+                .entry(self.tool_uses[index].id.clone())
+                .and_modify(|event| event.approval_path = Some(metric::ApprovalPath::Denied));
             // If the user just enters "n", replace the message we send to the model with
             // something more substantial.
             let user_input = if is_reject_response(user_input.trim()) {
@@ -4318,6 +4328,13 @@ impl ChatSession {
             // but we still need to show the tool description (diff output, etc.).
             if self.conversation.agents.trust_all_tools {
                 tool.accepted = true;
+                self.tool_use_telemetry_events
+                    .entry(tool.id.clone())
+                    .and_modify(|event| {
+                        event.is_trusted = true;
+                        event.approval_path = Some(metric::ApprovalPath::AutoAllowed);
+                        event.set_target_scope(tool.tool.target_scope(os));
+                    });
                 let _ = tool;
                 self.print_tool_description(os, i, true).await?;
                 self.stdout.flush()?;
@@ -4326,28 +4343,40 @@ impl ChatSession {
 
             let mut denied_match_set = None::<Vec<String>>;
             let interactive = self.interactive;
-            let allowed =
-                self.conversation
-                    .agents
-                    .get_active()
-                    .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
-                        PermissionEvalResult::Allow => true,
-                        PermissionEvalResult::Ask { trust_options } => {
-                            if !interactive {
-                                // In non-interactive mode, treat Ask as Deny so the LLM
-                                // can recover instead of crashing.
-                                denied_match_set.replace(vec!["non-interactive mode (no user to approve)".to_string()]);
-                            } else {
-                                tool.trust_options = trust_options;
-                            }
-                            false
-                        },
-                        PermissionEvalResult::Deny(matches) => {
-                            denied_match_set.replace(matches);
-                            false
-                        },
-                    })
-                    || self.conversation.agents.trust_all_tools;
+            let permission = self
+                .conversation
+                .agents
+                .get_active()
+                .map(|agent| tool.tool.evaluate_permission(os, agent));
+            if let Some(permission) = &permission {
+                self.tool_use_telemetry_events
+                    .entry(tool.id.clone())
+                    .and_modify(|event| event.set_target_scope(permission.target_scope));
+            }
+            let allowed = match permission.map(|permission| permission.result) {
+                Some(PermissionEvalResult::Allow) => true,
+                Some(PermissionEvalResult::Ask { trust_options }) => {
+                    if !interactive {
+                        // In non-interactive mode, treat Ask as Deny so the LLM
+                        // can recover instead of crashing.
+                        denied_match_set.replace(vec!["non-interactive mode (no user to approve)".to_string()]);
+                        self.tool_use_telemetry_events
+                            .entry(tool.id.clone())
+                            .and_modify(|event| event.approval_path = Some(metric::ApprovalPath::Denied));
+                    } else {
+                        tool.trust_options = trust_options;
+                    }
+                    false
+                },
+                Some(PermissionEvalResult::Deny(matches)) => {
+                    denied_match_set.replace(matches);
+                    self.tool_use_telemetry_events
+                        .entry(tool.id.clone())
+                        .and_modify(|event| event.approval_path = Some(metric::ApprovalPath::Denied));
+                    false
+                },
+                None => false,
+            };
 
             if let Some(match_set) = denied_match_set {
                 // Separate matched patterns (for user) from all patterns (for LLM)
@@ -4473,7 +4502,10 @@ impl ChatSession {
                 tool.accepted = true;
                 self.tool_use_telemetry_events
                     .entry(tool.id.clone())
-                    .and_modify(|ev| ev.is_trusted = true);
+                    .and_modify(|event| {
+                        event.is_trusted = true;
+                        event.approval_path = Some(metric::ApprovalPath::AutoAllowed);
+                    });
                 continue;
             }
 
@@ -5791,7 +5823,6 @@ impl ChatSession {
                     if let Tool::Custom(custom_tool) = &tool {
                         tool_telemetry.mcp_server_name = Some(custom_tool.server_name.clone());
                     }
-
                     match tool.validate(os).await {
                         Ok(()) => {
                             tool_telemetry.is_valid = Some(true);

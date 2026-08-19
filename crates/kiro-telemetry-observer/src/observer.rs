@@ -31,8 +31,10 @@ use agent::protocol::{
     InitializeUpdateEvent,
     InternalEvent,
     PermissionEvalResult,
+    ToolApprovalOutcome,
     ToolCallFailureReason,
     ToolCallResult,
+    ToolTargetScope,
     UpdateEvent,
 };
 use agent::task_executor::TaskExecutorEvent;
@@ -55,7 +57,6 @@ use kiro_telemetry_host::{
     TelemetryThread,
 };
 use tokio::sync::mpsc;
-use tracing::warn;
 
 use crate::context::TelemetryContext;
 
@@ -202,6 +203,9 @@ struct ToolUseTracker {
     is_custom_tool: bool,
     is_trusted: Option<bool>,
     is_accepted: Option<bool>,
+    approval_path: Option<metric::ApprovalPath>,
+    /// Coarse location of the resolved filesystem target. Never a path.
+    path_scope: Option<metric::PathScope>,
     suggested_at: Instant,
     execution_start: Option<Instant>,
     utterance_id: Option<String>,
@@ -213,6 +217,53 @@ pub struct SessionEvent {
     pub agent_event: AgentEvent,
 }
 
+/// The permission decision for one tool call, as reported by the agent.
+///
+/// Derived once where the agent's result is observed so the tracker and the
+/// deferred path cannot disagree.
+#[derive(Clone, Copy, Debug)]
+struct PermissionOutcome {
+    is_trusted: bool,
+    is_accepted: Option<bool>,
+    approval_path: Option<metric::ApprovalPath>,
+    path_scope: metric::PathScope,
+}
+
+impl PermissionOutcome {
+    fn from_result(result: &PermissionEvalResult, target_scope: ToolTargetScope) -> Self {
+        let (is_trusted, is_accepted, approval_path) = match result {
+            PermissionEvalResult::Allow => (true, Some(true), Some(metric::ApprovalPath::AutoAllowed)),
+            PermissionEvalResult::Ask { .. } => (false, None, None),
+            PermissionEvalResult::Deny { .. } => (false, Some(false), Some(metric::ApprovalPath::Denied)),
+        };
+        Self {
+            is_trusted,
+            is_accepted,
+            approval_path,
+            path_scope: metric_path_scope(target_scope),
+        }
+    }
+
+    fn apply_to(self, tracker: &mut ToolUseTracker) {
+        tracker.is_trusted = Some(self.is_trusted);
+        tracker.path_scope = Some(self.path_scope);
+        if let Some(accepted) = self.is_accepted {
+            tracker.is_accepted = Some(accepted);
+        }
+        if let Some(approval_path) = self.approval_path {
+            tracker.approval_path = Some(approval_path);
+        }
+    }
+
+    fn apply_approval(&mut self, outcome: ToolApprovalOutcome) {
+        self.is_accepted = Some(matches!(outcome, ToolApprovalOutcome::Approved));
+        self.approval_path = Some(match outcome {
+            ToolApprovalOutcome::Approved => metric::ApprovalPath::UserApproved,
+            ToolApprovalOutcome::Denied => metric::ApprovalPath::Denied,
+        });
+    }
+}
+
 /// Per-session state tracked by the observer.
 #[derive(Default)]
 struct SessionState {
@@ -220,6 +271,9 @@ struct SessionState {
     turn_state: TurnState,
     /// In-flight tool use trackers, keyed by tool_use_id.
     tool_trackers: HashMap<String, ToolUseTracker>,
+    /// Permission outcomes buffered until the later tool-call announcement.
+    /// Denied tools are never announced, so leftovers are cleared per turn.
+    pending_permissions: HashMap<String, PermissionOutcome>,
     context_recovery: Option<ContextRecoveryState>,
 }
 
@@ -312,8 +366,8 @@ impl TelemetryObserver {
             reason_extractor,
         };
         tokio::spawn(async move {
-            while let Some(msg) = agent_rx.recv().await {
-                observer.handle_event(&msg.session_id, &msg.agent_event);
+            while let Some(event) = agent_rx.recv().await {
+                observer.handle_event(&event.session_id, &event.agent_event);
             }
         });
 
@@ -484,27 +538,44 @@ impl TelemetryObserver {
                     is_custom_tool: matches!(tool_call.tool.kind, ToolKind::Mcp(_)),
                     is_trusted: None,
                     is_accepted: None,
+                    approval_path: None,
+                    path_scope: None,
                     suggested_at: Instant::now(),
                     execution_start: None,
                     utterance_id: None,
                 });
+                // The permission decision for this call usually arrives before
+                // this point, so adopt it now rather than losing it.
+                if let Some(outcome) = session.pending_permissions.remove(&tool_call.id)
+                    && let Some(tracker) = session.tool_trackers.get_mut(&tool_call.id)
+                {
+                    outcome.apply_to(tracker);
+                }
             },
             AgentEvent::Internal(InternalEvent::ToolPermissionEvalResult {
                 tool_use_id,
                 tool: _,
                 result,
+                target_scope,
             }) => {
+                let outcome = PermissionOutcome::from_result(result, *target_scope);
                 if let Some(tracker) = session.tool_trackers.get_mut(tool_use_id) {
-                    let trusted = matches!(result, PermissionEvalResult::Allow);
-                    tracker.is_trusted = Some(trusted);
-                    if trusted {
-                        tracker.is_accepted = Some(true);
-                    }
-                    if matches!(result, PermissionEvalResult::Deny { .. }) {
-                        tracker.is_accepted = Some(false);
-                    }
+                    outcome.apply_to(tracker);
                 } else {
-                    warn!(tool_use_id, "permission eval for unknown tool use");
+                    // The agent evaluates a whole batch before announcing any
+                    // tool, so arriving early is the normal case, not an error.
+                    session.pending_permissions.insert(tool_use_id.clone(), outcome);
+                }
+            },
+            AgentEvent::Internal(InternalEvent::ToolApprovalResult { tool_use_id, outcome }) => {
+                if let Some(tracker) = session.tool_trackers.get_mut(tool_use_id) {
+                    tracker.is_accepted = Some(matches!(outcome, ToolApprovalOutcome::Approved));
+                    tracker.approval_path = Some(match outcome {
+                        ToolApprovalOutcome::Approved => metric::ApprovalPath::UserApproved,
+                        ToolApprovalOutcome::Denied => metric::ApprovalPath::Denied,
+                    });
+                } else if let Some(permission) = session.pending_permissions.get_mut(tool_use_id) {
+                    permission.apply_approval(*outcome);
                 }
             },
             AgentEvent::Internal(InternalEvent::TaskExecutor(te)) => {
@@ -530,16 +601,20 @@ impl TelemetryObserver {
                 if let Some(tracker) = session.tool_trackers.remove(tool_use_id) {
                     self.emit_tool_use_suggested(session_id, tool_use_id, tracker, None, false);
                 } else {
+                    let permission = session.pending_permissions.remove(tool_use_id);
                     self.emit_failed_tool_use_suggested(
                         session_id,
                         tool_use_id,
                         tool_name,
                         tool_identity.as_ref(),
                         reason,
+                        permission,
                     );
                 }
             },
             AgentEvent::EndTurn(metadata) => {
+                // Denied tools are never announced, so discard their buffered outcomes.
+                session.pending_permissions.clear();
                 self.handle_end_turn(session_id, metadata);
             },
             AgentEvent::Compaction(agent::protocol::CompactionEvent::Started) => {
@@ -923,6 +998,7 @@ impl TelemetryObserver {
         let now = Instant::now();
         let is_accepted = tracker.is_accepted.unwrap_or(false);
         let is_trusted = tracker.is_trusted.unwrap_or(false);
+        let path_scope = tracker.path_scope;
 
         let (is_success, execution_duration, turn_duration) = match result {
             Some(ToolCallResult::Success(_)) => (
@@ -947,6 +1023,8 @@ impl TelemetryObserver {
             mcp_server_name: tracker.mcp_server_name,
             is_accepted,
             is_trusted,
+            path_scope,
+            approval_path: Some(tracker.approval_path.unwrap_or(metric::ApprovalPath::Unknown)),
             is_success,
             reason_desc: None,
             is_valid: Some(is_valid),
@@ -969,6 +1047,7 @@ impl TelemetryObserver {
         tool_name: &str,
         tool_identity: Option<&ToolCallIdentity>,
         reason: &ToolCallFailureReason,
+        permission: Option<PermissionOutcome>,
     ) {
         // Exhaustive so a new variant cannot silently classify as a denial.
         // An unavailable-tool (dummy placeholder) call is a model error like a
@@ -989,6 +1068,16 @@ impl TelemetryObserver {
                 tool_name.starts_with('@'),
             ),
         };
+        let approval_path = if is_model_error {
+            metric::ApprovalPath::Unknown
+        } else if let Some(path) = permission.and_then(|outcome| outcome.approval_path) {
+            path
+        } else if matches!(reason, ToolCallFailureReason::PermissionDenied) {
+            metric::ApprovalPath::Denied
+        } else {
+            metric::ApprovalPath::Unknown
+        };
+        let path_scope = permission.map(|outcome| outcome.path_scope);
         self.emit(EventType::ToolUseSuggested {
             conversation_id: session_id.to_string(),
             utterance_id: None,
@@ -997,6 +1086,8 @@ impl TelemetryObserver {
             tool_name: Some(metric_tool_name),
             mcp_server_name,
             is_accepted: is_model_error,
+            path_scope,
+            approval_path: Some(approval_path),
             is_trusted: false,
             is_success: is_model_error.then_some(false),
             reason_desc: None,
@@ -1031,6 +1122,17 @@ impl TelemetryObserver {
         }
         let (reason, desc) = extract_reason_from_kind(stream_err);
         (reason, desc, stream_err.original_status_code)
+    }
+}
+
+fn metric_path_scope(scope: ToolTargetScope) -> metric::PathScope {
+    match scope {
+        ToolTargetScope::Workspace => metric::PathScope::Workspace,
+        ToolTargetScope::OutsideWorkspace => metric::PathScope::OutsideWorkspace,
+        ToolTargetScope::Home => metric::PathScope::Home,
+        ToolTargetScope::System => metric::PathScope::System,
+        ToolTargetScope::NotApplicable => metric::PathScope::NotApplicable,
+        ToolTargetScope::Unknown => metric::PathScope::Unknown,
     }
 }
 

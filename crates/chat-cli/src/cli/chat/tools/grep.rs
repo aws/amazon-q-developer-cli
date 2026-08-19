@@ -212,7 +212,7 @@ impl Grep {
         })
     }
 
-    fn get_base_path(&self, os: &Os) -> Result<PathBuf> {
+    pub(crate) fn get_base_path(&self, os: &Os) -> Result<PathBuf> {
         match &self.path {
             Some(p) if !p.is_empty() => Ok(PathBuf::from(p)),
             _ => os.env.current_dir().wrap_err("Failed to get current directory"),

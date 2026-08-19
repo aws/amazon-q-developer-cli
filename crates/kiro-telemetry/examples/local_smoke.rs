@@ -43,7 +43,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let engine = metric::Engine::V3;
     let mode = metric::AgentMode::Plan;
     client.emit(metric::record_run_started(interface, engine, os_type))?;
-    client.emit(metric::record_chat_session_started(interface, mode, engine))?;
+    client.emit(metric::record_chat_session_started(
+        interface,
+        mode,
+        engine,
+        metric::TrustPosture::Unknown,
+    ))?;
     client.emit(metric::record_model_invocation(engine, Some("claude-4-sonnet")))?;
     client.emit(metric::record_user_turn(interface, mode, engine))?;
     if let Some(record) = metric::record_user_turn_duration_seconds(1.5, interface, mode, engine) {

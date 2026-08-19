@@ -1477,6 +1477,7 @@ async fn launch_acp_non_interactive(
                     SessionInterface::NoninteractiveCli,
                     telemetry_agent_mode,
                     Engine::V3,
+                    kiro_telemetry::metric::TrustPosture::from_trust_all_tools(trust_all_tools),
                 )
             {
                 debug!(%err, "failed to emit KAS non-interactive session telemetry");

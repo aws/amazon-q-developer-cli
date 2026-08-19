@@ -155,6 +155,17 @@ describe('Rust ACP telemetry ownership', () => {
       mode: 'interactive',
       version: '9.9.9-test',
       engine: 'v2',
+      trustPosture: 'prompt_on_demand',
+    });
+  });
+
+  it('records trust-all posture from the launched agent arguments', async () => {
+    const client = new AcpClient('/agent', ['--trust-all-tools'], '9.9.9-test');
+    await client.newSession();
+
+    expect(recordTuiSessionStarted.mock.calls[0]?.[0]).toMatchObject({
+      engine: 'v2',
+      trustPosture: 'trust_all_tools',
     });
   });
 

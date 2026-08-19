@@ -65,6 +65,18 @@ impl FsRead {
         preferred_alias: "read",
         aliases: &["fs_read", "read"],
     };
+
+    pub fn paths(&self) -> Vec<String> {
+        self.operations
+            .iter()
+            .flat_map(|operation| match operation {
+                FsReadOperation::Line(line) => vec![line.path.clone()],
+                FsReadOperation::Directory(directory) => vec![directory.path.clone()],
+                FsReadOperation::Search(search) => vec![search.path.clone()],
+                FsReadOperation::Image(image) => image.image_paths.clone(),
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -23,7 +23,7 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, session_interface, agent_mode, agent_engine]
+    attributes: [version_full, session_interface, agent_mode, agent_engine, trust_posture]
     cloudwatch_dimensions: [version_full, session_interface, agent_mode, agent_engine]
   - name: kiro_cli_cloud_session_lifecycle_total
     description: Cloud development session lifecycle transitions observed by the CLI.
@@ -201,7 +201,11 @@ metrics:
     unit: "1"
     priority: P0
     temporality: delta
-    attributes: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
+    # approval_path and path_scope are attributes only, deliberately not
+    # cloudwatch_dimensions: promoting them would multiply the existing series for a
+    # breakdown no dashboard needs yet. They still reach the EMF records, so query them
+    # in Logs Insights. See docs/design/kuts-metric-dimension-review.md before promoting.
+    attributes: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context, approval_path, path_scope]
     cloudwatch_dimensions: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
   - name: kiro_cli_model_invocations_total
     description: Logical model requests initiated by an agent loop, excluding transport retries.
@@ -389,7 +393,11 @@ metrics:
     unit: ms
     priority: P0
     temporality: delta
-    attributes: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
+    # approval_path and path_scope are attributes only, deliberately not
+    # cloudwatch_dimensions: promoting them would multiply the existing series for a
+    # breakdown no dashboard needs yet. They still reach the EMF records, so query them
+    # in Logs Insights. See docs/design/kuts-metric-dimension-review.md before promoting.
+    attributes: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context, approval_path, path_scope]
     cloudwatch_dimensions: [version_full, agent_engine, tool_origin, builtin_tool_name, tool_outcome, execution_context]
   - name: kiro_cli_mcp_server_init_total
     description: Terminal MCP server initialization outcomes; OAuth-required is intermediate and is counted only when initialization later succeeds or fails.

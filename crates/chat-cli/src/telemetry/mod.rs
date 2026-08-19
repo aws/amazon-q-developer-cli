@@ -521,8 +521,9 @@ impl TelemetryThread {
         &self,
         session_interface: metric::SessionInterface,
         agent_mode: metric::AgentMode,
+        trust_posture: metric::TrustPosture,
     ) -> Result<(), TelemetryError> {
-        self.send_chat_session_started_for_engine(session_interface, agent_mode, metric::Engine::V1)
+        self.send_chat_session_started_for_engine(session_interface, agent_mode, metric::Engine::V1, trust_posture)
     }
 
     pub(crate) fn send_chat_session_started_for_engine(
@@ -530,8 +531,14 @@ impl TelemetryThread {
         session_interface: metric::SessionInterface,
         agent_mode: metric::AgentMode,
         engine: metric::Engine,
+        trust_posture: metric::TrustPosture,
     ) -> Result<(), TelemetryError> {
-        self.send(chat_session_started_event(session_interface, agent_mode, engine))
+        self.send(chat_session_started_event(
+            session_interface,
+            agent_mode,
+            engine,
+            trust_posture,
+        ))
     }
 
     pub async fn send_cli_subcommand_executed(
@@ -1103,6 +1110,7 @@ fn tool_use_suggested_event(event: ToolUseEventBuilder, execution_context: metri
         mcp_server_name: event.mcp_server_name,
         is_accepted: event.is_accepted,
         is_trusted: event.is_trusted,
+        approval_path: event.approval_path,
         is_success: event.is_success,
         reason_desc: event.reason_desc,
         is_valid: event.is_valid,
@@ -1115,6 +1123,7 @@ fn tool_use_suggested_event(event: ToolUseEventBuilder, execution_context: metri
         turn_duration: event.turn_duration,
         aws_service_name: event.aws_service_name,
         aws_operation_name: event.aws_operation_name,
+        path_scope: event.path_scope,
     });
     telemetry_event.is_subagent = execution_context == metric::ExecutionContext::Subagent;
     telemetry_event
@@ -1139,9 +1148,11 @@ fn chat_session_started_event(
     session_interface: metric::SessionInterface,
     agent_mode: metric::AgentMode,
     engine: metric::Engine,
+    trust_posture: metric::TrustPosture,
 ) -> Event {
     let mut event = Event::new(EventType::ChatSessionStarted {
         mode: metric::Mode::from_name(agent_mode.as_str()),
+        trust_posture: Some(trust_posture),
     });
     event.set_session_interface(session_interface);
     event.set_engine(engine);
@@ -1734,23 +1745,30 @@ mod test {
             startup_state: Arc::new(AtomicU8::new(STARTUP_PENDING)),
         };
 
-        for agent_mode in [metric::AgentMode::Spec, metric::AgentMode::Autonomous] {
+        for (agent_mode, trust_posture) in [
+            (metric::AgentMode::Spec, metric::TrustPosture::PromptOnDemand),
+            (metric::AgentMode::Autonomous, metric::TrustPosture::TrustAllTools),
+        ] {
             thread
                 .send_chat_session_started_for_engine(
                     metric::SessionInterface::NoninteractiveCli,
                     agent_mode,
                     metric::Engine::V3,
+                    trust_posture,
                 )
                 .unwrap();
             let event = rx.try_recv().unwrap();
             let record = kiro_telemetry_legacy::event_to_otel_metric_record(&event).unwrap();
-            let recorded_agent_mode = record
-                .attributes
-                .iter()
-                .find(|attribute| attribute.key == "agent_mode")
-                .map(|attribute| attribute.value.as_str());
+            let attribute = |key: &str| {
+                record
+                    .attributes
+                    .iter()
+                    .find(|attribute| attribute.key == key)
+                    .map(|attribute| attribute.value.as_str())
+            };
 
-            assert_eq!(recorded_agent_mode, Some(agent_mode.as_str()));
+            assert_eq!(attribute("agent_mode"), Some(agent_mode.as_str()));
+            assert_eq!(attribute("trust_posture"), Some(trust_posture.as_str()));
         }
     }
 

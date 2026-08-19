@@ -4529,12 +4529,17 @@ async fn session_creation_emits_chat_session_started_telemetry_once() {
             metric::SessionInterface::ExternalAcp,
             metric::AgentMode::Custom,
             metric::Engine::V2,
+            metric::TrustPosture::PromptOnDemand,
         ),
     );
     expect_metric_attrs(&record, &[
         ("session_interface", "external_acp"),
         ("agent_mode", "custom"),
         ("agent_engine", "v2"),
+        // `.with_trust_all(true)` on the harness makes the test *client* auto-approve
+        // permission requests; it does not put the agent in trust-all-tools mode, so the
+        // session's posture is still the default.
+        ("trust_posture", "prompt_on_demand"),
     ]);
 }
 

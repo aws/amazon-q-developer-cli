@@ -37,9 +37,16 @@ export function createAcpClient(
         connectMockTransport,
       } = require('../test-utils/acp-mock/MockAcpTransport');
       const stream = connectMockTransport(mockSocketPath);
-      return new KasAcpClient({ stream, ...kasOptions });
+      return new KasAcpClient({
+        stream,
+        ...kasOptions,
+        initialTrustAllTools: extraAcpArgs.includes('--trust-all-tools'),
+      });
     }
-    return new KasAcpClient(kasOptions);
+    return new KasAcpClient({
+      ...kasOptions,
+      initialTrustAllTools: extraAcpArgs.includes('--trust-all-tools'),
+    });
   }
   return new RustAcpClient(agentPath, extraAcpArgs);
 }

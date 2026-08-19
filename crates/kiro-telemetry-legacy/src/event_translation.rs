@@ -370,6 +370,10 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
             turn_duration,
             aws_service_name,
             aws_operation_name,
+            // Metric-only fields; the legacy Toolkit event has no columns for
+            // them and must not grow any.
+            path_scope: _,
+            approval_path: _,
         } => Some(
             CodewhispererterminalToolUseSuggested {
                 create_time: event.created_time,
@@ -952,11 +956,14 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
             tool_name,
             mcp_server_name,
             is_accepted,
+            is_trusted: _,
             is_success,
             is_valid,
             is_custom_tool,
             execution_duration,
             aws_service_name,
+            path_scope,
+            approval_path,
             ..
         } => {
             if engine == metric::Engine::V3 {
@@ -969,9 +976,11 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
                 *is_custom_tool,
                 mcp_server_name.as_deref(),
                 *is_accepted,
+                approval_path.unwrap_or(metric::ApprovalPath::Unknown),
                 *is_valid,
                 *is_success,
                 event.is_subagent,
+                *path_scope,
             );
             let mut records = vec![metric::record_tool_call(tool)];
             records.extend(
@@ -1088,7 +1097,7 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
         EventType::ChatSlashCommandExecuted { command, .. } => {
             vec![metric::record_slash_command(command, engine)]
         },
-        EventType::ChatSessionStarted { mode } => {
+        EventType::ChatSessionStarted { mode, trust_posture } => {
             if !host_owns_turn_metrics(event) {
                 return Vec::new();
             }
@@ -1099,6 +1108,7 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
                     .agent_mode
                     .unwrap_or_else(|| metric::AgentMode::from_id(Some(mode.as_str()))),
                 engine,
+                trust_posture.unwrap_or_default(),
             )]
         },
         EventType::ProcessHealthMetric { .. } => Vec::new(),
@@ -1271,9 +1281,11 @@ fn canonical_tool_metric<'a>(
     is_custom_tool: bool,
     mcp_server_name: Option<&str>,
     is_accepted: bool,
+    approval_path: metric::ApprovalPath,
     is_valid: Option<bool>,
     is_success: Option<bool>,
     is_subagent: bool,
+    path_scope: Option<metric::PathScope>,
 ) -> metric::ToolMetric<'a> {
     let origin = if is_custom_tool || mcp_server_name.is_some() {
         metric::ToolMetricOrigin::Mcp
@@ -1302,6 +1314,8 @@ fn canonical_tool_metric<'a>(
         },
     )
     .builtin_tool_name(tool_name)
+    .approval_path(approval_path)
+    .path_scope(path_scope.unwrap_or(metric::PathScope::Unknown))
 }
 
 fn canonical_token_metric_records(engine: metric::Engine, model: Option<&str>, usage: TokenUsage) -> Vec<MetricRecord> {
@@ -1490,6 +1504,7 @@ mod tests {
         let session = attributed_event(
             EventType::ChatSessionStarted {
                 mode: metric::Mode::Interactive,
+                trust_posture: None,
             },
             metric::Engine::V2,
             metric::SessionInterface::InteractiveCli,
@@ -1514,6 +1529,7 @@ mod tests {
             let session = attributed_event(
                 EventType::ChatSessionStarted {
                     mode: metric::Mode::Oneshot,
+                    trust_posture: None,
                 },
                 engine,
                 metric::SessionInterface::NoninteractiveCli,
@@ -1660,6 +1676,84 @@ mod tests {
         assert!(!has_metric(&records, "kiro_cli_turn_failure_total"));
     }
 
+    fn tool_use_event(
+        is_accepted: bool,
+        is_trusted: bool,
+        path_scope: Option<metric::PathScope>,
+        approval_path: Option<metric::ApprovalPath>,
+    ) -> Event {
+        attributed_event(
+            EventType::ToolUseSuggested {
+                conversation_id: "conversation".to_string(),
+                utterance_id: None,
+                user_input_id: None,
+                tool_use_id: Some("tool-use".to_string()),
+                tool_name: Some("execute_bash".to_string()),
+                mcp_server_name: None,
+                is_accepted,
+                is_trusted,
+                is_success: Some(true),
+                reason_desc: None,
+                is_valid: Some(true),
+                is_custom_tool: false,
+                input_token_size: None,
+                output_token_size: None,
+                custom_tool_call_latency: None,
+                model: Some("model".to_string()),
+                execution_duration: None,
+                turn_duration: None,
+                aws_service_name: None,
+                aws_operation_name: None,
+                path_scope,
+                approval_path,
+            },
+            metric::Engine::V2,
+            metric::SessionInterface::InteractiveCli,
+        )
+    }
+
+    fn tool_call_record(event: &Event) -> MetricRecord {
+        event_to_otel_metric_records(event)
+            .into_iter()
+            .find(|record| record.name == "kiro_cli_tool_call_total")
+            .expect("tool call metric")
+    }
+
+    #[test]
+    fn approval_path_reaches_the_emitted_record_for_each_outcome() {
+        for (is_accepted, is_trusted, approval_path, expected) in [
+            (true, true, metric::ApprovalPath::AutoAllowed, "auto_allowed"),
+            (true, false, metric::ApprovalPath::UserApproved, "user_approved"),
+            (false, false, metric::ApprovalPath::Denied, "denied"),
+        ] {
+            let record = tool_call_record(&tool_use_event(is_accepted, is_trusted, None, Some(approval_path)));
+            assert_eq!(
+                attribute(&record, "approval_path"),
+                Some(expected),
+                "is_accepted={is_accepted} is_trusted={is_trusted}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_approval_path_is_unknown_instead_of_inferred_from_flags() {
+        let record = tool_call_record(&tool_use_event(true, false, None, None));
+        assert_eq!(attribute(&record, "approval_path"), Some("unknown"));
+        assert_eq!(attribute(&record, "tool_outcome"), Some("success"));
+    }
+
+    #[test]
+    fn path_scope_reaches_the_emitted_record() {
+        let record = tool_call_record(&tool_use_event(
+            true,
+            true,
+            Some(metric::PathScope::Workspace),
+            Some(metric::ApprovalPath::AutoAllowed),
+        ));
+
+        assert_eq!(attribute(&record, "path_scope"), Some("workspace"));
+    }
+
     #[test]
     fn v3_model_and_tool_events_are_suppressed() {
         let model = attributed_event(
@@ -1691,6 +1785,8 @@ mod tests {
                 turn_duration: None,
                 aws_service_name: None,
                 aws_operation_name: None,
+                path_scope: None,
+                approval_path: None,
             },
             metric::Engine::V3,
             metric::SessionInterface::InteractiveCli,

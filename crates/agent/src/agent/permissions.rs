@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use globset::{
     Glob,
@@ -22,6 +26,7 @@ use crate::agent::protocol::{
     ApprovalResult,
     PermissionEvalResult,
     PermissionOptionId,
+    ToolTargetScope,
 };
 use crate::agent::tool_permission::file_trust::generate_file_trust_options;
 use crate::agent::tools::use_aws::UseAws;
@@ -197,6 +202,129 @@ impl PathAccessType {
             _ => None,
         }
     }
+}
+
+impl ToolTargetScope {
+    fn containment_rank(self) -> u8 {
+        match self {
+            Self::Workspace => 0,
+            Self::OutsideWorkspace => 1,
+            Self::Home => 2,
+            Self::System => 3,
+            Self::NotApplicable | Self::Unknown => 5,
+        }
+    }
+
+    pub fn widest(scopes: impl IntoIterator<Item = Self>) -> Self {
+        scopes
+            .into_iter()
+            .filter(|scope| !matches!(scope, Self::NotApplicable))
+            .max_by_key(|scope| scope.containment_rank())
+            .unwrap_or(Self::NotApplicable)
+    }
+
+    /// Classify one absolute path already resolved for permission evaluation.
+    pub fn from_resolved_path(path: &Path, working_dir: Option<&Path>, home: Option<&Path>) -> Self {
+        if path.as_os_str().is_empty() || !path.is_absolute() {
+            return Self::Unknown;
+        }
+
+        let Some(working_dir) = working_dir.filter(|working_dir| !working_dir.as_os_str().is_empty()) else {
+            return Self::Unknown;
+        };
+        if path.starts_with(working_dir) {
+            return Self::Workspace;
+        }
+        if home.is_some_and(|home| !home.as_os_str().is_empty() && path.starts_with(home)) {
+            return Self::Home;
+        }
+        if is_system_path(path) {
+            return Self::System;
+        }
+        Self::OutsideWorkspace
+    }
+}
+
+/// Classify the canonical filesystem targets evaluated for permission.
+pub fn classify_tool_target<P: SystemProvider>(tool: &ToolKind, provider: &P) -> ToolTargetScope {
+    let paths = match tool {
+        ToolKind::BuiltIn(BuiltInTool::FileRead(read)) => read.all_paths(),
+        ToolKind::BuiltIn(BuiltInTool::FileWrite(write)) => vec![write.path().to_string()],
+        ToolKind::BuiltIn(BuiltInTool::Grep(grep)) => match grep.get_path(provider) {
+            Ok(path) => vec![path],
+            Err(_) => return ToolTargetScope::Unknown,
+        },
+        ToolKind::BuiltIn(BuiltInTool::Glob(glob)) => match glob.get_path(provider) {
+            Ok(path) => vec![path],
+            Err(_) => return ToolTargetScope::Unknown,
+        },
+        ToolKind::BuiltIn(BuiltInTool::Code(code)) => {
+            let paths = code.target_paths();
+            if paths.is_empty() {
+                match provider.cwd() {
+                    Ok(path) => vec![path.to_string_lossy().into_owned()],
+                    Err(_) => return ToolTargetScope::Unknown,
+                }
+            } else {
+                paths
+            }
+        },
+        ToolKind::BuiltIn(_) | ToolKind::Mcp(_) => return ToolTargetScope::NotApplicable,
+    };
+
+    let working_dir = provider
+        .cwd()
+        .ok()
+        .and_then(|path| canonicalize_path_sys(path.to_string_lossy(), provider).ok())
+        .map(PathBuf::from);
+    let home = provider
+        .home()
+        .and_then(|path| canonicalize_path_sys(path.to_string_lossy(), provider).ok())
+        .map(PathBuf::from);
+
+    ToolTargetScope::widest(paths.into_iter().map(|path| {
+        canonicalize_path_sys(path, provider).map_or(ToolTargetScope::Unknown, |path| {
+            ToolTargetScope::from_resolved_path(Path::new(&path), working_dir.as_deref(), home.as_deref())
+        })
+    }))
+}
+
+#[cfg(unix)]
+fn is_system_path(path: &Path) -> bool {
+    const UNIX_SYSTEM_ROOTS: &[&str] = &[
+        "/etc",
+        "/private/etc",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/var",
+        "/private/var",
+        "/opt",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/boot",
+        "/System",
+        "/Library",
+        "/Applications",
+    ];
+    UNIX_SYSTEM_ROOTS.iter().any(|root| path.starts_with(root))
+}
+
+#[cfg(windows)]
+fn is_system_path(path: &Path) -> bool {
+    let lossy = path.to_string_lossy().to_ascii_lowercase();
+    let after_drive = lossy.split_once(':').map_or(lossy.as_str(), |(_, rest)| rest);
+    ["\\windows", "\\program files", "\\program files (x86)", "\\programdata"]
+        .iter()
+        .any(|root| after_drive.starts_with(root))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn is_system_path(_path: &Path) -> bool {
+    false
 }
 
 /// Updates runtime permissions based on an "Always" approval result.
@@ -2285,6 +2413,89 @@ mod tests {
         let mut perms = RuntimePermissions::default();
         perms.filesystem.denied_write_paths.insert("/denied".to_string());
         assert!(perms.filesystem_denied_write_paths().contains("/denied"));
+    }
+
+    mod tool_target_scope {
+        use super::*;
+        use crate::tools::code::{
+            Code,
+            RenameSymbolParams,
+        };
+
+        fn provider() -> TestProvider {
+            TestProvider::new().with_cwd(PathBuf::from(TestProvider::default_home()).join("project"))
+        }
+
+        fn write(path: impl Into<String>) -> ToolKind {
+            ToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
+                path: path.into(),
+                content: String::new(),
+                start_line: None,
+            })))
+        }
+
+        #[test]
+        fn classifies_the_permission_layers_canonical_target() {
+            let provider = provider();
+            assert_eq!(
+                classify_tool_target(&write("src/main.rs"), &provider),
+                ToolTargetScope::Workspace
+            );
+            assert_eq!(
+                classify_tool_target(
+                    &write(
+                        PathBuf::from(TestProvider::default_home())
+                            .join("notes.txt")
+                            .to_string_lossy()
+                    ),
+                    &provider
+                ),
+                ToolTargetScope::Home
+            );
+        }
+
+        #[test]
+        fn missing_working_directory_is_unknown() {
+            assert_eq!(
+                ToolTargetScope::from_resolved_path(
+                    Path::new("/somewhere/file"),
+                    None,
+                    Some(Path::new(TestProvider::default_home()))
+                ),
+                ToolTargetScope::Unknown
+            );
+        }
+
+        #[test]
+        fn includes_code_write_targets() {
+            let tool = ToolKind::BuiltIn(BuiltInTool::Code(Code::RenameSymbol(RenameSymbolParams {
+                file_path: "src/main.rs".to_string(),
+                row: 1,
+                column: 1,
+                new_name: "renamed".to_string(),
+                dry_run: false,
+            })));
+
+            assert_eq!(classify_tool_target(&tool, &provider()), ToolTargetScope::Workspace);
+        }
+
+        #[test]
+        fn non_filesystem_tools_are_not_applicable() {
+            let tool = ToolKind::BuiltIn(BuiltInTool::Introspect(
+                serde_json::from_value(serde_json::json!({})).unwrap(),
+            ));
+
+            assert_eq!(classify_tool_target(&tool, &provider()), ToolTargetScope::NotApplicable);
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn reports_system_targets_after_resolution() {
+            assert_eq!(
+                classify_tool_target(&write("/etc/hosts"), &provider()),
+                ToolTargetScope::System
+            );
+        }
     }
 
     #[test]

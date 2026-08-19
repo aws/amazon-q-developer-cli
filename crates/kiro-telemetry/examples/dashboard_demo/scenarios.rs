@@ -21,6 +21,7 @@ use kiro_telemetry::metric::{
     SessionInterface,
     ToolMetricOrigin,
     ToolMetricOutcome,
+    TrustPosture,
     TurnFailureReason,
     UiMode,
 };
@@ -195,6 +196,7 @@ pub struct Scenario {
     pub tool_origin: ToolMetricOrigin,
     pub tool_outcome: ToolMetricOutcome,
     pub execution_context: ExecutionContext,
+    pub trust_posture: TrustPosture,
     pub mcp: McpPlan,
     pub ui_mode: UiMode,
     pub commands: CommandPlan,
@@ -219,6 +221,7 @@ pub const SCENARIOS: &[Scenario] = &[
         tool_origin: ToolMetricOrigin::Builtin,
         tool_outcome: ToolMetricOutcome::Success,
         execution_context: ExecutionContext::Main,
+        trust_posture: TrustPosture::PromptOnDemand,
         mcp: McpPlan {
             source: McpServerSource::Registry,
             outcome: McpInitOutcome::Success,
@@ -264,6 +267,7 @@ pub const SCENARIOS: &[Scenario] = &[
         tool_origin: ToolMetricOrigin::Mcp,
         tool_outcome: ToolMetricOutcome::Error,
         execution_context: ExecutionContext::Main,
+        trust_posture: TrustPosture::TrustAllTools,
         mcp: McpPlan {
             source: McpServerSource::Global,
             outcome: McpInitOutcome::Success,
@@ -315,6 +319,7 @@ pub const SCENARIOS: &[Scenario] = &[
         tool_origin: ToolMetricOrigin::Builtin,
         tool_outcome: ToolMetricOutcome::Success,
         execution_context: ExecutionContext::Subagent,
+        trust_posture: TrustPosture::PromptOnDemand,
         mcp: McpPlan {
             source: McpServerSource::AcpInjected,
             outcome: McpInitOutcome::Failure,
@@ -363,6 +368,7 @@ pub const SCENARIOS: &[Scenario] = &[
         tool_origin: ToolMetricOrigin::Builtin,
         tool_outcome: ToolMetricOutcome::Denied,
         execution_context: ExecutionContext::Subagent,
+        trust_posture: TrustPosture::TrustAllTools,
         mcp: McpPlan {
             source: McpServerSource::Unknown,
             outcome: McpInitOutcome::Success,
@@ -414,6 +420,7 @@ pub const SCENARIOS: &[Scenario] = &[
         tool_origin: ToolMetricOrigin::Mcp,
         tool_outcome: ToolMetricOutcome::Cancelled,
         execution_context: ExecutionContext::Subagent,
+        trust_posture: TrustPosture::PromptOnDemand,
         mcp: McpPlan {
             source: McpServerSource::Registry,
             outcome: McpInitOutcome::Failure,
@@ -461,6 +468,7 @@ pub const SCENARIOS: &[Scenario] = &[
         tool_origin: ToolMetricOrigin::Mcp,
         tool_outcome: ToolMetricOutcome::Success,
         execution_context: ExecutionContext::Subagent,
+        trust_posture: TrustPosture::TrustAllTools,
         mcp: McpPlan {
             source: McpServerSource::Workspace,
             outcome: McpInitOutcome::Success,
@@ -512,6 +520,7 @@ pub const SCENARIOS: &[Scenario] = &[
         tool_origin: ToolMetricOrigin::Unknown,
         tool_outcome: ToolMetricOutcome::Unknown,
         execution_context: ExecutionContext::Main,
+        trust_posture: TrustPosture::PromptOnDemand,
         mcp: McpPlan {
             source: McpServerSource::Agent,
             outcome: McpInitOutcome::Unknown,

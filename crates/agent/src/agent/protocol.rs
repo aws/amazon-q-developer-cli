@@ -585,6 +585,26 @@ impl PermissionEvalResult {
     }
 }
 
+/// Coarse location of the canonical filesystem target evaluated for permission.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolTargetScope {
+    Workspace,
+    OutsideWorkspace,
+    Home,
+    System,
+    NotApplicable,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolApprovalOutcome {
+    Approved,
+    Denied,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ContentChunk {
     Text(String),
@@ -678,6 +698,12 @@ pub enum InternalEvent {
         tool_use_id: String,
         tool: Tool,
         result: PermissionEvalResult,
+        #[serde(default)]
+        target_scope: ToolTargetScope,
+    },
+    ToolApprovalResult {
+        tool_use_id: String,
+        outcome: ToolApprovalOutcome,
     },
     /// Events specific to tool and hook execution
     TaskExecutor(Box<TaskExecutorEvent>),

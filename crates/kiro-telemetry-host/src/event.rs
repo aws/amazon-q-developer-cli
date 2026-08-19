@@ -378,6 +378,9 @@ pub enum EventType {
     ChatSessionStarted {
         #[serde(default, deserialize_with = "deserialize_mode_or_default")]
         mode: metric::Mode,
+        /// Whether the session prompts for permission at all.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trust_posture: Option<metric::TrustPosture>,
     },
     ChatEnd {
         conversation_id: String,
@@ -420,6 +423,17 @@ pub enum EventType {
         turn_duration: Option<Duration>,
         aws_service_name: Option<String>,
         aws_operation_name: Option<String>,
+        /// Coarse location of the resolved filesystem target. Never a path.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path_scope: Option<metric::PathScope>,
+        /// How authorization was obtained, when the emitter knows it outright.
+        ///
+        /// `None` means "derive it from `is_accepted`/`is_trusted`", which is the
+        /// historical behaviour. Set it when those flags cannot express the truth:
+        /// a call that never reached authorization at all is `Unknown`, and the
+        /// flags would otherwise report it as approved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approval_path: Option<metric::ApprovalPath>,
     },
     AgentContribution {
         conversation_id: String,

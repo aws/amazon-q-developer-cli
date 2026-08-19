@@ -218,6 +218,15 @@ attributes:
   - name: execution_context
     description: Whether a tool was invoked by the main agent or a subagent.
     allowed_values: [main, subagent]
+  - name: trust_posture
+    description: Permission posture when a chat session is created or loaded; later transitions are not represented.
+    allowed_values: [prompt_on_demand, trust_all_tools, unknown]
+  - name: approval_path
+    description: How authorization for one attempted tool execution was obtained.
+    allowed_values: [auto_allowed, user_approved, denied, unknown]
+  - name: path_scope
+    description: Coarse location of the resolved target of a filesystem tool, relative to the session working directory. Never carries a path.
+    allowed_values: [workspace, outside_workspace, home, system, not_applicable, unknown]
   - name: model
     description: Canonical model identifier supplied by the trusted agent or model service.
     cloudwatch_cardinality_hint: 12

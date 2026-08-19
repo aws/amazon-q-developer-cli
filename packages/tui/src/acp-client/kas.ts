@@ -352,6 +352,7 @@ export interface KasAcpClientOptions {
   version?: string;
   executionTarget?: ExecutionTarget;
   repos?: string[];
+  initialTrustAllTools?: boolean;
 }
 
 export class KasAcpClient extends BaseAcpClient {
@@ -548,6 +549,7 @@ export class KasAcpClient extends BaseAcpClient {
    * so production behavior is unchanged.
    */
   private readonly version: string;
+  private readonly initialTrustPosture: 'prompt_on_demand' | 'trust_all_tools';
 
   private handleUserInputRequest(
     request: UserInputRequest
@@ -592,6 +594,9 @@ export class KasAcpClient extends BaseAcpClient {
       this.initialEffort = options.initialEffort;
       this.kasSettings = kasSettings;
       this.version = options.version ?? getCliVersion();
+      this.initialTrustPosture = options.initialTrustAllTools
+        ? 'trust_all_tools'
+        : 'prompt_on_demand';
       this.v3ToolCalls = new TuiToolCallObserver(this.version);
       this.executionTarget = options.executionTarget;
       this.repos = options.repos;
@@ -703,6 +708,9 @@ export class KasAcpClient extends BaseAcpClient {
     this.initialModel = options.initialModel;
     this.initialEffort = options.initialEffort;
     this.version = version;
+    this.initialTrustPosture = options.initialTrustAllTools
+      ? 'trust_all_tools'
+      : 'prompt_on_demand';
     this.v3ToolCalls = new TuiToolCallObserver(this.version);
     this.executionTarget = options.executionTarget;
     this.repos = options.repos;
@@ -3616,6 +3624,7 @@ export class KasAcpClient extends BaseAcpClient {
     recordTuiSessionStarted({
       mode,
       version: this.version,
+      trustPosture: this.initialTrustPosture,
       logProperties: { sessionId },
     });
   }

@@ -71,7 +71,7 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
     vec![
         record_run_started(interface, engine, os),
         record_login_success(AuthMethod::BuilderId, AuthFlow::Pkce),
-        record_chat_session_started(interface, mode, engine),
+        record_chat_session_started(interface, mode, engine, crate::metric::TrustPosture::Unknown),
         record_cloud_session_lifecycle(CloudSessionEvent::Started),
         record_cloud_session_ready(1.0).expect("positive duration"),
         record_autonomous_mode("enabled", engine),
@@ -738,12 +738,14 @@ mod tests {
             metric::SessionInterface::InteractiveCli,
             metric::AgentMode::Plan,
             metric::Engine::V2,
+            metric::TrustPosture::PromptOnDemand,
         );
         let records = vec![
             metric::record_chat_session_started(
                 metric::SessionInterface::InteractiveCli,
                 metric::AgentMode::Default,
                 metric::Engine::V2,
+                metric::TrustPosture::PromptOnDemand,
             ),
             expected.clone(),
         ];

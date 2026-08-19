@@ -123,7 +123,12 @@ describe('agent mode normalization', () => {
 describe('session and turn metrics', () => {
   it('records one interactive chat session with reviewed dimensions', () => {
     recordTuiSessionStarted(
-      { mode: 'my-agent', version: '2.4.0', engine: 'v2' },
+      {
+        mode: 'my-agent',
+        version: '2.4.0',
+        engine: 'v2',
+        trustPosture: 'trust_all_tools',
+      },
       deps
     );
 
@@ -136,6 +141,7 @@ describe('session and turn metrics', () => {
           session_interface: 'interactive_cli',
           agent_mode: 'custom',
           agent_engine: 'v2',
+          trust_posture: 'trust_all_tools',
         },
         scope: TUI_SCOPE,
       },

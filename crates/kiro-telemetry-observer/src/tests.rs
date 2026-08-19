@@ -1877,3 +1877,347 @@ fn attempt_buckets_cover_the_full_retry_budgets() {
         }
     }
 }
+
+mod permission_outcome_ordering {
+    use agent::protocol::{
+        PermissionEvalResult,
+        ToolApprovalOutcome,
+        ToolTargetScope,
+    };
+    use agent::tools::fs_write::{
+        FileCreate,
+        FsWrite,
+    };
+    use agent::tools::{
+        BuiltInTool,
+        ToolKind,
+    };
+    use kiro_telemetry::metric;
+
+    use super::{
+        event_to_otel_metric_records,
+        make_observer,
+    };
+
+    /// Drives one tool call, sending the permission decision BEFORE the tool
+    /// call is announced, which is the real order the agent produces: it
+    /// evaluates a whole batch first. Returns the emitted `approval_path`.
+    fn reported_approval_path(
+        result: PermissionEvalResult,
+        approval: Option<ToolApprovalOutcome>,
+        execute: bool,
+    ) -> Option<String> {
+        let (mut obs, mut rx) = make_observer();
+        let session = "test-session";
+
+        let tool_call = agent::protocol::ToolCall {
+            id: "tool-1".to_string(),
+            tool: agent::tools::Tool {
+                tool_use_purpose: None,
+                kind: ToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
+                    path: "/home/u/project/f.txt".to_string(),
+                    content: String::new(),
+                    start_line: None,
+                }))),
+            },
+            tool_use_block: agent::agent_loop::types::ToolUseBlock {
+                tool_use_id: "tool-1".to_string(),
+                name: "fs_write".to_string(),
+                input: serde_json::json!({}),
+            },
+        };
+
+        // Permission first, exactly as the agent orders it.
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Internal(crate::observer::InternalEvent::ToolPermissionEvalResult {
+                tool_use_id: "tool-1".to_string(),
+                tool: tool_call.tool.clone(),
+                result,
+                target_scope: ToolTargetScope::Workspace,
+            }),
+        );
+        if let Some(outcome) = approval {
+            obs.handle_event(
+                session,
+                &crate::observer::AgentEvent::Internal(crate::observer::InternalEvent::ToolApprovalResult {
+                    tool_use_id: "tool-1".to_string(),
+                    outcome,
+                }),
+            );
+        }
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Update(crate::observer::UpdateEvent::ToolCall(tool_call.clone())),
+        );
+        let outcome = if execute {
+            crate::observer::ToolCallResult::Success(Default::default())
+        } else {
+            crate::observer::ToolCallResult::Cancelled
+        };
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Update(crate::observer::UpdateEvent::ToolCallFinished {
+                tool_call,
+                result: outcome,
+            }),
+        );
+
+        let event = rx.try_recv().expect("tool use event");
+        event_to_otel_metric_records(&event)
+            .iter()
+            .find(|record| record.name == "kiro_cli_tool_call_total")
+            .expect("kiro_cli_tool_call_total")
+            .attributes
+            .iter()
+            .find(|attribute| attribute.key == "approval_path")
+            .map(|attribute| attribute.value.clone())
+    }
+
+    #[test]
+    fn a_rule_allowed_call_is_auto_allowed_even_though_permission_arrives_first() {
+        // Without buffering, this decision is dropped because the tracker does
+        // not exist yet, and the call is misreported as `user_approved` -- which
+        // is what trust-all and every silently-allowed call produced in KUTS.
+        assert_eq!(
+            reported_approval_path(PermissionEvalResult::Allow, None, true),
+            Some("auto_allowed".to_string())
+        );
+    }
+
+    #[test]
+    fn a_denied_call_is_reported_as_denied() {
+        assert_eq!(
+            reported_approval_path(
+                PermissionEvalResult::Deny {
+                    reason: "blocked".to_string()
+                },
+                None,
+                false
+            ),
+            Some("denied".to_string())
+        );
+    }
+
+    #[test]
+    fn a_prompt_result_is_reported_without_inferring_from_execution() {
+        assert_eq!(
+            reported_approval_path(PermissionEvalResult::ask(), Some(ToolApprovalOutcome::Approved), true),
+            Some("user_approved".to_string())
+        );
+        assert_eq!(
+            reported_approval_path(PermissionEvalResult::ask(), Some(ToolApprovalOutcome::Denied), false),
+            Some("denied".to_string())
+        );
+        assert_eq!(
+            reported_approval_path(PermissionEvalResult::ask(), None, false),
+            Some("unknown".to_string())
+        );
+    }
+
+    #[test]
+    fn a_deny_decision_is_recorded_rather_than_defaulted_to() {
+        // `denied` is also what a tracker with no recorded decision collapses to,
+        // because emission does `unwrap_or(false)` on both flags. So asserting
+        // the emitted string cannot tell "the Deny arrived" from "nothing
+        // arrived" -- this asserts the tracker state instead, which can.
+        let (mut obs, _rx) = make_observer();
+        let session = "test-session";
+
+        let tool_call = agent::protocol::ToolCall {
+            id: "tool-1".to_string(),
+            tool: agent::tools::Tool {
+                tool_use_purpose: None,
+                kind: ToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
+                    path: "/etc/passwd".to_string(),
+                    content: String::new(),
+                    start_line: None,
+                }))),
+            },
+            tool_use_block: agent::agent_loop::types::ToolUseBlock {
+                tool_use_id: "tool-1".to_string(),
+                name: "fs_write".to_string(),
+                input: serde_json::json!({}),
+            },
+        };
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Internal(crate::observer::InternalEvent::ToolPermissionEvalResult {
+                tool_use_id: "tool-1".to_string(),
+                tool: tool_call.tool.clone(),
+                result: PermissionEvalResult::Deny {
+                    reason: "blocked".to_string(),
+                },
+                target_scope: ToolTargetScope::System,
+            }),
+        );
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Update(crate::observer::UpdateEvent::ToolCall(tool_call)),
+        );
+
+        let tracker = &obs.sessions[session].tool_trackers["tool-1"];
+        assert_eq!(
+            tracker.is_accepted,
+            Some(false),
+            "the refusal must be recorded, not absent"
+        );
+        assert_eq!(tracker.is_trusted, Some(false));
+        assert_eq!(tracker.approval_path, Some(metric::ApprovalPath::Denied));
+    }
+
+    #[test]
+    fn a_call_with_no_permission_decision_is_unknown() {
+        let (mut obs, mut rx) = make_observer();
+        let session = "test-session";
+
+        let tool_call = agent::protocol::ToolCall {
+            id: "tool-1".to_string(),
+            tool: agent::tools::Tool {
+                tool_use_purpose: None,
+                kind: ToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
+                    path: "/home/u/project/f.txt".to_string(),
+                    content: String::new(),
+                    start_line: None,
+                }))),
+            },
+            tool_use_block: agent::agent_loop::types::ToolUseBlock {
+                tool_use_id: "tool-1".to_string(),
+                name: "fs_write".to_string(),
+                input: serde_json::json!({}),
+            },
+        };
+        // No ToolPermissionEvalResult at all.
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Update(crate::observer::UpdateEvent::ToolCall(tool_call.clone())),
+        );
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Update(crate::observer::UpdateEvent::ToolCallFinished {
+                tool_call,
+                result: crate::observer::ToolCallResult::Cancelled,
+            }),
+        );
+
+        let event = rx.try_recv().expect("tool use event");
+        let reported = event_to_otel_metric_records(&event)
+            .iter()
+            .find(|record| record.name == "kiro_cli_tool_call_total")
+            .expect("kiro_cli_tool_call_total")
+            .attributes
+            .iter()
+            .find(|attribute| attribute.key == "approval_path")
+            .map(|attribute| attribute.value.clone());
+        assert_eq!(
+            reported,
+            Some("unknown".to_string()),
+            "a missing authorization observation must not be reported as a denial"
+        );
+    }
+
+    #[test]
+    fn a_parse_failure_reports_unknown_rather_than_an_approval_nobody_gave() {
+        // A model-generated call that could not be parsed never reached
+        // authorization. `is_accepted` has to stay true so the outcome is
+        // `error` and not `denied`, and the two flags would then derive
+        // `user_approved` -- inflating the bucket that counts how often we
+        // interrupt people, with calls no one was ever asked about.
+        let (mut obs, mut rx) = make_observer();
+        let session = "test-session";
+
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Update(crate::observer::UpdateEvent::ToolCallFailed {
+                tool_use_id: "tool-1".to_string(),
+                tool_name: "fs_read".to_string(),
+                tool_identity: None,
+                raw_input: serde_json::json!({}),
+                reason: agent::protocol::ToolCallFailureReason::ParseError,
+                error: "could not parse tool input".to_string(),
+            }),
+        );
+
+        let event = rx.try_recv().expect("tool use event");
+        let records = event_to_otel_metric_records(&event);
+        let record = records
+            .iter()
+            .find(|record| record.name == "kiro_cli_tool_call_total")
+            .expect("kiro_cli_tool_call_total");
+        let attribute = |key: &str| {
+            record
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key == key)
+                .map(|attribute| attribute.value.clone())
+        };
+        assert_eq!(attribute("approval_path"), Some("unknown".to_string()));
+        // The call itself is still reported as a failure, unchanged.
+        assert_eq!(attribute("tool_outcome"), Some("error".to_string()));
+    }
+
+    #[test]
+    fn a_decision_for_a_tool_that_never_runs_does_not_outlive_its_turn() {
+        // A tool denied during evaluation is handed straight back to the model
+        // and never announced, so nothing consumes its buffered decision. The
+        // buffer has to be emptied at the turn boundary or it grows for the
+        // lifetime of the session.
+        let (mut obs, _rx) = make_observer();
+        let session = "test-session";
+
+        let tool = agent::tools::Tool {
+            tool_use_purpose: None,
+            kind: ToolKind::BuiltIn(BuiltInTool::FileWrite(FsWrite::Create(FileCreate {
+                path: "/etc/passwd".to_string(),
+                content: String::new(),
+                start_line: None,
+            }))),
+        };
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::Internal(crate::observer::InternalEvent::ToolPermissionEvalResult {
+                tool_use_id: "tool-never-announced".to_string(),
+                tool,
+                result: PermissionEvalResult::Deny {
+                    reason: "blocked".to_string(),
+                },
+                target_scope: ToolTargetScope::System,
+            }),
+        );
+        assert_eq!(
+            obs.sessions[session].pending_permissions.len(),
+            1,
+            "the decision should be buffered while its tool call might still arrive"
+        );
+
+        obs.handle_event(
+            session,
+            &crate::observer::AgentEvent::EndTurn(super::UserTurnMetadata {
+                loop_id: super::test_loop_id(),
+                result: None,
+                message_ids: vec![],
+                total_request_count: 1,
+                number_of_cycles: 0,
+                builtin_tool_uses: 0,
+                turn_duration: Some(std::time::Duration::from_secs(1)),
+                end_reason: super::LoopEndReason::UserTurnEnd,
+                end_timestamp: chrono::Utc::now(),
+                input_token_count: 0,
+                output_token_count: 0,
+                cache_read_input_token_count: 0,
+                cache_write_input_token_count: 0,
+                model: None,
+                assistant_response_length: 0,
+                request_attempts: None,
+                context_usage_percentage: None,
+                final_context_usage_percentage: None,
+                metering_usage: Vec::new(),
+                user_prompt_length: 0,
+            }),
+        );
+        assert!(
+            obs.sessions[session].pending_permissions.is_empty(),
+            "a decision whose tool never ran must not survive the turn"
+        );
+    }
+}

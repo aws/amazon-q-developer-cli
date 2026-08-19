@@ -92,6 +92,7 @@ use permissions::{
     PathAccessType,
     RuntimePermissions,
     apply_approval_to_permissions,
+    classify_tool_target,
     evaluate_tool_permission,
 };
 use protocol::{
@@ -110,6 +111,7 @@ use protocol::{
     SendPromptArgs,
     StallRetryOutcome,
     SwapAgentArgs,
+    ToolApprovalOutcome,
     ToolCall,
     ToolCallFailureReason,
     ToolCallResult,
@@ -2663,6 +2665,16 @@ impl Agent {
             )));
         }
 
+        self.agent_event_buf
+            .push(AgentEvent::Internal(InternalEvent::ToolApprovalResult {
+                tool_use_id: args.id.clone(),
+                outcome: if args.result.option_id.is_allow() {
+                    ToolApprovalOutcome::Approved
+                } else {
+                    ToolApprovalOutcome::Denied
+                },
+            }));
+
         // Update permissions for "always" options
         if let Some((_, tool)) = state.tools.iter().find(|(b, _)| b.tool_use_id == args.id) {
             apply_approval_to_permissions(&mut self.permissions, tool.kind(), &args.result, &self.sys_provider);
@@ -4009,6 +4021,7 @@ impl Agent {
         let mut trust_options_map: HashMap<String, Vec<protocol::TrustOption>> = HashMap::new();
         for (block, tool) in &tools {
             let result = self.evaluate_tool_permission(tool).await?;
+            let target_scope = classify_tool_target(&tool.kind, &self.sys_provider);
             match &result {
                 PermissionEvalResult::Allow => (),
                 PermissionEvalResult::Ask { trust_options } => {
@@ -4024,6 +4037,7 @@ impl Agent {
                     tool_use_id: block.tool_use_id.clone(),
                     tool: tool.clone(),
                     result,
+                    target_scope,
                 }));
         }
 
