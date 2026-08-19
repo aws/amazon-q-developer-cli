@@ -262,33 +262,47 @@ function pastedLine(input: string): string {
 function wrapFooterHints(
   glyphs: ReturnType<typeof useGlyphs>,
   termWidth: number,
-  hostPreview: boolean
+  hostPreview: boolean,
+  colorize: { key: (s: string) => string; dim: (s: string) => string }
 ): string[] {
-  const dot = ` ${glyphs.smallDot} `;
-  const hints = [
-    `${glyphs.arrowUp}${glyphs.arrowDown} navigate`,
-    `${glyphs.arrowLeft}${glyphs.arrow} groups`,
-    `${glyphs.enter} resume`,
-    hostPreview ? 'tab/ctrl+p preview' : 'tab preview',
-    'ctrl+r rename',
-    'ctrl+b bookmark',
-    'ctrl+t tag',
-    'ctrl+d delete',
+  const hints: Array<{ keys: string; label: string }> = [
+    { keys: `${glyphs.arrowUp}${glyphs.arrowDown}`, label: 'navigate' },
+    { keys: `${glyphs.arrowLeft}${glyphs.arrow}`, label: 'groups' },
+    { keys: `${glyphs.enter}`, label: 'resume' },
+    {
+      keys: hostPreview ? 'tab/ctrl+p' : 'tab',
+      label: 'preview',
+    },
+    { keys: 'ctrl+r', label: 'rename' },
+    { keys: 'ctrl+b', label: 'bookmark' },
+    { keys: 'ctrl+t', label: 'tag' },
+    { keys: 'ctrl+d', label: 'delete' },
   ];
+  const format = (h: { keys: string; label: string }): string =>
+    `${colorize.key(h.keys)} ${colorize.dim(h.label)}`;
+  const plainWidth = (h: { keys: string; label: string }): number =>
+    visibleWidth(`${h.keys} ${h.label}`);
   const maxW = Math.max(termWidth - 2, 1);
+  const sep = colorize.dim(` ${glyphs.smallDot} `);
+  const sepPlainW = visibleWidth(` ${glyphs.smallDot} `);
   const lines: string[] = [];
-  let cur = '';
-  for (const rawHint of hints) {
-    const h = truncateToWidth(rawHint, maxW);
-    const next = cur ? cur + dot + h : h;
-    if (visibleWidth(next) > maxW && cur) {
-      lines.push(cur);
-      cur = h;
+  let curFormatted = '';
+  let curWidth = 0;
+  for (const hint of hints) {
+    const hWidth = Math.min(plainWidth(hint), maxW);
+    const nextWidth = curWidth ? curWidth + sepPlainW + hWidth : hWidth;
+    if (nextWidth > maxW && curWidth) {
+      lines.push(curFormatted);
+      curFormatted = format(hint);
+      curWidth = hWidth;
     } else {
-      cur = next;
+      curFormatted = curFormatted
+        ? curFormatted + sep + format(hint)
+        : format(hint);
+      curWidth = nextWidth;
     }
   }
-  if (cur) lines.push(cur);
+  if (curFormatted) lines.push(curFormatted);
   return lines;
 }
 
@@ -1788,7 +1802,8 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
   const footerHintLines = wrapFooterHints(
     glyphs,
     termWidth,
-    Boolean(onTogglePreview)
+    Boolean(onTogglePreview),
+    { key: getColor('primary'), dim }
   ).slice(0, Math.max(termHeight - fixedChrome - MIN_LIST_LINES, 0));
   const gcHintShown = nonDerivedEmpty > 0;
   const chromeReserve = fixedChrome + footerHintLines.length;
@@ -2112,7 +2127,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
         {(() => {
           const sel = chalk.hex(accentHex).bold;
           const keycap = (k: string, on: boolean) =>
-            on ? sel(`[${k}]`) : dim(`[${k}]`);
+            on ? sel(`[${k}]`) : getColor('primary')(`[${k}]`);
           const groupOptions: { id: GroupByDimension; label: string }[] = [
             { id: 'workspace', label: 'workspace' },
             { id: 'recency', label: 'recency' },
@@ -2200,9 +2215,12 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
                   expanded — inline they read as another option. */}
               {controlFocus && (
                 <Text wrap="truncate">
-                  {dim(
-                    `${glyphs.arrowLeft}${glyphs.arrow} select ${glyphs.smallDot} ${glyphs.enter} done ${glyphs.smallDot} esc cancel`
-                  )}
+                  {getColor('primary')(`${glyphs.arrowLeft}${glyphs.arrow}`)}
+                  {dim(` select ${glyphs.smallDot} `)}
+                  {getColor('primary')(`${glyphs.enter}`)}
+                  {dim(` done ${glyphs.smallDot} `)}
+                  {getColor('primary')('esc')}
+                  {dim(' cancel')}
                 </Text>
               )}
             </Box>
@@ -2774,7 +2792,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
               )}
               {lines.map((l, i) => (
                 <Text key={i} wrap="truncate">
-                  {dim(l)}
+                  {l}
                 </Text>
               ))}
             </>

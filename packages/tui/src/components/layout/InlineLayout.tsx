@@ -1062,7 +1062,12 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
               }}
             />
             <ActionHint
-              text="/copy to clipboard"
+              text={
+                inlineAgentEngine === 'kas' &&
+                features.isEnabled(Feature.SessionDashboard)
+                  ? `/sessions to resume ${glyphs.smallDot} /copy to clipboard`
+                  : '/copy to clipboard'
+              }
               visible={
                 !toolOutputsExpanded &&
                 !isProcessing &&
