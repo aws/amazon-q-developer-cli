@@ -369,6 +369,14 @@ describe('RC binary cache identity', () => {
       expect(checkout).toContain('persist-credentials: false');
       expect(checkout).toContain('scripts/const.py');
     }
+
+    const binaryCacheCheckouts = trusted.filter((checkout) =>
+      checkout.includes('.github/scripts/rc-binary-cache.ts')
+    );
+    expect(binaryCacheCheckouts).toHaveLength(9);
+    for (const checkout of binaryCacheCheckouts) {
+      expect(checkout).toContain(ASSET_ENV_CONTRACT_PATH);
+    }
   });
 
   it('reads the pinned Bun version from the trusted checkout', () => {
