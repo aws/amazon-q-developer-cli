@@ -64,6 +64,10 @@ jobs:
           REVIEW_COUNT=$(echo "$BOT_REVIEWS" | jq 'length')
           echo "count=$REVIEW_COUNT" >> "$GITHUB_OUTPUT"
 
+          # Check if bot has a prior CHANGES_REQUESTED that needs dismissing
+          HAS_CHANGES_REQUESTED=$(echo "$BOT_REVIEWS" | jq '[.[] | select(.state == "CHANGES_REQUESTED")] | length > 0')
+          echo "has_prior_request_changes=$HAS_CHANGES_REQUESTED" >> "$GITHUB_OUTPUT"
+
           if [ "$REVIEW_COUNT" -eq 0 ]; then
             echo "mode=full" >> "$GITHUB_OUTPUT"
           else
@@ -122,15 +126,16 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REVIEW_MODE: ${{ steps.iteration.outputs.mode }}
           REVIEW_ITERATION: ${{ steps.iteration.outputs.count }}
+          HAS_PRIOR_REQUEST_CHANGES: ${{ steps.iteration.outputs.has_prior_request_changes }}
         run: |
           if [ "$REVIEW_MODE" = "full" ]; then
             kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
               "Review PR $PR_NUMBER (iteration: first). Keep the parent review body to Description (1-2 lines), Recommendation (1 line), Watch For (only if inline comments cannot cover it), Memory Context (short, relevant bullets only), and Suggested Reviewers. Label issues as Blocking or Non-blocking. Mark REQUEST_CHANGES if any blocking finding exists. DO NOT wait for user input."
           else
-            APPROVE_CLAUSE=""
-            if [ "$REVIEW_ITERATION" -ge 2 ]; then
-              APPROVE_CLAUSE=" If no blocking findings remain and every unresolved finding on the PR is non-blocking, approve."
+            DISMISS_CLAUSE=""
+            if [ "$HAS_PRIOR_REQUEST_CHANGES" = "true" ]; then
+              DISMISS_CLAUSE=" If no blocking findings remain, dismiss the prior REQUEST_CHANGES review using the GitHub dismissals API."
             fi
             kiro-cli chat --no-interactive --trust-all-tools --agent pr-reviewer \
-              "Review PR $PR_NUMBER (iteration: $((REVIEW_ITERATION + 1)), mode: incremental). Only post NEW inline comments for findings not already raised. Keep the parent review body to Description (1-2 lines), Recommendation (1 line), and Watch For (optional). Do not include memory context, suggested reviewers, or appendices. Label issues as Blocking or Non-blocking. Mark REQUEST_CHANGES if any blocking finding remains unresolved on the PR.${APPROVE_CLAUSE} DO NOT wait for user input."
+              "Review PR $PR_NUMBER (iteration: $((REVIEW_ITERATION + 1)), mode: incremental). Only post NEW inline comments for findings not already raised. Keep the parent review body to Description (1-2 lines), Recommendation (1 line), and Watch For (optional). Do not include memory context, suggested reviewers, or appendices. Label issues as Blocking or Non-blocking. Mark REQUEST_CHANGES if any blocking finding remains unresolved on the PR.${DISMISS_CLAUSE} DO NOT wait for user input."
           fi

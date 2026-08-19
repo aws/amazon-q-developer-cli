@@ -46,6 +46,7 @@ Before any GitHub write:
 **Incremental mode additional checks:**
 5. Compare each finding against prior bot inline comments on this PR. A finding is a DUPLICATE if an existing bot comment targets the same `path` and addresses the same concern (normalized title + code token match).
 6. Identify RESOLVED findings: prior bot comments where the targeted line has been modified or removed in the current diff. List these in the summary body.
+7. Check whether the bot has a prior `REQUEST_CHANGES` review on this PR (set `HAS_PRIOR_REQUEST_CHANGES=true`). This determines whether an `APPROVE` is required to dismiss the stale block.
 
 Before choosing the review event, build:
 
@@ -55,7 +56,7 @@ Before choosing the review event, build:
 
 If no new inline or summary finding remains:
 - **Full mode:** exit cleanly without creating a review.
-- **Incremental mode:** if all prior findings are resolved, submit an `APPROVE` review (see section 3).
+- **Incremental mode:** if all prior findings are resolved and `HAS_PRIOR_REQUEST_CHANGES` is true, dismiss the prior review and post a `COMMENT` confirming resolution. Otherwise exit cleanly.
 
 ## 2. Determine review event
 
@@ -64,9 +65,29 @@ Evaluate these rules top-down against `UNRESOLVED_FINDINGS`:
 | Condition | Event |
 |-----------|-------|
 | Any blocking finding remains unresolved on the PR | `REQUEST_CHANGES` |
-| Incremental mode, `REVIEW_ITERATION >= 2`, and every unresolved finding is non-blocking | `APPROVE` |
-| Any unresolved finding remains on the PR | `COMMENT` |
-| No unresolved findings remain | `APPROVE` |
+| Every unresolved finding is non-blocking and `HAS_PRIOR_REQUEST_CHANGES` is true | `COMMENT` + dismiss prior review |
+| Every unresolved finding is non-blocking | `COMMENT` |
+| No unresolved findings remain and `HAS_PRIOR_REQUEST_CHANGES` is true | `COMMENT` + dismiss prior review |
+| No unresolved findings remain | skip (no review needed) |
+
+### Dismissing a prior REQUEST_CHANGES
+
+When the bot previously posted `REQUEST_CHANGES` and blocking findings are now resolved, the bot MUST dismiss its own stale review. GitHub Actions tokens cannot submit `APPROVE` reviews due to branch protection, so use the dismiss endpoint instead:
+
+```bash
+# Find the bot's latest REQUEST_CHANGES review ID
+REVIEW_ID=$(gh api "repos/$REPOSITORY/pulls/$PULL_NUMBER/reviews" \
+  --jq '[.[] | select(.user.login == "github-actions[bot]" and .state == "CHANGES_REQUESTED")] | last | .id')
+
+# Dismiss it
+if [ -n "$REVIEW_ID" ] && [ "$REVIEW_ID" != "null" ]; then
+  gh api --method PUT "repos/$REPOSITORY/pulls/$PULL_NUMBER/reviews/$REVIEW_ID/dismissals" \
+    -f message="Blocking findings resolved. Remaining items are non-blocking." \
+    -f event="DISMISS"
+fi
+```
+
+This clears the "Changes Requested" status from the PR without needing APPROVE permission.
 
 ## 3. Render the review
 
@@ -131,7 +152,7 @@ If approving (all resolved, no new findings):
 All previously raised findings have been addressed.
 
 **Recommendation**
-Approve.
+Approve. Prior REQUEST_CHANGES dismissed.
 ```
 
 If approving with only non-blocking findings still open:
@@ -143,13 +164,15 @@ If approving with only non-blocking findings still open:
 Blocking findings are resolved. Remaining open items are non-blocking.
 
 **Recommendation**
-Approve. Remaining findings are non-blocking.
+Approve. Remaining findings are non-blocking. Prior REQUEST_CHANGES dismissed.
 
 **Watch For**
 - [Non-blocking] Finding title — `path/to/file.ts:108`
 
 <!-- robertobot:<summary-finding-id> -->
 ```
+
+In both cases above, after posting the `COMMENT` review, dismiss the prior `REQUEST_CHANGES` review using the dismissals API (see section 2).
 
 ### Inline comment format (both modes)
 
@@ -184,7 +207,7 @@ Build one payload:
 ```json
 {
   "commit_id": "<reviewed_head_sha>",
-  "event": "<COMMENT|REQUEST_CHANGES|APPROVE>",
+  "event": "<COMMENT|REQUEST_CHANGES>",
   "body": "<signed review body>",
   "comments": [
     {
@@ -206,7 +229,22 @@ gh api --method POST "repos/$REPOSITORY/pulls/$PULL_NUMBER/reviews" \
   --input /tmp/pr-review-payload.json
 ```
 
+**After posting**, if the event was `COMMENT` and `HAS_PRIOR_REQUEST_CHANGES` is true and no blocking findings remain, dismiss the stale review:
+
+```bash
+REVIEW_ID=$(gh api "repos/$REPOSITORY/pulls/$PULL_NUMBER/reviews" \
+  --jq '[.[] | select(.user.login == "github-actions[bot]" and .state == "CHANGES_REQUESTED")] | last | .id')
+
+if [ -n "$REVIEW_ID" ] && [ "$REVIEW_ID" != "null" ]; then
+  gh api --method PUT "repos/$REPOSITORY/pulls/$PULL_NUMBER/reviews/$REVIEW_ID/dismissals" \
+    -f message="Blocking findings resolved. Remaining items are non-blocking." \
+    -f event="DISMISS"
+fi
+```
+
 Do not create or patch a top-level issue comment. Do not post inline comments one at a time. GitHub rejects the entire review if an inline anchor is invalid, which prevents partial publication.
+
+Note: `APPROVE` is not used because GitHub Actions tokens are not permitted to approve PRs in this repository. Use `COMMENT` + dismissal instead.
 
 ## 5. Verify
 
