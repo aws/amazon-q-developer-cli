@@ -69,8 +69,10 @@ use agent::{
     RESPONSE_INTERRUPTED_MESSAGE,
     TOOL_USES_INTERRUPTED_MESSAGE,
 };
+use base64::Engine as _;
 use code_agent_sdk::CodeIntelligence;
 use kiro_telemetry::metric::TurnFailureReason;
+use ring::rand::SecureRandom as _;
 use sacp::schema::{
     AGENT_METHOD_NAMES,
     AgentCapabilities,
@@ -1046,6 +1048,82 @@ fn resolve_mcp_init_timeout(
 /// - Converting agent events to ACP notifications (egress via owned connection)
 /// - Tool approval flow with trusted tool tracking
 /// - Custom extension handlers (slash commands, etc.)
+const TUI_TELEMETRY_KEY_FILE_ENV: &str = "KIRO_TUI_TELEMETRY_KEY_FILE";
+
+fn read_one_use_telemetry_key(path: &std::path::Path) -> std::io::Result<zeroize::Zeroizing<[u8; 32]>> {
+    read_one_use_telemetry_key_with(path, |path| std::fs::remove_file(path))
+}
+
+fn read_one_use_telemetry_key_with(
+    path: &std::path::Path,
+    remove_file: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+) -> std::io::Result<zeroize::Zeroizing<[u8; 32]>> {
+    let bytes = zeroize::Zeroizing::new(std::fs::read(path)?);
+    remove_file(path)?;
+    let key = bytes.as_slice().try_into().map_err(|_length_error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "telemetry key must contain exactly 32 bytes",
+        )
+    })?;
+    Ok(zeroize::Zeroizing::new(key))
+}
+
+struct TelemetryIdentityCipher {
+    key: Arc<ring::aead::LessSafeKey>,
+    random: ring::rand::SystemRandom,
+}
+
+impl TelemetryIdentityCipher {
+    fn for_client(client_info: Option<&AcpClientInfo>) -> Option<Self> {
+        if !client_info.is_some_and(|info| info.name == ClientName::Kiro) {
+            return None;
+        }
+        static KEY: std::sync::OnceLock<Option<Arc<ring::aead::LessSafeKey>>> = std::sync::OnceLock::new();
+        let key = KEY
+            .get_or_init(|| {
+                let path = std::env::var_os(TUI_TELEMETRY_KEY_FILE_ENV)?;
+                let key_bytes = read_one_use_telemetry_key(std::path::Path::new(&path)).ok()?;
+                let key = ring::aead::UnboundKey::new(&ring::aead::AES_256_GCM, key_bytes.as_ref()).ok()?;
+                Some(Arc::new(ring::aead::LessSafeKey::new(key)))
+            })
+            .clone()?;
+        Some(Self {
+            key,
+            random: ring::rand::SystemRandom::new(),
+        })
+    }
+
+    fn new(client_info: Option<&AcpClientInfo>, key_bytes: &[u8]) -> Option<Self> {
+        if !client_info.is_some_and(|info| info.name == ClientName::Kiro) {
+            return None;
+        }
+        let key = ring::aead::UnboundKey::new(&ring::aead::AES_256_GCM, key_bytes).ok()?;
+        Some(Self {
+            key: Arc::new(ring::aead::LessSafeKey::new(key)),
+            random: ring::rand::SystemRandom::new(),
+        })
+    }
+
+    fn encrypt(&self, user_id: &str) -> Option<serde_json::Value> {
+        let mut nonce_bytes = [0_u8; 12];
+        self.random.fill(&mut nonce_bytes).ok()?;
+        let nonce = ring::aead::Nonce::assume_unique_for_key(nonce_bytes);
+        let mut ciphertext = zeroize::Zeroizing::new(user_id.as_bytes().to_vec());
+        self.key
+            .seal_in_place_append_tag(
+                nonce,
+                ring::aead::Aad::from(super::extensions::methods::TELEMETRY_IDENTITY_CHANGED.as_bytes()),
+                &mut *ciphertext,
+            )
+            .ok()?;
+        Some(serde_json::json!({
+            "nonce": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(nonce_bytes),
+            "ciphertext": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(ciphertext.as_slice()),
+        }))
+    }
+}
+
 struct AcpSession {
     session_id: SessionId,
     session_id_str: String,
@@ -1062,6 +1140,7 @@ struct AcpSession {
     current_agent_name: String,
     /// Connection to the TUI client
     connection_cx: ConnectionTo<sacp::Client>,
+    telemetry_identity_cipher: Option<TelemetryIdentityCipher>,
     is_subagent: bool,
     previous_agent_name: Option<String>,
     pending_plan: Option<String>,
@@ -1955,6 +2034,8 @@ impl AcpSession {
 
         let agent = agent.spawn();
 
+        let telemetry_identity_cipher = TelemetryIdentityCipher::for_client(builder.acp_client_info.as_ref());
+
         // Create telemetry observer actor
         let rts_state_for_model = Arc::clone(&rts_state);
         let telemetry_context = TelemetryContext::new(
@@ -1991,6 +2072,7 @@ impl AcpSession {
             pending_plan: None,
             pending_swap: None,
             connection_cx,
+            telemetry_identity_cipher,
             is_subagent: builder.is_subagent,
             session_db: Arc::new(session_db),
             rts_state,
@@ -2072,6 +2154,11 @@ impl AcpSession {
             error!("Failed to initialize session: {}", e);
             return;
         }
+        // Initialization establishes the encrypted ACP channel. Drain any
+        // identity that was already persisted when this child started before
+        // declaring the session ready; ordinary prompts may never execute a
+        // slash-command path that applies command effects.
+        self.apply_command_effects(Vec::new());
         let _ = ready_tx.send(());
 
         loop {
@@ -2158,6 +2245,25 @@ impl AcpSession {
         let ext_notification = sacp::schema::ExtNotification::new(method, std::sync::Arc::from(params_raw));
         self.connection_cx
             .send_notification(sacp::schema::AgentNotification::ExtNotification(ext_notification))
+    }
+
+    fn apply_command_effects(&self, effects: Vec<super::commands::CommandEffect>) {
+        let update = effects.into_iter().next().map_or_else(
+            || self.os.current_telemetry_identity_update(),
+            |effect| match effect {
+                super::commands::CommandEffect::TelemetryIdentityChanged(update) => update,
+            },
+        );
+        let Some(cipher) = self.telemetry_identity_cipher.as_ref() else {
+            return;
+        };
+        let Some(params) = cipher.encrypt(update.value.notification_value()) else {
+            warn!("Failed to encrypt telemetry identity notification");
+            return;
+        };
+        if let Err(error) = self.send_ext_notification(super::extensions::methods::TELEMETRY_IDENTITY_CHANGED, params) {
+            warn!(%error, "Failed to queue telemetry identity notification");
+        }
     }
 
     fn current_effort(&self) -> Option<String> {
@@ -2292,7 +2398,9 @@ impl AcpSession {
                                 || matches!(&command, TuiCommand::Guide(_));
                             let is_agent_create = matches!(&command, TuiCommand::Agent(args) if args.agent_name.as_deref().is_some_and(|n| n == "create" || n.starts_with("create ")));
                             let ctx = self.command_context();
-                            let result = super::commands::execute(command, &ctx).await;
+                            let execution = super::commands::execute(command, &ctx).await;
+                            let result = execution.result;
+                            self.apply_command_effects(execution.effects);
 
                             // Mirror ExecuteCommand: update current_agent_name on successful swap
                             if is_agent_swap
@@ -2587,7 +2695,9 @@ impl AcpSession {
                     "ExecuteCommand: flags computed"
                 );
                 let ctx = self.command_context();
-                let result = super::commands::execute(command, &ctx).await;
+                let execution = super::commands::execute(command, &ctx).await;
+                let result = execution.result;
+                self.apply_command_effects(execution.effects);
                 debug!(
                     success = result.success,
                     message = %result.message,
@@ -6160,5 +6270,80 @@ mod acp_session_config_cwd_tests {
         let cwd = std::env::temp_dir();
         let config = AcpSessionConfig::new("sid".to_string(), cwd.clone());
         assert_eq!(config.cwd, cwd);
+    }
+}
+
+#[cfg(test)]
+mod telemetry_identity_notification_tests {
+    use super::*;
+
+    #[test]
+    fn launcher_key_file_is_read_once_and_removed() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("telemetry.key");
+        std::fs::write(&path, [7_u8; 32]).unwrap();
+
+        let key = read_one_use_telemetry_key(&path).unwrap();
+        assert_eq!(&*key, &[7_u8; 32]);
+        assert!(!path.exists());
+        assert_eq!(
+            read_one_use_telemetry_key(&path).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
+
+    #[test]
+    fn launcher_key_consumption_fails_closed_when_unlink_fails() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("telemetry.key");
+        std::fs::write(&path, [7_u8; 32]).unwrap();
+
+        let error = read_one_use_telemetry_key_with(&path, |_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "injected unlink failure",
+            ))
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn identity_cipher_requires_builtin_tui_and_launcher_key() {
+        let key = [7_u8; 32];
+        let tui = AcpClientInfo::new("kiro-tui".to_string(), "1.0.0".to_string());
+        let external = AcpClientInfo::new("external-editor".to_string(), "1.0.0".to_string());
+
+        assert!(TelemetryIdentityCipher::new(Some(&tui), &key).is_some());
+        assert!(TelemetryIdentityCipher::new(Some(&external), &key).is_none());
+        assert!(TelemetryIdentityCipher::new(None, &key).is_none());
+        assert!(TelemetryIdentityCipher::new(Some(&tui), &[7_u8; 31]).is_none());
+    }
+
+    #[test]
+    fn pseudonymous_identity_is_stable_domain_separated_and_non_raw() {
+        let identity = kiro_telemetry::pseudonymous_user_id("private-user-id");
+
+        assert_eq!(identity, "v1:WvTeO69_0uZMOLh0_HyQuoA87GQaiEZxqtJwK8EmlIg");
+        assert_eq!(identity, kiro_telemetry::pseudonymous_user_id("private-user-id"));
+        assert_ne!(identity, kiro_telemetry::pseudonymous_user_id("different-user-id"));
+        assert!(!identity.contains("private-user-id"));
+    }
+
+    #[test]
+    fn encrypted_identity_payload_contains_no_raw_or_pseudonymous_id() {
+        let key = [7_u8; 32];
+        let tui = AcpClientInfo::new("kiro-tui".to_string(), "1.0.0".to_string());
+        let cipher = TelemetryIdentityCipher::new(Some(&tui), &key).unwrap();
+        let identity = kiro_telemetry::pseudonymous_user_id("private-user-id");
+
+        let payload = cipher.encrypt(&identity).unwrap().to_string();
+
+        assert!(!payload.contains("private-user-id"));
+        assert!(!payload.contains(&identity));
+        assert!(payload.contains("ciphertext"));
+        assert!(payload.contains("nonce"));
     }
 }

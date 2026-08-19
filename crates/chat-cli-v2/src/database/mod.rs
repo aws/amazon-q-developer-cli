@@ -379,6 +379,10 @@ impl Database {
         self.set_json_entry(Table::State, TELEMETRY_USER_ID_KEY, user_id)
     }
 
+    pub fn clear_telemetry_user_id(&self) -> Result<(), DatabaseError> {
+        self.delete_entry(Table::State, TELEMETRY_USER_ID_KEY)
+    }
+
     /// Get the start URL used for IdC login.
     pub fn get_start_url(&self) -> Result<Option<String>, DatabaseError> {
         self.get_json_entry::<String>(Table::State, START_URL_KEY)

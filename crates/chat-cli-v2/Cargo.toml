@@ -144,6 +144,7 @@ walkdir.workspace = true
 webpki-roots.workspace = true
 whoami.workspace = true
 winnow.workspace = true
+zeroize.workspace = true
 zip.workspace = true
 kiro-telemetry.workspace = true
 kiro-telemetry-host.workspace = true

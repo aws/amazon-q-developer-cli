@@ -44,6 +44,8 @@ pub struct AcpTestHarnessBuilder {
     agent_configs: Vec<(String, serde_json::Value)>,
     settings: serde_json::Map<String, serde_json::Value>,
     trust_all: bool,
+    client_name: String,
+    persisted_telemetry_user_id: Option<String>,
     extra_acp_args: Vec<String>,
     envs: Vec<(String, String)>,
 }
@@ -55,6 +57,8 @@ impl AcpTestHarnessBuilder {
             agent_configs: Vec::new(),
             settings: serde_json::Map::new(),
             trust_all: false,
+            client_name: "test-client".to_string(),
+            persisted_telemetry_user_id: None,
             extra_acp_args: Vec::new(),
             envs: Vec::new(),
         }
@@ -83,6 +87,19 @@ impl AcpTestHarnessBuilder {
     /// Set whether to auto-approve all permission requests.
     pub fn with_trust_all(mut self, trust_all: bool) -> Self {
         self.trust_all = trust_all;
+        self
+    }
+
+    /// Set the ACP client name advertised during initialization.
+    pub fn with_client_name(mut self, client_name: &str) -> Self {
+        self.client_name = client_name.to_string();
+        self
+    }
+
+    /// Seed an identity before the ACP subprocess starts and configure the
+    /// one-use key required for the built-in Kiro TUI notification channel.
+    pub fn with_persisted_telemetry_user_id(mut self, user_id: &str) -> Self {
+        self.persisted_telemetry_user_id = Some(user_id.to_string());
         self
     }
 
@@ -125,10 +142,30 @@ impl AcpTestHarnessBuilder {
             std::fs::write(&paths.settings_path, json).expect("failed to write settings");
         }
 
-        let mut harness = AcpTestHarness::spawn_with_args(paths, &self.extra_acp_args, &self.envs).await;
+        let mut envs = self.envs;
+        if let Some(user_id) = self.persisted_telemetry_user_id.as_deref() {
+            seed_persisted_telemetry_user_id(&paths.database_path, user_id);
+            let key_path = paths.base_dir.join("telemetry-identity.key");
+            std::fs::write(&key_path, [0x42_u8; 32]).expect("failed to write telemetry identity test key");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
+                    .expect("failed to protect telemetry identity test key");
+            }
+            envs.push((
+                "KIRO_TUI_TELEMETRY_KEY_FILE".to_string(),
+                key_path.to_string_lossy().into_owned(),
+            ));
+        }
+
+        let mut harness = AcpTestHarness::spawn_with_args(paths, &self.extra_acp_args, &envs).await;
         let (stdin, stdout) = harness.take_stdio();
         let client = super::AcpTestClient::spawn(stdin, stdout, self.trust_all);
-        client.initialize().await.expect("initialize failed");
+        client
+            .initialize_as(&self.client_name, "0.1.0")
+            .await
+            .expect("initialize failed");
         harness.wait_for_ipc().await;
         (harness, client)
     }
@@ -147,6 +184,62 @@ impl AcpTestHarnessBuilder {
         let resp = client.new_session(cwd.clone()).await.expect("new_session failed");
         (harness, client, resp.session_id, cwd)
     }
+}
+
+fn seed_persisted_telemetry_user_id(path: &Path, user_id: &str) {
+    let connection = rusqlite::Connection::open(path).expect("failed to create ACP test database");
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE migrations (
+                id INTEGER PRIMARY KEY,
+                version INTEGER NOT NULL,
+                migration_time INTEGER NOT NULL
+            );
+            CREATE TABLE history (
+                id INTEGER PRIMARY KEY,
+                command TEXT,
+                shell TEXT,
+                pid INTEGER,
+                session_id TEXT,
+                cwd TEXT,
+                start_time INTEGER,
+                hostname TEXT,
+                exit_code INTEGER,
+                end_time INTEGER,
+                duration INTEGER
+            );
+            CREATE TABLE state (key TEXT PRIMARY KEY, value BLOB);
+            CREATE TABLE auth_kv (key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE conversations (key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE conversations_v2 (
+                key TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                value TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (key, conversation_id)
+            );
+            CREATE INDEX idx_conversations_v2_key_updated
+                ON conversations_v2(key, updated_at DESC);
+            CREATE INDEX idx_conversations_v2_updated_at
+                ON conversations_v2(updated_at DESC);
+            ",
+        )
+        .expect("failed to initialize ACP test database schema");
+    for version in 0_i64..=8 {
+        connection
+            .execute("INSERT INTO migrations (version, migration_time) VALUES (?1, 0)", [
+                version,
+            ])
+            .expect("failed to record ACP test database migration");
+    }
+    let encoded_user_id = serde_json::to_string(user_id).expect("failed to encode telemetry user ID");
+    connection
+        .execute("INSERT INTO state (key, value) VALUES ('telemetryUserId', ?1)", [
+            encoded_user_id,
+        ])
+        .expect("failed to seed persisted telemetry user ID");
 }
 
 /// Test harness for running ACP integration tests against the `chat_cli acp` subprocess.
@@ -200,6 +293,7 @@ impl AcpTestHarness {
             .stderr(std::process::Stdio::piped())
             .env("KIRO_TEST_MODE", "1")
             .env("HOME", &paths.home_dir)
+            .env("KIRO_TEST_DB_PATH", &paths.database_path)
             .env("KIRO_TEST_SESSIONS_DIR", &paths.sessions_dir)
             .env("KIRO_TEST_AGENTS_DIR", &paths.agents_dir)
             .env("KIRO_TEST_SETTINGS_PATH", &paths.settings_path)

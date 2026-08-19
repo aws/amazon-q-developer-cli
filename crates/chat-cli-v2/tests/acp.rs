@@ -29,6 +29,44 @@ use tokio::time::sleep;
 
 use crate::common::PermissionResponse;
 
+/// A persisted identity loaded by the ACP child must reach the TUI during
+/// session establishment; delivery cannot depend on a later slash command.
+#[tokio::test]
+#[timeout(30000)]
+#[serial]
+async fn persisted_identity_is_notified_before_first_command() {
+    let (harness, client) = AcpTestHarnessBuilder::new("persisted_identity_startup_notification")
+        .with_client_name("kiro-tui")
+        .with_persisted_telemetry_user_id("persisted-user-id")
+        .build()
+        .await;
+
+    client
+        .new_session(harness.paths.cwd.clone())
+        .await
+        .expect("new_session failed");
+
+    let method = methods::TELEMETRY_IDENTITY_CHANGED
+        .strip_prefix('_')
+        .expect("private extension method should start with an underscore");
+    let received = client
+        .wait_for_timeout(
+            |captured| {
+                captured
+                    .ext_notifications
+                    .iter()
+                    .any(|notification| notification.method.as_ref() == method)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+    assert!(
+        received,
+        "persisted telemetry identity should be notified before any command"
+    );
+}
+
 #[tokio::test]
 #[timeout(30000)]
 #[serial]

@@ -76,7 +76,7 @@ impl TelemetryConfig {
     }
 
     pub fn with_user_id(mut self, user_id: impl Into<Option<String>>) -> Self {
-        self.user_id = crate::record::validated_log_property(user_id);
+        self.user_id = user_id.into().filter(|user_id| crate::is_valid_raw_user_id(user_id));
         self
     }
 
@@ -230,7 +230,7 @@ mod tests {
             Some("authenticated-user".to_string())
         );
         assert_eq!(base.clone().with_user_id(Some(" \n".to_string())).user_id, None);
-        assert_eq!(base.with_user_id(Some("x".repeat(257))).user_id, None);
+        assert_eq!(base.with_user_id(Some("x".repeat(513))).user_id, None);
     }
 
     #[test]

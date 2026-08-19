@@ -35,6 +35,8 @@ import type {
 import {
   getTelemetryIdentity,
   isTelemetryEnabled,
+  registerTelemetryIdentityChangeHandler,
+  setTelemetryUserId,
 } from './telemetry-identity.js';
 import { recordEmitDrop } from './otlp-emit.js';
 
@@ -161,7 +163,7 @@ function withLogProperties(
   delete result['request_id'];
 
   for (const [key, value] of [
-    ['user_id', validatedLogProperty(process.env['KIRO_USER_ID'])],
+    ['user_id', validatedLogProperty(getTelemetryIdentity().userId)],
     ['session_id', validatedLogProperty(properties?.sessionId)],
     ['request_id', validatedLogProperty(properties?.requestId)],
   ] as const) {
@@ -171,18 +173,16 @@ function withLogProperties(
 }
 
 /**
- * OTLP resource attributes shared by every TUI metric: service.name=kiro-tui
- * plus identity. `kiro.machine_id` is Contract 3's resource-attribute channel.
+ * OTLP resource attributes shared by every TUI metric. User identity is not a
+ * resource attribute: it is stamped on each datapoint by withLogProperties().
  */
 function buildResource() {
   const identity = getTelemetryIdentity();
-  const attrs: Record<string, string> = {
+  return resourceFromAttributes({
     'service.name': 'kiro-tui',
     'service.version': identity.version,
     'kiro.machine_id': identity.machineId,
-  };
-  if (identity.userId) attrs['kiro.user_id'] = identity.userId;
-  return resourceFromAttributes(attrs);
+  });
 }
 
 /**
@@ -347,6 +347,16 @@ export function gauge(
   }
 }
 
+function clearRetainedGaugeValues(): void {
+  const current = state;
+  if (current === null || current === DISABLED) return;
+  for (const scope of current.meters.values()) {
+    for (const entry of scope.gauges.values()) entry.values.clear();
+  }
+}
+
+registerTelemetryIdentityChangeHandler(clearRetainedGaugeValues);
+
 /**
  * Flush batched metrics — call before process exit so the final delta window
  * (and exit-only metrics like peak_rss) is delivered. Best-effort; never throws.
@@ -366,20 +376,20 @@ export async function forceFlushMetrics(): Promise<void> {
  * re-initializes. Never throws.
  */
 export async function shutdownMetrics(): Promise<void> {
+  const current = state;
+  state = null;
+  if (current === null || current === DISABLED) return;
   try {
-    const s = ensureProvider();
-    if (s === DISABLED || s === null) return;
-    await s.provider.shutdown();
+    await current.provider.shutdown();
   } catch (err) {
     swallow('shutdown', err);
-  } finally {
-    state = null;
   }
 }
 
 /** Reset module state for tests (drop counter lives in otlp-emit.ts). */
 export function _resetMeterForTests(): void {
   state = null;
+  setTelemetryUserId(undefined);
   testReader = undefined;
 }
 

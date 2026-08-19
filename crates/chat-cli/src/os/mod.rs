@@ -79,14 +79,16 @@ impl Os {
             || crate::auth::external_idp::is_external_idp_logged_in(&database).await
             || crate::util::env_var::get_api_key().is_some()
             || (env.get("KIRO_TEST_MODE").is_ok() && database.get_telemetry_user_id().ok().flatten().is_some());
-        if authenticated {
-            refresh_telemetry_user_id(&client, &database, telemetry_enabled).await;
-        } else {
-            let _ = database.clear_telemetry_user_id();
+        if !authenticated && let Err(error) = database.clear_telemetry_user_id() {
+            tracing::warn!(%error, "Failed to clear unauthenticated telemetry identity");
         }
         let telemetry = TelemetryThread::new(&env, &fs, &mut database, Some(&region), telemetry_enabled)
             .await
             .log_on_err("Os::new: TelemetryThread::new failed")?;
+        if authenticated {
+            let identity_epochs = telemetry.identity_epochs();
+            refresh_telemetry_user_id(&client, &database, telemetry_enabled, &identity_epochs).await;
+        }
         Rollout::init(
             database.get_client_id().ok().flatten(),
             crate::rollout::resolve_segment_start_url(
@@ -114,19 +116,47 @@ impl Os {
     /// should be configured with, namely before login occurs.
     /// Ideally these resources should be refactored out of the Os struct
     pub async fn set_auth_profile(&mut self, profile: &AuthProfile) -> Result<()> {
+        self.clear_telemetry_identity()?;
         self.database.set_auth_profile(profile)?;
         self.rebuild_after_auth_transition(None, true).await
     }
 
     pub(crate) async fn refresh_telemetry_identity(&mut self) -> Result<()> {
+        self.clear_telemetry_identity()?;
         self.rebuild_after_auth_transition(None, true).await
     }
 
     pub(crate) async fn reset_telemetry_after_logout(&mut self, region: Option<&str>) -> Result<()> {
-        let clear_result = self.database.clear_telemetry_user_id();
-        let rebuild_result = self.rebuild_after_auth_transition(region, false).await;
-        clear_result?;
-        rebuild_result
+        // Erase identity BEFORE rebuilding. `clear_telemetry_identity` binds the live
+        // epoch anonymous and durably removes the persisted row; on a *failed* durable
+        // clear we return early WITHOUT rebuilding, because `TelemetryThread::new`
+        // re-seeds epoch 0 from that row (see the `rebuilt_telemetry_seeds_identity_from_persisted_row`
+        // test) and would otherwise resurrect the logged-out identity in the fresh
+        // host. Mirrors the clear-before-rebuild ordering of `set_auth_profile` /
+        // `refresh_telemetry_identity`.
+        self.clear_telemetry_identity()?;
+        self.rebuild_after_auth_transition(region, false).await
+    }
+
+    fn clear_telemetry_identity(&self) -> Result<()> {
+        Self::clear_telemetry_identity_with(&self.telemetry.identity_epochs(), || {
+            self.database.clear_telemetry_user_id()
+        })
+    }
+
+    /// Bind the live epoch anonymous and durably clear the persisted id, surfacing
+    /// the persist error so an auth transition can refuse to rebuild telemetry from a
+    /// stale row. Extracted from `clear_telemetry_identity` so the failure path is
+    /// unit-testable without a mockable database.
+    fn clear_telemetry_identity_with<E>(
+        identity_epochs: &kiro_telemetry::IdentityEpochs,
+        persist_clear: impl FnOnce() -> Result<(), E>,
+    ) -> Result<()>
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        identity_epochs.clear(persist_clear)?;
+        Ok(())
     }
 
     pub(crate) fn telemetry_region(&self) -> Option<String> {
@@ -138,14 +168,12 @@ impl Os {
         region_override: Option<&str>,
         refresh_identity: bool,
     ) -> Result<()> {
-        if refresh_identity {
-            self.database.clear_telemetry_user_id()?;
-        }
         let client_result = self.rebuild_api_client().await;
         let region = region_override.map_or_else(|| self.client.region().to_string(), str::to_owned);
         let telemetry_enabled = telemetry_enabled(&self.database);
         if refresh_identity && client_result.is_ok() {
-            refresh_telemetry_user_id(&self.client, &self.database, telemetry_enabled).await;
+            let identity_epochs = self.telemetry.identity_epochs();
+            refresh_telemetry_user_id(&self.client, &self.database, telemetry_enabled, &identity_epochs).await;
         }
         let telemetry_result = self.rebuild_telemetry(Some(&region), telemetry_enabled).await;
         client_result?;
@@ -159,6 +187,28 @@ impl Os {
         Ok(())
     }
 
+    pub(crate) fn telemetry_identity_epochs(&self) -> std::sync::Arc<kiro_telemetry::IdentityEpochs> {
+        self.telemetry.identity_epochs()
+    }
+
+    pub(crate) fn update_telemetry_user_id(
+        &self,
+        identity_epochs: &kiro_telemetry::IdentityEpochs,
+        observed_epoch: u64,
+        user_id: &str,
+    ) -> bool {
+        match identity_epochs.identify(observed_epoch, user_id, |user_id| {
+            self.database.set_telemetry_user_id(user_id).map(|_| ())
+        }) {
+            Ok(kiro_telemetry::IdentifyOutcome::Identified) => true,
+            Ok(kiro_telemetry::IdentifyOutcome::Stale) => false,
+            Err(error) => {
+                tracing::warn!(?error, "Failed to update telemetry identity");
+                false
+            },
+        }
+    }
+
     async fn rebuild_telemetry(&mut self, region: Option<&str>, telemetry_enabled: bool) -> Result<()> {
         let telemetry =
             TelemetryThread::new(&self.env, &self.fs, &mut self.database, region, telemetry_enabled).await?;
@@ -168,21 +218,30 @@ impl Os {
     }
 }
 
-async fn refresh_telemetry_user_id(client: &ApiClient, database: &Database, telemetry_enabled: bool) {
+async fn refresh_telemetry_user_id(
+    client: &ApiClient,
+    database: &Database,
+    telemetry_enabled: bool,
+    identity_epochs: &kiro_telemetry::IdentityEpochs,
+) {
     let cached_user_id = database.get_telemetry_user_id().ok().flatten();
     if !should_refresh_telemetry_user_id(telemetry_enabled, cached_user_id.as_deref()) {
         return;
     }
 
+    let observed_epoch = identity_epochs.current();
     if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), client.get_usage_limits()).await
         && let Some(info) = output.user_info()
+        && let Err(error) = identity_epochs.identify(observed_epoch, info.user_id(), |user_id| {
+            database.set_telemetry_user_id(user_id).map(|_| ())
+        })
     {
-        let _ = database.set_telemetry_user_id(info.user_id());
+        tracing::warn!(?error, "Failed to persist discovered telemetry identity");
     }
 }
 
 fn should_refresh_telemetry_user_id(telemetry_enabled: bool, cached_user_id: Option<&str>) -> bool {
-    telemetry_enabled && cached_user_id.is_none_or(|user_id| user_id.trim().is_empty())
+    telemetry_enabled && cached_user_id.is_none_or(|user_id| !kiro_telemetry::is_valid_raw_user_id(user_id))
 }
 
 #[cfg(test)]
@@ -232,6 +291,8 @@ mod tests {
         assert!(!should_refresh_telemetry_user_id(false, None));
         assert!(!should_refresh_telemetry_user_id(true, Some("cached")));
         assert!(should_refresh_telemetry_user_id(true, Some("  ")));
+        assert!(should_refresh_telemetry_user_id(true, Some("invalid\nuser")));
+        assert!(should_refresh_telemetry_user_id(true, Some(&"x".repeat(513))));
     }
 
     async fn enable_test_telemetry(os: &mut Os) {
@@ -268,5 +329,39 @@ mod tests {
 
         assert_eq!(os.database.get_telemetry_user_id().unwrap(), None);
         assert!(!os.telemetry.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn rebuilt_telemetry_seeds_identity_from_persisted_row() {
+        // The mechanism the logout ordering guards against: a rebuilt TelemetryThread
+        // seeds epoch 0 from the persisted telemetry user id, so a logout that failed
+        // to clear that row and then rebuilt would resurrect the logged-out identity.
+        let mut os = Os::new().await.unwrap();
+        os.database.set_telemetry_user_id("user-id").unwrap();
+        enable_test_telemetry(&mut os).await;
+
+        let epochs = os.telemetry_identity_epochs();
+        assert_eq!(
+            epochs.resolve(epochs.current()).as_deref(),
+            Some(kiro_telemetry::pseudonymous_user_id("user-id").as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn logout_clear_failure_reports_error_and_stays_anonymous() {
+        // A failed durable clear must surface as an error - which makes
+        // reset_telemetry_after_logout's `?` skip the reseeding rebuild - while still
+        // binding the live epoch anonymous. Without the propagated error the logout
+        // would rebuild from the un-cleared row and resurrect the identity.
+        let os = Os::new().await.unwrap();
+        let epochs = os.telemetry_identity_epochs();
+        epochs.identify::<()>(epochs.current(), "user-id", |_| Ok(())).unwrap();
+        assert!(epochs.resolve(epochs.current()).is_some());
+
+        let result =
+            Os::clear_telemetry_identity_with(&epochs, || Err(std::io::Error::other("injected clear failure")));
+
+        assert!(result.is_err());
+        assert_eq!(epochs.resolve(epochs.current()), None);
     }
 }

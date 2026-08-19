@@ -1,5 +1,6 @@
 import { describe, it, expect, mock, beforeEach, afterAll } from 'bun:test';
 import { EventEmitter } from 'events';
+import { existsSync, statSync } from 'node:fs';
 import { AgentEventType, ContentType } from '../types/agent-events';
 import { getCliVersion } from '../utils/version';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
@@ -156,6 +157,25 @@ describe('AcpClient', () => {
     const callArgs = mockSpawn.mock.calls[0]!;
     expect(callArgs[0]).toBe('/path/to/agent');
     expect(callArgs[1][0]).toBe('acp');
+  });
+
+  it('keeps telemetry identity and key bytes out of the Rust child environment', () => {
+    process.env['KIRO_USER_ID'] = 'private-user-id';
+    const client = new AcpClient('/path/to/agent', []);
+    const options = mockSpawn.mock.calls[0]![2];
+    const keyFile = options.env.KIRO_TUI_TELEMETRY_KEY_FILE as string;
+
+    expect(options.env.KIRO_USER_ID).toBeUndefined();
+    expect(options.env.KIRO_TUI_TELEMETRY_KEY).toBeUndefined();
+    expect(typeof keyFile).toBe('string');
+    expect(existsSync(keyFile)).toBe(true);
+    if (process.platform !== 'win32') {
+      expect(statSync(keyFile).mode & 0o777).toBe(0o600);
+    }
+
+    client.close();
+    expect(existsSync(keyFile)).toBe(false);
+    delete process.env['KIRO_USER_ID'];
   });
 
   it('close() calls kill("SIGTERM") on the agent process', () => {

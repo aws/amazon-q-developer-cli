@@ -906,11 +906,12 @@ mod tests {
         let properties = crate::MetricLogProperties::default()
             .with_session_id("test-session-id".to_string())
             .with_request_id("test-request-id".to_string());
+        let pseudonym = crate::pseudonymous_user_id("test-user-id");
         client
-            .emit_with_log_properties(expected_metric.clone(), &properties)
+            .emit_with_log_properties_and_pseudonymous_user_id(expected_metric.clone(), &properties, Some(&pseudonym))
             .expect("metric emit should succeed");
         let expected_metric = expected_metric
-            .with_attribute("user_id", "test-user-id")
+            .with_attribute("user_id", crate::pseudonymous_user_id("test-user-id"))
             .with_attribute("session_id", "test-session-id")
             .with_attribute("request_id", "test-request-id");
 

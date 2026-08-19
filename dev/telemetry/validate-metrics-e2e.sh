@@ -376,7 +376,19 @@ case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*) v1_os_type="windows" ;;
   *) v1_os_type="unknown" ;;
 esac
-v1_scope="otel_scope_name=\"kiro-telemetry\",version_full=\"${v1_version}\",user_id=\"${v1_user_id}\""
+# The telemetry pipeline pseudonymizes the raw service user id before it reaches
+# any wire format (kiro-telemetry `TelemetryConfig::with_user_id`): the DB is
+# seeded with the raw id above, but every emitted datapoint carries the stable
+# pseudonym "v1:" + base64url(SHA256("kiro-tui-telemetry-user-id:v1\0" || raw)).
+# Mirror that transform so the V1 identity assertions match what is emitted.
+pseudonymous_user_id() {
+  local pseudo
+  pseudo="$({ printf 'kiro-tui-telemetry-user-id:v1'; printf '\0'; printf '%s' "$1"; } \
+    | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+  printf 'v1:%s' "${pseudo}"
+}
+v1_user_id_pseudonym="$(pseudonymous_user_id "${v1_user_id}")"
+v1_scope="otel_scope_name=\"kiro-telemetry\",version_full=\"${v1_version}\",user_id=\"${v1_user_id_pseudonym}\""
 v1_run="${v1_scope},agent_engine=\"v1\",session_interface=\"noninteractive_cli\",os_type=\"${v1_os_type}\""
 v1_process="${v1_scope},agent_engine=\"v1\",os_type=\"${v1_os_type}\",process_role=\"host\""
 
@@ -409,7 +421,7 @@ fi
 expect_exact "V1 successful run outcomes" \
   "sum(kiro_cli_run_outcome_total{${v1_run},run_outcome=\"success\"})" 1
 expect_absent "V1 metrics with the wrong user identity" \
-  "{otel_scope_name=\"kiro-telemetry\",version_full=\"${v1_version}\",user_id!=\"${v1_user_id}\"}"
+  "{otel_scope_name=\"kiro-telemetry\",version_full=\"${v1_version}\",user_id!=\"${v1_user_id_pseudonym}\"}"
 expect_absent "retired V1 metric families" \
   "{otel_scope_name=\"kiro-telemetry\",version_full=\"${v1_version}\",__name__=~\"kiro_cli_session_started_total|kiro_cli_session_completed_total|kiro_cli_feature_used_total|kiro_cli_conversation_completed_total|kiro_cli_process_memory_rss|kiro_cli_process_memory_peak_rss|kiro_cli_process_cpu_utilization_(bucket|sum|count)\"}"
 

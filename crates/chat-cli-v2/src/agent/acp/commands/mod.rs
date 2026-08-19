@@ -151,49 +151,76 @@ pub struct CommandContext<'a> {
     pub request_stats: &'a RequestStats,
     pub goal_controller: Option<&'a super::goal::GoalController>,
 }
+#[derive(Debug)]
+pub(crate) enum CommandEffect {
+    TelemetryIdentityChanged(crate::os::TelemetryIdentityUpdate),
+}
+
+#[derive(Debug)]
+pub(crate) struct CommandExecution {
+    pub(crate) result: CommandResult,
+    pub(crate) effects: Vec<CommandEffect>,
+}
+
+impl CommandExecution {
+    fn with_effect(mut self, effect: Option<CommandEffect>) -> Self {
+        self.effects.extend(effect);
+        self
+    }
+}
+
+impl From<CommandResult> for CommandExecution {
+    fn from(result: CommandResult) -> Self {
+        Self {
+            result,
+            effects: Vec::new(),
+        }
+    }
+}
+
 /// Execute a slash command by dispatching to the appropriate module
-pub async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandResult {
+pub(crate) async fn execute(command: TuiCommand, ctx: &CommandContext<'_>) -> CommandExecution {
     match command {
-        TuiCommand::Help(_args) => help::execute(ctx).await,
-        TuiCommand::Model(ref args) => model::execute(args, ctx).await,
-        TuiCommand::Agent(ref args) => agent::execute(args, ctx).await,
-        TuiCommand::Context(ref args) => context::execute(args, ctx).await,
-        TuiCommand::Compact(ref args) => compact::execute(args, ctx).await,
-        TuiCommand::Clear(ref args) => clear::execute(args, ctx).await,
-        TuiCommand::Quit(ref args) => exit::execute(args, ctx).await,
+        TuiCommand::Help(_args) => help::execute(ctx).await.into(),
+        TuiCommand::Model(ref args) => model::execute(args, ctx).await.into(),
+        TuiCommand::Agent(ref args) => agent::execute(args, ctx).await.into(),
+        TuiCommand::Context(ref args) => context::execute(args, ctx).await.into(),
+        TuiCommand::Compact(ref args) => compact::execute(args, ctx).await.into(),
+        TuiCommand::Clear(ref args) => clear::execute(args, ctx).await.into(),
+        TuiCommand::Quit(ref args) => exit::execute(args, ctx).await.into(),
         TuiCommand::Usage(_args) => usage::execute(ctx).await,
-        TuiCommand::PasteImage(_) => paste_image::execute().await,
-        TuiCommand::Mcp(ref args) => mcp::execute(ctx, args).await,
-        TuiCommand::Tools(ref args) => tools::execute(args, ctx).await,
-        TuiCommand::Plan(ref args) => plan::execute(args.prompt.as_deref(), ctx).await,
+        TuiCommand::PasteImage(_) => paste_image::execute().await.into(),
+        TuiCommand::Mcp(ref args) => mcp::execute(ctx, args).await.into(),
+        TuiCommand::Tools(ref args) => tools::execute(args, ctx).await.into(),
+        TuiCommand::Plan(ref args) => plan::execute(args.prompt.as_deref(), ctx).await.into(),
         TuiCommand::Feedback(ref args) => {
             let is_amzn = matches!(
                 crate::auth::builder_id::BuilderIdToken::load(&ctx.os.database, None).await,
                 Ok(Some(token)) if token.is_amzn_user()
             );
-            issue::execute(args.feedback_type.as_deref(), is_amzn).await
+            issue::execute(args.feedback_type.as_deref(), is_amzn).await.into()
         },
-        TuiCommand::Knowledge(ref args) => knowledge::execute(args, ctx).await,
-        TuiCommand::Prompts(ref args) => prompts::execute(args).await,
-        TuiCommand::Chat(ref args) => chat::execute(args, ctx).await,
-        TuiCommand::Reply(_) => reply::execute(ctx).await,
-        TuiCommand::Code(ref args) => code::execute(args, ctx).await,
-        TuiCommand::Hooks(_) => hooks::execute(ctx).await,
-        TuiCommand::Guide(ref args) => guide::execute(args, ctx).await,
-        TuiCommand::Rewind(ref args) => rewind::execute(args, ctx).await,
-        TuiCommand::Stats(ref args) => stats::execute(args, ctx).await,
-        TuiCommand::Effort(ref args) => effort::execute(args, ctx).await,
+        TuiCommand::Knowledge(ref args) => knowledge::execute(args, ctx).await.into(),
+        TuiCommand::Prompts(ref args) => prompts::execute(args).await.into(),
+        TuiCommand::Chat(ref args) => chat::execute(args, ctx).await.into(),
+        TuiCommand::Reply(_) => reply::execute(ctx).await.into(),
+        TuiCommand::Code(ref args) => code::execute(args, ctx).await.into(),
+        TuiCommand::Hooks(_) => hooks::execute(ctx).await.into(),
+        TuiCommand::Guide(ref args) => guide::execute(args, ctx).await.into(),
+        TuiCommand::Rewind(ref args) => rewind::execute(args, ctx).await.into(),
+        TuiCommand::Stats(ref args) => stats::execute(args, ctx).await.into(),
+        TuiCommand::Effort(ref args) => effort::execute(args, ctx).await.into(),
         #[cfg(feature = "voice")]
         TuiCommand::Voice(ref args) => {
             if crate::rollout::Rollout::is_enabled(crate::rollout::Feature::Voice) {
-                voice::execute(args, ctx).await
+                voice::execute(args, ctx).await.into()
             } else {
-                CommandResult::error("Voice mode is not available in this build")
+                CommandResult::error("Voice mode is not available in this build").into()
             }
         },
         #[cfg(not(feature = "voice"))]
-        TuiCommand::Voice(_) => CommandResult::error("Voice mode is not supported on this platform"),
-        TuiCommand::Goal(ref args) => goal::execute(args, ctx).await,
+        TuiCommand::Voice(_) => CommandResult::error("Voice mode is not supported on this platform").into(),
+        TuiCommand::Goal(ref args) => goal::execute(args, ctx).await.into(),
     }
 }
 

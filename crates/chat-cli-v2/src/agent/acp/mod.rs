@@ -1,7 +1,6 @@
 pub mod acp_agent;
 pub mod acp_client;
 mod acp_provider;
-pub mod command_handler;
 pub mod commands;
 pub mod extensions;
 pub mod goal;

@@ -678,7 +678,12 @@ pub async fn is_builder_id_logged_in(database: &mut Database) -> bool {
     }
 }
 
-pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
+pub async fn logout(
+    database: &mut Database,
+    identity_epochs: &kiro_telemetry::IdentityEpochs,
+) -> Result<(), AuthError> {
+    identity_epochs.clear(|| database.clear_telemetry_user_id())?;
+
     let Ok(secret_store) = Database::new().await else {
         return Ok(());
     };

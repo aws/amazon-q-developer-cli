@@ -7,13 +7,36 @@
  */
 import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { ContentBlock } from '@agentclientprotocol/sdk';
+import { createCipheriv } from 'node:crypto';
 import { AgentEventType, type AgentStreamEvent } from '../types/agent-events';
 import { TurnFailureReason } from '../types/generated/telemetry';
 
 type RecordFnArgs = Record<string, unknown>;
 const recordTuiSessionStarted = mock((_args: RecordFnArgs) => {});
 const recordTuiUserTurn = mock((_args: RecordFnArgs) => {});
+const setTelemetryUserId = mock((_userId: string | undefined) => {});
 const textPrompt = (text: string): ContentBlock[] => [{ type: 'text', text }];
+const telemetryIdentityKey = Buffer.alloc(32, 7);
+const pseudonymousTelemetryUserId =
+  'v1:WvTeO69_0uZMOLh0_HyQuoA87GQaiEZxqtJwK8EmlIg';
+
+function encryptedIdentityParams(
+  userId: string,
+  aad = '_kiro.dev/telemetry/identityChanged'
+) {
+  const nonce = Buffer.alloc(12, 9);
+  const cipher = createCipheriv('aes-256-gcm', telemetryIdentityKey, nonce);
+  cipher.setAAD(Buffer.from(aad));
+  const ciphertext = Buffer.concat([
+    cipher.update(userId, 'utf8'),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]);
+  return {
+    nonce: nonce.toString('base64url'),
+    ciphertext: ciphertext.toString('base64url'),
+  };
+}
 
 // mock.module is process-global and survives this file — snapshot the real
 // modules and re-register them afterAll so mocks cannot leak into other files.
@@ -36,8 +59,8 @@ mock.module('../utils/tui-telemetry-observer', () => ({
     status === 'completed' ? 'success' : '_other_',
   turnFailureReasonFromStatus: () => undefined,
   recordTuiSessionStarted,
-  recordTuiUserTurn,
   recordTuiSlashCommand: mock(() => {}),
+  recordTuiUserTurn,
   recordTuiCloudSession: mock(() => {}),
   recordTuiCloudSessionReady: mock(() => {}),
   recordTuiCreditsConsumed: mock(() => {}),
@@ -137,6 +160,7 @@ const { RustAcpClient: AcpClient } = await import('../acp-client/rust?v2tel');
 beforeEach(() => {
   recordTuiSessionStarted.mockClear();
   recordTuiUserTurn.mockClear();
+  setTelemetryUserId.mockClear();
   promptStopReason = 'end_turn';
   promptMeta = undefined;
   promptError = undefined;
@@ -145,6 +169,97 @@ beforeEach(() => {
 });
 
 describe('Rust ACP telemetry ownership', () => {
+  it('applies only pseudonymous private identity notifications before returning', async () => {
+    const client = new AcpClient(
+      '/agent',
+      [],
+      '9.9.9-test',
+      telemetryIdentityKey,
+      setTelemetryUserId
+    );
+
+    await client.extNotification(
+      '_kiro.dev/telemetry/identityChanged',
+      encryptedIdentityParams(pseudonymousTelemetryUserId)
+    );
+
+    expect(setTelemetryUserId).toHaveBeenCalledTimes(1);
+    expect(setTelemetryUserId).toHaveBeenCalledWith(
+      pseudonymousTelemetryUserId
+    );
+    expect(setTelemetryUserId).not.toHaveBeenCalledWith('private-user-id');
+  });
+
+  it('rejects malformed, unauthenticated, and wrong-key identity payloads', async () => {
+    const client = new AcpClient(
+      '/agent',
+      [],
+      '9.9.9-test',
+      telemetryIdentityKey,
+      setTelemetryUserId
+    );
+    const modifiedTag = encryptedIdentityParams(pseudonymousTelemetryUserId);
+    const sealed = Buffer.from(modifiedTag.ciphertext, 'base64url');
+    sealed[sealed.length - 1] = sealed[sealed.length - 1]! ^ 1;
+    modifiedTag.ciphertext = sealed.toString('base64url');
+
+    await client.extNotification('_kiro.dev/telemetry/identityChanged', {
+      nonce: 'not-valid-base64url!',
+      ciphertext: 'also-invalid!',
+    });
+    await client.extNotification(
+      '_kiro.dev/telemetry/identityChanged',
+      modifiedTag
+    );
+    await client.extNotification(
+      '_kiro.dev/telemetry/identityChanged',
+      encryptedIdentityParams(
+        pseudonymousTelemetryUserId,
+        '_kiro.dev/telemetry/differentMethod'
+      )
+    );
+
+    const wrongKeyClient = new AcpClient(
+      '/agent',
+      [],
+      '9.9.9-test',
+      Buffer.alloc(32, 8),
+      setTelemetryUserId
+    );
+    await wrongKeyClient.extNotification(
+      '_kiro.dev/telemetry/identityChanged',
+      encryptedIdentityParams(pseudonymousTelemetryUserId)
+    );
+
+    expect(setTelemetryUserId).not.toHaveBeenCalled();
+    client.close();
+    wrongKeyClient.close();
+  });
+
+  it('applies clear and new-account notifications synchronously in wire order', async () => {
+    const client = new AcpClient(
+      '/agent',
+      [],
+      '9.9.9-test',
+      telemetryIdentityKey,
+      setTelemetryUserId
+    );
+
+    await client.extNotification(
+      '_kiro.dev/telemetry/identityChanged',
+      encryptedIdentityParams('')
+    );
+    await client.extNotification(
+      '_kiro.dev/telemetry/identityChanged',
+      encryptedIdentityParams(pseudonymousTelemetryUserId)
+    );
+
+    expect(setTelemetryUserId.mock.calls.map((call) => call[0])).toEqual([
+      undefined,
+      pseudonymousTelemetryUserId,
+    ]);
+  });
+
   it('records one interactive V2 chat session at session creation', async () => {
     const client = new AcpClient('/agent', [], '9.9.9-test');
     await client.newSession();

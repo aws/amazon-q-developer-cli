@@ -2,6 +2,10 @@ import * as acp from '@agentclientprotocol/sdk';
 import { logger } from '../utils/logger';
 import { maybeWrapStreamWithRecorder } from '../acp-recorder';
 import { spawn } from 'node:child_process';
+import { createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ListSessionsResponse } from '../types/session-client';
 import type { ProcessHealthSnapshot } from '../utils/process-health-collector';
 import { TurnFailureReason as TurnFailureReasonValue } from '../types/generated/telemetry';
@@ -30,6 +34,7 @@ import {
   buildStdioStreams,
   toAgentProcess,
   type SessionResult,
+  type TelemetryIdentitySetter,
 } from './base';
 
 /**
@@ -129,8 +134,18 @@ function extractCurrentAgent(
 
 // ─── Rust ACP client ─────────────────────────────────────────────────
 
+const TELEMETRY_IDENTITY_METHOD = '_kiro.dev/telemetry/identityChanged';
+
+function createTelemetryIdentityKeyFile(key: Buffer): string {
+  const path = join(tmpdir(), `kiro-tui-telemetry-${randomUUID()}.key`);
+  writeFileSync(path, key, { flag: 'wx', mode: 0o600 });
+  return path;
+}
+
 export class RustAcpClient extends BaseAcpClient implements acp.Client {
   private connection: acp.ClientSideConnection;
+  private readonly telemetryIdentityKey: Buffer;
+  private readonly telemetryIdentityKeyFile: string;
   /**
    * Version reported in the ACP `clientInfo` handshake. Injectable so tests
    * can assert the forwarded version without re-importing the module to bust
@@ -151,29 +166,55 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
   constructor(
     agentPath: string,
     extraAcpArgs: string[] = [],
-    version: string = getCliVersion()
+    version: string = getCliVersion(),
+    telemetryIdentityKey: Buffer = randomBytes(32),
+    telemetryIdentitySetter?: TelemetryIdentitySetter
   ) {
-    const proc = spawn(agentPath, ['acp', ...extraAcpArgs], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
-      // Unix: run in its own process group so close() can signal -pgid and
-      // take down any MCP servers / subprocesses the agent spawned. Without
-      // this a TUI crash or SIGTERM leaks the entire MCP tree as ppid=1
-      // orphans.
-      // Windows: detached allocates a visible console window (libuv maps it
-      // to CREATE_NEW_PROCESS_GROUP). Use windowsHide instead. See P460297924.
-      ...(process.platform !== 'win32'
-        ? { detached: true }
-        : { windowsHide: true }),
-    });
-    super(toAgentProcess(proc));
+    const telemetryIdentityKeyFile =
+      createTelemetryIdentityKeyFile(telemetryIdentityKey);
+    const backendEnv = { ...process.env };
+    delete backendEnv['KIRO_USER_ID'];
+    delete backendEnv['KIRO_TUI_TELEMETRY_KEY'];
+    delete backendEnv['KIRO_TUI_TELEMETRY_KEY_FILE'];
+    backendEnv['KIRO_TUI_TELEMETRY_KEY_FILE'] = telemetryIdentityKeyFile;
+    let proc;
+    try {
+      proc = spawn(agentPath, ['acp', ...extraAcpArgs], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: backendEnv,
+        // Unix: run in its own process group so close() can signal -pgid and
+        // take down any MCP servers / subprocesses the agent spawned. Without
+        // this a TUI crash or SIGTERM leaks the entire MCP tree as ppid=1
+        // orphans.
+        // Windows: detached allocates a visible console window (libuv maps it
+        // to CREATE_NEW_PROCESS_GROUP). Use windowsHide instead. See P460297924.
+        ...(process.platform !== 'win32'
+          ? { detached: true }
+          : { windowsHide: true }),
+      });
+    } catch (err) {
+      rmSync(telemetryIdentityKeyFile, { force: true });
+      throw err;
+    }
+    super(toAgentProcess(proc), telemetryIdentitySetter);
     this.version = version;
     this.initialTrustPosture = extraAcpArgs.includes('--trust-all-tools')
       ? 'trust_all_tools'
       : 'prompt_on_demand';
+    this.telemetryIdentityKey = telemetryIdentityKey;
+    this.telemetryIdentityKeyFile = telemetryIdentityKeyFile;
     const stream = buildStdioStreams(proc);
     const finalStream = maybeWrapStreamWithRecorder(stream);
     this.connection = new acp.ClientSideConnection(() => this, finalStream);
+  }
+
+  private cleanupTelemetryIdentityKeyFile(): void {
+    rmSync(this.telemetryIdentityKeyFile, { force: true });
+  }
+
+  override close(): void {
+    this.cleanupTelemetryIdentityKeyFile();
+    super.close();
   }
 
   /** SDK >=0.16 no longer prepends '_' to ext methods; the Rust sacp backend expects it. */
@@ -198,6 +239,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
       cwd: process.cwd(),
       mcpServers: [],
     });
+    this.cleanupTelemetryIdentityKeyFile();
     this.sessionId = r.sessionId;
     logger.debug('ACP session created', { sessionId: this.sessionId });
     // Drop any tool-call state stranded by a prior session so it cannot
@@ -222,6 +264,7 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
         this.sessionId = previousSessionId;
         throw err;
       });
+    this.cleanupTelemetryIdentityKeyFile();
     logger.debug('[acp-client] loadSession completed for session:', sessionId);
     // Drop any tool-call state stranded by the prior session (mirrors
     // KasAcpClient's per-session reset).
@@ -365,13 +408,14 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     if (!this.sessionId)
       return { success: false, message: 'No active session' };
     try {
-      return (await this.connection.extMethod(
+      const result = (await this.connection.extMethod(
         this.ext(EXT_METHODS.COMMANDS_EXECUTE),
         {
           sessionId: this.sessionId,
           command,
         }
       )) as unknown as CommandResult;
+      return result;
     } catch (e) {
       return {
         success: false,
@@ -582,13 +626,50 @@ export class RustAcpClient extends BaseAcpClient implements acp.Client {
     throw new Error('not implemented');
   }
 
+  private decryptTelemetryIdentity(
+    params: Record<string, unknown>
+  ): string | undefined {
+    const nonceValue = params['nonce'];
+    const ciphertextValue = params['ciphertext'];
+    if (typeof nonceValue !== 'string' || typeof ciphertextValue !== 'string')
+      return undefined;
+    try {
+      const nonce = Buffer.from(nonceValue, 'base64url');
+      const sealed = Buffer.from(ciphertextValue, 'base64url');
+      if (nonce.length !== 12 || sealed.length < 16) return undefined;
+      const ciphertext = sealed.subarray(0, -16);
+      const tag = sealed.subarray(-16);
+      const decipher = createDecipheriv(
+        'aes-256-gcm',
+        this.telemetryIdentityKey,
+        nonce
+      );
+      decipher.setAAD(Buffer.from(TELEMETRY_IDENTITY_METHOD));
+      decipher.setAuthTag(tag);
+      return Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final(),
+      ]).toString('utf8');
+    } catch {
+      return undefined;
+    }
+  }
+
   async extNotification?(
     method: string,
     params: Record<string, unknown>
   ): Promise<void> {
     // ACP SDK >=0.16 passes raw method names; older versions strip the leading '_'.
-    const key = method.startsWith('_') ? method.substring(1) : method;
+    const wireMethod = method.startsWith('_') ? method : `_${method}`;
+    const key = wireMethod.substring(1);
     const handler = this.extNotificationHandlers[key];
-    if (handler) handler(params);
+    if (!handler) return;
+    if (wireMethod === TELEMETRY_IDENTITY_METHOD) {
+      const userId = this.decryptTelemetryIdentity(params);
+      if (userId === undefined) return;
+      await handler(userId.length === 0 ? { clear: true } : { userId });
+      return;
+    }
+    await handler(params);
   }
 }

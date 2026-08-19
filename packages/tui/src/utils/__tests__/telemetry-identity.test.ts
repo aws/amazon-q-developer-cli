@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { getTelemetryIdentity } from '../telemetry-identity.js';
+import {
+  getTelemetryIdentity,
+  pseudonymousTelemetryUserId,
+  setTelemetryUserId,
+} from '../telemetry-identity.js';
 
 let originalMachineId: string | undefined;
 let originalUserId: string | undefined;
@@ -9,9 +13,12 @@ beforeEach(() => {
   originalMachineId = process.env['KIRO_TELEMETRY_CLIENT_ID'];
   originalUserId = process.env['KIRO_USER_ID'];
   originalVersionOverride = process.env['KIRO_VERSION_OVERRIDE'];
+  delete process.env['KIRO_USER_ID'];
+  setTelemetryUserId(undefined);
 });
 
 afterEach(() => {
+  setTelemetryUserId(undefined);
   if (originalMachineId === undefined)
     delete process.env['KIRO_TELEMETRY_CLIENT_ID'];
   else process.env['KIRO_TELEMETRY_CLIENT_ID'] = originalMachineId;
@@ -32,8 +39,34 @@ describe('getTelemetryIdentity', () => {
 
     expect(getTelemetryIdentity()).toMatchObject({
       machineId: 'ed9aa51f-68ef-4048-b2dd-6c02ca3fdc9e',
-      userId: 'test-user',
+      userId: pseudonymousTelemetryUserId('test-user'),
     });
+  });
+
+  it('uses the Rust-compatible stable pseudonym and hashes format-shaped raw IDs', () => {
+    const shapedRawId = 'v1:WvTeO69_0uZMOLh0_HyQuoA87GQaiEZxqtJwK8EmlIg';
+    expect(pseudonymousTelemetryUserId('private-user-id')).toBe(shapedRawId);
+    expect(pseudonymousTelemetryUserId(shapedRawId)).not.toBe(shapedRawId);
+  });
+
+  it('updates and clears the live pseudonymous identity directly', () => {
+    const userId = pseudonymousTelemetryUserId('private-user-id');
+
+    setTelemetryUserId(userId);
+    expect(getTelemetryIdentity().userId).toBe(userId);
+
+    setTelemetryUserId('raw-user-id');
+    expect(getTelemetryIdentity().userId).toBe(userId);
+
+    setTelemetryUserId(undefined);
+    expect(getTelemetryIdentity().userId).toBe('');
+  });
+
+  it('drops invalid raw environment identity instead of retaining it', () => {
+    process.env['KIRO_USER_ID'] = 'invalid\nuser';
+
+    expect(getTelemetryIdentity().userId).toBe('');
+    expect(process.env['KIRO_USER_ID']).toBeUndefined();
   });
 
   it('ignores surrounding whitespace in the supplied client ID', () => {

@@ -25,6 +25,22 @@ import { logger } from './utils/logger';
 
 type Direction = 'in' | 'out';
 
+const TELEMETRY_IDENTITY_METHODS = new Set([
+  '_kiro.dev/telemetry/identityChanged',
+  'kiro.dev/telemetry/identityChanged',
+]);
+
+function redactPrivateTelemetryIdentity(msg: AnyMessage): AnyMessage {
+  const candidate = msg as AnyMessage & { method?: unknown; params?: unknown };
+  if (
+    typeof candidate.method === 'string' &&
+    TELEMETRY_IDENTITY_METHODS.has(candidate.method)
+  ) {
+    return { ...candidate, params: { redacted: true } } as AnyMessage;
+  }
+  return msg;
+}
+
 /**
  * Writes JSONL records of ACP wire traffic to a file in append mode.
  *
@@ -53,7 +69,12 @@ export class AcpRecorder {
     if (this.broken || !this.stream) return;
     let line: string;
     try {
-      line = JSON.stringify({ ts: Date.now(), dir, msg }) + '\n';
+      line =
+        JSON.stringify({
+          ts: Date.now(),
+          dir,
+          msg: redactPrivateTelemetryIdentity(msg),
+        }) + '\n';
     } catch (err) {
       // JSON.stringify should never throw for AnyMessage but defend against
       // circular refs or BigInt values smuggled in by future protocol changes.

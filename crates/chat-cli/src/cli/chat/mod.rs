@@ -6570,10 +6570,12 @@ async fn get_limit_reached_info(os: &mut Os) -> LimitReachedInfo {
         return LimitReachedInfo::Enterprise;
     }
 
+    let identity_epochs = os.telemetry_identity_epochs();
+    let observed_epoch = identity_epochs.current();
     match os.client.get_usage_limits().await {
         Ok(response) => {
             if let Some(info) = response.user_info() {
-                let _ = os.database.set_telemetry_user_id(info.user_id());
+                os.update_telemetry_user_id(&identity_epochs, observed_epoch, info.user_id());
             }
             let sub_info = response.subscription_info();
 

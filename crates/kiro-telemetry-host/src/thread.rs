@@ -1,13 +1,16 @@
 //! Cross-harness `TelemetryThread`: spawns a tokio task that drains an mpsc
 //! channel of [`Event`]s into one or more sinks. The legacy CloudWatch/Toolkit
-//! sink is supplied by the caller through [`crate::config::LegacySink`] (V2
-//! only); the OTel sink is constructed inline from
-//! [`kiro_telemetry::TelemetryConfig`].
+//! sink is supplied by the caller through [`crate::config::LegacySink`]; the
+//! OTel sink is constructed inline from [`kiro_telemetry::TelemetryConfig`].
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    Mutex,
+};
 use std::time::Duration;
 
 use kiro_telemetry::{
+    IdentityEpochs,
     OtelMetricsSink,
     OtelProviders,
     TelemetryClient as OtelTelemetryClient,
@@ -41,7 +44,10 @@ use crate::event::{
     TangentModeSessionArgs,
     TelemetryResult,
 };
-use crate::process::ProcessSampler;
+use crate::process::{
+    ProcessIdentity,
+    ProcessSampler,
+};
 use crate::run_receipt::{
     DeferredRunReceiptAcknowledgement,
     RunReceipt,
@@ -49,43 +55,78 @@ use crate::run_receipt::{
 };
 use crate::tool_event::ToolUseEventBuilder;
 
+const MAX_POST_ABORT_DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
+
 /// Errors produced by [`TelemetryThread`] operations.
 #[derive(thiserror::Error, Debug)]
 pub enum TelemetryError {
-    #[error(transparent)]
-    Send(Box<mpsc::error::SendError<Event>>),
+    #[error("failed to enqueue telemetry message")]
+    Send,
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
     #[error(transparent)]
     Timeout(#[from] Elapsed),
 }
 
-impl From<Box<mpsc::error::SendError<Event>>> for TelemetryError {
-    fn from(value: Box<mpsc::error::SendError<Event>>) -> Self {
-        Self::Send(value)
+// Keep events inline on the hot path rather than adding a heap allocation per datapoint.
+#[allow(clippy::large_enum_variant)]
+enum TelemetryMessage {
+    Event { event: Event, epoch: u64 },
+}
+
+impl std::fmt::Debug for TelemetryMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Event { epoch, .. } => f.debug_struct("Event").field("epoch", epoch).finish(),
+        }
     }
 }
 
 /// Sender half of the telemetry channel; downgrades to a weak handle on clone
 /// so the worker shuts down once the original `TelemetryThread` is dropped.
 #[derive(Debug)]
-pub enum TelemetrySender {
-    Strong(mpsc::UnboundedSender<Event>),
-    Weak(mpsc::WeakUnboundedSender<Event>),
+pub struct TelemetrySender {
+    inner: TelemetrySenderInner,
+    identity_epochs: Arc<IdentityEpochs>,
+}
+
+#[derive(Debug)]
+enum TelemetrySenderInner {
+    Strong(mpsc::UnboundedSender<TelemetryMessage>),
+    Weak(mpsc::WeakUnboundedSender<TelemetryMessage>),
 }
 
 impl TelemetrySender {
-    pub fn send(&self, ev: Event) -> Result<(), Box<mpsc::error::SendError<Event>>> {
-        match self {
-            Self::Strong(sender) => sender.send(ev).map_err(Box::new),
-            Self::Weak(sender) => {
+    #[cfg(test)]
+    fn strong(sender: mpsc::UnboundedSender<TelemetryMessage>) -> Self {
+        Self::strong_with_identity(sender, Arc::new(IdentityEpochs::from_persisted(None)))
+    }
+
+    fn strong_with_identity(
+        sender: mpsc::UnboundedSender<TelemetryMessage>,
+        identity_epochs: Arc<IdentityEpochs>,
+    ) -> Self {
+        Self {
+            inner: TelemetrySenderInner::Strong(sender),
+            identity_epochs,
+        }
+    }
+
+    pub fn send(&self, event: Event) -> Result<(), TelemetryError> {
+        self.send_message(TelemetryMessage::Event {
+            event,
+            epoch: self.identity_epochs.current(),
+        })
+    }
+
+    fn send_message(&self, message: TelemetryMessage) -> Result<(), TelemetryError> {
+        match &self.inner {
+            TelemetrySenderInner::Strong(sender) => sender.send(message).map_err(|_send_error| TelemetryError::Send),
+            TelemetrySenderInner::Weak(sender) => {
                 if let Some(sender) = sender.upgrade() {
-                    sender.send(ev).map_err(Box::new)
+                    sender.send(message).map_err(|_send_error| TelemetryError::Send)
                 } else {
-                    tracing::error!(
-                        "Attempted to send telemetry after telemetry thread has been dropped. Event attempted {:?}",
-                        ev
-                    );
+                    tracing::error!("Attempted to send telemetry after telemetry thread was dropped");
                     Ok(())
                 }
             },
@@ -95,9 +136,13 @@ impl TelemetrySender {
 
 impl Clone for TelemetrySender {
     fn clone(&self) -> Self {
-        match self {
-            Self::Strong(sender) => Self::Weak(sender.downgrade()),
-            Self::Weak(sender) => Self::Weak(sender.clone()),
+        let inner = match &self.inner {
+            TelemetrySenderInner::Strong(sender) => TelemetrySenderInner::Weak(sender.downgrade()),
+            TelemetrySenderInner::Weak(sender) => TelemetrySenderInner::Weak(sender.clone()),
+        };
+        Self {
+            inner,
+            identity_epochs: Arc::clone(&self.identity_epochs),
         }
     }
 }
@@ -106,15 +151,23 @@ impl Clone for TelemetrySender {
 #[derive(Debug)]
 pub struct TelemetryThread {
     handle: Option<JoinHandle<()>>,
+    legacy_handle: Option<JoinHandle<()>>,
     tx: TelemetrySender,
-    run_receipt: Option<RunReceipt>,
+    identity_epochs: Arc<IdentityEpochs>,
+    process_identity: Arc<Mutex<Option<ProcessIdentity>>>,
+    run_receipt_store: Option<RunReceiptStore>,
+    run_receipt: Option<Arc<Mutex<Option<RunReceipt>>>>,
 }
 
 impl Clone for TelemetryThread {
     fn clone(&self) -> Self {
         Self {
             handle: None,
+            legacy_handle: None,
             tx: self.tx.clone(),
+            identity_epochs: Arc::clone(&self.identity_epochs),
+            process_identity: Arc::clone(&self.process_identity),
+            run_receipt_store: None,
             run_receipt: None,
         }
     }
@@ -156,7 +209,7 @@ impl OtelEmitter {
         }
     }
 
-    fn emit_metric_records(&self, event: &Event) {
+    fn emit_metric_records(&self, event: &Event, user_id: Option<&str>) {
         if !self.exports_enabled() {
             return;
         }
@@ -175,18 +228,21 @@ impl OtelEmitter {
         }
         let properties = event.metric_log_properties();
         for record in records {
-            if let Err(err) = self.client.emit_with_log_properties(record, &properties) {
+            if let Err(err) =
+                self.client
+                    .emit_with_log_properties_and_pseudonymous_user_id(record, &properties, user_id)
+            {
                 trace!(%err, "failed to emit OTel metric record");
             }
         }
     }
 
-    fn emit_records(&self, records: impl IntoIterator<Item = kiro_telemetry::MetricRecord>) {
+    fn emit_records(&self, records: impl IntoIterator<Item = kiro_telemetry::MetricRecord>, user_id: Option<&str>) {
         if !self.exports_enabled() {
             return;
         }
         for record in records {
-            if let Err(err) = self.client.emit(record) {
+            if let Err(err) = self.client.emit_with_pseudonymous_user_id(record, user_id) {
                 trace!(%err, "failed to emit OTel metric record");
             }
         }
@@ -343,6 +399,8 @@ impl TelemetryThread {
             ..
         } = config;
 
+        let identity_epochs = Arc::new(IdentityEpochs::from_persisted(otel_config.user_id.as_deref()));
+        let worker_identity_epochs = Arc::clone(&identity_epochs);
         let otel = OtelEmitter::from_config(&otel_config, otel_translator);
         let flush_worker = if otel.exports_enabled() {
             match spawn_flush_worker() {
@@ -356,7 +414,7 @@ impl TelemetryThread {
             None
         };
         let receipt_store = RunReceiptStore::new(otel_config.state_dir.clone());
-        let (run_receipt, pending_recovery) = if telemetry_enabled && otel.exports_enabled() {
+        let (run_receipt_store, run_receipt, pending_recovery) = if telemetry_enabled && otel.exports_enabled() {
             let recovery = receipt_store.recover();
             let recovered_records = recovery.records().collect::<Vec<_>>();
             let pending_recovery = if recovered_records.is_empty() {
@@ -369,23 +427,43 @@ impl TelemetryThread {
                 })
             };
             (
+                Some(receipt_store.clone()),
                 process_identity.and_then(|identity| receipt_store.start(identity).ok()),
                 pending_recovery,
             )
         } else {
             receipt_store.clear_unlocked();
-            (None, None)
+            (None, None, None)
         };
-        let mut process_sampler = process_identity
-            .filter(|_| otel.exports_enabled())
-            .and_then(|identity| ProcessSampler::new().map(|sampler| (identity, sampler)));
+        let process_identity = Arc::new(Mutex::new(process_identity));
+        let worker_process_identity = Arc::clone(&process_identity);
+        let mut process_sampler = otel.exports_enabled().then(ProcessSampler::new).flatten();
         let mut process_interval = tokio::time::interval_at(
             tokio::time::Instant::now() + Duration::from_secs(60),
             Duration::from_secs(60),
         );
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let tx = TelemetrySender::Strong(tx);
+        let tx = TelemetrySender::strong_with_identity(tx, Arc::clone(&identity_epochs));
+
+        // Legacy delivery performs network I/O. Keep it on a separate FIFO so
+        // an identity acknowledgement depends only on local OTel emission for
+        // events ahead of the control message, never on a telemetry endpoint.
+        let (legacy_tx, legacy_handle) = if let Some(sink) = legacy_sink {
+            let (legacy_tx, mut legacy_rx) = mpsc::unbounded_channel::<Event>();
+            let legacy_handle = tokio::spawn(async move {
+                while let Some(event) = legacy_rx.recv().await {
+                    if let Some(partition) = govcloud_partition {
+                        sink.send_event_govcloud(event, partition).await;
+                    } else {
+                        sink.send_event(event).await;
+                    }
+                }
+            });
+            (Some(legacy_tx), Some(legacy_handle))
+        } else {
+            (None, None)
+        };
 
         let pending_recovery = pending_recovery.map(|recovery| Arc::new(std::sync::Mutex::new(Some(recovery))));
         let recovery_flush = pending_recovery.as_ref().and_then(|recovery| {
@@ -419,24 +497,30 @@ impl TelemetryThread {
                     () = &mut recovery_monitor, if !recovery_complete => {
                         recovery_complete = true;
                     },
-                    event = rx.recv() => {
-                        let Some(mut event) = event else {
+                    message = rx.recv() => {
+                        let Some(message) = message else {
                             break;
                         };
-                        apply_event_defaults(&mut event, engine, client_application);
-                        trace!("TelemetryThread received new telemetry event: {:?}", event);
-                        otel.emit_metric_records(&event);
-                        if let Some(partition) = govcloud_partition {
-                            if let Some(sink) = legacy_sink.as_ref() {
-                                sink.send_event_govcloud(event, partition).await;
-                            }
-                        } else if let Some(sink) = legacy_sink.as_ref() {
-                            sink.send_event(event).await;
+                        match message {
+                            TelemetryMessage::Event { mut event, epoch } => {
+                                apply_event_defaults(&mut event, engine, client_application);
+                                trace!(epoch, "TelemetryThread received new telemetry event: {:?}", event);
+                                let user_id = worker_identity_epochs.resolve(epoch);
+                                otel.emit_metric_records(&event, user_id.as_deref());
+                                if let Some(legacy_tx) = legacy_tx.as_ref()
+                                    && legacy_tx.send(event).is_err()
+                                {
+                                    trace!("legacy telemetry worker exited before accepting event");
+                                }
+                            },
                         }
                     },
                     _ = process_interval.tick(), if process_sampler.is_some() => {
-                        if let Some((identity, sampler)) = process_sampler.as_mut() {
-                            otel.emit_records(sampler.sample(*identity));
+                        let identity = *worker_process_identity.lock().expect("process identity mutex poisoned");
+                        if let (Some(identity), Some(sampler)) = (identity, process_sampler.as_mut()) {
+                            let user_id = worker_identity_epochs
+                                .resolve(worker_identity_epochs.current());
+                            otel.emit_records(sampler.sample(identity), user_id.as_deref());
                         }
                     },
                 }
@@ -445,8 +529,10 @@ impl TelemetryThread {
             if !recovery_complete {
                 recovery_monitor.await;
             }
-            if let Some((identity, sampler)) = process_sampler.as_mut() {
-                otel.emit_records(sampler.final_sample(*identity));
+            let identity = *worker_process_identity.lock().expect("process identity mutex poisoned");
+            if let (Some(identity), Some(sampler)) = (identity, process_sampler.as_mut()) {
+                let user_id = worker_identity_epochs.resolve(worker_identity_epochs.current());
+                otel.emit_records(sampler.final_sample(identity), user_id.as_deref());
             }
             let recovery_outcome = match flush_worker.as_ref() {
                 Some(flush_worker) => {
@@ -512,8 +598,12 @@ impl TelemetryThread {
 
         Ok(Self {
             handle: Some(handle),
+            legacy_handle,
             tx,
-            run_receipt,
+            identity_epochs,
+            process_identity,
+            run_receipt_store,
+            run_receipt: Some(Arc::new(Mutex::new(run_receipt))),
         })
     }
 
@@ -523,28 +613,69 @@ impl TelemetryThread {
 
     pub async fn finish_with_timeout(mut self, timeout: Duration) -> Result<(), TelemetryError> {
         drop(self.tx);
-        let result = if let Some(handle) = self.handle.take() {
-            let mut handle = handle;
-            match tokio::time::timeout(timeout, &mut handle).await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(err)) => Err(TelemetryError::Join(err)),
-                Err(_) => {
-                    handle.abort();
-                    Ok(())
-                },
+        let mut pending = [self.handle.take(), self.legacy_handle.take()]
+            .into_iter()
+            .flatten()
+            .collect::<futures::stream::FuturesUnordered<_>>();
+        let mut first_error = None;
+        let deadline = tokio::time::Instant::now() + timeout;
+        let post_abort_budget = std::cmp::min(MAX_POST_ABORT_DRAIN_TIMEOUT, timeout / 2);
+        let graceful_deadline = deadline - post_abort_budget;
+        let timed_out = tokio::time::timeout_at(graceful_deadline, async {
+            while let Some(outcome) = futures::StreamExt::next(&mut pending).await {
+                if let Err(err) = outcome
+                    && first_error.is_none()
+                {
+                    first_error = Some(err);
+                }
             }
-        } else {
-            Ok(())
-        };
-        if let Some(receipt) = self.run_receipt.take() {
+        })
+        .await
+        .is_err();
+        if timed_out {
+            for handle in pending.iter() {
+                handle.abort();
+            }
+            let _ = tokio::time::timeout_at(deadline, async {
+                while let Some(outcome) = futures::StreamExt::next(&mut pending).await {
+                    if let Err(err) = outcome
+                        && !err.is_cancelled()
+                        && first_error.is_none()
+                    {
+                        first_error = Some(err);
+                    }
+                }
+            })
+            .await;
+        }
+        let result = first_error.map_or(Ok(()), |err| Err(TelemetryError::Join(err)));
+        if let Some(run_receipt) = self.run_receipt.take()
+            && let Some(receipt) = run_receipt.lock().expect("run receipt mutex poisoned").take()
+        {
             receipt.complete();
         }
         result
     }
 
+    pub fn set_process_identity(&self, engine: metric::Engine, role: metric::ProcessRole) {
+        let identity = ProcessIdentity::new(engine, role);
+        *self.process_identity.lock().expect("process identity mutex poisoned") = Some(identity);
+        if let (Some(store), Some(run_receipt)) = (self.run_receipt_store.as_ref(), self.run_receipt.as_ref()) {
+            let mut run_receipt = run_receipt.lock().expect("run receipt mutex poisoned");
+            if run_receipt.is_none() {
+                *run_receipt = store.start(identity).ok();
+            }
+        }
+    }
+
     /// Send a pre-built telemetry event directly.
     pub fn send_event(&self, event: Event) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(event)?)
+        self.tx.send(event)
+    }
+
+    /// Shared identity epoch state used by event producers and auth transitions.
+    pub fn identity_epochs(&self) -> Arc<IdentityEpochs> {
+        Arc::clone(&self.identity_epochs)
     }
 
     /// Expose the underlying sender for harness-internal use.
@@ -553,7 +684,7 @@ impl TelemetryThread {
     }
 
     pub fn send_user_logged_in(&self) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
+        self.tx.send(Event::new(EventType::UserLoggedIn {}))
     }
 
     pub fn send_auth_failed(
@@ -563,12 +694,12 @@ impl TelemetryThread {
         error_type: &str,
         error_code: Option<String>,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::AuthFailed {
+        self.tx.send(Event::new(EventType::AuthFailed {
             auth_method: auth_method.to_string(),
             oauth_flow: oauth_flow.to_string(),
             error_type: error_type.to_string(),
             error_code,
-        }))?)
+        }))
     }
 
     pub fn send_did_select_profile(
@@ -579,13 +710,13 @@ impl TelemetryThread {
         sso_region: Option<String>,
         profile_count: Option<i64>,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::DidSelectProfile {
+        self.tx.send(Event::new(EventType::DidSelectProfile {
             source,
             amazonq_profile_region,
             result,
             sso_region,
             profile_count,
-        }))?)
+        }))
     }
 
     pub fn send_profile_state(
@@ -595,12 +726,12 @@ impl TelemetryThread {
         result: crate::event::TelemetryResult,
         sso_region: Option<String>,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::ProfileState {
+        self.tx.send(Event::new(EventType::ProfileState {
             source,
             amazonq_profile_region,
             result,
             sso_region,
-        }))?)
+        }))
     }
 
     pub fn send_subagent_invocation(
@@ -611,13 +742,13 @@ impl TelemetryThread {
         mcp_tool_uses: u32,
         parent_tool_use_id: String,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::SubagentInvocation {
+        self.tx.send(Event::new(EventType::SubagentInvocation {
             parent_conversation_id,
             subagent_name,
             builtin_tool_uses,
             mcp_tool_uses,
             parent_tool_use_id,
-        }))?)
+        }))
     }
 
     pub fn send_subagent_record_user_turn_completion(
@@ -626,11 +757,11 @@ impl TelemetryThread {
         result: crate::event::TelemetryResult,
         args: crate::event::RecordUserTurnCompletionArgs,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::RecordUserTurnCompletion {
+        self.tx.send(Event::new(EventType::RecordUserTurnCompletion {
             conversation_id,
             result,
             args,
-        }))?)
+        }))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -642,13 +773,13 @@ impl TelemetryThread {
         max_iterations: i64,
         duration_sec: i64,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::GoalCompleted {
+        self.tx.send(Event::new(EventType::GoalCompleted {
             conversation_id,
             terminal_state,
             iterations,
             max_iterations,
             duration_sec,
-        }))?)
+        }))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -675,7 +806,7 @@ impl TelemetryThread {
         version: String,
         platform: String,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::ProcessHealthMetric {
+        self.tx.send(Event::new(EventType::ProcessHealthMetric {
             agent_kind,
             rss_mb,
             heap_used_mb,
@@ -696,7 +827,7 @@ impl TelemetryThread {
             session_id,
             version,
             platform,
-        }))?)
+        }))
     }
 
     pub fn send_mode_changed(
@@ -706,12 +837,12 @@ impl TelemetryThread {
         source: crate::event::ModeChangeSource,
         session_id: Option<String>,
     ) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::ModeChanged {
+        self.tx.send(Event::new(EventType::ModeChanged {
             from_mode,
             to_mode,
             source,
             session_id,
-        }))?)
+        }))
     }
 
     // ----------------------------------------------------------------------
@@ -1027,486 +1158,5 @@ async fn enrich(enricher: Option<&EventEnricher>, event: &mut Event) {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::io::Write;
-    use std::net::TcpListener;
-    use std::sync::mpsc as std_mpsc;
-    use std::time::Instant;
-
-    use kiro_telemetry::testing::{
-        OtlpTestCollector,
-        expect_otlp_metric,
-    };
-    use kiro_telemetry::{
-        OtelMode,
-        TelemetryConfig,
-    };
-
-    use super::*;
-    use crate::config::govcloud_partition;
-
-    fn start_one_shot_collector() -> (String, std_mpsc::Receiver<()>, std::thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let (received_tx, received_rx) = std_mpsc::channel();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            received_tx.send(()).unwrap();
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
-                .unwrap();
-        });
-        (endpoint, received_rx, server)
-    }
-
-    #[tokio::test]
-    async fn default_host_config_runs_without_sinks() {
-        let thread = TelemetryThread::new(HostConfig::default()).await.unwrap();
-        thread.send_user_logged_in().unwrap();
-        thread.finish().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn cloned_thread_can_finish_before_original() {
-        let thread = TelemetryThread::new(HostConfig::default()).await.unwrap();
-        let clone = thread.clone();
-        clone.finish().await.unwrap();
-        thread.finish().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn startup_spawn_failure_retries_final_export() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let (endpoint, received_rx, server) = start_one_shot_collector();
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
-            process_identity: Some(identity),
-            ..HostConfig::default()
-        };
-        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let thread = TelemetryThread::new_with_flush_worker(config, {
-            let spawn_count = Arc::clone(&spawn_count);
-            move || {
-                spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Err(std::io::Error::from_raw_os_error(libc::EAGAIN))
-            }
-        })
-        .await
-        .unwrap();
-
-        thread.finish().await.unwrap();
-        received_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        server.join().unwrap();
-        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn telemetry_thread_reuses_startup_worker_for_final_export() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let (endpoint, received_rx, server) = start_one_shot_collector();
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
-            process_identity: Some(identity),
-            ..HostConfig::default()
-        };
-        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let thread = TelemetryThread::new_with_flush_worker(config, {
-            let spawn_count = Arc::clone(&spawn_count);
-            move || {
-                FlushWorker::spawn_with(move |worker| {
-                    spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    std::thread::Builder::new()
-                        .name("kiro-telemetry-flush-test".to_string())
-                        .spawn(worker)
-                        .map(drop)
-                })
-            }
-        })
-        .await
-        .unwrap();
-
-        thread.finish().await.unwrap();
-        received_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        server.join().unwrap();
-        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn dead_flush_worker_keeps_shutdown_bounded_and_run_clean() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let (endpoint, received_rx, server) = start_one_shot_collector();
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
-            process_identity: Some(identity),
-            ..HostConfig::default()
-        };
-        let thread = TelemetryThread::new_with_flush_worker(config, || {
-            FlushWorker::spawn_with(|worker| {
-                drop(worker);
-                Ok(())
-            })
-        })
-        .await
-        .unwrap();
-
-        tokio::time::timeout(Duration::from_secs(1), thread.finish())
-            .await
-            .unwrap()
-            .unwrap();
-        received_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        server.join().unwrap();
-        assert_eq!(RunReceiptStore::new(state.path()).recover().records().count(), 0);
-    }
-
-    #[tokio::test]
-    async fn noop_fallback_preserves_recovery_receipt_for_later_launch() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let store = RunReceiptStore::new(state.path());
-        drop(store.start(identity).unwrap());
-
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(
-                true,
-                OtelMode::OtelOnly,
-                Some("not a valid endpoint".to_string()),
-                state.path().to_path_buf(),
-            ),
-            ..HostConfig::default()
-        };
-        let thread = TelemetryThread::new(config).await.unwrap();
-
-        thread.finish().await.unwrap();
-        assert_eq!(store.recover().records().count(), 1);
-    }
-
-    #[tokio::test]
-    async fn failed_accepted_flush_retries_and_acknowledges_only_success() {
-        let flushes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let acknowledgements = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let worker = FlushWorker::spawn_with(|worker| {
-            std::thread::Builder::new()
-                .name("kiro-telemetry-flush-test".to_string())
-                .spawn(worker)
-                .map(drop)
-        })
-        .unwrap();
-
-        let first = request_flush(
-            &worker,
-            {
-                let flushes = Arc::clone(&flushes);
-                move || {
-                    flushes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    false
-                }
-            },
-            {
-                let acknowledgements = Arc::clone(&acknowledgements);
-                move || {
-                    acknowledgements.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                }
-            },
-        )
-        .await;
-        let second = request_flush(
-            &worker,
-            {
-                let flushes = Arc::clone(&flushes);
-                move || {
-                    flushes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    true
-                }
-            },
-            {
-                let acknowledgements = Arc::clone(&acknowledgements);
-                move || {
-                    acknowledgements.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                }
-            },
-        )
-        .await;
-
-        assert_eq!(first, FlushOutcome::Failed);
-        assert_eq!(second, FlushOutcome::Succeeded);
-        assert_eq!(flushes.load(std::sync::atomic::Ordering::SeqCst), 2);
-        assert_eq!(acknowledgements.load(std::sync::atomic::Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn failed_recovery_flush_reemits_record_before_acknowledging() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let store = RunReceiptStore::new(state.path());
-        drop(store.start(identity).unwrap());
-        let collector = OtlpTestCollector::start_with_statuses(vec![400, 200]);
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(
-                true,
-                OtelMode::OtelOnly,
-                Some(collector.endpoint()),
-                state.path().to_path_buf(),
-            ),
-            ..HostConfig::default()
-        };
-        let thread = TelemetryThread::new(config).await.unwrap();
-        let expected = metric::record_crash_for_version(
-            env!("CARGO_PKG_VERSION"),
-            metric::Engine::V2,
-            metric::OsType::from_name(std::env::consts::OS),
-            metric::ProcessRole::Host,
-            metric::CrashKind::UncleanExit,
-        );
-        let failed_request = collector.receive_timeout(Duration::from_secs(5));
-        expect_otlp_metric(std::slice::from_ref(&failed_request), &expected);
-
-        thread.finish_with_timeout(Duration::from_secs(5)).await.unwrap();
-        let successful_request = collector.receive_timeout(Duration::from_secs(5));
-        expect_otlp_metric(std::slice::from_ref(&successful_request), &expected);
-        assert_eq!(store.recover().records().count(), 0);
-    }
-
-    #[tokio::test]
-    async fn unavailable_startup_worker_exports_recovery_once_at_shutdown() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let store = RunReceiptStore::new(state.path());
-        drop(store.start(identity).unwrap());
-        let collector = OtlpTestCollector::start(1);
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(
-                true,
-                OtelMode::OtelOnly,
-                Some(collector.endpoint()),
-                state.path().to_path_buf(),
-            ),
-            ..HostConfig::default()
-        };
-        let thread =
-            TelemetryThread::new_with_flush_worker(config, || Err(std::io::Error::from_raw_os_error(libc::EAGAIN)))
-                .await
-                .unwrap();
-
-        thread.finish_with_timeout(Duration::from_secs(5)).await.unwrap();
-        let requests = collector.collect();
-        let expected = metric::record_crash_for_version(
-            env!("CARGO_PKG_VERSION"),
-            metric::Engine::V2,
-            metric::OsType::from_name(std::env::consts::OS),
-            metric::ProcessRole::Host,
-            metric::CrashKind::UncleanExit,
-        );
-        expect_otlp_metric(&requests, &expected);
-        assert_eq!(store.recover().records().count(), 0);
-    }
-
-    #[tokio::test]
-    async fn abandoned_flush_does_not_acknowledge() {
-        let acknowledgements = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let worker = FlushWorker::spawn_with(|worker| {
-            std::thread::Builder::new()
-                .name("kiro-telemetry-flush-test".to_string())
-                .spawn(worker)
-                .map(drop)
-        })
-        .unwrap();
-
-        let outcome = request_flush(&worker, || panic!("simulated abandoned flush"), {
-            let acknowledgements = Arc::clone(&acknowledgements);
-            move || {
-                acknowledgements.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            }
-        })
-        .await;
-
-        assert_eq!(outcome, FlushOutcome::Abandoned);
-        assert_eq!(acknowledgements.load(std::sync::atomic::Ordering::SeqCst), 0);
-    }
-
-    #[test]
-    fn blocked_recovery_flush_does_not_hold_runtime_shutdown() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let store = RunReceiptStore::new(state.path());
-        drop(store.start(identity).unwrap());
-
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let (accepted_tx, accepted_rx) = std_mpsc::channel();
-        let (release_tx, release_rx) = std_mpsc::channel();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            accepted_tx.send(()).unwrap();
-            release_rx.recv().unwrap();
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
-                .unwrap();
-        });
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
-            process_identity: Some(identity),
-            ..HostConfig::default()
-        };
-        let (finished_tx, finished_rx) = std_mpsc::channel();
-        let runtime_thread = std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            let result = runtime.block_on(async move {
-                let thread = TelemetryThread::new(config).await.unwrap();
-                thread.finish_with_timeout(Duration::from_millis(100)).await
-            });
-            drop(runtime);
-            finished_tx.send(result).unwrap();
-        });
-
-        accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        let shutdown_result = finished_rx.recv_timeout(Duration::from_secs(5));
-        release_tx.send(()).unwrap();
-        server.join().unwrap();
-        runtime_thread.join().unwrap();
-
-        match shutdown_result {
-            Ok(result) => assert!(result.is_ok()),
-            Err(err) => panic!("blocked recovery flush held runtime shutdown: {err}"),
-        }
-
-        let receipt_directory = state.path().join("run-receipts");
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline
-            && std::fs::read_dir(&receipt_directory)
-                .into_iter()
-                .flatten()
-                .filter_map(Result::ok)
-                .any(|entry| entry.path().extension().is_some_and(|extension| extension == "json"))
-        {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(
-            std::fs::read_dir(receipt_directory)
-                .into_iter()
-                .flatten()
-                .filter_map(Result::ok)
-                .all(|entry| entry.path().extension().is_none_or(|extension| extension != "json"))
-        );
-    }
-
-    #[test]
-    fn blocked_final_flush_does_not_hold_runtime_shutdown() {
-        let state = tempfile::tempdir().unwrap();
-        let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let (accepted_tx, accepted_rx) = std_mpsc::channel();
-        let (release_tx, release_rx) = std_mpsc::channel();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            accepted_tx.send(()).unwrap();
-            release_rx.recv().unwrap();
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
-                .unwrap();
-        });
-        let config = HostConfig {
-            telemetry_enabled: true,
-            otel_config: TelemetryConfig::new(true, OtelMode::OtelOnly, Some(endpoint), state.path().to_path_buf()),
-            process_identity: Some(identity),
-            ..HostConfig::default()
-        };
-        let (finished_tx, finished_rx) = std_mpsc::channel();
-        let runtime_thread = std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            let result = runtime.block_on(async move {
-                let thread = TelemetryThread::new(config).await.unwrap();
-                thread.finish_with_timeout(Duration::from_millis(100)).await
-            });
-            drop(runtime);
-            finished_tx.send(result).unwrap();
-        });
-
-        accepted_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        let shutdown_result = finished_rx.recv_timeout(Duration::from_secs(5));
-        release_tx.send(()).unwrap();
-        server.join().unwrap();
-        runtime_thread.join().unwrap();
-
-        match shutdown_result {
-            Ok(result) => assert!(result.is_ok()),
-            Err(err) => panic!("blocked final flush held runtime shutdown: {err}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn join_failure_still_completes_run_receipt() {
-        let state = tempfile::tempdir().unwrap();
-        let store = RunReceiptStore::new(state.path());
-        let receipt = store
-            .start(crate::process::ProcessIdentity::new(
-                metric::Engine::V2,
-                metric::ProcessRole::Host,
-            ))
-            .unwrap();
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let thread = TelemetryThread {
-            handle: Some(tokio::spawn(async { panic!("test worker failure") })),
-            tx: TelemetrySender::Strong(tx),
-            run_receipt: Some(receipt),
-        };
-
-        let result = thread.finish().await;
-
-        assert!(matches!(result, Err(TelemetryError::Join(_))));
-        assert_eq!(store.recover().records().count(), 0);
-    }
-
-    #[test]
-    fn host_defaults_do_not_override_event_attribution() {
-        let mut event = Event::new(EventType::UserLoggedIn {});
-        event.set_engine(metric::Engine::V3);
-        event.set_client_application_kind(metric::ClientApplication::ChatCliV3);
-
-        apply_event_defaults(
-            &mut event,
-            Some(metric::Engine::V2),
-            Some(metric::ClientApplication::ChatCliV2),
-        );
-
-        assert_eq!(event.engine, Some(metric::Engine::V3));
-        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v3"));
-    }
-
-    #[test]
-    fn host_defaults_fill_missing_event_attribution() {
-        let mut event = Event::new(EventType::UserLoggedIn {});
-
-        apply_event_defaults(
-            &mut event,
-            Some(metric::Engine::V2),
-            Some(metric::ClientApplication::ChatCliV2),
-        );
-
-        assert_eq!(event.engine, Some(metric::Engine::V2));
-        assert_eq!(event.client_application.as_deref(), Some("chat_cli_v2"));
-    }
-
-    #[test]
-    fn govcloud_partition_detects_gov_regions() {
-        assert_eq!(govcloud_partition("us-gov-east-1"), Some("aws-us-gov"));
-        assert_eq!(govcloud_partition("us-gov-west-1"), Some("aws-us-gov"));
-        assert_eq!(govcloud_partition("us-east-1"), None);
-    }
-}
+#[path = "thread_tests.rs"]
+mod tests;

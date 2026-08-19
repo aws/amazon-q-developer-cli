@@ -17,10 +17,12 @@ const NO_LIMIT_SENTINEL: f64 = 999_999.0;
 
 /// Get billing usage data from API
 pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsageData, ChatError> {
+    let identity_epochs = os.telemetry_identity_epochs();
+    let observed_epoch = identity_epochs.current();
     match os.client.get_usage_limits().await {
         Ok(usage_limits) => {
             if let Some(info) = usage_limits.user_info() {
-                let _ = os.database.set_telemetry_user_id(info.user_id());
+                os.update_telemetry_user_id(&identity_epochs, observed_epoch, info.user_id());
             }
             let usage_breakdown = usage_limits.usage_breakdown_list();
 

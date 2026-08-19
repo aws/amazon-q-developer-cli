@@ -2448,6 +2448,7 @@ dependencies = [
  "windows-sys 0.59.0",
  "winnow 0.6.2",
  "winreg",
+ "zeroize",
  "zip 4.6.1",
 ]
 
@@ -5539,6 +5540,7 @@ name = "kiro-telemetry"
 version = "0.0.0-dev"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "fd-lock",
  "futures",
  "indexmap 2.14.0",
@@ -5554,6 +5556,7 @@ dependencies = [
  "reqwest 0.13.3",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "strum 0.28.0",
  "tempfile",
  "thiserror 2.0.18",

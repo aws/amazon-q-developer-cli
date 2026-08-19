@@ -94,7 +94,18 @@ impl TelemetryClient {
     }
 
     pub fn emit(&self, record: MetricRecord) -> Result<EmitOutcome, TelemetryError> {
-        self.emit_with_class_and_log_properties(record, EventClass::Metric, &MetricLogProperties::default())
+        self.emit_with_class_and_log_properties(record, EventClass::Metric, &MetricLogProperties::default(), None)
+    }
+
+    /// Emit a record with an identity that was already resolved from the event's
+    /// enqueue-time epoch. The value is pseudonymous by construction; raw user
+    /// ids never cross this API boundary.
+    pub fn emit_with_pseudonymous_user_id(
+        &self,
+        record: MetricRecord,
+        user_id: Option<&str>,
+    ) -> Result<EmitOutcome, TelemetryError> {
+        self.emit_with_class_and_log_properties(record, EventClass::Metric, &MetricLogProperties::default(), user_id)
     }
 
     pub fn emit_with_log_properties(
@@ -102,7 +113,16 @@ impl TelemetryClient {
         record: MetricRecord,
         properties: &MetricLogProperties,
     ) -> Result<EmitOutcome, TelemetryError> {
-        self.emit_with_class_and_log_properties(record, EventClass::Metric, properties)
+        self.emit_with_class_and_log_properties(record, EventClass::Metric, properties, None)
+    }
+
+    pub fn emit_with_log_properties_and_pseudonymous_user_id(
+        &self,
+        record: MetricRecord,
+        properties: &MetricLogProperties,
+        user_id: Option<&str>,
+    ) -> Result<EmitOutcome, TelemetryError> {
+        self.emit_with_class_and_log_properties(record, EventClass::Metric, properties, user_id)
     }
 
     pub fn emit_with_class(
@@ -110,7 +130,7 @@ impl TelemetryClient {
         record: MetricRecord,
         event_class: EventClass,
     ) -> Result<EmitOutcome, TelemetryError> {
-        self.emit_with_class_and_log_properties(record, event_class, &MetricLogProperties::default())
+        self.emit_with_class_and_log_properties(record, event_class, &MetricLogProperties::default(), None)
     }
 
     fn emit_with_class_and_log_properties(
@@ -118,6 +138,7 @@ impl TelemetryClient {
         mut record: MetricRecord,
         _event_class: EventClass,
         properties: &MetricLogProperties,
+        user_id: Option<&str>,
     ) -> Result<EmitOutcome, TelemetryError> {
         if !self.config.exports_enabled() {
             return Ok(EmitOutcome { emitted: false });
@@ -136,7 +157,7 @@ impl TelemetryClient {
         // fields in the KUTS EMF log record, not registered metric attributes.
         // KUTS metric declarations independently allowlist CloudWatch dimensions.
         for (key, value) in [
-            ("user_id", self.config.user_id.as_deref()),
+            ("user_id", user_id),
             ("session_id", properties.session_id()),
             ("request_id", properties.request_id()),
         ] {
@@ -230,11 +251,12 @@ mod tests {
             .with_user_id("test-user-id".to_string());
         let client = TelemetryClient::new(config).with_sink(sink.clone());
 
+        let pseudonym = crate::pseudonymous_user_id("test-user-id");
         client
-            .emit(metric::record_model_invocation(
-                metric::Engine::V2,
-                Some("claude-sonnet-4"),
-            ))
+            .emit_with_pseudonymous_user_id(
+                metric::record_model_invocation(metric::Engine::V2, Some("claude-sonnet-4")),
+                Some(&pseudonym),
+            )
             .expect("emit should not fail");
 
         let records = sink.records();
@@ -244,7 +266,32 @@ mod tests {
             .iter()
             .find(|attribute| attribute.key == "user_id")
             .map(|attribute| attribute.value.as_str());
-        assert_eq!(user_id, Some("test-user-id"));
+        assert_eq!(user_id, Some(crate::pseudonymous_user_id("test-user-id").as_str()));
+    }
+
+    #[test]
+    fn resolved_user_id_is_scoped_to_the_emitted_record() {
+        let sink = Arc::new(InMemorySink::default());
+        let config = TelemetryConfig::new(true, OtelMode::DualWrite, None, std::env::temp_dir());
+        let client = TelemetryClient::new(config).with_sink(sink.clone());
+
+        client
+            .emit(metric::record_model_invocation(metric::Engine::V2, None))
+            .expect("anonymous emit should succeed");
+        let pseudonym = crate::pseudonymous_user_id("late-user-id");
+        client
+            .emit_with_pseudonymous_user_id(
+                metric::record_model_invocation(metric::Engine::V2, None),
+                Some(&pseudonym),
+            )
+            .expect("identified emit should succeed");
+
+        let records = sink.records();
+        assert_eq!(records.len(), 2);
+        assert!(!records[0].attributes.iter().any(|attribute| attribute.key == "user_id"));
+        assert!(records[1].attributes.iter().any(|attribute| {
+            attribute.key == "user_id" && attribute.value == crate::pseudonymous_user_id("late-user-id")
+        }));
     }
 
     #[test]
@@ -257,16 +304,18 @@ mod tests {
             .with_session_id("test-session-id".to_string())
             .with_request_id("test-request-id".to_string());
 
+        let pseudonym = crate::pseudonymous_user_id("test-user-id");
         client
-            .emit_with_log_properties(
+            .emit_with_log_properties_and_pseudonymous_user_id(
                 metric::record_model_invocation(metric::Engine::V2, Some("claude-sonnet-4")),
                 &properties,
+                Some(&pseudonym),
             )
             .expect("emit should not fail");
 
         let attributes = &sink.records()[0].attributes;
         for (key, expected) in [
-            ("user_id", "test-user-id"),
+            ("user_id", crate::pseudonymous_user_id("test-user-id").as_str()),
             ("session_id", "test-session-id"),
             ("request_id", "test-request-id"),
         ] {

@@ -1,9 +1,9 @@
 //! Host-side telemetry configuration.
 //!
 //! `HostConfig` is the data-first input to [`crate::thread::TelemetryThread::new`].
-//! All values are pre-resolved by the caller (V2's `Os::new`, V3's observer, etc.);
+//! All values are pre-resolved by the caller (V1/V2's `Os::new`, V3's observer, etc.);
 //! the host crate performs no env/database reads of its own. The single optional
-//! [`LegacySink`] trait abstracts the V2-only Toolkit/CodeWhisperer post paths so
+//! [`LegacySink`] trait abstracts the V1/V2 Toolkit/CodeWhisperer post paths so
 //! the host crate stays free of AWS-SDK dependencies.
 
 use std::sync::Arc;
@@ -37,15 +37,15 @@ pub enum HostRole {
 
 /// Optional legacy sink consumed by [`crate::thread::TelemetryThread`].
 ///
-/// V2 implements this over its existing Toolkit + CodeWhisperer post paths.
+/// V1 and V2 implement this over their Toolkit + CodeWhisperer post paths.
 /// V3 / kiro-bot / tests pass `None`.
 pub trait LegacySink: Send + Sync + std::fmt::Debug {
     fn send_event(&self, event: Event) -> BoxFuture<'_, ()>;
     fn send_event_govcloud(&self, event: Event, partition: &'static str) -> BoxFuture<'_, ()>;
 }
 
-/// Translates a host-level [`Event`] into OTel records. V2 provides an
-/// implementation backed by `kiro-telemetry-legacy`; V3 and lite harnesses
+/// Translates a host-level [`Event`] into OTel records. V1 and V2 provide
+/// implementations backed by `kiro-telemetry-legacy`; V3 and lite harnesses
 /// can leave [`HostConfig::otel_translator`] as `None` to skip OTel emission.
 pub trait OtelEventTranslator: Send + Sync + std::fmt::Debug {
     fn metric_records(&self, event: &Event) -> Vec<MetricRecord>;
@@ -68,7 +68,7 @@ pub struct HostConfig {
     pub telemetry_enabled: bool,
     /// OTel config — caller builds via `TelemetryConfig::from_env() + .with_machine_id(...)`.
     pub otel_config: TelemetryConfig,
-    /// Optional legacy sink — `Some(_)` for V2, `None` for V3 / kiro-bot / tests.
+    /// Optional legacy sink — `Some(_)` for V1/V2, `None` for V3 / kiro-bot / tests.
     pub legacy_sink: Option<Arc<dyn LegacySink>>,
     /// Optional OTel translator. `Some(_)` enables OTel emission; `None` skips it.
     pub otel_translator: Option<Arc<dyn OtelEventTranslator>>,

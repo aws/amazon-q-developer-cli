@@ -28,6 +28,8 @@ pub mod methods {
     pub const SUBAGENT_LIST_UPDATE: &str = "_kiro.dev/subagent/list_update";
     /// Agent switched notification
     pub const AGENT_SWITCHED: &str = "_kiro.dev/agent/switched";
+    /// Private update for TUI-owned telemetry identity.
+    pub const TELEMETRY_IDENTITY_CHANGED: &str = "_kiro.dev/telemetry/identityChanged";
     /// Agent not found — requested agent fell back to default
     pub const AGENT_NOT_FOUND: &str = "_kiro.dev/agent/not_found";
     /// Agent config parse error at startup

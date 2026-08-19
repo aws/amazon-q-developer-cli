@@ -320,6 +320,47 @@ pub fn expect_otlp_metric(requests: &[CapturedOtlpRequest], expected: &MetricRec
     );
 }
 
+/// Return one value per datapoint for `key`, preserving exporter order and
+/// representing an absent attribute as `None`.
+pub fn otlp_metric_attribute_values(
+    requests: &[CapturedOtlpRequest],
+    metric_name: &str,
+    key: &str,
+) -> Vec<Option<String>> {
+    use opentelemetry_proto::tonic::metrics::v1::metric::Data;
+
+    let mut values = Vec::new();
+    for request in requests.iter().filter(|request| request.is_metrics()) {
+        let decoded = decode_metrics_request(request);
+        for metric in decoded
+            .resource_metrics
+            .iter()
+            .flat_map(|resource_metrics| &resource_metrics.scope_metrics)
+            .flat_map(|scope_metrics| &scope_metrics.metrics)
+            .filter(|metric| metric.name == metric_name)
+        {
+            let attributes = match metric.data.as_ref() {
+                Some(Data::Sum(sum)) => sum
+                    .data_points
+                    .iter()
+                    .map(|point| &point.attributes)
+                    .collect::<Vec<_>>(),
+                Some(Data::Gauge(gauge)) => gauge.data_points.iter().map(|point| &point.attributes).collect(),
+                Some(Data::Histogram(histogram)) => {
+                    histogram.data_points.iter().map(|point| &point.attributes).collect()
+                },
+                _ => Vec::new(),
+            };
+            values.extend(
+                attributes
+                    .into_iter()
+                    .map(|attributes| proto_attribute_value(attributes, key).map(str::to_owned)),
+            );
+        }
+    }
+    values
+}
+
 pub fn otlp_metric_names(requests: &[CapturedOtlpRequest]) -> Vec<String> {
     requests
         .iter()

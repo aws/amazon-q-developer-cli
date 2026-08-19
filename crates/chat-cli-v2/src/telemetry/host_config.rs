@@ -46,14 +46,14 @@ pub async fn build_v2_host_config(
     fs: &Fs,
     database: &mut Database,
     region: Option<&str>,
+    telemetry_user_id: Option<String>,
 ) -> Result<HostConfig, BuildHostConfigError> {
     let govcloud_partition = region.and_then(govcloud_partition);
     let telemetry_enabled = legacy_sink::resolve_telemetry_enabled(database);
     let client_id = legacy_sink::resolve_client_id(env, database, telemetry_enabled)?;
     let legacy_sink =
         legacy_sink::V2LegacySink::build(env, fs, database, govcloud_partition, client_id, telemetry_enabled).await?;
-    let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id, region)
-        .with_user_id(database.get_telemetry_user_id().ok().flatten());
+    let otel_config = otel_telemetry_config(env, telemetry_enabled, client_id, region).with_user_id(telemetry_user_id);
     Ok(HostConfig {
         client_id,
         telemetry_enabled,

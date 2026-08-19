@@ -295,7 +295,8 @@ async fn complete_external_idp_auth(
 }
 
 pub async fn logout(os: &mut Os) -> Result<ExitCode> {
-    let _ = crate::auth::logout(&mut os.database).await;
+    let identity_epochs = os.telemetry_identity_epochs();
+    let _ = crate::auth::logout(&mut os.database, &identity_epochs).await;
     let _ = crate::auth::social::logout_social(&os.database).await;
     let _ = crate::auth::external_idp::logout_external_idp(&os.database).await;
 

@@ -30,6 +30,11 @@ import {
   _resetMeterForTests,
   _setReaderForTests,
 } from '../meter.js';
+import {
+  getTelemetryIdentity,
+  pseudonymousTelemetryUserId,
+  setTelemetryUserId,
+} from '../telemetry-identity.js';
 
 let originalEndpoint: string | undefined;
 let originalEnabled: string | undefined;
@@ -174,11 +179,22 @@ describe('meter (d) identity log properties', () => {
     else process.env['KIRO_USER_ID'] = originalUserId;
   });
 
-  function attrsOf(name: string, exporter: InMemoryMetricExporter) {
-    const m = allMetrics(exporter.getMetrics()).find(
-      (x) => x.descriptor.name === name
+  function metricOf(name: string, exporter: InMemoryMetricExporter) {
+    return allMetrics(exporter.getMetrics()).find(
+      (candidate) => candidate.descriptor.name === name
     );
-    return m?.dataPoints[0]?.attributes as Record<string, unknown> | undefined;
+  }
+
+  function attrsOf(name: string, exporter: InMemoryMetricExporter) {
+    return metricOf(name, exporter)?.dataPoints[0]?.attributes as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  function resourceAttrsOf(exporter: InMemoryMetricExporter) {
+    return exporter.getMetrics().at(-1)?.resource.attributes as
+      | Record<string, unknown>
+      | undefined;
   }
 
   it('limits gauge identity to process-stable log properties', async () => {
@@ -225,17 +241,105 @@ describe('meter (d) identity log properties', () => {
       'kiro_cli_tool_execution_duration_ms',
     ]) {
       const attrs = attrsOf(name, exporter);
-      expect(attrs?.['user_id']).toBe('test-user-id');
+      expect(attrs?.['user_id']).toBe(
+        pseudonymousTelemetryUserId('test-user-id')
+      );
       expect(attrs?.['session_id']).toBe('test-session-id');
       expect(attrs?.['request_id']).toBe('test-request-id');
       expect(attrs?.['agent_engine']).toBe('v3');
     }
 
     const gaugeAttrs = attrsOf('kiro_cli_tui_heap_used_bytes', exporter);
-    expect(gaugeAttrs?.['user_id']).toBe('test-user-id');
+    expect(gaugeAttrs?.['user_id']).toBe(
+      pseudonymousTelemetryUserId('test-user-id')
+    );
     expect('session_id' in gaugeAttrs!).toBe(false);
     expect('request_id' in gaugeAttrs!).toBe(false);
     expect(gaugeAttrs?.['agent_engine']).toBe('v3');
+  });
+
+  it('keeps one provider and stamps identity on each datapoint at record time', async () => {
+    process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
+    delete process.env['KIRO_DISABLE_TELEMETRY'];
+    process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
+    delete process.env['KIRO_USER_ID'];
+    const exporter = injectInMemory();
+
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v2' });
+    const userId = pseudonymousTelemetryUserId('late-user-id');
+    setTelemetryUserId(userId);
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v2' });
+    histogram('kiro_cli_tool_execution_duration_ms', 42, {
+      agent_engine: 'v2',
+    });
+    await forceFlushMetrics();
+
+    const points = metricOf('kiro_cli_user_turns', exporter)!.dataPoints;
+    expect(points).toHaveLength(2);
+    expect(
+      points.some(
+        (point) =>
+          !(point.attributes as Record<string, unknown>)['user_id'] &&
+          point.value === 1
+      )
+    ).toBe(true);
+    expect(
+      points.some(
+        (point) =>
+          (point.attributes as Record<string, unknown>)['user_id'] === userId &&
+          point.value === 1
+      )
+    ).toBe(true);
+    expect(
+      attrsOf('kiro_cli_tool_execution_duration_ms', exporter)?.['user_id']
+    ).toBe(userId);
+    expect(resourceAttrsOf(exporter)?.['kiro.user_id']).toBeUndefined();
+  });
+
+  it('does not put startup identity on the OTel resource', async () => {
+    process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
+    delete process.env['KIRO_DISABLE_TELEMETRY'];
+    process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
+    process.env['KIRO_USER_ID'] = 'private-user-id';
+    const exporter = injectInMemory();
+
+    counter('kiro_cli_user_turns', 1, { agent_engine: 'v2' });
+    await forceFlushMetrics();
+
+    expect(resourceAttrsOf(exporter)?.['kiro.user_id']).toBeUndefined();
+    expect(attrsOf('kiro_cli_user_turns', exporter)?.['user_id']).toBe(
+      pseudonymousTelemetryUserId('private-user-id')
+    );
+  });
+
+  it('clears retained gauges at an identity boundary without rebuilding', async () => {
+    process.env['KIRO_TELEMETRY_OTLP_ENDPOINT'] = 'http://127.0.0.1:9/x';
+    delete process.env['KIRO_DISABLE_TELEMETRY'];
+    process.env['KIRO_TELEMETRY_ENABLED'] = 'true';
+    delete process.env['KIRO_USER_ID'];
+    const exporter = injectInMemory();
+
+    gauge('kiro_cli_tui_heap_used_bytes', 10, { agent_engine: 'v2' });
+    const userId = pseudonymousTelemetryUserId('late-user-id');
+    setTelemetryUserId(userId);
+    gauge('kiro_cli_tui_heap_used_bytes', 20, { agent_engine: 'v2' });
+    await forceFlushMetrics();
+
+    const metric = metricOf('kiro_cli_tui_heap_used_bytes', exporter);
+    expect(metric?.dataPoints).toHaveLength(1);
+    expect(metric?.dataPoints[0]?.value).toBe(20);
+    expect(
+      (metric?.dataPoints[0]?.attributes as Record<string, unknown>)?.[
+        'user_id'
+      ]
+    ).toBe(userId);
+  });
+
+  it('ignores malformed live identity updates', () => {
+    const userId = pseudonymousTelemetryUserId('private-user-id');
+    setTelemetryUserId(userId);
+    setTelemetryUserId('raw-user-id');
+    expect(getTelemetryIdentity().userId).toBe(userId);
   });
 
   it('rejects invalid values and strips reserved keys from schema attributes', async () => {

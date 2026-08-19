@@ -3,19 +3,31 @@
 use agent::tui_commands::CommandResult;
 use serde_json::json;
 
-use super::CommandContext;
+use super::{
+    CommandContext,
+    CommandEffect,
+    CommandExecution,
+};
 
 /// Sentinel value the backend returns as usage_limit for users without a cap. Confirmed with
 /// backend that 999999 is canonical: at/above this the user has no limit (progress bar hidden);
 /// a value below it is a real cap.
 const NO_LIMIT_SENTINEL: f64 = 999_999.0;
 
-pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
+pub(crate) async fn execute(ctx: &CommandContext<'_>) -> CommandExecution {
+    let identity_epochs = ctx.os.telemetry_identity_epochs();
+    let observed_epoch = identity_epochs.current();
     match ctx.api_client.get_usage_limits().await {
         Ok(usage_limits) => {
-            if let Some(info) = usage_limits.user_info() {
-                let _ = ctx.os.database.set_telemetry_user_id(info.user_id());
-            }
+            let telemetry_identity_update = if let Some(info) = usage_limits.user_info() {
+                keep_usage_on_telemetry_identity_error(ctx.os.update_telemetry_user_id(
+                    &identity_epochs,
+                    observed_epoch,
+                    info.user_id(),
+                ))
+            } else {
+                None
+            };
 
             // Extract plan info
             let plan_name = usage_limits
@@ -141,19 +153,18 @@ pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
 
             let message = format!("Plan: {} | {} usage breakdowns", plan_name, breakdowns.len());
 
-            CommandResult::success_with_data(
-                message,
-                json!({
-                    "planName": plan_name,
-                    "billingCycleReset": billing_cycle_reset,
-                    "overagesEnabled": overages_enabled,
-                    "isEnterprise": is_enterprise,
-                    "usageBreakdowns": breakdowns,
-                    "bonusCredits": bonuses,
-                    "addOnCredits": add_on_credits,
-                    "overageCapable": overage_capable
-                }),
-            )
+            let data = json!({
+                "planName": plan_name,
+                "billingCycleReset": billing_cycle_reset,
+                "overagesEnabled": overages_enabled,
+                "isEnterprise": is_enterprise,
+                "usageBreakdowns": breakdowns,
+                "bonusCredits": bonuses,
+                "addOnCredits": add_on_credits,
+                "overageCapable": overage_capable
+            });
+            CommandExecution::from(CommandResult::success_with_data(message, data))
+                .with_effect(telemetry_identity_update.map(CommandEffect::TelemetryIdentityChanged))
         },
         Err(err) => {
             use crate::api_client::error_utils::{
@@ -179,9 +190,22 @@ pub async fn execute(ctx: &CommandContext<'_>) -> CommandResult {
                         "overageCapable": false
                     }),
                 )
+                .into()
             } else {
-                CommandResult::error(format!("Failed to retrieve usage information: {}", err))
+                CommandResult::error(format!("Failed to retrieve usage information: {}", err)).into()
             }
+        },
+    }
+}
+
+fn keep_usage_on_telemetry_identity_error(
+    result: Result<Option<crate::os::TelemetryIdentityUpdate>, crate::os::TelemetryIdentityUpdateError>,
+) -> Option<crate::os::TelemetryIdentityUpdate> {
+    match result {
+        Ok(update) => update,
+        Err(error) => {
+            tracing::warn!(%error, "Failed to update telemetry identity; preserving usage response");
+            None
         },
     }
 }
@@ -214,6 +238,11 @@ fn active_pack_index(packs: &[AddOnPack]) -> Option<usize> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn telemetry_identity_failure_does_not_abort_usage_processing() {
+        let update = keep_usage_on_telemetry_identity_error(Err(crate::os::TelemetryIdentityUpdateError::Invalid));
+        assert!(update.is_none());
+    }
     #[test]
     fn no_active_pack_when_none_consumed() {
         let packs: Vec<AddOnPack> = vec![(0.0, 250.0, Some(200), None), (0.0, 200.0, Some(100), None)];

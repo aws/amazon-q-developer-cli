@@ -98,6 +98,22 @@ describe('AcpRecorder', () => {
     expect((lines[1]!.msg as TestMsg).method).toBe('session/new');
   });
 
+  it('redacts private telemetry identity notifications', async () => {
+    const recorder = new AcpRecorder(tracePath);
+    recorder.record('in', {
+      jsonrpc: '2.0',
+      method: '_kiro.dev/telemetry/identityChanged',
+      params: { userId: 'private-user-id' },
+    });
+    await recorder.close();
+
+    const contents = readFileSync(tracePath, 'utf-8');
+    expect(contents).not.toContain('private-user-id');
+    expect((readTrace(tracePath)[0]!.msg as TestMsg).params).toEqual({
+      redacted: true,
+    });
+  });
+
   it('appends to existing file on reopen', async () => {
     const first = new AcpRecorder(tracePath);
     first.record('in', { jsonrpc: '2.0', method: 'session/update' });

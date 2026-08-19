@@ -8,6 +8,7 @@ pub struct TestPaths {
     pub base_dir: PathBuf,
     pub cwd: PathBuf,
     pub home_dir: PathBuf,
+    pub database_path: PathBuf,
     pub sessions_dir: PathBuf,
     pub agents_dir: PathBuf,
     pub settings_path: PathBuf,
@@ -61,6 +62,7 @@ pub fn create_test_dir(test_name: &str) -> TestPaths {
     TestPaths {
         cwd: cwd.clone(),
         home_dir,
+        database_path: base_dir.join("data.sqlite3"),
         sessions_dir,
         agents_dir,
         settings_path,

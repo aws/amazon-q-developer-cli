@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "Bind pseudonymous telemetry identities to enqueue-time epochs so queued records cannot be attributed across account changes"
+}

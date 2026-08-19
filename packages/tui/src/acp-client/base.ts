@@ -2,6 +2,7 @@ import * as acp from '@agentclientprotocol/sdk';
 import { logger } from '../utils/logger';
 import { configResourceSource } from '../utils/config-resource.js';
 import { features, Feature } from '../features.js';
+import { setTelemetryUserId } from '../utils/telemetry-identity.js';
 import { parseSessionRepositories } from '../utils/session-repositories';
 import { isUserCancelledReason } from '../constants/tool-failure-reasons';
 import type { ChildProcess } from 'node:child_process';
@@ -240,6 +241,7 @@ export const EXT_METHODS = {
   SESSION_STEER: 'session/steer',
   SESSION_STEER_CLEAR: 'session/steer/clear',
   AGENT_SWITCHED: 'kiro.dev/agent/switched',
+  TELEMETRY_IDENTITY_CHANGED: 'kiro.dev/telemetry/identityChanged',
   SESSION_UPDATE: 'kiro.dev/session/update',
   GOAL_STATUS: 'kiro.dev/goal/status',
 } as const;
@@ -765,6 +767,8 @@ function partitionV2Prompts(wire: V2WirePrompt[]): {
 
 // ─── Base class ──────────────────────────────────────────────────────
 
+export type TelemetryIdentitySetter = (userId: string | undefined) => void;
+
 export abstract class BaseAcpClient implements SessionClient {
   public sessionId?: string;
   protected agentProcess: AgentProcess;
@@ -789,12 +793,17 @@ export abstract class BaseAcpClient implements SessionClient {
   // session with no injected/cleared event, so it can't reset itself).
   protected readonly kasSteerBuffers = new Map<string, Map<string, string>>();
   private readonly firstVisibleResponse = new TuiFirstVisibleResponseObserver();
+  private readonly telemetryIdentitySetter: TelemetryIdentitySetter;
 
-  constructor(agentProcess: AgentProcess) {
+  constructor(
+    agentProcess: AgentProcess,
+    telemetryIdentitySetter: TelemetryIdentitySetter = setTelemetryUserId
+  ) {
     this.agentProcess = agentProcess;
     if (!agentProcess.stdout || !agentProcess.stdin) {
       throw new Error('Failed to create agent process stdio streams');
     }
+    this.telemetryIdentitySetter = telemetryIdentitySetter;
     pipeStderr(agentProcess);
   }
 
@@ -1063,9 +1072,17 @@ export abstract class BaseAcpClient implements SessionClient {
 
   // ── Shared ext notification handlers ──
 
+  private updateTelemetryIdentity(params: Record<string, unknown>): void {
+    if (params['clear'] === true) {
+      this.telemetryIdentitySetter(undefined);
+    } else if (typeof params['userId'] === 'string') {
+      this.telemetryIdentitySetter(params['userId']);
+    }
+  }
+
   protected extNotificationHandlers: Record<
     string,
-    (params: Record<string, unknown>) => void
+    (params: Record<string, unknown>) => void | Promise<void>
   > = {
     [EXT_METHODS.COMMANDS_AVAILABLE]: (p) => this.handleCommandsAdvertising(p),
     [EXT_METHODS.METADATA]: (p) => this.handleMetadataUpdate(p),
@@ -1085,6 +1102,8 @@ export abstract class BaseAcpClient implements SessionClient {
     [EXT_METHODS.RATE_LIMIT_ERROR]: (p) => this.handleRateLimitError(p),
     [EXT_METHODS.SUBAGENT_LIST_UPDATE]: (p) => this.handleSubagentListUpdate(p),
     [EXT_METHODS.AGENT_SWITCHED]: (p) => this.handleAgentSwitched(p),
+    [EXT_METHODS.TELEMETRY_IDENTITY_CHANGED]: (p) =>
+      this.updateTelemetryIdentity(p),
     [EXT_METHODS.SESSION_UPDATE]: (p) => this.handleExtSessionUpdate(p),
     [EXT_METHODS.GOAL_STATUS]: (p) => this.handleGoalStatus(p),
   };
