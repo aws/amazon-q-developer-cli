@@ -15,6 +15,8 @@
 //! (matches kiro-cli's own resolver in `api_client::endpoints`), so the
 //! host MUST supply a `profileArn` for every auth type.
 
+use std::time::Duration;
+
 use serde::Serialize;
 
 use crate::api_client::BUILDER_ID_PROFILE_ARN;
@@ -24,6 +26,7 @@ use crate::auth::builder_id::{
     TokenType,
 };
 use crate::auth::external_idp::ExternalIdpToken;
+use crate::auth::refresh_coordinator::LOCK_HOLD_TIMEOUT;
 use crate::auth::social::{
     SocialProvider,
     SocialToken,
@@ -34,6 +37,26 @@ use crate::database::Database;
 /// leading `_` from the wire method `_kiro/auth/getAccessToken`. Listed once
 /// here so dispatchers can match against it without drift.
 pub const KAS_AUTH_EXT_METHOD: &str = "kiro/auth/getAccessToken";
+
+#[derive(Clone, Copy)]
+enum CallbackProvider {
+    ExternalIdp,
+    BuilderId,
+    Social,
+}
+
+const CALLBACK_RESOLUTION_SOURCES: [CallbackProvider; 3] = [
+    CallbackProvider::ExternalIdp,
+    CallbackProvider::BuilderId,
+    CallbackProvider::Social,
+];
+
+/// Maximum expected duration of a non-forced callback token lookup.
+///
+/// The ordered source list drives both the resolver loop and this bound, so
+/// adding another sequential provider automatically extends host drain budgets.
+pub const MAX_KAS_TOKEN_RESOLUTION_DURATION: Duration =
+    Duration::from_secs(LOCK_HOLD_TIMEOUT.as_secs() * CALLBACK_RESOLUTION_SOURCES.len() as u64);
 
 /// Auth method advertised to KAS in the `_kiro/auth/getAccessToken` response.
 /// KAS maps each value to a `TokenType` request header. Auth types that need
@@ -202,14 +225,24 @@ pub async fn resolve_kas_token_for_callback_with_refresh(
             Some(crate::auth::AuthSource::ApiKey) | None => Ok(None),
         };
     }
-    if let Some(token) = ExternalIdpToken::coordinated_refresh_inner(database, false).await? {
-        return Ok(Some(external_idp_callback_token(database, &token)?));
-    }
-    if let Some(token) = BuilderIdToken::coordinated_refresh_inner(database, None, false).await? {
-        return Ok(Some(builder_id_callback_token(database, &token)?));
-    }
-    if let Some(token) = SocialToken::coordinated_refresh_inner(database, false).await? {
-        return Ok(Some(social_callback_token(&token)?));
+    for source in CALLBACK_RESOLUTION_SOURCES {
+        match source {
+            CallbackProvider::ExternalIdp => {
+                if let Some(token) = ExternalIdpToken::coordinated_refresh_inner(database, false).await? {
+                    return Ok(Some(external_idp_callback_token(database, &token)?));
+                }
+            },
+            CallbackProvider::BuilderId => {
+                if let Some(token) = BuilderIdToken::coordinated_refresh_inner(database, None, false).await? {
+                    return Ok(Some(builder_id_callback_token(database, &token)?));
+                }
+            },
+            CallbackProvider::Social => {
+                if let Some(token) = SocialToken::coordinated_refresh_inner(database, false).await? {
+                    return Ok(Some(social_callback_token(&token)?));
+                }
+            },
+        }
     }
     Ok(None)
 }

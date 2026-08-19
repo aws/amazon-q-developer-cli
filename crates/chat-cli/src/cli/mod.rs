@@ -12,6 +12,7 @@ mod diagnostics;
 pub mod experiment;
 pub mod feed;
 mod issue;
+mod kas_acp_relay;
 mod mcp;
 mod settings;
 pub mod update;
@@ -93,6 +94,13 @@ impl OutputFormat {
     }
 }
 
+/// Authentication owner for a v3 engine ACP session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AcpAuthMethod {
+    /// Resolve access tokens for the v3 engine from the Kiro CLI credential store.
+    Cli,
+}
+
 /// The Kiro CLI
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
@@ -153,8 +161,12 @@ pub enum RootSubcommand {
         /// Agent engine to use: "v1", "v2" (default), or "v3"
         #[arg(long, value_name = "ENGINE", default_value_t = chat::AgentEngine::V2)]
         agent_engine: chat::AgentEngine,
+        /// Authentication owner for the v3 engine. Use "cli" to keep authentication inside this
+        /// process.
+        #[arg(long, visible_alias = "authMethod", value_name = "METHOD")]
+        auth_method: Option<AcpAuthMethod>,
     },
-    /// Start a persistent V3 agent server over WebSocket
+    /// Start a persistent WebSocket server for the v3 engine
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "8082")]
@@ -324,7 +336,9 @@ impl RootSubcommand {
                     trust_all_tools,
                     trust_tools,
                     agent_engine,
+                    auth_method,
                 } => {
+                    reject_acp_auth_method_for_non_v3(agent_engine, auth_method);
                     if agent_engine == chat::AgentEngine::Kas {
                         reject_unsupported_v3_acp_flags(
                             agent.as_deref(),
@@ -333,7 +347,7 @@ impl RootSubcommand {
                             trust_all_tools,
                             trust_tools.as_deref(),
                         );
-                        return execute_kas_acp(os).await;
+                        return execute_kas_acp(os, auth_method).await;
                     }
                     use std::sync::Arc;
 
@@ -460,7 +474,9 @@ impl RootSubcommand {
                 trust_all_tools,
                 trust_tools,
                 agent_engine,
+                auth_method,
             } => {
+                reject_acp_auth_method_for_non_v3(agent_engine, auth_method);
                 if agent_engine == chat::AgentEngine::Kas {
                     reject_unsupported_v3_acp_flags(
                         agent.as_deref(),
@@ -469,7 +485,7 @@ impl RootSubcommand {
                         trust_all_tools,
                         trust_tools.as_deref(),
                     );
-                    return execute_kas_acp(os).await;
+                    return execute_kas_acp(os, auth_method).await;
                 }
                 use std::sync::Arc;
 
@@ -754,6 +770,28 @@ async fn launch_acp_session(
     crate::launch::launch(options, os, telemetry_name).await
 }
 
+fn is_acp_auth_method_supported(agent_engine: chat::AgentEngine, auth_method: Option<AcpAuthMethod>) -> bool {
+    auth_method.is_none() || agent_engine == chat::AgentEngine::Kas
+}
+
+fn reject_acp_auth_method_for_non_v3(agent_engine: chat::AgentEngine, auth_method: Option<AcpAuthMethod>) {
+    if is_acp_auth_method_supported(agent_engine, auth_method) {
+        return;
+    }
+    let mut command = Cli::command();
+    match command.find_subcommand_mut("acp") {
+        Some(acp) => acp.error(
+            clap::error::ErrorKind::ArgumentConflict,
+            "--auth-method is only supported with --agent-engine=v3",
+        ),
+        None => command.error(
+            clap::error::ErrorKind::ArgumentConflict,
+            "--auth-method is only supported with --agent-engine=v3",
+        ),
+    }
+    .exit();
+}
+
 /// Names of `acp` flags that are inert on the v3 engine, in declaration order.
 fn unsupported_v3_acp_flags(
     agent: Option<&str>,
@@ -810,10 +848,23 @@ fn reject_unsupported_v3_acp_flags(
 /// Extracts embedded node + KAS assets if needed, then execs
 /// `node --experimental-wasm-modules acp-server.js --transport=stdio
 ///  --auth=acp-callback`.
-async fn execute_kas_acp(os: &Os) -> Result<ExitCode> {
-    let mut child = spawn_kas_process(os, KasStdio::Inherit).await?;
-    let status = child.wait().await?;
-    Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
+async fn execute_kas_acp(os: &Os, auth_method: Option<AcpAuthMethod>) -> Result<ExitCode> {
+    match auth_method {
+        None => {
+            let mut child = spawn_kas_process(os, KasStdio::Inherit).await?;
+            let status = child.wait().await?;
+            Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))
+        },
+        Some(AcpAuthMethod::Cli) => {
+            let mut signals = kas_acp_relay::ShutdownSignals::new()?;
+            let relay_io = kas_acp_relay::RelayIo::new()?;
+            let child = tokio::select! {
+                child = spawn_kas_process(os, KasStdio::Proxied) => child?,
+                exit_code = signals.recv() => return Ok(exit_code),
+            };
+            kas_acp_relay::run(child, signals, relay_io).await
+        },
+    }
 }
 
 /// Stdio configuration for a spawned KAS process.
@@ -823,6 +874,8 @@ pub(crate) enum KasStdio {
     Inherit,
     /// Pipe stdin/stdout (for ACP client use), null stderr.
     Piped,
+    /// Pipe stdin/stdout through the CLI auth relay and inherit stderr.
+    Proxied,
 }
 
 /// Spawn a KAS process with `--transport=stdio`.
@@ -861,18 +914,19 @@ pub(crate) fn content_collection_enabled(os: &Os) -> bool {
 /// Internal chat-cli ACP-client paths handle the callback via
 /// `chat_cli_v2::auth::kas_token::handle_ext_method`. External
 /// clients connecting to a `KasStdio::Inherit` spawn (e.g. `kiro-cli acp`)
-/// MUST implement the same callback themselves.
+/// MUST implement the same callback themselves. `KasStdio::Proxied` instead
+/// routes that callback through the CLI-owned auth relay.
 pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio::process::Child> {
     if !crate::util::platform::can_run_kas() {
-        bail!("V3 is currently not supported on this system.");
+        bail!("The v3 engine is currently not supported on this system.");
     }
 
     let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os, false).await?;
     let node_bin = node_bin.ok_or_else(|| {
-        eyre::eyre!("Cannot resolve node binary for KAS: KIRO_KAS_NODE_PATH not set and embedded node not available")
+        eyre::eyre!("Cannot resolve the node binary for the v3 engine: KIRO_KAS_NODE_PATH is not set and the embedded node binary is unavailable")
     })?;
     let server_js = server_js.ok_or_else(|| {
-        eyre::eyre!("Cannot resolve KAS server: KIRO_KAS_SERVER_PATH not set and embedded server not available")
+        eyre::eyre!("Cannot resolve the server for the v3 engine: KIRO_KAS_SERVER_PATH is not set and the embedded server is unavailable")
     })?;
 
     debug!(
@@ -905,6 +959,12 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit());
         },
+        KasStdio::Proxied => {
+            cmd.stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::inherit());
+            kas_acp_relay::configure_proxied_command(&mut cmd);
+        },
     }
 
     let kas_version = read_kas_version(&server_js);
@@ -926,7 +986,7 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
 
     let child = cmd.spawn().with_context(|| {
         format!(
-            "failed to spawn KAS: node binary `{}` (server: {})",
+            "failed to spawn the v3 engine: node binary `{}` (server: {})",
             node_bin.display(),
             server_js.display()
         )
@@ -939,10 +999,10 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
 async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
     let (node_bin, server_js) = crate::embedded_tui::ensure_kas_assets(os, false).await?;
     let node_bin = node_bin.ok_or_else(|| {
-        eyre::eyre!("Cannot resolve node binary for KAS: KIRO_KAS_NODE_PATH not set and embedded node not available")
+        eyre::eyre!("Cannot resolve the node binary for the v3 engine: KIRO_KAS_NODE_PATH is not set and the embedded node binary is unavailable")
     })?;
     let server_js = server_js.ok_or_else(|| {
-        eyre::eyre!("Cannot resolve KAS server: KIRO_KAS_SERVER_PATH not set and embedded server not available")
+        eyre::eyre!("Cannot resolve the server for the v3 engine: KIRO_KAS_SERVER_PATH is not set and the embedded server is unavailable")
     })?;
 
     debug!(
@@ -984,7 +1044,7 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
         .spawn()
         .with_context(|| {
             format!(
-                "failed to spawn KAS serve: {} {}",
+                "failed to spawn the v3 engine server: {} {}",
                 node_bin.display(),
                 server_js.display()
             )
@@ -1249,6 +1309,61 @@ mod test {
     #[test]
     fn debug_assert() {
         Cli::command().debug_assert();
+    }
+
+    fn parse_acp_auth_method(args: &[&str]) -> Option<AcpAuthMethod> {
+        let args = std::iter::once(CHAT_BINARY_NAME)
+            .chain(std::iter::once("acp"))
+            .chain(args.iter().copied());
+        match Cli::try_parse_from(args).expect("parse ACP arguments").subcommand {
+            Some(RootSubcommand::Acp { auth_method, .. }) => auth_method,
+            subcommand => panic!("expected ACP subcommand, got {subcommand:?}"),
+        }
+    }
+
+    #[test]
+    fn acp_auth_method_defaults_to_client_owned() {
+        assert_eq!(parse_acp_auth_method(&["--agent-engine=v3"]), None);
+    }
+
+    #[test]
+    fn acp_auth_method_cli_parses_canonical_flag() {
+        assert_eq!(
+            parse_acp_auth_method(&["--agent-engine=v3", "--auth-method=cli"]),
+            Some(AcpAuthMethod::Cli)
+        );
+    }
+
+    #[test]
+    fn acp_auth_method_cli_parses_camel_case_alias() {
+        assert_eq!(
+            parse_acp_auth_method(&["--agent-engine=v3", "--authMethod=cli"]),
+            Some(AcpAuthMethod::Cli)
+        );
+    }
+
+    #[test]
+    fn acp_auth_method_rejects_unknown_value() {
+        let error = Cli::try_parse_from([CHAT_BINARY_NAME, "acp", "--agent-engine=v3", "--auth-method=client"])
+            .expect_err("unknown auth method must fail parsing");
+        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn acp_auth_method_cli_requires_v3() {
+        assert!(is_acp_auth_method_supported(
+            chat::AgentEngine::Kas,
+            Some(AcpAuthMethod::Cli)
+        ));
+        assert!(!is_acp_auth_method_supported(
+            chat::AgentEngine::V2,
+            Some(AcpAuthMethod::Cli)
+        ));
+        assert!(!is_acp_auth_method_supported(
+            chat::AgentEngine::V1,
+            Some(AcpAuthMethod::Cli)
+        ));
+        assert!(is_acp_auth_method_supported(chat::AgentEngine::V2, None));
     }
 
     #[test]

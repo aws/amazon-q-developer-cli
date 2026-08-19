@@ -66,11 +66,11 @@ fn find_versioned_dir(kas_root: &Path) -> Option<PathBuf> {
 
 fn run_chat_v3(home: &Path, data_dir: &Path, db_path: &Path, bundle: &Path, bogus_node: &Path) {
     // `chat --v3 --no-interactive` runs the startup GC in the parent, then
-    // spawns the KAS `acp` child, which extracts the bundle and then spawns
-    // node.
+    // spawns the v3 engine `acp` child, which extracts the bundle and then
+    // spawns node.
     //
     // Note - The bogus node path makes that spawn fail *after* extraction, so the
-    // command exits non-zero with the known "failed to spawn KAS: node binary"
+    // command exits non-zero with the known "failed to spawn the v3 engine: node binary"
     // error.
     Command::cargo_bin("chat_cli")
         .expect("locate chat_cli binary")
@@ -84,7 +84,7 @@ fn run_chat_v3(home: &Path, data_dir: &Path, db_path: &Path, bundle: &Path, bogu
         .timeout(Duration::from_secs(60))
         .assert()
         .failure()
-        .stderr(contains("failed to spawn KAS: node binary"));
+        .stderr(contains("failed to spawn the v3 engine: node binary"));
 }
 
 #[test]

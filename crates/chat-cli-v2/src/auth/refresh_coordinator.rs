@@ -36,7 +36,7 @@ const LOCK_FILE_NAME: &str = ".refresh.lock";
 /// the RT strands the new token and forces the next holder into
 /// `invalid_grant`. Typical refresh is <5s; crossing 90s means
 /// something is genuinely wedged.
-const LOCK_HOLD_TIMEOUT: Duration = Duration::from_secs(90);
+pub(crate) const LOCK_HOLD_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Polling interval for the lock-acquire loop. Short enough to feel
 /// responsive once the lock is released, long enough to avoid burning

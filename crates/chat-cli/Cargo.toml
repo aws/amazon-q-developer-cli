@@ -167,7 +167,7 @@ security-framework.workspace = true
 mimalloc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows.workspace = true
+windows = { workspace = true, features = ["Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects"] }
 windows-sys = { version = "0.59.0", features = ["Win32_System_Console", "Win32_Foundation"] }
 winreg.workspace = true
 
