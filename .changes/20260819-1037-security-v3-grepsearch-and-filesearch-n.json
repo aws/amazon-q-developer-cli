@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "[V3] `grep_search` and `file_search` no longer return paths denied by `.kiroignore`"
+}

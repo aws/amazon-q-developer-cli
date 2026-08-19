@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Retry loop when a non-file tool call is truncated for exceeding the output token limit"
+}

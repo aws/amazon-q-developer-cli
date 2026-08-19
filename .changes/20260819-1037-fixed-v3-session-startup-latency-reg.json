@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Session startup latency regression from waiting on experiment resolution during initialize"
+}

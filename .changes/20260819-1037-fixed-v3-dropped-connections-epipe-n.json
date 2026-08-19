@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] Dropped connections (`EPIPE`) now retry instead of surfacing a raw `write EPIPE` error"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] \"Always allow\" is no longer offered for shell commands where the decision cannot be persisted"
+}
