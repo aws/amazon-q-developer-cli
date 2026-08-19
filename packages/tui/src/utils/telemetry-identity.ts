@@ -12,6 +12,7 @@ export interface TelemetryIdentity {
   userId: string;
   version: string;
   kiroClientVersion: string;
+  channel: string;
 }
 
 export function getTelemetryIdentity(): TelemetryIdentity {
@@ -23,6 +24,11 @@ export function getTelemetryIdentity(): TelemetryIdentity {
     userId: process.env['KIRO_USER_ID'] || '',
     version,
     kiroClientVersion: version,
+    channel: version.includes('-nightly')
+      ? 'nightly'
+      : version.includes('beta')
+        ? 'beta'
+        : 'stable',
   };
 }
 

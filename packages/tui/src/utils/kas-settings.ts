@@ -86,6 +86,7 @@ export function buildKasSettings(): KasSettings | undefined {
     ['chat.disableAutoCompaction', 'disableAutoCompaction'],
     ['chat.enableSubagent', '_subagent'],
     ['chat.enableDelegate', '_delegate'],
+    ['memory.enabled', 'userMemoryOptIn'],
   ];
 
   // ICECAP infra-safety gate. Monitor defaults ON for internal users (via

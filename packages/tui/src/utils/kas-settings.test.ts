@@ -343,4 +343,34 @@ describe('buildKasSettings', () => {
     expect(result?.infraSafetyMonitor).toEqual({ enabled: true });
     expect(result?.infraSafetyEnforce).toEqual({ enabled: true });
   });
+
+  // Pin the memory opt-in wire contract: the cli.json key `memory.enabled`
+  // maps to the agent-side key `userMemoryOptIn` (NOT `memoryOptIn`). These
+  // assertions are the guard against the client/agent key silently diverging.
+  test('memory.enabled: true emits userMemoryOptIn { enabled: true }', async () => {
+    writeSettings({ 'memory.enabled': true });
+    const buildKasSettings = await getBuildKasSettings();
+    const result = buildKasSettings();
+    expect(result?.userMemoryOptIn).toEqual({ enabled: true });
+    // The unqualified `memoryOptIn` key must NOT be emitted.
+    expect(result?.memoryOptIn).toBeUndefined();
+  });
+
+  test('memory.enabled: false emits userMemoryOptIn { enabled: false }', async () => {
+    writeSettings({ 'memory.enabled': false });
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.userMemoryOptIn).toEqual({ enabled: false });
+  });
+
+  test('userMemoryOptIn absent when memory.enabled is unset', async () => {
+    writeSettings({});
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.userMemoryOptIn).toBeUndefined();
+  });
+
+  test('userMemoryOptIn absent when memory.enabled is non-boolean', async () => {
+    writeSettings({ 'memory.enabled': 'yes' });
+    const buildKasSettings = await getBuildKasSettings();
+    expect(buildKasSettings()?.userMemoryOptIn).toBeUndefined();
+  });
 });
