@@ -95,4 +95,61 @@ describe('v2 lite: streamed overflow finalize is exactly-once', () => {
       idxOf('MSGPARA-2-0')
     );
   }, 120000);
+
+  it('a growing overflow thinking row settles into scrollback exactly once', async () => {
+    testCase = await E2ETestCase.builder()
+      .withTerminal({ width: 80, height: 14 })
+      .withTestName('v2-lite-thinking-finalize-once')
+      .withLite()
+      .withGlobalSettings({
+        'chat.preserveScrollback': true,
+        'chat.verbosity.lite': { showThinkingContent: true },
+      })
+      .launch();
+
+    await testCase.waitForText('ask a question', 15000);
+    await testCase.waitForSlashCommands(15000);
+    for (const c of 'reason at length') await testCase.sendKeys(c);
+    await testCase.pressEnter();
+
+    const chunks = Array.from(
+      { length: 18 },
+      (_, i) =>
+        `${i === 0 ? 'THINK-ONCE ' : ''}${i === 17 ? '\nTHINK-TAIL-ONCE ' : ''}reasoning sentence ${i} has enough steady filler to wrap the live block. `
+    );
+    for (const chunk of chunks.slice(0, -1)) {
+      await testCase.pushSendMessageResponse(
+        [
+          {
+            kind: 'event',
+            data: { kind: 'ReasoningEvent', data: { text: chunk } },
+          },
+        ],
+        { silent: true }
+      );
+      await testCase.sleepMs(40);
+    }
+
+    // Complete immediately after final growth to share one renderer window.
+    await testCase.pushSendMessageResponse(
+      [
+        {
+          kind: 'event',
+          data: {
+            kind: 'ReasoningEvent',
+            data: { text: chunks[chunks.length - 1] },
+          },
+        },
+      ],
+      { silent: true }
+    );
+    await testCase.pushSendMessageResponse(null);
+    await testCase.sleepMs(1000);
+
+    const all = testCase.getSnapshot();
+    const rendered = all.join('');
+    for (const marker of ['THINK-ONCE', 'THINK-TAIL-ONCE']) {
+      expect(rendered.split(marker).length - 1).toBe(1);
+    }
+  }, 120000);
 });

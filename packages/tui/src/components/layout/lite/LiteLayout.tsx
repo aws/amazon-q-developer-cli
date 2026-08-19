@@ -146,6 +146,23 @@ type ActiveSubagentRow = SubagentRow & {
 // re-resetting would duplicate/swallow scrollback. Only resetMessages/setUiMode
 // bump the token. -1 fires the reset once on first mount.
 let _liteLastObservedClearToken = -1;
+type LiteStaticItem = {
+  id: string;
+  text: string;
+  sourceMessageId?: string;
+};
+type LiteStaticItemsRef = { current: LiteStaticItem[] };
+let _liteStaticItemsRefForTests: LiteStaticItemsRef | null = null;
+let _liteSettlingItemsRefForTests: LiteStaticItemsRef | null = null;
+const _liteSettlePromotions = { guarantee: 0, escape: 0 };
+export const __liteSettleBufferSizeForTests = (): number =>
+  _liteSettlingItemsRefForTests?.current.length ?? 0;
+export const __liteStaticItemIdsForTests = (): string[] =>
+  _liteStaticItemsRefForTests?.current.map((item) => item.id) ?? [];
+export const __liteSettlePromotionsForTests = (): {
+  guarantee: number;
+  escape: number;
+} => ({ ..._liteSettlePromotions });
 
 export const LiteLayout: React.FC<VariantLayoutProps> = ({
   ApprovalPrompt,
@@ -700,7 +717,23 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // staticItemsRef only ever grows (until lite.scrollbackClearToken resets it).
   // The delta walk clamps late eligibility shrinkage and dedups via
   // pushedStaticIdsRef for rows that flip eligible after a later row flushed.
-  const staticItemsRef = useRef<Array<{ id: string; text: string }>>([]);
+  const staticItemsRef = useRef<LiteStaticItem[]>([]);
+  // Hold final rows until their live form paints so overflow cannot commit stale and final copies.
+  const settlingItemsRef = useRef<LiteStaticItem[]>([]);
+  useEffect(() => {
+    _liteStaticItemsRefForTests = staticItemsRef;
+    _liteSettlingItemsRefForTests = settlingItemsRef;
+    return () => {
+      if (_liteStaticItemsRefForTests === staticItemsRef) {
+        _liteStaticItemsRefForTests = null;
+      }
+      if (_liteSettlingItemsRefForTests === settlingItemsRef) {
+        _liteSettlingItemsRefForTests = null;
+      }
+    };
+  }, []);
+  const [settleGeneration, bumpSettleGeneration] = useState(0);
+  const settleStalePaintsRef = useRef(0);
   // High-water mark into `eligible`: count already appended. Resets on clear.
   const lastFlushedEligibleCountRef = useRef(0);
   // Session ids the user explicitly killed via Ctrl+X — the backend fires
@@ -721,9 +754,9 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // Session boundary (/chat new|<id>|load, /clear, /rewind, lite↔tui swap):
   // resetMessages/setUiMode bump lite.scrollbackClearToken. On a bump (or -1
   // first-mount init): (1) adjustStaticCursor(MAX) so the next paint lands at
-  // index 0; (2) reset staticItemsRef + bookkeeping refs; (3) head-push the KIRO
-  // banner when there's prior content (fresh sessions use the live banner so
-  // resize reflows it).
+  // index 0; (2) preserve unpromoted rows while resetting bookkeeping; (3)
+  // stage the KIRO banner when there's prior content (fresh sessions use the
+  // live banner so resize reflows it).
   //
   // DO NOT write CSI 3J/2J — that wipes the whole terminal scrollback including
   // pre-kiro shell history. twinki's accumulatedStaticOutput is 10k-line bounded
@@ -735,17 +768,56 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const liteScrollbackClearToken = useAppStore(
     (s) => s.lite.scrollbackClearToken
   );
-  const { adjustStaticCursor } = useTwinkiContext();
+  const { adjustStaticCursor, tui } = useTwinkiContext();
+  const promoteSettlingItems = useCallback(() => {
+    if (settlingItemsRef.current.length === 0) return;
+    staticItemsRef.current.push(...settlingItemsRef.current);
+    settlingItemsRef.current.length = 0;
+    bumpSettleGeneration((generation) => generation + 1);
+  }, []);
+  useEffect(() => {
+    if (typeof tui?.onRenderComplete !== 'function') return undefined;
+    return tui.onRenderComplete((event) => {
+      if (settlingItemsRef.current.length === 0) {
+        settleStalePaintsRef.current = 0;
+        return;
+      }
+      // Escape stale paints after a bound so off-screen rows cannot pin live content forever.
+      if (!event.frameRowsCurrent && ++settleStalePaintsRef.current < 3) {
+        return;
+      }
+      if (event.frameRowsCurrent) _liteSettlePromotions.guarantee++;
+      else _liteSettlePromotions.escape++;
+      settleStalePaintsRef.current = 0;
+      promoteSettlingItems();
+    });
+  }, [tui, promoteSettlingItems]);
+  useEffect(() => {
+    if (typeof tui?.onRenderComplete === 'function') return undefined;
+    if (settlingItemsRef.current.length === 0) return undefined;
+    let cancelled = false;
+    process.nextTick(() => {
+      if (!cancelled) promoteSettlingItems();
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
   if (liteScrollbackClearToken !== _liteLastObservedClearToken) {
     _liteLastObservedClearToken = liteScrollbackClearToken;
-    // Snapshot "did this layout commit any <Static> rows in the prior session?"
-    // BEFORE wiping. Decides swap-with-content (static anchor banner) vs truly
-    // fresh (live banner). Without it, /chat new mid-session falls through both
-    // gates (messages emptied → no User; live banner re-renders over preserved
-    // scrollback) and the user sees KIRO art twice.
-    const hadPriorStaticContent = staticItemsRef.current.length > 0;
+    // Snapshot whether this layout staged or committed rows before resetting.
+    const hadPriorStaticContent =
+      staticItemsRef.current.length > 0 || settlingItemsRef.current.length > 0;
+    const currentMessageIds = new Set(messages.map((message) => message.id));
+    const outgoingSettlingItems = settlingItemsRef.current.filter(
+      (item) =>
+        item.sourceMessageId === undefined ||
+        !currentMessageIds.has(item.sourceMessageId)
+    );
     adjustStaticCursor?.(Number.MAX_SAFE_INTEGER);
-    staticItemsRef.current = [];
+    staticItemsRef.current = outgoingSettlingItems;
+    settlingItemsRef.current = [];
+    settleStalePaintsRef.current = 0;
     lastFlushedEligibleCountRef.current = 0;
     pushedStaticIdsRef.current = new Set();
     emittedSubagentSummaryKeysByParentRef.current = new Map();
@@ -761,7 +833,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
       hadPriorStaticContent ||
       messages.some((m) => m.role === MessageRole.User)
     ) {
-      staticItemsRef.current.push({
+      settlingItemsRef.current.push({
         id: `lite-mode-banner-${liteScrollbackClearToken}`,
         text: welcomeBannerText,
       });
@@ -788,9 +860,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     return false;
   }, [messages]);
 
-  // Static items: welcome + finalized messages, delta-appended (not rebuilt)
-  // into the persistent staticItemsRef. Each item's text is baked once at flush
-  // time.
+  // Finalized messages delta-append through the settle buffer into persistent static items.
   //
   // Resize caveat: this bakes `process.stdout.columns` into each row's text, so
   // a later resize leaves it stale — but the monotonic cursor ignores
@@ -798,6 +868,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   // dropped or scramble history. Terminal soft-wrap absorbs width changes.
   const staticItems = useMemo(() => {
     const items = staticItemsRef.current;
+    const settlingItems = settlingItemsRef.current;
 
     // Slice the tui→lite bookmark out before selecting eligible rows (slice
     // preserves the tail for the "skip last streaming Model" rule).
@@ -898,8 +969,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     // the first time chat content lands (the live-region banner unmounts the
     // same render). The items.length === 0 gate keeps this exclusive with the
     // swap-with-content push above — one banner row per session start.
-    if (items.length === 0) {
-      items.push({
+    if (items.length === 0 && settlingItems.length === 0) {
+      settlingItems.push({
         id: '__lite_welcome__',
         text: welcomeBannerText,
       });
@@ -945,7 +1016,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         prevMsg !== null && needsLeadingBlank(prevMsg, msg) ? '\n' : '';
       const text =
         prefix + renderMessageToText(msg, agentName ?? undefined, renderCtx);
-      items.push({ id: msg.id, text });
+      settlingItems.push({ id: msg.id, text, sourceMessageId: msg.id });
       pushedStaticIdsRef.current.add(msg.id);
       if (
         msg.role === MessageRole.ToolUse &&
@@ -978,13 +1049,18 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         appendix.summaries,
         emittedSubagentSummaryKeysByParentRef.current
       );
-      items.push({ id: appendix.id, text: appendix.text });
+      settlingItems.push({
+        id: appendix.id,
+        text: appendix.text,
+        sourceMessageId: appendix.parentId,
+      });
     }
 
     // Return a NEW array reference each render — twinki's <Static> compares
     // `items` by reference, so the same mutated array would be blind to the
     // newly appended entries. Shallow copy of pointers is cheap.
     return items.slice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- settleGeneration invalidates the ref-backed static snapshot
   }, [
     messages,
     isProcessing,
@@ -1005,7 +1081,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     // about-to-commit banner row.
     welcomeBannerText,
     showWelcomeBanner,
+    settleGeneration,
   ]);
+
+  const settlingItems = settlingItemsRef.current;
 
   const handleSubmit = useCallback(
     (value: string) => {
@@ -1623,12 +1702,24 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
         )}
       </Static>
 
+      {settlingItems.length > 0 && (
+        <Box flexDirection="column">
+          {settlingItems.map((item) => (
+            <Text key={item.id} wrap="overflow">
+              {item.text}
+            </Text>
+          ))}
+        </Box>
+      )}
+
       {/* Outside <Static> so resize reflows it. The length === 0 gate keeps it
           exclusive with the swap-with-content static push above (no double
           KIRO art). */}
-      {showWelcomeBanner && staticItemsRef.current.length === 0 && (
-        <Text wrap="overflow">{welcomeBannerText}</Text>
-      )}
+      {showWelcomeBanner &&
+        staticItemsRef.current.length === 0 &&
+        settlingItemsRef.current.length === 0 && (
+          <Text wrap="overflow">{welcomeBannerText}</Text>
+        )}
 
       {/* Agent's standalone greeting alongside the banner; commits to <Static>
           via the fallback path once the welcome screen ends. */}
